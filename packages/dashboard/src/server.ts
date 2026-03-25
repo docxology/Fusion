@@ -7,7 +7,7 @@ import { createSSE } from "./sse.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-export function createServer(store: TaskStore) {
+export function createServer(store: TaskStore): ReturnType<typeof express> {
   const app = express();
 
   app.use(express.json());

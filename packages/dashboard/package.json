@@ -9,7 +9,7 @@
     "build": "vite build && tsc",
     "build:client": "vite build",
     "dev:client": "vite",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.app.json"
   },
   "dependencies": {
     "@hai/core": "workspace:*",
