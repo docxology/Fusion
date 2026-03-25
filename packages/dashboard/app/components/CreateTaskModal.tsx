@@ -12,10 +12,10 @@ export function CreateTaskModal({ onClose, onCreateTask, addToast }: CreateTaskM
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [deps, setDeps] = useState("");
-  const titleRef = useRef<HTMLInputElement>(null);
+  const descRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    setTimeout(() => titleRef.current?.focus(), 100);
+    setTimeout(() => descRef.current?.focus(), 100);
   }, []);
 
   useEffect(() => {
@@ -36,9 +36,9 @@ export function CreateTaskModal({ onClose, onCreateTask, addToast }: CreateTaskM
   const handleSubmit = useCallback(
     async (e: React.FormEvent) => {
       e.preventDefault();
-      const trimmedTitle = title.trim();
-      if (!trimmedTitle) return;
+      if (!description.trim()) return;
 
+      const trimmedTitle = title.trim();
       const dependencies = deps
         .split(",")
         .map((s) => s.trim())
@@ -46,8 +46,8 @@ export function CreateTaskModal({ onClose, onCreateTask, addToast }: CreateTaskM
 
       try {
         const task = await onCreateTask({
-          title: trimmedTitle,
-          description: description.trim() || undefined,
+          description: description.trim(),
+          title: trimmedTitle || undefined,
           dependencies: dependencies.length ? dependencies : undefined,
         });
         addToast(`Created ${task.id}`, "success");
@@ -70,27 +70,27 @@ export function CreateTaskModal({ onClose, onCreateTask, addToast }: CreateTaskM
         </div>
         <form onSubmit={handleSubmit}>
           <div className="form-group">
-            <label htmlFor="task-title">Title</label>
-            <input
-              ref={titleRef}
-              type="text"
-              id="task-title"
-              placeholder="What needs to be done?"
+            <label htmlFor="task-desc">Description</label>
+            <textarea
+              ref={descRef}
+              id="task-desc"
+              rows={4}
+              placeholder="What needs to be done? Add context, requirements, or rough notes..."
               required
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
             />
           </div>
           <div className="form-group">
-            <label htmlFor="task-desc">
-              Description <span className="optional">(optional)</span>
+            <label htmlFor="task-title">
+              Title <span className="optional">(optional)</span>
             </label>
-            <textarea
-              id="task-desc"
-              rows={4}
-              placeholder="Add context, requirements, or rough notes..."
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
+            <input
+              type="text"
+              id="task-title"
+              placeholder="Short summary (auto-generated if empty)"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
             />
           </div>
           <div className="form-group">

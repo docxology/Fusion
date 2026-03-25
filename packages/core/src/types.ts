@@ -3,7 +3,7 @@ export type Column = (typeof COLUMNS)[number];
 
 export interface Task {
   id: string;
-  title: string;
+  title?: string;
   description: string;
   column: Column;
   dependencies: string[];
@@ -17,8 +17,8 @@ export interface TaskDetail extends Task {
 }
 
 export interface TaskCreateInput {
-  title: string;
-  description?: string;
+  title?: string;
+  description: string;
   column?: Column;
   dependencies?: string[];
 }

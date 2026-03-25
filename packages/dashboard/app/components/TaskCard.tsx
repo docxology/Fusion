@@ -44,7 +44,9 @@ export function TaskCard({ task, queued, onOpenDetail, addToast }: TaskCardProps
       onClick={handleClick}
     >
       <span className="card-id">{task.id}</span>
-      <div className="card-title">{task.title}</div>
+      <div className="card-title">
+        {task.title || (task.description ? task.description.slice(0, 60) + (task.description.length > 60 ? "…" : "") : task.id)}
+      </div>
       {((task.dependencies && task.dependencies.length > 0) || queued) && (
         <div className="card-meta">
           {task.dependencies && task.dependencies.length > 0 && (
