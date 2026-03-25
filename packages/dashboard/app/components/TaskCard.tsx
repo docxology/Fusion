@@ -1,7 +1,25 @@
 import { useCallback, useState } from "react";
-import type { Task, TaskDetail } from "@hai/core";
+import type { Task, TaskDetail, Column } from "@hai/core";
 import { fetchTaskDetail } from "../api";
 import type { ToastType } from "../hooks/useToast";
+
+const COLUMN_COLOR_MAP: Record<Column, string> = {
+  triage: "rgba(210,153,34,0.15)",
+  todo: "rgba(88,166,255,0.15)",
+  "in-progress": "rgba(188,140,255,0.15)",
+  "in-review": "rgba(63,185,80,0.15)",
+  done: "rgba(139,148,158,0.15)",
+};
+
+const COLUMN_TEXT_COLOR_MAP: Record<Column, string> = {
+  triage: "var(--triage)",
+  todo: "var(--todo)",
+  "in-progress": "var(--in-progress)",
+  "in-review": "var(--in-review)",
+  done: "var(--done)",
+};
+
+const ACTIVE_STATUSES = new Set(["planning", "researching", "executing", "finalizing", "merging"]);
 
 interface TaskCardProps {
   task: Task;
@@ -43,6 +61,17 @@ export function TaskCard({ task, queued, onOpenDetail, addToast }: TaskCardProps
       onDragEnd={queued ? undefined : handleDragEnd}
       onClick={handleClick}
     >
+      {task.status && (
+        <span
+          className={`card-status-badge${ACTIVE_STATUSES.has(task.status) ? " pulsing" : ""}`}
+          style={{
+            background: COLUMN_COLOR_MAP[task.column],
+            color: COLUMN_TEXT_COLOR_MAP[task.column],
+          }}
+        >
+          {task.status}
+        </span>
+      )}
       <span className="card-id">{task.id}</span>
       <div className="card-title">
         {task.title || (task.description ? task.description.slice(0, 60) + (task.description.length > 60 ? "…" : "") : task.id)}
