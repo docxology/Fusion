@@ -160,24 +160,22 @@ export async function aiMergeTask(
     const prompt = buildMergePrompt(taskId, branch, commitLog, diffStat, hasConflicts);
     await session.prompt(prompt);
 
-    // 6. Verify the commit happened
+    // 6. Verify the commit happened — if MERGE_HEAD still exists, agent didn't commit
+    let needsFallback = false;
     try {
-      // Check if HEAD moved (merge was committed)
-      const mergeHead = execSync("git rev-parse MERGE_HEAD 2>/dev/null || true", {
-        cwd: rootDir,
-        encoding: "utf-8",
-      }).trim();
-
-      if (mergeHead) {
-        // Agent didn't commit — do it ourselves as fallback
-        console.log("[merger] Agent didn't commit — committing with default message");
-        execSync(
-          `git commit --no-edit -m "feat(${taskId}): merge ${branch}" -m "${commitLog}"`,
-          { cwd: rootDir, stdio: "pipe" },
-        );
-      }
+      execSync("git rev-parse MERGE_HEAD", { cwd: rootDir, stdio: "pipe" });
+      // If we get here, MERGE_HEAD exists = still uncommitted
+      needsFallback = true;
     } catch {
       // MERGE_HEAD doesn't exist = commit was made successfully
+    }
+
+    if (needsFallback) {
+      console.log("[merger] Agent didn't commit — committing with fallback message");
+      execSync(
+        `git commit --no-edit -m "feat(${taskId}): merge ${branch}" -m "${commitLog}"`,
+        { cwd: rootDir, stdio: "pipe" },
+      );
     }
 
     result.merged = true;
