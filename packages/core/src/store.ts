@@ -3,7 +3,7 @@ import { execSync } from "node:child_process";
 import { mkdir, readFile, writeFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { existsSync } from "node:fs";
-import type { Task, TaskDetail, TaskCreateInput, BoardConfig, Column, MergeResult } from "./types.js";
+import type { Task, TaskDetail, TaskCreateInput, BoardConfig, Column, MergeResult, TaskStatus } from "./types.js";
 import { VALID_TRANSITIONS } from "./types.js";
 
 export interface TaskStoreEvents {
@@ -63,6 +63,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       description: input.description || "",
       column: input.column || "triage",
       dependencies: input.dependencies || [],
+      status: "idle",
       createdAt: now,
       updatedAt: now,
     };
@@ -134,6 +135,15 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
     task.column = toColumn;
     task.updatedAt = new Date().toISOString();
 
+    // Auto-set status based on target column
+    if (toColumn === "in-review" || toColumn === "done") {
+      task.status = "complete";
+    } else if (toColumn === "in-progress") {
+      task.status = "executing";
+    } else if (toColumn === "todo") {
+      task.status = "idle";
+    }
+
     await writeFile(join(dir, "task.json"), JSON.stringify(task, null, 2));
 
     this.emit("task:moved", { task, from: fromColumn, to: toColumn });
@@ -158,6 +168,20 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
     if (updates.prompt !== undefined) {
       await writeFile(join(dir, "PROMPT.md"), updates.prompt);
     }
+
+    this.emit("task:updated", task);
+    return task;
+  }
+
+  async setStatus(id: string, status: TaskStatus): Promise<Task> {
+    const dir = this.taskDir(id);
+    const data = await readFile(join(dir, "task.json"), "utf-8");
+    const task = JSON.parse(data) as Task;
+
+    task.status = status;
+    task.updatedAt = new Date().toISOString();
+
+    await writeFile(join(dir, "task.json"), JSON.stringify(task, null, 2));
 
     this.emit("task:updated", task);
     return task;
@@ -280,6 +304,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
 
   private async moveToDone(task: Task, dir: string): Promise<void> {
     task.column = "done";
+    task.status = "complete";
     task.worktree = undefined;
     task.updatedAt = new Date().toISOString();
     await writeFile(join(dir, "task.json"), JSON.stringify(task, null, 2));
