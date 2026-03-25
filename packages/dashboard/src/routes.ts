@@ -15,16 +15,6 @@ export function createApiRoutes(store: TaskStore): Router {
     }
   });
 
-  // Get single task with prompt content
-  router.get("/tasks/:id", async (req, res) => {
-    try {
-      const task = await store.getTask(req.params.id);
-      res.json(task);
-    } catch (err: any) {
-      res.status(404).json({ error: `Task ${req.params.id} not found` });
-    }
-  });
-
   // Create task
   router.post("/tasks", async (req, res) => {
     try {
@@ -63,6 +53,29 @@ export function createApiRoutes(store: TaskStore): Router {
     }
   });
 
+  // Merge task (in-review → done, merges branch + cleans worktree)
+  router.post("/tasks/:id/merge", async (req, res) => {
+    try {
+      const result = await store.mergeTask(req.params.id);
+      res.json(result);
+    } catch (err: any) {
+      const status = err.message.includes("Cannot merge") ? 400
+        : err.message.includes("Merge conflict") ? 409
+        : 500;
+      res.status(status).json({ error: err.message });
+    }
+  });
+
+  // Get single task with prompt content
+  router.get("/tasks/:id", async (req, res) => {
+    try {
+      const task = await store.getTask(req.params.id);
+      res.json(task);
+    } catch (err: any) {
+      res.status(404).json({ error: `Task ${req.params.id} not found` });
+    }
+  });
+
   // Update task
   router.patch("/tasks/:id", async (req, res) => {
     try {
@@ -75,19 +88,6 @@ export function createApiRoutes(store: TaskStore): Router {
       res.json(task);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
-    }
-  });
-
-  // Merge task (in-review → done, merges branch + cleans worktree)
-  router.post("/tasks/:id/merge", async (req, res) => {
-    try {
-      const result = await store.mergeTask(req.params.id);
-      res.json(result);
-    } catch (err: any) {
-      const status = err.message.includes("Cannot merge") ? 400
-        : err.message.includes("Merge conflict") ? 409
-        : 500;
-      res.status(status).json({ error: err.message });
     }
   });
 
