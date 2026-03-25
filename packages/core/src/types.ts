@@ -3,7 +3,7 @@ export type Column = (typeof COLUMNS)[number];
 
 export interface Task {
   id: string;
-  title: string;
+  title?: string;
   description: string;
   column: Column;
   dependencies: string[];
