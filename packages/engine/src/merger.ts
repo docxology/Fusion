@@ -44,6 +44,27 @@ git commit -m "feat(HAI-003): add user profile page" -m "- Add /profile route wi
 Do NOT use generic messages like "merge branch" or "resolve conflicts".
 Base the message on the ACTUAL work done in the branch commits.`;
 
+/**
+ * Check if any non-done task (other than `excludeTaskId`) references the given
+ * worktree path. Returns the first matching task ID, or null if the worktree
+ * is safe to remove. Used by both the merger and executor cleanup to avoid
+ * deleting worktrees that are shared across dependent tasks.
+ */
+export async function findWorktreeUser(
+  store: TaskStore,
+  worktreePath: string,
+  excludeTaskId: string,
+): Promise<string | null> {
+  const tasks = await store.listTasks();
+  for (const t of tasks) {
+    if (t.id === excludeTaskId) continue;
+    if (t.worktree === worktreePath && t.column !== "done") {
+      return t.id;
+    }
+  }
+  return null;
+}
+
 export interface MergerOptions {
   /** Called with agent text output */
   onAgentText?: (delta: string) => void;
@@ -190,18 +211,7 @@ export async function aiMergeTask(
     session.dispose();
   }
 
-  // 7. Clean up worktree
-  if (existsSync(worktreePath)) {
-    try {
-      execSync(`git worktree remove "${worktreePath}" --force`, {
-        cwd: rootDir,
-        stdio: "pipe",
-      });
-      result.worktreeRemoved = true;
-    } catch { /* non-fatal */ }
-  }
-
-  // 8. Delete branch
+  // 7. Delete branch (always per-task, regardless of worktree sharing)
   try {
     execSync(`git branch -d "${branch}"`, { cwd: rootDir, stdio: "pipe" });
     result.branchDeleted = true;
@@ -210,6 +220,23 @@ export async function aiMergeTask(
       execSync(`git branch -D "${branch}"`, { cwd: rootDir, stdio: "pipe" });
       result.branchDeleted = true;
     } catch { /* non-fatal */ }
+  }
+
+  // 8. Clean up worktree — only if no other non-done task still references it
+  if (existsSync(worktreePath)) {
+    const otherUser = await findWorktreeUser(store, worktreePath, taskId);
+    if (otherUser) {
+      console.log(`[merger] Worktree retained — still needed by ${otherUser}`);
+      result.worktreeRemoved = false;
+    } else {
+      try {
+        execSync(`git worktree remove "${worktreePath}" --force`, {
+          cwd: rootDir,
+          stdio: "pipe",
+        });
+        result.worktreeRemoved = true;
+      } catch { /* non-fatal */ }
+    }
   }
 
   // 9. Move task to done

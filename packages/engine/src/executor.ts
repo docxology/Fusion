@@ -2,6 +2,7 @@ import { execSync } from "node:child_process";
 import { join } from "node:path";
 import { existsSync } from "node:fs";
 import type { TaskStore, Task, TaskDetail, StepStatus } from "@hai/core";
+import { findWorktreeUser } from "./merger.js";
 import { Type, type Static } from "@mariozechner/pi-ai";
 import { createHaiAgent } from "./pi.js";
 import { reviewStep } from "./reviewer.js";
@@ -165,6 +166,43 @@ export class TaskExecutor {
     }
   }
 
+  /**
+   * Find a dependency task that has an existing worktree directory on disk.
+   * Returns the worktree path if found, null otherwise.
+   * Prefers dependencies whose worktree is still on disk so build caches
+   * (node_modules, target/, dist/) can be reused by dependent tasks.
+   */
+  private resolveDependencyWorktree(task: Task, allTasks: Task[]): string | null {
+    if (task.dependencies.length === 0) return null;
+
+    for (const depId of task.dependencies) {
+      const dep = allTasks.find((t) => t.id === depId);
+      if (
+        dep &&
+        dep.worktree &&
+        (dep.column === "done" || dep.column === "in-review") &&
+        existsSync(dep.worktree)
+      ) {
+        return dep.worktree;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Reuse an existing worktree directory from a dependency task.
+   * Instead of creating a new worktree with `git worktree add`, this creates
+   * a new branch in the existing worktree via `git checkout -b`. The worktree
+   * directory (and its build caches) are preserved.
+   */
+  private reuseWorktree(branch: string, worktreePath: string): void {
+    execSync(`git checkout -b "${branch}"`, {
+      cwd: worktreePath,
+      stdio: "pipe",
+    });
+    console.log(`[executor] Reused worktree at ${worktreePath}, created branch ${branch}`);
+  }
+
   async execute(task: Task): Promise<void> {
     if (this.executing.has(task.id)) return;
     this.executing.add(task.id);
@@ -184,14 +222,34 @@ export class TaskExecutor {
         return;
       }
 
+      // Check if a dependency has a reusable worktree (warm cache)
+      const depWorktree = this.resolveDependencyWorktree(task, allTasks);
+
       // Create or reuse worktree
       const branchName = `hai/${task.id.toLowerCase()}`;
-      const worktreePath = task.worktree || join(this.rootDir, ".worktrees", task.id);
-      const isResume = existsSync(worktreePath);
-      this.createWorktree(branchName, worktreePath);
+      let worktreePath: string;
+      let isResume: boolean;
+      let isReuse: boolean;
+
+      if (depWorktree && !task.worktree) {
+        // Reuse dependency worktree for warm build cache
+        worktreePath = depWorktree;
+        isResume = false;
+        isReuse = true;
+        const depTask = allTasks.find((t) => t.worktree === depWorktree);
+        const depId = depTask?.id ?? "unknown";
+        console.log(`[executor] Reusing worktree from ${depId} at ${depWorktree} (warm cache)`);
+        this.reuseWorktree(branchName, worktreePath);
+      } else {
+        worktreePath = task.worktree || join(this.rootDir, ".worktrees", task.id);
+        isResume = existsSync(worktreePath);
+        isReuse = false;
+        this.createWorktree(branchName, worktreePath);
+      }
+
       this.activeWorktrees.set(task.id, worktreePath);
 
-      if (!isResume) {
+      if (!isResume && !isReuse) {
         await this.store.updateTask(task.id, { worktree: worktreePath });
         await this.store.logEntry(task.id, `Worktree created at ${worktreePath}`);
 
@@ -210,6 +268,10 @@ export class TaskExecutor {
             await this.store.logEntry(task.id, `Worktree init command failed: ${message}`);
           }
         }
+      } else if (isReuse) {
+        // Update task's worktree field to point to the reused directory
+        await this.store.updateTask(task.id, { worktree: worktreePath });
+        await this.store.logEntry(task.id, `Reusing worktree at ${worktreePath} (warm cache)`);
       }
 
       this.options.onStart?.(task, worktreePath);
@@ -457,12 +519,26 @@ export class TaskExecutor {
     console.log(`[executor] Worktree created: ${path}`);
   }
 
+  /**
+   * Remove a task's worktree, but only if no other in-progress or todo task
+   * shares the same worktree path (dependency-chain reuse). The branch is
+   * always cleaned up by the merger on a per-task basis.
+   */
   async cleanup(taskId: string): Promise<void> {
     const worktreePath = this.activeWorktrees.get(taskId);
     if (!worktreePath) return;
+
+    this.activeWorktrees.delete(taskId);
+
+    // Check if another task still needs this worktree
+    const otherUser = await findWorktreeUser(this.store, worktreePath, taskId);
+    if (otherUser) {
+      console.log(`[executor] Worktree retained for ${taskId} — still needed by ${otherUser}`);
+      return;
+    }
+
     try {
       execSync(`git worktree remove "${worktreePath}" --force`, { cwd: this.rootDir, stdio: "pipe" });
-      this.activeWorktrees.delete(taskId);
       console.log(`[executor] Cleaned up worktree for ${taskId}`);
     } catch (err: any) {
       console.error(`[executor] Failed to clean up worktree for ${taskId}:`, err.message);
