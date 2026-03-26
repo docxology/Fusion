@@ -271,7 +271,9 @@ export class TaskExecutor {
 
       // Create or reuse worktree — try pool first when recycling is enabled
       const branchName = `hai/${task.id.toLowerCase()}`;
-      let worktreePath = task.worktree || join(this.rootDir, ".worktrees", task.id);
+      // Use generateWorktreeName for human-friendly directory names (adjective-noun pattern)
+      // instead of task.id, so worktrees are named like ".worktrees/swift-falcon"
+      let worktreePath = task.worktree || join(this.rootDir, ".worktrees", generateWorktreeName(this.rootDir));
       let isResume = existsSync(worktreePath);
       let acquiredFromPool = false;
       const settings = await this.store.getSettings();

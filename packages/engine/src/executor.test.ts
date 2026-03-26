@@ -32,6 +32,7 @@ import { createHaiAgent } from "./pi.js";
 import { execSync } from "node:child_process";
 import { findWorktreeUser, aiMergeTask } from "./merger.js";
 import { WorktreePool } from "./worktree-pool.js";
+import { generateWorktreeName } from "./worktree-names.js";
 import type { Column, Task, TaskDetail } from "@hai/core";
 
 const mockedCreateHaiAgent = vi.mocked(createHaiAgent);
@@ -346,6 +347,78 @@ describe("TaskExecutor worktreeInitCommand", () => {
 
     // getSettings is called (for project commands in execution prompt) but init command should not run
     expect(store.getSettings).toHaveBeenCalled();
+  });
+});
+
+describe("TaskExecutor worktree naming", () => {
+  const makeTask = (id = "HAI-030", worktree?: string) => ({
+    id,
+    title: "Test",
+    description: "Test",
+    column: "in-progress" as const,
+    dependencies: [],
+    steps: [],
+    currentStep: 0,
+    log: [],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    ...(worktree ? { worktree } : {}),
+  });
+
+  const mockedGenerateWorktreeName = vi.mocked(generateWorktreeName);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockedExistsSync.mockReturnValue(false);
+    mockedGenerateWorktreeName.mockReturnValue("swift-falcon");
+    mockedCreateHaiAgent.mockResolvedValue({
+      session: {
+        prompt: vi.fn().mockResolvedValue(undefined),
+        dispose: vi.fn(),
+      },
+    } as any);
+  });
+
+  it("uses generateWorktreeName for fresh worktree directories", async () => {
+    const store = createMockStore();
+    const executor = new TaskExecutor(store, "/tmp/test");
+
+    await executor.execute(makeTask());
+
+    // The worktree path stored should use the generated name, not the task ID
+    expect(store.updateTask).toHaveBeenCalledWith("HAI-030", {
+      worktree: "/tmp/test/.worktrees/swift-falcon",
+    });
+    expect(mockedGenerateWorktreeName).toHaveBeenCalledWith("/tmp/test");
+  });
+
+  it("does NOT use task ID as worktree directory name for fresh worktrees", async () => {
+    const store = createMockStore();
+    const executor = new TaskExecutor(store, "/tmp/test");
+
+    await executor.execute(makeTask("HAI-099"));
+
+    // Verify the worktree path does NOT contain the task ID
+    const updateCalls = store.updateTask.mock.calls;
+    const worktreeUpdate = updateCalls.find(
+      (call: any[]) => call[1]?.worktree !== undefined,
+    );
+    expect(worktreeUpdate).toBeDefined();
+    expect(worktreeUpdate![1].worktree).not.toContain("HAI-099");
+    expect(worktreeUpdate![1].worktree).toContain("swift-falcon");
+  });
+
+  it("reuses stored worktree path for resumed tasks", async () => {
+    const existingPath = "/tmp/test/.worktrees/calm-river";
+    mockedExistsSync.mockReturnValue(true);
+
+    const store = createMockStore();
+    const executor = new TaskExecutor(store, "/tmp/test");
+
+    await executor.execute(makeTask("HAI-031", existingPath));
+
+    // Should NOT generate a new name — reuse the stored path
+    expect(mockedGenerateWorktreeName).not.toHaveBeenCalled();
   });
 });
 
