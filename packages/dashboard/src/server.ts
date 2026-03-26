@@ -21,11 +21,22 @@ export function createServer(store: TaskStore, options?: ServerOptions): ReturnT
   app.use(express.json());
 
   // Serve built React app
-  const clientDir = existsSync(join(__dirname, "..", "dist", "client"))
-    ? join(__dirname, "..", "dist", "client")
-    : existsSync(join(__dirname, "..", "client"))
-      ? join(__dirname, "..", "client")
-      : join(__dirname, "..", "public");
+  // Resolution order:
+  //   1. HAI_CLIENT_DIR env override (explicit)
+  //   2. Next to process.execPath (bun-compiled binary: dist/hai + dist/client/)
+  //   3. __dirname/../dist/client  (running from src/ via tsx/ts-node)
+  //   4. __dirname/../client        (running from dist/ after tsc)
+  //   5. __dirname/../public        (fallback for dev)
+  const execDir = dirname(process.execPath);
+  const clientDir = process.env.HAI_CLIENT_DIR
+    ? process.env.HAI_CLIENT_DIR
+    : existsSync(join(execDir, "client", "index.html"))
+      ? join(execDir, "client")
+      : existsSync(join(__dirname, "..", "dist", "client"))
+        ? join(__dirname, "..", "dist", "client")
+        : existsSync(join(__dirname, "..", "client"))
+          ? join(__dirname, "..", "client")
+          : join(__dirname, "..", "public");
 
   app.use(express.static(clientDir));
 

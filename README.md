@@ -140,6 +140,37 @@ pnpm dev dashboard -- --engine  # Board + AI engine
 pnpm dev task list              # CLI commands
 ```
 
+## Building a standalone executable
+
+You can build a single self-contained `hai` binary using [Bun](https://bun.sh/):
+
+```bash
+pnpm build:exe
+```
+
+This compiles all TypeScript, builds the dashboard client, and produces:
+
+- `packages/cli/dist/hai` — the standalone binary
+- `packages/cli/dist/client/` — co-located dashboard assets
+
+Run the binary directly — no Node.js, pnpm, or workspace setup needed:
+
+```bash
+./packages/cli/dist/hai --help
+./packages/cli/dist/hai task list
+./packages/cli/dist/hai dashboard
+```
+
+To distribute, copy both the `hai` binary and the `client/` directory together.
+
+You can override the dashboard asset path via the `HAI_CLIENT_DIR` environment variable:
+
+```bash
+HAI_CLIENT_DIR=/path/to/client ./hai dashboard
+```
+
+**Prerequisites:** Bun ≥ 1.0 (`bun --version`)
+
 ## License
 
 ISC

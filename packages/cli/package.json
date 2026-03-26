@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "tsx src/bin.ts",
     "build": "tsc",
+    "build:exe": "bun run build.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
