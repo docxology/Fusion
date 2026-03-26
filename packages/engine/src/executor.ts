@@ -252,16 +252,25 @@ export class TaskExecutor {
       label: "Create Task",
       description:
         "Create a new task for out-of-scope work discovered during execution. " +
-        "The task goes into triage where it will be specified by the AI.",
+        "The task goes into triage where it will be specified by the AI. " +
+        "Optionally set dependencies (e.g., the new task depends on the current one, " +
+        "or the current task should wait for the new one).",
       parameters: Type.Object({
         description: Type.String({ description: "What needs to be done" }),
+        dependencies: Type.Optional(
+          Type.Array(Type.String(), { description: "Task IDs this new task depends on (e.g. [\"HAI-001\"])" }),
+        ),
       }),
       execute: async (_id, params) => {
-        const task = await store.createTask({ description: params.description });
+        const task = await store.createTask({
+          description: params.description,
+          dependencies: params.dependencies,
+        });
+        const deps = task.dependencies.length ? ` (depends on: ${task.dependencies.join(", ")})` : "";
         return {
           content: [{
             type: "text" as const,
-            text: `Created ${task.id}: ${params.description}`,
+            text: `Created ${task.id}: ${params.description}${deps}`,
           }],
           details: {},
         };
