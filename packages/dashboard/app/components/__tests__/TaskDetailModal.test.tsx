@@ -74,4 +74,19 @@ describe("TaskDetailModal", () => {
     expect(fallback.classList.contains("detail-prompt")).toBe(true);
     expect(fallback.classList.contains("markdown-body")).toBe(false);
   });
+
+  it("does not render a PROMPT.md heading", () => {
+    render(
+      <TaskDetailModal
+        task={makeTask({ prompt: "# Some prompt content" })}
+        onClose={noop}
+        onMoveTask={noopMove}
+        onDeleteTask={noopDelete}
+        onMergeTask={noopMerge}
+        addToast={noop}
+      />,
+    );
+
+    expect(screen.queryByText("PROMPT.md")).toBeNull();
+  });
 });
