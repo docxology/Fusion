@@ -15,6 +15,7 @@ import {
   SessionManager,
   SettingsManager,
   type AgentSession,
+  type ToolDefinition,
 } from "@mariozechner/pi-coding-agent";
 
 export interface AgentResult {
@@ -25,6 +26,7 @@ export interface AgentOptions {
   cwd: string;
   systemPrompt: string;
   tools?: "coding" | "readonly";
+  customTools?: ToolDefinition[];
   onText?: (delta: string) => void;
   onToolStart?: (name: string) => void;
   onToolEnd?: (name: string, isError: boolean) => void;
@@ -62,6 +64,7 @@ export async function createHaiAgent(options: AgentOptions): Promise<AgentResult
     modelRegistry,
     resourceLoader,
     tools,
+    customTools: options.customTools,
     sessionManager: SessionManager.inMemory(),
     settingsManager,
   });

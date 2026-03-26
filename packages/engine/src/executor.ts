@@ -2,7 +2,10 @@ import { execSync } from "node:child_process";
 import { join } from "node:path";
 import { existsSync } from "node:fs";
 import type { TaskStore, Task, TaskDetail } from "@hai/core";
+import { Type } from "@mariozechner/pi-ai";
 import { createHaiAgent } from "./pi.js";
+import { reviewStep, type ReviewResult } from "./reviewer.js";
+import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 
 const EXECUTOR_SYSTEM_PROMPT = `You are a task execution agent for "hai", an AI-orchestrated task board.
 
@@ -152,11 +155,17 @@ export class TaskExecutor {
         }
       }
 
-      // Create pi agent session in the worktree
+      // Build the review_step tool for cross-model review
+      const reviewStepTool = this.createReviewStepTool(
+        task.id, worktreePath, detail.prompt,
+      );
+
+      // Create pi agent session in the worktree with review_step tool
       const { session } = await createHaiAgent({
         cwd: worktreePath,
         systemPrompt: EXECUTOR_SYSTEM_PROMPT,
         tools: "coding",
+        customTools: [reviewStepTool],
         onText: (delta) => this.options.onAgentText?.(task.id, delta),
         onToolStart: (name) => this.options.onAgentTool?.(task.id, name),
       });
@@ -205,6 +214,120 @@ export class TaskExecutor {
       }
     }
     console.log(`[executor] Worktree created: ${path}`);
+  }
+
+  /**
+   * Create the review_step tool that the worker calls at step boundaries.
+   * Spawns a separate reviewer pi session with read-only tools.
+   */
+  private createReviewStepTool(
+    taskId: string,
+    worktreePath: string,
+    promptContent: string,
+  ): ToolDefinition {
+    const store = this.store;
+    const options = this.options;
+
+    return {
+      name: "review_step",
+      label: "Review Step",
+      description:
+        "Spawn a reviewer agent to evaluate your plan or code for a step. " +
+        "Returns APPROVE, REVISE, RETHINK, or UNAVAILABLE. " +
+        "Call at step boundaries based on the task's review level. " +
+        "Skip reviews for Step 0 (Preflight) and the final documentation step.",
+      parameters: Type.Object({
+        step: Type.Number({ description: "Step number to review" }),
+        type: Type.Union(
+          [Type.Literal("plan"), Type.Literal("code")],
+          { description: 'Review type: "plan" or "code"' },
+        ),
+        step_name: Type.String({ description: "Name of the step being reviewed" }),
+        baseline: Type.Optional(
+          Type.String({
+            description:
+              "Git commit SHA for code review diff baseline. " +
+              "Capture HEAD before starting a step and pass it here.",
+          }),
+        ),
+      }),
+      execute: async (_toolCallId, params) => {
+        const { step, type: reviewType, step_name, baseline } = params;
+
+        console.log(
+          `[reviewer] ${taskId}: ${reviewType} review for Step ${step} (${step_name})`,
+        );
+        await store.logEntry(
+          taskId,
+          `${reviewType} review requested for Step ${step} (${step_name})`,
+        );
+
+        try {
+          const result = await reviewStep(
+            worktreePath,
+            taskId,
+            step,
+            step_name,
+            reviewType,
+            promptContent,
+            baseline,
+            {
+              onText: (delta) => options.onAgentText?.(taskId, delta),
+            },
+          );
+
+          // Log the result
+          await store.logEntry(
+            taskId,
+            `${reviewType} review Step ${step}: ${result.verdict}`,
+            result.summary,
+          );
+
+          console.log(
+            `[reviewer] ${taskId}: Step ${step} ${reviewType} → ${result.verdict}`,
+          );
+
+          // Format response for the worker
+          let text: string;
+          switch (result.verdict) {
+            case "APPROVE":
+              text = "APPROVE";
+              break;
+            case "REVISE":
+              text = `REVISE\n\n${result.review}`;
+              break;
+            case "RETHINK":
+              text = `RETHINK\n\n${result.review}`;
+              break;
+            default:
+              text = "UNAVAILABLE — reviewer did not produce a usable verdict.";
+          }
+
+          return {
+            content: [{ type: "text" as const, text }],
+            details: {},
+          };
+        } catch (err: any) {
+          console.error(
+            `[reviewer] ${taskId}: review failed: ${err.message}`,
+          );
+          await store.logEntry(
+            taskId,
+            `${reviewType} review failed: ${err.message}`,
+          );
+
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `UNAVAILABLE — reviewer error: ${err.message}`,
+              },
+            ],
+            details: {},
+          };
+        }
+      },
+    };
   }
 
   async cleanup(taskId: string): Promise<void> {
