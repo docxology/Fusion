@@ -327,6 +327,35 @@ describe("Scheduler file-scope overlap", () => {
     expect(store.moveTask).toHaveBeenCalledWith("HAI-001", "in-progress");
   });
 
+  it("does not emit console.log when deferring due to file overlap", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const tasks = [
+      makeTask({ id: "HAI-001", column: "in-progress" }),
+      makeTask({ id: "HAI-002", column: "todo" }),
+    ];
+    const store = createMockStore(tasks);
+    store.getSettings.mockResolvedValue({
+      maxConcurrent: 2,
+      maxWorktrees: 4,
+      pollIntervalMs: 15000,
+      groupOverlappingFiles: true,
+      autoMerge: false,
+    });
+    store.parseFileScopeFromPrompt.mockImplementation(async (id: string) => {
+      if (id === "HAI-001") return ["packages/shared/utils.ts"];
+      if (id === "HAI-002") return ["packages/shared/utils.ts"];
+      return [];
+    });
+
+    const scheduler = new Scheduler(store, { maxConcurrent: 3 });
+    await runSchedule(scheduler);
+
+    // Verify no log about deferring/file overlap was emitted
+    const calls = logSpy.mock.calls.flat().map(String);
+    expect(calls.some((msg) => msg.includes("Deferring") && msg.includes("file overlap"))).toBe(false);
+    logSpy.mockRestore();
+  });
+
   it("does not set status 'queued' when file scopes do not overlap", async () => {
     const tasks = [
       makeTask({ id: "HAI-001", column: "in-progress" }),

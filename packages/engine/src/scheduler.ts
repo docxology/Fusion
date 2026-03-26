@@ -249,9 +249,6 @@ export class Scheduler {
               }
             }
             if (overlappingTaskId) {
-              console.log(
-                `[scheduler] Deferring ${task.id}: file overlap with ${overlappingTaskId}`,
-              );
               await this.store.updateTask(task.id, { status: "queued", blockedBy: overlappingTaskId });
               continue;
             }
