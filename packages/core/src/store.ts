@@ -31,6 +31,8 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
   private debounceMs = 150;
   /** Per-task promise chain for serializing writes */
   private taskLocks: Map<string, Promise<void>> = new Map();
+  /** Promise chain for serializing config.json read-modify-write cycles */
+  private configLock: Promise<void> = Promise.resolve();
 
   constructor(private rootDir: string) {
     super();
@@ -44,6 +46,26 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
     if (!existsSync(this.configPath)) {
       await this.writeConfig({ nextId: 1 });
     }
+  }
+
+  /**
+   * Serialize all mutations to config.json by chaining promises.
+   * Concurrent callers will queue behind each other, preventing
+   * lost-update races on the nextId counter.
+   */
+  private withConfigLock<T>(fn: () => Promise<T>): Promise<T> {
+    let resolve: () => void;
+    const next = new Promise<void>((r) => { resolve = r; });
+    const prev = this.configLock;
+    this.configLock = next;
+
+    return prev.then(async () => {
+      try {
+        return await fn();
+      } finally {
+        resolve!();
+      }
+    });
   }
 
   /**
@@ -120,12 +142,14 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
   }
 
   async updateSettings(patch: Partial<Settings>): Promise<Settings> {
-    const config = await this.readConfig();
-    const current = { ...DEFAULT_SETTINGS, ...config.settings };
-    const updated = { ...current, ...patch };
-    config.settings = updated;
-    await this.writeConfig(config);
-    return updated;
+    return this.withConfigLock(async () => {
+      const config = await this.readConfig();
+      const current = { ...DEFAULT_SETTINGS, ...config.settings };
+      const updated = { ...current, ...patch };
+      config.settings = updated;
+      await this.writeConfig(config);
+      return updated;
+    });
   }
 
   private async readConfig(): Promise<BoardConfig> {
@@ -133,16 +157,29 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
     return JSON.parse(data);
   }
 
+  /**
+   * Atomically write config.json by writing to a temp file first, then
+   * renaming into place. The rename is atomic on POSIX filesystems,
+   * preventing partial writes from corrupting the file.
+   */
+  private async atomicWriteConfig(config: BoardConfig): Promise<void> {
+    const tmpPath = this.configPath + ".tmp";
+    await writeFile(tmpPath, JSON.stringify(config, null, 2));
+    await rename(tmpPath, this.configPath);
+  }
+
   private async writeConfig(config: BoardConfig): Promise<void> {
-    await writeFile(this.configPath, JSON.stringify(config, null, 2));
+    await this.atomicWriteConfig(config);
   }
 
   private async allocateId(): Promise<string> {
-    const config = await this.readConfig();
-    const id = `HAI-${String(config.nextId).padStart(3, "0")}`;
-    config.nextId++;
-    await this.writeConfig(config);
-    return id;
+    return this.withConfigLock(async () => {
+      const config = await this.readConfig();
+      const id = `HAI-${String(config.nextId).padStart(3, "0")}`;
+      config.nextId++;
+      await this.writeConfig(config);
+      return id;
+    });
   }
 
   private taskDir(id: string): string {
