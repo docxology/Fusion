@@ -129,7 +129,7 @@ export async function aiMergeTask(
   let commitLog = "";
   let diffStat = "";
   try {
-    commitLog = execSync(`git log main..${branch} --format="- %s"`, {
+    commitLog = execSync(`git log HEAD..${branch} --format="- %s"`, {
       cwd: rootDir,
       encoding: "utf-8",
     }).trim();
@@ -137,7 +137,7 @@ export async function aiMergeTask(
     commitLog = "(unable to read commit log)";
   }
   try {
-    diffStat = execSync(`git diff main..${branch} --stat`, {
+    diffStat = execSync(`git diff HEAD..${branch} --stat`, {
       cwd: rootDir,
       encoding: "utf-8",
     }).trim();
