@@ -9,13 +9,14 @@ function makeTask(overrides: Partial<TaskDetail> = {}): TaskDetail {
     description: "Test task",
     column: "in-progress" as Column,
     dependencies: [],
+    prompt: "",
     steps: [],
     currentStep: 0,
     log: [],
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
     ...overrides,
-  };
+  } as TaskDetail;
 }
 
 const noop = vi.fn();
@@ -162,5 +163,55 @@ describe("TaskDetailModal", () => {
     expect(markdownBody?.textContent).toContain("Fix the login bug");
     // The detail header shows the ID (not duplicated as markdown heading)
     expect(container.querySelector(".detail-id")?.textContent).toBe("HAI-099");
+    // The h2 title shows description, not the task ID
+    const h2 = container.querySelector("h2.detail-title");
+    expect(h2?.textContent).toBe("Fix the login bug");
+  });
+
+  it("shows the title in <h2> when task.title is set", () => {
+    const { container } = render(
+      <TaskDetailModal
+        task={makeTask({
+          title: "Implement dark mode",
+          description: "Add dark mode toggle to the settings page",
+        })}
+        onClose={noop}
+        onMoveTask={noopMove}
+        onDeleteTask={noopDelete}
+        onMergeTask={noopMerge}
+        addToast={noop}
+      />,
+    );
+
+    const h2 = container.querySelector("h2.detail-title");
+    expect(h2?.textContent).toBe("Implement dark mode");
+  });
+
+  it("always shows task.id in the detail-id badge regardless of title", () => {
+    // With title
+    const { container: withTitle } = render(
+      <TaskDetailModal
+        task={makeTask({ title: "Some title" })}
+        onClose={noop}
+        onMoveTask={noopMove}
+        onDeleteTask={noopDelete}
+        onMergeTask={noopMerge}
+        addToast={noop}
+      />,
+    );
+    expect(withTitle.querySelector(".detail-id")?.textContent).toBe("HAI-099");
+
+    // Without title
+    const { container: withoutTitle } = render(
+      <TaskDetailModal
+        task={makeTask({ title: undefined, description: "A description" })}
+        onClose={noop}
+        onMoveTask={noopMove}
+        onDeleteTask={noopDelete}
+        onMergeTask={noopMerge}
+        addToast={noop}
+      />,
+    );
+    expect(withoutTitle.querySelector(".detail-id")?.textContent).toBe("HAI-099");
   });
 });
