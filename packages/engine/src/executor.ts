@@ -1,7 +1,7 @@
 import { execSync } from "node:child_process";
 import { join } from "node:path";
 import { existsSync } from "node:fs";
-import type { TaskStore, Task, TaskDetail, StepStatus } from "@hai/core";
+import type { TaskStore, Task, TaskDetail, StepStatus, Settings } from "@hai/core";
 import { findWorktreeUser } from "./merger.js";
 import { generateWorktreeName } from "./worktree-names.js";
 import { Type, type Static } from "@mariozechner/pi-ai";
@@ -246,9 +246,9 @@ export class TaskExecutor {
       let worktreePath = task.worktree || join(this.rootDir, ".worktrees", task.id);
       let isResume = existsSync(worktreePath);
       let acquiredFromPool = false;
+      const settings = await this.store.getSettings();
 
       if (!isResume) {
-        const settings = await this.store.getSettings();
 
         // Try acquiring a warm worktree from the pool
         if (this.options.pool && settings.recycleWorktrees) {
@@ -365,7 +365,7 @@ export class TaskExecutor {
         });
 
         try {
-          const agentPrompt = buildExecutionPrompt(detail, this.rootDir);
+          const agentPrompt = buildExecutionPrompt(detail, this.rootDir, settings);
           await session.prompt(agentPrompt);
 
           if (taskDone) {
@@ -612,7 +612,10 @@ export class TaskExecutor {
   }
 }
 
-export function buildExecutionPrompt(task: TaskDetail, rootDir?: string): string {
+// Project commands are injected here (for reliability) and also in the PROMPT.md (by triage).
+// This ensures the executor agent always sees the authoritative commands from settings,
+// even if the PROMPT.md was written manually or before commands were configured.
+export function buildExecutionPrompt(task: TaskDetail, rootDir?: string, settings?: Settings): string {
   const reviewMatch = task.prompt.match(/##\s*Review Level[:\s]*(\d)/);
   const reviewLevel = reviewMatch ? parseInt(reviewMatch[1], 10) : 0;
 
@@ -660,6 +663,15 @@ git log --oneline
     attachmentsSection = "\n" + lines.join("\n") + "\n";
   }
 
+  // Build project commands section from settings
+  let commandsSection = "";
+  if (settings?.testCommand || settings?.buildCommand) {
+    const lines = ["## Project Commands"];
+    if (settings.testCommand) lines.push(`- **Test:** \`${settings.testCommand}\``);
+    if (settings.buildCommand) lines.push(`- **Build:** \`${settings.buildCommand}\``);
+    commandsSection = "\n" + lines.join("\n") + "\n";
+  }
+
   return `Execute this task.
 
 ## Task: ${task.id}
@@ -669,7 +681,7 @@ ${task.dependencies.length > 0 ? `Dependencies: ${task.dependencies.join(", ")}`
 ## PROMPT.md
 
 ${task.prompt}
-${attachmentsSection}${progressSection}
+${attachmentsSection}${commandsSection}${progressSection}
 ## Review level: ${reviewLevel}
 
 ${reviewLevel === 0 ? "No reviews required. Implement directly." : ""}

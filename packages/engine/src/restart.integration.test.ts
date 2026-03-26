@@ -228,8 +228,8 @@ describe("In-progress task resume after restart", () => {
     await executor.resumeOrphaned();
     await new Promise((r) => setTimeout(r, 50));
 
-    // getSettings should NOT have been called (skipped entire !isResume block)
-    expect(store.getSettings).not.toHaveBeenCalled();
+    // getSettings is called (for project commands in execution prompt) but init command should not run
+    expect(store.getSettings).toHaveBeenCalled();
 
     // No init command calls
     const initCalls = mockedExecSync.mock.calls.filter(

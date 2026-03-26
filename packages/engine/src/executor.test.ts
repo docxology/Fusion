@@ -344,8 +344,8 @@ describe("TaskExecutor worktreeInitCommand", () => {
     const executor = new TaskExecutor(store, "/tmp/test");
     await executor.execute(makeTask());
 
-    // getSettings should NOT have been called (skipped entire !isResume block)
-    expect(store.getSettings).not.toHaveBeenCalled();
+    // getSettings is called (for project commands in execution prompt) but init command should not run
+    expect(store.getSettings).toHaveBeenCalled();
   });
 });
 
@@ -703,5 +703,94 @@ describe("buildExecutionPrompt", () => {
     const result = buildExecutionPrompt(task);
 
     expect(result).not.toContain("## Attachments");
+  });
+
+  it("includes Project Commands section with test command when settings.testCommand is set", () => {
+    const task = createMockTaskDetail();
+    const result = buildExecutionPrompt(task, "/home/user/project", {
+      testCommand: "pnpm test",
+    } as any);
+
+    expect(result).toContain("## Project Commands");
+    expect(result).toContain("- **Test:** `pnpm test`");
+    expect(result).not.toContain("- **Build:**");
+  });
+
+  it("includes Project Commands section with build command when settings.buildCommand is set", () => {
+    const task = createMockTaskDetail();
+    const result = buildExecutionPrompt(task, "/home/user/project", {
+      buildCommand: "pnpm build",
+    } as any);
+
+    expect(result).toContain("## Project Commands");
+    expect(result).toContain("- **Build:** `pnpm build`");
+    expect(result).not.toContain("- **Test:**");
+  });
+
+  it("includes both commands when both are set", () => {
+    const task = createMockTaskDetail();
+    const result = buildExecutionPrompt(task, "/home/user/project", {
+      testCommand: "pnpm test",
+      buildCommand: "pnpm build",
+    } as any);
+
+    expect(result).toContain("## Project Commands");
+    expect(result).toContain("- **Test:** `pnpm test`");
+    expect(result).toContain("- **Build:** `pnpm build`");
+  });
+
+  it("omits Project Commands section when neither command is set", () => {
+    const task = createMockTaskDetail();
+    const result = buildExecutionPrompt(task, "/home/user/project", {} as any);
+
+    expect(result).not.toContain("## Project Commands");
+  });
+
+  it("omits Project Commands section when settings is undefined", () => {
+    const task = createMockTaskDetail();
+    const result = buildExecutionPrompt(task);
+
+    expect(result).not.toContain("## Project Commands");
+  });
+
+  it("passes settings to buildExecutionPrompt in TaskExecutor.execute()", async () => {
+    const store = createMockStore();
+    store.getSettings.mockResolvedValue({
+      maxConcurrent: 2,
+      maxWorktrees: 4,
+      pollIntervalMs: 15000,
+      groupOverlappingFiles: false,
+      autoMerge: false,
+      testCommand: "npm test",
+      buildCommand: "npm run build",
+    });
+
+    const mockPrompt = vi.fn().mockResolvedValue(undefined);
+    mockedCreateHaiAgent.mockResolvedValue({
+      session: {
+        prompt: mockPrompt,
+        dispose: vi.fn(),
+      },
+    } as any);
+
+    const executor = new TaskExecutor(store, "/tmp/test");
+    await executor.execute({
+      id: "HAI-001",
+      title: "Test",
+      description: "Test",
+      column: "in-progress",
+      dependencies: [],
+      steps: [],
+      currentStep: 0,
+      log: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+
+    expect(mockPrompt).toHaveBeenCalledOnce();
+    const agentPrompt = mockPrompt.mock.calls[0][0];
+    expect(agentPrompt).toContain("## Project Commands");
+    expect(agentPrompt).toContain("- **Test:** `npm test`");
+    expect(agentPrompt).toContain("- **Build:** `npm run build`");
   });
 });
