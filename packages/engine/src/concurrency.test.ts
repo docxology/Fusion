@@ -180,6 +180,53 @@ describe("AgentSemaphore", () => {
     expect(sem.activeCount).toBe(0);
   });
 
+  it("integration: simulates merge-like usage with semaphore.run()", async () => {
+    const sem = new AgentSemaphore(1);
+    let concurrent = 0;
+    let maxConcurrent = 0;
+
+    // Simulate serialized merge queue where each merge also goes through semaphore
+    const rawMerge = async () => {
+      concurrent++;
+      maxConcurrent = Math.max(maxConcurrent, concurrent);
+      await new Promise((r) => setTimeout(r, 10));
+      concurrent--;
+    };
+    const onMerge = () => sem.run(rawMerge);
+
+    await Promise.all([onMerge(), onMerge(), onMerge()]);
+    expect(maxConcurrent).toBe(1);
+    expect(sem.activeCount).toBe(0);
+  });
+
+  it("integration: shared semaphore limits triage + execution + merge together", async () => {
+    const sem = new AgentSemaphore(2);
+    let concurrent = 0;
+    let maxConcurrent = 0;
+
+    const simulateAgent = () =>
+      sem.run(async () => {
+        concurrent++;
+        maxConcurrent = Math.max(maxConcurrent, concurrent);
+        await new Promise((r) => setTimeout(r, 10));
+        concurrent--;
+      });
+
+    // Simulate mixed activity: 2 triage + 2 execution + 2 merge = 6 total
+    await Promise.all([
+      simulateAgent(), // triage
+      simulateAgent(), // triage
+      simulateAgent(), // execution
+      simulateAgent(), // execution
+      simulateAgent(), // merge
+      simulateAgent(), // merge
+    ]);
+
+    // Should never exceed 2 concurrent despite 6 tasks
+    expect(maxConcurrent).toBe(2);
+    expect(sem.activeCount).toBe(0);
+  });
+
   it("integration: semaphore is optional (no-op when absent)", async () => {
     const semaphore: AgentSemaphore | undefined = undefined;
     let ran = false;
