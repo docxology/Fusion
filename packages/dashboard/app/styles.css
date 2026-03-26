@@ -149,6 +149,19 @@ html, body {
   text-align: center;
 }
 
+@keyframes count-flash-bg {
+  from {
+    background: #238636;
+  }
+  to {
+    background: var(--card);
+  }
+}
+
+.column-count.count-flash {
+  animation: count-flash-bg 700ms ease-out;
+}
+
 .column-desc {
   font-size: 11px;
   color: var(--text-dim);

@@ -1,4 +1,5 @@
 import { useState, useCallback } from "react";
+import { useFlashOnIncrease } from "../hooks/useFlashOnIncrease";
 import type { Task, TaskDetail, TaskCreateInput, Column as ColumnType } from "@hai/core";
 import { COLUMN_LABELS, COLUMN_DESCRIPTIONS } from "@hai/core";
 import { TaskCard } from "./TaskCard";
@@ -25,6 +26,7 @@ interface ColumnProps {
 
 export function Column({ column, tasks, allTasks, maxConcurrent, onMoveTask, onOpenDetail, addToast, isCreating, onCancelCreate, onCreateTask, onNewTask, autoMerge, onToggleAutoMerge }: ColumnProps) {
   const [dragOver, setDragOver] = useState(false);
+  const countFlashing = useFlashOnIncrease(tasks.length);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -63,7 +65,7 @@ export function Column({ column, tasks, allTasks, maxConcurrent, onMoveTask, onO
       <div className="column-header">
         <div className={`column-dot dot-${column}`} />
         <h2>{COLUMN_LABELS[column]}</h2>
-        <span className="column-count">{tasks.length}</span>
+        <span className={`column-count${countFlashing ? " count-flash" : ""}`}>{tasks.length}</span>
         {column === "in-review" && onToggleAutoMerge && (
           <label className="auto-merge-toggle" title={autoMerge ? "Auto-merge enabled" : "Auto-merge disabled"}>
             <input
