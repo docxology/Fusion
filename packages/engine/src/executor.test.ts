@@ -8,9 +8,13 @@ vi.mock("./pi.js", () => ({
 vi.mock("./reviewer.js", () => ({
   reviewStep: vi.fn(),
 }));
-vi.mock("./merger.js", () => ({
-  findWorktreeUser: vi.fn().mockResolvedValue(null),
-}));
+vi.mock("./merger.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./merger.js")>();
+  return {
+    ...actual,
+    findWorktreeUser: vi.fn().mockResolvedValue(null),
+  };
+});
 vi.mock("./worktree-names.js", () => ({
   generateWorktreeName: vi.fn().mockReturnValue("swift-falcon"),
 }));
@@ -514,6 +518,7 @@ describe("Merger worktree pool integration", () => {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       }),
+      listTasks: vi.fn().mockResolvedValue([]),
       logEntry: vi.fn(),
       getSettings: vi.fn().mockResolvedValue({
         maxConcurrent: 2,
