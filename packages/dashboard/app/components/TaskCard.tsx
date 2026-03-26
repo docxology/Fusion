@@ -102,7 +102,7 @@ export function TaskCard({ task, queued, onOpenDetail, addToast }: TaskCardProps
       {((task.dependencies && task.dependencies.length > 0) || queued || task.status === "queued") && (
         <div className="card-meta">
           {task.dependencies && task.dependencies.length > 0 && (
-            <span className="card-dep-badge">
+            <span className="card-dep-badge" data-tooltip={task.dependencies.join(", ")}>
               <Link size={12} style={{ verticalAlign: 'middle' }} /> {task.dependencies.length} dep{task.dependencies.length > 1 ? "s" : ""}
             </span>
           )}

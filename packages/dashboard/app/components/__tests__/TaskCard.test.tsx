@@ -131,6 +131,31 @@ describe("TaskCard failed status", () => {
   });
 });
 
+describe("TaskCard dependency tooltip", () => {
+  /** Mirrors the data-tooltip computation from TaskCard.tsx */
+  function computeDepTooltip(dependencies: string[]): string | undefined {
+    if (dependencies.length === 0) return undefined;
+    return dependencies.join(", ");
+  }
+
+  it("returns comma-separated dependency IDs when dependencies are present", () => {
+    expect(computeDepTooltip(["HAI-001", "HAI-042"])).toBe("HAI-001, HAI-042");
+  });
+
+  it("returns single dependency ID when only one dependency", () => {
+    expect(computeDepTooltip(["HAI-010"])).toBe("HAI-010");
+  });
+
+  it("returns undefined when dependencies array is empty", () => {
+    expect(computeDepTooltip([])).toBeUndefined();
+  });
+
+  it("handles many dependencies", () => {
+    const deps = ["HAI-001", "HAI-002", "HAI-003", "HAI-004"];
+    expect(computeDepTooltip(deps)).toBe("HAI-001, HAI-002, HAI-003, HAI-004");
+  });
+});
+
 describe("TaskCard queued badge logic", () => {
   /** Mirrors the card-status-badge visibility condition from TaskCard.tsx */
   function shouldShowStatusBadge(status?: string | null): boolean {
