@@ -154,6 +154,16 @@ describe("TaskCard dependency tooltip", () => {
     const deps = ["HAI-001", "HAI-002", "HAI-003", "HAI-004"];
     expect(computeDepTooltip(deps)).toBe("HAI-001, HAI-002, HAI-003, HAI-004");
   });
+
+  it("data-tooltip attribute contains dependency IDs as a readable string", () => {
+    const deps = ["HAI-005", "HAI-012"];
+    const tooltip = computeDepTooltip(deps);
+    expect(tooltip).toBeDefined();
+    // Each dependency ID should appear in the tooltip
+    for (const dep of deps) {
+      expect(tooltip).toContain(dep);
+    }
+  });
 });
 
 describe("TaskCard queued badge logic", () => {

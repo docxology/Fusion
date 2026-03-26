@@ -245,6 +245,7 @@ html, body {
   word-break: break-word;
 }
 
+/* z-index + position: relative so .card-dep-badge tooltip renders above .card-title */
 .card-meta {
   display: flex;
   align-items: center;
@@ -252,6 +253,8 @@ html, body {
   margin-top: 8px;
   font-size: 11px;
   color: var(--text-dim);
+  position: relative;
+  z-index: 1;
 }
 
 .card-status-badge {
@@ -299,7 +302,7 @@ html, body {
   bottom: 100%;
   left: 50%;
   transform: translateX(-50%);
-  background: var(--bg-card);
+  background: var(--surface);
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 6px;
