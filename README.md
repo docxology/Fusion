@@ -44,8 +44,11 @@ pnpm dev task list
 # Move a task
 pnpm dev task move HAI-001 todo
 
-# Attach a screenshot to a task
+# Attach a file to a task (images, logs, configs)
 pnpm dev task attach HAI-001 ./screenshot.png
+
+# Create a task with attachments
+pnpm dev task create "Fix the login bug" -- --attach screenshot.png --attach error.log
 ```
 
 Then open [http://localhost:4040](http://localhost:4040).
@@ -81,7 +84,7 @@ Tasks live on disk in `.hai/tasks/` in the project root:
     └── HAI-001/
         ├── task.json        # Metadata (column, deps, timestamps)
         ├── PROMPT.md        # Task specification
-        └── attachments/     # Screenshot images (optional)
+        └── attachments/     # File attachments — images & text files (optional)
 ```
 
 ### Board UI

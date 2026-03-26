@@ -1,5 +1,6 @@
-import type { TaskStore, Task, TaskDetail, Settings } from "@hai/core";
-import { Type, type Static } from "@mariozechner/pi-ai";
+import type { TaskStore, Task, TaskDetail, TaskAttachment, Settings } from "@hai/core";
+import type { ImageContent } from "@mariozechner/pi-ai";
+import { Type } from "@mariozechner/pi-ai";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import { createHaiAgent } from "./pi.js";
 import type { AgentSemaphore } from "./concurrency.js";
@@ -260,8 +261,13 @@ export class TriageProcessor {
         });
 
         try {
-          const agentPrompt = buildSpecificationPrompt(detail, promptPath, settings);
-          await session.prompt(agentPrompt);
+          // Read attachment contents for inlining in prompt
+          const { attachmentContents, imageContents } = await readAttachmentContents(
+            this.rootDir, detail.id, detail.attachments,
+          );
+
+          const agentPrompt = buildSpecificationPrompt(detail, promptPath, settings, attachmentContents);
+          await session.prompt(agentPrompt, imageContents.length > 0 ? { images: imageContents } : undefined);
 
           // Check if the agent flagged a duplicate
           const { readFile } = await import("node:fs/promises");
@@ -372,7 +378,73 @@ export class TriageProcessor {
   }
 }
 
-export function buildSpecificationPrompt(task: TaskDetail, promptPath: string, settings?: Settings): string {
+/** Content read from an attachment file for inlining in the prompt. */
+export interface AttachmentContent {
+  originalName: string;
+  mimeType: string;
+  /** Text content for text files, null for images (handled via image content blocks). */
+  text: string | null;
+}
+
+const IMAGE_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+const TEXT_INLINE_LIMIT = 50 * 1024; // 50KB
+
+/**
+ * Read attachment files from disk, returning text contents for inlining
+ * and image contents for pi image content blocks.
+ */
+export async function readAttachmentContents(
+  rootDir: string,
+  taskId: string,
+  attachments?: TaskAttachment[],
+): Promise<{ attachmentContents: AttachmentContent[]; imageContents: ImageContent[] }> {
+  const attachmentContents: AttachmentContent[] = [];
+  const imageContents: ImageContent[] = [];
+
+  if (!attachments || attachments.length === 0) {
+    return { attachmentContents, imageContents };
+  }
+
+  const { readFile } = await import("node:fs/promises");
+  const { join } = await import("node:path");
+
+  for (const att of attachments) {
+    const filePath = join(rootDir, ".hai", "tasks", taskId, "attachments", att.filename);
+
+    try {
+      if (IMAGE_MIME_TYPES.has(att.mimeType)) {
+        const data = await readFile(filePath);
+        imageContents.push({
+          type: "image",
+          data: data.toString("base64"),
+          mimeType: att.mimeType,
+        });
+        attachmentContents.push({
+          originalName: att.originalName,
+          mimeType: att.mimeType,
+          text: null,
+        });
+      } else {
+        const data = await readFile(filePath, "utf-8");
+        const text = data.length > TEXT_INLINE_LIMIT
+          ? data.slice(0, TEXT_INLINE_LIMIT) + "\n... (truncated at 50KB)"
+          : data;
+        attachmentContents.push({
+          originalName: att.originalName,
+          mimeType: att.mimeType,
+          text,
+        });
+      }
+    } catch {
+      // Skip unreadable attachments
+      continue;
+    }
+  }
+
+  return { attachmentContents, imageContents };
+}
+
+export function buildSpecificationPrompt(task: TaskDetail, promptPath: string, settings?: Settings, attachmentContents?: AttachmentContent[]): string {
   let commandsSection = "";
   if (settings?.testCommand || settings?.buildCommand) {
     const lines = ["## Project Commands"];
@@ -380,6 +452,20 @@ export function buildSpecificationPrompt(task: TaskDetail, promptPath: string, s
     if (settings.buildCommand) lines.push(`- **Build:** \`${settings.buildCommand}\``);
     lines.push("Use these exact commands in testing/verification steps.");
     commandsSection = "\n\n" + lines.join("\n");
+  }
+
+  let attachmentsSection = "";
+  if (attachmentContents && attachmentContents.length > 0) {
+    const parts = ["## Attachments", ""];
+    for (const att of attachmentContents) {
+      if (att.text === null) {
+        // Image — will be passed via image content blocks
+        parts.push(`- **${att.originalName}** (${att.mimeType}) — included as image below`);
+      } else {
+        parts.push(`### ${att.originalName} (${att.mimeType})\n\n\`\`\`\n${att.text}\n\`\`\``);
+      }
+    }
+    attachmentsSection = "\n\n" + parts.join("\n");
   }
 
   return `Specify this task and write the result to \`${promptPath}\`.
@@ -396,5 +482,5 @@ ${task.dependencies.length > 0 ? `- **Dependencies:** ${task.dependencies.join("
 3. The specification must be detailed enough for an autonomous AI agent to implement without asking questions
 4. Name actual files, functions, and patterns from the codebase — be specific
 
-Use the write tool to write the specification file.${commandsSection}`;
+Use the write tool to write the specification file.${commandsSection}${attachmentsSection}`;
 }

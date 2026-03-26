@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 import { Link, Clock } from "lucide-react";
 import type { Task, TaskDetail, Column } from "@hai/core";
-import { fetchTaskDetail } from "../api";
+import { fetchTaskDetail, uploadAttachment } from "../api";
 import type { ToastType } from "../hooks/useToast";
 
 const COLUMN_COLOR_MAP: Record<Column, string> = {
@@ -31,6 +31,7 @@ interface TaskCardProps {
 
 export function TaskCard({ task, queued, onOpenDetail, addToast }: TaskCardProps) {
   const [dragging, setDragging] = useState(false);
+  const [fileDragOver, setFileDragOver] = useState(false);
 
   const handleDragStart = useCallback((e: React.DragEvent) => {
     e.dataTransfer.setData("text/plain", task.id);
@@ -41,6 +42,42 @@ export function TaskCard({ task, queued, onOpenDetail, addToast }: TaskCardProps
   const handleDragEnd = useCallback(() => {
     setDragging(false);
   }, []);
+
+  const isFileDrag = useCallback((e: React.DragEvent) => {
+    return e.dataTransfer.types.includes("Files");
+  }, []);
+
+  const handleFileDragOver = useCallback((e: React.DragEvent) => {
+    if (!isFileDrag(e)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = "copy";
+    setFileDragOver(true);
+  }, [isFileDrag]);
+
+  const handleFileDragLeave = useCallback((e: React.DragEvent) => {
+    if (!isFileDrag(e)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setFileDragOver(false);
+  }, [isFileDrag]);
+
+  const handleFileDrop = useCallback(async (e: React.DragEvent) => {
+    if (!isFileDrag(e)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setFileDragOver(false);
+
+    const files = Array.from(e.dataTransfer.files);
+    for (const file of files) {
+      try {
+        await uploadAttachment(task.id, file);
+        addToast(`Attached ${file.name} to ${task.id}`, "success");
+      } catch (err: any) {
+        addToast(`Failed to attach ${file.name}: ${err.message}`, "error");
+      }
+    }
+  }, [task.id, isFileDrag, addToast]);
 
   const handleClick = useCallback(async () => {
     try {
@@ -53,7 +90,7 @@ export function TaskCard({ task, queued, onOpenDetail, addToast }: TaskCardProps
 
   const isFailed = task.status === "failed";
   const isAgentActive = !queued && !isFailed && (task.column === "in-progress" || ACTIVE_STATUSES.has(task.status as string));
-  const cardClass = `card${dragging ? " dragging" : ""}${queued ? " queued" : ""}${isAgentActive ? " agent-active" : ""}${isFailed ? " failed" : ""}`;
+  const cardClass = `card${dragging ? " dragging" : ""}${queued ? " queued" : ""}${isAgentActive ? " agent-active" : ""}${isFailed ? " failed" : ""}${fileDragOver ? " file-drop-target" : ""}`;
 
   return (
     <div
@@ -62,6 +99,9 @@ export function TaskCard({ task, queued, onOpenDetail, addToast }: TaskCardProps
       draggable={!queued}
       onDragStart={queued ? undefined : handleDragStart}
       onDragEnd={queued ? undefined : handleDragEnd}
+      onDragOver={handleFileDragOver}
+      onDragLeave={handleFileDragLeave}
+      onDrop={handleFileDrop}
       onClick={handleClick}
     >
       <div className="card-header">

@@ -718,6 +718,12 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
     "image/jpeg",
     "image/gif",
     "image/webp",
+    "text/plain",
+    "application/json",
+    "text/yaml",
+    "text/x-toml",
+    "text/csv",
+    "application/xml",
   ]);
 
   private static MAX_ATTACHMENT_SIZE = 5 * 1024 * 1024; // 5MB

@@ -245,10 +245,29 @@ describe("TaskStore", () => {
       expect(content).toEqual(TINY_PNG);
     });
 
-    it("rejects non-image mime types", async () => {
+    it("accepts text/plain mime type", async () => {
+      const task = await createTestTask();
+      const attachment = await store.addAttachment(task.id, "error.log", Buffer.from("log content"), "text/plain");
+      expect(attachment.originalName).toBe("error.log");
+      expect(attachment.mimeType).toBe("text/plain");
+    });
+
+    it("accepts application/json mime type", async () => {
+      const task = await createTestTask();
+      const attachment = await store.addAttachment(task.id, "config.json", Buffer.from('{"key":"val"}'), "application/json");
+      expect(attachment.mimeType).toBe("application/json");
+    });
+
+    it("accepts text/yaml mime type", async () => {
+      const task = await createTestTask();
+      const attachment = await store.addAttachment(task.id, "config.yaml", Buffer.from("key: val"), "text/yaml");
+      expect(attachment.mimeType).toBe("text/yaml");
+    });
+
+    it("rejects unsupported mime types", async () => {
       const task = await createTestTask();
       await expect(
-        store.addAttachment(task.id, "file.txt", Buffer.from("hello"), "text/plain"),
+        store.addAttachment(task.id, "file.bin", Buffer.from("data"), "application/octet-stream"),
       ).rejects.toThrow("Invalid mime type");
     });
 

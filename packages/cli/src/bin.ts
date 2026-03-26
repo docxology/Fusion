@@ -8,21 +8,23 @@ hai — AI-orchestrated task board
 
 Usage:
   hai dashboard                        Start the board web UI
-  hai task create [desc]               Create a new task (goes to triage)
+  hai task create [desc] [--attach f]   Create a new task (goes to triage)
   hai task list                        List all tasks
   hai task show <id>                   Show task details, steps, log
   hai task move <id> <col>             Move a task to a column
   hai task update <id> <step> <status> Update step status (pending|in-progress|done|skipped)
   hai task log <id> <message>          Add a log entry
   hai task merge <id>                  Merge an in-review task and close it
-  hai task attach <id> <file>          Attach a screenshot image to a task
+  hai task attach <id> <file>          Attach a file to a task
 
 Options:
   --port, -p <port>          Dashboard port (default: 4040)
   --engine                   Enable AI engine (auto-specify + execute tasks)
+  --attach <file>            Attach file(s) on task create (repeatable)
   --help, -h                 Show this help
 
 Columns: triage, todo, in-progress, in-review, done
+Supported file types: png, jpg, gif, webp, txt, log, json, yaml, yml, toml, csv, xml
 
 The AI engine uses pi (github.com/badlogic/pi-mono) for agent sessions.
 Requires configured API keys — run "pi" first to set up authentication.
@@ -55,8 +57,19 @@ async function main() {
         const subcommand = args[1];
         switch (subcommand) {
           case "create": {
-            const title = args.slice(2).join(" ");
-            await runTaskCreate(title || undefined);
+            const createArgs = args.slice(2);
+            const attachFiles: string[] = [];
+            const descParts: string[] = [];
+            for (let i = 0; i < createArgs.length; i++) {
+              if (createArgs[i] === "--attach" && i + 1 < createArgs.length) {
+                attachFiles.push(createArgs[i + 1]);
+                i++; // skip the value
+              } else {
+                descParts.push(createArgs[i]);
+              }
+            }
+            const title = descParts.join(" ");
+            await runTaskCreate(title || undefined, attachFiles.length > 0 ? attachFiles : undefined);
             break;
           }
           case "list":

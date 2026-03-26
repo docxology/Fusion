@@ -206,6 +206,10 @@ html, body {
 }
 .card:active { cursor: grabbing; }
 .card.dragging { opacity: 0.4; transform: scale(0.98); }
+.card.file-drop-target {
+  border: 2px dashed var(--todo);
+  background: rgba(88, 166, 255, 0.08);
+}
 
 /* Agent-active glow: animated border glow when an agent is actively working on a task.
    Uses the in-progress column color to stay consistent with the theme. */

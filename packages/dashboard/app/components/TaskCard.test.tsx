@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { TaskCard } from "./TaskCard";
 import type { Task } from "@hai/core";
 
@@ -8,6 +8,14 @@ vi.mock("lucide-react", () => ({
   Link: () => null,
   Clock: () => null,
 }));
+
+// Mock the api module
+vi.mock("../api", () => ({
+  fetchTaskDetail: vi.fn(),
+  uploadAttachment: vi.fn(),
+}));
+
+import { uploadAttachment } from "../api";
 
 function makeTask(overrides: Partial<Task> = {}): Task {
   return {
@@ -62,5 +70,90 @@ describe("TaskCard", () => {
       <TaskCard task={makeTask({ status: undefined as any })} onOpenDetail={noop} addToast={noop} />,
     );
     expect(container.querySelector(".card-status-badge")).toBeNull();
+  });
+
+  it("shows drop indicator on file dragover and removes on dragleave", () => {
+    const { container } = render(
+      <TaskCard task={makeTask()} onOpenDetail={noop} addToast={noop} />,
+    );
+    const card = container.querySelector(".card")!;
+
+    // Simulate file dragover
+    fireEvent.dragOver(card, {
+      dataTransfer: { types: ["Files"], dropEffect: "none" },
+    });
+    expect(card.classList.contains("file-drop-target")).toBe(true);
+
+    // Simulate dragleave
+    fireEvent.dragLeave(card, {
+      dataTransfer: { types: ["Files"] },
+    });
+    expect(card.classList.contains("file-drop-target")).toBe(false);
+  });
+
+  it("does not show drop indicator for non-file drag", () => {
+    const { container } = render(
+      <TaskCard task={makeTask()} onOpenDetail={noop} addToast={noop} />,
+    );
+    const card = container.querySelector(".card")!;
+
+    // Simulate card dragover (not files)
+    fireEvent.dragOver(card, {
+      dataTransfer: { types: ["text/plain"], dropEffect: "none" },
+    });
+    expect(card.classList.contains("file-drop-target")).toBe(false);
+  });
+
+  it("calls uploadAttachment on file drop", async () => {
+    const mockUpload = vi.mocked(uploadAttachment);
+    mockUpload.mockResolvedValue({
+      filename: "abc-test.png",
+      originalName: "test.png",
+      mimeType: "image/png",
+      size: 1024,
+      createdAt: new Date().toISOString(),
+    });
+    const addToast = vi.fn();
+
+    const { container } = render(
+      <TaskCard task={makeTask()} onOpenDetail={noop} addToast={addToast} />,
+    );
+    const card = container.querySelector(".card")!;
+
+    const file = new File(["content"], "test.png", { type: "image/png" });
+    fireEvent.drop(card, {
+      dataTransfer: { types: ["Files"], files: [file] },
+    });
+
+    await waitFor(() => {
+      expect(mockUpload).toHaveBeenCalledWith("HAI-001", file);
+      expect(addToast).toHaveBeenCalledWith(
+        expect.stringContaining("Attached test.png"),
+        "success",
+      );
+    });
+  });
+
+  it("shows error toast when upload fails", async () => {
+    const mockUpload = vi.mocked(uploadAttachment);
+    mockUpload.mockRejectedValue(new Error("Upload failed"));
+    const addToast = vi.fn();
+
+    const { container } = render(
+      <TaskCard task={makeTask()} onOpenDetail={noop} addToast={addToast} />,
+    );
+    const card = container.querySelector(".card")!;
+
+    const file = new File(["content"], "bad.png", { type: "image/png" });
+    fireEvent.drop(card, {
+      dataTransfer: { types: ["Files"], files: [file] },
+    });
+
+    await waitFor(() => {
+      expect(addToast).toHaveBeenCalledWith(
+        expect.stringContaining("Failed to attach bad.png"),
+        "error",
+      );
+    });
   });
 });

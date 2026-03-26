@@ -6,7 +6,7 @@ vi.mock("./pi.js", () => ({
   createHaiAgent: vi.fn(),
 }));
 
-import { TriageProcessor, buildSpecificationPrompt } from "./triage.js";
+import { TriageProcessor, buildSpecificationPrompt, type AttachmentContent } from "./triage.js";
 import { createHaiAgent } from "./pi.js";
 import type { TaskDetail } from "@hai/core";
 
@@ -281,5 +281,56 @@ describe("buildSpecificationPrompt", () => {
     const result = buildSpecificationPrompt(task, ".hai/tasks/HAI-001/PROMPT.md");
 
     expect(result).not.toContain("## Project Commands");
+  });
+
+  it("includes text attachment content in fenced code block", () => {
+    const task = createMockTaskDetail();
+    const attachmentContents: AttachmentContent[] = [
+      { originalName: "error.log", mimeType: "text/plain", text: "ERROR: something broke\nStack trace here" },
+    ];
+    const result = buildSpecificationPrompt(task, ".hai/tasks/HAI-001/PROMPT.md", undefined, attachmentContents);
+
+    expect(result).toContain("## Attachments");
+    expect(result).toContain("### error.log (text/plain)");
+    expect(result).toContain("```\nERROR: something broke\nStack trace here\n```");
+  });
+
+  it("includes image attachment reference in prompt", () => {
+    const task = createMockTaskDetail();
+    const attachmentContents: AttachmentContent[] = [
+      { originalName: "screenshot.png", mimeType: "image/png", text: null },
+    ];
+    const result = buildSpecificationPrompt(task, ".hai/tasks/HAI-001/PROMPT.md", undefined, attachmentContents);
+
+    expect(result).toContain("## Attachments");
+    expect(result).toContain("**screenshot.png** (image/png)");
+    expect(result).toContain("included as image below");
+  });
+
+  it("includes both image and text attachments", () => {
+    const task = createMockTaskDetail();
+    const attachmentContents: AttachmentContent[] = [
+      { originalName: "screenshot.png", mimeType: "image/png", text: null },
+      { originalName: "config.json", mimeType: "application/json", text: '{"key": "value"}' },
+    ];
+    const result = buildSpecificationPrompt(task, ".hai/tasks/HAI-001/PROMPT.md", undefined, attachmentContents);
+
+    expect(result).toContain("**screenshot.png** (image/png)");
+    expect(result).toContain("### config.json (application/json)");
+    expect(result).toContain('{"key": "value"}');
+  });
+
+  it("omits attachments section when no attachments", () => {
+    const task = createMockTaskDetail();
+    const result = buildSpecificationPrompt(task, ".hai/tasks/HAI-001/PROMPT.md", undefined, []);
+
+    expect(result).not.toContain("## Attachments");
+  });
+
+  it("omits attachments section when attachmentContents is undefined", () => {
+    const task = createMockTaskDetail();
+    const result = buildSpecificationPrompt(task, ".hai/tasks/HAI-001/PROMPT.md");
+
+    expect(result).not.toContain("## Attachments");
   });
 });

@@ -27,13 +27,11 @@ vi.mock("node:fs", () => ({
   existsSync: vi.fn().mockReturnValue(true),
 }));
 
-import { TaskExecutor } from "./executor.js";
-import { aiMergeTask } from "./merger.js";
-import { WorktreePool } from "./worktree-pool.js";
+import { TaskExecutor, buildExecutionPrompt } from "./executor.js";
 import { createHaiAgent } from "./pi.js";
 import { execSync } from "node:child_process";
 import { findWorktreeUser } from "./merger.js";
-import type { Column, Task } from "@hai/core";
+import type { Column, Task, TaskDetail } from "@hai/core";
 
 const mockedCreateHaiAgent = vi.mocked(createHaiAgent);
 
@@ -620,5 +618,89 @@ describe("Merger worktree pool integration", () => {
       (c) => typeof c[0] === "string" && (c[0] as string).includes("worktree remove"),
     );
     expect(removeCalls.length).toBeGreaterThan(0);
+  });
+});
+
+function createMockTaskDetail(overrides: Partial<TaskDetail> = {}): TaskDetail {
+  return {
+    id: "HAI-001",
+    title: "Test Task",
+    description: "A test task",
+    column: "in-progress",
+    dependencies: [],
+    steps: [],
+    currentStep: 0,
+    log: [],
+    prompt: "# test\n## Steps\n### Step 0: Preflight\n- [ ] check",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    ...overrides,
+  };
+}
+
+describe("buildExecutionPrompt", () => {
+  it("includes attachment section with absolute paths for image attachments", () => {
+    const task = createMockTaskDetail({
+      attachments: [
+        { filename: "abc123-screenshot.png", originalName: "screenshot.png", mimeType: "image/png", size: 2048, createdAt: new Date().toISOString() },
+      ],
+    });
+    const result = buildExecutionPrompt(task, "/home/user/project");
+
+    expect(result).toContain("## Attachments");
+    expect(result).toContain("**screenshot.png** (screenshot)");
+    expect(result).toContain("/home/user/project/.hai/tasks/HAI-001/attachments/abc123-screenshot.png");
+  });
+
+  it("includes attachment section with absolute paths for text attachments", () => {
+    const task = createMockTaskDetail({
+      attachments: [
+        { filename: "def456-error.log", originalName: "error.log", mimeType: "text/plain", size: 512, createdAt: new Date().toISOString() },
+      ],
+    });
+    const result = buildExecutionPrompt(task, "/home/user/project");
+
+    expect(result).toContain("## Attachments");
+    expect(result).toContain("**error.log** (text/plain)");
+    expect(result).toContain("read for context");
+    expect(result).toContain("/home/user/project/.hai/tasks/HAI-001/attachments/def456-error.log");
+  });
+
+  it("includes both image and text attachments", () => {
+    const task = createMockTaskDetail({
+      attachments: [
+        { filename: "abc-shot.png", originalName: "shot.png", mimeType: "image/png", size: 1024, createdAt: new Date().toISOString() },
+        { filename: "def-config.json", originalName: "config.json", mimeType: "application/json", size: 256, createdAt: new Date().toISOString() },
+      ],
+    });
+    const result = buildExecutionPrompt(task, "/home/user/project");
+
+    expect(result).toContain("**shot.png** (screenshot)");
+    expect(result).toContain("**config.json** (application/json)");
+  });
+
+  it("omits attachment section when no attachments", () => {
+    const task = createMockTaskDetail({ attachments: [] });
+    const result = buildExecutionPrompt(task, "/home/user/project");
+
+    expect(result).not.toContain("## Attachments");
+  });
+
+  it("omits attachment section when attachments is undefined", () => {
+    const task = createMockTaskDetail();
+    const result = buildExecutionPrompt(task);
+
+    expect(result).not.toContain("## Attachments");
+  });
+
+  it("omits attachment section when rootDir is not provided", () => {
+    const task = createMockTaskDetail({
+      attachments: [
+        { filename: "abc.png", originalName: "test.png", mimeType: "image/png", size: 1024, createdAt: new Date().toISOString() },
+      ],
+    });
+    const result = buildExecutionPrompt(task);
+
+    expect(result).not.toContain("## Attachments");
   });
 });

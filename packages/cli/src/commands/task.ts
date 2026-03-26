@@ -10,7 +10,7 @@ async function getStore(): Promise<TaskStore> {
   return store;
 }
 
-export async function runTaskCreate(descriptionArg?: string) {
+export async function runTaskCreate(descriptionArg?: string, attachFiles?: string[]) {
   let description = descriptionArg;
 
   if (!description) {
@@ -35,6 +35,36 @@ export async function runTaskCreate(descriptionArg?: string) {
   console.log(`  ✓ Created ${task.id}: ${label}`);
   console.log(`    Column: triage`);
   console.log(`    Path:   .hai/tasks/${task.id}/`);
+
+  if (attachFiles && attachFiles.length > 0) {
+    const { readFile } = await import("node:fs/promises");
+    const { basename, extname, resolve } = await import("node:path");
+
+    for (const filePath of attachFiles) {
+      const resolvedPath = resolve(filePath);
+      const filename = basename(resolvedPath);
+      const ext = extname(filename).toLowerCase();
+      const mimeType = MIME_TYPES[ext];
+
+      if (!mimeType) {
+        console.error(`    ✗ Unsupported file type: ${ext} (${filename})`);
+        continue;
+      }
+
+      let content: Buffer;
+      try {
+        content = await readFile(resolvedPath);
+      } catch {
+        console.error(`    ✗ Cannot read file: ${filePath}`);
+        continue;
+      }
+
+      const attachment = await store.addAttachment(task.id, filename, content, mimeType);
+      const sizeKB = (attachment.size / 1024).toFixed(1);
+      console.log(`    📎 Attached: ${attachment.originalName} (${sizeKB} KB)`);
+    }
+  }
+
   console.log();
 }
 
@@ -175,6 +205,14 @@ const MIME_TYPES: Record<string, string> = {
   ".jpeg": "image/jpeg",
   ".gif": "image/gif",
   ".webp": "image/webp",
+  ".txt": "text/plain",
+  ".log": "text/plain",
+  ".json": "application/json",
+  ".yaml": "text/yaml",
+  ".yml": "text/yaml",
+  ".toml": "text/x-toml",
+  ".csv": "text/csv",
+  ".xml": "application/xml",
 };
 
 export async function runTaskAttach(id: string, filePath: string) {

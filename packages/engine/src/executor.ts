@@ -325,7 +325,7 @@ export class TaskExecutor {
         });
 
         try {
-          const agentPrompt = buildExecutionPrompt(detail);
+          const agentPrompt = buildExecutionPrompt(detail, this.rootDir);
           await session.prompt(agentPrompt);
 
           if (taskDone) {
@@ -569,7 +569,7 @@ export class TaskExecutor {
   }
 }
 
-function buildExecutionPrompt(task: TaskDetail): string {
+export function buildExecutionPrompt(task: TaskDetail, rootDir?: string): string {
   const reviewMatch = task.prompt.match(/##\s*Review Level[:\s]*(\d)/);
   const reviewLevel = reviewMatch ? parseInt(reviewMatch[1], 10) : 0;
 
@@ -601,6 +601,22 @@ git log --oneline
 `;
   }
 
+  // Build attachments section
+  let attachmentsSection = "";
+  if (task.attachments && task.attachments.length > 0 && rootDir) {
+    const IMAGE_MIMES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+    const lines = ["## Attachments", ""];
+    for (const att of task.attachments) {
+      const absPath = `${rootDir}/.hai/tasks/${task.id}/attachments/${att.filename}`;
+      if (IMAGE_MIMES.has(att.mimeType)) {
+        lines.push(`- **${att.originalName}** (screenshot): \`${absPath}\``);
+      } else {
+        lines.push(`- **${att.originalName}** (${att.mimeType}): \`${absPath}\` — read for context`);
+      }
+    }
+    attachmentsSection = "\n" + lines.join("\n") + "\n";
+  }
+
   return `Execute this task.
 
 ## Task: ${task.id}
@@ -610,7 +626,7 @@ ${task.dependencies.length > 0 ? `Dependencies: ${task.dependencies.join(", ")}`
 ## PROMPT.md
 
 ${task.prompt}
-${progressSection}
+${attachmentsSection}${progressSection}
 ## Review level: ${reviewLevel}
 
 ${reviewLevel === 0 ? "No reviews required. Implement directly." : ""}
