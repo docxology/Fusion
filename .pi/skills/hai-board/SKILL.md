@@ -1,0 +1,85 @@
+---
+name: hai-board
+description: Start and manage the hai dashboard web UI and AI engine. Use when asked to start the board, run the dashboard, enable the AI engine, or configure hai settings.
+---
+
+# hai board
+
+## Start the dashboard
+
+```bash
+hai dashboard
+```
+
+Opens the kanban board at http://localhost:4040.
+
+Options:
+- `--port <N>` or `-p <N>` — custom port (default: 4040)
+- `--engine` — enable the AI engine (auto-triage, scheduling, execution)
+- `--no-open` — don't open the browser automatically
+
+### With AI engine
+
+```bash
+hai dashboard --engine
+```
+
+Enables:
+- **Triage processor** — auto-specifies tasks in the triage column
+- **Scheduler** — moves todo tasks to in-progress when dependencies are met
+- **Executor** — runs tasks in git worktrees via AI agents
+- **Auto-merge** — squash-merges completed tasks to main
+- **Cross-model review** — independent reviewer agent checks work at step boundaries
+
+### Development mode
+
+Run in two terminals:
+
+```bash
+# Terminal 1: start the server + engine
+hai dashboard --engine
+
+# Terminal 2: watch-rebuild the React dashboard UI
+pnpm dev:ui
+```
+
+## Configuration
+
+Settings are in `.hai/config.json`:
+
+```json
+{
+  "nextId": 27,
+  "settings": {
+    "maxConcurrent": 4,
+    "maxWorktrees": 4,
+    "pollIntervalMs": 15000,
+    "autoMerge": true
+  }
+}
+```
+
+| Setting | Description | Default |
+|---------|-------------|---------|
+| `maxConcurrent` | Max tasks executing simultaneously | 2 |
+| `maxWorktrees` | Max git worktrees | 4 |
+| `pollIntervalMs` | Scheduler/triage poll interval | 15000 |
+| `autoMerge` | Auto-merge tasks when they reach in-review | false |
+
+## Task storage
+
+Tasks live in `.hai/tasks/`:
+
+```
+.hai/
+├── config.json
+└── tasks/
+    └── HAI-001/
+        ├── task.json    # Metadata, steps, log
+        └── PROMPT.md    # Task specification
+```
+
+## Prerequisites
+
+The AI engine requires [pi](https://github.com/badlogic/pi-mono) with
+configured API keys. Run `pi` first to set up authentication.
