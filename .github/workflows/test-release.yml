@@ -4,9 +4,25 @@ on:
   workflow_dispatch:
 
 jobs:
-  test-release:
-    name: Test Build & Package
-    runs-on: ubuntu-latest
+  build:
+    name: Test Build (${{ matrix.binary }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: bun-linux-x64
+            binary: hai-linux-x64
+          - os: macos-latest
+            target: bun-darwin-arm64
+            binary: hai-darwin-arm64
+          - os: macos-13
+            target: bun-darwin-x64
+            binary: hai-darwin-x64
+          - os: windows-latest
+            target: bun-windows-x64
+            binary: hai-windows-x64.exe
 
     steps:
       - name: Checkout
@@ -31,32 +47,59 @@ jobs:
         run: pnpm build
 
       - name: Build standalone binary
-        run: pnpm build:exe
+        run: pnpm --filter hai build:exe -- --target ${{ matrix.target }}
 
-      - name: Rename binary with platform and arch
-        run: |
-          PLATFORM=$(uname -s | tr '[:upper:]' '[:lower:]')
-          ARCH=$(uname -m)
-          case "$ARCH" in
-            x86_64) ARCH="x64" ;;
-            aarch64) ARCH="arm64" ;;
-          esac
-          cp packages/cli/dist/hai packages/cli/dist/hai-${PLATFORM}-${ARCH}
-
-      - name: Generate checksums
+      - name: Generate checksum (Linux)
+        if: runner.os == 'Linux'
         run: |
           cd packages/cli/dist
-          for file in hai-*; do
-            sha256sum "$file" > "${file}.sha256"
-          done
+          sha256sum ${{ matrix.binary }} > ${{ matrix.binary }}.sha256
 
-      - name: Smoke test
+      - name: Generate checksum (macOS)
+        if: runner.os == 'macOS'
         run: |
-          chmod +x packages/cli/dist/hai
-          packages/cli/dist/hai --help
+          cd packages/cli/dist
+          shasum -a 256 ${{ matrix.binary }} > ${{ matrix.binary }}.sha256
+
+      - name: Generate checksum (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cd packages/cli/dist
+          $hash = (Get-FileHash -Algorithm SHA256 "${{ matrix.binary }}").Hash.ToLower()
+          "$hash  ${{ matrix.binary }}" | Out-File -Encoding ascii "${{ matrix.binary }}.sha256"
+
+      - name: Smoke test (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          chmod +x packages/cli/dist/${{ matrix.binary }}
+          packages/cli/dist/${{ matrix.binary }} --help
+
+      - name: Smoke test (Windows)
+        if: runner.os == 'Windows'
+        run: .\packages\cli\dist\${{ matrix.binary }} --help
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
-          name: hai-binary
-          path: packages/cli/dist/hai-*
+          name: ${{ matrix.binary }}
+          path: |
+            packages/cli/dist/${{ matrix.binary }}
+            packages/cli/dist/${{ matrix.binary }}.sha256
+
+  collect:
+    name: Collect Artifacts
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Upload combined archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: hai-all-platforms
+          path: artifacts/**/*

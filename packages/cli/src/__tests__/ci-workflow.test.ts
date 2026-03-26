@@ -88,12 +88,49 @@ describe("Release workflow (.github/workflows/release.yml)", () => {
     expect(content).toContain("pnpm build");
   });
 
-  it("includes pnpm build:exe step", () => {
-    expect(content).toContain("pnpm build:exe");
+  it("includes build:exe step", () => {
+    expect(content).toContain("build:exe");
   });
 
   it("generates SHA256 checksums", () => {
     expect(content).toContain("sha256sum");
+  });
+
+  describe("matrix build strategy", () => {
+    it("has a build job with strategy.matrix including at least 4 entries", () => {
+      const buildJob = workflow.jobs.build;
+      expect(buildJob).toBeDefined();
+      expect(buildJob.strategy?.matrix?.include?.length).toBeGreaterThanOrEqual(4);
+    });
+
+    it("includes all required OS runners", () => {
+      const runners = workflow.jobs.build.strategy.matrix.include.map((e: any) => e.os);
+      expect(runners).toContain("ubuntu-latest");
+      expect(runners).toContain("macos-latest");
+      expect(runners).toContain("macos-13");
+      expect(runners).toContain("windows-latest");
+    });
+
+    it("includes all required Bun targets", () => {
+      const targets = workflow.jobs.build.strategy.matrix.include.map((e: any) => e.target);
+      expect(targets).toContain("bun-linux-x64");
+      expect(targets).toContain("bun-darwin-arm64");
+      expect(targets).toContain("bun-darwin-x64");
+      expect(targets).toContain("bun-windows-x64");
+    });
+
+    it("has a release job that needs the build job", () => {
+      const releaseJob = workflow.jobs.release;
+      expect(releaseJob).toBeDefined();
+      const needs = Array.isArray(releaseJob.needs) ? releaseJob.needs : [releaseJob.needs];
+      expect(needs).toContain("build");
+    });
+
+    it("generates checksums on all platforms", () => {
+      expect(content).toContain("sha256sum");
+      expect(content).toContain("shasum -a 256");
+      expect(content).toContain("Get-FileHash");
+    });
   });
 });
 
@@ -124,8 +161,8 @@ describe("Test Release workflow (.github/workflows/test-release.yml)", () => {
     expect(content).toContain("pnpm build");
   });
 
-  it("includes pnpm build:exe step", () => {
-    expect(content).toContain("pnpm build:exe");
+  it("includes build:exe step", () => {
+    expect(content).toContain("build:exe");
   });
 
   it("includes smoke test with --help", () => {
@@ -134,5 +171,35 @@ describe("Test Release workflow (.github/workflows/test-release.yml)", () => {
 
   it("uploads artifact", () => {
     expect(content).toContain("actions/upload-artifact");
+  });
+
+  describe("matrix build strategy", () => {
+    it("has a build job with strategy.matrix including at least 4 entries", () => {
+      const buildJob = workflow.jobs.build;
+      expect(buildJob).toBeDefined();
+      expect(buildJob.strategy?.matrix?.include?.length).toBeGreaterThanOrEqual(4);
+    });
+
+    it("includes all required OS runners", () => {
+      const runners = workflow.jobs.build.strategy.matrix.include.map((e: any) => e.os);
+      expect(runners).toContain("ubuntu-latest");
+      expect(runners).toContain("macos-latest");
+      expect(runners).toContain("macos-13");
+      expect(runners).toContain("windows-latest");
+    });
+
+    it("includes all required Bun targets", () => {
+      const targets = workflow.jobs.build.strategy.matrix.include.map((e: any) => e.target);
+      expect(targets).toContain("bun-linux-x64");
+      expect(targets).toContain("bun-darwin-arm64");
+      expect(targets).toContain("bun-darwin-x64");
+      expect(targets).toContain("bun-windows-x64");
+    });
+
+    it("generates checksums on all platforms", () => {
+      expect(content).toContain("sha256sum");
+      expect(content).toContain("shasum -a 256");
+      expect(content).toContain("Get-FileHash");
+    });
   });
 });

@@ -203,10 +203,16 @@ Pre-built standalone binaries are published automatically via GitHub Actions.
 
 ### Downloading binaries
 
-Download the latest binary from the [GitHub Releases](../../releases) page. Each release includes:
+Download the latest binary from the [GitHub Releases](../../releases) page. Each release includes platform-specific binaries and SHA256 checksum files for verification.
 
-- Platform-specific binaries (e.g., `hai-linux-x64`)
-- SHA256 checksum files for verification
+#### Supported platforms
+
+| Platform | Binary | Runner |
+|----------|--------|--------|
+| Linux x64 | `hai-linux-x64` | `ubuntu-latest` |
+| macOS arm64 (Apple Silicon) | `hai-darwin-arm64` | `macos-latest` |
+| macOS x64 (Intel) | `hai-darwin-x64` | `macos-13` |
+| Windows x64 | `hai-windows-x64.exe` | `windows-latest` |
 
 ### Triggering a release
 
@@ -217,7 +223,7 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-The release workflow will automatically build the binary and create a GitHub Release with the artifact attached.
+The release workflow will automatically build native binaries for all supported platforms and create a GitHub Release with all artifacts attached.
 
 ### CI pipeline
 
