@@ -252,7 +252,7 @@ export class Scheduler {
               console.log(
                 `[scheduler] Deferring ${task.id}: file overlap with ${overlappingTaskId}`,
               );
-              await this.store.updateTask(task.id, { status: "queued" });
+              await this.store.updateTask(task.id, { status: "queued", blockedBy: overlappingTaskId });
               continue;
             }
           }
@@ -267,7 +267,7 @@ export class Scheduler {
         console.log(
           `[scheduler] Starting ${task.id}: ${task.title || task.id} (deps satisfied)`,
         );
-        await this.store.updateTask(task.id, { status: null });
+        await this.store.updateTask(task.id, { status: null, blockedBy: null });
         await this.store.moveTask(task.id, "in-progress");
         this.options.onSchedule?.(task);
         started++;

@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { Link, Clock } from "lucide-react";
+import { Link, Clock, Layers } from "lucide-react";
 import type { Task, TaskDetail, Column } from "@hai/core";
 import { fetchTaskDetail, uploadAttachment } from "../api";
 import type { ToastType } from "../hooks/useToast";
@@ -139,11 +139,16 @@ export function TaskCard({ task, queued, onOpenDetail, addToast }: TaskCardProps
           </div>
         );
       })()}
-      {((task.dependencies && task.dependencies.length > 0) || queued || task.status === "queued") && (
+      {((task.dependencies && task.dependencies.length > 0) || queued || task.status === "queued" || task.blockedBy) && (
         <div className="card-meta">
           {task.dependencies && task.dependencies.length > 0 && (
             <span className="card-dep-badge" data-tooltip={task.dependencies.join(", ")}>
               <Link size={12} style={{ verticalAlign: 'middle' }} /> {task.dependencies.length} dep{task.dependencies.length > 1 ? "s" : ""}
+            </span>
+          )}
+          {task.blockedBy && (
+            <span className="card-scope-badge" data-tooltip={`Blocked by ${task.blockedBy} (file overlap)`}>
+              <Layers size={12} style={{ verticalAlign: 'middle' }} /> {task.blockedBy}
             </span>
           )}
           {(queued || task.status === "queued") && <span className="queued-badge"><Clock size={12} style={{ verticalAlign: 'middle' }} /> Queued</span>}

@@ -166,6 +166,44 @@ describe("TaskCard dependency tooltip", () => {
   });
 });
 
+describe("TaskCard file-scope overlap badge logic", () => {
+  /** Mirrors the card-meta visibility condition from TaskCard.tsx */
+  function shouldShowCardMeta(opts: { dependencies?: string[]; queued?: boolean; status?: string | null; blockedBy?: string }): boolean {
+    const deps = opts.dependencies || [];
+    return deps.length > 0 || !!opts.queued || opts.status === "queued" || !!opts.blockedBy;
+  }
+
+  /** Mirrors the card-scope-badge visibility condition from TaskCard.tsx */
+  function shouldShowScopeBadge(blockedBy?: string): boolean {
+    return !!blockedBy;
+  }
+
+  it("shows scope badge when blockedBy is set", () => {
+    expect(shouldShowScopeBadge("HAI-003")).toBe(true);
+  });
+
+  it("does NOT show scope badge when blockedBy is undefined", () => {
+    expect(shouldShowScopeBadge(undefined)).toBe(false);
+  });
+
+  it("shows card-meta when blockedBy is set even with no deps or queued status", () => {
+    expect(shouldShowCardMeta({ blockedBy: "HAI-003" })).toBe(true);
+  });
+
+  it("does NOT show card-meta when no deps, not queued, and no blockedBy", () => {
+    expect(shouldShowCardMeta({})).toBe(false);
+  });
+
+  /** Mirrors tooltip computation from TaskCard.tsx */
+  function computeScopeTooltip(blockedBy: string): string {
+    return `Blocked by ${blockedBy} (file overlap)`;
+  }
+
+  it("generates correct tooltip text", () => {
+    expect(computeScopeTooltip("HAI-005")).toBe("Blocked by HAI-005 (file overlap)");
+  });
+});
+
 describe("TaskCard queued badge logic", () => {
   /** Mirrors the card-status-badge visibility condition from TaskCard.tsx */
   function shouldShowStatusBadge(status?: string | null): boolean {

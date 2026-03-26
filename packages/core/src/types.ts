@@ -32,6 +32,11 @@ export interface Task {
   steps: TaskStep[];
   currentStep: number;
   status?: string;
+  /** ID of the in-progress task whose file scope overlaps with this task,
+   *  causing the scheduler to defer it. Set when the scheduler queues
+   *  the task due to file-scope overlap; cleared (set to `undefined`)
+   *  when the task is eventually started or moved to done. */
+  blockedBy?: string;
   attachments?: TaskAttachment[];
   log: TaskLogEntry[];
   size?: "S" | "M" | "L";

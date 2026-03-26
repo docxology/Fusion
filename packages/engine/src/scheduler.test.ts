@@ -278,8 +278,53 @@ describe("Scheduler file-scope overlap", () => {
 
     // HAI-002 should NOT be moved to in-progress (deferred)
     expect(store.moveTask).not.toHaveBeenCalled();
-    // HAI-002 should have status set to "queued"
-    expect(store.updateTask).toHaveBeenCalledWith("HAI-002", { status: "queued" });
+    // HAI-002 should have status set to "queued" with blockedBy
+    expect(store.updateTask).toHaveBeenCalledWith("HAI-002", { status: "queued", blockedBy: "HAI-001" });
+  });
+
+  it("sets blockedBy to the overlapping task ID when deferred due to file scope overlap", async () => {
+    const tasks = [
+      makeTask({ id: "HAI-001", column: "in-progress" }),
+      makeTask({ id: "HAI-002", column: "todo" }),
+    ];
+    const store = createMockStore(tasks);
+    store.getSettings.mockResolvedValue({
+      maxConcurrent: 2,
+      maxWorktrees: 4,
+      pollIntervalMs: 15000,
+      groupOverlappingFiles: true,
+      autoMerge: false,
+    });
+    store.parseFileScopeFromPrompt.mockImplementation(async (id: string) => {
+      if (id === "HAI-001") return ["packages/shared/utils.ts"];
+      if (id === "HAI-002") return ["packages/shared/utils.ts"];
+      return [];
+    });
+
+    const scheduler = new Scheduler(store, { maxConcurrent: 3 });
+    await runSchedule(scheduler);
+
+    expect(store.updateTask).toHaveBeenCalledWith("HAI-002", { status: "queued", blockedBy: "HAI-001" });
+  });
+
+  it("clears blockedBy when a task is started", async () => {
+    const tasks = [
+      makeTask({ id: "HAI-001", column: "todo" }),
+    ];
+    const store = createMockStore(tasks);
+    store.getSettings.mockResolvedValue({
+      maxConcurrent: 2,
+      maxWorktrees: 4,
+      pollIntervalMs: 15000,
+      groupOverlappingFiles: false,
+      autoMerge: false,
+    });
+
+    const scheduler = new Scheduler(store, { maxConcurrent: 2 });
+    await runSchedule(scheduler);
+
+    expect(store.updateTask).toHaveBeenCalledWith("HAI-001", { status: null, blockedBy: null });
+    expect(store.moveTask).toHaveBeenCalledWith("HAI-001", "in-progress");
   });
 
   it("does not set status 'queued' when file scopes do not overlap", async () => {

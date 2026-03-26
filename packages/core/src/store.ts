@@ -267,6 +267,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       if (toColumn === "done") {
         task.status = undefined;
         task.worktree = undefined;
+        task.blockedBy = undefined;
       }
 
       await this.atomicWriteTaskJson(dir, task);
@@ -281,7 +282,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
 
   async updateTask(
     id: string,
-    updates: { title?: string; description?: string; prompt?: string; worktree?: string; status?: string | null },
+    updates: { title?: string; description?: string; prompt?: string; worktree?: string; status?: string | null; blockedBy?: string | null },
   ): Promise<Task> {
     return this.withTaskLock(id, async () => {
       const dir = this.taskDir(id);
@@ -294,6 +295,11 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
         task.status = undefined;
       } else if (updates.status !== undefined) {
         task.status = updates.status;
+      }
+      if (updates.blockedBy === null) {
+        task.blockedBy = undefined;
+      } else if (updates.blockedBy !== undefined) {
+        task.blockedBy = updates.blockedBy;
       }
       task.updatedAt = new Date().toISOString();
 
@@ -564,6 +570,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
     task.column = "done";
     task.worktree = undefined;
     task.status = undefined;
+    task.blockedBy = undefined;
     task.updatedAt = new Date().toISOString();
 
     await this.atomicWriteTaskJson(dir, task);

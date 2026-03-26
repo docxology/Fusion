@@ -464,7 +464,7 @@ describe("Scheduler after restart", () => {
     scheduler.stop();
 
     expect(store.moveTask).toHaveBeenCalledWith("HAI-070", "in-progress");
-    expect(store.updateTask).toHaveBeenCalledWith("HAI-070", { status: null });
+    expect(store.updateTask).toHaveBeenCalledWith("HAI-070", { status: null, blockedBy: null });
     expect(onSchedule).toHaveBeenCalledWith(todoTask);
   });
 
