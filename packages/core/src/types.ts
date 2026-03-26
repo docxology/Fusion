@@ -46,12 +46,14 @@ export interface Settings {
   maxConcurrent: number;
   maxWorktrees: number;
   pollIntervalMs: number;
+  autoMerge: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
   maxConcurrent: 2,
   maxWorktrees: 4,
   pollIntervalMs: 15000,
+  autoMerge: false,
 };
 
 export interface BoardConfig {
