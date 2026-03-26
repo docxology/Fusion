@@ -86,6 +86,15 @@ describe("SettingsModal", () => {
     expect(screen.getByText("Auto-merge completed tasks")).toBeTruthy();
   });
 
+  it("groupOverlappingFiles input has type checkbox", async () => {
+    render(<SettingsModal onClose={onClose} addToast={addToast} />);
+    await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
+
+    const checkbox = screen.getByLabelText("Serialize tasks with overlapping files");
+    expect(checkbox).toBeTruthy();
+    expect(checkbox.getAttribute("type")).toBe("checkbox");
+  });
+
   it("save button calls updateSettings with form data", async () => {
     render(<SettingsModal onClose={onClose} addToast={addToast} />);
     await waitFor(() => expect(fetchSettings).toHaveBeenCalled());

@@ -353,7 +353,7 @@ html, body {
 }
 .optional { font-weight: 400; text-transform: none; letter-spacing: 0; }
 
-.form-group input,
+.form-group input:not([type="checkbox"]),
 .form-group textarea {
   width: 100%;
   padding: 8px 12px;
@@ -366,9 +366,17 @@ html, body {
   outline: none;
   transition: border-color 0.15s;
 }
-.form-group input:focus,
+.form-group input:not([type="checkbox"]):focus,
 .form-group textarea:focus {
   border-color: var(--todo);
+}
+.form-group input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  margin: 0;
+  accent-color: var(--todo);
+  cursor: pointer;
 }
 .form-group textarea { resize: vertical; }
 
