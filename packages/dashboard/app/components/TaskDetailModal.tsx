@@ -115,7 +115,6 @@ export function TaskDetailModal({
             {new Date(task.updatedAt).toLocaleDateString()}
           </div>
           <div className="detail-section">
-            <h4>PROMPT.md</h4>
             {task.prompt ? (
               <div className="markdown-body">
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>
