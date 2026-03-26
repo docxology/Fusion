@@ -334,3 +334,89 @@ describe("buildSpecificationPrompt", () => {
     expect(result).not.toContain("## Attachments");
   });
 });
+
+function createEnoentError(path = "/fake/path"): NodeJS.ErrnoException {
+  return Object.assign(
+    new Error(`ENOENT: no such file or directory, open '${path}'`),
+    { code: "ENOENT", errno: -2, syscall: "open" },
+  );
+}
+
+const dummyTask = {
+  id: "HAI-099",
+  title: "Deleted task",
+  description: "This task was deleted",
+  column: "triage" as const,
+  dependencies: [],
+  steps: [],
+  currentStep: 0,
+  log: [],
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
+};
+
+describe("TriageProcessor deleted task handling", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("handles ENOENT from updateTask gracefully without calling onSpecifyError", async () => {
+    const store = createMockStore();
+    store.updateTask.mockRejectedValue(createEnoentError());
+
+    const onError = vi.fn();
+    const triage = new TriageProcessor(store, "/tmp/test", {
+      onSpecifyError: onError,
+    });
+
+    // Should not throw
+    await triage.specifyTask(dummyTask);
+
+    expect(onError).not.toHaveBeenCalled();
+    // updateTask was called once (the "specifying" call that threw)
+    expect(store.updateTask).toHaveBeenCalledTimes(1);
+  });
+
+  it("handles ENOENT from getTask gracefully", async () => {
+    const store = createMockStore();
+    store.updateTask.mockResolvedValue({});
+    store.getTask.mockRejectedValue(createEnoentError());
+
+    const onError = vi.fn();
+    const triage = new TriageProcessor(store, "/tmp/test", {
+      onSpecifyError: onError,
+    });
+
+    await triage.specifyTask(dummyTask);
+
+    expect(onError).not.toHaveBeenCalled();
+    // updateTask called once for "specifying", but NOT for status reset (ENOENT path skips it)
+    expect(store.updateTask).toHaveBeenCalledTimes(1);
+  });
+
+  it("cleans up processing Set on ENOENT so task is not stuck", async () => {
+    const store = createMockStore();
+    store.updateTask.mockRejectedValueOnce(createEnoentError());
+
+    const triage = new TriageProcessor(store, "/tmp/test", {});
+
+    // First call — ENOENT
+    await triage.specifyTask(dummyTask);
+
+    // Second call with same task should NOT short-circuit from processing guard.
+    // Reset mock to succeed and set up agent mock for the retry path.
+    store.updateTask.mockResolvedValue({});
+    mockedCreateHaiAgent.mockResolvedValue({
+      session: {
+        prompt: vi.fn().mockResolvedValue(undefined),
+        dispose: vi.fn(),
+      },
+    } as any);
+
+    await triage.specifyTask(dummyTask);
+
+    // If processing Set was cleaned up, updateTask will be called again for "specifying"
+    expect(store.updateTask).toHaveBeenCalledWith("HAI-099", { status: "specifying" });
+    expect(mockedCreateHaiAgent).toHaveBeenCalled();
+  });
+});

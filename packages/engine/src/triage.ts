@@ -242,9 +242,10 @@ export class TriageProcessor {
 
     console.log(`[triage] Specifying ${task.id}: ${task.title || task.description.slice(0, 60)}`);
     this.options.onSpecifyStart?.(task);
-    await this.store.updateTask(task.id, { status: "specifying" });
 
     try {
+      // Set status inside try so ENOENT (task deleted between poll and specify) is caught
+      await this.store.updateTask(task.id, { status: "specifying" });
       const detail = await this.store.getTask(task.id);
       const settings = await this.store.getSettings();
       const promptPath = `.hai/tasks/${task.id}/PROMPT.md`;
@@ -299,9 +300,15 @@ export class TriageProcessor {
         await agentWork();
       }
     } catch (err: any) {
-      await this.store.updateTask(task.id, { status: null }).catch(() => {});
-      console.error(`[triage] ✗ ${task.id} specification failed:`, err.message);
-      this.options.onSpecifyError?.(task, err);
+      // Race condition: task was deleted (e.g. as a duplicate) between listTasks()
+      // and specifyTask(). The file is gone, so just log and skip — no point retrying.
+      if (err.code === "ENOENT") {
+        console.log(`[triage] ${task.id} no longer exists — skipping`);
+      } else {
+        await this.store.updateTask(task.id, { status: null }).catch(() => {});
+        console.error(`[triage] ✗ ${task.id} specification failed:`, err.message);
+        this.options.onSpecifyError?.(task, err);
+      }
     } finally {
       this.processing.delete(task.id);
     }
