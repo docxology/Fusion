@@ -155,6 +155,12 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
     task.column = toColumn;
     task.updatedAt = new Date().toISOString();
 
+    // Clear transient fields when moving to done (matches moveToDone behavior)
+    if (toColumn === "done") {
+      task.status = undefined;
+      task.worktree = undefined;
+    }
+
     const taskJsonPath = join(dir, "task.json");
     this.suppressWatcher(taskJsonPath);
     await writeFile(taskJsonPath, JSON.stringify(task, null, 2));
