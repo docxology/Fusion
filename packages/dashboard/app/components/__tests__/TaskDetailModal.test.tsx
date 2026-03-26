@@ -214,4 +214,29 @@ describe("TaskDetailModal", () => {
     );
     expect(withoutTitle.querySelector(".detail-id")?.textContent).toBe("HAI-099");
   });
+
+  it("activity list does not have nested scroll constraints", () => {
+    const { container } = render(
+      <TaskDetailModal
+        task={makeTask({
+          log: [
+            { timestamp: "2026-01-01T00:00:00Z", message: "Created task" },
+            { timestamp: "2026-01-01T00:01:00Z", message: "Started work" },
+            { timestamp: "2026-01-01T00:02:00Z", message: "Completed step 1" },
+          ],
+        })}
+        onClose={noop}
+        onMoveTask={noopMove}
+        onDeleteTask={noopDelete}
+        onMergeTask={noopMerge}
+        addToast={noop}
+      />,
+    );
+
+    const activityList = container.querySelector(".detail-activity-list");
+    expect(activityList).toBeTruthy();
+    const style = (activityList as HTMLElement).style;
+    expect(style.overflowY).not.toBe("auto");
+    expect(style.maxHeight).toBe("");
+  });
 });
