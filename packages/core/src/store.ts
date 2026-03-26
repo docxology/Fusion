@@ -68,6 +68,40 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
     });
   }
 
+  /**
+   * Safely read and parse a task.json file. On `SyntaxError`, attempts to
+   * recover by truncating the content at the last valid `}` and re-parsing.
+   * Logs a warning to stderr when truncation-repair is used.
+   */
+  private async safeReadTaskJson(dir: string): Promise<Task> {
+    const filePath = join(dir, "task.json");
+    const raw = await readFile(filePath, "utf-8");
+    try {
+      return JSON.parse(raw) as Task;
+    } catch (err) {
+      if (!(err instanceof SyntaxError)) throw err;
+
+      // Attempt recovery: find last '}' and truncate
+      const lastBrace = raw.lastIndexOf("}");
+      if (lastBrace > 0) {
+        const truncated = raw.slice(0, lastBrace + 1);
+        try {
+          const task = JSON.parse(truncated) as Task;
+          console.warn(
+            `[hai] Warning: repaired corrupted task.json at ${filePath} (truncated ${raw.length - lastBrace - 1} trailing bytes)`,
+          );
+          return task;
+        } catch {
+          // Recovery also failed — fall through
+        }
+      }
+
+      throw new Error(
+        `Failed to parse task.json at ${filePath}: ${(err as Error).message}`,
+      );
+    }
+  }
+
   async getSettings(): Promise<Settings> {
     const config = await this.readConfig();
     return { ...DEFAULT_SETTINGS, ...config.settings };
@@ -144,8 +178,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
 
   async getTask(id: string): Promise<TaskDetail> {
     const dir = this.taskDir(id);
-    const data = await readFile(join(dir, "task.json"), "utf-8");
-    const task = JSON.parse(data) as Task;
+    const task = await this.safeReadTaskJson(dir);
 
     let prompt = "";
     const promptPath = join(dir, "PROMPT.md");
@@ -165,11 +198,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
     for (const entry of entries) {
       if (entry.isDirectory() && entry.name.startsWith("HAI-")) {
         try {
-          const data = await readFile(
-            join(this.tasksDir, entry.name, "task.json"),
-            "utf-8",
-          );
-          tasks.push(JSON.parse(data));
+          tasks.push(await this.safeReadTaskJson(join(this.tasksDir, entry.name)));
         } catch {
           // skip invalid task dirs
         }
@@ -182,8 +211,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
   async moveTask(id: string, toColumn: Column): Promise<Task> {
     return this.withTaskLock(id, async () => {
       const dir = this.taskDir(id);
-      const data = await readFile(join(dir, "task.json"), "utf-8");
-      const task = JSON.parse(data) as Task;
+      const task = await this.safeReadTaskJson(dir);
 
       const validTargets = VALID_TRANSITIONS[task.column];
       if (!validTargets.includes(toColumn)) {
@@ -221,8 +249,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
   ): Promise<Task> {
     return this.withTaskLock(id, async () => {
       const dir = this.taskDir(id);
-      const data = await readFile(join(dir, "task.json"), "utf-8");
-      const task = JSON.parse(data) as Task;
+      const task = await this.safeReadTaskJson(dir);
 
       if (updates.title !== undefined) task.title = updates.title;
       if (updates.description !== undefined) task.description = updates.description;
@@ -260,8 +287,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
   ): Promise<Task> {
     return this.withTaskLock(id, async () => {
       const dir = this.taskDir(id);
-      const data = await readFile(join(dir, "task.json"), "utf-8");
-      const task = JSON.parse(data) as Task;
+      const task = await this.safeReadTaskJson(dir);
 
       // Auto-initialize steps from PROMPT.md if empty
       if (task.steps.length === 0) {
@@ -311,8 +337,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
   async logEntry(id: string, action: string, outcome?: string): Promise<Task> {
     return this.withTaskLock(id, async () => {
       const dir = this.taskDir(id);
-      const data = await readFile(join(dir, "task.json"), "utf-8");
-      const task = JSON.parse(data) as Task;
+      const task = await this.safeReadTaskJson(dir);
 
       task.log.push({
         timestamp: new Date().toISOString(),
@@ -381,8 +406,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
   async deleteTask(id: string): Promise<Task> {
     return this.withTaskLock(id, async () => {
       const dir = this.taskDir(id);
-      const data = await readFile(join(dir, "task.json"), "utf-8");
-      const task = JSON.parse(data) as Task;
+      const task = await this.safeReadTaskJson(dir);
 
       const taskJsonPath = join(dir, "task.json");
       this.suppressWatcher(taskJsonPath);
@@ -405,8 +429,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
   async mergeTask(id: string): Promise<MergeResult> {
     return this.withTaskLock(id, async () => {
       const dir = this.taskDir(id);
-      const data = await readFile(join(dir, "task.json"), "utf-8");
-      const task = JSON.parse(data) as Task;
+      const task = await this.safeReadTaskJson(dir);
 
       if (task.column !== "in-review") {
         throw new Error(
@@ -630,8 +653,8 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
 
     let task: Task;
     try {
-      const data = await readFile(filePath, "utf-8");
-      task = JSON.parse(data) as Task;
+      const taskDir = join(this.tasksDir, taskId);
+      task = await this.safeReadTaskJson(taskDir);
     } catch {
       return; // File not readable or invalid JSON
     }
