@@ -16,7 +16,7 @@
  */
 
 import { join, dirname } from "node:path";
-import { cpSync, mkdirSync, existsSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, existsSync, rmSync } from "node:fs";
 
 const cliRoot = dirname(new URL(import.meta.url).pathname);
 const workspaceRoot = join(cliRoot, "..", "..");
@@ -102,14 +102,6 @@ function copyClientAssets() {
   console.log(`  → ${dashboardClientDest}`);
 }
 
-// ── Write a minimal package.json next to the binary ───────────────────
-function writeDistPackageJson() {
-  writeFileSync(
-    join(outDir, "package.json"),
-    JSON.stringify({ name: "hai", version: "0.1.0", type: "module" }, null, 2) + "\n",
-  );
-}
-
 // ── Compile a single binary ───────────────────────────────────────────
 function compileBinary(outFile: string, target: string): boolean {
   console.log(`Compiling ${outFile} (target: ${target})...`);
@@ -157,7 +149,6 @@ if (targets === null) {
   // Default: build for current platform → dist/hai
   const outBinary = join(outDir, defaultBinaryName());
   const ok = compileBinary(outBinary, "bun");
-  writeDistPackageJson();
   if (!ok) process.exit(1);
   console.log(`\n✓ Built: ${outBinary}`);
   console.log(`  Assets: ${dashboardClientDest}`);
@@ -177,8 +168,6 @@ if (targets === null) {
       built.push(name);
     }
   }
-
-  writeDistPackageJson();
 
   console.log(`\n${failed ? "⚠" : "✓"} Cross-compilation complete.`);
   if (built.length > 0) {
