@@ -67,12 +67,12 @@ kb reuses your existing pi authentication — no separate setup needed.
 
 ## Packages
 
-| Package | Description |
-|---------|-------------|
-| `@kb/core` | Domain model — tasks, board columns, file-based store |
-| `@kb/dashboard` | Web UI — Express server + kanban board with SSE |
-| `@kb/engine` | AI engine — triage (pi), execution (pi + worktrees), scheduling |
-| `kb` (cli) | CLI — `kb dashboard`, `kb task create/list/move/attach` |
+| Package         | Description                                                     |
+| --------------- | --------------------------------------------------------------- |
+| `@kb/core`      | Domain model — tasks, board columns, file-based store           |
+| `@kb/dashboard` | Web UI — Express server + kanban board with SSE                 |
+| `@kb/engine`    | AI engine — triage (pi), execution (pi + worktrees), scheduling |
+| `kb` (cli)      | CLI — `kb dashboard`, `kb task create/list/move/attach`         |
 
 ## Architecture
 
@@ -93,30 +93,11 @@ Tasks live on disk in `.kb/tasks/` in the project root:
 ### Board UI
 
 Real-time kanban board at `localhost:4040`:
+
 - Drag-and-drop cards between columns
 - Create tasks from the web UI
 - Click cards for detail view with move/delete actions
 - Server-Sent Events for live updates across tabs
-
-### API Rate Limiting
-
-All API endpoints (`/api/*`) are rate limited to prevent abuse. Limits are applied per client IP:
-
-| Scope | Limit | Window |
-|-------|-------|--------|
-| General API (`/api/*`) | 100 requests | 1 minute |
-| SSE connections (`/api/events`) | 10 connections | 1 minute |
-
-Every API response includes standard rate limit headers:
-
-| Header | Description |
-|--------|-------------|
-| `RateLimit-Limit` | Maximum requests allowed per window |
-| `RateLimit-Remaining` | Requests remaining in the current window |
-| `RateLimit-Reset` | Seconds until the rate limit window resets |
-| `Retry-After` | Seconds to wait before retrying (only on 429 responses) |
-
-When a client exceeds the limit, the API returns `429 Too Many Requests`.
 
 ### AI Engine
 
@@ -129,6 +110,7 @@ The AI engine starts automatically with the dashboard. Three components run:
 - **TaskExecutor** — Listens for tasks entering in-progress. Creates a git worktree, spawns a pi agent session with full coding tools scoped to the worktree, and executes the specification. Moves to in-review on completion.
 
 Each pi agent session gets:
+
 - Custom system prompt for its role (triage specifier vs task executor)
 - Tools scoped to the correct directory (`createCodingTools(cwd)`)
 - In-memory sessions (no persistence needed)
@@ -175,13 +157,13 @@ pnpm build:exe:all
 
 This produces binaries for all supported targets in `packages/cli/dist/`:
 
-| Target | Output |
-|--------|--------|
-| `bun-linux-x64` | `kb-linux-x64` |
-| `bun-linux-arm64` | `kb-linux-arm64` |
-| `bun-darwin-x64` | `kb-darwin-x64` |
-| `bun-darwin-arm64` | `kb-darwin-arm64` |
-| `bun-windows-x64` | `kb-windows-x64.exe` |
+| Target             | Output               |
+| ------------------ | -------------------- |
+| `bun-linux-x64`    | `kb-linux-x64`       |
+| `bun-linux-arm64`  | `kb-linux-arm64`     |
+| `bun-darwin-x64`   | `kb-darwin-x64`      |
+| `bun-darwin-arm64` | `kb-darwin-arm64`    |
+| `bun-windows-x64`  | `kb-windows-x64.exe` |
 
 To build for a specific platform:
 
