@@ -1,4 +1,4 @@
-# Release workflow: npm publishing via changesets
+# Release workflow: npm publishing via changesets + OIDC
 #
 # This workflow runs on every push to main and does one of two things:
 # 1. If there are pending changesets: creates/updates a "Version Packages" PR
@@ -6,7 +6,7 @@
 # 2. If there are no pending changesets (i.e., a version PR was just merged):
 #    builds all packages and publishes them to npm.
 #
-# Requires NPM_TOKEN secret for npm authentication.
+# Uses npm OIDC publishing — no NPM_TOKEN secret needed.
 
 name: Version & Release
 
@@ -18,7 +18,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
-  id-token: write # Required for npm provenance attestation
+  id-token: write
 
 jobs:
   release:
@@ -49,7 +49,6 @@ jobs:
         uses: changesets/action@v1
         with:
           version: pnpm release:version
-          publish: pnpm -r publish --provenance
+          publish: pnpm -r publish --provenance --access public
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
