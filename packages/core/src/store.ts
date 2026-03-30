@@ -346,6 +346,11 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       const dir = this.taskDir(id);
       const task = await this.readTaskJson(dir);
 
+      // Initialize log array if missing (for legacy tasks)
+      if (!task.log) {
+        task.log = [];
+      }
+
       if (updates.title !== undefined) task.title = updates.title;
       if (updates.description !== undefined) task.description = updates.description;
       if (updates.worktree !== undefined) task.worktree = updates.worktree;
@@ -431,6 +436,11 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       const dir = this.taskDir(id);
       const task = await this.readTaskJson(dir);
 
+      // Initialize log array if missing (for legacy tasks)
+      if (!task.log) {
+        task.log = [];
+      }
+
       task.paused = paused || undefined;
       // When pausing an in-progress task, set status so the UI can show the state.
       // When unpausing, clear the "paused" status.
@@ -467,6 +477,11 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       // Auto-initialize steps from PROMPT.md if empty
       if (task.steps.length === 0) {
         task.steps = await this.parseStepsFromPrompt(id);
+      }
+
+      // Initialize log array if missing (for legacy tasks)
+      if (!task.log) {
+        task.log = [];
       }
 
       if (stepIndex < 0 || stepIndex >= task.steps.length) {
@@ -511,6 +526,11 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
     return this.withTaskLock(id, async () => {
       const dir = this.taskDir(id);
       const task = await this.readTaskJson(dir);
+
+      // Initialize log array if missing (for legacy tasks)
+      if (!task.log) {
+        task.log = [];
+      }
 
       task.log.push({
         timestamp: new Date().toISOString(),
@@ -751,6 +771,11 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       const dir = this.taskDir(id);
       const task = await this.readTaskJson(dir);
 
+      // Initialize log array if missing (for legacy tasks)
+      if (!task.log) {
+        task.log = [];
+      }
+
       if (task.column !== "done") {
         throw new Error(
           `Cannot archive ${id}: task is in '${task.column}', must be in 'done'`,
@@ -783,6 +808,11 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
     return this.withTaskLock(id, async () => {
       const dir = this.taskDir(id);
       const task = await this.readTaskJson(dir);
+
+      // Initialize log array if missing (for legacy tasks)
+      if (!task.log) {
+        task.log = [];
+      }
 
       if (task.column !== "archived") {
         throw new Error(
@@ -1125,6 +1155,11 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
     return this.withTaskLock(id, async () => {
       const dir = this.taskDir(id);
       const task = await this.readTaskJson(dir);
+
+      // Initialize log array if missing (for legacy tasks)
+      if (!task.log) {
+        task.log = [];
+      }
 
       // Generate unique ID: timestamp + random suffix for collision resistance
       const commentId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;

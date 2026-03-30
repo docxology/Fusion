@@ -719,9 +719,9 @@ describe("ListView Column Filtering", () => {
     expect(screen.getByText("KB-001")).toBeDefined();
     expect(screen.getByText("KB-002")).toBeDefined();
 
-    // All 5 section headers should be visible
+    // All 6 section headers should be visible (one for each column)
     const sectionHeaders = screen.getAllByRole("row").filter(r => r.className.includes("list-section-header"));
-    expect(sectionHeaders.length).toBe(5);
+    expect(sectionHeaders.length).toBe(6);
   });
 
   it("switches column filter when different drop zone is clicked", () => {
@@ -1276,16 +1276,20 @@ describe("ListView Inline Create Card", () => {
     expect(mockOnCancelCreate).toHaveBeenCalledTimes(1);
   });
 
-  it("renders InlineCreateCard in triage section with correct colSpan", () => {
+  it("renders InlineCreateCard outside the table when creating", () => {
     renderListView({ isCreating: true, onCancelCreate: vi.fn(), onCreateTask: vi.fn() });
 
-    // Find the inline create row
-    const inlineCreateRow = document.querySelector(".list-inline-create-row");
-    expect(inlineCreateRow).toBeTruthy();
+    // Find the inline create container (now outside the table)
+    const inlineCreateContainer = document.querySelector(".list-inline-create-container");
+    expect(inlineCreateContainer).toBeTruthy();
 
-    // Check that the cell has the correct colSpan (8 columns by default)
-    const inlineCreateCell = document.querySelector(".list-inline-create-cell");
-    expect(inlineCreateCell).toBeTruthy();
-    expect(inlineCreateCell?.getAttribute("colspan")).toBe("8");
+    // Find the inline create card itself
+    const inlineCreateCard = document.querySelector(".inline-create-card");
+    expect(inlineCreateCard).toBeTruthy();
+
+    // Should have the Save button
+    const saveButton = document.querySelector(".inline-create-actions .btn-primary");
+    expect(saveButton).toBeTruthy();
+    expect(saveButton?.textContent).toBe("Save");
   });
 });

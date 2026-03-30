@@ -424,11 +424,13 @@ export function ListView({
             </button>
           )}
         </div>
-        {onNewTask && (
+        {isCreating ? (
+          <span className="list-creating-indicator">Creating task...</span>
+        ) : onNewTask ? (
           <button className="btn btn-primary btn-sm" onClick={onNewTask}>
             + New Task
           </button>
-        )}
+        ) : null}
       </div>
 
       <div className="list-drop-zones">
@@ -458,6 +460,17 @@ export function ListView({
       </div>
 
       <div className="list-table-container">
+        {/* Inline Create Card - outside the table for better UX */}
+        {isCreating && onCancelCreate && onCreateTask && (
+          <div className="list-inline-create-container">
+            <InlineCreateCard
+              tasks={tasks}
+              onSubmit={onCreateTask}
+              onCancel={onCancelCreate}
+              addToast={addToast}
+            />
+          </div>
+        )}
         {filteredCount === 0 && !isCreating ? (
           <div className="list-empty">
             {filter ? "No tasks match your filter" : "No tasks yet"}
@@ -528,20 +541,6 @@ export function ListView({
                         <span className="list-section-count">{columnTasks.length}</span>
                       </th>
                     </tr>
-
-                    {/* Inline Create Card for Triage column */}
-                    {column === "triage" && isCreating && onCancelCreate && onCreateTask && (
-                      <tr className="list-inline-create-row">
-                        <td colSpan={visibleColumns.size} className="list-inline-create-cell">
-                          <InlineCreateCard
-                            tasks={tasks}
-                            onSubmit={onCreateTask}
-                            onCancel={onCancelCreate}
-                            addToast={addToast}
-                          />
-                        </td>
-                      </tr>
-                    )}
 
                     {/* Task Rows */}
                     {isEmpty ? (

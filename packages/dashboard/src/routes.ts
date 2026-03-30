@@ -6,6 +6,7 @@ import type { TaskStore, Column, MergeResult } from "@kb/core";
 import { COLUMNS, VALID_TRANSITIONS, type PrInfo } from "@kb/core";
 import type { ServerOptions } from "./server.js";
 import { GitHubClient, getCurrentGitHubRepo } from "./github.js";
+import { terminalSessionManager } from "./terminal.js";
 
 /**
  * Minimal interface matching pi-coding-agent's ModelRegistry API surface
@@ -1824,6 +1825,102 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
       } else {
         res.status(500).json({ error: err.message });
       }
+    }
+  });
+
+  // ── Terminal Routes ─────────────────────────────────────────────────
+
+  /**
+   * POST /api/terminal/exec
+   * Execute a shell command in the project root directory.
+   * Body: { command: string }
+   * Returns: { sessionId: string }
+   * 
+   * Output is streamed via SSE at /api/terminal/sessions/:id/stream
+   */
+  router.post("/terminal/exec", async (req, res) => {
+    try {
+      const { command } = req.body;
+      
+      if (!command || typeof command !== "string") {
+        res.status(400).json({ error: "command is required and must be a string" });
+        return;
+      }
+      
+      if (command.length > 4096) {
+        res.status(400).json({ error: "command exceeds maximum length of 4096 characters" });
+        return;
+      }
+      
+      const rootDir = store.getRootDir();
+      const result = terminalSessionManager.createSession(command, rootDir);
+      
+      if (result.error) {
+        res.status(403).json({ error: result.error });
+        return;
+      }
+      
+      res.status(201).json({ sessionId: result.sessionId });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Failed to execute command" });
+    }
+  });
+
+  /**
+   * POST /api/terminal/sessions/:id/kill
+   * Terminate a running terminal session.
+   * Returns: { killed: boolean }
+   */
+  router.post("/terminal/sessions/:id/kill", (req, res) => {
+    try {
+      const { id } = req.params;
+      const { signal } = req.body;
+      
+      const validSignals: NodeJS.Signals[] = ["SIGTERM", "SIGKILL", "SIGINT"];
+      const killSignal = validSignals.includes(signal) ? signal : "SIGTERM";
+      
+      const killed = terminalSessionManager.killSession(id, killSignal);
+      
+      if (!killed) {
+        const session = terminalSessionManager.getSession(id);
+        if (!session) {
+          res.status(404).json({ error: "Session not found" });
+        } else {
+          res.status(400).json({ error: "Session is not running" });
+        }
+        return;
+      }
+      
+      res.json({ killed: true, sessionId: id });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  /**
+   * GET /api/terminal/sessions/:id
+   * Get session status and output history.
+   * Returns: { id, command, running, exitCode, output }
+   */
+  router.get("/terminal/sessions/:id", (req, res) => {
+    try {
+      const session = terminalSessionManager.getSession(req.params.id);
+      
+      if (!session) {
+        res.status(404).json({ error: "Session not found" });
+        return;
+      }
+      
+      res.json({
+        id: session.id,
+        command: session.command,
+        running: session.exitCode === null && !session.killed,
+        exitCode: session.exitCode,
+        output: session.output.join(""),
+        startTime: session.startTime.toISOString(),
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
     }
   });
 

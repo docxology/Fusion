@@ -1783,9 +1783,26 @@ body {
   gap: 8px;
 }
 
+.inline-create-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+}
+
 .inline-create-hint {
   font-size: 11px;
   color: var(--text-dim);
+}
+
+.list-inline-create-container {
+  margin-bottom: 12px;
+  margin-top: 8px;
+}
+
+.list-creating-indicator {
+  font-size: 12px;
+  color: var(--todo);
   margin-left: auto;
 }
 

@@ -93,6 +93,43 @@ export function InlineCreateCard({ tasks, onSubmit, onCancel, addToast }: Inline
     });
   }, []);
 
+  const handleSubmit = useCallback(async () => {
+    if (!description.trim() || submitting) return;
+    setSubmitting(true);
+    try {
+      const task = await onSubmit({
+        description: description.trim(),
+        column: "triage",
+        dependencies: dependencies.length ? dependencies : undefined,
+      });
+
+      // Upload pending images as attachments
+      if (pendingImages.length > 0) {
+        const failures: string[] = [];
+        for (const img of pendingImages) {
+          try {
+            await uploadAttachment(task.id, img.file);
+          } catch {
+            failures.push(img.file.name);
+          }
+        }
+        if (failures.length > 0) {
+          addToast(`Failed to upload: ${failures.join(", ")}`, "error");
+        }
+      }
+
+      // Clean up preview URLs
+      pendingImages.forEach((img) => URL.revokeObjectURL(img.previewUrl));
+      setPendingImages([]);
+
+      addToast(`Created ${task.id}`, "success");
+    } catch (err: any) {
+      addToast(err.message, "error");
+    } finally {
+      setSubmitting(false);
+    }
+  }, [description, dependencies, submitting, pendingImages, onSubmit, addToast]);
+
   const handleKeyDown = useCallback(
     async (e: React.KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -102,43 +139,10 @@ export function InlineCreateCard({ tasks, onSubmit, onCancel, addToast }: Inline
       }
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
-        if (!description.trim() || submitting) return;
-        setSubmitting(true);
-        try {
-          const task = await onSubmit({
-            description: description.trim(),
-            column: "triage",
-            dependencies: dependencies.length ? dependencies : undefined,
-          });
-
-          // Upload pending images as attachments
-          if (pendingImages.length > 0) {
-            const failures: string[] = [];
-            for (const img of pendingImages) {
-              try {
-                await uploadAttachment(task.id, img.file);
-              } catch {
-                failures.push(img.file.name);
-              }
-            }
-            if (failures.length > 0) {
-              addToast(`Failed to upload: ${failures.join(", ")}`, "error");
-            }
-          }
-
-          // Clean up preview URLs
-          pendingImages.forEach((img) => URL.revokeObjectURL(img.previewUrl));
-          setPendingImages([]);
-
-          addToast(`Created ${task.id}`, "success");
-        } catch (err: any) {
-          addToast(err.message, "error");
-        } finally {
-          setSubmitting(false);
-        }
+        handleSubmit();
       }
     },
-    [description, dependencies, submitting, pendingImages, onSubmit, onCancel, addToast],
+    [handleSubmit, onCancel],
   );
 
   const toggleDep = useCallback((id: string) => {
@@ -240,7 +244,17 @@ export function InlineCreateCard({ tasks, onSubmit, onCancel, addToast }: Inline
             );
           })()}
         </div>
-        <span className="inline-create-hint">Enter to create · Esc to cancel</span>
+        <div className="inline-create-actions">
+          <span className="inline-create-hint">Enter to create · Esc to cancel</span>
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            onClick={handleSubmit}
+            disabled={!description.trim() || submitting}
+          >
+            {submitting ? "Creating..." : "Save"}
+          </button>
+        </div>
       </div>
     </div>
   );

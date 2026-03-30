@@ -7,6 +7,7 @@ import type { AuthStorageLike, ModelRegistryLike } from "./routes.js";
 import { createApiRoutes } from "./routes.js";
 import { createSSE } from "./sse.js";
 import { rateLimit, RATE_LIMITS } from "./rate-limit.js";
+import { terminalSessionManager } from "./terminal.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -73,6 +74,65 @@ export function createServer(store: TaskStore, options?: ServerOptions): ReturnT
     req.on("close", () => {
       clearInterval(heartbeat);
       store.off("agent:log", onAgentLog);
+    });
+  });
+
+  // Terminal SSE endpoint for real-time command output streaming
+  app.get("/api/terminal/sessions/:id/stream", rateLimit(RATE_LIMITS.sse), (req, res) => {
+    const sessionId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+    res.flushHeaders();
+
+    res.write(": connected\n\n");
+
+    const session = terminalSessionManager.getSession(sessionId);
+    
+    // If session doesn't exist, send error and close
+    if (!session) {
+      res.write(`event: terminal:error\ndata: ${JSON.stringify({ message: "Session not found" })}\n\n`);
+      res.end();
+      return;
+    }
+
+    // Send existing output immediately
+    if (session.output.length > 0) {
+      const existingOutput = session.output.join("");
+      res.write(`event: terminal:output\ndata: ${JSON.stringify({ type: "stdout", data: existingOutput })}\n\n`);
+    }
+
+    // If session has already exited, send exit event
+    if (session.exitCode !== null) {
+      res.write(`event: terminal:exit\ndata: ${JSON.stringify({ exitCode: session.exitCode })}\n\n`);
+      res.end();
+      return;
+    }
+
+    // Listen for new output
+    const onOutput = (event: import("./terminal.js").TerminalOutputEvent) => {
+      if (event.sessionId !== sessionId) return;
+      
+      if (event.type === "exit") {
+        res.write(`event: terminal:exit\ndata: ${JSON.stringify({ exitCode: event.exitCode })}\n\n`);
+        res.end();
+      } else {
+        res.write(`event: terminal:output\ndata: ${JSON.stringify({ type: event.type, data: event.data })}\n\n`);
+      }
+    };
+
+    terminalSessionManager.on("output", onOutput);
+
+    // Heartbeat to keep connection alive
+    const heartbeat = setInterval(() => {
+      res.write(": heartbeat\n\n");
+    }, 30_000);
+
+    req.on("close", () => {
+      clearInterval(heartbeat);
+      terminalSessionManager.off("output", onOutput);
     });
   });
 
