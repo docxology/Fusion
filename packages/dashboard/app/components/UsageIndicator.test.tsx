@@ -569,4 +569,294 @@ describe("UsageIndicator", () => {
     expect(document.querySelector('[data-provider="google"]')).toBeInTheDocument();
     expect(document.querySelector("svg[aria-label='Google Gemini']")).toBeInTheDocument();
   });
+
+  // Pace indicator tests
+  it("renders pace marker for weekly windows with timing data", () => {
+    mockUseUsageData.mockReturnValue({
+      providers: [
+        {
+          name: "TestProvider",
+          icon: "🧪",
+          status: "ok",
+          windows: [
+            { 
+              label: "Weekly", 
+              percentUsed: 30, 
+              percentLeft: 70, 
+              resetText: "resets in 3d",
+              resetMs: 259200000, // 3 days remaining
+              windowDurationMs: 604800000, // 7 days total
+            },
+          ],
+        },
+      ],
+      loading: false,
+      error: null,
+      lastUpdated: new Date(),
+      refresh: mockRefresh,
+    });
+
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+
+    const paceMarker = document.querySelector('[data-testid="pace-marker"]');
+    expect(paceMarker).toBeInTheDocument();
+  });
+
+  it("does not render pace marker for non-weekly windows (Session, Hourly)", () => {
+    mockUseUsageData.mockReturnValue({
+      providers: [
+        {
+          name: "TestProvider",
+          icon: "🧪",
+          status: "ok",
+          windows: [
+            { 
+              label: "Session (5h)", 
+              percentUsed: 45, 
+              percentLeft: 55, 
+              resetText: "resets in 2h",
+              resetMs: 7200000,
+              windowDurationMs: 18000000,
+            },
+            { 
+              label: "Hourly", 
+              percentUsed: 60, 
+              percentLeft: 40, 
+              resetText: "resets in 30m",
+              resetMs: 1800000,
+              windowDurationMs: 3600000,
+            },
+          ],
+        },
+      ],
+      loading: false,
+      error: null,
+      lastUpdated: new Date(),
+      refresh: mockRefresh,
+    });
+
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+
+    const paceMarkers = document.querySelectorAll('[data-testid="pace-marker"]');
+    expect(paceMarkers.length).toBe(0);
+  });
+
+  it("does not render pace marker when resetMs or windowDurationMs is undefined", () => {
+    mockUseUsageData.mockReturnValue({
+      providers: [
+        {
+          name: "TestProvider",
+          icon: "🧪",
+          status: "ok",
+          windows: [
+            { 
+              label: "Weekly", 
+              percentUsed: 30, 
+              percentLeft: 70, 
+              resetText: "resets in 3d",
+              // No resetMs or windowDurationMs
+            },
+          ],
+        },
+      ],
+      loading: false,
+      error: null,
+      lastUpdated: new Date(),
+      refresh: mockRefresh,
+    });
+
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+
+    const paceMarker = document.querySelector('[data-testid="pace-marker"]');
+    expect(paceMarker).not.toBeInTheDocument();
+  });
+
+  it("shows 'ahead of pace' text when usage exceeds elapsed time by >5%", () => {
+    mockUseUsageData.mockReturnValue({
+      providers: [
+        {
+          name: "TestProvider",
+          icon: "🧪",
+          status: "ok",
+          windows: [
+            { 
+              label: "Weekly", 
+              percentUsed: 70, // 70% used
+              percentLeft: 30, 
+              resetText: "resets in 3.5d",
+              resetMs: 302400000, // 3.5 days remaining out of 7
+              windowDurationMs: 604800000, // 7 days total
+            },
+          ],
+        },
+      ],
+      loading: false,
+      error: null,
+      lastUpdated: new Date(),
+      refresh: mockRefresh,
+    });
+
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+
+    // percentElapsed = 100 - (302400 / 604800 * 100) = 100 - 50 = 50%
+    // paceDelta = 70 - 50 = 20% (ahead)
+    const paceRow = screen.getByTestId("pace-row");
+    expect(paceRow).toHaveTextContent(/ahead of pace/);
+    expect(paceRow).toHaveTextContent("20%");
+  });
+
+  it("shows 'behind pace' text when usage is under elapsed time by >5%", () => {
+    mockUseUsageData.mockReturnValue({
+      providers: [
+        {
+          name: "TestProvider",
+          icon: "🧪",
+          status: "ok",
+          windows: [
+            { 
+              label: "Weekly", 
+              percentUsed: 20, // 20% used
+              percentLeft: 80, 
+              resetText: "resets in 3.5d",
+              resetMs: 302400000, // 3.5 days remaining out of 7
+              windowDurationMs: 604800000, // 7 days total
+            },
+          ],
+        },
+      ],
+      loading: false,
+      error: null,
+      lastUpdated: new Date(),
+      refresh: mockRefresh,
+    });
+
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+
+    // percentElapsed = 100 - (302400 / 604800 * 100) = 100 - 50 = 50%
+    // paceDelta = 20 - 50 = -30% (behind)
+    const paceRow = screen.getByTestId("pace-row");
+    expect(paceRow).toHaveTextContent(/behind pace/);
+    expect(paceRow).toHaveTextContent("30%");
+  });
+
+  it("shows 'on pace' text when usage is within 5% of elapsed time", () => {
+    mockUseUsageData.mockReturnValue({
+      providers: [
+        {
+          name: "TestProvider",
+          icon: "🧪",
+          status: "ok",
+          windows: [
+            { 
+              label: "Weekly", 
+              percentUsed: 52, // 52% used
+              percentLeft: 48, 
+              resetText: "resets in 3.5d",
+              resetMs: 302400000, // 3.5 days remaining out of 7
+              windowDurationMs: 604800000, // 7 days total
+            },
+          ],
+        },
+      ],
+      loading: false,
+      error: null,
+      lastUpdated: new Date(),
+      refresh: mockRefresh,
+    });
+
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+
+    // percentElapsed = 100 - (302400 / 604800 * 100) = 100 - 50 = 50%
+    // paceDelta = 52 - 50 = 2% (within 5% threshold, on pace)
+    const paceRow = screen.getByTestId("pace-row");
+    expect(paceRow).toHaveTextContent(/On pace/);
+  });
+
+  it("pace marker position inverts correctly when switching to remaining mode", () => {
+    // Mock provider with weekly window
+    mockUseUsageData.mockReturnValue({
+      providers: [
+        {
+          name: "TestProvider",
+          icon: "🧪",
+          status: "ok",
+          windows: [
+            { 
+              label: "Weekly", 
+              percentUsed: 30, 
+              percentLeft: 70, 
+              resetText: "resets in 3.5d",
+              resetMs: 302400000, // 50% elapsed
+              windowDurationMs: 604800000,
+            },
+          ],
+        },
+      ],
+      loading: false,
+      error: null,
+      lastUpdated: new Date(),
+      refresh: mockRefresh,
+    });
+
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+
+    // In used mode: marker at 50%
+    let paceMarker = document.querySelector('[data-testid="pace-marker"]') as HTMLElement;
+    expect(paceMarker).toBeInTheDocument();
+    expect(paceMarker.style.left).toBe("50%");
+
+    // Switch to remaining mode
+    const remainingBtn = screen.getByTestId("usage-view-toggle-remaining");
+    fireEvent.click(remainingBtn);
+
+    // In remaining mode: marker at 100 - 50 = 50% (same in this case since it's 50/50)
+    paceMarker = document.querySelector('[data-testid="pace-marker"]') as HTMLElement;
+    expect(paceMarker.style.left).toBe("50%");
+  });
+
+  it("pace percentage text inverts correctly when switching to remaining mode", () => {
+    // Clear localStorage to ensure fresh 'used' mode
+    localStorage.removeItem("kb-usage-view-mode");
+    
+    // Setup: 70% used (ahead of pace), 30% remaining
+    mockUseUsageData.mockReturnValue({
+      providers: [
+        {
+          name: "TestProvider",
+          icon: "🧪",
+          status: "ok",
+          windows: [
+            { 
+              label: "Weekly", 
+              percentUsed: 70, // 70% used
+              percentLeft: 30, 
+              resetText: "resets in 3.5d",
+              resetMs: 302400000, // 50% elapsed
+              windowDurationMs: 604800000,
+            },
+          ],
+        },
+      ],
+      loading: false,
+      error: null,
+      lastUpdated: new Date(),
+      refresh: mockRefresh,
+    });
+
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+
+    // In used mode: ahead of pace (70% used vs 50% elapsed)
+    let paceRow = screen.getByTestId("pace-row");
+    expect(paceRow).toHaveTextContent(/ahead of pace/);
+    expect(paceRow).toHaveTextContent("⚡");
+
+    // Switch to remaining mode
+    const remainingBtn = screen.getByTestId("usage-view-toggle-remaining");
+    fireEvent.click(remainingBtn);
+
+    // In remaining mode: message should invert (behind on remaining)
+    // When ahead on usage (using more than expected), you're behind on remaining
+    paceRow = screen.getByTestId("pace-row");
+    expect(paceRow).toHaveTextContent(/behind on remaining/);
+  });
 });

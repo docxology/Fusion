@@ -38,22 +38,58 @@ function UsageWindowRow({ window, viewMode }: UsageWindowRowProps) {
   const headerText = isRemainingMode ? `${window.percentLeft}% remaining` : `${window.percentUsed}% used`;
   const footerText = isRemainingMode ? `${window.percentUsed}% used` : `${window.percentLeft}% left`;
 
+  // Pace calculation for weekly windows
+  const shouldShowPace = window.label.toLowerCase().includes('weekly') && 
+                         window.resetMs !== undefined && 
+                         window.windowDurationMs !== undefined;
+
+  let percentElapsed = 0;
+  let paceDelta = 0;
+  let markerPosition = 0;
+
+  if (shouldShowPace) {
+    percentElapsed = 100 - (window.resetMs! / window.windowDurationMs! * 100);
+    paceDelta = window.percentUsed - percentElapsed; // positive = ahead of pace
+    
+    // Marker position adjusts for view mode
+    markerPosition = isRemainingMode ? (100 - percentElapsed) : percentElapsed;
+  }
+
+  // Pace status thresholds
+  const PACE_THRESHOLD = 5; // 5% threshold for "on pace"
+  const isAhead = paceDelta > PACE_THRESHOLD;
+  const isBehind = paceDelta < -PACE_THRESHOLD;
+  const isOnTrack = !isAhead && !isBehind;
+
+  // Format pace delta for display (absolute value, rounded)
+  const paceDeltaFormatted = Math.abs(Math.round(paceDelta));
+
   return (
     <div className="usage-window">
       <div className="usage-window-header">
         <span className="usage-window-label">{window.label}</span>
         <span className="usage-window-percentage">{headerText}</span>
       </div>
-      <div className="usage-progress-bar">
-        <div
-          className={`usage-progress-fill ${colorClass}`}
-          style={{ width: `${displayPercent}%` }}
-          role="progressbar"
-          aria-valuenow={displayPercent}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-label={`${window.label}: ${headerText}`}
-        />
+      <div className="usage-progress-wrapper">
+        <div className="usage-progress-bar">
+          <div
+            className={`usage-progress-fill ${colorClass}`}
+            style={{ width: `${displayPercent}%` }}
+            role="progressbar"
+            aria-valuenow={displayPercent}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-label={`${window.label}: ${headerText}`}
+          />
+        </div>
+        {shouldShowPace && (
+          <div
+            className="usage-pace-marker"
+            style={{ left: `${markerPosition}%` }}
+            aria-hidden="true"
+            data-testid="pace-marker"
+          />
+        )}
       </div>
       <div className="usage-window-footer">
         <span className="usage-window-left">{footerText}</span>
@@ -61,6 +97,36 @@ function UsageWindowRow({ window, viewMode }: UsageWindowRowProps) {
           <span className="usage-window-reset">{window.resetText}</span>
         )}
       </div>
+      {shouldShowPace && (
+        <div className="usage-pace-row" data-testid="pace-row">
+          {isAhead && (
+            <>
+              <span className="pace-icon pace-icon-ahead">⚡</span>
+              <span className="pace-text pace-ahead">
+                {isRemainingMode 
+                  ? `${paceDeltaFormatted}% behind on remaining` 
+                  : `${paceDeltaFormatted}% ahead of pace`}
+              </span>
+            </>
+          )}
+          {isBehind && (
+            <>
+              <span className="pace-icon pace-icon-behind">🐢</span>
+              <span className="pace-text pace-behind">
+                {isRemainingMode 
+                  ? `${paceDeltaFormatted}% ahead on remaining` 
+                  : `${paceDeltaFormatted}% behind pace`}
+              </span>
+            </>
+          )}
+          {isOnTrack && (
+            <>
+              <span className="pace-icon pace-icon-ontrack">✓</span>
+              <span className="pace-text pace-ontrack">On pace</span>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

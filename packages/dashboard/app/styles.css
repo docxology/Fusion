@@ -7151,6 +7151,50 @@ html .column.drag-over * {
   font-style: italic;
 }
 
+/* Pace marker and text */
+.usage-progress-wrapper {
+  position: relative;
+}
+
+.usage-pace-marker {
+  position: absolute;
+  top: -1px;
+  width: 2px;
+  height: 10px;
+  background: var(--in-progress);
+  border-radius: 1px;
+  z-index: 2;
+  transform: translateX(-50%);
+}
+
+.usage-pace-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  margin-top: 4px;
+}
+
+.pace-icon {
+  flex-shrink: 0;
+}
+
+.pace-text {
+  font-weight: 500;
+}
+
+.pace-ahead {
+  color: var(--color-success);
+}
+
+.pace-behind {
+  color: var(--triage);
+}
+
+.pace-ontrack {
+  color: var(--text-muted);
+}
+
 /* Empty state */
 .usage-provider-empty {
   font-size: 12px;
