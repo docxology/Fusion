@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { InlineCreateCard } from "../InlineCreateCard";
 import type { Task, Column } from "@kb/core";
 
@@ -185,5 +185,56 @@ describe("InlineCreateCard dependency dropdown search", () => {
     const items = document.querySelectorAll(".dep-dropdown-item");
     expect(items).toHaveLength(1);
     expect(items[0].querySelector(".dep-dropdown-id")?.textContent).toBe("KB-002");
+  });
+});
+
+describe("InlineCreateCard breakIntoSubtasks toggle", () => {
+  it("renders toggle defaulted to off", () => {
+    renderCard();
+    const checkbox = screen.getByTestId("break-into-subtasks-toggle") as HTMLInputElement;
+    expect(checkbox.checked).toBe(false);
+  });
+
+  it("can be toggled on", () => {
+    renderCard();
+    const checkbox = screen.getByTestId("break-into-subtasks-toggle") as HTMLInputElement;
+    fireEvent.click(checkbox);
+    expect(checkbox.checked).toBe(true);
+  });
+
+  it("passes breakIntoSubtasks in submit payload", async () => {
+    const { props } = renderCard();
+    const textarea = screen.getByPlaceholderText("What needs to be done?");
+    const checkbox = screen.getByTestId("break-into-subtasks-toggle") as HTMLInputElement;
+
+    fireEvent.change(textarea, { target: { value: "Split this work" } });
+    fireEvent.click(checkbox);
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(props.onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          description: "Split this work",
+          breakIntoSubtasks: true,
+        }),
+      );
+    });
+  });
+
+  it("passes breakIntoSubtasks=false by default", async () => {
+    const { props } = renderCard();
+    const textarea = screen.getByPlaceholderText("What needs to be done?");
+
+    fireEvent.change(textarea, { target: { value: "Simple task" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(props.onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          description: "Simple task",
+          breakIntoSubtasks: false,
+        }),
+      );
+    });
   });
 });

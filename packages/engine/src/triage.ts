@@ -150,9 +150,18 @@ When you plan to list a task in the \`## Dependencies\` section, first call \`ta
 Use what you learn — file scope, APIs, patterns, completion criteria — to make the new spec accurate: reference the right paths, avoid conflicting assumptions, and describe what the dependency must deliver before this task starts.
 If the dependency task has no PROMPT.md yet (not yet specified), note that in the Dependencies section.
 
-## Executor tools
-The executor agent has these extra built-in tools:
-- \`task_create\` — create follow-up tasks
+## Triage subtask breakdown
+When the task includes \`breakIntoSubtasks: true\`, first decide whether it should be split.
+
+- Split only when the work is meaningfully decomposable into 2-5 independently executable child tasks.
+- If splitting: use the \`task_create\` tool to create child tasks in triage, include clear descriptions and dependencies between them, then stop. Do NOT write a PROMPT.md for the parent task.
+- If not splitting: proceed with a normal PROMPT.md specification.
+
+## Triage tools
+You have these extra tools during triage:
+- \`task_list\` — list existing active tasks
+- \`task_get\` — inspect a task and its PROMPT.md
+- \`task_create\` — create a child/follow-up task while triaging
 
 ## Guidelines
 - Read the project structure and relevant source files to understand context BEFORE writing
@@ -419,9 +428,15 @@ export class TriageProcessor {
         const specReviewVerdictRef: { current: ReviewVerdict | null } = {
           current: null,
         };
+        // Track subtasks created during triage when breakIntoSubtasks was requested.
+        const createdSubtasksRef: { current: string[] } = { current: [] };
 
         const customTools = [
-          ...this.createTriageTools(),
+          ...this.createTriageTools({
+            parentTaskId: task.id,
+            allowTaskCreate: detail.breakIntoSubtasks === true,
+            createdSubtasksRef,
+          }),
           this.createReviewSpecTool(
             task.id,
             promptPath,
@@ -496,6 +511,17 @@ export class TriageProcessor {
 
           // Re-raise errors that pi-coding-agent swallowed after exhausting retries.
           checkSessionError(session);
+
+          if (detail.breakIntoSubtasks && createdSubtasksRef.current.length > 0) {
+            const childTaskIds = createdSubtasksRef.current.join(", ");
+            await this.store.logEntry(
+              task.id,
+              `Converted into subtasks: ${childTaskIds}`,
+            );
+            await this.store.deleteTask(task.id);
+            triageLog.log(`✓ ${task.id} split into subtasks (${childTaskIds}) and closed`);
+            return;
+          }
 
           // Post-session APPROVE gate: only advance to todo when the spec
           // reviewer explicitly approved.  Any other verdict (REVISE,
@@ -636,11 +662,22 @@ export class TriageProcessor {
     }
   }
 
-  private createTriageTools(): ToolDefinition[] {
+  private createTriageTools(options: {
+    parentTaskId: string;
+    allowTaskCreate: boolean;
+    createdSubtasksRef: { current: string[] };
+  }): ToolDefinition[] {
     const store = this.store;
 
     const taskGetParams = Type.Object({
       id: Type.String({ description: "Task ID (e.g. KB-001)" }),
+    });
+    const taskCreateParams = Type.Object({
+      title: Type.Optional(Type.String({ description: "Short child task title" })),
+      description: Type.String({ description: "Child task description/mission" }),
+      dependencies: Type.Optional(
+        Type.Array(Type.String({ description: "Task ID dependency (e.g. KB-001)" })),
+      ),
     });
 
     const taskList: ToolDefinition = {
@@ -712,7 +749,69 @@ export class TriageProcessor {
       },
     };
 
-    return [taskList, taskGet];
+    const taskCreate: ToolDefinition = {
+      name: "task_create",
+      label: "Create Child Task",
+      description:
+        "Create a child task (subtask) while breaking a larger task into smaller pieces. " +
+        "Use this when breakIntoSubtasks is enabled and the work can be split into 2-5 independently executable tasks. " +
+        "The created task will be a child of the current task being triaged.",
+      parameters: taskCreateParams,
+      execute: async (
+        _callId: string,
+        params: Static<typeof taskCreateParams>,
+      ) => {
+        if (!options.allowTaskCreate) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "ERROR: Task creation is not enabled for this task. The user did not request subtask breakdown.",
+              },
+            ],
+            details: {},
+          };
+        }
+
+        try {
+          const newTask = await store.createTask({
+            title: params.title,
+            description: params.description,
+            dependencies: params.dependencies || [],
+            column: "triage",
+          });
+
+          // Track the created subtask
+          options.createdSubtasksRef.current.push(newTask.id);
+
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `Created child task ${newTask.id}: ${params.title || params.description.slice(0, 60)}`,
+              },
+            ],
+            details: { taskId: newTask.id },
+          };
+        } catch (err: any) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `ERROR: Failed to create task: ${err.message}`,
+              },
+            ],
+            details: {},
+          };
+        }
+      },
+    };
+
+    const tools: ToolDefinition[] = [taskList, taskGet];
+    if (options.allowTaskCreate) {
+      tools.push(taskCreate);
+    }
+    return tools;
   }
 
   /**
@@ -1025,13 +1124,36 @@ ${feedback}
 Please revise the specification above to address this feedback. Write the complete revised PROMPT.md to \`${promptPath}\`.`;
   }
 
+  let subtaskSection = "";
+  if (task.breakIntoSubtasks) {
+    subtaskSection = `
+
+## Subtask Breakdown Requested
+The user has requested that this task be broken into smaller subtasks if it is complex enough to warrant splitting.
+
+**When to split:**
+- Only split when the work is meaningfully decomposable into 2-5 independently executable child tasks
+- Each child task should be completable on its own with a clear scope and acceptance criteria
+- Child tasks should have logical dependencies between them if order matters
+
+**How to split:**
+1. First, analyze the task to determine if it should be split
+2. If splitting: use the \\\`task_create\\\` tool to create child tasks in order, setting up dependencies as needed
+3. Include clear descriptions and acceptance criteria for each child task
+4. After creating all subtasks, stop — do NOT write a PROMPT.md for the parent task
+5. If NOT splitting: proceed with a normal PROMPT.md specification for this task
+
+**Important:** If you create subtasks, this parent task will be closed and replaced by the children. Make sure each child is a complete, executable task.`;
+  }
+
   return `${isRevision ? "Revise" : "Specify"} this task and write the result to \`${promptPath}\`.
 
 ## Task
 - **ID:** ${task.id}
 - **Title:** ${task.title || "(none)"}
 - **Description:** ${task.description}
-${task.dependencies.length > 0 ? `- **Dependencies:** ${task.dependencies.join(", ")}` : ""}${revisionSection}
+${task.breakIntoSubtasks ? "- **Break into subtasks:** Yes (user requested)" : ""}
+${task.dependencies.length > 0 ? `- **Dependencies:** ${task.dependencies.join(", ")}` : ""}${revisionSection}${subtaskSection}
 
 ## Instructions
 ${isRevision ? "1. Review the existing specification and user feedback carefully\n2. Revise the PROMPT.md to address the feedback while maintaining the structure\n3. Ensure the specification is detailed enough for an AI agent to execute" : "1. Read the project structure to understand context (package.json, source files, etc.)\n2. Write a complete PROMPT.md specification to the given path following the format in your system prompt\n3. The specification must be detailed enough for an autonomous AI agent to implement without asking questions\n4. Name actual files, functions, and patterns from the codebase — be specific"}

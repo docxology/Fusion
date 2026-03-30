@@ -104,6 +104,8 @@ export interface Task {
   description: string;
   column: Column;
   dependencies: string[];
+  /** User-requested hint for triage: prefer splitting into child tasks when appropriate. */
+  breakIntoSubtasks?: boolean;
   worktree?: string;
   steps: TaskStep[];
   currentStep: number;
@@ -166,6 +168,7 @@ export interface TaskCreateInput {
   description: string;
   column?: Column;
   dependencies?: string[];
+  breakIntoSubtasks?: boolean;
 }
 
 export interface Settings {

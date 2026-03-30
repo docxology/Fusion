@@ -193,6 +193,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       description: input.description,
       column: input.column || "triage",
       dependencies: input.dependencies || [],
+      breakIntoSubtasks: input.breakIntoSubtasks === true ? true : undefined,
       steps: [],
       currentStep: 0,
       log: [{ timestamp: now, action: "Task created" }],

@@ -610,9 +610,13 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
   // Create task
   router.post("/tasks", async (req, res) => {
     try {
-      const { title, description, column, dependencies } = req.body;
+      const { title, description, column, dependencies, breakIntoSubtasks } = req.body;
       if (!description || typeof description !== "string") {
         res.status(400).json({ error: "description is required" });
+        return;
+      }
+      if (breakIntoSubtasks !== undefined && typeof breakIntoSubtasks !== "boolean") {
+        res.status(400).json({ error: "breakIntoSubtasks must be a boolean" });
         return;
       }
       const task = await store.createTask({
@@ -620,6 +624,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         description,
         column,
         dependencies,
+        breakIntoSubtasks,
       });
       res.status(201).json(task);
     } catch (err: any) {

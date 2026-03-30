@@ -105,6 +105,32 @@ describe("TaskStore", () => {
       expect(detail.prompt).toMatch(/^# KB-001: Add caching\n/);
       expect(detail.prompt).toContain("Implement caching layer for API responses");
     });
+
+  });
+
+  describe("breakIntoSubtasks task creation flag", () => {
+    it("persists breakIntoSubtasks=true when explicitly requested", async () => {
+      const task = await store.createTask({
+        description: "Large feature",
+        breakIntoSubtasks: true,
+      });
+
+      expect(task.breakIntoSubtasks).toBe(true);
+
+      const detail = await store.getTask(task.id);
+      expect(detail.breakIntoSubtasks).toBe(true);
+    });
+
+    it("leaves breakIntoSubtasks unset by default", async () => {
+      const task = await store.createTask({
+        description: "Regular task",
+      });
+
+      expect(task.breakIntoSubtasks).toBeUndefined();
+
+      const detail = await store.getTask(task.id);
+      expect(detail.breakIntoSubtasks).toBeUndefined();
+    });
   });
 
   // ── Lock serialization test ──────────────────────────────────────

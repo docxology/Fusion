@@ -150,6 +150,78 @@ describe("GET /tasks/:id", () => {
   });
 });
 
+describe("POST /tasks", () => {
+  let store: TaskStore;
+
+  beforeEach(() => {
+    store = createMockStore();
+  });
+
+  function buildApp() {
+    const app = express();
+    app.use(express.json());
+    app.use("/api", createApiRoutes(store));
+    return app;
+  }
+
+  it("creates a task and forwards breakIntoSubtasks", async () => {
+    const createdTask = {
+      ...FAKE_TASK_DETAIL,
+      column: "triage",
+      breakIntoSubtasks: true,
+    };
+    (store.createTask as ReturnType<typeof vi.fn>).mockResolvedValue(createdTask);
+
+    const res = await REQUEST(
+      buildApp(),
+      "POST",
+      "/api/tasks",
+      JSON.stringify({
+        description: "Big initiative",
+        breakIntoSubtasks: true,
+      }),
+      { "Content-Type": "application/json" },
+    );
+
+    expect(res.status).toBe(201);
+    expect(store.createTask).toHaveBeenCalledWith({
+      title: undefined,
+      description: "Big initiative",
+      column: undefined,
+      dependencies: undefined,
+      breakIntoSubtasks: true,
+    });
+  });
+
+  it("returns 400 when description is missing", async () => {
+    const res = await REQUEST(
+      buildApp(),
+      "POST",
+      "/api/tasks",
+      JSON.stringify({ breakIntoSubtasks: true }),
+      { "Content-Type": "application/json" },
+    );
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("description is required");
+    expect(store.createTask).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when breakIntoSubtasks is not a boolean", async () => {
+    const res = await REQUEST(
+      buildApp(),
+      "POST",
+      "/api/tasks",
+      JSON.stringify({ description: "Big initiative", breakIntoSubtasks: "yes" }),
+      { "Content-Type": "application/json" },
+    );
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("breakIntoSubtasks must be a boolean");
+    expect(store.createTask).not.toHaveBeenCalled();
+  });
+});
+
 describe("POST /tasks/:id/retry", () => {
   let store: TaskStore;
 

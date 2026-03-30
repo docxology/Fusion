@@ -23,6 +23,7 @@ export function InlineCreateCard({ tasks, onSubmit, onCancel, addToast }: Inline
   const [dependencies, setDependencies] = useState<string[]>([]);
   const [showDeps, setShowDeps] = useState(false);
   const [depSearch, setDepSearch] = useState("");
+  const [breakIntoSubtasks, setBreakIntoSubtasks] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -44,13 +45,19 @@ export function InlineCreateCard({ tasks, onSubmit, onCancel, addToast }: Inline
       // relatedTarget is the element receiving focus — if it's inside the card, ignore
       if (e.relatedTarget instanceof Node && card.contains(e.relatedTarget)) return;
       // Only cancel if empty and dropdown is not open
-      if (description.trim() === "" && pendingImages.length === 0 && dependencies.length === 0 && !showDeps) {
+      if (
+        description.trim() === "" &&
+        pendingImages.length === 0 &&
+        dependencies.length === 0 &&
+        !breakIntoSubtasks &&
+        !showDeps
+      ) {
         onCancel();
       }
     };
     card.addEventListener("focusout", handleFocusOut);
     return () => card.removeEventListener("focusout", handleFocusOut);
-  }, [description, pendingImages, dependencies, showDeps, onCancel]);
+  }, [description, pendingImages, dependencies, breakIntoSubtasks, showDeps, onCancel]);
 
   // Clean up object URLs on unmount to prevent memory leaks
   useEffect(() => {
@@ -101,6 +108,7 @@ export function InlineCreateCard({ tasks, onSubmit, onCancel, addToast }: Inline
         description: description.trim(),
         column: "triage",
         dependencies: dependencies.length ? dependencies : undefined,
+        breakIntoSubtasks,
       });
 
       // Upload pending images as attachments
@@ -128,7 +136,7 @@ export function InlineCreateCard({ tasks, onSubmit, onCancel, addToast }: Inline
     } finally {
       setSubmitting(false);
     }
-  }, [description, dependencies, submitting, pendingImages, onSubmit, addToast]);
+  }, [description, dependencies, breakIntoSubtasks, submitting, pendingImages, onSubmit, addToast]);
 
   const handleKeyDown = useCallback(
     async (e: React.KeyboardEvent) => {
@@ -199,6 +207,17 @@ export function InlineCreateCard({ tasks, onSubmit, onCancel, addToast }: Inline
           >
             <Link size={12} style={{ verticalAlign: 'middle' }} />{dependencies.length > 0 ? ` ${dependencies.length} deps` : " Deps"}
           </button>
+          {!submitting && (
+            <label className="inline-create-hint" style={{ display: "inline-flex", alignItems: "center", gap: 6, marginLeft: 8 }}>
+              <input
+                type="checkbox"
+                data-testid="break-into-subtasks-toggle"
+                checked={breakIntoSubtasks}
+                onChange={(e) => setBreakIntoSubtasks(e.target.checked)}
+              />
+              Break into subtasks
+            </label>
+          )}
           {showDeps && (() => {
             const term = depSearch.toLowerCase();
             const filtered = (term

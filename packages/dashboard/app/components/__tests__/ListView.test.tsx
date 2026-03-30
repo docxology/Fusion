@@ -1357,6 +1357,7 @@ describe("ListView Inline Create Card", () => {
       expect(mockOnCreateTask).toHaveBeenCalledWith({
         description: "New task description",
         column: "triage",
+        breakIntoSubtasks: false,
       });
     });
   });

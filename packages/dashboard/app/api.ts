@@ -32,9 +32,16 @@ export async function fetchTaskDetail(id: string): Promise<TaskDetail> {
 }
 
 export function createTask(input: TaskCreateInput): Promise<Task> {
+  const { title, description, column, dependencies, breakIntoSubtasks } = input;
   return api<Task>("/tasks", {
     method: "POST",
-    body: JSON.stringify(input),
+    body: JSON.stringify({
+      title,
+      description,
+      column,
+      dependencies,
+      breakIntoSubtasks,
+    }),
   });
 }
 
