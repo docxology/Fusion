@@ -229,7 +229,6 @@ function AppInner() {
       <TerminalModal
         isOpen={terminalOpen}
         onClose={handleTerminalClose}
-        tasks={inProgressTasks}
       />
       <ToastContainer toasts={toasts} onRemove={removeToast} />
     </>

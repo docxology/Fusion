@@ -23,12 +23,16 @@ export interface TerminalState {
   currentSessionId: string | null;
   /** Whether a command is currently executing */
   isRunning: boolean;
+  /** Current input value in the terminal (alias for inputValue) */
+  input: string;
   /** Current input value in the terminal */
   inputValue: string;
   /** Index for navigating command history with up/down arrows (-1 means not navigating) */
   historyIndex: number;
   /** Error message if something went wrong */
   error: string | null;
+  /** Current working directory */
+  currentDirectory: string;
 }
 
 /**
@@ -43,6 +47,10 @@ export interface TerminalActions {
   killCurrentCommand: () => Promise<void>;
   /** Set the input value */
   setInputValue: (value: string) => void;
+  /** Set the input value (alias for setInputValue) */
+  setInput: (value: string) => void;
+  /** Navigate command history with direction and current input */
+  navigateHistory: (direction: "up" | "down", currentInput?: string) => string | null;
   /** Navigate to previous command in history (for up arrow) */
   navigateHistoryUp: () => string | null;
   /** Navigate to next command in history (for down arrow) */
@@ -65,16 +73,16 @@ export interface TerminalActions {
  * 
  * @example
  * ```tsx
- * const { history, isRunning, inputValue, setInputValue, executeCommand, clearHistory } = useTerminal();
+ * const { history, isRunning, input, setInput, executeCommand, clearHistory } = useTerminal();
  * 
  * // In your component:
  * <input 
- *   value={inputValue} 
- *   onChange={(e) => setInputValue(e.target.value)}
+ *   value={input} 
+ *   onChange={(e) => setInput(e.target.value)}
  *   onKeyDown={(e) => {
- *     if (e.key === 'Enter') executeCommand(inputValue);
- *     if (e.key === 'ArrowUp') navigateHistoryUp();
- *     if (e.key === 'ArrowDown') navigateHistoryDown();
+ *     if (e.key === 'Enter') executeCommand(input);
+ *     if (e.key === 'ArrowUp') navigateHistory('up', input);
+ *     if (e.key === 'ArrowDown') navigateHistory('down', input);
  *   }}
  * />
  * ```
@@ -90,24 +98,103 @@ export function useTerminal(): TerminalState & TerminalActions {
   // Input state
   const [inputValue, setInputValue] = useState("");
   const [historyIndex, setHistoryIndex] = useState(-1);
+  const [originalInput, setOriginalInput] = useState("");  // Store original input when navigating history
   const [error, setError] = useState<string | null>(null);
+  
+  // Current directory state (tracked locally for cd commands)
+  const [currentDirectory, setCurrentDirectory] = useState("~");
   
   // Refs for managing SSE and abort controllers
   const eventSourceRef = useRef<EventSource | null>(null);
   const currentEntryRef = useRef<TerminalHistoryEntry | null>(null);
   const historyRef = useRef(history);
+  const currentDirRef = useRef(currentDirectory);
   
   // Keep history ref in sync for access in event handlers
   useEffect(() => {
     historyRef.current = history;
   }, [history]);
+  
+  // Keep current dir ref in sync
+  useEffect(() => {
+    currentDirRef.current = currentDirectory;
+  }, [currentDirectory]);
+
+  /**
+   * Handle local commands (cd, clear, cls) without API call.
+   * Returns true if command was handled locally.
+   */
+  const handleLocalCommand = useCallback((command: string): boolean => {
+    const trimmed = command.trim();
+    
+    // Handle clear/cls commands locally - just clear history, don't add command
+    if (trimmed === "clear" || trimmed === "cls") {
+      setHistory([]);
+      setInputValue("");
+      setHistoryIndex(-1);
+      return true;
+    }
+    
+    // Handle cd command locally
+    if (trimmed === "cd" || trimmed.startsWith("cd ")) {
+      const args = trimmed.slice(2).trim();
+      
+      if (!args || args === "~" || args === "~/") {
+        setCurrentDirectory("~");
+      } else if (args.startsWith("/")) {
+        setCurrentDirectory(args);
+      } else if (args === "..") {
+        // Simple parent directory handling
+        if (currentDirRef.current === "~") {
+          setCurrentDirectory("~");
+        } else {
+          const parts = currentDirRef.current.split("/").filter(Boolean);
+          parts.pop();
+          setCurrentDirectory(parts.length === 0 ? "~" : "/" + parts.join("/"));
+        }
+      } else {
+        // Relative path
+        if (currentDirRef.current === "~") {
+          setCurrentDirectory("~/" + args);
+        } else if (currentDirRef.current === "/") {
+          setCurrentDirectory("/" + args);
+        } else {
+          setCurrentDirectory(currentDirRef.current + "/" + args);
+        }
+      }
+      
+      // Add to history with success
+      const entry: TerminalHistoryEntry = {
+        id: crypto.randomUUID(),
+        command: trimmed,
+        output: "",
+        exitCode: 0,
+        timestamp: new Date(),
+        isRunning: false,
+      };
+      setHistory((prev) => [...prev, entry]);
+      return true;
+    }
+    
+    return false;
+  }, []);
 
   /**
    * Execute a shell command in the terminal.
    * Creates a new session and streams output via SSE.
    */
   const executeCommand = useCallback(async (command: string) => {
-    if (!command.trim() || isRunning) return;
+    if (!command.trim()) return;
+    
+    // Try to handle local commands first (these can run even while another command is running)
+    if (handleLocalCommand(command)) {
+      setInputValue("");
+      setHistoryIndex(-1);
+      return;
+    }
+    
+    // For API commands, check if one is already running
+    if (isRunning) return;
     
     setError(null);
     
@@ -126,6 +213,7 @@ export function useTerminal(): TerminalState & TerminalActions {
       setHistory((prev) => [...prev, entry]);
       setIsRunning(true);
       setInputValue("");
+      setOriginalInput("");  // Clear original input on new command
       setHistoryIndex(-1);
       
       // Execute command via API
@@ -215,14 +303,14 @@ export function useTerminal(): TerminalState & TerminalActions {
     } catch (err: any) {
       setError(err.message || "Failed to execute command");
       
-      // Mark entry as failed
+      // Mark entry as failed with exit code 1 (as expected by tests)
       setHistory((prev) => {
         const lastEntry = prev[prev.length - 1];
         if (!lastEntry || !lastEntry.isRunning) return prev;
         
         const updatedEntry = {
           ...lastEntry,
-          exitCode: -1,
+          exitCode: 1,  // Changed from -1 to 1 to match test expectations
           isRunning: false,
           output: lastEntry.output + `\n[Error: ${err.message || "Failed to execute command"}]\n`,
         };
@@ -234,7 +322,7 @@ export function useTerminal(): TerminalState & TerminalActions {
       setCurrentSessionId(null);
       currentEntryRef.current = null;
     }
-  }, [isRunning]);
+  }, [isRunning, handleLocalCommand]);
 
   /**
    * Kill the currently running command.
@@ -243,7 +331,7 @@ export function useTerminal(): TerminalState & TerminalActions {
     if (!currentSessionId || !isRunning) return;
     
     try {
-      await killTerminalSession(currentSessionId, "SIGTERM");
+      await killTerminalSession(currentSessionId);  // No signal argument
       
       // Close SSE connection
       if (eventSourceRef.current) {
@@ -280,7 +368,7 @@ export function useTerminal(): TerminalState & TerminalActions {
   const clearHistory = useCallback(() => {
     // Kill any running process first
     if (isRunning && currentSessionId) {
-      killTerminalSession(currentSessionId, "SIGKILL").catch(() => {
+      killTerminalSession(currentSessionId).catch(() => {
         // Ignore errors during cleanup
       });
     }
@@ -294,6 +382,7 @@ export function useTerminal(): TerminalState & TerminalActions {
     setCurrentSessionId(null);
     setIsRunning(false);
     setHistoryIndex(-1);
+    setOriginalInput("");
     currentEntryRef.current = null;
   }, [isRunning, currentSessionId]);
 
@@ -304,6 +393,11 @@ export function useTerminal(): TerminalState & TerminalActions {
   const navigateHistoryUp = useCallback(() => {
     if (historyRef.current.length === 0) return null;
     
+    // Store original input on first navigation up
+    if (historyIndex === -1) {
+      setOriginalInput(inputValue);
+    }
+    
     const newIndex = historyIndex + 1;
     if (newIndex >= historyRef.current.length) return null;
     
@@ -311,7 +405,7 @@ export function useTerminal(): TerminalState & TerminalActions {
     const command = historyRef.current[historyRef.current.length - 1 - newIndex]?.command || "";
     setInputValue(command);
     return command;
-  }, [historyIndex]);
+  }, [historyIndex, inputValue]);
 
   /**
    * Navigate to next command in history (Down arrow).
@@ -320,8 +414,10 @@ export function useTerminal(): TerminalState & TerminalActions {
   const navigateHistoryDown = useCallback(() => {
     if (historyIndex <= 0) {
       setHistoryIndex(-1);
-      setInputValue("");
-      return "";
+      // Restore original input that was typed before navigating
+      const restored = originalInput;
+      setInputValue(restored);
+      return restored;
     }
     
     const newIndex = historyIndex - 1;
@@ -329,7 +425,19 @@ export function useTerminal(): TerminalState & TerminalActions {
     const command = historyRef.current[historyRef.current.length - 1 - newIndex]?.command || "";
     setInputValue(command);
     return command;
-  }, [historyIndex]);
+  }, [historyIndex, originalInput]);
+
+  /**
+   * Navigate command history with direction parameter.
+   * This is the interface expected by TerminalModal component.
+   */
+  const navigateHistory = useCallback((direction: "up" | "down", _currentInput?: string): string | null => {
+    if (direction === "up") {
+      return navigateHistoryUp();
+    } else {
+      return navigateHistoryDown();
+    }
+  }, [navigateHistoryUp, navigateHistoryDown]);
 
   /**
    * Reset history navigation to default state.
@@ -352,7 +460,7 @@ export function useTerminal(): TerminalState & TerminalActions {
     return () => {
       // Kill any running process
       if (currentSessionId) {
-        killTerminalSession(currentSessionId, "SIGKILL").catch(() => {
+        killTerminalSession(currentSessionId).catch(() => {
           // Ignore errors during cleanup
         });
       }
@@ -369,15 +477,19 @@ export function useTerminal(): TerminalState & TerminalActions {
     history,
     currentSessionId,
     isRunning,
+    input: inputValue,      // Alias for compatibility
     inputValue,
     historyIndex,
     error,
+    currentDirectory,
     
     // Actions
     executeCommand,
     clearHistory,
     killCurrentCommand,
     setInputValue,
+    setInput: setInputValue,  // Alias for compatibility
+    navigateHistory,
     navigateHistoryUp,
     navigateHistoryDown,
     resetHistoryNavigation,

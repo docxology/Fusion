@@ -65,6 +65,7 @@ kb task list
 kb task show KB-001
 kb task move KB-001 todo
 kb task merge KB-001
+kb task refine KB-001 --feedback "Add more tests"   # Create follow-up refinement task
 kb task import owner/repo                  # Import all open issues (batch mode)
 kb task import owner/repo --interactive    # Interactive issue selection
 kb task import owner/repo --limit 10       # Limit number of issues fetched

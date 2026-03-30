@@ -85,12 +85,11 @@ export function Header({
         <button className="btn-icon" onClick={onOpenGitHubImport} title="Import from GitHub">
           <Download size={16} />
         </button>
-        {/* Terminal button - shows badge with count when in-progress tasks exist */}
+        {/* Terminal button - always enabled */}
         <button
           className={`btn-icon btn-icon--terminal${hasInProgressTasks ? " has-badge" : ""}`}
           onClick={onToggleTerminal}
-          title="Open Terminal View"
-          disabled={!hasInProgressTasks}
+          title="Open Terminal"
           data-testid="terminal-toggle-btn"
         >
           <Terminal size={16} />

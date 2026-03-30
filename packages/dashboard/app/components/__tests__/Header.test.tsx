@@ -252,5 +252,46 @@ describe("Header", () => {
     const btn = screen.getByTitle("Toggle theme (System)");
     expect(btn).toBeDefined();
   });
+
+  // ── Terminal Button ─────────────────────────────────────────────
+  // Terminal button is now always enabled (interactive shell feature)
+
+  it("renders terminal button with correct title", () => {
+    const onToggle = vi.fn();
+    render(<Header onToggleTerminal={onToggle} inProgressCount={0} />);
+    const btn = screen.getByTitle("Open Terminal");
+    expect(btn).toBeDefined();
+  });
+
+  it("calls onToggleTerminal when terminal button is clicked", () => {
+    const onToggle = vi.fn();
+    render(<Header onToggleTerminal={onToggle} inProgressCount={1} />);
+    const btn = screen.getByTitle("Open Terminal");
+    fireEvent.click(btn);
+    expect(onToggle).toHaveBeenCalledOnce();
+  });
+
+  it("is enabled regardless of in-progress task count", () => {
+    // Terminal is now always accessible as an interactive shell
+    const { rerender } = render(<Header onToggleTerminal={vi.fn()} inProgressCount={0} />);
+    let btn = screen.getByTitle("Open Terminal");
+    expect((btn as HTMLButtonElement).disabled).toBe(false);
+
+    rerender(<Header onToggleTerminal={vi.fn()} inProgressCount={3} />);
+    btn = screen.getByTitle("Open Terminal");
+    expect((btn as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("shows badge when in-progress tasks exist", () => {
+    render(<Header onToggleTerminal={vi.fn()} inProgressCount={3} />);
+    const badge = screen.getByTestId("terminal-badge");
+    expect(badge.textContent).toBe("3");
+  });
+
+  it("does not show badge when no in-progress tasks", () => {
+    render(<Header onToggleTerminal={vi.fn()} inProgressCount={0} />);
+    const badge = screen.queryByTestId("terminal-badge");
+    expect(badge).toBeNull();
+  });
 });
 

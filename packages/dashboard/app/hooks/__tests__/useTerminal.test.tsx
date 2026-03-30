@@ -16,13 +16,66 @@ class MockEventSource {
   onerror: (() => void) | null = null;
   onopen: (() => void) | null = null;
   url: string;
+  private listeners: Map<string, Array<(event: MessageEvent) => void>> = new Map();
 
   constructor(url: string) {
     this.url = url;
     // Simulate connection opening
     setTimeout(() => {
       if (this.onopen) this.onopen();
+      // Also emit as event listener
+      this.emit("connected", {});
     }, 0);
+  }
+
+  addEventListener(type: string, handler: (event: MessageEvent) => void) {
+    if (!this.listeners.has(type)) {
+      this.listeners.set(type, []);
+    }
+    this.listeners.get(type)!.push(handler);
+  }
+
+  removeEventListener(type: string, handler: (event: MessageEvent) => void) {
+    const handlers = this.listeners.get(type);
+    if (handlers) {
+      const index = handlers.indexOf(handler);
+      if (index > -1) {
+        handlers.splice(index, 1);
+      }
+    }
+  }
+
+  private emit(type: string, data: unknown) {
+    const handlers = this.listeners.get(type);
+    if (handlers) {
+      const event = {
+        type,
+        data: typeof data === "string" ? data : JSON.stringify(data),
+        lastEventId: "",
+        origin: "",
+        ports: [],
+        source: null,
+        bubbles: false,
+        cancelable: false,
+        composed: false,
+        initEvent: () => {},
+        preventDefault: () => {},
+        stopImmediatePropagation: () => {},
+        stopPropagation: () => {},
+        currentTarget: null,
+        target: null,
+        timeStamp: Date.now(),
+        eventPhase: 0,
+        isTrusted: true,
+        returnValue: true,
+        srcElement: null,
+        nativeEvent: undefined,
+        isDefaultPrevented: () => false,
+        isPropagationStopped: () => false,
+        persist: () => {},
+      } as unknown as MessageEvent;
+      handlers.forEach(h => h(event));
+    }
   }
 
   close() {
@@ -60,10 +113,46 @@ class MockEventSource {
     } as unknown as MessageEvent;
 
     if (this.onmessage) this.onmessage(event);
+    
+    // Also emit to registered listeners
+    const handlers = this.listeners.get(eventType);
+    if (handlers) {
+      handlers.forEach(h => h(event));
+    }
   }
 
   simulateError() {
     if (this.onerror) this.onerror();
+    const handlers = this.listeners.get("error");
+    if (handlers) {
+      const event = {
+        type: "error",
+        data: "",
+        lastEventId: "",
+        origin: "",
+        ports: [],
+        source: null,
+        bubbles: false,
+        cancelable: false,
+        composed: false,
+        initEvent: () => {},
+        preventDefault: () => {},
+        stopImmediatePropagation: () => {},
+        stopPropagation: () => {},
+        currentTarget: null,
+        target: null,
+        timeStamp: Date.now(),
+        eventPhase: 0,
+        isTrusted: true,
+        returnValue: true,
+        srcElement: null,
+        nativeEvent: undefined,
+        isDefaultPrevented: () => false,
+        isPropagationStopped: () => false,
+        persist: () => {},
+      } as unknown as MessageEvent;
+      handlers.forEach(h => h(event));
+    }
   }
 }
 

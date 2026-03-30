@@ -100,13 +100,13 @@ describe("Header", () => {
   describe("terminal button", () => {
     it("renders terminal button with correct title", () => {
       renderHeader({ onToggleTerminal: noop });
-      expect(screen.getByTitle("Open Terminal View")).toBeDefined();
+      expect(screen.getByTitle("Open Terminal")).toBeDefined();
     });
 
     it("calls onToggleTerminal when terminal button is clicked", () => {
       const onToggleTerminal = vi.fn();
       renderHeader({ onToggleTerminal, inProgressCount: 1 });
-      fireEvent.click(screen.getByTitle("Open Terminal View"));
+      fireEvent.click(screen.getByTitle("Open Terminal"));
       expect(onToggleTerminal).toHaveBeenCalled();
     });
 
@@ -127,15 +127,23 @@ describe("Header", () => {
       expect(screen.queryByTestId("terminal-badge")).toBeNull();
     });
 
-    it("is disabled when no in-progress tasks", () => {
-      renderHeader({ onToggleTerminal: noop, inProgressCount: 0 });
-      const btn = screen.getByTitle("Open Terminal View");
-      expect(btn.hasAttribute("disabled")).toBe(true);
-    });
+    it("is always enabled (interactive shell feature)", () => {
+      // Terminal is now always accessible regardless of task state
+      const { rerender } = renderHeader({ onToggleTerminal: noop, inProgressCount: 0 });
+      let btn = screen.getByTitle("Open Terminal");
+      expect(btn.hasAttribute("disabled")).toBe(false);
 
-    it("is enabled when in-progress tasks exist", () => {
-      renderHeader({ onToggleTerminal: noop, inProgressCount: 2 });
-      const btn = screen.getByTitle("Open Terminal View");
+      rerender(<Header
+        onOpenSettings={noop}
+        onOpenGitHubImport={noop}
+        globalPaused={false}
+        enginePaused={false}
+        onToggleGlobalPause={noop}
+        onToggleEnginePause={noop}
+        onToggleTerminal={noop}
+        inProgressCount={2}
+      />);
+      btn = screen.getByTitle("Open Terminal");
       expect(btn.hasAttribute("disabled")).toBe(false);
     });
   });

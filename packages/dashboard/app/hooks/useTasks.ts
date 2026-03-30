@@ -2,6 +2,17 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import type { Task, Column, TaskCreateInput, MergeResult } from "@kb/core";
 import * as api from "../api";
 
+function normalizeTask(task: Task): Task {
+  return {
+    ...task,
+    dependencies: Array.isArray(task.dependencies) ? task.dependencies : [],
+    steps: Array.isArray(task.steps) ? task.steps : [],
+    log: Array.isArray((task as Task & { log?: unknown }).log)
+      ? (task as Task & { log?: Task["log"] }).log!
+      : [],
+  };
+}
+
 /**
  * Compare two ISO timestamp strings.
  * Returns positive if a is newer than b, negative if b is newer, 0 if equal.
@@ -20,7 +31,7 @@ export function useTasks() {
 
   // Fetch initial tasks
   useEffect(() => {
-    api.fetchTasks().then(setTasks).catch(() => setTasks([]));
+    api.fetchTasks().then((tasks) => setTasks(tasks.map(normalizeTask))).catch(() => setTasks([]));
   }, []);
 
   // SSE live updates
@@ -28,7 +39,7 @@ export function useTasks() {
     const es = new EventSource("/api/events");
 
     es.addEventListener("task:created", (e) => {
-      const task: Task = JSON.parse(e.data);
+      const task = normalizeTask(JSON.parse(e.data) as Task);
       setTasks((prev) => [...prev, task]);
     });
 
@@ -36,15 +47,16 @@ export function useTasks() {
       // Payload: { task, from, to } - task object includes server-set columnMovedAt
       // We use 'to' as the authoritative column and trust the server's columnMovedAt
       const { task, to }: { task: Task; from: Column; to: Column } = JSON.parse(e.data);
+      const normalizedTask = normalizeTask(task);
       setTasks((prev) =>
         prev.map((t) =>
-          t.id === task.id ? { ...task, column: to } : t
+          t.id === normalizedTask.id ? { ...normalizedTask, column: to } : t
         )
       );
     });
 
     es.addEventListener("task:updated", (e) => {
-      const incoming: Task = JSON.parse(e.data);
+      const incoming = normalizeTask(JSON.parse(e.data) as Task);
       setTasks((prev) =>
         prev.map((t) => {
           if (t.id !== incoming.id) return t;
@@ -71,7 +83,7 @@ export function useTasks() {
     });
 
     es.addEventListener("task:deleted", (e) => {
-      const task: Task = JSON.parse(e.data);
+      const task = normalizeTask(JSON.parse(e.data) as Task);
       setTasks((prev) => prev.filter((t) => t.id !== task.id));
     });
 
@@ -79,10 +91,11 @@ export function useTasks() {
       // Payload: { task, branch, merged, worktreeRemoved, branchDeleted, ... }
       // The task object has already been moved to 'done' by the server
       const { task }: { task: Task } = JSON.parse(e.data);
+      const normalizedTask = normalizeTask(task);
       setTasks((prev) =>
         prev.map((t) =>
           // Ensure column is 'done' since that's where merged tasks always go
-          t.id === task.id ? { ...task, column: "done" as Column } : t
+          t.id === normalizedTask.id ? { ...normalizedTask, column: "done" as Column } : t
         )
       );
     });
@@ -99,15 +112,15 @@ export function useTasks() {
   }, []);
 
   const createTask = useCallback(async (input: TaskCreateInput): Promise<Task> => {
-    return api.createTask(input);
+    return normalizeTask(await api.createTask(input));
   }, []);
 
   const moveTask = useCallback(async (id: string, column: Column): Promise<Task> => {
-    return api.moveTask(id, column);
+    return normalizeTask(await api.moveTask(id, column));
   }, []);
 
   const deleteTask = useCallback(async (id: string): Promise<Task> => {
-    return api.deleteTask(id);
+    return normalizeTask(await api.deleteTask(id));
   }, []);
 
   const mergeTask = useCallback(async (id: string): Promise<MergeResult> => {
@@ -115,11 +128,11 @@ export function useTasks() {
   }, []);
 
   const retryTask = useCallback(async (id: string): Promise<Task> => {
-    return api.retryTask(id);
+    return normalizeTask(await api.retryTask(id));
   }, []);
 
   const duplicateTask = useCallback(async (id: string): Promise<Task> => {
-    return api.duplicateTask(id);
+    return normalizeTask(await api.duplicateTask(id));
   }, []);
 
   const updateTask = useCallback(async (
@@ -139,7 +152,7 @@ export function useTasks() {
     }
 
     try {
-      const updatedTask = await api.updateTask(id, updates);
+      const updatedTask = normalizeTask(await api.updateTask(id, updates));
       // Replace with server response
       setTasks((prev) =>
         prev.map((t) => (t.id === id ? updatedTask : t))
@@ -157,7 +170,7 @@ export function useTasks() {
   }, []);
 
   const archiveTask = useCallback(async (id: string): Promise<Task> => {
-    const task = await api.archiveTask(id);
+    const task = normalizeTask(await api.archiveTask(id));
     setTasks((prev) =>
       prev.map((t) => (t.id === id ? task : t))
     );
@@ -165,7 +178,7 @@ export function useTasks() {
   }, []);
 
   const unarchiveTask = useCallback(async (id: string): Promise<Task> => {
-    const task = await api.unarchiveTask(id);
+    const task = normalizeTask(await api.unarchiveTask(id));
     setTasks((prev) =>
       prev.map((t) => (t.id === id ? task : t))
     );
