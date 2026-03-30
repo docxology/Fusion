@@ -26,6 +26,21 @@ describe("Header", () => {
     expect(btn).toBeDefined();
   });
 
+  it("renders the import button", () => {
+    const onOpen = vi.fn();
+    render(<Header onOpenGitHubImport={onOpen} />);
+    const btn = screen.getByTitle("Import from GitHub");
+    expect(btn).toBeDefined();
+  });
+
+  it("calls onOpenGitHubImport when import button is clicked", () => {
+    const onOpen = vi.fn();
+    render(<Header onOpenGitHubImport={onOpen} />);
+    const btn = screen.getByTitle("Import from GitHub");
+    fireEvent.click(btn);
+    expect(onOpen).toHaveBeenCalledOnce();
+  });
+
   // ── Pause button (soft pause) ────────────────────────────────────
 
   it("renders pause button with 'Pause scheduling' title when not paused", () => {

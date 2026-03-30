@@ -1642,3 +1642,150 @@ body {
     gap: 8px;
   }
 }
+
+/* === GitHub Import Modal === */
+.form-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.form-row .form-group {
+  flex: 1;
+  min-width: 0;
+}
+
+.form-row .form-group--action {
+  flex: 0 0 auto;
+}
+
+.form-row .btn {
+  height: 32px;
+}
+
+.form-error {
+  margin: 12px 0;
+  padding: 8px 12px;
+  background: rgba(248, 81, 73, 0.1);
+  border: 1px solid var(--color-error);
+  border-radius: var(--radius);
+  color: var(--color-error);
+  font-size: 13px;
+}
+
+.issues-list {
+  margin-top: 16px;
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.issues-list h4 {
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.issue-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.issue-item:last-child {
+  border-bottom: none;
+}
+
+.issue-item:hover:not(.imported) {
+  background: var(--card-hover);
+}
+
+.issue-item.selected {
+  background: rgba(88, 166, 255, 0.1);
+}
+
+.issue-item.imported {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.issue-number {
+  font-size: 12px;
+  color: var(--text-muted);
+  min-width: 40px;
+}
+
+.issue-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.issue-labels {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.label-chip {
+  padding: 2px 6px;
+  font-size: 11px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--text-muted);
+}
+
+.imported-badge {
+  padding: 2px 8px;
+  font-size: 11px;
+  background: rgba(63, 185, 80, 0.2);
+  border: 1px solid var(--color-success);
+  border-radius: 12px;
+  color: var(--color-success);
+}
+
+.issue-preview {
+  margin-top: 16px;
+  padding: 12px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.issue-preview h4 {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.preview-title {
+  font-weight: 500;
+  margin-bottom: 8px;
+}
+
+.preview-body {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}

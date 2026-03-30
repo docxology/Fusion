@@ -1,7 +1,8 @@
-import { Settings, Pause, Play, Square } from "lucide-react";
+import { Settings, Pause, Play, Square, Download } from "lucide-react";
 
 interface HeaderProps {
   onOpenSettings?: () => void;
+  onOpenGitHubImport?: () => void;
   globalPaused?: boolean;
   enginePaused?: boolean;
   onToggleGlobalPause?: () => void;
@@ -10,6 +11,7 @@ interface HeaderProps {
 
 export function Header({
   onOpenSettings,
+  onOpenGitHubImport,
   globalPaused,
   enginePaused,
   onToggleGlobalPause,
@@ -23,6 +25,10 @@ export function Header({
         <span className="logo-sub">board</span>
       </div>
       <div className="header-actions">
+        {/* Import from GitHub */}
+        <button className="btn-icon" onClick={onOpenGitHubImport} title="Import from GitHub">
+          <Download size={16} />
+        </button>
         {/* Pause button (soft pause): stops new work, lets agents finish */}
         <button
           className={`btn-icon${enginePaused ? " btn-icon--paused" : ""}`}

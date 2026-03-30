@@ -151,3 +151,35 @@ export function logoutProvider(provider: string): Promise<{ success: boolean }> 
     body: JSON.stringify({ provider }),
   });
 }
+
+// --- GitHub Import API ---
+
+/** GitHub issue returned by the fetch endpoint */
+export interface GitHubIssue {
+  number: number;
+  title: string;
+  body: string | null;
+  html_url: string;
+  labels: Array<{ name: string }>;
+}
+
+/** Fetch open GitHub issues from a repository */
+export function apiFetchGitHubIssues(
+  owner: string,
+  repo: string,
+  limit?: number,
+  labels?: string[]
+): Promise<GitHubIssue[]> {
+  return api<GitHubIssue[]>("/github/issues/fetch", {
+    method: "POST",
+    body: JSON.stringify({ owner, repo, limit, labels }),
+  });
+}
+
+/** Import a specific GitHub issue as a kb task */
+export function apiImportGitHubIssue(owner: string, repo: string, issueNumber: number): Promise<Task> {
+  return api<Task>("/github/issues/import", {
+    method: "POST",
+    body: JSON.stringify({ owner, repo, issueNumber }),
+  });
+}

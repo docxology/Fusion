@@ -285,6 +285,202 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
     }
   });
 
+  // ── GitHub Import Routes ──────────────────────────────────────────
+
+  /**
+   * POST /api/github/issues/fetch
+   * Fetch open issues from a GitHub repository.
+   * Body: { owner: string, repo: string, limit?: number, labels?: string[] }
+   * Returns: Array of GitHubIssue objects (filtered, no PRs)
+   */
+  router.post("/github/issues/fetch", async (req, res) => {
+    try {
+      const { owner, repo, limit = 30, labels } = req.body;
+
+      if (!owner || typeof owner !== "string") {
+        res.status(400).json({ error: "owner is required" });
+        return;
+      }
+      if (!repo || typeof repo !== "string") {
+        res.status(400).json({ error: "repo is required" });
+        return;
+      }
+
+      const token = process.env.GITHUB_TOKEN;
+
+      // Build query parameters - only open issues, no PRs
+      const params = new URLSearchParams();
+      params.append("state", "open");
+      params.append("per_page", String(Math.min(limit, 100)));
+      if (labels && labels.length > 0) {
+        params.append("labels", labels.join(","));
+      }
+
+      const url = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues?${params}`;
+
+      const headers: Record<string, string> = {
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "kb-dashboard/1.0",
+      };
+
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+      try {
+        const response = await fetch(url, {
+          headers,
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          if (response.status === 404) {
+            res.status(404).json({ error: `Repository not found: ${owner}/${repo}` });
+            return;
+          }
+          if (response.status === 401 || response.status === 403) {
+            res.status(token ? 403 : 401).json({
+              error: `Authentication failed. ${token ? "Check your GITHUB_TOKEN." : "Set GITHUB_TOKEN env var."}`,
+            });
+            return;
+          }
+          res.status(502).json({ error: `GitHub API error: ${response.status} ${response.statusText}` });
+          return;
+        }
+
+        // Filter out pull requests (they have a pull_request property)
+        const issues = (await response.json()) as Array<{
+          number: number;
+          title: string;
+          body: string | null;
+          html_url: string;
+          labels: Array<{ name: string }>;
+          pull_request?: unknown;
+        }>;
+        const filteredIssues = issues.filter((issue) => !issue.pull_request).slice(0, limit);
+
+        res.json(filteredIssues);
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  /**
+   * POST /api/github/issues/import
+   * Import a specific GitHub issue as a kb task.
+   * Body: { owner: string, repo: string, issueNumber: number }
+   * Returns: Created Task object
+   */
+  router.post("/github/issues/import", async (req, res) => {
+    try {
+      const { owner, repo, issueNumber } = req.body;
+
+      if (!owner || typeof owner !== "string") {
+        res.status(400).json({ error: "owner is required" });
+        return;
+      }
+      if (!repo || typeof repo !== "string") {
+        res.status(400).json({ error: "repo is required" });
+        return;
+      }
+      if (!issueNumber || typeof issueNumber !== "number" || issueNumber < 1) {
+        res.status(400).json({ error: "issueNumber is required and must be a positive number" });
+        return;
+      }
+
+      const token = process.env.GITHUB_TOKEN;
+
+      // Fetch the specific issue
+      const url = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${issueNumber}`;
+
+      const headers: Record<string, string> = {
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "kb-dashboard/1.0",
+      };
+
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+      let issue: { number: number; title: string; body: string | null; html_url: string; pull_request?: unknown };
+
+      try {
+        const response = await fetch(url, {
+          headers,
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          if (response.status === 404) {
+            res.status(404).json({ error: `Issue #${issueNumber} not found in ${owner}/${repo}` });
+            return;
+          }
+          if (response.status === 401 || response.status === 403) {
+            res.status(token ? 403 : 401).json({
+              error: `Authentication failed. ${token ? "Check your GITHUB_TOKEN." : "Set GITHUB_TOKEN env var."}`,
+            });
+            return;
+          }
+          res.status(502).json({ error: `GitHub API error: ${response.status} ${response.statusText}` });
+          return;
+        }
+
+        issue = await response.json() as typeof issue;
+
+        // Check if it's a pull request
+        if (issue.pull_request) {
+          res.status(400).json({ error: `#${issueNumber} is a pull request, not an issue` });
+          return;
+        }
+      } finally {
+        clearTimeout(timeoutId);
+      }
+
+      // Check if already imported
+      const existingTasks = await store.listTasks();
+      const sourceUrl = issue.html_url;
+      for (const existingTask of existingTasks) {
+        if (existingTask.description.includes(sourceUrl)) {
+          res.status(409).json({
+            error: `Issue #${issueNumber} already imported as ${existingTask.id}`,
+            existingTaskId: existingTask.id,
+          });
+          return;
+        }
+      }
+
+      // Create the task
+      const title = issue.title.slice(0, 200);
+      const body = issue.body?.trim() || "(no description)";
+      const description = `${body}\n\nSource: ${sourceUrl}`;
+
+      const task = await store.createTask({
+        title: title || undefined,
+        description,
+        column: "triage",
+        dependencies: [],
+      });
+
+      // Log the import action
+      await store.logEntry(task.id, "Imported from GitHub", sourceUrl);
+
+      res.status(201).json(task);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // ---------- Auth routes ----------
   registerAuthRoutes(router, options?.authStorage);
 

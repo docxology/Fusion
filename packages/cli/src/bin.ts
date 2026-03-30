@@ -64,6 +64,7 @@ Options:
   --depends <id>             Declare dependency on task create (repeatable)
   --limit, -l <n>            Max issues to import (default: 30, max: 100)
   --labels, -L <labels>      Comma-separated label filter for import
+  --interactive, -i          Interactive mode for issue selection
   --help, -h                 Show this help
 
 Columns: triage, todo, in-progress, in-review, done
@@ -187,6 +188,7 @@ async function main() {
               console.error("Usage: kb task import <owner/repo> [options]");
               console.error("Options: --limit <n>, -l <n>  (default: 30, max: 100)");
               console.error("         --labels <labels>, -L <labels>  (comma-separated)");
+              console.error("         --interactive, -i  (interactive mode)");
               process.exit(1);
             }
 
@@ -210,7 +212,15 @@ async function main() {
               labels = args[labi + 1].split(",").map(l => l.trim()).filter(Boolean);
             }
 
-            await runTaskImportFromGitHub(ownerRepo, { limit, labels });
+            // Check for interactive mode
+            const interactive = args.includes("--interactive") || args.includes("-i");
+
+            if (interactive) {
+              const { runTaskImportGitHubInteractive } = await import("./commands/task.js");
+              await runTaskImportGitHubInteractive(ownerRepo, { limit, labels });
+            } else {
+              await runTaskImportFromGitHub(ownerRepo, { limit, labels });
+            }
             break;
           }
           default:

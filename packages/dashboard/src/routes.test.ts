@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import express from "express";
 import http from "node:http";
 import { createApiRoutes } from "./routes.js";
@@ -654,5 +654,300 @@ describe("Pause/Unpause endpoints", () => {
     const res = await REQUEST(buildApp(), "POST", "/api/tasks/KB-001/pause");
     expect(res.status).toBe(500);
     expect(res.body.error).toBe("not found");
+  });
+});
+
+// --- GitHub Import route tests ---
+
+describe("POST /github/issues/fetch", () => {
+  let store: TaskStore;
+  let fetchSpy: ReturnType<typeof vi.fn>;
+  const originalFetch = globalThis.fetch;
+
+  beforeEach(() => {
+    store = createMockStore();
+    fetchSpy = vi.fn();
+    globalThis.fetch = fetchSpy as any;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    vi.restoreAllMocks();
+  });
+
+  function buildApp() {
+    const app = express();
+    app.use(express.json());
+    app.use("/api", createApiRoutes(store));
+    return app;
+  }
+
+  const mockGitHubIssue = {
+    number: 1,
+    title: "Test Issue",
+    body: "Test body",
+    html_url: "https://github.com/owner/repo/issues/1",
+    labels: [{ name: "bug" }],
+  };
+
+  it("fetches issues successfully", async () => {
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve([mockGitHubIssue]),
+    } as Response);
+
+    const res = await REQUEST(buildApp(), "POST", "/api/github/issues/fetch", JSON.stringify({ owner: "owner", repo: "repo" }), {
+      "Content-Type": "application/json",
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0].number).toBe(1);
+    expect(res.body[0].title).toBe("Test Issue");
+  });
+
+  it("returns 400 when owner is missing", async () => {
+    const res = await REQUEST(buildApp(), "POST", "/api/github/issues/fetch", JSON.stringify({ repo: "repo" }), {
+      "Content-Type": "application/json",
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("owner is required");
+  });
+
+  it("returns 400 when repo is missing", async () => {
+    const res = await REQUEST(buildApp(), "POST", "/api/github/issues/fetch", JSON.stringify({ owner: "owner" }), {
+      "Content-Type": "application/json",
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("repo is required");
+  });
+
+  it("returns 404 when repository not found", async () => {
+    fetchSpy.mockResolvedValueOnce({
+      ok: false,
+      status: 404,
+      statusText: "Not Found",
+    } as Response);
+
+    const res = await REQUEST(buildApp(), "POST", "/api/github/issues/fetch", JSON.stringify({ owner: "owner", repo: "repo" }), {
+      "Content-Type": "application/json",
+    });
+
+    expect(res.status).toBe(404);
+    expect(res.body.error).toContain("Repository not found");
+  });
+
+  it("returns 401/403 when authentication fails", async () => {
+    fetchSpy.mockResolvedValueOnce({
+      ok: false,
+      status: 403,
+      statusText: "Forbidden",
+    } as Response);
+
+    const res = await REQUEST(buildApp(), "POST", "/api/github/issues/fetch", JSON.stringify({ owner: "owner", repo: "repo" }), {
+      "Content-Type": "application/json",
+    });
+
+    expect(res.status).toBe(401);
+    expect(res.body.error).toContain("Authentication failed");
+  });
+
+  it("filters out pull requests", async () => {
+    const pr = { ...mockGitHubIssue, pull_request: {} };
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve([mockGitHubIssue, pr]),
+    } as Response);
+
+    const res = await REQUEST(buildApp(), "POST", "/api/github/issues/fetch", JSON.stringify({ owner: "owner", repo: "repo" }), {
+      "Content-Type": "application/json",
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0].number).toBe(1);
+  });
+
+  it("respects limit parameter", async () => {
+    const manyIssues = Array.from({ length: 50 }, (_, i) => ({ ...mockGitHubIssue, number: i + 1 }));
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve(manyIssues),
+    } as Response);
+
+    const res = await REQUEST(buildApp(), "POST", "/api/github/issues/fetch", JSON.stringify({ owner: "owner", repo: "repo", limit: 10 }), {
+      "Content-Type": "application/json",
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(10);
+  });
+});
+
+describe("POST /github/issues/import", () => {
+  let store: TaskStore;
+  let fetchSpy: ReturnType<typeof vi.fn>;
+  const originalFetch = globalThis.fetch;
+
+  beforeEach(() => {
+    fetchSpy = vi.fn();
+    globalThis.fetch = fetchSpy as any;
+
+    store = createMockStore({
+      createTask: vi.fn().mockResolvedValue({
+        id: "KB-001",
+        title: "Test Issue",
+        description: "Test body\n\nSource: https://github.com/owner/repo/issues/1",
+        column: "triage",
+      }),
+      logEntry: vi.fn().mockResolvedValue(undefined),
+    });
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    vi.restoreAllMocks();
+  });
+
+  function buildApp() {
+    const app = express();
+    app.use(express.json());
+    app.use("/api", createApiRoutes(store));
+    return app;
+  }
+
+  const mockGitHubIssue = {
+    number: 1,
+    title: "Test Issue",
+    body: "Test body",
+    html_url: "https://github.com/owner/repo/issues/1",
+    labels: [{ name: "bug" }],
+  };
+
+  it("imports a single issue successfully", async () => {
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve(mockGitHubIssue),
+    } as Response);
+
+    const res = await REQUEST(buildApp(), "POST", "/api/github/issues/import", JSON.stringify({ owner: "owner", repo: "repo", issueNumber: 1 }), {
+      "Content-Type": "application/json",
+    });
+
+    expect(res.status).toBe(201);
+    expect(res.body.id).toBe("KB-001");
+    expect(store.createTask).toHaveBeenCalledWith({
+      title: "Test Issue",
+      description: "Test body\n\nSource: https://github.com/owner/repo/issues/1",
+      column: "triage",
+      dependencies: [],
+    });
+  });
+
+  it("logs the import action", async () => {
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve(mockGitHubIssue),
+    } as Response);
+
+    await REQUEST(buildApp(), "POST", "/api/github/issues/import", JSON.stringify({ owner: "owner", repo: "repo", issueNumber: 1 }), {
+      "Content-Type": "application/json",
+    });
+
+    expect(store.logEntry).toHaveBeenCalledWith("KB-001", "Imported from GitHub", "https://github.com/owner/repo/issues/1");
+  });
+
+  it("returns 400 when issueNumber is missing", async () => {
+    const res = await REQUEST(buildApp(), "POST", "/api/github/issues/import", JSON.stringify({ owner: "owner", repo: "repo" }), {
+      "Content-Type": "application/json",
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("issueNumber is required");
+  });
+
+  it("returns 404 when issue not found", async () => {
+    fetchSpy.mockResolvedValueOnce({
+      ok: false,
+      status: 404,
+      statusText: "Not Found",
+    } as Response);
+
+    const res = await REQUEST(buildApp(), "POST", "/api/github/issues/import", JSON.stringify({ owner: "owner", repo: "repo", issueNumber: 999 }), {
+      "Content-Type": "application/json",
+    });
+
+    expect(res.status).toBe(404);
+    expect(res.body.error).toContain("not found");
+  });
+
+  it("returns 400 when importing a pull request", async () => {
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ ...mockGitHubIssue, pull_request: {} }),
+    } as Response);
+
+    const res = await REQUEST(buildApp(), "POST", "/api/github/issues/import", JSON.stringify({ owner: "owner", repo: "repo", issueNumber: 1 }), {
+      "Content-Type": "application/json",
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("pull request");
+  });
+
+  it("returns 409 when issue already imported", async () => {
+    (store.listTasks as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+      {
+        id: "KB-002",
+        description: "Existing\n\nSource: https://github.com/owner/repo/issues/1",
+        column: "triage",
+      },
+    ]);
+
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve(mockGitHubIssue),
+    } as Response);
+
+    const res = await REQUEST(buildApp(), "POST", "/api/github/issues/import", JSON.stringify({ owner: "owner", repo: "repo", issueNumber: 1 }), {
+      "Content-Type": "application/json",
+    });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toContain("already imported");
+    expect(res.body.existingTaskId).toBe("KB-002");
+    expect(store.createTask).not.toHaveBeenCalled();
+  });
+
+  it("truncates long titles to 200 chars", async () => {
+    const longTitleIssue = {
+      ...mockGitHubIssue,
+      title: "A".repeat(250),
+    };
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve(longTitleIssue),
+    } as Response);
+
+    await REQUEST(buildApp(), "POST", "/api/github/issues/import", JSON.stringify({ owner: "owner", repo: "repo", issueNumber: 1 }), {
+      "Content-Type": "application/json",
+    });
+
+    expect(store.createTask).toHaveBeenCalledWith({
+      title: "A".repeat(200),
+      description: expect.stringContaining("Source:"),
+      column: "triage",
+      dependencies: [],
+    });
   });
 });

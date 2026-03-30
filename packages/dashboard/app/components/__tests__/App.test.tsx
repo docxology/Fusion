@@ -261,3 +261,41 @@ describe("App engine pause (soft pause)", () => {
     expect(updateSettings).toHaveBeenCalledWith({ enginePaused: true });
   });
 });
+
+describe("App GitHub import", () => {
+  it("opens GitHub import modal when import button is clicked", async () => {
+    render(<App />);
+
+    // Wait for the header to render
+    await waitFor(() => {
+      expect(screen.getByTitle("Import from GitHub")).toBeTruthy();
+    });
+
+    // Click the import button
+    fireEvent.click(screen.getByTitle("Import from GitHub"));
+
+    // Modal should be visible
+    expect(screen.getByText("Import from GitHub")).toBeTruthy();
+  });
+
+  it("closes GitHub import modal on cancel", async () => {
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByTitle("Import from GitHub")).toBeTruthy();
+    });
+
+    // Open the modal
+    fireEvent.click(screen.getByTitle("Import from GitHub"));
+    expect(screen.getByText("Import from GitHub")).toBeTruthy();
+
+    // Close the modal - use getAllByRole since there might be multiple buttons
+    const cancelButtons = screen.getAllByRole("button", { name: /Cancel/i });
+    fireEvent.click(cancelButtons[cancelButtons.length - 1]);
+
+    // Modal should be closed - the Load button from the modal should be gone
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: /^Load$/i })).toBeNull();
+    });
+  });
+});

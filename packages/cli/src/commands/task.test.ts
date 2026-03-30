@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
+// Mock node:readline/promises before importing the module under test
+vi.mock("node:readline/promises", () => ({
+  createInterface: vi.fn(),
+}));
+
 // Mock @kb/core before importing the module under test
 vi.mock("@kb/core", () => {
   const COLUMNS = ["triage", "specified", "in-progress", "review", "done"];
@@ -21,6 +26,7 @@ vi.mock("@kb/core", () => {
 // Mock @kb/engine
 vi.mock("@kb/engine", () => ({ aiMergeTask: vi.fn() }));
 
+import { createInterface } from "node:readline/promises";
 import { TaskStore } from "@kb/core";
 import { runTaskShow, runTaskCreate } from "./task.js";
 
@@ -268,6 +274,248 @@ describe("runTaskCreate with --depends", () => {
       description: "test task",
       dependencies: undefined,
     });
+  });
+});
+
+import { runTaskImportGitHubInteractive } from "./task.js";
+
+describe("runTaskImportGitHubInteractive", () => {
+  let logSpy: ReturnType<typeof vi.spyOn>;
+  let errorSpy: ReturnType<typeof vi.spyOn>;
+  let mockCreateTask: ReturnType<typeof vi.fn>;
+  let mockListTasks: ReturnType<typeof vi.fn>;
+  let fetchSpy: ReturnType<typeof vi.fn>;
+  const originalFetch = globalThis.fetch;
+
+  beforeEach(() => {
+    logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    fetchSpy = vi.fn();
+    globalThis.fetch = fetchSpy as any;
+
+    mockCreateTask = vi.fn().mockImplementation((input: { description: string; title?: string }) => ({
+      id: `KB-${String(mockCreateTask.mock.calls.length).padStart(3, "0")}`,
+      title: input.title,
+      description: input.description,
+      column: "triage",
+      dependencies: [],
+      steps: [],
+      currentStep: 0,
+      log: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }));
+
+    mockListTasks = vi.fn().mockResolvedValue([]);
+
+    (TaskStore as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => ({
+      init: vi.fn(),
+      createTask: mockCreateTask,
+      listTasks: mockListTasks,
+    }));
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    vi.restoreAllMocks();
+  });
+
+  const mockIssue = (num: number, title: string, body: string | null): GitHubIssue => ({
+    number: num,
+    title,
+    body,
+    html_url: `https://github.com/owner/repo/issues/${num}`,
+    labels: [],
+    created_at: "2024-01-01T00:00:00Z",
+    updated_at: "2024-01-02T00:00:00Z",
+  });
+
+  it("imports selected issues via interactive mode", async () => {
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve([
+        mockIssue(1, "First Issue", "Description 1"),
+        mockIssue(2, "Second Issue", "Description 2"),
+        mockIssue(3, "Third Issue", "Description 3"),
+      ]),
+    } as Response);
+
+    // Mock readline to select issues 1 and 3
+    const mockReadline = {
+      question: vi.fn().mockResolvedValueOnce("1,3"),
+      close: vi.fn(),
+    };
+    vi.mocked(createInterface).mockReturnValueOnce(mockReadline as any);
+
+    await runTaskImportGitHubInteractive("owner/repo");
+
+    expect(mockCreateTask).toHaveBeenCalledTimes(2);
+    expect(mockCreateTask).toHaveBeenCalledWith({
+      title: "First Issue",
+      description: "Description 1\n\nSource: https://github.com/owner/repo/issues/1",
+      column: "triage",
+      dependencies: [],
+    });
+    expect(mockCreateTask).toHaveBeenCalledWith({
+      title: "Third Issue",
+      description: "Description 3\n\nSource: https://github.com/owner/repo/issues/3",
+      column: "triage",
+      dependencies: [],
+    });
+  });
+
+  it('imports all issues when "all" is selected', async () => {
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve([
+        mockIssue(1, "First Issue", "Description 1"),
+        mockIssue(2, "Second Issue", "Description 2"),
+      ]),
+    } as Response);
+
+    // Mock readline to select "all"
+    const mockReadline = {
+      question: vi.fn().mockResolvedValueOnce("all"),
+      close: vi.fn(),
+    };
+    vi.mocked(createInterface).mockReturnValueOnce(mockReadline as any);
+
+    await runTaskImportGitHubInteractive("owner/repo");
+
+    expect(mockCreateTask).toHaveBeenCalledTimes(2);
+  });
+
+  it("skips already imported issues", async () => {
+    // Setup existing task with source URL
+    mockListTasks.mockResolvedValueOnce([
+      {
+        id: "KB-001",
+        description: "Existing\n\nSource: https://github.com/owner/repo/issues/1",
+        column: "triage",
+      },
+    ]);
+
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve([
+        mockIssue(1, "First Issue", "Description 1"),
+        mockIssue(2, "Second Issue", "Description 2"),
+      ]),
+    } as Response);
+
+    const mockReadline = {
+      question: vi.fn().mockResolvedValueOnce("all"),
+      close: vi.fn(),
+    };
+    vi.mocked(createInterface).mockReturnValueOnce(mockReadline as any);
+
+    await runTaskImportGitHubInteractive("owner/repo");
+
+    expect(mockCreateTask).toHaveBeenCalledTimes(1);
+    expect(mockCreateTask).toHaveBeenCalledWith({
+      title: "Second Issue",
+      description: "Description 2\n\nSource: https://github.com/owner/repo/issues/2",
+      column: "triage",
+      dependencies: [],
+    });
+
+    const skipLine = logSpy.mock.calls.find(
+      (call) => typeof call[0] === "string" && call[0].includes("Skipping #1"),
+    );
+    expect(skipLine).toBeDefined();
+  });
+
+  it("handles empty issues list", async () => {
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve([]),
+    } as Response);
+
+    await runTaskImportGitHubInteractive("owner/repo");
+
+    expect(mockCreateTask).not.toHaveBeenCalled();
+    const noIssuesLine = logSpy.mock.calls.find(
+      (call) => typeof call[0] === "string" && call[0].includes("No open issues"),
+    );
+    expect(noIssuesLine).toBeDefined();
+  });
+
+  it("exits on invalid owner/repo format", async () => {
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => {
+      throw new Error("process.exit");
+    });
+
+    await expect(runTaskImportGitHubInteractive("invalid-format")).rejects.toThrow("process.exit");
+    expect(mockCreateTask).not.toHaveBeenCalled();
+    expect(exitSpy).toHaveBeenCalledWith(1);
+  });
+
+  it("handles API errors gracefully", async () => {
+    fetchSpy.mockResolvedValueOnce({
+      ok: false,
+      status: 404,
+      statusText: "Not Found",
+    } as Response);
+
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => {
+      throw new Error("process.exit");
+    });
+
+    await expect(runTaskImportGitHubInteractive("owner/repo")).rejects.toThrow("process.exit");
+    expect(mockCreateTask).not.toHaveBeenCalled();
+    expect(exitSpy).toHaveBeenCalledWith(1);
+  });
+
+  it("re-prompts on invalid input", async () => {
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve([
+        mockIssue(1, "First Issue", "Description 1"),
+      ]),
+    } as Response);
+
+    // First invalid input, then valid
+    const mockReadline = {
+      question: vi.fn()
+        .mockResolvedValueOnce("invalid")
+        .mockResolvedValueOnce("1"),
+      close: vi.fn(),
+    };
+    vi.mocked(createInterface).mockReturnValueOnce(mockReadline as any);
+
+    await runTaskImportGitHubInteractive("owner/repo");
+
+    expect(mockReadline.question).toHaveBeenCalledTimes(2);
+    expect(mockCreateTask).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-prompts on out of range selection", async () => {
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve([
+        mockIssue(1, "First Issue", "Description 1"),
+      ]),
+    } as Response);
+
+    // First out of range, then valid
+    const mockReadline = {
+      question: vi.fn()
+        .mockResolvedValueOnce("99")
+        .mockResolvedValueOnce("1"),
+      close: vi.fn(),
+    };
+    vi.mocked(createInterface).mockReturnValueOnce(mockReadline as any);
+
+    await runTaskImportGitHubInteractive("owner/repo");
+
+    expect(mockReadline.question).toHaveBeenCalledTimes(2);
+    expect(mockCreateTask).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -537,6 +785,7 @@ describe("runTaskImportFromGitHub", () => {
 
     await expect(runTaskImportFromGitHub("invalid-format")).rejects.toThrow("process.exit");
     expect(mockCreateTask).not.toHaveBeenCalled();
+    expect(exitSpy).toHaveBeenCalledWith(1);
   });
 
   it("handles API errors gracefully", async () => {
@@ -551,6 +800,7 @@ describe("runTaskImportFromGitHub", () => {
     });
 
     await expect(runTaskImportFromGitHub("owner/repo")).rejects.toThrow("process.exit");
+    expect(exitSpy).toHaveBeenCalledWith(1);
   });
 
   it("uses (no description) for empty body", async () => {

@@ -286,6 +286,138 @@ export async function runTaskMove(id: string, column: string) {
   console.log();
 }
 
+export async function runTaskImportGitHubInteractive(
+  ownerRepo: string,
+  options: TaskImportOptions = {}
+): Promise<void> {
+  // Parse owner/repo
+  const match = ownerRepo.match(/^([^/]+)\/([^/]+)$/);
+  if (!match) {
+    console.error(`Invalid owner/repo format: ${ownerRepo}`);
+    console.error(`Expected format: owner/repo (e.g., dustinbyrne/kb)`);
+    process.exit(1);
+  }
+
+  const [, owner, repo] = match;
+  const { limit = 30, labels } = options;
+
+  console.log(`\n  Fetching issues from ${owner}/${repo}...\n`);
+
+  const store = await getStore();
+  const existingTasks = await store.listTasks();
+
+  // Build a set of already-imported issue URLs
+  const importedUrls = new Map<string, string>();
+  for (const task of existingTasks) {
+    // Match Source URL anywhere in description (more robust than end-of-string anchor)
+    const sourceMatch = task.description.match(/Source: (https:\/\/github\.com\/[^/]+\/[^/]+\/issues\/\d+)/);
+    if (sourceMatch) {
+      importedUrls.set(sourceMatch[1], task.id);
+    }
+  }
+
+  let issues: GitHubIssue[];
+  try {
+    issues = await fetchGitHubIssues(owner, repo, { limit, labels });
+  } catch (err: any) {
+    console.error(`  ✗ ${err.message}\n`);
+    process.exit(1);
+  }
+
+  if (issues.length === 0) {
+    console.log(`  No open issues found in ${owner}/${repo}.\n`);
+    return;
+  }
+
+  // Display issues with numbers
+  console.log(`  Found ${issues.length} issues:\n`);
+  for (let i = 0; i < issues.length; i++) {
+    const issue = issues[i];
+    const alreadyImported = importedUrls.has(issue.html_url);
+    const status = alreadyImported ? ` [Imported as ${importedUrls.get(issue.html_url)}]` : "";
+    console.log(`  ${i + 1}. #${issue.number} ${issue.title.slice(0, 80)}${issue.title.length > 80 ? "…" : ""}${status}`);
+  }
+
+  console.log();
+
+  // Create readline interface for interactive selection
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+
+  let selectedIndices: number[] = [];
+  let validInput = false;
+
+  while (!validInput) {
+    const answer = await rl.question('  Enter numbers to import (comma-separated) or "all": ');
+    const trimmed = answer.trim().toLowerCase();
+
+    if (trimmed === "all") {
+      selectedIndices = issues.map((_, i) => i);
+      validInput = true;
+    } else {
+      const nums = trimmed
+        .split(",")
+        .map((s) => parseInt(s.trim(), 10))
+        .filter((n) => !isNaN(n));
+
+      if (nums.length === 0) {
+        console.log("  Please enter at least one number or 'all'");
+        continue;
+      }
+
+      const outOfRange = nums.filter((n) => n < 1 || n > issues.length);
+      if (outOfRange.length > 0) {
+        console.log(`  Invalid selection: ${outOfRange.join(", ")} (range: 1-${issues.length})`);
+        continue;
+      }
+
+      selectedIndices = nums.map((n) => n - 1); // Convert to 0-based
+      validInput = true;
+    }
+  }
+
+  rl.close();
+
+  console.log();
+
+  let created = 0;
+  let skipped = 0;
+
+  for (const idx of selectedIndices) {
+    const issue = issues[idx];
+
+    // Check if already imported
+    if (importedUrls.has(issue.html_url)) {
+      const existingId = importedUrls.get(issue.html_url)!;
+      console.log(`  → Skipping #${issue.number}: already imported as ${existingId}`);
+      skipped++;
+      continue;
+    }
+
+    // Prepare title (truncate to 200 chars)
+    const title = issue.title.slice(0, 200);
+
+    // Prepare description
+    const body = issue.body?.trim() || "(no description)";
+    const description = `${body}\n\nSource: ${issue.html_url}`;
+
+    // Create the task
+    const task = await store.createTask({
+      title: title || undefined,
+      description,
+      column: "triage",
+      dependencies: [],
+    });
+
+    const label = task.title || task.description.slice(0, 60) + (task.description.length > 60 ? "…" : "");
+    console.log(`  ✓ Created ${task.id}: ${label}`);
+    created++;
+  }
+
+  console.log();
+  console.log(`  ✓ Imported ${created} tasks from ${owner}/${repo}${skipped > 0 ? ` (${skipped} skipped)` : ""}`);
+  console.log();
+}
+
 // ── GitHub Issue Import ───────────────────────────────────────────
 
 export interface GitHubIssue {
@@ -394,7 +526,8 @@ export async function runTaskImportFromGitHub(
   // Build a set of already-imported issue URLs
   const importedUrls = new Map<string, string>();
   for (const task of existingTasks) {
-    const sourceMatch = task.description.match(/Source: (https:\/\/github\.com\/[^\/]+\/[^\/]+\/issues\/\d+)$/m);
+    // Match Source URL anywhere in description (more robust than end-of-string anchor)
+    const sourceMatch = task.description.match(/Source: (https:\/\/github\.com\/[^\/]+\/[^\/]+\/issues\/\d+)/);
     if (sourceMatch) {
       importedUrls.set(sourceMatch[1], task.id);
     }

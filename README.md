@@ -65,7 +65,23 @@ kb task list
 kb task show KB-001
 kb task move KB-001 todo
 kb task merge KB-001
+kb task import owner/repo                  # Import all open issues (batch mode)
+kb task import owner/repo --interactive    # Interactive issue selection
+kb task import owner/repo --limit 10       # Limit number of issues fetched
+kb task import owner/repo --labels bug     # Filter by label(s)
 ```
+
+**GitHub Import:**
+- Batch mode imports all open issues automatically (skipping already-imported)
+- Interactive mode (`-i`) lets you select specific issues from a numbered list
+- Requires `GITHUB_TOKEN` env var for private repositories
+- Pull requests are automatically filtered out
+
+**Dashboard Import:**
+- Click the ↓ (Download) icon in the header to open the GitHub import modal
+- Enter owner/repo, optionally filter by labels
+- Select an issue from the list and click Import
+- Already-imported issues are marked with an "Imported" badge
 
 Agents can use these same commands, or see [`.agents/skills/`](.agents/skills/) for structured skill docs.
 
