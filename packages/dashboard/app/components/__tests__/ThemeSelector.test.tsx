@@ -81,6 +81,7 @@ describe("ThemeSelector", () => {
     expect(screen.getByLabelText("Ocean theme")).toBeDefined();
     expect(screen.getByLabelText("Forest theme")).toBeDefined();
     expect(screen.getByLabelText("Sunset theme")).toBeDefined();
+    expect(screen.getByLabelText("Zen theme")).toBeDefined();
     expect(screen.getByLabelText("Berry theme")).toBeDefined();
     expect(screen.getByLabelText("Mono theme")).toBeDefined();
     expect(screen.getByLabelText("High Contrast theme")).toBeDefined();
@@ -121,6 +122,9 @@ describe("ThemeSelector", () => {
 
     fireEvent.click(screen.getByLabelText("Berry theme"));
     expect(onColorThemeChange).toHaveBeenCalledWith("berry");
+
+    fireEvent.click(screen.getByLabelText("Zen theme"));
+    expect(onColorThemeChange).toHaveBeenCalledWith("zen");
   });
 
   it("displays current theme preview", () => {

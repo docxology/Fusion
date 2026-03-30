@@ -15,6 +15,7 @@ export const COLOR_THEMES = [
   "ocean",
   "forest",
   "sunset",
+  "zen",
   "berry",
   "monochrome",
   "high-contrast",

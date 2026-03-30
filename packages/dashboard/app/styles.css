@@ -5052,6 +5052,61 @@ html .column.drag-over * {
   --color-error: #d32f2f;
 }
 
+/* ZEN - Minimal, clean monochrome with subtle accents */
+[data-color-theme="zen"] {
+  --bg: #0c0c0c;
+  --surface: #111111;
+  --card: #1a1a1a;
+  --card-hover: #222222;
+  --border: #2a2a2a;
+  --text: #e0e0e0;
+  --text-muted: #808080;
+  --text-dim: #555555;
+
+  --todo: #6b7b8c;
+  --in-progress: #7a8590;
+  --in-progress-rgb: 122, 133, 144;
+  --in-review: #6b8c7a;
+  --triage: #8c7b6b;
+  --done: #666666;
+  --color-success: #6b8c7a;
+  --color-error: #8c6b6b;
+
+  /* Minimal glow effects */
+  --shadow-glow: none;
+  --glow-success: none;
+  --glow-warning: none;
+  --glow-danger: none;
+  --focus-ring: 0 0 0 1px var(--border);
+}
+
+[data-color-theme="zen"][data-theme="light"] {
+  --bg: #f5f5f5;
+  --surface: #fafafa;
+  --card: #ffffff;
+  --card-hover: #f0f0f0;
+  --border: #e0e0e0;
+  --text: #333333;
+  --text-muted: #777777;
+  --text-dim: #999999;
+
+  --todo: #5a6a7a;
+  --in-progress: #6a757f;
+  --in-progress-rgb: 106, 117, 127;
+  --in-review: #5a7a6a;
+  --triage: #7a6a5a;
+  --done: #555555;
+  --color-success: #5a7a6a;
+  --color-error: #7a5a5a;
+
+  /* Minimal glow effects */
+  --shadow-glow: none;
+  --glow-success: none;
+  --glow-warning: none;
+  --glow-danger: none;
+  --focus-ring: 0 0 0 1px var(--border);
+}
+
 /* HIGH CONTRAST - Extreme contrast for accessibility */
 [data-color-theme="high-contrast"] {
   --bg: #000000;
@@ -5521,6 +5576,11 @@ html .column.drag-over * {
   --surface: #4a2c2c;
 }
 
+.theme-swatch-zen {
+  --bg: #0c0c0c;
+  --surface: #111111;
+}
+
 .theme-swatch-berry {
   --bg: #1a0b2e;
   --surface: #2d1b4e;
@@ -5565,6 +5625,11 @@ html .column.drag-over * {
 [data-theme="light"] .theme-swatch-ayu {
   --bg: #fafafa;
   --surface: #f3f3f3;
+}
+
+[data-theme="light"] .theme-swatch-zen {
+  --bg: #f5f5f5;
+  --surface: #fafafa;
 }
 
 /* Reset to defaults button */

@@ -20,6 +20,7 @@ const COLOR_THEMES: { value: ColorTheme; label: string; className: string }[] = 
   { value: "ocean", label: "Ocean", className: "theme-swatch-ocean" },
   { value: "forest", label: "Forest", className: "theme-swatch-forest" },
   { value: "sunset", label: "Sunset", className: "theme-swatch-sunset" },
+  { value: "zen", label: "Zen", className: "theme-swatch-zen" },
   { value: "berry", label: "Berry", className: "theme-swatch-berry" },
   { value: "monochrome", label: "Mono", className: "theme-swatch-monochrome" },
   { value: "high-contrast", label: "High Contrast", className: "theme-swatch-high-contrast" },
