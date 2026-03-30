@@ -423,7 +423,7 @@ describe("Header", () => {
       expect(screen.getByTitle("List view")).toBeDefined();
     });
 
-    it("shows terminal and pause controls inline on mobile", () => {
+    it("shows terminal in overflow menu and pause controls inline on mobile", () => {
       render(
         <Header
           onToggleTerminal={vi.fn()}
@@ -431,15 +431,18 @@ describe("Header", () => {
           onToggleGlobalPause={vi.fn()}
         />
       );
-      expect(screen.getByTitle("Open Terminal")).toBeDefined();
+      // Terminal is in overflow menu on mobile, not inline
+      fireEvent.click(screen.getByTitle("More header actions"));
+      expect(screen.getByText("Open Terminal")).toBeDefined();
+      // Pause/stop are always inline
       expect(screen.getByTitle("Pause scheduling")).toBeDefined();
       expect(screen.getByTitle("Stop AI engine")).toBeDefined();
     });
 
-    it("overflow menu includes usage button when onOpenUsage provided", () => {
+    it("shows usage button inline when onOpenUsage provided", () => {
       render(<Header onOpenSettings={vi.fn()} onOpenUsage={vi.fn()} />);
-      fireEvent.click(screen.getByTitle("More header actions"));
-      expect(screen.getByText("View usage")).toBeDefined();
+      // Usage button is inline on all screens, not in overflow menu
+      expect(screen.getByTitle("View usage")).toBeDefined();
     });
 
     it("mobile search input dispatches onSearchChange when typing", () => {
