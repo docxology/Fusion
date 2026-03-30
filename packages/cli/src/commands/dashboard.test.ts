@@ -61,6 +61,12 @@ vi.mock("@kb/dashboard", () => ({
   createServer: vi.fn(() => ({ listen: mockListen })),
 }));
 
+// ── Mock node:readline ──────────────────────────────────────────────
+
+vi.mock("node:readline", () => ({
+  createInterface: vi.fn(),
+}));
+
 // ── Mock @kb/engine ────────────────────────────────────────────────
 
 // We need the real WorktreePool class so we can assert `instanceof`.
@@ -1035,5 +1041,177 @@ describe("runDashboard — merge conflict retry logic", () => {
       "KB-SUCCESS",
       expect.objectContaining({ mergeRetries: 0 }),
     );
+  });
+});
+
+// ── promptForPort tests ───────────────────────────────────────────────
+
+import { promptForPort } from "./dashboard.js";
+
+describe("promptForPort", () => {
+  let mockRl: {
+    question: ReturnType<typeof vi.fn>;
+    close: ReturnType<typeof vi.fn>;
+  };
+
+  beforeEach(() => {
+    mockRl = {
+      question: vi.fn(),
+      close: vi.fn(),
+    };
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("returns default port on empty input", async () => {
+    const { createInterface } = await import("node:readline");
+    vi.mocked(createInterface).mockReturnValue(mockRl as unknown as ReturnType<typeof createInterface>);
+
+    // Simulate user pressing Enter (empty input)
+    mockRl.question.mockImplementation((_prompt: string, callback: (answer: string) => void) => {
+      callback("");
+    });
+
+    const result = await promptForPort(4040);
+    expect(result).toBe(4040);
+    expect(mockRl.close).toHaveBeenCalled();
+  });
+
+  it("returns valid custom port", async () => {
+    const { createInterface } = await import("node:readline");
+    vi.mocked(createInterface).mockReturnValue(mockRl as unknown as ReturnType<typeof createInterface>);
+
+    mockRl.question.mockImplementation((_prompt: string, callback: (answer: string) => void) => {
+      callback("8080");
+    });
+
+    const result = await promptForPort(4040);
+    expect(result).toBe(8080);
+    expect(mockRl.close).toHaveBeenCalled();
+  });
+
+  it("re-prompts on invalid (non-numeric) input", async () => {
+    const { createInterface } = await import("node:readline");
+    vi.mocked(createInterface).mockReturnValue(mockRl as unknown as ReturnType<typeof createInterface>);
+
+    // First call returns invalid input, second call returns valid
+    let callCount = 0;
+    mockRl.question.mockImplementation((_prompt: string, callback: (answer: string) => void) => {
+      callCount++;
+      if (callCount === 1) {
+        callback("abc");
+      } else {
+        callback("3000");
+      }
+    });
+
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const result = await promptForPort(4040);
+
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("not a number"));
+    expect(result).toBe(3000);
+    expect(mockRl.question).toHaveBeenCalledTimes(2);
+    consoleSpy.mockRestore();
+  });
+
+  it("re-prompts on out-of-range port (too low)", async () => {
+    const { createInterface } = await import("node:readline");
+    vi.mocked(createInterface).mockReturnValue(mockRl as unknown as ReturnType<typeof createInterface>);
+
+    let callCount = 0;
+    mockRl.question.mockImplementation((_prompt: string, callback: (answer: string) => void) => {
+      callCount++;
+      if (callCount === 1) {
+        callback("0");
+      } else {
+        callback("5000");
+      }
+    });
+
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const result = await promptForPort(4040);
+
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("must be between 1 and 65535"));
+    expect(result).toBe(5000);
+    expect(mockRl.question).toHaveBeenCalledTimes(2);
+    consoleSpy.mockRestore();
+  });
+
+  it("re-prompts on out-of-range port (too high)", async () => {
+    const { createInterface } = await import("node:readline");
+    vi.mocked(createInterface).mockReturnValue(mockRl as unknown as ReturnType<typeof createInterface>);
+
+    let callCount = 0;
+    mockRl.question.mockImplementation((_prompt: string, callback: (answer: string) => void) => {
+      callCount++;
+      if (callCount === 1) {
+        callback("70000");
+      } else {
+        callback("9000");
+      }
+    });
+
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const result = await promptForPort(4040);
+
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("must be between 1 and 65535"));
+    expect(result).toBe(9000);
+    expect(mockRl.question).toHaveBeenCalledTimes(2);
+    consoleSpy.mockRestore();
+  });
+
+  it("accepts minimum valid port (1)", async () => {
+    const { createInterface } = await import("node:readline");
+    vi.mocked(createInterface).mockReturnValue(mockRl as unknown as ReturnType<typeof createInterface>);
+
+    mockRl.question.mockImplementation((_prompt: string, callback: (answer: string) => void) => {
+      callback("1");
+    });
+
+    const result = await promptForPort(4040);
+    expect(result).toBe(1);
+  });
+
+  it("accepts maximum valid port (65535)", async () => {
+    const { createInterface } = await import("node:readline");
+    vi.mocked(createInterface).mockReturnValue(mockRl as unknown as ReturnType<typeof createInterface>);
+
+    mockRl.question.mockImplementation((_prompt: string, callback: (answer: string) => void) => {
+      callback("65535");
+    });
+
+    const result = await promptForPort(4040);
+    expect(result).toBe(65535);
+  });
+
+  it("rejects on SIGINT (Ctrl+C)", async () => {
+    const { createInterface } = await import("node:readline");
+    vi.mocked(createInterface).mockReturnValue(mockRl as unknown as ReturnType<typeof createInterface>);
+
+    // Simulate that the promise rejects when SIGINT is triggered
+    const removeListenerSpy = vi.spyOn(process, "removeListener").mockImplementation(() => {});
+
+    // Trigger SIGINT handler immediately to test rejection
+    let sigintHandler: (() => void) | null = null;
+    const onSpy = vi.spyOn(process, "on").mockImplementation((event: string, handler: (...args: unknown[]) => void) => {
+      if (event === "SIGINT") {
+        sigintHandler = handler as () => void;
+      }
+      return process;
+    });
+
+    mockRl.question.mockImplementation(() => {
+      // Simulate SIGINT during prompt
+      setTimeout(() => {
+        if (sigintHandler) sigintHandler();
+      }, 10);
+    });
+
+    await expect(promptForPort(4040)).rejects.toThrow("Interactive prompt cancelled");
+
+    onSpy.mockRestore();
+    removeListenerSpy.mockRestore();
   });
 });

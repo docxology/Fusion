@@ -54,11 +54,19 @@ Then from the root of your repository:
 kb dashboard
 ```
 
+Or start with interactive port selection:
+
+```bash
+kb dashboard --interactive
+```
+
 Open [http://localhost:4040](http://localhost:4040) — create tasks from the board or the CLI.
 
 ### CLI commands
 
 ```bash
+kb dashboard                              # Start the web UI (default port 4040)
+kb dashboard --interactive                # Start with interactive port selection
 kb task create "Fix the login redirect bug"
 kb task create "Button misaligned" --attach screenshot.png
 kb task list

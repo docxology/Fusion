@@ -1,5 +1,6 @@
 import { exec } from "node:child_process";
 import type { AddressInfo } from "node:net";
+import { createInterface } from "node:readline";
 import { TaskStore } from "@kb/core";
 import { createServer } from "@kb/dashboard";
 import { TriageProcessor, TaskExecutor, Scheduler, AgentSemaphore, WorktreePool, aiMergeTask, UsageLimitPauser, PRIORITY_MERGE, scanIdleWorktrees, cleanupOrphanedWorktrees, NtfyNotifier } from "@kb/engine";
@@ -13,7 +14,79 @@ function openBrowser(url: string): void {
   exec(cmd, () => {});
 }
 
-export async function runDashboard(port: number, opts: { open?: boolean; paused?: boolean; dev?: boolean } = {}) {
+/**
+ * Prompt the user for a port number interactively.
+ * Shows "Port [4040]: " and accepts user input or Enter for default.
+ * Validates input is a valid port number (1-65535).
+ * Re-prompts on invalid input.
+ * Handles SIGINT (Ctrl+C) gracefully.
+ */
+export function promptForPort(defaultPort: number = 4040, input: NodeJS.ReadableStream = process.stdin): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const rl = createInterface({
+      input,
+      output: process.stdout,
+    });
+
+    // Handle Ctrl+C during prompt
+    const sigintHandler = () => {
+      rl.close();
+      console.log("\n");
+      reject(new Error("Interactive prompt cancelled"));
+    };
+    process.on("SIGINT", sigintHandler);
+
+    const ask = () => {
+      rl.question(`Port [${defaultPort}]: `, (answer) => {
+        const trimmed = answer.trim();
+
+        // Empty input: use default
+        if (trimmed === "") {
+          process.removeListener("SIGINT", sigintHandler);
+          rl.close();
+          resolve(defaultPort);
+          return;
+        }
+
+        // Validate as number
+        const port = parseInt(trimmed, 10);
+        if (isNaN(port)) {
+          console.log(`Invalid input: "${trimmed}" is not a number`);
+          ask();
+          return;
+        }
+
+        // Validate port range
+        if (port < 1 || port > 65535) {
+          console.log(`Invalid port: ${port} (must be between 1 and 65535)`);
+          ask();
+          return;
+        }
+
+        process.removeListener("SIGINT", sigintHandler);
+        rl.close();
+        resolve(port);
+      });
+    };
+
+    ask();
+  });
+}
+
+export async function runDashboard(port: number, opts: { open?: boolean; paused?: boolean; dev?: boolean; interactive?: boolean } = {}) {
+  // Handle interactive port selection
+  let selectedPort = port;
+  if (opts.interactive) {
+    try {
+      selectedPort = await promptForPort(port);
+    } catch (err: any) {
+      if (err.message === "Interactive prompt cancelled") {
+        console.log("Cancelled — exiting");
+        process.exit(0);
+      }
+      throw err;
+    }
+  }
   const cwd = process.cwd();
   const store = new TaskStore(cwd);
   await store.init();
@@ -395,7 +468,7 @@ export async function runDashboard(port: number, opts: { open?: boolean; paused?
     });
   }
 
-  const server = app.listen(port);
+  const server = app.listen(selectedPort);
 
   server.on("error", (err: NodeJS.ErrnoException) => {
     if (err.code === "EADDRINUSE") {
@@ -409,8 +482,8 @@ export async function runDashboard(port: number, opts: { open?: boolean; paused?
   server.on("listening", () => {
     const actualPort = (server.address() as AddressInfo).port;
 
-    if (actualPort !== port) {
-      console.log(`⚠ Port ${port} in use, using ${actualPort} instead`);
+    if (actualPort !== selectedPort) {
+      console.log(`⚠ Port ${selectedPort} in use, using ${actualPort} instead`);
     }
 
     console.log();

@@ -48,6 +48,7 @@ Usage:
   kb dashboard                        Start the board web UI
   kb dashboard --paused               Start with automation paused
   kb dashboard --dev                  Start web UI only (no AI engine)
+  kb dashboard --interactive          Start with interactive port selection
   kb task create [desc] [opts]         Create a new task (goes to triage)
   kb task list                        List all tasks
   kb task show <id>                   Show task details, steps, log
@@ -66,6 +67,7 @@ Usage:
 
 Options:
   --port, -p <port>          Dashboard port (default: 4040)
+  --interactive              Interactive mode (port selection for dashboard, issue selection for import)
   --paused                   Start with engine paused (automation disabled)
   --dev                      Start dashboard only (no AI engine)
   --attach <file>            Attach file(s) on task create (repeatable)
@@ -103,7 +105,8 @@ async function main() {
         const open = !args.includes("--no-open");
         const paused = args.includes("--paused");
         const dev = args.includes("--dev");
-        await runDashboard(port, { open, paused, dev });
+        const interactive = args.includes("--interactive");
+        await runDashboard(port, { open, paused, dev, interactive });
         break;
       }
 
