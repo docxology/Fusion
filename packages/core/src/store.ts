@@ -20,6 +20,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
   private kbDir: string;
   private tasksDir: string;
   private configPath: string;
+  private archiveLogPath: string;
 
   /** File-system watcher instance */
   private watcher: FSWatcher | null = null;
@@ -42,6 +43,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
     this.kbDir = join(rootDir, ".kb");
     this.tasksDir = join(this.kbDir, "tasks");
     this.configPath = join(this.kbDir, "config.json");
+    this.archiveLogPath = join(this.kbDir, "archive.jsonl");
   }
 
   async init(): Promise<void> {
@@ -867,8 +869,11 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
   /**
    * Archive a done task (move from done → archived).
    * Logs the action and emits `task:moved` event.
+   * @param cleanup - If true, immediately cleans up the task directory after archiving
+   *                  by writing a compact entry to archive.jsonl and removing files.
+   *                  Default: false for backward compatibility.
    */
-  async archiveTask(id: string): Promise<Task> {
+  async archiveTask(id: string, cleanup: boolean = false): Promise<Task> {
     return this.withTaskLock(id, async () => {
       const dir = this.taskDir(id);
       const task = await this.readTaskJson(dir);
@@ -892,10 +897,55 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
         action: "Task archived",
       });
 
-      await this.atomicWriteTaskJson(dir, task);
+      // If cleanup requested, write archive entry BEFORE removing directory
+      if (cleanup) {
+        const entry: import("./types.js").ArchivedTaskEntry = {
+          id: task.id,
+          title: task.title,
+          description: task.description,
+          column: "archived",
+          dependencies: task.dependencies,
+          steps: task.steps,
+          currentStep: task.currentStep,
+          size: task.size,
+          reviewLevel: task.reviewLevel,
+          prInfo: task.prInfo,
+          issueInfo: task.issueInfo,
+          attachments: task.attachments,
+          log: task.log,
+          createdAt: task.createdAt,
+          updatedAt: task.updatedAt,
+          columnMovedAt: task.columnMovedAt,
+          archivedAt: task.columnMovedAt,
+          modelProvider: task.modelProvider,
+          modelId: task.modelId,
+          validatorModelProvider: task.validatorModelProvider,
+          validatorModelId: task.validatorModelId,
+          breakIntoSubtasks: task.breakIntoSubtasks,
+          paused: task.paused,
+          baseBranch: task.baseBranch,
+          mergeRetries: task.mergeRetries,
+          error: task.error,
+        };
 
-      // Update cache if watcher is active
-      if (this.watcher) this.taskCache.set(id, { ...task });
+        // Write to archive.jsonl atomically (append only)
+        await appendFile(this.archiveLogPath, JSON.stringify(entry) + "\n");
+
+        // Remove task directory recursively
+        const { rm } = await import("node:fs/promises");
+        await rm(dir, { recursive: true, force: true });
+
+        // Remove from cache if watcher is active
+        if (this.watcher) {
+          this.taskCache.delete(id);
+        }
+      } else {
+        // Normal archive - just write task.json
+        await this.atomicWriteTaskJson(dir, task);
+
+        // Update cache if watcher is active
+        if (this.watcher) this.taskCache.set(id, { ...task });
+      }
 
       this.emit("task:moved", { task, from: "done" as Column, to: "archived" as Column });
       return task;
@@ -903,12 +953,37 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
   }
 
   /**
+   * Archive a task and immediately clean up its directory.
+   * Convenience method equivalent to `archiveTask(id, true)`.
+   */
+  async archiveTaskAndCleanup(id: string): Promise<Task> {
+    return this.archiveTask(id, true);
+  }
+
+  /**
    * Unarchive an archived task (move from archived → done).
+   * If the task directory was cleaned up, restores from archive.jsonl first.
    * Logs the action and emits `task:moved` event.
    */
   async unarchiveTask(id: string): Promise<Task> {
+    const dir = this.taskDir(id);
+
+    // Check if directory exists BEFORE acquiring lock
+    if (!existsSync(dir)) {
+      // Task was cleaned up - restore from archive
+      const entry = await this.findInArchive(id);
+      if (!entry) {
+        throw new Error(
+          `Cannot unarchive ${id}: task directory missing and not found in archive`,
+        );
+      }
+
+      // Restore the task directory first
+      await this.restoreFromArchive(entry);
+    }
+
     return this.withTaskLock(id, async () => {
-      const dir = this.taskDir(id);
+      // Re-read task.json (either existing or freshly restored)
       const task = await this.readTaskJson(dir);
 
       // Initialize log array if missing (for legacy tasks)
@@ -1445,6 +1520,204 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       }
     }
     return entries;
+  }
+
+  // ── Archive Cleanup Methods ─────────────────────────────────────────
+
+  /**
+   * Read and parse the archive log file (archive.jsonl).
+   * Returns empty array if archive file doesn't exist.
+   */
+  async readArchiveLog(): Promise<import("./types.js").ArchivedTaskEntry[]> {
+    if (!existsSync(this.archiveLogPath)) {
+      return [];
+    }
+
+    const content = await readFile(this.archiveLogPath, "utf-8");
+    const entries: import("./types.js").ArchivedTaskEntry[] = [];
+
+    for (const line of content.split("\n")) {
+      if (!line.trim()) continue;
+      try {
+        entries.push(JSON.parse(line) as import("./types.js").ArchivedTaskEntry);
+      } catch {
+        // Skip malformed lines
+      }
+    }
+
+    return entries;
+  }
+
+  /**
+   * Find a specific task in the archive log by ID.
+   * Returns undefined if not found or archive doesn't exist.
+   */
+  async findInArchive(id: string): Promise<import("./types.js").ArchivedTaskEntry | undefined> {
+    const entries = await this.readArchiveLog();
+    return entries.find((e) => e.id === id);
+  }
+
+  /**
+   * Cleanup archived tasks by condensing them into compact archive entries.
+   * For each archived task with an existing directory:
+   * - Creates a compact archive entry (metadata only, no agent logs)
+   * - Appends entry to archive.jsonl atomically
+   * - Removes the entire task directory
+   * Skips tasks already cleaned up (directory already gone).
+   */
+  async cleanupArchivedTasks(): Promise<string[]> {
+    const archivedTasks = await this.listTasks().then((tasks) =>
+      tasks.filter((t) => t.column === "archived"),
+    );
+
+    const cleanedUpIds: string[] = [];
+
+    for (const task of archivedTasks) {
+      const dir = this.taskDir(task.id);
+
+      // Skip if directory already cleaned up
+      if (!existsSync(dir)) {
+        continue;
+      }
+
+      // Create compact archive entry (exclude agent logs)
+      const entry: import("./types.js").ArchivedTaskEntry = {
+        id: task.id,
+        title: task.title,
+        description: task.description,
+        column: "archived",
+        dependencies: task.dependencies,
+        steps: task.steps,
+        currentStep: task.currentStep,
+        size: task.size,
+        reviewLevel: task.reviewLevel,
+        prInfo: task.prInfo,
+        issueInfo: task.issueInfo,
+        attachments: task.attachments,
+        log: task.log,
+        createdAt: task.createdAt,
+        updatedAt: task.updatedAt,
+        columnMovedAt: task.columnMovedAt,
+        archivedAt: new Date().toISOString(),
+        modelProvider: task.modelProvider,
+        modelId: task.modelId,
+        validatorModelProvider: task.validatorModelProvider,
+        validatorModelId: task.validatorModelId,
+        breakIntoSubtasks: task.breakIntoSubtasks,
+        paused: task.paused,
+        baseBranch: task.baseBranch,
+        mergeRetries: task.mergeRetries,
+        error: task.error,
+      };
+
+      // Atomic append to archive.jsonl
+      await appendFile(this.archiveLogPath, JSON.stringify(entry) + "\n");
+
+      // Remove task directory recursively
+      const { rm } = await import("node:fs/promises");
+      await rm(dir, { recursive: true, force: true });
+
+      // Remove from cache if watcher is active
+      if (this.watcher) {
+        this.taskCache.delete(task.id);
+      }
+
+      cleanedUpIds.push(task.id);
+    }
+
+    return cleanedUpIds;
+  }
+
+  /**
+   * Restore a task from an archive entry.
+   * Recreates task directory with task.json and PROMPT.md.
+   * Clears transient execution state (worktree, status, blockedBy, etc.).
+   * Does NOT recreate agent.log (intentionally lost during archive).
+   */
+  private async restoreFromArchive(entry: import("./types.js").ArchivedTaskEntry): Promise<Task> {
+    const dir = this.taskDir(entry.id);
+
+    // Create task directory
+    await mkdir(dir, { recursive: true });
+
+    // Build restored task (clear transient fields)
+    const restoredTask: Task = {
+      id: entry.id,
+      title: entry.title,
+      description: entry.description,
+      column: "archived", // Will be changed to "done" by unarchiveTask
+      dependencies: entry.dependencies,
+      steps: entry.steps,
+      currentStep: entry.currentStep,
+      size: entry.size,
+      reviewLevel: entry.reviewLevel,
+      prInfo: entry.prInfo,
+      issueInfo: entry.issueInfo,
+      attachments: entry.attachments,
+      log: [...entry.log, { timestamp: new Date().toISOString(), action: "Task restored from archive" }],
+      createdAt: entry.createdAt,
+      updatedAt: new Date().toISOString(),
+      columnMovedAt: entry.columnMovedAt,
+      modelProvider: entry.modelProvider,
+      modelId: entry.modelId,
+      validatorModelProvider: entry.validatorModelProvider,
+      validatorModelId: entry.validatorModelId,
+      breakIntoSubtasks: entry.breakIntoSubtasks,
+      // Intentionally NOT restoring: worktree, status, blockedBy, paused, baseBranch, error, steeringComments
+    };
+
+    // Write task.json
+    await this.atomicWriteTaskJson(dir, restoredTask);
+
+    // Generate PROMPT.md with preserved steps
+    const prompt = this.generatePromptFromArchiveEntry(entry);
+    await writeFile(join(dir, "PROMPT.md"), prompt);
+
+    // Create empty attachments directory if attachments existed
+    if (entry.attachments && entry.attachments.length > 0) {
+      await mkdir(join(dir, "attachments"), { recursive: true });
+    }
+
+    return restoredTask;
+  }
+
+  /**
+   * Generate a PROMPT.md from an archive entry, preserving the original step structure.
+   */
+  private generatePromptFromArchiveEntry(entry: import("./types.js").ArchivedTaskEntry): string {
+    const deps =
+      entry.dependencies.length > 0
+        ? entry.dependencies.map((d) => `- **Task:** ${d}`).join("\n")
+        : "- **None**";
+
+    const heading = entry.title ? `${entry.id}: ${entry.title}` : entry.id;
+
+    // Build steps section from preserved steps
+    let stepsSection = "## Steps\n\n";
+    if (entry.steps && entry.steps.length > 0) {
+      for (let i = 0; i < entry.steps.length; i++) {
+        const step = entry.steps[i];
+        const status = step.status === "done" ? "[x]" : "[ ]";
+        stepsSection += `### Step ${i}: ${step.name}\n\n- ${status} ${step.name}\n\n`;
+      }
+    } else {
+      stepsSection += "### Step 0: Preflight\n\n- [ ] Review and verify\n\n";
+    }
+
+    return `# ${heading}
+
+**Created:** ${entry.createdAt.split("T")[0]}
+${entry.size ? `**Size:** ${entry.size}` : "**Size:** M"}
+
+## Mission
+
+${entry.description}
+
+## Dependencies
+
+${deps}
+
+${stepsSection}`;
   }
 
   getRootDir(): string {

@@ -2284,4 +2284,389 @@ describe("TaskStore", () => {
       expect(detail.prompt).toMatch(/^# KB-001: Build the authentication system/);
     });
   });
+
+  // ── Archive Cleanup Tests ────────────────────────────────────────
+
+  describe("cleanupArchivedTasks", () => {
+    it("writes compact entry to archive.jsonl without agent log", async () => {
+      // Create and archive a task
+      const task = await store.createTask({ description: "Test cleanup", title: "Cleanup Task" });
+      await store.moveTask(task.id, "todo");
+      await store.moveTask(task.id, "in-progress");
+      await store.moveTask(task.id, "in-review");
+      await store.moveTask(task.id, "done");
+      await store.archiveTask(task.id);
+
+      // Add an agent log entry (should not be in archive)
+      await store.appendAgentLog(task.id, "Test agent log", "text");
+
+      // Cleanup archived tasks
+      const cleaned = await store.cleanupArchivedTasks();
+      expect(cleaned).toContain(task.id);
+
+      // Read archive.jsonl
+      const archivePath = join(rootDir, ".kb", "archive.jsonl");
+      const content = await readFile(archivePath, "utf-8");
+      const entry = JSON.parse(content.trim()) as import("./types.js").ArchivedTaskEntry;
+
+      expect(entry.id).toBe(task.id);
+      expect(entry.title).toBe("Cleanup Task");
+      expect(entry.description).toBe("Test cleanup");
+      expect(entry.column).toBe("archived");
+      // Agent log should NOT be in the archive entry
+      expect(entry).not.toHaveProperty("agentLog");
+    });
+
+    it("removes task directory after archiving", async () => {
+      const task = await store.createTask({ description: "Test dir removal" });
+      await store.moveTask(task.id, "todo");
+      await store.moveTask(task.id, "in-progress");
+      await store.moveTask(task.id, "in-review");
+      await store.moveTask(task.id, "done");
+      await store.archiveTask(task.id);
+
+      const dir = join(rootDir, ".kb", "tasks", task.id);
+      expect(existsSync(dir)).toBe(true);
+
+      await store.cleanupArchivedTasks();
+
+      expect(existsSync(dir)).toBe(false);
+    });
+
+    it("skips already-cleaned-up tasks (idempotent)", async () => {
+      const task = await store.createTask({ description: "Test idempotent" });
+      await store.moveTask(task.id, "todo");
+      await store.moveTask(task.id, "in-progress");
+      await store.moveTask(task.id, "in-review");
+      await store.moveTask(task.id, "done");
+      await store.archiveTask(task.id);
+
+      // First cleanup
+      const cleaned1 = await store.cleanupArchivedTasks();
+      expect(cleaned1).toContain(task.id);
+
+      // Second cleanup should skip
+      const cleaned2 = await store.cleanupArchivedTasks();
+      expect(cleaned2).not.toContain(task.id);
+      expect(cleaned2).toHaveLength(0);
+    });
+
+    it("preserves task metadata in archive entry", async () => {
+      const task = await store.createTask({
+        description: "Test metadata",
+        title: "Metadata Task",
+      });
+      await store.moveTask(task.id, "todo");
+      await store.moveTask(task.id, "in-progress");
+      await store.moveTask(task.id, "in-review");
+      await store.moveTask(task.id, "done");
+
+      // Add some metadata via updateTask
+      await store.updateTask(task.id, {
+        reviewLevel: 2,
+        size: "M",
+      });
+
+      // Add an attachment (metadata only, no content)
+      await store.addAttachment(task.id, "test.txt", Buffer.from("test"), "text/plain");
+
+      await store.archiveTask(task.id);
+      await store.cleanupArchivedTasks();
+
+      const archivePath = join(rootDir, ".kb", "archive.jsonl");
+      const content = await readFile(archivePath, "utf-8");
+      const entry = JSON.parse(content.trim()) as import("./types.js").ArchivedTaskEntry;
+
+      expect(entry.id).toBe(task.id);
+      expect(entry.title).toBe("Metadata Task");
+      expect(entry.size).toBe("M");
+      expect(entry.reviewLevel).toBe(2);
+      expect(entry.attachments).toHaveLength(1);
+      expect(entry.attachments![0].originalName).toBe("test.txt");
+    });
+  });
+
+  describe("readArchiveLog", () => {
+    it("returns empty array when archive.jsonl does not exist", async () => {
+      const entries = await store.readArchiveLog();
+      expect(entries).toEqual([]);
+    });
+
+    it("returns parsed entries from archive.jsonl", async () => {
+      const task = await store.createTask({ description: "Test read" });
+      await store.moveTask(task.id, "todo");
+      await store.moveTask(task.id, "in-progress");
+      await store.moveTask(task.id, "in-review");
+      await store.moveTask(task.id, "done");
+      await store.archiveTask(task.id);
+      await store.cleanupArchivedTasks();
+
+      const entries = await store.readArchiveLog();
+      expect(entries).toHaveLength(1);
+      expect(entries[0].id).toBe(task.id);
+      expect(entries[0].description).toBe("Test read");
+    });
+
+    it("handles multiple entries in archive.jsonl", async () => {
+      // Archive and cleanup task 1
+      const task1 = await store.createTask({ description: "Task 1" });
+      await store.moveTask(task1.id, "todo");
+      await store.moveTask(task1.id, "in-progress");
+      await store.moveTask(task1.id, "in-review");
+      await store.moveTask(task1.id, "done");
+      await store.archiveTask(task1.id);
+      await store.cleanupArchivedTasks();
+
+      // Archive and cleanup task 2
+      const task2 = await store.createTask({ description: "Task 2" });
+      await store.moveTask(task2.id, "todo");
+      await store.moveTask(task2.id, "in-progress");
+      await store.moveTask(task2.id, "in-review");
+      await store.moveTask(task2.id, "done");
+      await store.archiveTask(task2.id);
+      await store.cleanupArchivedTasks();
+
+      const entries = await store.readArchiveLog();
+      expect(entries).toHaveLength(2);
+      expect(entries.map((e) => e.id).sort()).toEqual([task1.id, task2.id].sort());
+    });
+  });
+
+  describe("findInArchive", () => {
+    it("returns undefined when task not in archive", async () => {
+      const entry = await store.findInArchive("KB-999");
+      expect(entry).toBeUndefined();
+    });
+
+    it("returns archive entry for specific task", async () => {
+      const task = await store.createTask({ description: "Test find" });
+      await store.moveTask(task.id, "todo");
+      await store.moveTask(task.id, "in-progress");
+      await store.moveTask(task.id, "in-review");
+      await store.moveTask(task.id, "done");
+      await store.archiveTask(task.id);
+      await store.cleanupArchivedTasks();
+
+      const entry = await store.findInArchive(task.id);
+      expect(entry).toBeDefined();
+      expect(entry!.id).toBe(task.id);
+      expect(entry!.description).toBe("Test find");
+    });
+  });
+
+  describe("unarchiveTask with restore", () => {
+    it("restores missing task from archive.jsonl", async () => {
+      const task = await store.createTask({ description: "Test restore" });
+      await store.moveTask(task.id, "todo");
+      await store.moveTask(task.id, "in-progress");
+      await store.moveTask(task.id, "in-review");
+      await store.moveTask(task.id, "done");
+      await store.archiveTask(task.id);
+      await store.cleanupArchivedTasks();
+
+      const dir = join(rootDir, ".kb", "tasks", task.id);
+      expect(existsSync(dir)).toBe(false);
+
+      // Unarchive should restore from archive
+      const unarchived = await store.unarchiveTask(task.id);
+      expect(unarchived.column).toBe("done");
+      expect(unarchived.description).toBe("Test restore");
+
+      // Directory should be recreated
+      expect(existsSync(dir)).toBe(true);
+    });
+
+    it("works normally when task directory exists", async () => {
+      const task = await store.createTask({ description: "Test normal" });
+      await store.moveTask(task.id, "todo");
+      await store.moveTask(task.id, "in-progress");
+      await store.moveTask(task.id, "in-review");
+      await store.moveTask(task.id, "done");
+      await store.archiveTask(task.id);
+      // Note: NOT calling cleanupArchivedTasks, so directory exists
+
+      const unarchived = await store.unarchiveTask(task.id);
+      expect(unarchived.column).toBe("done");
+    });
+
+    it("restored task has correct column (done) and preserved metadata", async () => {
+      const task = await store.createTask({
+        description: "Test metadata preserve",
+        title: "Preserved Task",
+      });
+      await store.moveTask(task.id, "todo");
+      await store.moveTask(task.id, "in-progress");
+      await store.moveTask(task.id, "in-review");
+      await store.moveTask(task.id, "done");
+      // Set metadata via updateTask
+      await store.updateTask(task.id, { size: "L", reviewLevel: 2 });
+      await store.archiveTask(task.id);
+      await store.cleanupArchivedTasks();
+
+      const unarchived = await store.unarchiveTask(task.id);
+      expect(unarchived.column).toBe("done");
+      expect(unarchived.title).toBe("Preserved Task");
+      expect(unarchived.size).toBe("L");
+      expect(unarchived.reviewLevel).toBe(2);
+      expect(unarchived.description).toBe("Test metadata preserve");
+    });
+
+    it("throws error when task directory missing and not in archive", async () => {
+      // Create a fake archived task by manually moving column
+      const task = await store.createTask({ description: "Not in archive" });
+      await store.moveTask(task.id, "todo");
+      await store.moveTask(task.id, "in-progress");
+      await store.moveTask(task.id, "in-review");
+      await store.moveTask(task.id, "done");
+      await store.archiveTask(task.id);
+
+      // Delete directory without archiving
+      const dir = join(rootDir, ".kb", "tasks", task.id);
+      const { rm } = await import("node:fs/promises");
+      await rm(dir, { recursive: true, force: true });
+
+      await expect(store.unarchiveTask(task.id)).rejects.toThrow("not found in archive");
+    });
+
+    it("adds log entry for restore action", async () => {
+      const task = await store.createTask({ description: "Test restore log" });
+      await store.moveTask(task.id, "todo");
+      await store.moveTask(task.id, "in-progress");
+      await store.moveTask(task.id, "in-review");
+      await store.moveTask(task.id, "done");
+      await store.archiveTask(task.id);
+      await store.cleanupArchivedTasks();
+
+      const unarchived = await store.unarchiveTask(task.id);
+      expect(unarchived.log.some((l) => l.action === "Task restored from archive")).toBe(true);
+      expect(unarchived.log.some((l) => l.action === "Task unarchived")).toBe(true);
+    });
+
+    it("recreates PROMPT.md after restore", async () => {
+      const task = await store.createTask({ description: "Test prompt restore" });
+      await store.moveTask(task.id, "todo");
+      await store.moveTask(task.id, "in-progress");
+      await store.moveTask(task.id, "in-review");
+      await store.moveTask(task.id, "done");
+      await store.archiveTask(task.id);
+      await store.cleanupArchivedTasks();
+
+      await store.unarchiveTask(task.id);
+
+      // Verify PROMPT.md was recreated
+      const detail = await store.getTask(task.id);
+      expect(detail.prompt).toContain(task.id);
+      expect(detail.prompt).toContain("Test prompt restore");
+    });
+
+    it("recreates attachments directory (empty) after restore", async () => {
+      const task = await store.createTask({ description: "Test attach restore" });
+      await store.moveTask(task.id, "todo");
+      await store.moveTask(task.id, "in-progress");
+      await store.moveTask(task.id, "in-review");
+      await store.moveTask(task.id, "done");
+
+      // Add an attachment
+      await store.addAttachment(task.id, "test.txt", Buffer.from("test"), "text/plain");
+
+      await store.archiveTask(task.id);
+      await store.cleanupArchivedTasks();
+
+      const dir = join(rootDir, ".kb", "tasks", task.id);
+      expect(existsSync(dir)).toBe(false);
+
+      await store.unarchiveTask(task.id);
+
+      // Directory should exist with empty attachments folder
+      expect(existsSync(dir)).toBe(true);
+      expect(existsSync(join(dir, "attachments"))).toBe(true);
+    });
+  });
+
+  describe("archiveTask with cleanup", () => {
+    it("archiveTask(true) archives and cleans up immediately", async () => {
+      const task = await store.createTask({ description: "Immediate cleanup" });
+      await store.moveTask(task.id, "todo");
+      await store.moveTask(task.id, "in-progress");
+      await store.moveTask(task.id, "in-review");
+      await store.moveTask(task.id, "done");
+
+      const archived = await store.archiveTask(task.id, true);
+      expect(archived.column).toBe("archived");
+
+      // Directory should be gone immediately
+      const dir = join(rootDir, ".kb", "tasks", task.id);
+      expect(existsSync(dir)).toBe(false);
+
+      // Should be in archive.jsonl
+      const entry = await store.findInArchive(task.id);
+      expect(entry).toBeDefined();
+      expect(entry!.description).toBe("Immediate cleanup");
+    });
+
+    it("archiveTaskAndCleanup is convenience method", async () => {
+      const task = await store.createTask({ description: "Convenience method" });
+      await store.moveTask(task.id, "todo");
+      await store.moveTask(task.id, "in-progress");
+      await store.moveTask(task.id, "in-review");
+      await store.moveTask(task.id, "done");
+
+      const archived = await store.archiveTaskAndCleanup(task.id);
+      expect(archived.column).toBe("archived");
+
+      const dir = join(rootDir, ".kb", "tasks", task.id);
+      expect(existsSync(dir)).toBe(false);
+    });
+
+    it("archiveTask(false) preserves directory (backward compatibility)", async () => {
+      const task = await store.createTask({ description: "No cleanup" });
+      await store.moveTask(task.id, "todo");
+      await store.moveTask(task.id, "in-progress");
+      await store.moveTask(task.id, "in-review");
+      await store.moveTask(task.id, "done");
+
+      const archived = await store.archiveTask(task.id, false);
+      expect(archived.column).toBe("archived");
+
+      // Directory should still exist
+      const dir = join(rootDir, ".kb", "tasks", task.id);
+      expect(existsSync(dir)).toBe(true);
+    });
+
+    it("default cleanup parameter is false", async () => {
+      const task = await store.createTask({ description: "Default cleanup" });
+      await store.moveTask(task.id, "todo");
+      await store.moveTask(task.id, "in-progress");
+      await store.moveTask(task.id, "in-review");
+      await store.moveTask(task.id, "done");
+
+      const archived = await store.archiveTask(task.id); // No cleanup param
+      expect(archived.column).toBe("archived");
+
+      // Directory should still exist (default is false)
+      const dir = join(rootDir, ".kb", "tasks", task.id);
+      expect(existsSync(dir)).toBe(true);
+    });
+  });
+
+  describe("archive log persistence", () => {
+    it("archive log survives TaskStore reinitialization", async () => {
+      const task = await store.createTask({ description: "Survival test" });
+      await store.moveTask(task.id, "todo");
+      await store.moveTask(task.id, "in-progress");
+      await store.moveTask(task.id, "in-review");
+      await store.moveTask(task.id, "done");
+      await store.archiveTask(task.id);
+      await store.cleanupArchivedTasks();
+
+      // Create new store instance
+      const newStore = new TaskStore(rootDir);
+      await newStore.init();
+
+      const entries = await newStore.readArchiveLog();
+      expect(entries).toHaveLength(1);
+      expect(entries[0].id).toBe(task.id);
+      expect(entries[0].description).toBe("Survival test");
+    });
+  });
 });

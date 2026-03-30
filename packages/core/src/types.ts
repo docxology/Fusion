@@ -366,6 +366,42 @@ export const VALID_TRANSITIONS: Record<Column, Column[]> = {
 
 // ── Planning Mode Types ────────────────────────────────────────────────────
 
+/** Entry in the archive log (archive.jsonl) representing a compact, 
+ *  restorable snapshot of an archived task without agent log content.
+ */
+export interface ArchivedTaskEntry {
+  id: string;
+  title?: string;
+  description: string;
+  column: "archived"; // Always archived when in the log
+  dependencies: string[];
+  steps: TaskStep[];
+  currentStep: number;
+  size?: "S" | "M" | "L";
+  reviewLevel?: number;
+  prInfo?: PrInfo;
+  issueInfo?: IssueInfo;
+  /** Attachment metadata (filenames, mime types, etc.) without file content */
+  attachments?: TaskAttachment[];
+  log: TaskLogEntry[];
+  createdAt: string;
+  updatedAt: string;
+  columnMovedAt?: string;
+  /** Timestamp when the task was archived to the log */
+  archivedAt: string;
+  /** Optional: model override fields for executor and validator */
+  modelProvider?: string;
+  modelId?: string;
+  validatorModelProvider?: string;
+  validatorModelId?: string;
+  /** Optional: other metadata to preserve */
+  breakIntoSubtasks?: boolean;
+  paused?: boolean;
+  baseBranch?: string;
+  mergeRetries?: number;
+  error?: string;
+}
+
 /** Type of planning question presented to the user */
 export type PlanningQuestionType = "text" | "single_select" | "multi_select" | "confirm";
 

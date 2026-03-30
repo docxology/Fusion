@@ -237,3 +237,58 @@ To clear overrides, select "Use default" for both fields and save.
 
 - Triage (task specification) always uses global defaults — per-task overrides apply only to execution and review
 - Both provider and modelId must be set together; partial configuration falls back to defaults
+
+## Archive Cleanup
+
+Archived tasks can be cleaned up from the filesystem to reduce storage overhead while preserving the ability to restore them later.
+
+### Storage Pattern
+
+When a task is archived and cleaned up:
+1. A compact entry is written to `.kb/archive.jsonl` (JSON Lines format)
+2. The task directory (`task.json`, `PROMPT.md`, `agent.log`, attachments) is removed
+3. The archive entry contains all metadata needed to restore the task
+
+The archive log is append-only and survives TaskStore reinitialization.
+
+### Archive Entry Format
+
+Each line in `archive.jsonl` is a JSON object containing:
+- `id`, `title`, `description`, `column` (always "archived")
+- `dependencies`, `steps`, `currentStep`
+- `size`, `reviewLevel`, `prInfo`, `issueInfo`
+- `attachments` (metadata only, no file content)
+- `log` (task log entries)
+- `createdAt`, `updatedAt`, `columnMovedAt`, `archivedAt`
+- Model overrides: `modelProvider`, `modelId`, `validatorModelProvider`, `validatorModelId`
+
+**Explicitly excluded:** `agent.log` content (can be large, not needed for restoration)
+
+### API
+
+- `archiveTask(id, cleanup)` — Archive with optional immediate cleanup
+- `archiveTaskAndCleanup(id)` — Convenience method for archive + cleanup
+- `cleanupArchivedTasks()` — Bulk cleanup of all archived tasks with directories
+- `readArchiveLog()` — Parse all archive entries
+- `findInArchive(id)` — Find specific task in archive
+- `unarchiveTask(id)` — Restore from archive if directory is missing
+
+### Restoration Behavior
+
+When `unarchiveTask()` is called:
+1. If task directory exists: normal unarchive (column "archived" → "done")
+2. If directory missing: restore from archive entry first, then unarchive
+3. Restored tasks have:
+   - All metadata preserved
+   - `column` set to "done" (was "archived" in the log)
+   - `PROMPT.md` regenerated with preserved steps
+   - Empty `attachments/` directory (files intentionally lost)
+   - No `agent.log` (intentionally lost during archive)
+   - Log entry: "Task restored from archive"
+
+### Cleanup Behavior
+
+- `cleanupArchivedTasks()` iterates all "archived" column tasks
+- Skips tasks already cleaned up (directory gone)
+- Writes archive entry atomically before directory removal
+- Can be called idempotently
