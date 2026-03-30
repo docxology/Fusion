@@ -666,3 +666,190 @@ describe("ListView", () => {
     expect(dataRows[2].textContent).toContain("KB-003"); // Charlie
   });
 });
+
+describe("ListView Column Visibility", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // Clear localStorage before each test
+    localStorage.clear();
+  });
+
+  it("renders column toggle button", () => {
+    renderListView();
+
+    const columnsButton = screen.getByRole("button", { name: /columns/i });
+    expect(columnsButton).toBeDefined();
+  });
+
+  it("opens column dropdown when toggle clicked", () => {
+    renderListView();
+
+    const columnsButton = screen.getByRole("button", { name: /columns/i });
+    fireEvent.click(columnsButton);
+
+    // Dropdown should be visible with checkboxes for each column
+    expect(screen.getByText("ID")).toBeDefined();
+    expect(screen.getByText("Title")).toBeDefined();
+    expect(screen.getByText("Status")).toBeDefined();
+    expect(screen.getByText("Column")).toBeDefined();
+    expect(screen.getByText("Created")).toBeDefined();
+    expect(screen.getByText("Updated")).toBeDefined();
+    expect(screen.getByText("Dependencies")).toBeDefined();
+    expect(screen.getByText("Progress")).toBeDefined();
+  });
+
+  it("hides column when unchecked in dropdown", () => {
+    const tasks = [createMockTask({ id: "KB-001", title: "Test Task" })];
+    renderListView({ tasks });
+
+    // Open dropdown
+    const columnsButton = screen.getByRole("button", { name: /columns/i });
+    fireEvent.click(columnsButton);
+
+    // Uncheck the Title column
+    const checkboxes = screen.getAllByRole("checkbox");
+    const titleCheckbox = checkboxes.find(
+      cb => cb.parentElement?.textContent?.includes("Title")
+    );
+    expect(titleCheckbox).toBeDefined();
+    fireEvent.click(titleCheckbox!);
+
+    // Title column should no longer be visible in the table
+    const table = document.querySelector(".list-table");
+    expect(table?.textContent).not.toContain("Test Task");
+  });
+
+  it("shows column when checked in dropdown", () => {
+    const tasks = [createMockTask({ id: "KB-001", title: "Test Task" })];
+    renderListView({ tasks });
+
+    // Open dropdown
+    const columnsButton = screen.getByRole("button", { name: /columns/i });
+    fireEvent.click(columnsButton);
+    
+    // Find and uncheck the Title column
+    const checkboxes = screen.getAllByRole("checkbox");
+    const titleCheckbox = checkboxes.find(
+      cb => cb.parentElement?.textContent?.includes("Title")
+    );
+    expect(titleCheckbox).toBeDefined();
+    fireEvent.click(titleCheckbox!);
+
+    // Verify Title is hidden
+    const table = document.querySelector(".list-table");
+    expect(table?.textContent).not.toContain("Test Task");
+
+    // Re-check the Title column (still in the same dropdown session)
+    const titleCheckbox2 = screen.getAllByRole("checkbox").find(
+      cb => cb.parentElement?.textContent?.includes("Title")
+    );
+    expect(titleCheckbox2).toBeDefined();
+    fireEvent.click(titleCheckbox2!);
+
+    // Title column should be visible again
+    const tableAfter = document.querySelector(".list-table");
+    expect(tableAfter?.textContent).toContain("Test Task");
+  });
+
+  it("persists column visibility to localStorage", () => {
+    const tasks = [createMockTask({ id: "KB-001", title: "Test Task" })];
+    renderListView({ tasks });
+
+    // Open dropdown and uncheck Title
+    const columnsButton = screen.getByRole("button", { name: /columns/i });
+    fireEvent.click(columnsButton);
+    const titleCheckbox = screen.getByLabelText("Title");
+    fireEvent.click(titleCheckbox);
+
+    // Verify localStorage was updated
+    const saved = localStorage.getItem("kb-dashboard-list-columns");
+    expect(saved).toBeTruthy();
+    const parsed = JSON.parse(saved!);
+    expect(parsed).not.toContain("title");
+  });
+
+  it("initializes column visibility from localStorage", () => {
+    // Set up localStorage with only ID and Status visible
+    localStorage.setItem("kb-dashboard-list-columns", JSON.stringify(["id", "status"]));
+
+    const tasks = [createMockTask({ id: "KB-001", title: "Test Task", status: "pending" })];
+    renderListView({ tasks });
+
+    // ID should be visible
+    expect(screen.getByText("KB-001")).toBeDefined();
+
+    // Title should NOT be visible (hidden by localStorage)
+    const table = document.querySelector(".list-table");
+    expect(table?.textContent).not.toContain("Test Task");
+  });
+
+  it("prevents hiding all columns (at least one stays visible)", () => {
+    renderListView();
+
+    // Open dropdown
+    const columnsButton = screen.getByRole("button", { name: /columns/i });
+    fireEvent.click(columnsButton);
+
+    // Get all checkboxes and try to uncheck all except one
+    const checkboxes = screen.getAllByRole("checkbox");
+    
+    // Uncheck all but one
+    for (let i = 0; i < checkboxes.length - 1; i++) {
+      if (checkboxes[i].checked) {
+        fireEvent.click(checkboxes[i]);
+      }
+    }
+
+    // The last checkbox should be disabled (check the disabled property)
+    const lastCheckbox = checkboxes[checkboxes.length - 1];
+    if (lastCheckbox.checked) {
+      expect(lastCheckbox.disabled).toBe(true);
+    }
+  });
+
+  it("sorting still works when some columns are hidden", () => {
+    const tasks = [
+      createMockTask({ id: "KB-003", column: "triage" }),
+      createMockTask({ id: "KB-001", column: "triage" }),
+      createMockTask({ id: "KB-002", column: "triage" }),
+    ];
+    renderListView({ tasks });
+
+    // Hide some columns
+    const columnsButton = screen.getByRole("button", { name: /columns/i });
+    fireEvent.click(columnsButton);
+    const checkboxes = screen.getAllByRole("checkbox");
+    const titleCheckbox = checkboxes.find(
+      cb => cb.parentElement?.textContent?.includes("Title")
+    );
+    expect(titleCheckbox).toBeDefined();
+    fireEvent.click(titleCheckbox!);
+
+    // Find and click ID header to sort (use getAllByText and find the header cell)
+    const idHeaders = screen.getAllByText("ID");
+    const idHeader = idHeaders.find(el => el.tagName === "TH" || el.closest("th"));
+    expect(idHeader).toBeDefined();
+    fireEvent.click(idHeader!);
+
+    // Get sorted rows and verify sorting still works
+    const rows = screen.getAllByRole("row").filter(r => r.getAttribute("data-id"));
+    expect(rows[0].textContent).toContain("KB-001");
+    expect(rows[1].textContent).toContain("KB-002");
+    expect(rows[2].textContent).toContain("KB-003");
+  });
+
+  it("all columns visible by default when no localStorage", () => {
+    const tasks = [
+      createMockTask({ id: "KB-001", title: "Test Task", status: "pending", column: "triage" }),
+    ];
+    renderListView({ tasks });
+
+    // All columns should be visible by default
+    expect(screen.getByText("KB-001")).toBeDefined();
+    expect(screen.getByText("Test Task")).toBeDefined();
+    expect(screen.getByText("pending")).toBeDefined();
+    // Check for column badge specifically using the class
+    const columnBadge = document.querySelector(".list-column-badge");
+    expect(columnBadge?.textContent).toContain("Triage");
+  });
+});

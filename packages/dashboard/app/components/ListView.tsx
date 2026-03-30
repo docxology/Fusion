@@ -1,5 +1,5 @@
-import { useState, useCallback, useMemo, Fragment } from "react";
-import { LayoutGrid, List as ListIcon, ArrowUpDown, ArrowUp, ArrowDown, Search, Link } from "lucide-react";
+import { useState, useCallback, useMemo, Fragment, useEffect, useRef } from "react";
+import { LayoutGrid, List as ListIcon, ArrowUpDown, ArrowUp, ArrowDown, Search, Link, Columns3 } from "lucide-react";
 import type { Task, TaskDetail, Column, TaskStep } from "@kb/core";
 import { COLUMN_LABELS, COLUMNS } from "@kb/core";
 import { fetchTaskDetail } from "../api";
@@ -17,6 +17,10 @@ const ACTIVE_STATUSES = new Set(["planning", "researching", "executing", "finali
 
 type SortField = "id" | "title" | "status" | "column" | "createdAt" | "updatedAt";
 type SortDirection = "asc" | "desc";
+
+// Column visibility types
+const ALL_LIST_COLUMNS = ["id", "title", "status", "column", "createdAt", "updatedAt", "dependencies", "progress"] as const;
+type ListColumn = typeof ALL_LIST_COLUMNS[number];
 
 interface ListViewProps {
   tasks: Task[];
@@ -60,6 +64,92 @@ export function ListView({
   const [filter, setFilter] = useState("");
   const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<Column | null>(null);
+
+  // Column visibility state - initialize from localStorage or default to all columns
+  const [visibleColumns, setVisibleColumns] = useState<Set<ListColumn>>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("kb-dashboard-list-columns");
+        if (saved) {
+          const parsed = JSON.parse(saved) as ListColumn[];
+          // Validate that all saved columns are valid ListColumn values
+          const validColumns = parsed.filter((col): col is ListColumn =>
+            ALL_LIST_COLUMNS.includes(col as ListColumn)
+          );
+          if (validColumns.length > 0) {
+            return new Set(validColumns);
+          }
+        }
+      } catch {
+        // Invalid localStorage data - fall through to default
+      }
+    }
+    return new Set(ALL_LIST_COLUMNS);
+  });
+
+  // Persist column visibility changes to localStorage
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("kb-dashboard-list-columns", JSON.stringify([...visibleColumns]));
+    }
+  }, [visibleColumns]);
+
+  // Column dropdown state
+  const [columnDropdownOpen, setColumnDropdownOpen] = useState(false);
+  const columnDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Toggle a column's visibility
+  const toggleColumn = useCallback((column: ListColumn) => {
+    setVisibleColumns((prev) => {
+      const next = new Set(prev);
+      if (next.has(column)) {
+        // Prevent hiding the last visible column
+        if (next.size > 1) {
+          next.delete(column);
+        }
+      } else {
+        next.add(column);
+      }
+      return next;
+    });
+  }, []);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    if (!columnDropdownOpen) return;
+
+    const handleClickOutside = (e: MouseEvent) => {
+      if (columnDropdownRef.current && !columnDropdownRef.current.contains(e.target as Node)) {
+        setColumnDropdownOpen(false);
+      }
+    };
+
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setColumnDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleEscape);
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [columnDropdownOpen]);
+
+  // Column display labels
+  const COLUMN_LABELS_MAP: Record<ListColumn, string> = {
+    id: "ID",
+    title: "Title",
+    status: "Status",
+    column: "Column",
+    createdAt: "Created",
+    updatedAt: "Updated",
+    dependencies: "Dependencies",
+    progress: "Progress",
+  };
 
   const handleSort = useCallback((field: SortField) => {
     if (sortField === field) {
@@ -207,6 +297,41 @@ export function ListView({
             </button>
           )}
         </div>
+        <div className="list-column-toggle" ref={columnDropdownRef}>
+          <button
+            className="btn btn-sm"
+            onClick={() => setColumnDropdownOpen((prev) => !prev)}
+            aria-expanded={columnDropdownOpen}
+            aria-haspopup="menu"
+          >
+            <Columns3 size={14} />
+            Columns
+          </button>
+          {columnDropdownOpen && (
+            <div className="list-column-dropdown" role="menu">
+              {ALL_LIST_COLUMNS.map((column) => {
+                const isVisible = visibleColumns.has(column);
+                const isLastVisible = isVisible && visibleColumns.size === 1;
+                return (
+                  <label
+                    key={column}
+                    className={`list-column-dropdown-item${isLastVisible ? " disabled" : ""}`}
+                    role="menuitem"
+                    title={isLastVisible ? "At least one column must be visible" : ""}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isVisible}
+                      onChange={() => toggleColumn(column)}
+                      disabled={isLastVisible}
+                    />
+                    <span>{COLUMN_LABELS_MAP[column]}</span>
+                  </label>
+                );
+              })}
+            </div>
+          )}
+        </div>
         <div className="list-stats">
           {filteredCount} of {tasks.length} tasks
         </div>
@@ -245,26 +370,42 @@ export function ListView({
           <table className="list-table">
             <thead>
               <tr>
-                <th className="list-header-cell" onClick={() => handleSort("id")}>
-                  ID {getSortIcon("id")}
-                </th>
-                <th className="list-header-cell" onClick={() => handleSort("title")}>
-                  Title {getSortIcon("title")}
-                </th>
-                <th className="list-header-cell" onClick={() => handleSort("status")}>
-                  Status {getSortIcon("status")}
-                </th>
-                <th className="list-header-cell" onClick={() => handleSort("column")}>
-                  Column {getSortIcon("column")}
-                </th>
-                <th className="list-header-cell" onClick={() => handleSort("createdAt")}>
-                  Created {getSortIcon("createdAt")}
-                </th>
-                <th className="list-header-cell" onClick={() => handleSort("updatedAt")}>
-                  Updated {getSortIcon("updatedAt")}
-                </th>
-                <th className="list-header-cell">Dependencies</th>
-                <th className="list-header-cell">Progress</th>
+                {visibleColumns.has("id") && (
+                  <th className="list-header-cell" onClick={() => handleSort("id")}>
+                    ID {getSortIcon("id")}
+                  </th>
+                )}
+                {visibleColumns.has("title") && (
+                  <th className="list-header-cell" onClick={() => handleSort("title")}>
+                    Title {getSortIcon("title")}
+                  </th>
+                )}
+                {visibleColumns.has("status") && (
+                  <th className="list-header-cell" onClick={() => handleSort("status")}>
+                    Status {getSortIcon("status")}
+                  </th>
+                )}
+                {visibleColumns.has("column") && (
+                  <th className="list-header-cell" onClick={() => handleSort("column")}>
+                    Column {getSortIcon("column")}
+                  </th>
+                )}
+                {visibleColumns.has("createdAt") && (
+                  <th className="list-header-cell" onClick={() => handleSort("createdAt")}>
+                    Created {getSortIcon("createdAt")}
+                  </th>
+                )}
+                {visibleColumns.has("updatedAt") && (
+                  <th className="list-header-cell" onClick={() => handleSort("updatedAt")}>
+                    Updated {getSortIcon("updatedAt")}
+                  </th>
+                )}
+                {visibleColumns.has("dependencies") && (
+                  <th className="list-header-cell">Dependencies</th>
+                )}
+                {visibleColumns.has("progress") && (
+                  <th className="list-header-cell">Progress</th>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -279,7 +420,7 @@ export function ListView({
                   <Fragment key={column}>
                     {/* Section Header */}
                     <tr className="list-section-header">
-                      <th colSpan={8} className="list-section-cell">
+                      <th colSpan={visibleColumns.size} className="list-section-cell">
                         <span className={`list-section-dot dot-${column}`} />
                         <span className="list-section-title">{COLUMN_LABELS[column]}</span>
                         <span className="list-section-count">{columnTasks.length}</span>
@@ -289,7 +430,7 @@ export function ListView({
                     {/* Task Rows */}
                     {isEmpty ? (
                       <tr className="list-section-empty">
-                        <td colSpan={8} className="list-empty-cell">
+                        <td colSpan={visibleColumns.size} className="list-empty-cell">
                           No tasks
                         </td>
                       </tr>
@@ -316,63 +457,79 @@ export function ListView({
                             onDragEnd={handleDragEnd}
                             data-id={task.id}
                           >
-                            <td className="list-cell list-cell-id">{task.id}</td>
-                            <td className="list-cell list-cell-title">
-                              {task.title || task.description.slice(0, 60) + (task.description.length > 60 ? "…" : "")}
-                            </td>
-                            <td className="list-cell">
-                              {task.status ? (
+                            {visibleColumns.has("id") && (
+                              <td className="list-cell list-cell-id">{task.id}</td>
+                            )}
+                            {visibleColumns.has("title") && (
+                              <td className="list-cell list-cell-title">
+                                {task.title || task.description.slice(0, 60) + (task.description.length > 60 ? "…" : "")}
+                              </td>
+                            )}
+                            {visibleColumns.has("status") && (
+                              <td className="list-cell">
+                                {task.status ? (
+                                  <span
+                                    className={`list-status-badge${isFailed ? " failed" : ""}${
+                                      isAgentActive ? " pulsing" : ""
+                                    }`}
+                                  >
+                                    {task.status}
+                                  </span>
+                                ) : (
+                                  <span className="list-status-badge">-</span>
+                                )}
+                              </td>
+                            )}
+                            {visibleColumns.has("column") && (
+                              <td className="list-cell">
                                 <span
-                                  className={`list-status-badge${isFailed ? " failed" : ""}${
-                                    isAgentActive ? " pulsing" : ""
-                                  }`}
+                                  className="list-column-badge"
+                                  style={{
+                                    background: `${COLUMN_COLOR_MAP[task.column]}20`,
+                                    color: COLUMN_COLOR_MAP[task.column],
+                                  }}
                                 >
-                                  {task.status}
+                                  {COLUMN_LABELS[task.column]}
                                 </span>
-                              ) : (
-                                <span className="list-status-badge">-</span>
-                              )}
-                            </td>
-                            <td className="list-cell">
-                              <span
-                                className="list-column-badge"
-                                style={{
-                                  background: `${COLUMN_COLOR_MAP[task.column]}20`,
-                                  color: COLUMN_COLOR_MAP[task.column],
-                                }}
-                              >
-                                {COLUMN_LABELS[task.column]}
-                              </span>
-                            </td>
-                            <td className="list-cell list-cell-date">{formatDate(task.createdAt)}</td>
-                            <td className="list-cell list-cell-date">{formatDate(task.updatedAt)}</td>
-                            <td className="list-cell list-cell-deps">
-                              {task.dependencies && task.dependencies.length > 0 ? (
-                                <span className="list-dep-badge" title={task.dependencies.join(", ")}>
-                                  <Link size={12} /> {task.dependencies.length}
-                                </span>
-                              ) : (
-                                "-"
-                              )}
-                            </td>
-                            <td className="list-cell list-cell-progress">
-                              {task.steps.length > 0 ? (
-                                <div className="list-progress">
-                                  <div className="list-progress-bar">
-                                    <div
-                                      className="list-progress-fill"
-                                      style={{
-                                        width: `${getStepProgressPercent(task.steps)}%`,
-                                        backgroundColor: COLUMN_COLOR_MAP[task.column],
-                                      }}
-                                    />
+                              </td>
+                            )}
+                            {visibleColumns.has("createdAt") && (
+                              <td className="list-cell list-cell-date">{formatDate(task.createdAt)}</td>
+                            )}
+                            {visibleColumns.has("updatedAt") && (
+                              <td className="list-cell list-cell-date">{formatDate(task.updatedAt)}</td>
+                            )}
+                            {visibleColumns.has("dependencies") && (
+                              <td className="list-cell list-cell-deps">
+                                {task.dependencies && task.dependencies.length > 0 ? (
+                                  <span className="list-dep-badge" title={task.dependencies.join(", ")}>
+                                    <Link size={12} /> {task.dependencies.length}
+                                  </span>
+                                ) : (
+                                  "-"
+                                )}
+                              </td>
+                            )}
+                            {visibleColumns.has("progress") && (
+                              <td className="list-cell list-cell-progress">
+                                {task.steps.length > 0 ? (
+                                  <div className="list-progress">
+                                    <div className="list-progress-bar">
+                                      <div
+                                        className="list-progress-fill"
+                                        style={{
+                                          width: `${getStepProgressPercent(task.steps)}%`,
+                                          backgroundColor: COLUMN_COLOR_MAP[task.column],
+                                        }}
+                                      />
+                                    </div>
+                                    <span className="list-progress-label">{getStepProgress(task.steps)}</span>
                                   </div>
-                                  <span className="list-progress-label">{getStepProgress(task.steps)}</span>
-                                </div>
-                              ) : (
-                                "-"
-                              )}
-                            </td>
+                                ) : (
+                                  "-"
+                                )}
+                              </td>
+                            )}
                           </tr>
                         );
                       })

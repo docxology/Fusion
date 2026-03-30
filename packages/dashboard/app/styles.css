@@ -2027,6 +2027,78 @@ body {
   margin-left: auto;
 }
 
+/* Column toggle dropdown */
+.list-column-toggle {
+  position: relative;
+}
+
+.list-column-toggle .btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.list-column-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  min-width: 160px;
+  padding: 6px 0;
+  z-index: 100;
+  box-shadow: var(--shadow);
+  animation: dropdown-in 0.15s ease-out;
+}
+
+@keyframes dropdown-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.list-column-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.list-column-dropdown-item:hover {
+  background: var(--card-hover);
+}
+
+.list-column-dropdown-item.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.list-column-dropdown-item.disabled:hover {
+  background: none;
+}
+
+.list-column-dropdown-item input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--todo);
+  cursor: pointer;
+}
+
+.list-column-dropdown-item.disabled input[type="checkbox"] {
+  cursor: not-allowed;
+}
+
 /* Drop zones for drag and drop */
 .list-drop-zones {
   display: flex;
@@ -2374,6 +2446,11 @@ body {
 
   .list-stats {
     order: 1;
+  }
+
+  .list-column-toggle {
+    order: 3;
+    margin-left: auto;
   }
 
   .list-drop-zones {
