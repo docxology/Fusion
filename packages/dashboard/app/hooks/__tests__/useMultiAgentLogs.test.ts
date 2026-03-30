@@ -1,3 +1,18 @@
+/**
+ * EventSource Mock Cleanup Requirements:
+ * 
+ * This test file uses a MockEventSource class that tracks all instances in a static
+ * `instances` array. To prevent test isolation issues, we must ensure:
+ * 
+ * 1. `MockEventSource.instances` is reset to empty before each test
+ * 2. Any lingering EventSource instances are closed and removed after each test
+ * 3. Fake timers are restored to real timers after each test (in case a test failed
+ *    before it could restore them)
+ * 
+ * Without proper cleanup, fake timers from one test can leak to subsequent tests,
+ * causing `waitFor()` calls to hang indefinitely.
+ */
+
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
 import { MAX_LOG_ENTRIES, useMultiAgentLogs } from "../useMultiAgentLogs";
@@ -25,11 +40,22 @@ function getConnections(taskId: string): MockEventSource[] {
 }
 
 beforeEach(() => {
+  MockEventSource.instances = [];
   mockFetchAgentLogs.mockReset().mockResolvedValue([]);
+  
+  // Ensure we start with real timers for every test
+  vi.useRealTimers();
 });
 
 afterEach(() => {
-  // Clean up is handled by global afterEach in vitest.setup.ts
+  // Close all lingering EventSource instances to clear reconnect timers
+  for (const instance of MockEventSource.instances) {
+    instance.close();
+  }
+  MockEventSource.instances = [];
+  
+  // Safety: ensure real timers are restored even if a test failed
+  vi.useRealTimers();
 });
 
 describe("useMultiAgentLogs", () => {
