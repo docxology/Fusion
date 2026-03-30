@@ -1283,6 +1283,97 @@ describe("TaskStore", () => {
     });
   });
 
+  describe("moveTask — clears transient fields when leaving in-progress", () => {
+    it("clears status, error, worktree, and blockedBy when moving from in-progress to todo", async () => {
+      const task = await store.createTask({ description: "test clear fields" });
+      await store.moveTask(task.id, "todo");
+      await store.moveTask(task.id, "in-progress");
+
+      // Simulate a failed state
+      await store.updateTask(task.id, {
+        status: "failed",
+        error: "Something went wrong",
+        worktree: "test-worktree",
+        blockedBy: "KB-001"
+      });
+
+      const moved = await store.moveTask(task.id, "todo");
+      expect(moved.column).toBe("todo");
+      expect(moved.status).toBeUndefined();
+      expect(moved.error).toBeUndefined();
+      expect(moved.worktree).toBeUndefined();
+      expect(moved.blockedBy).toBeUndefined();
+    });
+
+    it("clears status, error, worktree, and blockedBy when moving from in-progress to triage", async () => {
+      const task = await store.createTask({ description: "test clear fields to triage" });
+      await store.moveTask(task.id, "todo");
+      await store.moveTask(task.id, "in-progress");
+
+      // Simulate a failed state
+      await store.updateTask(task.id, {
+        status: "failed",
+        error: "Something went wrong",
+        worktree: "test-worktree",
+        blockedBy: "KB-001"
+      });
+
+      const moved = await store.moveTask(task.id, "triage");
+      expect(moved.column).toBe("triage");
+      expect(moved.status).toBeUndefined();
+      expect(moved.error).toBeUndefined();
+      expect(moved.worktree).toBeUndefined();
+      expect(moved.blockedBy).toBeUndefined();
+    });
+
+    it("preserves status when moving from todo to in-progress", async () => {
+      const task = await store.createTask({ description: "test preserve status", column: "todo" });
+
+      // Set a custom status before moving to in-progress
+      await store.updateTask(task.id, { status: "planning" });
+
+      const moved = await store.moveTask(task.id, "in-progress");
+      expect(moved.column).toBe("in-progress");
+      expect(moved.status).toBe("planning");
+    });
+
+    it("does not clear status when moving between non-in-progress columns", async () => {
+      const task = await store.createTask({ description: "test non-in-progress move" });
+      // Task starts in triage
+
+      // Set a custom status
+      await store.updateTask(task.id, { status: "custom-status" });
+
+      // Move from triage to todo
+      const moved = await store.moveTask(task.id, "todo");
+      expect(moved.column).toBe("todo");
+      expect(moved.status).toBe("custom-status");
+    });
+
+    it("clears status, error, worktree, and blockedBy when moving from in-progress to done", async () => {
+      const task = await store.createTask({ description: "test clear fields to done" });
+      await store.moveTask(task.id, "todo");
+      await store.moveTask(task.id, "in-progress");
+
+      // Simulate a failed state
+      await store.updateTask(task.id, {
+        status: "failed",
+        error: "Something went wrong",
+        worktree: "test-worktree",
+        blockedBy: "KB-001"
+      });
+
+      // Must go through in-review to reach done
+      await store.moveTask(task.id, "in-review");
+      const moved = await store.moveTask(task.id, "done");
+      expect(moved.column).toBe("done");
+      expect(moved.status).toBeUndefined();
+      expect(moved.error).toBeUndefined();
+      expect(moved.worktree).toBeUndefined();
+      expect(moved.blockedBy).toBeUndefined();
+    });
+  });
+
   describe("columnMovedAt", () => {
     it("createTask sets columnMovedAt", async () => {
       const before = new Date().toISOString();

@@ -403,6 +403,16 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       // Clear transient fields when moving to done (matches moveToDone behavior)
       if (toColumn === "done") {
         task.status = undefined;
+        task.error = undefined;
+        task.worktree = undefined;
+        task.blockedBy = undefined;
+      }
+
+      // Clear transient fields when moving from in-progress to reset columns (todo/triage)
+      // This ensures failed tasks don't show failed status after being moved for retry
+      if (fromColumn === "in-progress" && (toColumn === "todo" || toColumn === "triage")) {
+        task.status = undefined;
+        task.error = undefined;
         task.worktree = undefined;
         task.blockedBy = undefined;
       }

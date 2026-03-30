@@ -2871,7 +2871,7 @@ describe("TaskExecutor usage limit detection", () => {
     );
     expect(store.updateSettings).toHaveBeenCalledWith({ globalPause: true });
     // Task should still be marked as failed
-    expect(store.updateTask).toHaveBeenCalledWith("KB-001", { status: "failed" });
+    expect(store.updateTask).toHaveBeenCalledWith("KB-001", { status: "failed", error: "rate_limit_error: Rate limit exceeded" });
     expect(onError).toHaveBeenCalled();
   });
 
@@ -2903,7 +2903,7 @@ describe("TaskExecutor usage limit detection", () => {
 
     expect(onUsageLimitHitSpy).not.toHaveBeenCalled();
     // Task should still be marked as failed
-    expect(store.updateTask).toHaveBeenCalledWith("KB-001", { status: "failed" });
+    expect(store.updateTask).toHaveBeenCalledWith("KB-001", { status: "failed", error: "connection refused" });
   });
 
   it("works without usageLimitPauser (backward compatible)", async () => {
@@ -2928,7 +2928,7 @@ describe("TaskExecutor usage limit detection", () => {
     });
 
     // Should not crash — just mark as failed
-    expect(store.updateTask).toHaveBeenCalledWith("KB-001", { status: "failed" });
+    expect(store.updateTask).toHaveBeenCalledWith("KB-001", { status: "failed", error: "rate_limit_error: Rate limit exceeded" });
     expect(onError).toHaveBeenCalled();
   });
 
@@ -2972,7 +2972,7 @@ describe("TaskExecutor usage limit detection", () => {
       "rate_limit_error: Rate limit exceeded",
     );
     // Task should be marked as failed
-    expect(store.updateTask).toHaveBeenCalledWith("KB-001", { status: "failed" });
+    expect(store.updateTask).toHaveBeenCalledWith("KB-001", { status: "failed", error: "rate_limit_error: Rate limit exceeded" });
     // onError callback should fire
     expect(onError).toHaveBeenCalled();
   });
