@@ -1,8 +1,12 @@
 import { defineConfig } from "vitest/config";
 
+const maxWorkers = Number.parseInt(process.env.VITEST_MAX_WORKERS ?? "4", 10);
+
 export default defineConfig({
   test: {
     include: ["src/**/*.test.ts"],
+    maxWorkers,
+    fileParallelism: false,
     coverage: {
       enabled: false,
       reporter: ["text", "html", "json"],

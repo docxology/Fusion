@@ -2,6 +2,8 @@ import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import { resolve } from "node:path";
 
+const maxWorkers = Number.parseInt(process.env.VITEST_MAX_WORKERS ?? "4", 10);
+
 export default defineConfig({
   plugins: [react()],
   resolve: {
@@ -14,6 +16,8 @@ export default defineConfig({
     globals: true,
     include: ["app/**/*.test.{ts,tsx}", "src/**/*.test.{ts,tsx}"],
     setupFiles: ["./vitest.setup.ts"],
+    maxWorkers,
+    fileParallelism: false,
     coverage: {
       enabled: false,
       reporter: ["text", "html", "json"],
