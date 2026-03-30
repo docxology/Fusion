@@ -3181,3 +3181,104 @@ describe("Per-task model overrides", () => {
     expect(capturedOptions[0].defaultModelId).toBe("gpt-4o");
   });
 });
+
+// ── Invalid transition error handling tests ─────────────────────────
+
+describe("Invalid transition error handling", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockedExistsSync.mockReturnValue(true);
+  });
+
+  it("does not mark task as failed when invalid transition error occurs on completion", async () => {
+    const store = createMockStore();
+
+    // Mock moveTask to throw invalid transition error (task already moved to done)
+    store.moveTask.mockRejectedValue(
+      new Error("Invalid transition: 'done' → 'in-review'. Valid targets: none"),
+    );
+
+    // Mock agent that completes successfully
+    mockedCreateHaiAgent.mockImplementation(async () => {
+      return {
+        session: {
+          prompt: vi.fn().mockImplementation(async () => {
+            // Agent completes work but moveTask will fail
+          }),
+          dispose: vi.fn(),
+          sessionManager: {
+            getLeafId: vi.fn(),
+            branchWithSummary: vi.fn(),
+          },
+          navigateTree: vi.fn(),
+        },
+      } as any;
+    });
+
+    const executor = new TaskExecutor(store, "/tmp/test");
+    await executor.execute({
+      id: "KB-001",
+      title: "Test",
+      description: "Test",
+      column: "in-progress",
+      dependencies: [],
+      steps: [],
+      currentStep: 0,
+      log: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+
+    // Should NOT mark task as failed
+    expect(store.updateTask).not.toHaveBeenCalledWith("KB-001", { status: "failed", error: expect.any(String) });
+
+    // Should log informative message
+    expect(store.logEntry).toHaveBeenCalledWith(
+      "KB-001",
+      "Task already moved from 'done' — skipping transition to 'in-review'",
+      expect.stringContaining("Invalid transition"),
+    );
+  });
+
+  it("calls onComplete when invalid transition occurs after successful execution", async () => {
+    const store = createMockStore();
+    const onComplete = vi.fn();
+
+    // Mock moveTask to throw invalid transition error
+    store.moveTask.mockRejectedValue(
+      new Error("Invalid transition: 'in-progress' → 'in-review'. Valid targets: todo, triage"),
+    );
+
+    mockedCreateHaiAgent.mockImplementation(async () => {
+      return {
+        session: {
+          prompt: vi.fn().mockResolvedValue(undefined),
+          dispose: vi.fn(),
+          sessionManager: {
+            getLeafId: vi.fn(),
+            branchWithSummary: vi.fn(),
+          },
+          navigateTree: vi.fn(),
+        },
+      } as any;
+    });
+
+    const executor = new TaskExecutor(store, "/tmp/test", { onComplete });
+    await executor.execute({
+      id: "KB-002",
+      title: "Test",
+      description: "Test",
+      column: "in-progress",
+      dependencies: [],
+      steps: [],
+      currentStep: 0,
+      log: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+
+    // onComplete should be called even when invalid transition occurs
+    expect(onComplete).toHaveBeenCalled();
+    expect(onComplete).toHaveBeenCalledWith(expect.objectContaining({ id: "KB-002" }));
+  });
+});

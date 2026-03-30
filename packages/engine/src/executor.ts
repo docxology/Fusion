@@ -513,6 +513,17 @@ export class TaskExecutor {
         // Dependency added mid-execution — discard worktree and move to triage
         this.depAborted.delete(task.id);
         await this.handleDepAbortCleanup(task.id, worktreePath);
+      } else if (err.message?.includes("Invalid transition")) {
+        // Task was moved by user/process while executor was running — already in desired state
+        // This check must come before pausedAborted since it's more specific
+        const transitionMatch = err.message.match(/Invalid transition: '([^']+)' → '([^']+)'/);
+        const fromColumn = transitionMatch?.[1] ?? "unknown";
+        const toColumn = transitionMatch?.[2] ?? "unknown";
+        const logMessage = `Task already moved from '${fromColumn}' — skipping transition to '${toColumn}'`;
+        executorLog.log(`${task.id} ${logMessage}`);
+        await this.store.logEntry(task.id, logMessage, err.message);
+        // Task finished successfully (just already moved), so call onComplete
+        this.options.onComplete?.(task);
       } else if (this.pausedAborted.has(task.id)) {
         // Task was paused mid-execution — move to todo, don't mark as failed
         executorLog.log(`${task.id} paused — moving to todo`);
