@@ -178,7 +178,7 @@ describe("PlanningModeModal", () => {
       expect(screen.getByText(/Build a user authentication/)).toBeDefined();
     });
 
-    it.skip("auto-starts planning when initialPlan prop is provided", async () => {
+    it("auto-starts planning when initialPlan prop is provided", async () => {
       render(
         <PlanningModeModal
           isOpen={true}
@@ -200,7 +200,7 @@ describe("PlanningModeModal", () => {
       });
     });
 
-    it.skip("sets initial plan text in textarea when initialPlan prop is provided", async () => {
+    it("sets initial plan text in textarea when initialPlan prop is provided", async () => {
       render(
         <PlanningModeModal
           isOpen={true}

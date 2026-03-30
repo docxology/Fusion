@@ -42,7 +42,11 @@ export function PlanningModeModal({ isOpen, onClose, onTaskCreated, tasks, initi
   const [error, setError] = useState<string | null>(null);
   const [responseHistory, setResponseHistory] = useState<QuestionResponse[]>([]);
   const [editedSummary, setEditedSummary] = useState<PlanningSummary | null>(null);
-  const [hasAutoStarted, setHasAutoStarted] = useState(false);
+  // Use ref instead of state for hasAutoStarted to handle React StrictMode double-render.
+  // In StrictMode, components render twice but state persists across renders,
+  // which would skip auto-start on the second (committed) render. Refs are
+  // re-initialized on each render, ensuring the auto-start effect runs correctly.
+  const hasAutoStartedRef = useRef(false);
   const [streamingOutput, setStreamingOutput] = useState<string>("");
   const [showThinking, setShowThinking] = useState(true);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -58,21 +62,21 @@ export function PlanningModeModal({ isOpen, onClose, onTaskCreated, tasks, initi
 
   // Auto-start planning when initialPlan prop is provided
   useEffect(() => {
-    if (isOpen && initialPlanProp && !hasAutoStarted && view.type === "initial") {
+    if (isOpen && initialPlanProp && !hasAutoStartedRef.current && view.type === "initial") {
       setInitialPlan(initialPlanProp);
-      setHasAutoStarted(true);
+      hasAutoStartedRef.current = true;
       // Use a small timeout to allow state update to propagate before starting
       const timer = setTimeout(() => {
         handleStartPlanningWithPlan(initialPlanProp);
       }, 0);
       return () => clearTimeout(timer);
     }
-  }, [isOpen, initialPlanProp, hasAutoStarted, view.type]);
+  }, [isOpen, initialPlanProp, view.type]);
 
   // Reset hasAutoStarted when modal closes
   useEffect(() => {
     if (!isOpen) {
-      setHasAutoStarted(false);
+      hasAutoStartedRef.current = false;
     }
   }, [isOpen]);
 
