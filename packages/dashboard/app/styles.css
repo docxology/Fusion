@@ -3142,6 +3142,15 @@ body {
   gap: 6px;
 }
 
+.list-quick-entry {
+  flex-shrink: 0;
+}
+
+.list-quick-entry .quick-entry-box {
+  margin-bottom: 0;
+  padding: 4px 8px;
+}
+
 .list-column-dropdown {
   position: absolute;
   top: 100%;

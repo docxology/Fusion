@@ -242,6 +242,7 @@ function AppInner() {
           isCreating={isListInlineCreating}
           onCancelCreate={handleListInlineCreateCancel}
           onCreateTask={handleListInlineCreate}
+          onQuickCreate={handleQuickCreate}
         />
       )}
       {detailTask && (

@@ -1401,3 +1401,98 @@ describe("ListView Inline Create Card", () => {
     expect(saveButton?.textContent).toBe("Save");
   });
 });
+
+describe("ListView Quick Entry", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("renders QuickEntryBox when onQuickCreate is provided", () => {
+    const mockOnQuickCreate = vi.fn().mockResolvedValue(undefined);
+    renderListView({ onQuickCreate: mockOnQuickCreate });
+
+    // Quick entry box should be visible
+    const quickEntry = screen.getByTestId("quick-entry-box");
+    expect(quickEntry).toBeDefined();
+
+    // Input should be visible
+    const input = screen.getByTestId("quick-entry-input");
+    expect(input).toBeDefined();
+  });
+
+  it("does not render QuickEntryBox when onQuickCreate is not provided", () => {
+    renderListView({ onQuickCreate: undefined });
+
+    // Quick entry box should not be visible
+    const quickEntry = screen.queryByTestId("quick-entry-box");
+    expect(quickEntry).toBeNull();
+  });
+
+  it("calls onQuickCreate with description when Enter is pressed", async () => {
+    const mockOnQuickCreate = vi.fn().mockResolvedValue(undefined);
+    renderListView({ onQuickCreate: mockOnQuickCreate });
+
+    const input = screen.getByTestId("quick-entry-input");
+    fireEvent.change(input, { target: { value: "New quick task" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => {
+      expect(mockOnQuickCreate).toHaveBeenCalledWith("New quick task");
+    });
+  });
+
+  it("clears input after successful quick create", async () => {
+    const mockOnQuickCreate = vi.fn().mockResolvedValue(undefined);
+    renderListView({ onQuickCreate: mockOnQuickCreate });
+
+    const input = screen.getByTestId("quick-entry-input") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "Task to create" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => {
+      expect(mockOnQuickCreate).toHaveBeenCalled();
+    });
+
+    expect(input.value).toBe("");
+  });
+
+  it("shows error toast when onQuickCreate fails and keeps input content", async () => {
+    const mockOnQuickCreate = vi.fn().mockRejectedValue(new Error("Create failed"));
+    renderListView({ onQuickCreate: mockOnQuickCreate });
+
+    const input = screen.getByTestId("quick-entry-input") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "Failed task" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => {
+      expect(mockAddToast).toHaveBeenCalledWith("Create failed", "error");
+    });
+
+    // Input content should be preserved for retry
+    expect(input.value).toBe("Failed task");
+  });
+
+  it("trims whitespace when creating task via quick entry", async () => {
+    const mockOnQuickCreate = vi.fn().mockResolvedValue(undefined);
+    renderListView({ onQuickCreate: mockOnQuickCreate });
+
+    const input = screen.getByTestId("quick-entry-input");
+    fireEvent.change(input, { target: { value: "  Task with spaces  " } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => {
+      expect(mockOnQuickCreate).toHaveBeenCalledWith("Task with spaces");
+    });
+  });
+
+  it("does not submit on Enter if input is empty", async () => {
+    const mockOnQuickCreate = vi.fn().mockResolvedValue(undefined);
+    renderListView({ onQuickCreate: mockOnQuickCreate });
+
+    const input = screen.getByTestId("quick-entry-input");
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(mockOnQuickCreate).not.toHaveBeenCalled();
+  });
+});

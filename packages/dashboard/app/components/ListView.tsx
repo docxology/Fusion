@@ -4,6 +4,7 @@ import type { Task, TaskDetail, Column, TaskStep, TaskCreateInput } from "@kb/co
 import { COLUMN_LABELS, COLUMNS } from "@kb/core";
 import { fetchTaskDetail } from "../api";
 import { InlineCreateCard } from "./InlineCreateCard";
+import { QuickEntryBox } from "./QuickEntryBox";
 import type { ToastType } from "../hooks/useToast";
 
 const COLUMN_COLOR_MAP: Record<Column, string> = {
@@ -34,6 +35,7 @@ interface ListViewProps {
   onCancelCreate?: () => void;
   onCreateTask?: (input: TaskCreateInput) => Promise<Task>;
   onNewTask?: () => void;
+  onQuickCreate?: (description: string) => Promise<void>;
 }
 
 function getStepProgress(steps: TaskStep[]): string {
@@ -58,6 +60,7 @@ export function ListView({
   isCreating,
   onCancelCreate,
   onCreateTask,
+  onQuickCreate,
 }: ListViewProps) {
   const [sortField, setSortField] = useState<SortField>("id");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
@@ -350,6 +353,11 @@ export function ListView({
             </button>
           )}
         </div>
+        {onQuickCreate && (
+          <div className="list-quick-entry">
+            <QuickEntryBox onCreate={onQuickCreate} addToast={addToast} />
+          </div>
+        )}
         <div className="list-column-toggle" ref={columnDropdownRef}>
           <button
             className="btn btn-sm"
