@@ -44,7 +44,8 @@ The Git Manager provides comprehensive repository visualization and management d
 - View operation results and error states
 
 ### Configuration
-- **Settings Modal**: Configure scheduling, worktrees, build commands, merge preferences
+- **Settings Modal**: Configure scheduling, worktrees, build commands, merge preferences, and notifications
+- **Notifications**: ntfy.sh integration for push notifications when tasks complete or fail
 - **Authentication**: OAuth provider management for AI model access
 - **Pause Controls**: Soft pause (stop new work) and hard stop (kill all agents)
 
