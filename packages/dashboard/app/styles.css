@@ -3497,6 +3497,7 @@ body {
   font-style: italic;
 }
 
+.model-selector-filter {
   display: flex;
   align-items: center;
   gap: 8px;

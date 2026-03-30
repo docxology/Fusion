@@ -360,8 +360,10 @@ export function TaskCard({
             {task.size}
           </span>
         )}
-        {/* GitHub Badges - PR and Issue */}
-        <GitHubBadge prInfo={task.prInfo} issueInfo={task.issueInfo} />
+        {/* GitHub badges only for tasks explicitly linked to an issue or PR */}
+        {(task.prInfo || task.issueInfo) && (
+          <GitHubBadge prInfo={task.prInfo} issueInfo={task.issueInfo} />
+        )}
         {/* Edit button - visible on hover for editable cards */}
         {canEdit && (
           <button
