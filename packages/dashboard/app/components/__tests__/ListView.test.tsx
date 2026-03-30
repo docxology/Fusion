@@ -1044,27 +1044,75 @@ describe("ListView Hide Done Tasks", () => {
     expect(screen.getByText("KB-002")).toBeDefined();
   });
 
-  it("shows done tasks when toggle is deactivated", () => {
+  it("hides archived tasks when toggle is activated", () => {
     const tasks = [
-      createMockTask({ id: "KB-001", column: "done" }),
+      createMockTask({ id: "KB-001", column: "archived" }),
       createMockTask({ id: "KB-002", column: "triage" }),
     ];
 
     renderListView({ tasks });
 
-    // Click hide done button to hide done tasks
+    // Both tasks should be visible initially
+    expect(screen.getByText("KB-001")).toBeDefined();
+    expect(screen.getByText("KB-002")).toBeDefined();
+
+    // Click hide done button
     const hideDoneButton = screen.getByRole("button", { name: /hide done/i });
     fireEvent.click(hideDoneButton);
 
-    // Done task should be hidden
+    // Archived task should be hidden, triage task should still be visible
     expect(screen.queryByText("KB-001")).toBeNull();
+    expect(screen.getByText("KB-002")).toBeDefined();
+  });
 
-    // Click again to show done tasks
-    fireEvent.click(hideDoneButton);
+  it("hides both done and archived tasks when toggle is activated", () => {
+    const tasks = [
+      createMockTask({ id: "KB-001", column: "done" }),
+      createMockTask({ id: "KB-002", column: "archived" }),
+      createMockTask({ id: "KB-003", column: "triage" }),
+    ];
 
-    // Both tasks should be visible again
+    renderListView({ tasks });
+
+    // All tasks should be visible initially
     expect(screen.getByText("KB-001")).toBeDefined();
     expect(screen.getByText("KB-002")).toBeDefined();
+    expect(screen.getByText("KB-003")).toBeDefined();
+
+    // Click hide done button
+    const hideDoneButton = screen.getByRole("button", { name: /hide done/i });
+    fireEvent.click(hideDoneButton);
+
+    // Done and archived tasks should be hidden, triage task should remain visible
+    expect(screen.queryByText("KB-001")).toBeNull();
+    expect(screen.queryByText("KB-002")).toBeNull();
+    expect(screen.getByText("KB-003")).toBeDefined();
+  });
+
+  it("shows done and archived tasks when toggle is deactivated", () => {
+    const tasks = [
+      createMockTask({ id: "KB-001", column: "done" }),
+      createMockTask({ id: "KB-002", column: "archived" }),
+      createMockTask({ id: "KB-003", column: "triage" }),
+    ];
+
+    renderListView({ tasks });
+
+    // Click hide done button to hide completed tasks
+    const hideDoneButton = screen.getByRole("button", { name: /hide done/i });
+    fireEvent.click(hideDoneButton);
+
+    // Completed tasks should be hidden
+    expect(screen.queryByText("KB-001")).toBeNull();
+    expect(screen.queryByText("KB-002")).toBeNull();
+
+    // Click again to show all tasks
+    fireEvent.click(hideDoneButton);
+
+    // All tasks should be visible again
+    expect(screen.getByText("KB-001")).toBeDefined();
+    expect(screen.getByText("KB-002")).toBeDefined();
+    expect(screen.getByText("KB-003")).toBeDefined();
   });
 
   it("persists hide done preference to localStorage", () => {
@@ -1085,23 +1133,25 @@ describe("ListView Hide Done Tasks", () => {
 
     const tasks = [
       createMockTask({ id: "KB-001", column: "done" }),
-      createMockTask({ id: "KB-002", column: "triage" }),
+      createMockTask({ id: "KB-002", column: "archived" }),
+      createMockTask({ id: "KB-003", column: "triage" }),
     ];
     renderListView({ tasks });
 
     // Button should show "Show Done" text since done tasks are hidden
     expect(screen.getByRole("button", { name: /show done/i })).toBeDefined();
 
-    // Done task should be hidden initially
+    // Completed tasks should be hidden initially
     expect(screen.queryByText("KB-001")).toBeNull();
-    expect(screen.getByText("KB-002")).toBeDefined();
+    expect(screen.queryByText("KB-002")).toBeNull();
+    expect(screen.getByText("KB-003")).toBeDefined();
   });
 
-  it("updates stats text when done tasks are hidden", () => {
+  it("updates stats text when done and archived tasks are hidden", () => {
     const tasks = [
       createMockTask({ id: "KB-001", column: "done" }),
-      createMockTask({ id: "KB-002", column: "triage" }),
-      createMockTask({ id: "KB-003", column: "done" }),
+      createMockTask({ id: "KB-002", column: "archived" }),
+      createMockTask({ id: "KB-003", column: "triage" }),
     ];
 
     renderListView({ tasks });
@@ -1115,13 +1165,14 @@ describe("ListView Hide Done Tasks", () => {
 
     // Stats should show filtered count with hidden indicator
     expect(screen.getByText("1 of 3 tasks")).toBeDefined();
-    expect(screen.getByText(/2 done hidden/)).toBeDefined();
+    expect(screen.getByText(/2 hidden/)).toBeDefined();
   });
 
-  it("hides done column section header when hide done is active", () => {
+  it("hides done and archived column section headers when hide done is active", () => {
     const tasks = [
       createMockTask({ id: "KB-001", column: "done" }),
-      createMockTask({ id: "KB-002", column: "triage" }),
+      createMockTask({ id: "KB-002", column: "archived" }),
+      createMockTask({ id: "KB-003", column: "triage" }),
     ];
 
     renderListView({ tasks });
@@ -1134,11 +1185,22 @@ describe("ListView Hide Done Tasks", () => {
     const hideDoneButton = screen.getByRole("button", { name: /hide done/i });
     fireEvent.click(hideDoneButton);
 
-    // Done section should be hidden - find section headers and verify done is not present
+    // Done and Archived sections should be hidden
     const doneSection = screen.getAllByRole("row").find(r => 
       r.className.includes("list-section-header") && r.textContent?.includes("Done")
     );
     expect(doneSection).toBeUndefined();
+
+    const archivedSection = screen.getAllByRole("row").find(r => 
+      r.className.includes("list-section-header") && r.textContent?.includes("Archived")
+    );
+    expect(archivedSection).toBeUndefined();
+
+    // Triage section should still be visible
+    const triageSection = screen.getAllByRole("row").find(r => 
+      r.className.includes("list-section-header") && r.textContent?.includes("Triage")
+    );
+    expect(triageSection).toBeDefined();
   });
 
   it("shows done drop zone with count when hide done is active", () => {
@@ -1159,10 +1221,29 @@ describe("ListView Hide Done Tasks", () => {
     expect(doneZone?.textContent).toContain("0 of 2");
   });
 
+  it("shows archived drop zone with count when hide done is active", () => {
+    const tasks = [
+      createMockTask({ id: "KB-001", column: "archived" }),
+      createMockTask({ id: "KB-002", column: "archived" }),
+    ];
+
+    renderListView({ tasks });
+
+    // Click hide done button
+    const hideDoneButton = screen.getByRole("button", { name: /hide done/i });
+    fireEvent.click(hideDoneButton);
+
+    // Archived drop zone should still be visible with "X of Y" format
+    const archivedZone = document.querySelector('[data-column="archived"].list-drop-zone');
+    expect(archivedZone).toBeDefined();
+    expect(archivedZone?.textContent).toContain("0 of 2");
+  });
+
   it("preserves hide done state through filter changes", () => {
     const tasks = [
       createMockTask({ id: "KB-001", column: "done", title: "Alpha" }),
-      createMockTask({ id: "KB-002", column: "triage", title: "Beta" }),
+      createMockTask({ id: "KB-002", column: "archived", title: "Beta" }),
+      createMockTask({ id: "KB-003", column: "triage", title: "Gamma" }),
     ];
 
     renderListView({ tasks });
@@ -1173,12 +1254,61 @@ describe("ListView Hide Done Tasks", () => {
 
     // Apply filter
     const filterInput = screen.getByPlaceholderText("Filter by ID or title...");
-    fireEvent.change(filterInput, { target: { value: "Beta" } });
+    fireEvent.change(filterInput, { target: { value: "Gamma" } });
 
-    // Done task should remain hidden
+    // Completed tasks should remain hidden
     expect(screen.queryByText("KB-001")).toBeNull();
+    expect(screen.queryByText("KB-002")).toBeNull();
     // Filtered task should be visible
-    expect(screen.getByText("KB-002")).toBeDefined();
+    expect(screen.getByText("KB-003")).toBeDefined();
+  });
+
+  it("shows done section when selectedColumn is done even with hide done active", () => {
+    const tasks = [
+      createMockTask({ id: "KB-001", column: "done", title: "Done Task" }),
+      createMockTask({ id: "KB-002", column: "triage", title: "Triage Task" }),
+    ];
+
+    renderListView({ tasks });
+
+    // Enable hide done
+    const hideDoneButton = screen.getByRole("button", { name: /hide done/i });
+    fireEvent.click(hideDoneButton);
+
+    // Done task should be hidden
+    expect(screen.queryByText("KB-001")).toBeNull();
+
+    // Click on the done drop zone to select that column
+    const doneZone = document.querySelector('[data-column="done"].list-drop-zone')!;
+    fireEvent.click(doneZone);
+
+    // Done task should now be visible because selectedColumn overrides hide
+    expect(screen.getByText("KB-001")).toBeDefined();
+    expect(screen.queryByText("KB-002")).toBeNull();
+  });
+
+  it("shows archived section when selectedColumn is archived even with hide done active", () => {
+    const tasks = [
+      createMockTask({ id: "KB-001", column: "archived", title: "Archived Task" }),
+      createMockTask({ id: "KB-002", column: "triage", title: "Triage Task" }),
+    ];
+
+    renderListView({ tasks });
+
+    // Enable hide done
+    const hideDoneButton = screen.getByRole("button", { name: /hide done/i });
+    fireEvent.click(hideDoneButton);
+
+    // Archived task should be hidden
+    expect(screen.queryByText("KB-001")).toBeNull();
+
+    // Click on the archived drop zone to select that column
+    const archivedZone = document.querySelector('[data-column="archived"].list-drop-zone')!;
+    fireEvent.click(archivedZone);
+
+    // Archived task should now be visible because selectedColumn overrides hide
+    expect(screen.getByText("KB-001")).toBeDefined();
+    expect(screen.queryByText("KB-002")).toBeNull();
   });
 });
 

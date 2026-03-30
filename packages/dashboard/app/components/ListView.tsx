@@ -200,9 +200,10 @@ export function ListView({
         )
       : [...tasks];
 
-    // Then filter out done tasks if hideDoneTasks is enabled
-    if (hideDoneTasks) {
-      filtered = filtered.filter((t) => t.column !== "done");
+    // Then filter out done and archived tasks if hideDoneTasks is enabled
+    // BUT only when no specific column is selected (strict hide semantics)
+    if (hideDoneTasks && !selectedColumn) {
+      filtered = filtered.filter((t) => t.column !== "done" && t.column !== "archived");
     }
 
     // Then apply column filter if selected
@@ -247,16 +248,16 @@ export function ListView({
     return Object.values(groupedTasks).reduce((sum, group) => sum + group.length, 0);
   }, [groupedTasks]);
 
-  // Calculate done task counts for stats display
-  const doneTaskCount = useMemo(() => {
-    return tasks.filter((t) => t.column === "done").length;
+  // Calculate done and archived task counts for stats display
+  const completedTaskCount = useMemo(() => {
+    return tasks.filter((t) => t.column === "done" || t.column === "archived").length;
   }, [tasks]);
 
-  // Calculate hidden done tasks count
-  const hiddenDoneCount = useMemo(() => {
+  // Calculate hidden done+archived tasks count
+  const hiddenCompletedCount = useMemo(() => {
     if (!hideDoneTasks) return 0;
-    return doneTaskCount;
-  }, [hideDoneTasks, doneTaskCount]);
+    return completedTaskCount;
+  }, [hideDoneTasks, completedTaskCount]);
   const handleRowClick = useCallback(
     async (task: Task) => {
       try {
@@ -397,8 +398,8 @@ export function ListView({
           {selectedColumn
             ? `${filteredCount} of ${tasks.length} tasks in ${COLUMN_LABELS[selectedColumn]}`
             : `${filteredCount} of ${tasks.length} tasks`}
-          {hiddenDoneCount > 0 && !selectedColumn && (
-            <span className="list-stats-hidden"> ({hiddenDoneCount} done hidden)</span>
+          {hiddenCompletedCount > 0 && !selectedColumn && (
+            <span className="list-stats-hidden"> ({hiddenCompletedCount} hidden)</span>
           )}
           {selectedColumn && (
             <button
@@ -423,8 +424,9 @@ export function ListView({
       <div className="list-drop-zones">
         {COLUMNS.map((column) => {
           const totalCount = tasks.filter((t) => t.column === column).length;
-          const visibleCount = hideDoneTasks && column === "done" ? 0 : totalCount;
-          const showPartial = hideDoneTasks && column === "done" && totalCount > 0;
+          const isCompletedColumn = column === "done" || column === "archived";
+          const visibleCount = hideDoneTasks && isCompletedColumn ? 0 : totalCount;
+          const showPartial = hideDoneTasks && isCompletedColumn && totalCount > 0;
 
           return (
             <div
@@ -499,8 +501,8 @@ export function ListView({
                 // When column filter is active, only show the selected column
                 if (selectedColumn && column !== selectedColumn) return null;
                 
-                // Skip done column section when hideDoneTasks is enabled (unless it's the selected column)
-                if (hideDoneTasks && column === "done" && !selectedColumn) return null;
+                // Skip done and archived column sections when hideDoneTasks is enabled (unless it's the selected column)
+                if (hideDoneTasks && (column === "done" || column === "archived") && !selectedColumn) return null;
 
                 const columnTasks = groupedTasks[column];
                 const isEmpty = columnTasks.length === 0;
