@@ -6911,6 +6911,11 @@ html .column.drag-over * {
   .planning-dep-title {
     max-width: none;
   }
+
+  /* Prevent mobile zoom on focus for planning text inputs (16px minimum) */
+  .planning-textarea {
+    font-size: 16px;
+  }
 }
 
 /* ============================================================

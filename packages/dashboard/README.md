@@ -30,6 +30,7 @@ AI-guided interactive planning for creating well-specified tasks from high-level
 - **Example Suggestions**: Quick-start chips with common task templates
 - **Dependency Selection**: Toggle existing tasks as dependencies
 - **Keyboard Navigation**: Tab through options, Enter to submit, Escape to close
+- **Mobile-Safe Inputs**: Text inputs (initial plan, question responses, summary description) use 16px font size on mobile viewports to prevent browser zoom-on-focus
 
 **API Endpoints**:
 - `POST /api/planning/start` - Begin planning session (`{ initialPlan }`)
