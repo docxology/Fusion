@@ -211,13 +211,14 @@ export function Header({
           </>
         )}
 
-        {/* Desktop actions */}
-        {!isMobile && onOpenUsage && (
+        {/* Usage button - inline on all screens when onOpenUsage provided */}
+        {onOpenUsage && (
           <button className="btn-icon" onClick={onOpenUsage} title="View usage">
             <Activity size={16} />
           </button>
         )}
 
+        {/* Desktop actions */}
         {!isMobile && (
           <button className="btn-icon" onClick={onOpenGitHubImport} title="Import from GitHub">
             <Download size={16} />
@@ -235,15 +236,17 @@ export function Header({
           </button>
         )}
 
-        {/* Terminal button - always inline */}
-        <button
-          className="btn-icon btn-icon--terminal"
-          onClick={onToggleTerminal}
-          title="Open Terminal"
-          data-testid="terminal-toggle-btn"
-        >
-          <Terminal size={16} />
-        </button>
+        {/* Terminal button - desktop only (moved to overflow on mobile) */}
+        {!isMobile && (
+          <button
+            className="btn-icon btn-icon--terminal"
+            onClick={onToggleTerminal}
+            title="Open Terminal"
+            data-testid="terminal-toggle-btn"
+          >
+            <Terminal size={16} />
+          </button>
+        )}
 
         {/* Pause button (soft pause) - always inline */}
         <button
@@ -294,16 +297,16 @@ export function Header({
             role="menu"
             aria-label="Additional header actions"
           >
-            {onOpenUsage && (
-              <button
-                className="mobile-overflow-item"
-                onClick={() => handleOverflowAction(onOpenUsage)}
-                role="menuitem"
-              >
-                <Activity size={16} />
-                <span>View usage</span>
-              </button>
-            )}
+            {/* Terminal - in overflow on mobile */}
+            <button
+              className="mobile-overflow-item"
+              onClick={() => handleOverflowAction(onToggleTerminal)}
+              role="menuitem"
+              data-testid="overflow-terminal-btn"
+            >
+              <Terminal size={16} />
+              <span>Open Terminal</span>
+            </button>
             <button
               className="mobile-overflow-item"
               onClick={() => handleOverflowAction(onOpenGitHubImport)}
