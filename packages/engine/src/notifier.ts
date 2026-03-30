@@ -11,6 +11,9 @@ interface NtfyConfig {
   topic: string | undefined;
 }
 
+/** Event types for notification deduplication */
+type NotificationEventType = "in-review" | "merged" | "failed";
+
 /**
  * NtfyNotifier sends push notifications via ntfy.sh when tasks complete
  * or fail. It listens to TaskStore events and sends HTTP POST requests
@@ -19,16 +22,14 @@ interface NtfyConfig {
  * Features:
  * - Runtime reconfiguration via settings:updated events
  * - Best-effort delivery (errors are logged but never thrown)
- * - Duplicate prevention for rapid column transitions
+ * - Duplicate prevention per event type (in-review, merged, failed)
  * - Configurable notification events (hardcoded defaults)
  */
 export class NtfyNotifier {
   private config: NtfyConfig = { enabled: false, topic: undefined };
   private ntfyBaseUrl: string;
-  /** Tracks last notification time per task to prevent duplicates */
-  private lastNotificationTime: Map<string, number> = new Map();
-  /** Minimum interval between notifications for the same task (ms) */
-  private debounceMs = 5000;
+  /** Tracks which (taskId, eventType) pairs have been notified to prevent duplicates */
+  private notifiedEvents: Set<string> = new Set();
   /** AbortController for in-flight requests during shutdown */
   private abortController: AbortController | null = null;
 
@@ -91,7 +92,7 @@ export class NtfyNotifier {
 
     // Notify when task moves to in-review (completed work, ready for review)
     if (to === "in-review") {
-      this.maybeNotify(task.id, () =>
+      this.maybeNotify(task.id, "in-review", () =>
         this.sendNotification(
           this.config.topic!,
           `Task ${task.id} completed`,
@@ -101,17 +102,8 @@ export class NtfyNotifier {
       );
     }
 
-    // Notify when task moves to done (merged to main)
-    if (to === "done") {
-      this.maybeNotify(task.id, () =>
-        this.sendNotification(
-          this.config.topic!,
-          `Task ${task.id} merged`,
-          `Task "${task.title ?? task.id}" has been merged to main`,
-          "default",
-        ),
-      );
-    }
+    // Note: "done" notifications come from handleTaskMerged (task:merged event)
+    // to avoid duplicate notifications when moveToDone is called before merge
   };
 
   private handleTaskUpdated = (task: Task): void => {
@@ -119,7 +111,7 @@ export class NtfyNotifier {
 
     // Notify when task fails
     if (task.status === "failed") {
-      this.maybeNotify(task.id, () =>
+      this.maybeNotify(task.id, "failed", () =>
         this.sendNotification(
           this.config.topic!,
           `Task ${task.id} failed`,
@@ -135,7 +127,7 @@ export class NtfyNotifier {
 
     // Only notify on successful merges
     if (result.merged) {
-      this.maybeNotify(result.task.id, () =>
+      this.maybeNotify(result.task.id, "merged", () =>
         this.sendNotification(
           this.config.topic!,
           `Task ${result.task.id} merged`,
@@ -173,19 +165,22 @@ export class NtfyNotifier {
   }
 
   /**
-   * Send notification if enough time has passed since last notification for this task.
-   * This prevents duplicate notifications during rapid column transitions.
+   * Send notification if this (taskId, eventType) pair hasn't been notified before.
+   * This prevents duplicate notifications for the same event type per task.
    */
-  private maybeNotify(taskId: string, notifyFn: () => Promise<void>): void {
-    const now = Date.now();
-    const lastTime = this.lastNotificationTime.get(taskId);
+  private maybeNotify(
+    taskId: string,
+    eventType: NotificationEventType,
+    notifyFn: () => Promise<void>,
+  ): void {
+    const key = `${taskId}:${eventType}`;
 
-    if (lastTime && now - lastTime < this.debounceMs) {
-      // Too soon, skip this notification
+    if (this.notifiedEvents.has(key)) {
+      // Already sent this notification type for this task
       return;
     }
 
-    this.lastNotificationTime.set(taskId, now);
+    this.notifiedEvents.add(key);
     notifyFn().catch(() => {
       // Errors are logged in sendNotification, just need to catch here
     });

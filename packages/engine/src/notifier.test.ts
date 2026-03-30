@@ -137,7 +137,7 @@ describe("NtfyNotifier", () => {
       );
     });
 
-    it("sends notification when task moves to done", async () => {
+    it("does not send notification when task moves to done (merged notification comes from task:merged)", async () => {
       notifier = new NtfyNotifier(store);
       await notifier.start();
 
@@ -145,18 +145,8 @@ describe("NtfyNotifier", () => {
 
       await new Promise(resolve => setTimeout(resolve, 10));
 
-      expect(fetchMock).toHaveBeenCalledTimes(1);
-      expect(fetchMock).toHaveBeenCalledWith(
-        "https://ntfy.sh/test-topic",
-        expect.objectContaining({
-          method: "POST",
-          headers: expect.objectContaining({
-            "Title": "Task KB-001 merged",
-            "Priority": "default",
-          }),
-          body: 'Task "Test Task" has been merged to main',
-        })
-      );
+      // handleTaskMoved should NOT send notification for "done" - that's handleTaskMerged's job
+      expect(fetchMock).not.toHaveBeenCalled();
     });
 
     it("sends high priority notification when task fails", async () => {
@@ -335,46 +325,92 @@ describe("NtfyNotifier", () => {
     });
   });
 
-  describe("debouncing", () => {
+  describe("deduplication", () => {
     beforeEach(() => {
       store.setSettings({ ntfyEnabled: true, ntfyTopic: "test-topic" });
       fetchMock.mockResolvedValue({ ok: true });
     });
 
-    it("prevents duplicate notifications within debounce window", async () => {
+    it("prevents duplicate notifications for the same event type", async () => {
       notifier = new NtfyNotifier(store);
       await notifier.start();
 
       const task = createTask("KB-001", "Test Task");
 
-      // Rapid transitions
+      // Multiple in-review events for the same task
       store.triggerTaskMoved(task, "in-progress", "in-review");
-      store.triggerTaskMoved(task, "in-review", "done");
-      store.triggerTaskMoved(task, "done", "in-review");
+      store.triggerTaskMoved(task, "in-progress", "in-review");
+      store.triggerTaskMoved(task, "in-progress", "in-review");
 
       await new Promise(resolve => setTimeout(resolve, 10));
 
-      // Should only send one notification due to debouncing
+      // Should only send one notification due to deduplication
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
-    it("allows notifications after debounce window", async () => {
+    it("allows different event types for the same task", async () => {
       notifier = new NtfyNotifier(store);
       await notifier.start();
 
       const task = createTask("KB-001", "Test Task");
 
+      // First: in-review notification
       store.triggerTaskMoved(task, "in-progress", "in-review");
       await new Promise(resolve => setTimeout(resolve, 10));
       expect(fetchMock).toHaveBeenCalledTimes(1);
 
-      // Wait for debounce window (5 seconds) - use fake timers or access internal state
-      // For this test, we'll create a new task to verify separate tasks aren't debounced together
-      const task2 = createTask("KB-002", "Test Task 2");
-      store.triggerTaskMoved(task2, "in-progress", "in-review");
+      // Second: merged notification (different event type - should be allowed)
+      const mergeResult: MergeResult = {
+        task,
+        branch: "kb/kb-001",
+        merged: true,
+        worktreeRemoved: true,
+        branchDeleted: true,
+      };
+      store.triggerTaskMerged(mergeResult);
       await new Promise(resolve => setTimeout(resolve, 10));
 
-      // Different task ID should get its own notification
+      // Should have two notifications now
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it("prevents duplicate task:merged events for the same task", async () => {
+      notifier = new NtfyNotifier(store);
+      await notifier.start();
+
+      const task = createTask("KB-001", "Test Task");
+      const mergeResult: MergeResult = {
+        task,
+        branch: "kb/kb-001",
+        merged: true,
+        worktreeRemoved: true,
+        branchDeleted: true,
+      };
+
+      // Multiple merged events for the same task
+      store.triggerTaskMerged(mergeResult);
+      store.triggerTaskMerged(mergeResult);
+      store.triggerTaskMerged(mergeResult);
+
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      // Should only send one notification
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("allows notifications for different tasks independently", async () => {
+      notifier = new NtfyNotifier(store);
+      await notifier.start();
+
+      const task1 = createTask("KB-001", "Test Task 1");
+      const task2 = createTask("KB-002", "Test Task 2");
+
+      store.triggerTaskMoved(task1, "in-progress", "in-review");
+      store.triggerTaskMoved(task2, "in-progress", "in-review");
+
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      // Different tasks should each get their own notification
       expect(fetchMock).toHaveBeenCalledTimes(2);
     });
   });
@@ -421,7 +457,29 @@ describe("NtfyNotifier", () => {
   });
 
   describe("edge cases", () => {
-    it("does not notify on task:moved to columns other than in-review or done", async () => {
+    it("allows in-review and failed notifications for the same task", async () => {
+      store.setSettings({ ntfyEnabled: true, ntfyTopic: "test-topic" });
+      fetchMock.mockResolvedValue({ ok: true });
+      notifier = new NtfyNotifier(store);
+      await notifier.start();
+
+      const task = createTask("KB-001", "Test Task");
+
+      // First: in-review notification
+      store.triggerTaskMoved(task, "in-progress", "in-review");
+      await new Promise(resolve => setTimeout(resolve, 10));
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+
+      // Second: failed notification (different event type - should be allowed)
+      const failedTask = { ...task, status: "failed" };
+      store.triggerTaskUpdated(failedTask);
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      // Should have two notifications
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it("does not notify on task:moved to columns other than in-review", async () => {
       store.setSettings({ ntfyEnabled: true, ntfyTopic: "test-topic" });
       fetchMock.mockResolvedValue({ ok: true });
       notifier = new NtfyNotifier(store);
@@ -433,6 +491,10 @@ describe("NtfyNotifier", () => {
 
       // Move to in-progress - should not notify
       store.triggerTaskMoved(createTask("KB-002", "Test Task 2"), "todo", "in-progress");
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      // Move to done - should not notify (merged notification comes from task:merged)
+      store.triggerTaskMoved(createTask("KB-003", "Test Task 3"), "in-review", "done");
       await new Promise(resolve => setTimeout(resolve, 10));
 
       expect(fetchMock).not.toHaveBeenCalled();
