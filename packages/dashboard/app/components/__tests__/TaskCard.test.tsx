@@ -1237,6 +1237,85 @@ describe("TaskCard steps toggle", () => {
     fireEvent.click(toggle);
     expect(chevron?.classList.contains("expanded")).toBe(true);
   });
+
+  it("progress bar counts skipped steps as completed", () => {
+    const task = makeTask({
+      steps: [
+        { name: "Step 1", status: "done" },
+        { name: "Step 2", status: "skipped" },
+        { name: "Step 3", status: "pending" },
+        { name: "Step 4", status: "in-progress" },
+      ],
+    });
+
+    render(
+      <TaskCard
+        task={task}
+        onOpenDetail={vi.fn()}
+        addToast={noopToast}
+      />
+    );
+
+    // Progress label should show "2/4" (done + skipped = 2 completed)
+    const progressLabel = document.querySelector(".card-progress-label");
+    expect(progressLabel).toBeDefined();
+    expect(progressLabel?.textContent).toBe("2/4");
+  });
+
+  it("step list renders skipped status with correct CSS class", () => {
+    const task = makeTask({
+      steps: [
+        { name: "Done step", status: "done" },
+        { name: "Skipped step", status: "skipped" },
+        { name: "Pending step", status: "pending" },
+      ],
+    });
+
+    render(
+      <TaskCard
+        task={task}
+        onOpenDetail={vi.fn()}
+        addToast={noopToast}
+      />
+    );
+
+    const toggle = screen.getByRole("button", { name: /Show steps/i });
+    fireEvent.click(toggle);
+
+    // Check that skipped step has the correct dot class
+    const stepDots = document.querySelectorAll(".card-step-dot");
+    expect(stepDots.length).toBe(3);
+    expect(stepDots[0].classList.contains("card-step-dot--done")).toBe(true);
+    expect(stepDots[1].classList.contains("card-step-dot--skipped")).toBe(true);
+    expect(stepDots[2].classList.contains("card-step-dot--pending")).toBe(true);
+  });
+
+  it("progress bar shows 100% when all steps are skipped", () => {
+    const task = makeTask({
+      steps: [
+        { name: "Step 1", status: "skipped" },
+        { name: "Step 2", status: "skipped" },
+        { name: "Step 3", status: "skipped" },
+      ],
+    });
+
+    render(
+      <TaskCard
+        task={task}
+        onOpenDetail={vi.fn()}
+        addToast={noopToast}
+      />
+    );
+
+    // Progress label should show "3/3"
+    const progressLabel = document.querySelector(".card-progress-label");
+    expect(progressLabel?.textContent).toBe("3/3");
+
+    // Progress fill should be 100% width
+    const progressFill = document.querySelector(".card-progress-fill") as HTMLElement;
+    expect(progressFill).toBeDefined();
+    expect(progressFill.style.width).toBe("100%");
+  });
 });
 
 /**

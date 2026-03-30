@@ -416,7 +416,7 @@ export function TaskCard({
         {task.title || (task.description ? task.description.slice(0, 60) + (task.description.length > 60 ? "…" : "") : task.id)}
       </div>
       {task.steps.length > 0 && (() => {
-        const completedSteps = task.steps.filter(s => s.status === "done").length;
+        const completedSteps = task.steps.filter(s => s.status === "done" || s.status === "skipped").length;
         const totalSteps = task.steps.length;
         return (
           <>
