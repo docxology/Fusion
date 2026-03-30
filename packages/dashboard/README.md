@@ -156,7 +156,7 @@ Browse and edit task worktree files directly from the task detail modal:
 - **Notifications**: ntfy.sh integration for push notifications when tasks complete or fail
 - **Authentication**: OAuth provider management for AI model access
 - **Pause Controls**: Soft pause (stop new work) and hard stop (kill all agents)
-- **Theming**: Light/dark/system mode toggle and 8 color themes (see Theming section below)
+- **Theming**: Light/dark/system mode toggle and 12 color themes (see Theming section below)
 
 ### Merge strategies
 
@@ -192,7 +192,7 @@ The dashboard supports a comprehensive theming system with both light/dark mode 
 Toggle between modes using the theme button in the header (cycles Dark → Light → System) or select from the Appearance section in Settings.
 
 ### Color Themes
-Choose from 8 distinct color palettes in the Appearance settings:
+Choose from 12 distinct color palettes in the Appearance settings:
 
 | Theme | Description |
 |-------|-------------|
@@ -245,6 +245,17 @@ pnpm dev
 ### Strict TypeScript Verification
 
 The dashboard enforces strict type-checking via `src/__tests__/typecheck.test.ts`, which runs `pnpm typecheck` to verify the workspace type-checks cleanly from a clean checkout. The test temporarily moves any existing `dist/` directories to ensure type resolution happens against source files, not stale build artifacts. This ensures type safety across the workspace and catches missing or incompatible types in dependencies without requiring a full build first.
+
+**Contributor Verification Requirements**
+
+Dashboard changes must keep both test suites green:
+
+```bash
+cd packages/dashboard && pnpm test      # Run all dashboard tests
+cd packages/dashboard && pnpm typecheck # Run dashboard typecheck
+```
+
+The terminal hook tests (`app/hooks/useTerminal.test.ts`) and typecheck regression suite (`src/__tests__/typecheck.test.ts`) are intentionally active — do not skip these tests. Any changes that break type safety or test coverage will fail the CI gate.
 
 ### Workspace Type Checking
 
