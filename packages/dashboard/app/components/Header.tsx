@@ -1,9 +1,10 @@
-import { Settings, Pause, Play, Square, Download, LayoutGrid, List, Terminal, Lightbulb, Search, X } from "lucide-react";
+import { Settings, Pause, Play, Square, Download, LayoutGrid, List, Terminal, Lightbulb, Search, X, Activity } from "lucide-react";
 
 interface HeaderProps {
   onOpenSettings?: () => void;
   onOpenGitHubImport?: () => void;
   onOpenPlanning?: () => void;
+  onOpenUsage?: () => void;
   onToggleTerminal?: () => void;
   globalPaused?: boolean;
   enginePaused?: boolean;
@@ -19,6 +20,7 @@ export function Header({
   onOpenSettings,
   onOpenGitHubImport,
   onOpenPlanning,
+  onOpenUsage,
   onToggleTerminal,
   globalPaused,
   enginePaused,
@@ -81,6 +83,11 @@ export function Header({
               </button>
             )}
           </div>
+        )}
+        {onOpenUsage && (
+          <button className="btn-icon" onClick={onOpenUsage} title="View usage">
+            <Activity size={16} />
+          </button>
         )}
         {/* Import from GitHub */}
         <button className="btn-icon" onClick={onOpenGitHubImport} title="Import from GitHub">

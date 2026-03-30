@@ -153,6 +153,25 @@ describe("Header", () => {
     });
   });
 
+  describe("usage button", () => {
+    it("does not render usage button when onOpenUsage is not provided", () => {
+      renderHeader();
+      expect(screen.queryByTitle("View usage")).toBeNull();
+    });
+
+    it("renders usage button with correct title when onOpenUsage is provided", () => {
+      renderHeader({ onOpenUsage: vi.fn() });
+      expect(screen.getByTitle("View usage")).toBeDefined();
+    });
+
+    it("calls onOpenUsage when usage button is clicked", () => {
+      const onOpenUsage = vi.fn();
+      renderHeader({ onOpenUsage });
+      fireEvent.click(screen.getByTitle("View usage"));
+      expect(onOpenUsage).toHaveBeenCalled();
+    });
+  });
+
   describe("planning button", () => {
     it("renders planning button with correct title", () => {
       renderHeader({ onOpenPlanning: vi.fn() });
