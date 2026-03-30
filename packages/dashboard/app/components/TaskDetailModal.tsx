@@ -829,7 +829,10 @@ export function TaskDetailModal({
               <button
                 type="button"
                 className="btn btn-sm dep-trigger"
-                onClick={() => setShowDepDropdown((v) => !v)}
+                onClick={() => {
+                  if (showDepDropdown) setDepSearch("");
+                  setShowDepDropdown((v) => !v);
+                }}
               >
                 Add Dependency
               </button>
