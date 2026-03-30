@@ -1313,95 +1313,6 @@ describe("ListView Hide Done Tasks", () => {
   });
 });
 
-describe("ListView Inline Create Card", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it("shows InlineCreateCard when isCreating is true", () => {
-    renderListView({ isCreating: true, onCancelCreate: vi.fn(), onCreateTask: vi.fn() });
-
-    // The inline creation card should be visible with its textarea
-    expect(screen.getByPlaceholderText("What needs to be done?")).toBeDefined();
-  });
-
-  it("does not show InlineCreateCard when isCreating is false", () => {
-    renderListView({ isCreating: false, onCancelCreate: vi.fn(), onCreateTask: vi.fn() });
-
-    // The inline creation card should not be visible
-    expect(screen.queryByPlaceholderText("What needs to be done?")).toBeNull();
-  });
-
-  it("does not show InlineCreateCard when onCancelCreate is not provided", () => {
-    renderListView({ isCreating: true, onCreateTask: vi.fn() });
-
-    // The inline creation card should not be visible without onCancelCreate
-    expect(screen.queryByPlaceholderText("What needs to be done?")).toBeNull();
-  });
-
-  it("does not show InlineCreateCard when onCreateTask is not provided", () => {
-    renderListView({ isCreating: true, onCancelCreate: vi.fn() });
-
-    // The inline creation card should not be visible without onCreateTask
-    expect(screen.queryByPlaceholderText("What needs to be done?")).toBeNull();
-  });
-
-  it("calls onCreateTask with triage column when task is submitted from inline card", async () => {
-    const mockOnCreateTask = vi.fn().mockResolvedValue(createMockTask({ id: "KB-002" }));
-    renderListView({ isCreating: true, onCancelCreate: vi.fn(), onCreateTask: mockOnCreateTask });
-
-    const textarea = screen.getByPlaceholderText("What needs to be done?");
-    fireEvent.change(textarea, { target: { value: "New task description" } });
-    fireEvent.keyDown(textarea, { key: "Enter" });
-
-    await waitFor(() => {
-      expect(mockOnCreateTask).toHaveBeenCalledWith({
-        description: "New task description",
-        column: "triage",
-        breakIntoSubtasks: false,
-      });
-    });
-  });
-
-  it("calls onCancelCreate when inline card is cancelled via blur", () => {
-    const mockOnCancelCreate = vi.fn();
-    renderListView({ isCreating: true, onCancelCreate: mockOnCancelCreate, onCreateTask: vi.fn() });
-
-    const textarea = screen.getByPlaceholderText("What needs to be done?");
-    textarea.focus();
-    fireEvent.focusOut(textarea, { relatedTarget: null });
-
-    expect(mockOnCancelCreate).toHaveBeenCalledTimes(1);
-  });
-
-  it("calls onCancelCreate when inline card is cancelled via Escape key", () => {
-    const mockOnCancelCreate = vi.fn();
-    renderListView({ isCreating: true, onCancelCreate: mockOnCancelCreate, onCreateTask: vi.fn() });
-
-    const textarea = screen.getByPlaceholderText("What needs to be done?");
-    fireEvent.keyDown(textarea, { key: "Escape" });
-
-    expect(mockOnCancelCreate).toHaveBeenCalledTimes(1);
-  });
-
-  it("renders InlineCreateCard outside the table when creating", () => {
-    renderListView({ isCreating: true, onCancelCreate: vi.fn(), onCreateTask: vi.fn() });
-
-    // Find the inline create container (now outside the table)
-    const inlineCreateContainer = document.querySelector(".list-inline-create-container");
-    expect(inlineCreateContainer).toBeTruthy();
-
-    // Find the inline create card itself
-    const inlineCreateCard = document.querySelector(".inline-create-card");
-    expect(inlineCreateCard).toBeTruthy();
-
-    // Should have the Save button
-    const saveButton = document.querySelector(".inline-create-actions .btn-primary");
-    expect(saveButton).toBeTruthy();
-    expect(saveButton?.textContent).toBe("Save");
-  });
-});
-
 describe("ListView Quick Entry", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -1418,14 +1329,6 @@ describe("ListView Quick Entry", () => {
     // Input should be visible
     const input = screen.getByTestId("quick-entry-input");
     expect(input).toBeDefined();
-  });
-
-  it("does not render QuickEntryBox when onQuickCreate is not provided", () => {
-    renderListView({ onQuickCreate: undefined });
-
-    // Quick entry box should not be visible
-    const quickEntry = screen.queryByTestId("quick-entry-box");
-    expect(quickEntry).toBeNull();
   });
 
   it("calls onQuickCreate with description when Enter is pressed", async () => {

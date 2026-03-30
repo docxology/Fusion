@@ -318,7 +318,7 @@ describe("App view switching", () => {
     });
   });
 
-  it("opens the inline create card from the list view new-task button", async () => {
+  it("opens the NewTaskModal from the list view new-task button", async () => {
     render(<App />);
 
     await waitFor(() => {
@@ -333,7 +333,9 @@ describe("App view switching", () => {
 
     fireEvent.click(screen.getByText("+ New Task"));
 
+    // The NewTaskModal should be visible with its header and description field
     await waitFor(() => {
+      expect(screen.getByText("New Task")).toBeTruthy();
       expect(screen.getByPlaceholderText("What needs to be done?")).toBeTruthy();
     });
   });

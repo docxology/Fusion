@@ -44,7 +44,6 @@ function AppInner() {
   });
   const [searchQuery, setSearchQuery] = useState("");
   const [githubTokenConfigured, setGithubTokenConfigured] = useState(false);
-  const [isListInlineCreating, setIsListInlineCreating] = useState(false);
   const { tasks, createTask, moveTask, deleteTask, mergeTask, retryTask, updateTask, duplicateTask, archiveTask, unarchiveTask } = useTasks();
 
   // Theme management
@@ -90,16 +89,8 @@ function AppInner() {
     setView(newView);
   }, []);
 
-  useEffect(() => {
-    if (view !== "list") {
-      setIsListInlineCreating(false);
-    }
-  }, [view]);
-
   const handleNewTaskOpen = useCallback(() => setNewTaskModalOpen(true), []);
   const handleNewTaskClose = useCallback(() => setNewTaskModalOpen(false), []);
-  const handleListInlineCreateOpen = useCallback(() => setIsListInlineCreating(true), []);
-  const handleListInlineCreateCancel = useCallback(() => setIsListInlineCreating(false), []);
 
   const handleQuickCreate = useCallback(
     async (description: string): Promise<void> => {
@@ -111,15 +102,6 @@ function AppInner() {
   const handleModalCreate = useCallback(
     async (input: TaskCreateInput): Promise<Task> => {
       const task = await createTask({ ...input, column: "triage" });
-      return task;
-    },
-    [createTask],
-  );
-
-  const handleListInlineCreate = useCallback(
-    async (input: TaskCreateInput): Promise<Task> => {
-      const task = await createTask({ ...input, column: input.column ?? "triage" });
-      setIsListInlineCreating(false);
       return task;
     },
     [createTask],
@@ -230,18 +212,14 @@ function AppInner() {
           searchQuery={searchQuery}
         />
       ) : (
-        // Board view keeps the existing modal-based create flow; list view uses
-        // InlineCreateCard so model selection is available directly in-row.
+        // List view now uses the same modal-based create flow as board view.
         <ListView
           tasks={tasks}
           onMoveTask={moveTask}
           onOpenDetail={handleDetailOpen}
           addToast={addToast}
           globalPaused={globalPaused}
-          onNewTask={handleListInlineCreateOpen}
-          isCreating={isListInlineCreating}
-          onCancelCreate={handleListInlineCreateCancel}
-          onCreateTask={handleListInlineCreate}
+          onNewTask={handleNewTaskOpen}
           onQuickCreate={handleQuickCreate}
         />
       )}

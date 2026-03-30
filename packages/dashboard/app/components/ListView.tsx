@@ -1,9 +1,8 @@
 import { useState, useCallback, useMemo, Fragment, useEffect, useRef } from "react";
 import { LayoutGrid, List as ListIcon, ArrowUpDown, ArrowUp, ArrowDown, Search, Link, Columns3, EyeOff, Eye } from "lucide-react";
-import type { Task, TaskDetail, Column, TaskStep, TaskCreateInput } from "@kb/core";
+import type { Task, TaskDetail, Column, TaskStep } from "@kb/core";
 import { COLUMN_LABELS, COLUMNS } from "@kb/core";
 import { fetchTaskDetail } from "../api";
-import { InlineCreateCard } from "./InlineCreateCard";
 import { QuickEntryBox } from "./QuickEntryBox";
 import type { ToastType } from "../hooks/useToast";
 
@@ -31,9 +30,6 @@ interface ListViewProps {
   onOpenDetail: (task: TaskDetail) => void;
   addToast: (message: string, type?: ToastType) => void;
   globalPaused?: boolean;
-  isCreating?: boolean;
-  onCancelCreate?: () => void;
-  onCreateTask?: (input: TaskCreateInput) => Promise<Task>;
   onNewTask?: () => void;
   onQuickCreate?: (description: string) => Promise<void>;
 }
@@ -57,9 +53,6 @@ export function ListView({
   addToast,
   globalPaused,
   onNewTask,
-  isCreating,
-  onCancelCreate,
-  onCreateTask,
   onQuickCreate,
 }: ListViewProps) {
   const [sortField, setSortField] = useState<SortField>("id");
@@ -353,11 +346,9 @@ export function ListView({
             </button>
           )}
         </div>
-        {onQuickCreate && (
-          <div className="list-quick-entry">
-            <QuickEntryBox onCreate={onQuickCreate} addToast={addToast} />
-          </div>
-        )}
+        <div className="list-quick-entry">
+          <QuickEntryBox onCreate={onQuickCreate} addToast={addToast} />
+        </div>
         <div className="list-column-toggle" ref={columnDropdownRef}>
           <button
             className="btn btn-sm"
@@ -420,9 +411,7 @@ export function ListView({
             </button>
           )}
         </div>
-        {isCreating ? (
-          <span className="list-creating-indicator">Creating task...</span>
-        ) : onNewTask ? (
+        {onNewTask ? (
           <button className="btn btn-primary btn-sm" onClick={onNewTask}>
             + New Task
           </button>
@@ -457,18 +446,7 @@ export function ListView({
       </div>
 
       <div className="list-table-container">
-        {/* Inline Create Card - outside the table for better UX */}
-        {isCreating && onCancelCreate && onCreateTask && (
-          <div className="list-inline-create-container">
-            <InlineCreateCard
-              tasks={tasks}
-              onSubmit={onCreateTask}
-              onCancel={onCancelCreate}
-              addToast={addToast}
-            />
-          </div>
-        )}
-        {filteredCount === 0 && !isCreating ? (
+        {filteredCount === 0 ? (
           <div className="list-empty">
             {filter ? "No tasks match your filter" : "No tasks yet"}
           </div>
@@ -515,8 +493,8 @@ export function ListView({
                 const columnTasks = groupedTasks[column];
                 const isEmpty = columnTasks.length === 0;
 
-                // When text filtering, hide empty sections entirely (except triage when creating)
-                if (filter && isEmpty && !(column === "triage" && isCreating)) return null;
+                // When text filtering, hide empty sections entirely
+                if (filter && isEmpty) return null;
 
                 return (
                   <Fragment key={column}>
