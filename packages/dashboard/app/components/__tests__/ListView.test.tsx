@@ -377,8 +377,8 @@ describe("ListView", () => {
     renderListView({ tasks });
 
     const depCells = screen.getAllByRole("cell");
-    // Find the cell that should contain deps (7th column)
-    const depCell = depCells[6];
+    // Find the cell that should contain deps (5th column, index 4)
+    const depCell = depCells[4];
     expect(depCell.textContent).toBe("-");
   });
 
@@ -535,28 +535,6 @@ describe("ListView", () => {
     await waitFor(() => {
       expect(mockAddToast).toHaveBeenCalledWith("Move failed", "error");
     });
-  });
-
-  it("formats dates correctly", () => {
-    const tasks = [
-      createMockTask({
-        id: "KB-001",
-        createdAt: "2024-03-15T10:30:00Z",
-        updatedAt: "2024-03-16T14:45:00Z",
-      }),
-    ];
-
-    renderListView({ tasks });
-
-    // Check that dates are formatted and displayed
-    const cells = screen.getAllByRole("cell");
-    // Created and Updated are columns 5 and 6 (0-indexed: 4 and 5)
-    const createdCell = cells[4];
-    const updatedCell = cells[5];
-
-    // Should contain formatted dates with time
-    expect(createdCell.textContent).toMatch(/\d{1,2}\/\d{1,2}\/\d{4}/);
-    expect(updatedCell.textContent).toMatch(/\d{1,2}\/\d{1,2}\/\d{4}/);
   });
 
   it("truncates long descriptions in title cell", () => {
@@ -871,8 +849,6 @@ describe("ListView Column Visibility", () => {
     expect(screen.getByText("Title")).toBeDefined();
     expect(screen.getByText("Status")).toBeDefined();
     expect(screen.getByText("Column")).toBeDefined();
-    expect(screen.getByText("Created")).toBeDefined();
-    expect(screen.getByText("Updated")).toBeDefined();
     expect(screen.getByText("Dependencies")).toBeDefined();
     expect(screen.getByText("Progress")).toBeDefined();
   });

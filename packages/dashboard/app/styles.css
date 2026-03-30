@@ -1104,6 +1104,43 @@ body {
   margin-bottom: 16px;
 }
 
+/* Error alert in task detail modal */
+.detail-error-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 12px 0 16px;
+  padding: 12px 14px;
+  background: rgba(218, 54, 51, 0.1);
+  border: 1px solid rgba(218, 54, 51, 0.3);
+  border-radius: var(--radius);
+}
+
+.detail-error-icon {
+  flex-shrink: 0;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.detail-error-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.detail-error-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #da3633;
+  margin-bottom: 4px;
+}
+
+.detail-error-message {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  word-break: break-word;
+}
+
 .detail-section {
   margin-top: 16px;
 }

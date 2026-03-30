@@ -17,11 +17,11 @@ const COLUMN_COLOR_MAP: Record<Column, string> = {
 
 const ACTIVE_STATUSES = new Set(["planning", "researching", "executing", "finalizing", "merging", "specifying"]);
 
-type SortField = "id" | "title" | "status" | "column" | "createdAt" | "updatedAt";
+type SortField = "id" | "title" | "status" | "column";
 type SortDirection = "asc" | "desc";
 
 // Column visibility types
-const ALL_LIST_COLUMNS = ["id", "title", "status", "column", "createdAt", "updatedAt", "dependencies", "progress"] as const;
+const ALL_LIST_COLUMNS = ["id", "title", "status", "column", "dependencies", "progress"] as const;
 type ListColumn = typeof ALL_LIST_COLUMNS[number];
 
 interface ListViewProps {
@@ -34,11 +34,6 @@ interface ListViewProps {
   onCancelCreate?: () => void;
   onCreateTask?: (input: { description: string; column: Column; dependencies?: string[] }) => Promise<Task>;
   onNewTask?: () => void;
-}
-
-function formatDate(iso: string): string {
-  const date = new Date(iso);
-  return date.toLocaleDateString() + " " + date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
 function getStepProgress(steps: TaskStep[]): string {
@@ -64,7 +59,7 @@ export function ListView({
   onCancelCreate,
   onCreateTask,
 }: ListViewProps) {
-  const [sortField, setSortField] = useState<SortField>("createdAt");
+  const [sortField, setSortField] = useState<SortField>("id");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
   const [filter, setFilter] = useState("");
   const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
@@ -173,8 +168,6 @@ export function ListView({
     title: "Title",
     status: "Status",
     column: "Column",
-    createdAt: "Created",
-    updatedAt: "Updated",
     dependencies: "Dependencies",
     progress: "Progress",
   };
@@ -231,12 +224,6 @@ export function ListView({
           break;
         case "column":
           comparison = a.column.localeCompare(b.column);
-          break;
-        case "createdAt":
-          comparison = a.createdAt.localeCompare(b.createdAt);
-          break;
-        case "updatedAt":
-          comparison = a.updatedAt.localeCompare(b.updatedAt);
           break;
       }
       return sortDirection === "asc" ? comparison : -comparison;
@@ -499,16 +486,6 @@ export function ListView({
                     Column {getSortIcon("column")}
                   </th>
                 )}
-                {visibleColumns.has("createdAt") && (
-                  <th className="list-header-cell" onClick={() => handleSort("createdAt")}>
-                    Created {getSortIcon("createdAt")}
-                  </th>
-                )}
-                {visibleColumns.has("updatedAt") && (
-                  <th className="list-header-cell" onClick={() => handleSort("updatedAt")}>
-                    Updated {getSortIcon("updatedAt")}
-                  </th>
-                )}
                 {visibleColumns.has("dependencies") && (
                   <th className="list-header-cell">Dependencies</th>
                 )}
@@ -607,12 +584,6 @@ export function ListView({
                                   {COLUMN_LABELS[task.column]}
                                 </span>
                               </td>
-                            )}
-                            {visibleColumns.has("createdAt") && (
-                              <td className="list-cell list-cell-date">{formatDate(task.createdAt)}</td>
-                            )}
-                            {visibleColumns.has("updatedAt") && (
-                              <td className="list-cell list-cell-date">{formatDate(task.updatedAt)}</td>
                             )}
                             {visibleColumns.has("dependencies") && (
                               <td className="list-cell list-cell-deps">
