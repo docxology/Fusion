@@ -63,7 +63,7 @@ jobs:
         run: pnpm build
 
       - name: Build binary
-        run: pnpm --filter @dustinbyrne/kb build:exe -- --target ${{ matrix.target }}
+        run: pnpm --filter @gsxdsm/fusion build:exe -- --target ${{ matrix.target }}
 
       - name: Verify binary exists
         shell: bash
