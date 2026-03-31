@@ -166,11 +166,11 @@ async function migrateTasks(kbDir: string, db: Database): Promise<void> {
       modelId, validatorModelProvider, validatorModelId, mergeRetries, error,
       summary, thinkingLevel, createdAt, updatedAt, columnMovedAt,
       dependencies, steps, log, attachments, steeringComments,
-      workflowStepResults, prInfo, issueInfo, breakIntoSubtasks,
-      enabledWorkflowSteps
+      comments, workflowStepResults, prInfo, issueInfo, mergeDetails,
+      breakIntoSubtasks, enabledWorkflowSteps
     ) VALUES (
       ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-      ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+      ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
     )
   `);
 
@@ -214,9 +214,11 @@ async function migrateTasks(kbDir: string, db: Database): Promise<void> {
         toJson(task.log || []),
         toJson(task.attachments || []),
         toJson(task.steeringComments || []),
+        toJson(task.comments || []),
         toJson(task.workflowStepResults || []),
         toJsonNullable(task.prInfo),
         toJsonNullable(task.issueInfo),
+        toJsonNullable(task.mergeDetails),
         task.breakIntoSubtasks ? 1 : 0,
         toJson(task.enabledWorkflowSteps || []),
       );

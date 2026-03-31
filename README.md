@@ -88,6 +88,8 @@ fn task archive KB-001                   # Archive a done task
 fn task unarchive KB-001                 # Restore an archived task
 fn task delete KB-001 [--force]          # Delete a task
 fn task retry KB-001                     # Retry a failed task
+fn task comment KB-001 "Looks good"      # Add a general task comment
+fn task comments KB-001                  # List task comments
 fn task steer KB-001 "Use TypeScript"    # Add steering comment
 fn task pause KB-001                     # Pause automation for task
 fn task unpause KB-001                   # Resume automation for task
@@ -499,6 +501,29 @@ When a task has a linked PR, Fusion automatically monitors it for new review com
 - **Follow-up tasks**: When a PR is closed with unaddressed feedback, a follow-up task is created
 
 Uses `gh` CLI authentication when available, falls back to `GITHUB_TOKEN` if set.
+
+## Task Comments vs Steering Comments
+
+Fusion now supports two distinct kinds of discussion on a task:
+
+- **Task comments** — General collaboration notes for humans. Use these for questions, decisions, progress notes, or context you want preserved on the task. You can add them from the dashboard Comments tab or from the CLI with `fn task comment <id> "message"`.
+- **Steering comments** — Execution guidance aimed at the AI worker. These are used for actionable direction like “change this approach” or “use TypeScript here,” and are also populated automatically from actionable PR review feedback.
+
+Use task comments for conversation. Use steering comments when you want to influence implementation behavior.
+
+## Merge Details
+
+When a task is merged successfully, Fusion now stores richer merge metadata on the completed task and shows it in the task detail view. This includes:
+
+- merge commit SHA
+- files changed count
+- insertions and deletions
+- merge timestamp
+- merge commit message
+- linked PR number when available
+- merge confirmation status
+
+This gives completed tasks a clearer audit trail in both the board UI and stored task metadata.
 
 ## Workflow Steps
 

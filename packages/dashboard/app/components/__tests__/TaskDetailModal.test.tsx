@@ -115,6 +115,22 @@ describe("TaskDetailModal", () => {
     expect(screen.queryByText("PROMPT.md")).toBeNull();
   });
 
+  it("renders Comments tab", () => {
+    render(
+      <TaskDetailModal
+        task={makeTask()}
+        onClose={noop}
+        onMoveTask={noopMove}
+        onDeleteTask={noopDelete}
+        onMergeTask={noopMerge}
+        onOpenDetail={noopOpenDetail}
+        addToast={noop}
+      />,
+    );
+
+    expect(screen.getByText("Comments")).toBeTruthy();
+  });
+
   it("renders Retry button when task status is 'failed'", () => {
     render(
       <TaskDetailModal
@@ -1149,7 +1165,7 @@ describe("TaskDetailModal", () => {
       );
 
       const tabs = container.querySelectorAll(".detail-tab");
-      expect(tabs.length).toBe(5); // Definition, Activity, Agent Log, Steering, Model (Spec combined into Definition)
+      expect(tabs.length).toBe(6); // Definition, Activity, Agent Log, Steering, Comments, Model
       // Tabs should use class-based styling, not inline styles
       expect(tabs[0].classList.contains("detail-tab")).toBe(true);
       expect(tabs[0].classList.contains("detail-tab-active")).toBe(true); // Definition is default active
@@ -1157,6 +1173,7 @@ describe("TaskDetailModal", () => {
       expect(tabs[2].classList.contains("detail-tab-active")).toBe(false);
       expect(tabs[3].classList.contains("detail-tab-active")).toBe(false);
       expect(tabs[4].classList.contains("detail-tab-active")).toBe(false);
+      expect(tabs[5].classList.contains("detail-tab-active")).toBe(false);
       // Verify no inline padding/fontSize (responsive CSS controls this)
       expect((tabs[0] as HTMLElement).style.padding).toBe("");
       expect((tabs[0] as HTMLElement).style.fontSize).toBe("");
@@ -1634,7 +1651,7 @@ describe("TaskDetailModal", () => {
       });
     });
 
-    it("shows all 5 tabs in correct order (Spec tab removed)", () => {
+    it("shows all 6 tabs in correct order with comments", () => {
       const { container } = render(
         <TaskDetailModal
           task={makeTask()}
@@ -1648,12 +1665,13 @@ describe("TaskDetailModal", () => {
       );
 
       const tabs = container.querySelectorAll(".detail-tab");
-      expect(tabs.length).toBe(5);
+      expect(tabs.length).toBe(6);
       expect(tabs[0].textContent).toBe("Definition");
       expect(tabs[1].textContent).toBe("Activity");
       expect(tabs[2].textContent).toBe("Agent Log");
       expect(tabs[3].textContent).toBe("Steering");
-      expect(tabs[4].textContent).toBe("Model");
+      expect(tabs[4].textContent).toBe("Comments");
+      expect(tabs[5].textContent).toBe("Model");
     });
 
     it("shows empty state and Edit button when no prompt", () => {

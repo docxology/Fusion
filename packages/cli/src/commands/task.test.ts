@@ -52,7 +52,7 @@ vi.mock("@fusion/core/gh-cli", () => ({
 import { createInterface } from "node:readline/promises";
 import { TaskStore } from "@fusion/core";
 import { watchFile, unwatchFile, statSync, existsSync, readFileSync } from "node:fs";
-import { runTaskShow, runTaskCreate, runTaskDuplicate, runTaskRefine, runTaskDelete, runTaskRetry, runTaskLogs, runTaskPrCreate, type LogsOptions } from "./task.js";
+import { runTaskShow, runTaskCreate, runTaskDuplicate, runTaskRefine, runTaskDelete, runTaskRetry, runTaskLogs, runTaskComment, runTaskComments, runTaskPrCreate, type LogsOptions } from "./task.js";
 import { isGhAvailable, isGhAuthenticated, getCurrentRepo } from "@fusion/core/gh-cli";
 import { GitHubClient } from "@fusion/dashboard";
 
@@ -1203,6 +1203,44 @@ describe("runTaskDelete", () => {
 });
 
 // --- Retry Tests ---
+
+describe("runTaskComment", () => {
+  let logSpy: ReturnType<typeof vi.spyOn>;
+  let errorSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("adds a task comment with explicit author", async () => {
+    (TaskStore as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => ({
+      init: vi.fn(),
+      addTaskComment: vi.fn().mockResolvedValue(makeTask({ comments: [{ id: "c1", text: "Hello", author: "alice", createdAt: new Date().toISOString() }] })),
+    }));
+
+    await runTaskComment("KB-001", "Hello", "alice");
+
+    const store = (TaskStore as unknown as ReturnType<typeof vi.fn>).mock.results.at(-1)?.value;
+    expect(store.addTaskComment).toHaveBeenCalledWith("KB-001", "Hello", "alice");
+    expect(logSpy).toHaveBeenCalledWith("  ✓ Comment added to KB-001");
+  });
+
+  it("lists task comments", async () => {
+    (TaskStore as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => ({
+      init: vi.fn(),
+      getTask: vi.fn().mockResolvedValue(makeTask({ comments: [{ id: "c1", text: "Hello", author: "alice", createdAt: "2026-01-01T00:00:00.000Z" }] })),
+    }));
+
+    await runTaskComments("KB-001");
+
+    expect(logSpy).toHaveBeenCalledWith("  Comments for KB-001:");
+  });
+});
 
 describe("runTaskRetry", () => {
   let logSpy: ReturnType<typeof vi.spyOn>;

@@ -11,6 +11,8 @@ import { AgentLogViewer } from "./AgentLogViewer";
 import { SteeringTab } from "./SteeringTab";
 import { ModelSelectorTab } from "./ModelSelectorTab";
 import { PrSection } from "./PrSection";
+import { TaskComments } from "./TaskComments";
+import { MergeDetails } from "./MergeDetails";
 
 interface ModelSelection {
   provider?: string;
@@ -103,7 +105,7 @@ export function TaskDetailModal({
   addToast,
   githubTokenConfigured,
 }: TaskDetailModalProps) {
-  const [activeTab, setActiveTab] = useState<"definition" | "activity" | "agent-log" | "steering" | "model">("definition");
+  const [activeTab, setActiveTab] = useState<"definition" | "activity" | "agent-log" | "steering" | "comments" | "model">("definition");
   const [attachments, setAttachments] = useState<TaskAttachment[]>(task.attachments || []);
   const [uploading, setUploading] = useState(false);
   const [dependencies, setDependencies] = useState<string[]>(task.dependencies || []);
@@ -676,6 +678,12 @@ export function TaskDetailModal({
               Steering
             </button>
             <button
+              className={`detail-tab${activeTab === "comments" ? " detail-tab-active" : ""}`}
+              onClick={() => setActiveTab("comments")}
+            >
+              Comments
+            </button>
+            <button
               className={`detail-tab${activeTab === "model" ? " detail-tab-active" : ""}`}
               onClick={() => setActiveTab("model")}
             >
@@ -697,6 +705,8 @@ export function TaskDetailModal({
             </div>
           ) : activeTab === "steering" ? (
             <SteeringTab task={task} addToast={addToast} />
+          ) : activeTab === "comments" ? (
+            <TaskComments task={task} addToast={addToast} />
           ) : activeTab === "activity" ? (
             <div className="detail-section detail-activity">
               <h4>Activity</h4>
@@ -733,6 +743,7 @@ export function TaskDetailModal({
               </div>
             </div>
           )}
+          <MergeDetails task={task} />
           <div className="detail-section detail-step-progress">
             <h4>Progress</h4>
             {task.steps && task.steps.length > 0 ? (

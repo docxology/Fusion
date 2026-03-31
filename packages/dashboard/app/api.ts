@@ -2,6 +2,7 @@ import type {
   Task,
   TaskDetail,
   TaskAttachment,
+  TaskComment,
   TaskCreateInput,
   AgentLogEntry,
   Column,
@@ -252,6 +253,30 @@ export function fetchAgentLogs(taskId: string): Promise<AgentLogEntry[]> {
 
 export function fetchSessionFiles(taskId: string): Promise<string[]> {
   return api<string[]>(`/tasks/${taskId}/session-files`);
+}
+
+export function fetchTaskComments(id: string): Promise<TaskComment[]> {
+  return api<TaskComment[]>(`/tasks/${id}/comments`);
+}
+
+export function addTaskComment(id: string, text: string, author?: string): Promise<Task> {
+  return api<Task>(`/tasks/${id}/comments`, {
+    method: "POST",
+    body: JSON.stringify({ text, author }),
+  });
+}
+
+export function updateTaskComment(id: string, commentId: string, text: string): Promise<Task> {
+  return api<Task>(`/tasks/${id}/comments/${commentId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ text }),
+  });
+}
+
+export function deleteTaskComment(id: string, commentId: string): Promise<Task> {
+  return api<Task>(`/tasks/${id}/comments/${commentId}`, {
+    method: "DELETE",
+  });
 }
 
 export function addSteeringComment(id: string, text: string): Promise<Task> {

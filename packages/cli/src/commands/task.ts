@@ -895,6 +895,58 @@ export async function runTaskImportFromGitHub(
   console.log();
 }
 
+export async function runTaskComment(id: string, message?: string, author = "user") {
+  const store = await getStore();
+
+  let text = message;
+  if (text === undefined) {
+    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    text = await rl.question("Comment: ");
+    rl.close();
+  }
+
+  if (!text || text.trim().length === 0) {
+    console.error("Error: Comment is required");
+    process.exit(1);
+  }
+
+  const trimmed = text.trim();
+  if (trimmed.length > 2000) {
+    console.error("Error: Comment must be between 1 and 2000 characters");
+    process.exit(1);
+  }
+
+  const task = await store.addTaskComment(id, trimmed, author || "user");
+  const latestComment = task.comments?.[task.comments.length - 1];
+
+  console.log();
+  console.log(`  ✓ Comment added to ${task.id}`);
+  if (latestComment) {
+    console.log(`    ID: ${latestComment.id}`);
+  }
+  console.log();
+}
+
+export async function runTaskComments(id: string) {
+  const store = await getStore();
+  const task = await store.getTask(id);
+  const comments = task.comments || [];
+
+  console.log();
+  if (comments.length === 0) {
+    console.log(`  No comments on ${id}`);
+    console.log();
+    return;
+  }
+
+  console.log(`  Comments for ${id}:`);
+  for (const comment of comments) {
+    console.log(`    ${comment.id} · ${comment.author} · ${new Date(comment.updatedAt || comment.createdAt).toLocaleString()}`);
+    console.log(`    ${comment.text}`);
+  }
+  console.log();
+}
+
 export async function runTaskSteer(id: string, message?: string) {
   const store = await getStore();
 

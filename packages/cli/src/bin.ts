@@ -39,7 +39,7 @@ if (isBunBinary) {
 
 // Dynamic imports so the pi-coding-agent config module sees PI_PACKAGE_DIR
 const { runDashboard } = await import("./commands/dashboard.js");
-const { runTaskCreate, runTaskList, runTaskMove, runTaskMerge, runTaskUpdate, runTaskLog, runTaskLogs, runTaskShow, runTaskAttach, runTaskPause, runTaskUnpause, runTaskImportFromGitHub, runTaskDuplicate, runTaskArchive, runTaskUnarchive, runTaskRefine, runTaskPlan, runTaskDelete, runTaskRetry, runTaskSteer, runTaskPrCreate } = await import("./commands/task.js");
+const { runTaskCreate, runTaskList, runTaskMove, runTaskMerge, runTaskUpdate, runTaskLog, runTaskLogs, runTaskShow, runTaskAttach, runTaskPause, runTaskUnpause, runTaskImportFromGitHub, runTaskDuplicate, runTaskArchive, runTaskUnarchive, runTaskRefine, runTaskPlan, runTaskDelete, runTaskRetry, runTaskComment, runTaskComments, runTaskSteer, runTaskPrCreate } = await import("./commands/task.js");
 const { runSettingsShow, runSettingsSet } = await import("./commands/settings.js");
 const { runGitStatus, runGitFetch, runGitPull, runGitPush } = await import("./commands/git.js");
 
@@ -69,6 +69,8 @@ Usage:
   fn task attach <id> <file>          Attach a file to a task
   fn task pause <id>                  Pause a task (stops all automation)
   fn task unpause <id>                Unpause a task (resumes automation)
+  fn task comment <id> [message]      Add task comment (prompts if message omitted)
+  fn task comments <id>               List task comments
   fn task steer <id> [message]        Add steering comment (prompts if message omitted)
   fn task retry <id>                  Retry a failed task (clears error, moves to todo)
   fn task pr-create <id> [--title <title>] [--base <branch>] [--body <body>]
@@ -294,6 +296,25 @@ async function main() {
             const id = args[2];
             if (!id) { console.error("Usage: fn task unpause <id>"); process.exit(1); }
             await runTaskUnpause(id);
+            break;
+          }
+          case "comment": {
+            const id = args[2];
+            if (!id) { console.error("Usage: fn task comment <id> [message] [--author <name>]"); process.exit(1); }
+            const authorIdx = args.indexOf("--author");
+            const author = authorIdx !== -1 && authorIdx + 1 < args.length ? args[authorIdx + 1] : undefined;
+            const messageParts = args.slice(3).filter((arg, index, arr) => {
+              const absoluteIndex = index + 3;
+              return absoluteIndex !== authorIdx && absoluteIndex !== authorIdx + 1;
+            });
+            const message = messageParts.join(" ");
+            await runTaskComment(id, message || undefined, author || process.env.USER || "user");
+            break;
+          }
+          case "comments": {
+            const id = args[2];
+            if (!id) { console.error("Usage: fn task comments <id>"); process.exit(1); }
+            await runTaskComments(id);
             break;
           }
           case "steer": {

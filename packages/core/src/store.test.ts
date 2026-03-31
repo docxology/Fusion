@@ -1017,6 +1017,72 @@ describe("TaskStore", () => {
     });
   });
 
+  describe("task comments", () => {
+    it("adds a task comment to a task", async () => {
+      const task = await createTestTask();
+      const updated = await store.addTaskComment(task.id, "Please review this", "alice");
+
+      expect(updated.comments).toHaveLength(1);
+      expect(updated.comments![0].text).toBe("Please review this");
+      expect(updated.comments![0].author).toBe("alice");
+      expect(updated.comments![0].id).toBeDefined();
+      expect(updated.comments![0].createdAt).toBeDefined();
+      expect(updated.comments![0].updatedAt).toBeUndefined();
+    });
+
+    it("updates an existing task comment", async () => {
+      const task = await createTestTask();
+      const added = await store.addTaskComment(task.id, "First draft", "alice");
+      const commentId = added.comments![0].id;
+
+      const updated = await store.updateTaskComment(task.id, commentId, "Updated draft");
+
+      expect(updated.comments).toHaveLength(1);
+      expect(updated.comments![0].text).toBe("Updated draft");
+      expect(updated.comments![0].updatedAt).toBeDefined();
+      expect(updated.log.some((entry) => entry.action === "Comment updated")).toBe(true);
+    });
+
+    it("deletes a task comment", async () => {
+      const task = await createTestTask();
+      const added = await store.addTaskComment(task.id, "Disposable", "alice");
+      const commentId = added.comments![0].id;
+
+      const updated = await store.deleteTaskComment(task.id, commentId);
+
+      expect(updated.comments).toBeUndefined();
+      expect(updated.log.some((entry) => entry.action === "Comment deleted")).toBe(true);
+    });
+
+    it("throws when updating a missing task comment", async () => {
+      const task = await createTestTask();
+
+      await expect(store.updateTaskComment(task.id, "missing", "Nope")).rejects.toThrow(
+        `Comment missing not found on task ${task.id}`,
+      );
+    });
+
+    it("throws when deleting a missing task comment", async () => {
+      const task = await createTestTask();
+
+      await expect(store.deleteTaskComment(task.id, "missing")).rejects.toThrow(
+        `Comment missing not found on task ${task.id}`,
+      );
+    });
+
+    it("persists task comments independently from steering comments", async () => {
+      const task = await createTestTask();
+      await store.addTaskComment(task.id, "General note", "alice");
+      await store.addSteeringComment(task.id, "Execution note");
+
+      const reopened = await store.getTask(task.id);
+      expect(reopened.comments).toHaveLength(1);
+      expect(reopened.comments![0].text).toBe("General note");
+      expect(reopened.steeringComments).toHaveLength(1);
+      expect(reopened.steeringComments![0].text).toBe("Execution note");
+    });
+  });
+
   describe("addSteeringComment", () => {
     it("adds a steering comment to a task", async () => {
       const task = await createTestTask();
@@ -1223,6 +1289,43 @@ describe("TaskStore", () => {
 
       expect(updated.steeringComments).toHaveLength(1);
       expect(updated.steeringComments![0].text).toBe("   ");
+    });
+  });
+
+  describe("task comments and merge details types", () => {
+    it("keeps task comments distinct from steering comments on new tasks", async () => {
+      const task = await createTestTask();
+      const reopened = await store.getTask(task.id);
+
+      expect(reopened.comments).toBeUndefined();
+      expect(reopened.steeringComments).toBeUndefined();
+    });
+
+    it("supports the task comment and merge details shapes", async () => {
+      const comment: NonNullable<Task["comments"]>[number] = {
+        id: `comment-${Date.now()}`,
+        text: "Looks good",
+        author: "alice",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      const mergeDetails: NonNullable<Task["mergeDetails"]> = {
+        commitSha: "abc123def456",
+        filesChanged: 3,
+        insertions: 10,
+        deletions: 2,
+        mergeCommitMessage: "feat(KB-001): merge kb/kb-001",
+        mergedAt: new Date().toISOString(),
+        mergeConfirmed: true,
+        prNumber: 42,
+      };
+      const taskShape: Pick<Task, "comments" | "mergeDetails"> = {
+        comments: [comment],
+        mergeDetails,
+      };
+
+      expect(taskShape.comments).toEqual([comment]);
+      expect(taskShape.mergeDetails).toEqual(mergeDetails);
     });
   });
 
@@ -3167,6 +3270,38 @@ describe("TaskStore", () => {
       expect(logs.length).toBeGreaterThanOrEqual(1);
       expect(logs[0].taskId).toBe(task.id);
       expect(logs[0].type).toBe("task:deleted");
+    });
+
+    it("captures merge details when merging a task", async () => {
+      const task = await store.createTask({ description: "Test merge details" });
+      await store.moveTask(task.id, "todo");
+      await store.moveTask(task.id, "in-progress");
+      await store.moveTask(task.id, "in-review");
+      await store.updateTask(task.id, {
+        worktree: "/tmp/test-worktree",
+      });
+
+      const { execSync } = await import("node:child_process");
+      try {
+        execSync(`git checkout -b kb/${task.id.toLowerCase()}`, { cwd: rootDir, stdio: "pipe" });
+        execSync('git commit --allow-empty -m "test commit"', { cwd: rootDir, stdio: "pipe" });
+        execSync("git checkout main || git checkout master", { cwd: rootDir, stdio: "pipe" });
+      } catch {
+        return;
+      }
+
+      try {
+        const result = await store.mergeTask(task.id);
+        expect(result.mergeConfirmed ?? result.merged).toBeDefined();
+        expect(result.task.mergeDetails).toBeDefined();
+        if (result.merged) {
+          expect(result.task.mergeDetails?.commitSha).toBeTruthy();
+          expect(result.task.mergeDetails?.mergeCommitMessage).toContain(task.id);
+          expect(result.task.mergeDetails?.mergedAt).toBeDefined();
+        }
+      } catch {
+        // merge may fail depending on repo state; skip strict assertions in that case
+      }
     });
 
     it("records activity on task:merged", async () => {

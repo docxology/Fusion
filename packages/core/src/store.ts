@@ -141,9 +141,11 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       log: fromJson<import("./types.js").TaskLogEntry[]>(row.log) || [],
       attachments: (() => { const a = fromJson<TaskAttachment[]>(row.attachments); return a && a.length > 0 ? a : undefined; })(),
       steeringComments: (() => { const s = fromJson<import("./types.js").SteeringComment[]>(row.steeringComments); return s && s.length > 0 ? s : undefined; })(),
+      comments: (() => { const c = fromJson<import("./types.js").TaskComment[]>(row.comments); return c && c.length > 0 ? c : undefined; })(),
       workflowStepResults: (() => { const w = fromJson<import("./types.js").WorkflowStepResult[]>(row.workflowStepResults); return w && w.length > 0 ? w : undefined; })(),
       prInfo: fromJson<import("./types.js").PrInfo>(row.prInfo),
       issueInfo: fromJson<import("./types.js").IssueInfo>(row.issueInfo),
+      mergeDetails: fromJson<import("./types.js").MergeDetails>(row.mergeDetails),
       breakIntoSubtasks: row.breakIntoSubtasks ? true : undefined,
       enabledWorkflowSteps: (() => { const e = fromJson<string[]>(row.enabledWorkflowSteps); return e && e.length > 0 ? e : undefined; })(),
     };
@@ -160,11 +162,11 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
         modelId, validatorModelProvider, validatorModelId, mergeRetries, error,
         summary, thinkingLevel, createdAt, updatedAt, columnMovedAt,
         dependencies, steps, log, attachments, steeringComments,
-        workflowStepResults, prInfo, issueInfo, breakIntoSubtasks,
-        enabledWorkflowSteps
+        comments, workflowStepResults, prInfo, issueInfo, mergeDetails,
+        breakIntoSubtasks, enabledWorkflowSteps
       ) VALUES (
         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
       )
     `).run(
       task.id,
@@ -196,9 +198,11 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       toJson(task.log || []),
       toJson(task.attachments || []),
       toJson(task.steeringComments || []),
+      toJson(task.comments || []),
       toJson(task.workflowStepResults || []),
       toJsonNullable(task.prInfo),
       toJsonNullable(task.issueInfo),
+      toJsonNullable(task.mergeDetails),
       task.breakIntoSubtasks ? 1 : 0,
       toJson(task.enabledWorkflowSteps || []),
     );
@@ -1162,6 +1166,58 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
     });
   }
 
+  private collectMergeDetails(id: string, branch: string, task: Task, commitMessage: string): import("./types.js").MergeDetails {
+    const mergedAt = new Date().toISOString();
+    let commitSha: string | undefined;
+    let filesChanged: number | undefined;
+    let insertions: number | undefined;
+    let deletions: number | undefined;
+
+    try {
+      commitSha = execSync("git rev-parse HEAD", {
+        cwd: this.rootDir,
+        stdio: "pipe",
+        encoding: "utf-8",
+      }).trim() || undefined;
+    } catch {
+      commitSha = undefined;
+    }
+
+    try {
+      const statsOutput = execSync("git show --shortstat --format= HEAD", {
+        cwd: this.rootDir,
+        stdio: "pipe",
+        encoding: "utf-8",
+      }).trim();
+      const normalized = statsOutput.replace(/\n/g, " ");
+      const filesMatch = normalized.match(/(\d+) files? changed/);
+      const insertionsMatch = normalized.match(/(\d+) insertions?\(\+\)/);
+      const deletionsMatch = normalized.match(/(\d+) deletions?\(-\)/);
+      filesChanged = filesMatch ? Number.parseInt(filesMatch[1], 10) : 0;
+      insertions = insertionsMatch ? Number.parseInt(insertionsMatch[1], 10) : 0;
+      deletions = deletionsMatch ? Number.parseInt(deletionsMatch[1], 10) : 0;
+    } catch {
+      filesChanged = undefined;
+      insertions = undefined;
+      deletions = undefined;
+    }
+
+    return {
+      commitSha,
+      filesChanged,
+      insertions,
+      deletions,
+      mergeCommitMessage: commitMessage,
+      mergedAt,
+      mergeConfirmed: true,
+      prNumber: task.prInfo?.number,
+      resolutionStrategy: task.mergeDetails?.resolutionStrategy,
+      resolutionMethod: task.mergeDetails?.resolutionMethod,
+      attemptsMade: task.mergeDetails?.attemptsMade,
+      autoResolvedCount: task.mergeDetails?.autoResolvedCount,
+    };
+  }
+
   /**
    * Merge an in-review task's branch into the current branch,
    * clean up the worktree, and move the task to done.
@@ -1196,6 +1252,11 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       } catch {
         // No branch — might have been manually merged. Just move to done.
         result.error = `Branch '${branch}' not found — moving to done without merge`;
+        task.mergeDetails = {
+          mergedAt: new Date().toISOString(),
+          mergeConfirmed: false,
+          prNumber: task.prInfo?.number,
+        };
         await this.moveToDone(task, dir);
         result.task = { ...task, column: "done" };
         this.emit("task:merged", result);
@@ -1203,16 +1264,20 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       }
 
       // 2. Merge the branch
+      const mergeCommitMessage = `feat(${id}): merge ${branch}`;
       try {
         execSync(`git merge --squash "${branch}"`, {
           cwd: this.rootDir,
           stdio: "pipe",
         });
-        execSync(`git commit --no-edit -m "feat(${id}): merge ${branch}"`, {
+        execSync(`git commit --no-edit -m "${mergeCommitMessage}"`, {
           cwd: this.rootDir,
           stdio: "pipe",
         });
         result.merged = true;
+        const mergeDetails = this.collectMergeDetails(id, branch, task, mergeCommitMessage);
+        task.mergeDetails = mergeDetails;
+        Object.assign(result, mergeDetails);
       } catch (err: any) {
         // Squash conflict — reset and report
         try {
@@ -1804,6 +1869,95 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
     const logPath = join(dir, "agent.log");
     await appendFile(logPath, JSON.stringify(entry) + "\n");
     this.emit("agent:log", entry);
+  }
+
+  async addTaskComment(id: string, text: string, author: string): Promise<Task> {
+    return this.withTaskLock(id, async () => {
+      const dir = this.taskDir(id);
+      const task = await this.readTaskJson(dir);
+
+      if (!task.log) {
+        task.log = [];
+      }
+
+      const commentId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const comment: import("./types.js").TaskComment = {
+        id: commentId,
+        text,
+        author,
+        createdAt: new Date().toISOString(),
+      };
+
+      if (!task.comments) {
+        task.comments = [];
+      }
+      task.comments.push(comment);
+      task.updatedAt = new Date().toISOString();
+      task.log.push({
+        timestamp: task.updatedAt,
+        action: `Comment added by ${author}`,
+      });
+
+      await this.atomicWriteTaskJson(dir, task);
+      if (this.watcher) this.taskCache.set(id, { ...task });
+
+      this.emit("task:updated", task);
+      return task;
+    });
+  }
+
+  async updateTaskComment(id: string, commentId: string, text: string): Promise<Task> {
+    return this.withTaskLock(id, async () => {
+      const dir = this.taskDir(id);
+      const task = await this.readTaskJson(dir);
+      const comments = task.comments || [];
+      const comment = comments.find((entry) => entry.id === commentId);
+
+      if (!comment) {
+        throw new Error(`Comment ${commentId} not found on task ${id}`);
+      }
+
+      comment.text = text;
+      comment.updatedAt = new Date().toISOString();
+      task.comments = comments;
+      task.updatedAt = comment.updatedAt;
+      task.log.push({
+        timestamp: task.updatedAt,
+        action: "Comment updated",
+      });
+
+      await this.atomicWriteTaskJson(dir, task);
+      if (this.watcher) this.taskCache.set(id, { ...task });
+
+      this.emit("task:updated", task);
+      return task;
+    });
+  }
+
+  async deleteTaskComment(id: string, commentId: string): Promise<Task> {
+    return this.withTaskLock(id, async () => {
+      const dir = this.taskDir(id);
+      const task = await this.readTaskJson(dir);
+      const currentComments = task.comments || [];
+      const nextComments = currentComments.filter((entry) => entry.id !== commentId);
+
+      if (nextComments.length === currentComments.length) {
+        throw new Error(`Comment ${commentId} not found on task ${id}`);
+      }
+
+      task.comments = nextComments.length > 0 ? nextComments : undefined;
+      task.updatedAt = new Date().toISOString();
+      task.log.push({
+        timestamp: task.updatedAt,
+        action: "Comment deleted",
+      });
+
+      await this.atomicWriteTaskJson(dir, task);
+      if (this.watcher) this.taskCache.set(id, { ...task });
+
+      this.emit("task:updated", task);
+      return task;
+    });
   }
 
   /**

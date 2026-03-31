@@ -92,9 +92,11 @@ CREATE TABLE IF NOT EXISTS tasks (
   log TEXT DEFAULT '[]',
   attachments TEXT DEFAULT '[]',
   steeringComments TEXT DEFAULT '[]',
+  comments TEXT DEFAULT '[]',
   workflowStepResults TEXT DEFAULT '[]',
   prInfo TEXT,
   issueInfo TEXT,
+  mergeDetails TEXT,
   breakIntoSubtasks INTEGER DEFAULT 0,
   enabledWorkflowSteps TEXT DEFAULT '[]'
 );

@@ -333,6 +333,34 @@ export interface SteeringComment {
   author: "user" | "agent";
 }
 
+export interface TaskComment {
+  id: string;
+  text: string;
+  author: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface TaskCommentInput {
+  text: string;
+  author: string;
+}
+
+export interface MergeDetails {
+  commitSha?: string;
+  filesChanged?: number;
+  insertions?: number;
+  deletions?: number;
+  mergeCommitMessage?: string;
+  mergedAt?: string;
+  mergeConfirmed?: boolean;
+  prNumber?: number;
+  resolutionStrategy?: "ai" | "auto-resolve" | "theirs";
+  resolutionMethod?: "ai" | "auto" | "mixed" | "theirs";
+  attemptsMade?: 1 | 2 | 3;
+  autoResolvedCount?: number;
+}
+
 export interface Task {
   id: string;
   title?: string;
@@ -360,8 +388,10 @@ export interface Task {
   baseBranch?: string;
   attachments?: TaskAttachment[];
   steeringComments?: SteeringComment[];
+  comments?: TaskComment[];
   /** PR information for tasks linked to GitHub pull requests */
   prInfo?: PrInfo;
+  mergeDetails?: MergeDetails;
   /** Issue information for tasks imported from GitHub issues */
   issueInfo?: IssueInfo;
   log: TaskLogEntry[];
@@ -723,21 +753,13 @@ export interface BoardConfig {
   nextWorkflowStepId?: number;
 }
 
-export interface MergeResult {
+export interface MergeResult extends MergeDetails {
   task: Task;
   branch: string;
   merged: boolean;
   worktreeRemoved: boolean;
   branchDeleted: boolean;
   error?: string;
-  /** Strategy that successfully resolved the merge, if any */
-  resolutionStrategy?: "ai" | "auto-resolve" | "theirs";
-  /** Alias for resolutionStrategy — how conflicts were resolved (for metrics/debugging) */
-  resolutionMethod?: "ai" | "auto" | "mixed" | "theirs";
-  /** Number of retry attempts made (1 = first attempt succeeded, 2-3 = retries needed) */
-  attemptsMade?: 1 | 2 | 3;
-  /** Number of files auto-resolved (for tracking mixed resolution scenarios) */
-  autoResolvedCount?: number;
 }
 
 export const COLUMN_LABELS: Record<Column, string> = {

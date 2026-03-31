@@ -52,6 +52,9 @@ function createMockStore(overrides: Partial<TaskStore> = {}): TaskStore {
     logEntry: vi.fn().mockResolvedValue(undefined),
     getAgentLogs: vi.fn().mockResolvedValue([]),
     addSteeringComment: vi.fn(),
+    addTaskComment: vi.fn(),
+    updateTaskComment: vi.fn(),
+    deleteTaskComment: vi.fn(),
     updatePrInfo: vi.fn().mockResolvedValue(undefined),
     updateIssueInfo: vi.fn().mockResolvedValue(undefined),
     getRootDir: vi.fn().mockReturnValue("/fake/root"),
@@ -1405,6 +1408,63 @@ describe("Pause/Unpause endpoints", () => {
     const res = await REQUEST(buildApp(), "POST", "/api/tasks/KB-001/pause");
     expect(res.status).toBe(500);
     expect(res.body.error).toBe("not found");
+  });
+
+  describe("task comment routes", () => {
+    it("GET /tasks/:id/comments — returns task comments", async () => {
+      const comments = [{ id: "c1", text: "Hello", author: "alice", createdAt: "2026-01-01T00:00:00.000Z" }];
+      const store = createMockStore({
+        getTask: vi.fn().mockResolvedValue({ ...FAKE_TASK_DETAIL, comments }),
+      });
+
+      const app = express();
+      app.use(express.json());
+      app.use("/api", createApiRoutes(store));
+
+      const res = await GET(app, "/api/tasks/KB-001/comments");
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual(comments);
+    });
+
+    it("POST /tasks/:id/comments — adds a task comment", async () => {
+      const updatedTask = { ...FAKE_TASK_DETAIL, comments: [{ id: "c1", text: "Hello", author: "user", createdAt: "2026-01-01T00:00:00.000Z" }] };
+      const store = createMockStore({ addTaskComment: vi.fn().mockResolvedValue(updatedTask) });
+      const app = express();
+      app.use(express.json());
+      app.use("/api", createApiRoutes(store));
+
+      const res = await REQUEST(app, "POST", "/api/tasks/KB-001/comments", JSON.stringify({ text: "Hello" }), {
+        "Content-Type": "application/json",
+      });
+      expect(res.status).toBe(200);
+      expect(store.addTaskComment).toHaveBeenCalledWith("KB-001", "Hello", "user");
+    });
+
+    it("PATCH /tasks/:id/comments/:commentId — updates a task comment", async () => {
+      const updatedTask = { ...FAKE_TASK_DETAIL, comments: [{ id: "c1", text: "Updated", author: "user", createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:01:00.000Z" }] };
+      const store = createMockStore({ updateTaskComment: vi.fn().mockResolvedValue(updatedTask) });
+      const app = express();
+      app.use(express.json());
+      app.use("/api", createApiRoutes(store));
+
+      const res = await REQUEST(app, "PATCH", "/api/tasks/KB-001/comments/c1", JSON.stringify({ text: "Updated" }), {
+        "Content-Type": "application/json",
+      });
+      expect(res.status).toBe(200);
+      expect(store.updateTaskComment).toHaveBeenCalledWith("KB-001", "c1", "Updated");
+    });
+
+    it("DELETE /tasks/:id/comments/:commentId — deletes a task comment", async () => {
+      const updatedTask = { ...FAKE_TASK_DETAIL, comments: [] };
+      const store = createMockStore({ deleteTaskComment: vi.fn().mockResolvedValue(updatedTask) });
+      const app = express();
+      app.use(express.json());
+      app.use("/api", createApiRoutes(store));
+
+      const res = await REQUEST(app, "DELETE", "/api/tasks/KB-001/comments/c1");
+      expect(res.status).toBe(200);
+      expect(store.deleteTaskComment).toHaveBeenCalledWith("KB-001", "c1");
+    });
   });
 
   describe("POST /tasks/:id/steer", () => {

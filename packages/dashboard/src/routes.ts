@@ -1654,6 +1654,72 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
     }
   });
 
+  router.get("/tasks/:id/comments", async (req, res) => {
+    try {
+      const task = await store.getTask(req.params.id);
+      res.json(task.comments || []);
+    } catch (err: any) {
+      const status = err.code === "ENOENT" ? 404 : 500;
+      res.status(status).json({ error: err.message });
+    }
+  });
+
+  router.post("/tasks/:id/comments", async (req, res) => {
+    try {
+      const { text, author } = req.body;
+      if (!text || typeof text !== "string") {
+        res.status(400).json({ error: "text is required and must be a string" });
+        return;
+      }
+      if (text.length === 0 || text.length > 2000) {
+        res.status(400).json({ error: "text must be between 1 and 2000 characters" });
+        return;
+      }
+      if (author !== undefined && typeof author !== "string") {
+        res.status(400).json({ error: "author must be a string" });
+        return;
+      }
+      const task = await store.addTaskComment(req.params.id, text, author?.trim() || "user");
+      res.json(task);
+    } catch (err: any) {
+      const status = err.code === "ENOENT" ? 404 : 500;
+      res.status(status).json({ error: err.message });
+    }
+  });
+
+  router.patch("/tasks/:id/comments/:commentId", async (req, res) => {
+    try {
+      const { text } = req.body;
+      if (!text || typeof text !== "string") {
+        res.status(400).json({ error: "text is required and must be a string" });
+        return;
+      }
+      if (text.length === 0 || text.length > 2000) {
+        res.status(400).json({ error: "text must be between 1 and 2000 characters" });
+        return;
+      }
+      const task = await store.updateTaskComment(req.params.id, req.params.commentId, text);
+      res.json(task);
+    } catch (err: any) {
+      const status = err.code === "ENOENT" ? 404
+        : err.message?.includes("not found") ? 404
+        : 500;
+      res.status(status).json({ error: err.message });
+    }
+  });
+
+  router.delete("/tasks/:id/comments/:commentId", async (req, res) => {
+    try {
+      const task = await store.deleteTaskComment(req.params.id, req.params.commentId);
+      res.json(task);
+    } catch (err: any) {
+      const status = err.code === "ENOENT" ? 404
+        : err.message?.includes("not found") ? 404
+        : 500;
+      res.status(status).json({ error: err.message });
+    }
+  });
+
   // Add steering comment to task
   router.post("/tasks/:id/steer", async (req, res) => {
     try {

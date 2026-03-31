@@ -9,6 +9,10 @@ import {
   logoutProvider,
   fetchModels,
   addSteeringComment,
+  addTaskComment,
+  updateTaskComment,
+  deleteTaskComment,
+  fetchTaskComments,
   fetchGitRemotes,
   refineTask,
   fetchBatchStatus,
@@ -131,6 +135,75 @@ describe("updateTask", () => {
     globalThis.fetch = vi.fn().mockReturnValue(mockFetchResponse(false, { error: "Not found" }));
 
     await expect(updateTask("KB-001", { dependencies: [] })).rejects.toThrow("Not found");
+  });
+});
+
+describe("task comments api", () => {
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  const FAKE_TASK: Task = {
+    id: "KB-001",
+    description: "Test",
+    column: "todo",
+    dependencies: [],
+    steps: [],
+    currentStep: 0,
+    log: [],
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    comments: [{ id: "c1", text: "Hello", author: "user", createdAt: "2026-01-01T00:00:00.000Z" }],
+  };
+
+  it("fetches task comments", async () => {
+    const comments = FAKE_TASK.comments!;
+    globalThis.fetch = vi.fn().mockReturnValue(mockFetchResponse(true, comments));
+
+    const result = await fetchTaskComments("KB-001");
+
+    expect(result).toEqual(comments);
+    expect(globalThis.fetch).toHaveBeenCalledWith("/api/tasks/KB-001/comments", {
+      headers: { "Content-Type": "application/json" },
+    });
+  });
+
+  it("adds a task comment", async () => {
+    globalThis.fetch = vi.fn().mockReturnValue(mockFetchResponse(true, FAKE_TASK));
+
+    const result = await addTaskComment("KB-001", "Hello", "user");
+
+    expect(result).toEqual(FAKE_TASK);
+    expect(globalThis.fetch).toHaveBeenCalledWith("/api/tasks/KB-001/comments", {
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+      body: JSON.stringify({ text: "Hello", author: "user" }),
+    });
+  });
+
+  it("updates a task comment", async () => {
+    globalThis.fetch = vi.fn().mockReturnValue(mockFetchResponse(true, FAKE_TASK));
+
+    await updateTaskComment("KB-001", "c1", "Updated");
+
+    expect(globalThis.fetch).toHaveBeenCalledWith("/api/tasks/KB-001/comments/c1", {
+      headers: { "Content-Type": "application/json" },
+      method: "PATCH",
+      body: JSON.stringify({ text: "Updated" }),
+    });
+  });
+
+  it("deletes a task comment", async () => {
+    globalThis.fetch = vi.fn().mockReturnValue(mockFetchResponse(true, FAKE_TASK));
+
+    await deleteTaskComment("KB-001", "c1");
+
+    expect(globalThis.fetch).toHaveBeenCalledWith("/api/tasks/KB-001/comments/c1", {
+      headers: { "Content-Type": "application/json" },
+      method: "DELETE",
+    });
   });
 });
 
