@@ -981,4 +981,88 @@ describe("usage", () => {
       expect(codex.windows[0].resetText).toContain("1h 1m");
     });
   });
+
+  describe("pace integration with provider windows", () => {
+    it("attaches pace to Minimax weekly window with valid timing data", async () => {
+      const mockResponse = {
+        quota: {
+          total: 1000,
+          used: 350,
+          remaining: 650,
+        },
+        reset_at: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
+      };
+
+      mockReadFileSync.mockImplementation((path: string) => {
+        if (path.includes("minimax")) {
+          return JSON.stringify({ access_token: "test-token" });
+        }
+        throw new Error("File not found");
+      });
+
+      const mockReq = { on: vi.fn(), write: vi.fn(), end: vi.fn() };
+
+      mockRequest.mockImplementation((options: any, callback: any) => {
+        const mockRes = {
+          statusCode: 200,
+          headers: {},
+          on: vi.fn((event: string, handler: any) => {
+            if (event === "data") handler(Buffer.from(JSON.stringify(mockResponse)));
+            if (event === "end") handler();
+          }),
+        };
+        callback(mockRes);
+        return mockReq;
+      });
+
+      const providers = await fetchAllProviderUsage();
+      const minimax = providers.find((p) => p.name === "Minimax")!;
+
+      expect(minimax.status).toBe("ok");
+      expect(minimax.windows).toHaveLength(1);
+
+      const weeklyWindow = minimax.windows[0];
+      expect(weeklyWindow.label).toBe("Weekly");
+      expect(weeklyWindow.pace).toBeDefined();
+      expect(weeklyWindow.pace!.status).toBe("behind");
+      expect(weeklyWindow.pace!.percentElapsed).toBeGreaterThan(0);
+      expect(weeklyWindow.pace!.message).toContain("under pace");
+    });
+
+    it("does not attach pace when resetMs is 0 (window already reset)", async () => {
+      const mockResponse = {
+        quota: { total: 1000, used: 0, remaining: 1000 },
+        reset_at: new Date(Date.now() - 1000).toISOString(),
+      };
+
+      mockReadFileSync.mockImplementation((path: string) => {
+        if (path.includes("minimax")) {
+          return JSON.stringify({ access_token: "test-token" });
+        }
+        throw new Error("File not found");
+      });
+
+      const mockReq = { on: vi.fn(), write: vi.fn(), end: vi.fn() };
+
+      mockRequest.mockImplementation((options: any, callback: any) => {
+        const mockRes = {
+          statusCode: 200,
+          headers: {},
+          on: vi.fn((event: string, handler: any) => {
+            if (event === "data") handler(Buffer.from(JSON.stringify(mockResponse)));
+            if (event === "end") handler();
+          }),
+        };
+        callback(mockRes);
+        return mockReq;
+      });
+
+      const providers = await fetchAllProviderUsage();
+      const minimax = providers.find((p) => p.name === "Minimax")!;
+
+      expect(minimax.status).toBe("ok");
+      expect(minimax.windows[0].resetMs).toBe(0);
+      expect(minimax.windows[0].pace).toBeUndefined();
+    });
+  });
 });

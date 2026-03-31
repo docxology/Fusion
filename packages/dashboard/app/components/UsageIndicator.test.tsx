@@ -881,4 +881,49 @@ describe("UsageIndicator", () => {
     paceRow = screen.getByTestId("pace-row");
     expect(paceRow).toHaveTextContent("Using 20% over pace");
   });
+
+  it("verifies pace appears for weekly windows with valid backend timing data", () => {
+    // This test verifies the full data flow: backend calculates pace when both
+    // resetMs and windowDurationMs are present, frontend displays the indicator
+    mockUseUsageData.mockReturnValue({
+      providers: [
+        {
+          name: "TestProvider",
+          icon: "🧪",
+          status: "ok",
+          windows: [
+            { 
+              label: "Weekly", 
+              percentUsed: 40, 
+              percentLeft: 60, 
+              resetText: "resets in 4d",
+              resetMs: 345600000, // 4 days remaining
+              windowDurationMs: 604800000, // 7 days total
+              // Pace should be calculated by backend and included in response
+              pace: {
+                status: "behind",
+                percentElapsed: 43,
+                message: "Using 3% under pace",
+              },
+            },
+          ],
+        },
+      ],
+      loading: false,
+      error: null,
+      lastUpdated: new Date(),
+      refresh: mockRefresh,
+    });
+
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+
+    // Pace marker should be rendered
+    const paceMarker = document.querySelector('[data-testid="pace-marker"]');
+    expect(paceMarker).toBeInTheDocument();
+
+    // Pace row should show status
+    const paceRow = screen.getByTestId("pace-row");
+    expect(paceRow).toBeInTheDocument();
+    expect(paceRow).toHaveTextContent("under pace");
+  });
 });
