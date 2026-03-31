@@ -565,6 +565,18 @@ function pushGitBranch(): GitPushResult {
 
 export function createApiRoutes(store: TaskStore, options?: ServerOptions): Router {
   const router = Router();
+
+  if (process.env.KB_DEBUG_PLANNING_ROUTES === "1") {
+    const planningRoutes = [
+      "POST /planning/start",
+      "POST /planning/start-streaming",
+      "POST /planning/respond",
+      "POST /planning/cancel",
+      "POST /planning/create-task",
+      "GET /planning/:sessionId/stream",
+    ];
+    console.debug("[planning:routes:registered]", planningRoutes);
+  }
   const sessionFilesCache = new Map<string, { files: string[]; expiresAt: number }>();
 
   // Get GitHub token from options or env

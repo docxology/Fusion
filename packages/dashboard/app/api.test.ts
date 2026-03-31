@@ -16,6 +16,8 @@ import {
   fetchWorkspaceFileList,
   fetchWorkspaceFileContent,
   saveWorkspaceFileContent,
+  startPlanningStreaming,
+  fetchTasks,
 } from "./api";
 import type { Task, TaskDetail, BatchStatusResponse } from "@kb/core";
 
@@ -1109,7 +1111,7 @@ describe("API Error Handling", () => {
   });
 
   describe("Non-JSON success responses", () => {
-    it("throws error for successful non-JSON response", async () => {
+    it("throws a descriptive HTML fallback error including the endpoint URL", async () => {
       globalThis.fetch = vi.fn().mockReturnValue(
         Promise.resolve({
           ok: true,
@@ -1124,11 +1126,10 @@ describe("API Error Handling", () => {
         } as unknown as Response)
       );
 
-      await expect(fetchTasks()).rejects.toThrow("Unexpected response format: expected JSON, got text/html");
+      await expect(fetchTasks()).rejects.toThrow("API returned HTML instead of JSON for /api/tasks");
     });
 
-    it("includes response preview for unexpected success format", async () => {
-      const htmlResponse = "<html><body>SPA Fallback</body></html>";
+    it("includes planning endpoint URL and status when HTML is returned", async () => {
       globalThis.fetch = vi.fn().mockReturnValue(
         Promise.resolve({
           ok: true,
@@ -1139,16 +1140,18 @@ describe("API Error Handling", () => {
               name.toLowerCase() === "content-type" ? "text/html" : null,
           },
           json: () => Promise.reject(new Error("JSON parse error")),
-          text: () => Promise.resolve(htmlResponse),
+          text: () => Promise.resolve("<!DOCTYPE html><html><body>SPA Fallback</body></html>"),
         } as unknown as Response)
       );
 
-      await expect(fetchTasks()).rejects.toThrow("(Response: <html><body>SPA Fallback</body></html>)");
+      await expect(startPlanningStreaming("Build auth")).rejects.toThrow(
+        "API returned HTML instead of JSON for /api/planning/start-streaming. The endpoint may not be properly configured. (200 OK)"
+      );
     });
   });
 
   describe("JSON parsing edge cases", () => {
-    it("handles invalid JSON in error response with JSON content-type", async () => {
+    it("reports invalid JSON with the endpoint URL", async () => {
       globalThis.fetch = vi.fn().mockReturnValue(
         Promise.resolve({
           ok: false,
@@ -1163,9 +1166,9 @@ describe("API Error Handling", () => {
         } as unknown as Response)
       );
 
-      // Should fall back to text-based error when JSON parsing fails
-      await expect(fetchTasks()).rejects.toThrow("Request failed: 500 Internal Server Error");
-      await expect(fetchTasks()).rejects.toThrow("Response:");
+      await expect(fetchTasks()).rejects.toThrow(
+        "API returned invalid JSON for /api/tasks. (500 Internal Server Error)"
+      );
     });
   });
 });

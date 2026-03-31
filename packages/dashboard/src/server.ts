@@ -166,6 +166,19 @@ export function createServer(store: TaskStore, options?: ServerOptions): ReturnT
   // Rate limiting — mutation endpoints (POST/PUT/PATCH/DELETE)
   app.use("/api", rateLimit(RATE_LIMITS.api));
 
+  // Planning route diagnostics for production/runtime debugging. Disabled by default.
+  if (process.env.KB_DEBUG_PLANNING_ROUTES === "1") {
+    app.use("/api/planning", (req, _res, next) => {
+      console.debug("[planning:request]", {
+        method: req.method,
+        path: req.path,
+        originalUrl: req.originalUrl,
+        contentType: req.headers["content-type"],
+      });
+      next();
+    });
+  }
+
   // REST API
   app.use("/api", createApiRoutes(store, options));
 

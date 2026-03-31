@@ -16,60 +16,55 @@ import type {
 import type { PlanningQuestion, PlanningSummary, PlanningResponse } from "@kb/core";
 import type { ScheduledTask, ScheduledTaskCreateInput, ScheduledTaskUpdateInput, AutomationRunResult } from "@kb/core";
 
+function looksLikeHtml(body: string): boolean {
+  const trimmed = body.trim();
+  return trimmed.startsWith("<!DOCTYPE") || trimmed.startsWith("<html") || trimmed.startsWith("<HTML");
+}
+
+function buildApiUrl(path: string): string {
+  return `/api${path}`;
+}
+
 async function api<T = unknown>(path: string, opts: RequestInit = {}): Promise<T> {
-  const res = await fetch(`/api${path}`, {
+  const url = buildApiUrl(path);
+  const res = await fetch(url, {
     headers: { "Content-Type": "application/json" },
     ...opts,
   });
 
-  // Check if response is JSON before attempting to parse
   const contentType = res.headers.get("content-type") ?? "";
+  const bodyText = await res.text();
   const isJson = contentType.includes("application/json");
-  const isHtml = contentType.includes("text/html");
+  const isHtml = contentType.includes("text/html") || looksLikeHtml(bodyText);
+
+  if (isHtml) {
+    throw new Error(
+      `API returned HTML instead of JSON for ${url}. ` +
+      `The endpoint may not be properly configured. (${res.status} ${res.statusText})`
+    );
+  }
+
+  if (!isJson) {
+    const preview = bodyText.length > 160 ? `${bodyText.slice(0, 160)}...` : bodyText;
+    throw new Error(
+      `API returned ${contentType || "an unknown content type"} instead of JSON for ${url}. ` +
+      `(${res.status} ${res.statusText})${preview ? ` Response: ${preview}` : ""}`
+    );
+  }
+
+  let data: unknown;
+  try {
+    data = bodyText ? JSON.parse(bodyText) : null;
+  } catch {
+    throw new Error(
+      `API returned invalid JSON for ${url}. (${res.status} ${res.statusText})`
+    );
+  }
 
   if (!res.ok) {
-    // For error responses, read as text first
-    const text = await res.text();
-    
-    // Try to extract error from JSON if content-type indicates JSON
-    if (isJson) {
-      try {
-        const data = JSON.parse(text) as { error?: string };
-        throw new Error(data.error || `Request failed: ${res.status} ${res.statusText}`);
-      } catch {
-        // JSON parsing failed - fall through to text-based error below
-      }
-    }
-    
-    // HTML error response (SPA fallback case) - show user-friendly message
-    if (isHtml || text.trim().startsWith("<!DOCTYPE") || text.trim().startsWith("<html")) {
-      throw new Error("Server returned an unexpected response. Please refresh and try again.");
-    }
-    
-    // Non-JSON error response: use status text with truncated body preview
-    const textPreview = text.length > 100 ? text.slice(0, 100) + "..." : text;
-    const message = textPreview 
-      ? `Request failed: ${res.status} ${res.statusText} (Response: ${textPreview})`
-      : `Request failed: ${res.status} ${res.statusText}`;
-    throw new Error(message);
+    throw new Error((data as { error?: string } | null)?.error || `Request failed for ${url}: ${res.status} ${res.statusText}`);
   }
 
-  // For successful responses, parse as JSON if content-type indicates JSON
-  if (!isJson) {
-    // Unexpected non-JSON success response (likely HTML from SPA fallback)
-    const text = await res.text();
-    
-    // Check if it looks like HTML
-    if (isHtml || text.trim().startsWith("<!DOCTYPE") || text.trim().startsWith("<html")) {
-      throw new Error("Server returned an unexpected response. Please refresh and try again.");
-    }
-    
-    // Other non-JSON response
-    const textPreview = text.length > 100 ? text.slice(0, 100) + "..." : text;
-    throw new Error(`Unexpected response format: expected JSON, got ${contentType || "unknown"}${textPreview ? ` (Response: ${textPreview})` : ""}`);
-  }
-
-  const data = await res.json();
   return data as T;
 }
 

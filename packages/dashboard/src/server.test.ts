@@ -50,6 +50,38 @@ async function GET(app: express.Express, path: string): Promise<{ status: number
   });
 }
 
+async function REQUEST(
+  app: express.Express,
+  method: string,
+  path: string,
+  body?: string,
+  headers?: Record<string, string>,
+): Promise<{ status: number; body: unknown; headers: http.IncomingHttpHeaders }> {
+  return new Promise((resolve, reject) => {
+    const server = app.listen(0, () => {
+      const addr = server.address() as { port: number };
+      const req = http.request(
+        { hostname: "127.0.0.1", port: addr.port, path, method, headers },
+        (res) => {
+          let data = "";
+          res.on("data", (chunk) => (data += chunk));
+          res.on("end", () => {
+            server.close();
+            try {
+              resolve({ status: res.statusCode!, body: JSON.parse(data), headers: res.headers });
+            } catch {
+              resolve({ status: res.statusCode!, body: data, headers: res.headers });
+            }
+          });
+        },
+      );
+      req.on("error", (err) => { server.close(); reject(err); });
+      if (body) req.write(body);
+      req.end();
+    });
+  });
+}
+
 describe("API Error Handling Middleware", () => {
   let store: TaskStore;
 
@@ -108,6 +140,42 @@ describe("API Error Handling Middleware", () => {
         expect(res.body).not.toContain("<!DOCTYPE html>");
         expect(res.body).not.toContain("<html");
       }
+    });
+  });
+
+  describe("planning API route content types", () => {
+    it("returns JSON for all POST planning endpoints instead of falling through to SPA HTML", async () => {
+      const endpoints = [
+        "/api/planning/start",
+        "/api/planning/start-streaming",
+        "/api/planning/respond",
+        "/api/planning/cancel",
+        "/api/planning/create-task",
+      ];
+
+      for (const path of endpoints) {
+        const app = createServer(store);
+        const res = await REQUEST(app, "POST", path, JSON.stringify({}), {
+          "Content-Type": "application/json",
+        });
+
+        expect(res.headers["content-type"]).toContain("application/json");
+        if (typeof res.body === "string") {
+          expect(res.body).not.toContain("<!DOCTYPE html>");
+          expect(res.body).not.toContain("<html");
+        }
+      }
+    });
+
+    it("returns JSON 404s for unmatched planning API routes", async () => {
+      const app = createServer(store);
+      const res = await REQUEST(app, "POST", "/api/planning/not-a-route", JSON.stringify({}), {
+        "Content-Type": "application/json",
+      });
+
+      expect(res.status).toBe(404);
+      expect(res.headers["content-type"]).toContain("application/json");
+      expect(res.body).toEqual({ error: "Not found" });
     });
   });
 });
