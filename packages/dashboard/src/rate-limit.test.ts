@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach } from "vitest";
-import { rateLimit } from "./rate-limit.js";
+import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
+import { rateLimit, RATE_LIMITS } from "./rate-limit.js";
 import type { Request, Response, NextFunction } from "express";
 
 function mockReq(ip = "127.0.0.1"): Partial<Request> {
@@ -26,6 +26,20 @@ function mockRes(): Partial<Response> & { _status: number; _json: any; _headers:
   };
   return res;
 }
+
+describe("RATE_LIMITS constants", () => {
+  it("has correct values for api limit", () => {
+    expect(RATE_LIMITS.api).toEqual({ windowMs: 60_000, max: 100 });
+  });
+
+  it("has correct values for mutation limit", () => {
+    expect(RATE_LIMITS.mutation).toEqual({ windowMs: 60_000, max: 30 });
+  });
+
+  it("has correct values for sse limit", () => {
+    expect(RATE_LIMITS.sse).toEqual({ windowMs: 60_000, max: 10 });
+  });
+});
 
 describe("rateLimit", () => {
   let middleware: ReturnType<typeof rateLimit>;
@@ -113,5 +127,110 @@ describe("rateLimit", () => {
     const res = mockRes();
     mw(mockReq() as Request, res as unknown as Response, () => {});
     expect(res._json).toEqual({ error: "Slow down!" });
+  });
+
+  it("uses default options (100 req/min, 60s window)", () => {
+    const defaultMiddleware = rateLimit();
+    const req = mockReq();
+    const res = mockRes();
+    let called = false;
+
+    // First request should be allowed
+    defaultMiddleware(req as Request, res as unknown as Response, () => { called = true; });
+    expect(called).toBe(true);
+    expect(res._headers["RateLimit-Limit"]).toBe("100");
+  });
+
+  it("respects custom options", () => {
+    const customMiddleware = rateLimit({ windowMs: 30_000, max: 5, message: "Custom" });
+    const req = mockReq();
+    const res = mockRes();
+
+    customMiddleware(req as Request, res as unknown as Response, () => {});
+    expect(res._headers["RateLimit-Limit"]).toBe("5");
+  });
+
+  it("uses remoteAddress when ip is undefined", () => {
+    const req = { socket: { remoteAddress: "192.168.1.1" } } as Partial<Request>;
+    const res = mockRes();
+    let called = false;
+
+    middleware(req as Request, res as unknown as Response, () => { called = true; });
+    expect(called).toBe(true);
+  });
+
+  describe("cleanup interval", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("removes expired entries after window expires", () => {
+      const shortWindowMs = 1000;
+      const cleanupMiddleware = rateLimit({ windowMs: shortWindowMs, max: 1 });
+      const req = mockReq("1.2.3.4");
+
+      // Make first request
+      cleanupMiddleware(req as Request, mockRes() as unknown as Response, () => {});
+
+      // Advance time past the window
+      vi.advanceTimersByTime(shortWindowMs + 100);
+
+      // New request should be allowed since old entry expired
+      const res = mockRes();
+      let called = false;
+      cleanupMiddleware(req as Request, res as unknown as Response, () => { called = true; });
+
+      expect(called).toBe(true);
+      expect(res._headers["RateLimit-Remaining"]).toBe("0");
+    });
+  });
+});
+
+describe("rateLimit with RATE_LIMITS presets", () => {
+  it("works with RATE_LIMITS.api preset", () => {
+    const apiMiddleware = rateLimit(RATE_LIMITS.api);
+    const req = mockReq();
+    const res = mockRes();
+    let called = false;
+
+    apiMiddleware(req as Request, res as unknown as Response, () => { called = true; });
+
+    expect(called).toBe(true);
+    expect(res._headers["RateLimit-Limit"]).toBe("100");
+  });
+
+  it("works with RATE_LIMITS.mutation preset", () => {
+    const mutationMiddleware = rateLimit(RATE_LIMITS.mutation);
+    const req = mockReq();
+
+    // Exhaust limit
+    for (let i = 0; i < 30; i++) {
+      mutationMiddleware(req as Request, mockRes() as unknown as Response, () => {});
+    }
+
+    // 31st request should be blocked
+    const res = mockRes();
+    mutationMiddleware(req as Request, res as unknown as Response, () => {});
+    expect(res._status).toBe(429);
+  });
+
+  it("works with RATE_LIMITS.sse preset", () => {
+    const sseMiddleware = rateLimit(RATE_LIMITS.sse);
+    const req = mockReq();
+    const res = mockRes();
+
+    // Exhaust limit
+    for (let i = 0; i < 10; i++) {
+      sseMiddleware(req as Request, mockRes() as unknown as Response, () => {});
+    }
+
+    // 11th request should be blocked
+    const blockedRes = mockRes();
+    sseMiddleware(req as Request, blockedRes as unknown as Response, () => {});
+    expect(blockedRes._status).toBe(429);
   });
 });
