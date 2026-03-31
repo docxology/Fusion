@@ -151,6 +151,29 @@ Browse and edit task worktree files directly from the task detail modal:
   - `Ctrl/Cmd+S` to save
   - `Escape` to close
 
+### Activity Log
+View a centralized timeline of all task lifecycle events. Click the history icon in the header to open the Activity Log modal.
+
+**Features**:
+- **Event Types**: Track task:created, task:moved, task:merged, task:failed, task:deleted, and settings:updated events
+- **Task Links**: Click any task ID in the log to open its detail modal
+- **Filter by Type**: Use the dropdown to show only specific event types (e.g., only failures, only merges)
+- **Auto-refresh**: Log updates automatically every 30 seconds when the modal is open
+- **Pagination**: "Load More" button fetches older entries (100 entries per request, max 1000)
+- **Clear Log**: Maintenance function to clear all activity history (with confirmation)
+
+**Event Metadata**:
+- Task moves show from/to column transitions
+- Merges show success/failure status
+- Failures include error messages when available
+
+**Keyboard Shortcuts**:
+- `Escape` - Close modal (or cancel confirmation dialog)
+
+**API Endpoints**:
+- `GET /api/activity` - Get activity log entries with optional limit, since, and type filters
+- `DELETE /api/activity` - Clear all activity log entries
+
 ### Configuration
 - **Settings Modal**: Configure scheduling, worktrees, build commands, merge preferences, notifications, and appearance
 - **Notifications**: ntfy.sh integration for push notifications when tasks complete or fail
