@@ -2,7 +2,7 @@ import { Router, type Request, type Response, type NextFunction } from "express"
 import multer from "multer";
 import { createReadStream } from "node:fs";
 import { execSync } from "node:child_process";
-import type { TaskStore, Column, MergeResult, ScheduleType } from "@kb/core";
+import type { TaskStore, Column, MergeResult, ScheduleType, ActivityEventType } from "@kb/core";
 import { COLUMNS, VALID_TRANSITIONS, type BatchStatusEntry, type BatchStatusResponse, type BatchStatusResult, type IssueInfo, type PrInfo, isGhAuthenticated, AUTOMATION_PRESETS, AutomationStore } from "@kb/core";
 import type { ServerOptions } from "./server.js";
 import { GitHubClient, getCurrentGitHubRepo, parseBadgeUrl } from "./github.js";
@@ -3330,6 +3330,65 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
       if (err.code === "ENOENT") {
         return res.status(404).json({ error: "Schedule not found" });
       }
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── Activity Log Routes ─────────────────────────────────────────────
+
+  /**
+   * GET /api/activity
+   * Get activity log entries.
+   * Query params: limit (default 100, max 1000), since (ISO timestamp), type (event type filter)
+   * Returns: ActivityLogEntry[] sorted newest first
+   */
+  router.get("/activity", async (req, res) => {
+    try {
+      const limitParam = req.query.limit;
+      const sinceParam = req.query.since;
+      const typeParam = req.query.type;
+
+      // Parse and validate limit
+      let limit: number | undefined;
+      if (limitParam !== undefined) {
+        const parsed = Number.parseInt(limitParam as string, 10);
+        if (!Number.isFinite(parsed) || parsed < 0) {
+          res.status(400).json({ error: "limit must be a non-negative integer" });
+          return;
+        }
+        limit = Math.min(parsed, 1000); // Max 1000
+      }
+
+      // Validate type if provided
+      const validTypes = ["task:created", "task:moved", "task:updated", "task:deleted", "task:merged", "task:failed", "settings:updated"];
+      if (typeParam !== undefined && !validTypes.includes(typeParam as string)) {
+        res.status(400).json({ error: `Invalid type. Must be one of: ${validTypes.join(", ")}` });
+        return;
+      }
+
+      const options: { limit?: number; since?: string; type?: ActivityEventType } = {
+        limit,
+        since: sinceParam as string | undefined,
+        type: typeParam as ActivityEventType | undefined,
+      };
+
+      const entries = await store.getActivityLog(options);
+      res.json(entries);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  /**
+   * DELETE /api/activity
+   * Clear all activity log entries (maintenance endpoint).
+   * Returns: { success: true }
+   */
+  router.delete("/activity", async (_req, res) => {
+    try {
+      await store.clearActivityLog();
+      res.json({ success: true });
+    } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
   });

@@ -7542,6 +7542,22 @@ html .column.drag-over * {
   gap: 8px;
 }
 
+/* Actions row for Save/Cancel in Definition tab edit mode */
+.spec-editor-actions-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* Edit mode container in Definition tab */
+.spec-editor-edit-mode {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 /* Content area - flexible and scrollable */
 .spec-editor-content {
   flex: 1;

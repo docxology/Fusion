@@ -11,7 +11,6 @@ import { AgentLogViewer } from "./AgentLogViewer";
 import { SteeringTab } from "./SteeringTab";
 import { ModelSelectorTab } from "./ModelSelectorTab";
 import { PrSection } from "./PrSection";
-import { SpecEditor } from "./SpecEditor";
 
 interface ModelSelection {
   provider?: string;
@@ -104,7 +103,7 @@ export function TaskDetailModal({
   addToast,
   githubTokenConfigured,
 }: TaskDetailModalProps) {
-  const [activeTab, setActiveTab] = useState<"definition" | "activity" | "agent-log" | "steering" | "model" | "spec">("definition");
+  const [activeTab, setActiveTab] = useState<"definition" | "activity" | "agent-log" | "steering" | "model">("definition");
   const [attachments, setAttachments] = useState<TaskAttachment[]>(task.attachments || []);
   const [uploading, setUploading] = useState(false);
   const [dependencies, setDependencies] = useState<string[]>(task.dependencies || []);
@@ -112,6 +111,9 @@ export function TaskDetailModal({
   const [depSearch, setDepSearch] = useState("");
   const [isSavingSpec, setIsSavingSpec] = useState(false);
   const [isRequestingRevision, setIsRequestingRevision] = useState(false);
+  const [isEditingSpec, setIsEditingSpec] = useState(false);
+  const [specEditContent, setSpecEditContent] = useState(task.prompt || "");
+  const [specFeedback, setSpecFeedback] = useState("");
   const [showRefineModal, setShowRefineModal] = useState(false);
   const [refineFeedback, setRefineFeedback] = useState("");
   const [isRefining, setIsRefining] = useState(false);
@@ -136,6 +138,13 @@ export function TaskDetailModal({
       setDepSearch("");
     }
   }, [showDepDropdown]);
+
+  // Reset spec edit state when task changes
+  useEffect(() => {
+    setIsEditingSpec(false);
+    setSpecEditContent(task.prompt || "");
+    setSpecFeedback("");
+  }, [task.id, task.prompt]);
 
   // Auto-focus title when entering edit mode
   useEffect(() => {
@@ -463,6 +472,7 @@ export function TaskDetailModal({
     }
   }, [onOpenDetail, addToast]);
 
+  // Spec save handlers (must be declared before functions that use them)
   const handleSaveSpec = useCallback(async (newContent: string) => {
     setIsSavingSpec(true);
     try {
@@ -495,6 +505,44 @@ export function TaskDetailModal({
       setIsRequestingRevision(false);
     }
   }, [task.id, addToast, onClose]);
+
+  // Spec editing handlers (depend on handleSaveSpec and handleRequestSpecRevision)
+  const enterSpecEditMode = useCallback(() => {
+    setIsEditingSpec(true);
+    setSpecEditContent(task.prompt || "");
+    setSpecFeedback("");
+  }, [task.prompt]);
+
+  const exitSpecEditMode = useCallback(() => {
+    setIsEditingSpec(false);
+    setSpecEditContent(task.prompt || "");
+    setSpecFeedback("");
+  }, [task.prompt]);
+
+  const handleSaveSpecFromEdit = useCallback(async () => {
+    if (specEditContent === (task.prompt || "")) {
+      exitSpecEditMode();
+      return;
+    }
+    await handleSaveSpec(specEditContent);
+    setIsEditingSpec(false);
+  }, [specEditContent, task.prompt, handleSaveSpec, exitSpecEditMode]);
+
+  const handleRequestRevisionFromEdit = useCallback(async () => {
+    if (!specFeedback.trim()) return;
+    await handleRequestSpecRevision(specFeedback.trim());
+  }, [specFeedback, handleRequestSpecRevision]);
+
+  // Keyboard shortcuts for spec edit mode
+  const handleSpecTextareaKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      exitSpecEditMode();
+    } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      void handleSaveSpecFromEdit();
+    }
+  }, [exitSpecEditMode, handleSaveSpecFromEdit]);
 
   const availableTasks = tasks
     .filter((t) => t.id !== task.id && !dependencies.includes(t.id))
@@ -633,24 +681,8 @@ export function TaskDetailModal({
             >
               Model
             </button>
-            <button
-              className={`detail-tab${activeTab === "spec" ? " detail-tab-active" : ""}`}
-              onClick={() => setActiveTab("spec")}
-            >
-              Spec
-            </button>
           </div>
-          {activeTab === "spec" ? (
-            <div className="detail-section detail-section--spec">
-              <SpecEditor
-                content={task.prompt || ""}
-                onSave={handleSaveSpec}
-                onRequestRevision={handleRequestSpecRevision}
-                isSaving={isSavingSpec}
-                isRequesting={isRequestingRevision}
-              />
-            </div>
-          ) : activeTab === "model" ? (
+          {activeTab === "model" ? (
             <div className="detail-section">
               <ModelSelectorTab task={task} addToast={addToast} />
             </div>
@@ -713,7 +745,66 @@ export function TaskDetailModal({
             )}
           </div>
           <div className="detail-section">
-            {task.prompt ? (
+            {isEditingSpec ? (
+              <div className="spec-editor-edit-mode">
+                <textarea
+                  className="spec-editor-textarea"
+                  value={specEditContent}
+                  onChange={(e) => setSpecEditContent(e.target.value)}
+                  onKeyDown={handleSpecTextareaKeyDown}
+                  disabled={isSavingSpec}
+                  placeholder="Enter task specification in Markdown..."
+                  rows={12}
+                />
+                <div className="spec-editor-actions-row">
+                  <button
+                    className="btn btn-sm"
+                    onClick={exitSpecEditMode}
+                    disabled={isSavingSpec}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    className="btn btn-primary btn-sm"
+                    onClick={() => void handleSaveSpecFromEdit()}
+                    disabled={specEditContent === (task.prompt || "") || isSavingSpec}
+                  >
+                    {isSavingSpec ? "Saving…" : "Save"}
+                  </button>
+                </div>
+                <div className="spec-editor-hint">
+                  <kbd>Ctrl</kbd>+<kbd>Enter</kbd> to save · <kbd>Escape</kbd> to cancel
+                </div>
+                {/* AI Revision Section */}
+                <div className="spec-editor-revision">
+                  <h4>Ask AI to Revise</h4>
+                  <p className="spec-editor-revision-help">
+                    Provide feedback for the AI to improve this specification. The task will move to triage for re-specification.
+                  </p>
+                  <textarea
+                    className="spec-editor-feedback"
+                    value={specFeedback}
+                    onChange={(e) => setSpecFeedback(e.target.value)}
+                    placeholder="e.g., 'Add more details about error handling', 'Split this into smaller steps', 'Include tests for the API endpoints'..."
+                    disabled={isRequestingRevision}
+                    rows={4}
+                    maxLength={2000}
+                  />
+                  <div className="spec-editor-revision-actions">
+                    <span className="spec-editor-char-count">
+                      {specFeedback.length}/2000
+                    </span>
+                    <button
+                      className="btn btn-primary btn-sm"
+                      onClick={() => void handleRequestRevisionFromEdit()}
+                      disabled={!specFeedback.trim() || isRequestingRevision}
+                    >
+                      {isRequestingRevision ? "Requesting…" : "Request AI Revision"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : task.prompt ? (
               <div className="markdown-body">
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>
                   {task.prompt.replace(/^#\s+[^\n]*\n+/, "")}
@@ -721,6 +812,13 @@ export function TaskDetailModal({
               </div>
             ) : (
               <div className="detail-prompt">(no prompt)</div>
+            )}
+            {!isEditingSpec && (
+              <div style={{ marginTop: "12px" }}>
+                <button className="btn btn-sm" onClick={enterSpecEditMode}>
+                  Edit
+                </button>
+              </div>
             )}
           </div>
           <div className="detail-section">
