@@ -1107,6 +1107,123 @@ describe("TaskStore", () => {
       const updated = await store.addSteeringComment(task.id, "Timestamp test");
       expect(updated.updatedAt).not.toBe(before);
     });
+
+    it("creates refinement task when steering comment added to done task", async () => {
+      const task = await store.createTask({ description: "Original task" });
+      await store.moveTask(task.id, "todo");
+      await store.moveTask(task.id, "in-progress");
+      await store.moveTask(task.id, "in-review");
+      await store.moveTask(task.id, "done");
+
+      const allTasksBefore = await store.listTasks();
+
+      await store.addSteeringComment(task.id, "Need to fix edge case");
+
+      const allTasksAfter = await store.listTasks();
+      expect(allTasksAfter).toHaveLength(allTasksBefore.length + 1);
+
+      const refinement = allTasksAfter.find((t) => t.id !== task.id && t.title?.includes("Refinement"));
+      expect(refinement).toBeDefined();
+      expect(refinement?.column).toBe("triage");
+      expect(refinement?.dependencies).toContain(task.id);
+    });
+
+    it("does not create refinement when steering comment added to non-done task (triage)", async () => {
+      const task = await store.createTask({ description: "Original task" });
+      // Task starts in triage
+
+      const allTasksBefore = await store.listTasks();
+
+      await store.addSteeringComment(task.id, "Some feedback");
+
+      const allTasksAfter = await store.listTasks();
+      expect(allTasksAfter).toHaveLength(allTasksBefore.length);
+    });
+
+    it("does not create refinement when steering comment added to non-done task (in-progress)", async () => {
+      const task = await store.createTask({ description: "Original task" });
+      await store.moveTask(task.id, "todo");
+      await store.moveTask(task.id, "in-progress");
+
+      const allTasksBefore = await store.listTasks();
+
+      await store.addSteeringComment(task.id, "Some feedback");
+
+      const allTasksAfter = await store.listTasks();
+      expect(allTasksAfter).toHaveLength(allTasksBefore.length);
+    });
+
+    it("does not create refinement when steering comment added to non-done task (in-review)", async () => {
+      const task = await store.createTask({ description: "Original task" });
+      await store.moveTask(task.id, "todo");
+      await store.moveTask(task.id, "in-progress");
+      await store.moveTask(task.id, "in-review");
+
+      const allTasksBefore = await store.listTasks();
+
+      await store.addSteeringComment(task.id, "Some feedback");
+
+      const allTasksAfter = await store.listTasks();
+      expect(allTasksAfter).toHaveLength(allTasksBefore.length);
+    });
+
+    it("steering comment is still added to original task even when refinement is created", async () => {
+      const task = await store.createTask({ description: "Original task" });
+      await store.moveTask(task.id, "todo");
+      await store.moveTask(task.id, "in-progress");
+      await store.moveTask(task.id, "in-review");
+      await store.moveTask(task.id, "done");
+
+      const updated = await store.addSteeringComment(task.id, "Need to fix edge case");
+
+      expect(updated.steeringComments).toHaveLength(1);
+      expect(updated.steeringComments![0].text).toBe("Need to fix edge case");
+    });
+
+    it("refinement task has correct dependency on original done task", async () => {
+      const task = await store.createTask({ description: "Original task" });
+      await store.moveTask(task.id, "todo");
+      await store.moveTask(task.id, "in-progress");
+      await store.moveTask(task.id, "in-review");
+      await store.moveTask(task.id, "done");
+
+      await store.addSteeringComment(task.id, "Need to fix edge case");
+
+      const allTasks = await store.listTasks();
+      const refinement = allTasks.find((t) => t.id !== task.id && t.dependencies?.includes(task.id));
+
+      expect(refinement).toBeDefined();
+      expect(refinement?.dependencies).toEqual([task.id]);
+    });
+
+    it("does not create refinement for agent-authored comments", async () => {
+      const task = await store.createTask({ description: "Original task" });
+      await store.moveTask(task.id, "todo");
+      await store.moveTask(task.id, "in-progress");
+      await store.moveTask(task.id, "in-review");
+      await store.moveTask(task.id, "done");
+
+      const allTasksBefore = await store.listTasks();
+
+      await store.addSteeringComment(task.id, "Agent feedback", "agent");
+
+      const allTasksAfter = await store.listTasks();
+      expect(allTasksAfter).toHaveLength(allTasksBefore.length);
+    });
+
+    it("does not fail when steering comment is empty or whitespace on done task", async () => {
+      const task = await store.createTask({ description: "Original task" });
+      await store.moveTask(task.id, "todo");
+      await store.moveTask(task.id, "in-progress");
+      await store.moveTask(task.id, "in-review");
+      await store.moveTask(task.id, "done");
+
+      // Should not throw - refineTask will reject empty feedback but we catch it
+      const updated = await store.addSteeringComment(task.id, "   ");
+
+      expect(updated.steeringComments).toHaveLength(1);
+      expect(updated.steeringComments![0].text).toBe("   ");
+    });
   });
 
   describe("updatePrInfo", () => {

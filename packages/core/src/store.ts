@@ -1557,13 +1557,16 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
   /**
    * Add a steering comment to a task.
    * Steering comments are user-provided feedback injected into the AI execution context.
+   * When a steering comment is added to a task in the "done" column by a user,
+   * automatically creates a refinement task with the comment text as feedback.
    */
   async addSteeringComment(
     id: string,
     text: string,
     author: "user" | "agent" = "user",
   ): Promise<Task> {
-    return this.withTaskLock(id, async () => {
+    // Phase 1: Add steering comment under lock
+    const task = await this.withTaskLock(id, async () => {
       const dir = this.taskDir(id);
       const task = await this.readTaskJson(dir);
 
@@ -1599,6 +1602,20 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       this.emit("task:updated", task);
       return task;
     });
+
+    // Phase 2: Auto-refinement OUTSIDE the lock (to avoid lock contention)
+    // Only create refinement for user comments on done tasks
+    if (task.column === "done" && author === "user") {
+      try {
+        await this.refineTask(id, text);
+      } catch {
+        // Silently ignore - refinement is best-effort and shouldn't fail
+        // the steering comment addition. refineTask already validates
+        // feedback text, so empty/whitespace comments won't create refinements.
+      }
+    }
+
+    return task;
   }
 
   /**
