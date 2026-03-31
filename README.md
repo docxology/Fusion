@@ -1,8 +1,8 @@
-# kb
+# Fusion
 
 AI-orchestrated task board. Like Trello, but your tasks get specified, executed, and delivered by AI — powered by [pi](https://github.com/badlogic/pi-mono).
 
-![kb dashboard](demo/screenshot.png)
+![Fusion dashboard](demo/screenshot.png)
 
 ## Workflow
 
@@ -51,13 +51,13 @@ npm i -g @dustinbyrne/kb
 Then from the root of your repository:
 
 ```bash
-kb dashboard
+fn dashboard
 ```
 
 Or start with interactive port selection:
 
 ```bash
-kb dashboard --interactive
+fn dashboard --interactive
 ```
 
 Open [http://localhost:4040](http://localhost:4040) — create tasks from the board or the CLI.
@@ -65,19 +65,19 @@ Open [http://localhost:4040](http://localhost:4040) — create tasks from the bo
 ### CLI commands
 
 ```bash
-kb dashboard                              # Start the web UI (default port 4040)
-kb dashboard --interactive                # Start with interactive port selection
-kb task create "Fix the login redirect bug"
-kb task create "Button misaligned" --attach screenshot.png
-kb task list
-kb task show KB-001
-kb task move KB-001 todo
-kb task merge KB-001
-kb task refine KB-001 --feedback "Add more tests"   # Create follow-up refinement task
-kb task import owner/repo                  # Import all open issues (batch mode)
-kb task import owner/repo --interactive    # Interactive issue selection
-kb task import owner/repo --limit 10       # Limit number of issues fetched
-kb task import owner/repo --labels bug     # Filter by label(s)
+fn dashboard                              # Start the web UI (default port 4040)
+fn dashboard --interactive                # Start with interactive port selection
+fn task create "Fix the login redirect bug"
+fn task create "Button misaligned" --attach screenshot.png
+fn task list
+fn task show KB-001
+fn task move KB-001 todo
+fn task merge KB-001
+fn task refine KB-001 --feedback "Add more tests"   # Create follow-up refinement task
+fn task import owner/repo                  # Import all open issues (batch mode)
+fn task import owner/repo --interactive    # Interactive issue selection
+fn task import owner/repo --limit 10       # Limit number of issues fetched
+fn task import owner/repo --labels bug     # Filter by label(s)
 ```
 
 **GitHub Import:**
@@ -88,7 +88,7 @@ kb task import owner/repo --labels bug     # Filter by label(s)
 
 **Dashboard Import:**
 - Click the ↓ (Download) icon in the header to open the GitHub import modal
-- kb detects GitHub remotes automatically: a single remote is preselected, and multiple remotes can be chosen from a repository dropdown
+- Fusion detects GitHub remotes automatically: a single remote is preselected, and multiple remotes can be chosen from a repository dropdown
 - Optionally filter the fetched issues with comma-separated labels before loading open issues
 - Review the results list and preview pane, then select the issue you want to import
 - Already-imported issues stay visible with an "Imported" badge and cannot be selected again
@@ -102,7 +102,7 @@ The AI engine uses [pi](https://github.com/badlogic/pi-mono) under the hood:
 1. `npm i -g @mariozechner/pi-coding-agent`
 2. Run `pi` and use `/login`, or set `ANTHROPIC_API_KEY`
 
-kb reuses your existing pi authentication.
+Fusion reuses your existing pi authentication.
 
 ## Packages
 
@@ -111,7 +111,9 @@ kb reuses your existing pi authentication.
 | `@kb/core`      | Domain model — tasks, board columns, file-based store           |
 | `@kb/dashboard` | Web UI — Express server + kanban board with SSE                 |
 | `@kb/engine`    | AI engine — triage (pi), execution (pi + worktrees), scheduling |
-| `kb` (cli)      | CLI — `kb dashboard`, `kb task create/list/move/attach`         |
+| `kb` (cli)      | CLI — `fn dashboard`, `fn task create/list/move/attach`         |
+
+## Architecture
 
 ## Architecture
 
@@ -175,7 +177,7 @@ This command validates TypeScript across all packages using source file resoluti
 
 ## Building a standalone executable
 
-You can build a single self-contained `kb` binary using [Bun](https://bun.sh/):
+You can build a single self-contained `fn` binary using [Bun](https://bun.sh/):
 
 ```bash
 pnpm build:exe
@@ -183,18 +185,18 @@ pnpm build:exe
 
 This compiles all TypeScript, builds the dashboard client, and produces:
 
-- `packages/cli/dist/kb` — the standalone binary
+- `packages/cli/dist/fn` — the standalone binary
 - `packages/cli/dist/client/` — co-located dashboard assets
 
 Run the binary directly — no Node.js, pnpm, or workspace setup needed:
 
 ```bash
-./packages/cli/dist/kb --help
-./packages/cli/dist/kb task list
-./packages/cli/dist/kb dashboard
+./packages/cli/dist/fn --help
+./packages/cli/dist/fn task list
+./packages/cli/dist/fn dashboard
 ```
 
-To distribute, copy both the `kb` binary and the `client/` directory together.
+To distribute, copy both the `fn` binary and the `client/` directory together.
 
 ### Cross-compilation
 
@@ -225,18 +227,18 @@ The `client/` directory is shared across all binaries (platform-independent asse
 You can override the dashboard asset path via the `KB_CLIENT_DIR` environment variable:
 
 ```bash
-KB_CLIENT_DIR=/path/to/client ./kb dashboard
+KB_CLIENT_DIR=/path/to/client ./fn dashboard
 ```
 
 **Prerequisites:** Bun ≥ 1.0 (`bun --version`)
 
 ## GitHub Integration
 
-kb uses the `gh` CLI (GitHub CLI) for all GitHub operations. If you have `gh` installed and authenticated (run `gh auth login`), kb will use your existing session. For environments without `gh` CLI, you can set `GITHUB_TOKEN` as a fallback.
+Fusion uses the `gh` CLI (GitHub CLI) for all GitHub operations. If you have `gh` installed and authenticated (run `gh auth login`), Fusion will use your existing session. For environments without `gh` CLI, you can set `GITHUB_TOKEN` as a fallback.
 
 ### PR Creation from Dashboard
 
-kb can create GitHub Pull Requests directly from the dashboard for tasks in the **In Review** column:
+Fusion can create GitHub Pull Requests directly from the dashboard for tasks in the **In Review** column:
 
 1. Ensure you have `gh` CLI installed and authenticated (`gh auth login`), or set the `GITHUB_TOKEN` environment variable
 2. Open a task in the **In Review** column
@@ -248,12 +250,12 @@ The dashboard shows real-time PR status (open, closed, merged) with a refresh bu
 
 ### Auto-completion modes
 
-kb supports two completion strategies once a task reaches **In Review**:
+Fusion supports two completion strategies once a task reaches **In Review**:
 
-- **Direct merge** *(default)* — existing behavior. kb AI-squash-merges the task branch into your current branch locally.
-- **Pull request** — kb creates or links a GitHub PR for the task branch, keeps the task in **In Review** while reviews/checks are pending, and auto-merges the PR when required checks succeed and no review is actively blocking it.
+- **Direct merge** *(default)* — existing behavior. Fusion AI-squash-merges the task branch into your current branch locally.
+- **Pull request** — Fusion creates or links a GitHub PR for the task branch, keeps the task in **In Review** while reviews/checks are pending, and auto-merges the PR when required checks succeed and no review is actively blocking it.
 
-`autoMerge` still controls whether kb performs either completion strategy automatically. Turning `autoMerge` off means tasks stay in **In Review** until you merge manually.
+`autoMerge` still controls whether Fusion performs either completion strategy automatically. Turning `autoMerge` off means tasks stay in **In Review** until you merge manually.
 
 ### PR-first mode prerequisites and behavior
 
@@ -263,7 +265,7 @@ PR-first automation is designed for repositories that require GitHub-side govern
 - Ensure the task branch already exists on GitHub using the normal kb branch naming convention: `kb/<task-id-lower>`
 - Expect the task to remain in **In Review** while required checks are pending/failing or a review is blocking merge
 
-**Important:** kb does **not** implicitly push task branches before creating a PR. PR-first mode assumes branch publishing is handled by your existing workflow or repository automation.
+**Important:** Fusion does **not** implicitly push task branches before creating a PR. PR-first mode assumes branch publishing is handled by your existing workflow or repository automation.
 
 ### Spec Editing & AI Revision
 
@@ -287,7 +289,7 @@ The dashboard includes a **Spec** tab for managing task specifications directly 
 
 ### PR Comment Monitoring
 
-When a task has a linked PR, kb automatically monitors it for new review comments:
+When a task has a linked PR, Fusion automatically monitors it for new review comments:
 
 - **Adaptive polling**: Checks every 30 seconds when active, 5 minutes when idle
 - **Actionable feedback detection**: Filters out "LGTM" and "Thanks" comments, detects requests like "fix", "change", "update"

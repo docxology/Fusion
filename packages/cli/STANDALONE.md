@@ -1,6 +1,6 @@
 # Standalone CLI
 
-kb works as a standalone CLI without pi. This is useful for CI environments, scripting, or if you prefer working from the terminal.
+Fusion works as a standalone CLI without pi. This is useful for CI environments, scripting, or if you prefer working from the terminal.
 
 ## Installation
 
@@ -10,7 +10,7 @@ npm install -g @dustinbyrne/kb
 
 ## Authentication
 
-kb uses [pi](https://github.com/badlogic/pi-mono) for AI agent sessions and reuses your existing pi authentication. You can also authenticate directly through the dashboard UI.
+Fusion uses [pi](https://github.com/badlogic/pi-mono) for AI agent sessions and reuses your existing pi authentication. You can also authenticate directly through the dashboard UI.
 
 If you don't have pi set up yet: `npm i -g @mariozechner/pi-coding-agent && pi` then `/login`.
 
@@ -21,11 +21,11 @@ If you don't have pi set up yet: `npm i -g @mariozechner/pi-coding-agent && pi` 
 Launch the web UI and AI engine:
 
 ```bash
-kb dashboard
-kb dashboard --port 8080
-kb dashboard --interactive     # Interactive port selection (prompts for port)
-kb dashboard --paused        # Start with automation paused (review before work begins)
-kb dashboard --dev           # Start web UI only (no AI engine)
+fn dashboard
+fn dashboard --port 8080
+fn dashboard --interactive     # Interactive port selection (prompts for port)
+fn dashboard --paused        # Start with automation paused (review before work begins)
+fn dashboard --dev           # Start web UI only (no AI engine)
 ```
 
 ### Multi-Instance Deployments
@@ -39,7 +39,7 @@ export KB_BADGE_PUBSUB_REDIS_URL="redis://redis.example.com:6379"
 # Optional: customize the pub/sub channel (default: kb:badge-updates)
 export KB_BADGE_PUBSUB_CHANNEL="my-app-badge-updates"
 
-kb dashboard
+fn dashboard
 ```
 
 With this configuration, PR/issue badge updates received via webhook on one instance are delivered to subscribed WebSocket clients on all instances.
@@ -82,40 +82,40 @@ When webhooks are not configured or delivery fails, the dashboard falls back to 
 ### Create a task
 
 ```bash
-kb task create "Fix the login redirect bug"
-kb task create "Update hero section" --attach screenshot.png --attach design.pdf
+fn task create "Fix the login redirect bug"
+fn task create "Update hero section" --attach screenshot.png --attach design.pdf
 ```
 
 ### Manage tasks
 
 ```bash
-kb task list                        # List all tasks
-kb task show KB-001                 # Show task details, steps, and log
-kb task move KB-001 todo            # Move a task to a column
-kb task merge KB-001                # Merge an in-review task and close it
-kb task log KB-001 "Added context"  # Add a log entry
-kb task pause KB-001                # Pause a task (stops automation)
-kb task unpause KB-001              # Resume a paused task
-kb task attach KB-001 ./error.log   # Attach a file to a task
-kb task import owner/repo           # Import GitHub issues as tasks
-kb task import owner/repo --limit 10 --labels "bug,enhancement"
+fn task list                        # List all tasks
+fn task show KB-001                 # Show task details, steps, and log
+fn task move KB-001 todo            # Move a task to a column
+fn task merge KB-001                # Merge an in-review task and close it
+fn task log KB-001 "Added context"  # Add a log entry
+fn task pause KB-001                # Pause a task (stops automation)
+fn task unpause KB-001              # Resume a paused task
+fn task attach KB-001 ./error.log   # Attach a file to a task
+fn task import owner/repo           # Import GitHub issues as tasks
+fn task import owner/repo --limit 10 --labels "bug,enhancement"
 ```
 
 ### Typical workflow
 
 ```bash
 # 1. Create a task — it lands in triage
-kb task create "Add dark mode support"
+fn task create "Add dark mode support"
 
 # 2. Start the dashboard — AI specs the task and begins working
-kb dashboard
+fn dashboard
 
 # 3. Check progress
-kb task list
-kb task show KB-042
+fn task list
+fn task show KB-042
 
 # 4. When it reaches "in-review", review the changes and merge
-kb task merge KB-042
+fn task merge KB-042
 ```
 
 ## Standalone binary

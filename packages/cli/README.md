@@ -1,8 +1,8 @@
 # @dustinbyrne/kb
 
-An automated Kanban board for [pi](https://github.com/badlogic/pi-mono). You (or an agent) add high level ideas to your task list, and a team of agents execute them using worktrees.
+An automated Kanban board for [pi](https://github.com/badlogic/pi-mono). Fusion is an AI-orchestrated task board where you (or an agent) add high level ideas to your task list, and a team of agents execute them using worktrees.
 
-![kb dashboard](https://raw.githubusercontent.com/dustinbyrne/kb/main/demo/screenshot.png)
+![Fusion dashboard](https://raw.githubusercontent.com/dustinbyrne/kb/main/demo/screenshot.png)
 
 ## Installation
 
@@ -10,16 +10,16 @@ An automated Kanban board for [pi](https://github.com/badlogic/pi-mono). You (or
 pi install npm:@dustinbyrne/kb
 ```
 
-This gives pi the ability to manage and create tasks in your kanban dashboard.
+This gives pi the ability to manage and create tasks in your Fusion dashboard.
 
 ## The dashboard
 
-Run `/kb` in pi to launch the dashboard and AI engine.
+Run `/fn` in pi to launch the dashboard and AI engine.
 
 ```
-/kb              # start on default port 4040
-/kb stop         # stop it
-/kb 8080         # run on a custom port
+/fn              # start on default port 4040
+/fn stop         # stop it
+/fn 8080         # run on a custom port
 ```
 
 The dashboard gives you:
@@ -49,14 +49,14 @@ An executor agent works through the spec step by step in the worktree. At each s
 
 ### Merge
 
-When execution finishes and the reviewer signs off, the task moves to "in review." kb supports two completion modes:
+When execution finishes and the reviewer signs off, the task moves to "in review." Fusion supports two completion modes:
 
 - **Direct merge** *(default)* — automatically squash-merges the completed task branch into your current branch with a clean commit.
 - **Pull request** — automatically creates or links a GitHub PR for the task branch, waits for GitHub reviews/checks, then merges the PR once policy conditions are satisfied.
 
-`autoMerge` still controls whether kb performs completion automatically at all. If `autoMerge` is disabled, tasks stay in **In Review** until you finish the merge yourself.
+`autoMerge` still controls whether Fusion performs completion automatically at all. If `autoMerge` is disabled, tasks stay in **In Review** until you finish the merge yourself.
 
-For PR-first mode, authenticate GitHub with `gh auth login` or `GITHUB_TOKEN`, and make sure the task branch already exists on GitHub as `kb/<task-id-lower>`. kb does **not** push branches for you before PR creation.
+For PR-first mode, authenticate GitHub with `gh auth login` or `GITHUB_TOKEN`, and make sure the task branch already exists on GitHub as `kb/<task-id-lower>`. Fusion does **not** push branches for you before PR creation.
 
 Worktrees can be cleaned up after merge or reused by the next task to keep build caches warm.
 
@@ -68,7 +68,7 @@ You can manage tasks without leaving the conversation:
 
 > "Every ten minutes, analyze the server code for logic the client hasn't implemented yet and create tasks. Tasks may spawn additional tasks, so just add enough to keep the board saturated."
 
-> "Create a kb task to fix the login redirect bug"
+> "Create a Fusion task to fix the login redirect bug"
 
 > "Add a task for dark mode support, it depends on KB-003"
 
@@ -82,7 +82,7 @@ The extension gives pi tools to create tasks, check progress, attach files, and 
 
 ## Standalone CLI
 
-kb also works as a standalone CLI outside of pi. See [STANDALONE.md](./STANDALONE.md) for installation and usage without the pi extension.
+Fusion also works as a standalone CLI outside of pi. See [STANDALONE.md](./STANDALONE.md) for installation and usage without the pi extension.
 
 ## Full documentation
 

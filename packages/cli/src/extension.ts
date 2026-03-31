@@ -60,10 +60,10 @@ export default function kbExtension(pi: ExtensionAPI) {
     name: "kb_task_create",
     label: "KB: Create Task",
     description:
-      "Create a new task on the kb task board. The task enters the triage column " +
+      "Create a new task on the Fusion task board. The task enters the triage column " +
       "where the AI triage agent will specify it into a full prompt with steps, " +
       "file scope, and acceptance criteria.",
-    promptSnippet: "Create a task on the kb AI-orchestrated task board",
+    promptSnippet: "Create a task on the Fusion AI-orchestrated task board",
     promptGuidelines: [
       "Use kb_task_create for task tracking — be descriptive so the triage agent can write a good spec.",
       "Include the problem AND desired outcome. For bugs, describe current vs expected behavior.",
@@ -112,8 +112,8 @@ export default function kbExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "kb_task_list",
     label: "KB: List Tasks",
-    description: "List all tasks on the kb board, grouped by column.",
-    promptSnippet: "List all tasks on the kb board grouped by column",
+    description: "List all tasks on the Fusion board, grouped by column.",
+    promptSnippet: "List all tasks on the Fusion board grouped by column",
     parameters: Type.Object({
       column: Type.Optional(
         StringEnum([...COLUMNS] as unknown as string[], {
@@ -171,7 +171,7 @@ export default function kbExtension(pi: ExtensionAPI) {
     name: "kb_task_show",
     label: "KB: Show Task",
     description: "Show full details for a task including steps, progress, and log entries.",
-    promptSnippet: "Show full details for a kb task",
+    promptSnippet: "Show full details for a Fusion task",
     parameters: Type.Object({
       id: Type.String({ description: "Task ID (e.g. KB-001)" }),
     }),
@@ -252,7 +252,7 @@ export default function kbExtension(pi: ExtensionAPI) {
     description:
       "Attach a file to a task. Supports images (png, jpg, gif, webp) and " +
       "text files (txt, log, json, yaml, yml, toml, csv, xml).",
-    promptSnippet: "Attach a file to a kb task",
+    promptSnippet: "Attach a file to a Fusion task",
     parameters: Type.Object({
       id: Type.String({ description: "Task ID (e.g. KB-001)" }),
       path: Type.String({ description: "Path to the file to attach" }),
@@ -302,7 +302,7 @@ export default function kbExtension(pi: ExtensionAPI) {
     label: "KB: Pause Task",
     description:
       "Pause a task — stops all automated agent and scheduler interaction for this task.",
-    promptSnippet: "Pause a kb task (stops automation)",
+    promptSnippet: "Pause a Fusion task (stops automation)",
     parameters: Type.Object({
       id: Type.String({ description: "Task ID (e.g. KB-001)" }),
     }),
@@ -325,7 +325,7 @@ export default function kbExtension(pi: ExtensionAPI) {
     label: "KB: Unpause Task",
     description:
       "Unpause a task — resumes automated agent and scheduler interaction.",
-    promptSnippet: "Unpause a kb task (resumes automation)",
+    promptSnippet: "Unpause a Fusion task (resumes automation)",
     parameters: Type.Object({
       id: Type.String({ description: "Task ID (e.g. KB-001)" }),
     }),
@@ -348,7 +348,7 @@ export default function kbExtension(pi: ExtensionAPI) {
     label: "KB: Retry Task",
     description:
       "Retry a failed task — clears the error state and moves it back to the todo column for re-execution.",
-    promptSnippet: "Retry a failed kb task (clears error, moves to todo)",
+    promptSnippet: "Retry a failed Fusion task (clears error, moves to todo)",
     promptGuidelines: [
       "Use when a task has failed and needs to be retried from the beginning",
       "Only tasks in 'failed' state can be retried",
@@ -407,7 +407,7 @@ export default function kbExtension(pi: ExtensionAPI) {
       "Duplicate an existing task, creating a fresh copy in triage. " +
       "Copies the title and description but resets all execution state. " +
       "The AI triage agent will re-specify the new task.",
-    promptSnippet: "Duplicate a kb task (creates copy in triage)",
+    promptSnippet: "Duplicate a Fusion task (creates copy in triage)",
     promptGuidelines: [
       "Use when a task needs to be re-done, split, or used as a template",
       "The duplicated task will be placed in triage for re-specification",
@@ -474,7 +474,7 @@ export default function kbExtension(pi: ExtensionAPI) {
     description:
       "Archive a done task (move from done → archived). " +
       "Archived tasks are preserved for historical reference but moved out of the main board view.",
-    promptSnippet: "Archive a done kb task (moves to archived column)",
+    promptSnippet: "Archive a done Fusion task (moves to archived column)",
     promptGuidelines: [
       "Use to clean up old completed tasks from the done column",
       "Only tasks in the 'done' column can be archived",
@@ -503,7 +503,7 @@ export default function kbExtension(pi: ExtensionAPI) {
     description:
       "Unarchive an archived task (move from archived → done). " +
       "Restores the task to the done column.",
-    promptSnippet: "Unarchive a kb task (restores to done column)",
+    promptSnippet: "Unarchive a Fusion task (restores to done column)",
     promptGuidelines: [
       "Use to restore an archived task back to the done column",
       "Only tasks in the 'archived' column can be unarchived",
@@ -529,9 +529,9 @@ export default function kbExtension(pi: ExtensionAPI) {
     name: "kb_task_delete",
     label: "KB: Delete Task",
     description:
-      "Permanently delete a task from the kb board. " +
+      "Permanently delete a task from the Fusion board. " +
       "Tasks are deleted immediately and cannot be recovered.",
-    promptSnippet: "Delete a kb task",
+    promptSnippet: "Delete a Fusion task",
     promptGuidelines: [
       "Use for cleaning up test tasks or tasks created in error",
       "Tasks are permanently deleted and cannot be recovered",
@@ -558,12 +558,12 @@ export default function kbExtension(pi: ExtensionAPI) {
     name: "kb_task_import_github",
     label: "KB: Import GitHub Issues",
     description:
-      "Import GitHub issues as kb tasks. Fetches open issues from a repository " +
+      "Import GitHub issues as Fusion tasks. Fetches open issues from a repository " +
       "and creates tasks in the triage column. Each task includes the issue title " +
       "and body with a link to the source issue.",
-    promptSnippet: "Import GitHub issues as kb tasks",
+    promptSnippet: "Import GitHub issues as Fusion tasks",
     promptGuidelines: [
-      "Use for syncing GitHub issue backlog to kb board",
+      "Use for syncing GitHub issue backlog to Fusion board",
       "Uses gh CLI authentication when available (run 'gh auth login')",
       "Falls back to GITHUB_TOKEN env var for private repositories without gh CLI",
       "Use --limit to control how many issues to import (default: 30)",
@@ -648,9 +648,9 @@ export default function kbExtension(pi: ExtensionAPI) {
     name: "kb_task_import_github_issue",
     label: "KB: Import GitHub Issue",
     description:
-      "Import a specific GitHub issue as a kb task. Fetches the issue by number " +
+      "Import a specific GitHub issue as a Fusion task. Fetches the issue by number " +
       "and creates a single task in the triage column with the issue title and body.",
-    promptSnippet: "Import a specific GitHub issue as a kb task",
+    promptSnippet: "Import a specific GitHub issue as a Fusion task",
     promptGuidelines: [
       "Use for importing a single known issue by its number",
       "Uses gh CLI authentication when available (run 'gh auth login')",
@@ -680,7 +680,7 @@ export default function kbExtension(pi: ExtensionAPI) {
       const headers: Record<string, string> = {
         Accept: "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
-        "User-Agent": "kb-cli/1.0",
+        "User-Agent": "fusion-cli/1.0",
       };
 
       if (token) {
@@ -819,7 +819,7 @@ export default function kbExtension(pi: ExtensionAPI) {
       const headers: Record<string, string> = {
         Accept: "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
-        "User-Agent": "kb-cli/1.0",
+        "User-Agent": "fusion-cli/1.0",
       };
 
       if (token) {
@@ -975,46 +975,46 @@ export default function kbExtension(pi: ExtensionAPI) {
     },
   });
 
-  // ── /kb command — start the dashboard + engine ───────────────────
+  // ── /fn command — start the dashboard + engine ───────────────────
 
   let dashboardProcess: ChildProcess | null = null;
   let dashboardPort: number | null = null;
 
-  pi.registerCommand("kb", {
-    description: "Start (or stop) the kb dashboard and AI engine",
+  pi.registerCommand("fn", {
+    description: "Start (or stop) the Fusion dashboard and AI engine",
     handler: async (args, ctx) => {
       const trimmed = (args ?? "").trim();
 
-      // /kb stop — kill the dashboard
+      // /fn stop — kill the dashboard
       if (trimmed === "stop") {
         if (dashboardProcess) {
           dashboardProcess.kill("SIGINT");
           dashboardProcess = null;
           dashboardPort = null;
-          ctx.ui.setStatus("kb", "");
-          ctx.ui.notify("kb dashboard stopped", "info");
+          ctx.ui.setStatus("fn", "");
+          ctx.ui.notify("Fusion dashboard stopped", "info");
         } else {
-          ctx.ui.notify("kb dashboard is not running", "warning");
+          ctx.ui.notify("Fusion dashboard is not running", "warning");
         }
         return;
       }
 
-      // /kb status
+      // /fn status
       if (trimmed === "status") {
         if (dashboardProcess && !dashboardProcess.killed) {
-          ctx.ui.notify(`kb dashboard running on http://localhost:${dashboardPort}`, "info");
+          ctx.ui.notify(`Fusion dashboard running on http://localhost:${dashboardPort}`, "info");
         } else {
           dashboardProcess = null;
           dashboardPort = null;
-          ctx.ui.notify("kb dashboard is not running", "info");
+          ctx.ui.notify("Fusion dashboard is not running", "info");
         }
         return;
       }
 
-      // /kb [port] — start the dashboard
+      // /fn [port] — start the dashboard
       if (dashboardProcess && !dashboardProcess.killed) {
         ctx.ui.notify(
-          `kb dashboard already running on http://localhost:${dashboardPort}. Use /kb stop first.`,
+          `Fusion dashboard already running on http://localhost:${dashboardPort}. Use /fn stop first.`,
           "warning",
         );
         return;
@@ -1022,8 +1022,8 @@ export default function kbExtension(pi: ExtensionAPI) {
 
       const port = trimmed ? parseInt(trimmed, 10) || 4040 : 4040;
 
-      // Find the kb binary: prefer local node_modules, then global
-      const child = spawn("kb", ["dashboard", "--port", String(port)], {
+      // Find the fn binary: prefer local node_modules, then global
+      const child = spawn("fn", ["dashboard", "--port", String(port)], {
         cwd: ctx.cwd,
         stdio: ["ignore", "pipe", "pipe"],
         detached: false,
@@ -1033,21 +1033,21 @@ export default function kbExtension(pi: ExtensionAPI) {
       dashboardProcess = child;
       dashboardPort = port;
 
-      // Watch for early exit (e.g. kb not found)
+      // Watch for early exit (e.g. fn not found)
       child.on("error", (err) => {
         dashboardProcess = null;
         dashboardPort = null;
-        ctx.ui.setStatus("kb", "");
-        ctx.ui.notify(`Failed to start kb dashboard: ${err.message}`, "error");
+        ctx.ui.setStatus("fn", "");
+        ctx.ui.notify(`Failed to start Fusion dashboard: ${err.message}`, "error");
       });
 
       child.on("exit", (code) => {
         if (dashboardProcess === child) {
           dashboardProcess = null;
           dashboardPort = null;
-          ctx.ui.setStatus("kb", "");
+          ctx.ui.setStatus("fn", "");
           if (code !== 0 && code !== null) {
-            ctx.ui.notify(`kb dashboard exited with code ${code}`, "warning");
+            ctx.ui.notify(`Fusion dashboard exited with code ${code}`, "warning");
           }
         }
       });
@@ -1057,9 +1057,9 @@ export default function kbExtension(pi: ExtensionAPI) {
 
       if (dashboardProcess && !dashboardProcess.killed) {
         const url = `http://localhost:${port}`;
-        ctx.ui.notify(`kb dashboard started on ${url} (AI engine active)`, "info");
+        ctx.ui.notify(`Fusion dashboard started on ${url} (AI engine active)`, "info");
         const link = `\x1b]8;;${url}\x1b\\${url}\x1b]8;;\x1b\\`;
-        ctx.ui.setStatus("kb", `kb ● ${link}`);
+        ctx.ui.setStatus("fn", `Fusion ● ${link}`);
       }
     },
   });

@@ -44,41 +44,41 @@ const { runSettingsShow, runSettingsSet } = await import("./commands/settings.js
 const { runGitStatus, runGitFetch, runGitPull, runGitPush } = await import("./commands/git.js");
 
 const HELP = `
-kb — AI-orchestrated task board
+fn — AI-orchestrated task board
 
 Usage:
-  kb dashboard                        Start the board web UI
-  kb dashboard --paused               Start with automation paused
-  kb dashboard --dev                  Start web UI only (no AI engine)
-  kb dashboard --interactive          Start with interactive port selection
-  kb task create [desc] [opts]         Create a new task (goes to triage)
-  kb task plan [description] [opts]    Create task via AI-guided planning
-  kb task list                        List all tasks
-  kb task show <id>                   Show task details, steps, log
-  kb task logs <id> [--follow] [--limit <n>] [--type <type>]
+  fn dashboard                        Start the board web UI
+  fn dashboard --paused               Start with automation paused
+  fn dashboard --dev                  Start web UI only (no AI engine)
+  fn dashboard --interactive          Start with interactive port selection
+  fn task create [desc] [opts]         Create a new task (goes to triage)
+  fn task plan [description] [opts]    Create task via AI-guided planning
+  fn task list                        List all tasks
+  fn task show <id>                   Show task details, steps, log
+  fn task logs <id> [--follow] [--limit <n>] [--type <type>]
                                       Show task agent execution logs
-  kb task move <id> <col>             Move a task to a column
-  kb task update <id> <step> <status> Update step status (pending|in-progress|done|skipped)
-  kb task log <id> <message>          Add a log entry
-  kb task merge <id>                  Merge an in-review task and close it
-  kb task duplicate <id>              Duplicate a task (creates copy in triage)
-  kb task refine <id> [opts]          Create a refinement task from done/in-review
-  kb task archive <id>                Archive a done task
-  kb task unarchive <id>              Unarchive an archived task
-  kb task delete <id> [--force]       Delete a task (use --force to skip confirmation)
-  kb task attach <id> <file>          Attach a file to a task
-  kb task pause <id>                  Pause a task (stops all automation)
-  kb task unpause <id>                Unpause a task (resumes automation)
-  kb task steer <id> [message]        Add steering comment (prompts if message omitted)
-  kb task retry <id>                  Retry a failed task (clears error, moves to todo)
-  kb task import <owner/repo> [opts]  Import GitHub issues as tasks
-  kb settings                          Show current kb configuration
-  kb settings set <key> <value>        Update a configuration setting
+  fn task move <id> <col>             Move a task to a column
+  fn task update <id> <step> <status> Update step status (pending|in-progress|done|skipped)
+  fn task log <id> <message>          Add a log entry
+  fn task merge <id>                  Merge an in-review task and close it
+  fn task duplicate <id>              Duplicate a task (creates copy in triage)
+  fn task refine <id> [opts]          Create a refinement task from done/in-review
+  fn task archive <id>                Archive a done task
+  fn task unarchive <id>              Unarchive an archived task
+  fn task delete <id> [--force]       Delete a task (use --force to skip confirmation)
+  fn task attach <id> <file>          Attach a file to a task
+  fn task pause <id>                  Pause a task (stops all automation)
+  fn task unpause <id>                Unpause a task (resumes automation)
+  fn task steer <id> [message]        Add steering comment (prompts if message omitted)
+  fn task retry <id>                  Retry a failed task (clears error, moves to todo)
+  fn task import <owner/repo> [opts]  Import GitHub issues as tasks
+  fn settings                          Show current Fusion configuration
+  fn settings set <key> <value>        Update a configuration setting
 
-  kb git status              Show current branch, commit, dirty state, ahead/behind
-  kb git push                Push current branch
-  kb git pull                Pull current branch
-  kb git fetch [remote]      Fetch from remote (default: origin)
+  fn git status              Show current branch, commit, dirty state, ahead/behind
+  fn git push                Push current branch
+  fn git pull                Pull current branch
+  fn git fetch [remote]      Fetch from remote (default: origin)
 
 Options:
   --port, -p <port>          Dashboard port (default: 4040)
@@ -171,7 +171,7 @@ async function main() {
             const id = args[2];
             const column = args[3];
             if (!id || !column) {
-              console.error("Usage: kb task move <id> <column>");
+              console.error("Usage: fn task move <id> <column>");
               process.exit(1);
             }
             await runTaskMove(id, column);
@@ -179,14 +179,14 @@ async function main() {
           }
           case "show": {
             const id = args[2];
-            if (!id) { console.error("Usage: kb task show <id>"); process.exit(1); }
+            if (!id) { console.error("Usage: fn task show <id>"); process.exit(1); }
             await runTaskShow(id);
             break;
           }
           case "update": {
             const id = args[2], step = args[3], status = args[4];
             if (!id || !step || !status) {
-              console.error("Usage: kb task update <id> <step> <status>");
+              console.error("Usage: fn task update <id> <step> <status>");
               console.error("Status: pending | in-progress | done | skipped");
               process.exit(1);
             }
@@ -195,13 +195,13 @@ async function main() {
           }
           case "log": {
             const id = args[2], message = args.slice(3).join(" ");
-            if (!id || !message) { console.error("Usage: kb task log <id> <message>"); process.exit(1); }
+            if (!id || !message) { console.error("Usage: fn task log <id> <message>"); process.exit(1); }
             await runTaskLog(id, message);
             break;
           }
           case "logs": {
             const id = args[2];
-            if (!id) { console.error("Usage: kb task logs <id> [--follow] [--limit <n>] [--type <type>]"); process.exit(1); }
+            if (!id) { console.error("Usage: fn task logs <id> [--follow] [--limit <n>] [--type <type>]"); process.exit(1); }
             
             // Parse flags
             const follow = args.includes("--follow");
@@ -226,19 +226,19 @@ async function main() {
           }
           case "merge": {
             const id = args[2];
-            if (!id) { console.error("Usage: kb task merge <id>"); process.exit(1); }
+            if (!id) { console.error("Usage: fn task merge <id>"); process.exit(1); }
             await runTaskMerge(id);
             break;
           }
           case "duplicate": {
             const id = args[2];
-            if (!id) { console.error("Usage: kb task duplicate <id>"); process.exit(1); }
+            if (!id) { console.error("Usage: fn task duplicate <id>"); process.exit(1); }
             await runTaskDuplicate(id);
             break;
           }
           case "refine": {
             const id = args[2];
-            if (!id) { console.error("Usage: kb task refine <id> [--feedback <text>]"); process.exit(1); }
+            if (!id) { console.error("Usage: fn task refine <id> [--feedback <text>]"); process.exit(1); }
             // Parse optional --feedback flag
             const feedbackIdx = args.indexOf("--feedback");
             const feedback = feedbackIdx !== -1 && feedbackIdx + 1 < args.length
@@ -249,19 +249,19 @@ async function main() {
           }
           case "archive": {
             const id = args[2];
-            if (!id) { console.error("Usage: kb task archive <id>"); process.exit(1); }
+            if (!id) { console.error("Usage: fn task archive <id>"); process.exit(1); }
             await runTaskArchive(id);
             break;
           }
           case "unarchive": {
             const id = args[2];
-            if (!id) { console.error("Usage: kb task unarchive <id>"); process.exit(1); }
+            if (!id) { console.error("Usage: fn task unarchive <id>"); process.exit(1); }
             await runTaskUnarchive(id);
             break;
           }
           case "delete": {
             const id = args[2];
-            if (!id) { console.error("Usage: kb task delete <id> [--force]"); process.exit(1); }
+            if (!id) { console.error("Usage: fn task delete <id> [--force]"); process.exit(1); }
             const force = args.includes("--force");
             await runTaskDelete(id, force);
             break;
@@ -269,7 +269,7 @@ async function main() {
           case "attach": {
             const id = args[2], file = args[3];
             if (!id || !file) {
-              console.error("Usage: kb task attach <id> <file>");
+              console.error("Usage: fn task attach <id> <file>");
               process.exit(1);
             }
             await runTaskAttach(id, file);
@@ -277,27 +277,27 @@ async function main() {
           }
           case "pause": {
             const id = args[2];
-            if (!id) { console.error("Usage: kb task pause <id>"); process.exit(1); }
+            if (!id) { console.error("Usage: fn task pause <id>"); process.exit(1); }
             await runTaskPause(id);
             break;
           }
           case "unpause": {
             const id = args[2];
-            if (!id) { console.error("Usage: kb task unpause <id>"); process.exit(1); }
+            if (!id) { console.error("Usage: fn task unpause <id>"); process.exit(1); }
             await runTaskUnpause(id);
             break;
           }
           case "steer": {
             const id = args[2];
             const message = args.slice(3).join(" ");
-            if (!id) { console.error("Usage: kb task steer <id> [message]"); process.exit(1); }
+            if (!id) { console.error("Usage: fn task steer <id> [message]"); process.exit(1); }
             await runTaskSteer(id, message || undefined);
             break;
           }
           case "retry": {
             const id = args[2];
             if (!id) {
-              console.error("Usage: kb task retry <id>");
+              console.error("Usage: fn task retry <id>");
               process.exit(1);
             }
             await runTaskRetry(id);
@@ -306,7 +306,7 @@ async function main() {
           case "import": {
             const ownerRepo = args[2];
             if (!ownerRepo) {
-              console.error("Usage: kb task import <owner/repo> [options]");
+              console.error("Usage: fn task import <owner/repo> [options]");
               console.error("Options: --limit <n>, -l <n>  (default: 30, max: 100)");
               console.error("         --labels <labels>, -L <labels>  (comma-separated)");
               console.error("         --interactive, -i  (interactive mode)");
@@ -346,7 +346,7 @@ async function main() {
           }
           default:
             console.error(`Unknown subcommand: task ${subcommand || ""}`);
-            console.log("Try: kb task create | list | move");
+            console.log("Try: fn task create | list | move");
             process.exit(1);
         }
         break;
@@ -362,15 +362,15 @@ async function main() {
           const key = args[2];
           const value = args.slice(3).join(" ");
           if (!key || value === undefined) {
-            console.error("Usage: kb settings set <key> <value>");
-            console.error("Example: kb settings set maxConcurrent 4");
+            console.error("Usage: fn settings set <key> <value>");
+            console.error("Example: fn settings set maxConcurrent 4");
             process.exit(1);
           }
           await runSettingsSet(key, value);
           break;
         }
         console.error(`Unknown settings subcommand: ${subcommand}`);
-        console.error("Try: kb settings | kb settings set <key> <value>");
+        console.error("Try: fn settings | fn settings set <key> <value>");
         process.exit(1);
       }
 
@@ -397,7 +397,7 @@ async function main() {
           }
           default:
             console.error(`Unknown subcommand: git ${subcommand || ""}`);
-            console.log("Try: kb git status | fetch | pull | push");
+            console.log("Try: fn git status | fetch | pull | push");
             process.exit(1);
         }
         break;
