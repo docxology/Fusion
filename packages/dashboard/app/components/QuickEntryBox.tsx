@@ -612,6 +612,7 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
                   type="button"
                   className="btn btn-sm"
                   onClick={handlePlanClick}
+                  onMouseDown={(e) => e.preventDefault()}
                   disabled={!description.trim()}
                   data-testid="plan-button"
                   title="Open planning mode with current description"
@@ -623,6 +624,7 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
                   type="button"
                   className="btn btn-sm"
                   onClick={handleSubtaskClick}
+                  onMouseDown={(e) => e.preventDefault()}
                   disabled={!description.trim()}
                   data-testid="subtask-button"
                   title="Break down into AI-generated subtasks"
@@ -634,6 +636,7 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
                   type="button"
                   className="btn btn-sm"
                   onClick={handleSaveClick}
+                  onMouseDown={(e) => e.preventDefault()}
                   disabled={!description.trim() || isSubmitting}
                   data-testid="save-button"
                   title="Save draft to browser storage"
