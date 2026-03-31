@@ -65,6 +65,15 @@ describe("NewTaskModal", () => {
     expect(screen.getByRole("button", { name: "Cancel" })).toBeTruthy();
   });
 
+  it("focuses description textarea when modal opens", async () => {
+    renderNewTaskModal();
+    
+    const descTextarea = screen.getByLabelText(/Description/i);
+    await waitFor(() => {
+      expect(descTextarea).toHaveFocus();
+    });
+  });
+
   it("creates task with description on submit", async () => {
     const { props } = renderNewTaskModal();
     

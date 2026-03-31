@@ -327,6 +327,17 @@ export function NewTaskModal({ isOpen, onClose, tasks, onCreateTask, addToast, o
     setHasDirtyState(isDirty);
   }, [description, dependencies, pendingImages, executorModel, validatorModel, enablePlanningMode]);
 
+  // Auto-focus description textarea when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      // Small delay to ensure modal is fully rendered
+      const timeoutId = setTimeout(() => {
+        descTextareaRef.current?.focus();
+      }, 0);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [isOpen]);
+
   // Close dropdown when clicking outside
   useEffect(() => {
     if (!showDepDropdown) return;
