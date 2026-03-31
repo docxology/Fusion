@@ -64,27 +64,63 @@ Open [http://localhost:4040](http://localhost:4040) — create tasks from the bo
 
 ### CLI commands
 
+**Dashboard:**
 ```bash
 fn dashboard                              # Start the web UI (default port 4040)
 fn dashboard --interactive                # Start with interactive port selection
-fn task create "Fix the login redirect bug"
-fn task create "Button misaligned" --attach screenshot.png
-fn task list
-fn task show KB-001
-fn task move KB-001 todo
-fn task merge KB-001
-fn task refine KB-001 --feedback "Add more tests"   # Create follow-up refinement task
-fn task import owner/repo                  # Import all open issues (batch mode)
+fn dashboard --paused                     # Start with automation paused
+fn dashboard --dev                        # Start web UI only (no AI engine)
+```
+
+**Task Management:**
+```bash
+fn task create "Fix the login bug"         # Create a new task (goes to triage)
+fn task create "Bug" --attach screenshot.png --depends KB-001
+fn task plan "Build auth system"          # Create task via AI-guided planning
+fn task list                              # List all tasks
+fn task show KB-001                       # Show task details, steps, log
+fn task logs KB-001 [--follow] [--limit 50] [--type tool]
+fn task move KB-001 todo                   # Move a task to a column
+fn task merge KB-001                     # Merge an in-review task
+fn task duplicate KB-001                 # Duplicate a task (copy to triage)
+fn task refine KB-001 --feedback "Add tests"  # Create refinement task
+fn task archive KB-001                   # Archive a done task
+fn task unarchive KB-001                 # Restore an archived task
+fn task delete KB-001 [--force]          # Delete a task
+fn task retry KB-001                     # Retry a failed task
+fn task steer KB-001 "Use TypeScript"    # Add steering comment
+fn task pause KB-001                     # Pause automation for task
+fn task unpause KB-001                   # Resume automation for task
+```
+
+**GitHub Integration:**
+```bash
+fn task import owner/repo                  # Import all open issues
 fn task import owner/repo --interactive    # Interactive issue selection
-fn task import owner/repo --limit 10       # Limit number of issues fetched
+fn task import owner/repo --limit 10       # Limit number of issues
 fn task import owner/repo --labels bug     # Filter by label(s)
+fn task pr-create KB-001 --title "Fix" --base main
+```
+
+**Git Commands:**
+```bash
+fn git status                             # Show branch, commit, dirty state
+fn git fetch [remote]                     # Fetch from remote
+fn git pull [--yes]                       # Pull current branch
+fn git push [--yes]                       # Push current branch
+```
+
+**Settings:**
+```bash
+fn settings                               # Show current configuration
+fn settings set maxConcurrent 4          # Update a setting
 ```
 
 **GitHub Import:**
 - Batch mode imports all open issues automatically (skipping already-imported)
 - Interactive mode (`-i`) lets you select specific issues from a numbered list
 - Uses `gh` CLI authentication (run `gh auth login`) or falls back to `GITHUB_TOKEN` for private repositories
-- Pull requests are automatically filtered out
+- Pull requests are automatically filtered out (use `fn task pr-create` to create PRs from tasks)
 
 **Dashboard Import:**
 - Click the ↓ (Download) icon in the header to open the GitHub import modal
@@ -112,8 +148,6 @@ Fusion reuses your existing pi authentication.
 | `@kb/dashboard` | Web UI — Express server + kanban board with SSE                 |
 | `@kb/engine`    | AI engine — triage (pi), execution (pi + worktrees), scheduling |
 | `kb` (cli)      | CLI — `fn dashboard`, `fn task create/list/move/attach`         |
-
-## Architecture
 
 ## Architecture
 
@@ -157,6 +191,93 @@ Each pi agent session gets:
 - In-memory sessions (no persistence needed)
 - The user's existing pi auth (API keys from `~/.pi/agent/auth.json`)
 
+## Model System
+
+Fusion provides flexible AI model configuration with support for model presets, per-task overrides, and a hierarchical settings system.
+
+### Model Presets
+
+Model presets let teams standardize AI model choices. Each preset contains:
+- **ID** — stable slug for storage (e.g., `budget`, `normal`, `complex`)
+- **Name** — human-friendly label
+- **Executor model** — provider/model pair for task execution
+- **Validator model** — provider/model pair for code/spec review
+
+Presets can be auto-selected by task size:
+- **Small (S)** → Budget preset
+- **Medium (M)** → Normal preset  
+- **Large (L)** → Complex preset
+
+### Per-Task Model Overrides
+
+Override global models for specific tasks:
+- **Executor Model** — AI model that implements the task
+- **Validator Model** — AI model that reviews code and plans
+
+Set overrides in the dashboard via **task detail → Model tab**, or choose **Custom** during task creation.
+
+### Settings Hierarchy
+
+**Global settings** (`~/.pi/kb/settings.json`):
+- `defaultProvider` / `defaultModelId` — Default AI models
+- `planningProvider` / `planningModelId` — Task specification models
+- `validatorProvider` / `validatorModelId` — Review models
+- `themeMode`, `colorTheme` — UI preferences
+- `ntfyEnabled`, `ntfyTopic` — Push notifications
+
+**Project settings** (`.kb/config.json`):
+- `modelPresets` — Custom preset definitions
+- `autoSelectPresetBySize` — Size-to-preset mappings
+- All workflow and automation settings
+
+Project settings override global settings. Configure in the dashboard under **Settings > Model**.
+
+## Task Planning & Creation
+
+Fusion offers multiple ways to create tasks, from quick entry to AI-assisted planning.
+
+### Planning Mode
+
+Use AI-guided planning for complex tasks. The AI interviews you to refine requirements before creating the task:
+
+```bash
+fn task plan "Build a user authentication system"
+```
+
+Or in the dashboard, type a description and click the **Plan** button (💡) to open the planning modal.
+
+### Subtask Breakdown
+
+Break large tasks into smaller, manageable subtasks before creation:
+
+1. Type a task description in the dashboard
+2. Click the **Subtask** button (🌳) to open the breakdown dialog
+3. AI suggests 2-5 subtasks based on your description
+4. Edit titles, descriptions, sizes, and dependencies
+5. Drag-and-drop to reorder subtasks (affects execution order)
+6. Create all subtasks in one action with proper dependency links
+
+### AI Text Refinement
+
+When creating tasks, the AI can refine your description:
+- Converts rough ideas into structured task specifications
+- Suggests appropriate file scopes and steps
+- Available in both Quick Entry and planning mode
+
+### Manual Plan Approval
+
+Enable `requirePlanApproval` in settings for manual review of AI-generated specifications:
+
+```json
+{
+  "settings": {
+    "requirePlanApproval": true
+  }
+}
+```
+
+When enabled, tasks stay in **Triage** with "awaiting-approval" status after AI specification. Review the PROMPT.md in the task detail modal, then click **Approve Plan** to move to **Todo** or **Reject Plan** to regenerate.
+
 ## Development
 
 ```bash
@@ -174,6 +295,72 @@ pnpm typecheck                  # Type-check all packages
 ```
 
 This command validates TypeScript across all packages using source file resolution, without requiring `dist/` output from prior builds. Run it after cloning or before committing to catch type errors early.
+
+## Dashboard Features
+
+### Interactive Terminal
+
+A fully interactive PTY-based terminal is available in the dashboard for executing shell commands directly from the web interface:
+
+- Real PTY using node-pty with authentic bash/zsh/powershell behavior
+- xterm.js for full terminal emulation with colors and ANSI support
+- WebSocket bidirectional communication for instant input/output
+- Auto-resizing with zoom support (Ctrl++/-)
+- Copy/paste via keyboard shortcuts
+
+### Git Manager
+
+Built-in Git repository visualization and management:
+
+- View commits with diffs
+- Manage branches
+- See worktree/task associations
+- Perform fetch/pull/push operations
+
+### Activity Log
+
+Global activity tracking accessible from the header (history icon):
+
+- Task lifecycle events: created, moved, merged, failed, deleted
+- Settings changes for important configuration updates
+- Filter events by type
+- Auto-refresh every 30 seconds
+
+### Board Search & Views
+
+**Board View:**
+- Real-time search across task titles and descriptions
+- Drag-and-drop between columns
+- Column visibility toggle (show/hide columns)
+
+**List View:**
+- Group by column, size, or none
+- Inline editing of task titles
+- Duplicate task button for quick cloning
+
+### Theme System
+
+- **Theme modes:** Dark, Light, System (follows OS preference)
+- **8+ color themes:** Default, Ocean, Forest, Sunset, Berry, Monochrome, High Contrast, Solarized, Factory
+- Quick toggle in header, full selector in Settings > Appearance
+- Preferences persist to localStorage
+
+## Archive
+
+Completed tasks can be archived to keep the board focused on recent work while preserving historical tasks.
+
+**CLI:**
+```bash
+fn task archive KB-001        # Archive a done task
+fn task unarchive KB-001      # Restore an archived task to done
+```
+
+**Dashboard:**
+- New "Archived" column at the end of the board (collapsed by default)
+- Archive/unarchive buttons on task cards (visible on hover)
+- Archived tasks cannot be dragged or modified
+
+Archive cleanup removes task directories while preserving metadata in `.kb/archive.jsonl`. Restored tasks keep all metadata but lose attachments and agent logs.
 
 ## Building a standalone executable
 
@@ -236,10 +423,25 @@ KB_CLIENT_DIR=/path/to/client ./fn dashboard
 
 Fusion uses the `gh` CLI (GitHub CLI) for all GitHub operations. If you have `gh` installed and authenticated (run `gh auth login`), Fusion will use your existing session. For environments without `gh` CLI, you can set `GITHUB_TOKEN` as a fallback.
 
-### PR Creation from Dashboard
+### Real-Time PR/Issue Badges
 
-Fusion can create GitHub Pull Requests directly from the dashboard for tasks in the **In Review** column:
+Tasks with linked GitHub PRs or imported issues display real-time status badges on the board:
 
+- **PR badges** — Shows open/closed/merged state with check status
+- **Issue badges** — Shows open/closed state
+- **WebSocket updates** — Badge status updates instantly via WebSocket when changes occur on GitHub
+- **Multi-instance support** — Redis pub/sub enables badge updates across load-balanced dashboard instances (configure via `KB_BADGE_PUBSUB_REDIS_URL`)
+
+### PR Creation
+
+Create GitHub Pull Requests from the CLI or dashboard:
+
+**CLI:**
+```bash
+fn task pr-create KB-001 --title "Fix login bug" --base main --body "Detailed description"
+```
+
+**Dashboard:**
 1. Ensure you have `gh` CLI installed and authenticated (`gh auth login`), or set the `GITHUB_TOKEN` environment variable
 2. Open a task in the **In Review** column
 3. Click **"Create PR"** in the Pull Request section
@@ -298,27 +500,180 @@ When a task has a linked PR, Fusion automatically monitors it for new review com
 
 Uses `gh` CLI authentication when available, falls back to `GITHUB_TOKEN` if set.
 
-### Workflow Steps
+## Workflow Steps
 
 Workflow steps are reusable quality gates that run after task implementation but before the task moves to in-review.
 
-**Defining workflow steps:**
+### Defining Workflow Steps
+
 1. Click the **Workflow Steps** button (⚡) in the dashboard header
 2. Click **Add Workflow Step** and provide a name and description
 3. Use **Refine with AI** to generate a detailed agent prompt from your description
 4. Save and enable the step
 
-**Using workflow steps:**
+### Built-in Templates
+
+Five templates are included for common quality checks:
+
+| Template | Category | Description |
+|----------|----------|-------------|
+| **Documentation Review** | Quality | Verify all public APIs, functions, and complex logic have appropriate documentation |
+| **QA Check** | Quality | Run tests and verify they pass, check for obvious bugs |
+| **Security Audit** | Security | Check for common security vulnerabilities and anti-patterns |
+| **Performance Review** | Quality | Check for performance anti-patterns and optimization opportunities |
+| **Accessibility Check** | Quality | Verify UI changes meet accessibility standards (WCAG 2.1) |
+
+Click **Add** on any template to create a customizable workflow step.
+
+### Using Workflow Steps
+
 1. When creating a new task, check the workflow steps you want to run
 2. After the main task executor completes, each selected workflow step runs automatically
 3. The task only moves to in-review after all workflow steps pass
+4. View results in the **Workflow** tab of the task detail modal
 
-**Examples:**
-- **Documentation Review** — Verify all public APIs have JSDoc comments
-- **QA Check** — Run the test suite and verify all tests pass
-- **Security Audit** — Check for common security issues in the changes
+Workflow step agents use **readonly tools** (no modifications). If a workflow step fails, the task is marked as failed and won't move to in-review.
 
-Workflow step agents run with readonly tools in the task's worktree. If a workflow step fails, the task is marked as failed and won't move to in-review.
+## Scheduled Tasks
+
+Automate recurring workflows with multi-step scheduled tasks. Schedules are stored in `.kb/automations/`.
+
+### Schedule Types
+
+| Preset | Cron Expression | Description |
+|--------|-----------------|-------------|
+| `every15Minutes` | `*/15 * * * *` | Every 15 minutes |
+| `every30Minutes` | `*/30 * * * *` | Every 30 minutes |
+| `hourly` | `0 * * * *` | Every hour |
+| `every2Hours` | `0 */2 * * *` | Every 2 hours |
+| `every6Hours` | `0 */6 * * *` | Every 6 hours |
+| `every12Hours` | `0 */12 * * *` | Every 12 hours |
+| `daily` | `0 0 * * *` | Daily at midnight |
+| `weekdays` | `0 0 * * 1-5` | Weekdays at midnight |
+| `weekly` | `0 0 * * 0` | Weekly on Sunday |
+| `monthly` | `0 0 1 * *` | Monthly on 1st |
+| `custom` | — | Define your own cron |
+
+### Step Types
+
+Each schedule contains multiple steps executed sequentially:
+
+**Command Steps:**
+```json
+{
+  "type": "command",
+  "command": "pnpm test",
+  "timeout": 300000,
+  "continueOnFailure": false
+}
+```
+
+**AI Prompt Steps** *(placeholder — not yet implemented)*:
+```json
+{
+  "type": "ai-prompt",
+  "prompt": "Review recent commits for issues",
+  "timeout": 600000
+}
+```
+
+### Dashboard Interface
+
+Access via the **Scheduled Tasks** button in the dashboard header:
+
+- **List view** — All schedules with enable/disable toggle
+- **Create/Edit modal** — Configure schedule, steps, and options
+- **Manual run** — Execute a schedule on-demand
+- **Run history** — Last 50 runs with per-step results and output
+- **Step reordering** — Drag to reorder steps
+
+### Configuration
+
+Per-step options:
+- `timeout` — Override default timeout (milliseconds)
+- `continueOnFailure` — Continue to next step if this one fails (default: false)
+
+Schedules respect the global pause state (`fn dashboard --paused`).
+
+## Configuration Reference
+
+Fusion uses a two-tier settings hierarchy:
+- **Global settings** (`~/.pi/kb/settings.json`) — User preferences across all projects
+- **Project settings** (`.kb/config.json`) — Project-specific workflow settings
+
+Project settings override global settings. Configure in the dashboard under **Settings**.
+
+### Settings Table
+
+| Setting | Scope | Default | Description |
+|---------|-------|---------|-------------|
+| `defaultProvider` | Global | — | Default AI model provider |
+| `defaultModelId` | Global | — | Default AI model ID |
+| `planningProvider` | Global | — | Model provider for task specification |
+| `planningModelId` | Global | — | Model ID for task specification |
+| `validatorProvider` | Global | — | Model provider for code/spec review |
+| `validatorModelId` | Global | — | Model ID for review |
+| `defaultThinkingLevel` | Global | — | Default thinking effort level |
+| `themeMode` | Global | dark | UI theme: dark/light/system |
+| `colorTheme` | Global | default | Color theme name |
+| `ntfyEnabled` | Global | false | Enable push notifications |
+| `ntfyTopic` | Global | — | ntfy.sh topic for notifications |
+| `maxConcurrent` | Project | 2 | Concurrent task execution limit |
+| `autoMerge` | Project | true | Auto-merge completed tasks |
+| `smartConflictResolution` | Project | true | Auto-resolve lock/generated files |
+| `autoResolveConflicts` | Project | true | Alias for smartConflictResolution |
+| `requirePlanApproval` | Project | false | Manual approval for AI specs |
+| `taskStuckTimeoutMs` | Project | — | Stuck task detection timeout (ms) |
+| `worktreeNaming` | Project | random | Worktree naming: random/task-id/task-title |
+| `recycleWorktrees` | Project | false | Pool and reuse worktrees |
+| `groupOverlappingFiles` | Project | false | Serialize tasks with shared files |
+| `prCompletionMode` | Project | direct | Completion: direct/pr-first |
+
+### Key Settings Explained
+
+**Smart Conflict Resolution:**
+```json
+{
+  "settings": {
+    "smartConflictResolution": true
+  }
+}
+```
+Automatically resolves:
+- Lock files (`package-lock.json`, `yarn.lock`, etc.) using "ours" strategy
+- Generated files (`*.gen.ts`, `dist/*`) using "theirs" strategy
+- Trivial whitespace conflicts
+
+**Stuck Task Detection:**
+```json
+{
+  "settings": {
+    "taskStuckTimeoutMs": 600000
+  }
+}
+```
+Terminates and retries tasks with no agent activity for the specified duration (10 minutes in this example).
+
+**Push Notifications (ntfy.sh):**
+```json
+{
+  "settings": {
+    "ntfyEnabled": true,
+    "ntfyTopic": "my-kb-notifications"
+  }
+}
+```
+Get notified when tasks complete, merge, or fail. Requires [ntfy.sh](https://ntfy.sh) app.
+
+**Plan Approval:**
+```json
+{
+  "settings": {
+    "requirePlanApproval": true
+  }
+}
+```
+AI-generated specifications require manual approval before moving to Todo.
 
 ## Releases
 
