@@ -390,14 +390,6 @@ export function ListView({
             </button>
           )}
         </div>
-        <div className="list-quick-entry">
-          <QuickEntryBox 
-            onCreate={onQuickCreate ?? (async () => addToast("Task creation not available", "error"))} 
-            addToast={addToast}
-            tasks={tasks}
-            availableModels={availableModels}
-          />
-        </div>
         <div className="list-column-toggle" ref={columnDropdownRef}>
           <button
             className="btn btn-sm"
@@ -465,6 +457,15 @@ export function ListView({
             + New Task
           </button>
         ) : null}
+      </div>
+
+      <div className="list-create-area">
+        <QuickEntryBox 
+          onCreate={onQuickCreate ?? (async () => addToast("Task creation not available", "error"))} 
+          addToast={addToast}
+          tasks={tasks}
+          availableModels={availableModels}
+        />
       </div>
 
       <div className="list-drop-zones">

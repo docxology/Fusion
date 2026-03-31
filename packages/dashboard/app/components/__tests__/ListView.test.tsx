@@ -1331,6 +1331,48 @@ describe("ListView Quick Entry", () => {
     expect(input).toBeDefined();
   });
 
+  it("renders QuickEntryBox in list-create-area, not in toolbar", () => {
+    const mockOnQuickCreate = vi.fn().mockResolvedValue(undefined);
+    renderListView({ onQuickCreate: mockOnQuickCreate });
+
+    const quickEntry = screen.getByTestId("quick-entry-box");
+    const toolbar = document.querySelector(".list-toolbar");
+    const createArea = document.querySelector(".list-create-area");
+
+    // QuickEntryBox should not be inside toolbar
+    expect(toolbar?.contains(quickEntry)).toBe(false);
+    // QuickEntryBox should be inside create-area
+    expect(createArea?.contains(quickEntry)).toBe(true);
+  });
+
+  it("shows model selector button when QuickEntryBox is expanded", async () => {
+    const mockOnQuickCreate = vi.fn().mockResolvedValue(undefined);
+    renderListView({ onQuickCreate: mockOnQuickCreate });
+
+    const input = screen.getByTestId("quick-entry-input");
+    
+    // Focus the input to expand the QuickEntryBox
+    fireEvent.focus(input);
+    
+    // Model selector button should be visible
+    const modelButton = await screen.findByTestId("quick-entry-models-button");
+    expect(modelButton).toBeDefined();
+  });
+
+  it("shows dependency selector button when QuickEntryBox is expanded", async () => {
+    const mockOnQuickCreate = vi.fn().mockResolvedValue(undefined);
+    renderListView({ onQuickCreate: mockOnQuickCreate });
+
+    const input = screen.getByTestId("quick-entry-input");
+    
+    // Focus the input to expand the QuickEntryBox
+    fireEvent.focus(input);
+    
+    // Dependency selector button should be visible
+    const depsButton = await screen.findByTestId("quick-entry-deps-button");
+    expect(depsButton).toBeDefined();
+  });
+
   it("calls onQuickCreate with description when Enter is pressed", async () => {
     const mockOnQuickCreate = vi.fn().mockResolvedValue(undefined);
     renderListView({ onQuickCreate: mockOnQuickCreate });

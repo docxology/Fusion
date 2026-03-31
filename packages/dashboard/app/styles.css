@@ -3226,13 +3226,16 @@ body {
   gap: 6px;
 }
 
-.list-quick-entry {
-  flex-shrink: 0;
+.list-create-area {
+  width: 100%;
+  padding: var(--space-md) var(--space-xl);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
 }
 
-.list-quick-entry .quick-entry-box {
-  margin-bottom: 0;
-  padding: 4px 8px;
+.list-create-area .quick-entry-box {
+  max-width: 800px;
+  margin: 0 auto;
 }
 
 .list-column-dropdown {
@@ -3690,6 +3693,10 @@ body {
   .list-toolbar {
     padding: 12px;
     flex-wrap: wrap;
+  }
+
+  .list-create-area {
+    padding: var(--space-sm) var(--space-md);
   }
 
   .list-filter {
