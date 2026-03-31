@@ -47,6 +47,12 @@ const SCHEDULE_TYPE_COLORS: Record<string, string> = {
   weekly: "var(--color-purple, #a855f7)",
   monthly: "var(--color-orange, #f97316)",
   custom: "var(--color-gray, #6b7280)",
+  every15Minutes: "var(--color-cyan, #06b6d4)",
+  every30Minutes: "var(--color-teal, #14b8a6)",
+  every2Hours: "var(--color-indigo, #6366f1)",
+  every6Hours: "var(--color-rose, #f43f5e)",
+  every12Hours: "var(--color-amber, #f59e0b)",
+  weekdays: "var(--color-emerald, #10b981)",
 };
 
 interface ScheduleCardProps {

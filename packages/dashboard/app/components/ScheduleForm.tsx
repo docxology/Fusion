@@ -7,6 +7,12 @@ const PRESET_CRON: Record<Exclude<ScheduleType, "custom">, string> = {
   daily: "0 0 * * *",
   weekly: "0 0 * * 1",
   monthly: "0 0 1 * *",
+  every15Minutes: "*/15 * * * *",
+  every30Minutes: "*/30 * * * *",
+  every2Hours: "0 */2 * * *",
+  every6Hours: "0 */6 * * *",
+  every12Hours: "0 */12 * * *",
+  weekdays: "0 9 * * 1-5",
 };
 
 const SCHEDULE_TYPE_LABELS: Record<ScheduleType, string> = {
@@ -15,6 +21,12 @@ const SCHEDULE_TYPE_LABELS: Record<ScheduleType, string> = {
   weekly: "Every week (Monday)",
   monthly: "Every month (1st)",
   custom: "Custom cron expression",
+  every15Minutes: "Every 15 minutes",
+  every30Minutes: "Every 30 minutes",
+  every2Hours: "Every 2 hours",
+  every6Hours: "Every 6 hours",
+  every12Hours: "Every 12 hours",
+  weekdays: "Weekdays at 9 AM (Mon-Fri)",
 };
 
 /**

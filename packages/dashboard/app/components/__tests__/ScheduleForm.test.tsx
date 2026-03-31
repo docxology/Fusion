@@ -136,6 +136,27 @@ describe("ScheduleForm", () => {
       const cronField = screen.getByLabelText("Cron Expression") as HTMLInputElement;
       expect(cronField.value).toBe("0 * * * *");
     });
+
+    it("auto-fills cron expression for every15Minutes preset", () => {
+      render(<ScheduleForm onSubmit={onSubmit} onCancel={onCancel} />);
+      fireEvent.change(screen.getByLabelText("Schedule"), { target: { value: "every15Minutes" } });
+      const cronField = screen.getByLabelText("Cron Expression") as HTMLInputElement;
+      expect(cronField.value).toBe("*/15 * * * *");
+    });
+
+    it("auto-fills cron expression for every6Hours preset", () => {
+      render(<ScheduleForm onSubmit={onSubmit} onCancel={onCancel} />);
+      fireEvent.change(screen.getByLabelText("Schedule"), { target: { value: "every6Hours" } });
+      const cronField = screen.getByLabelText("Cron Expression") as HTMLInputElement;
+      expect(cronField.value).toBe("0 */6 * * *");
+    });
+
+    it("auto-fills cron expression for weekdays preset", () => {
+      render(<ScheduleForm onSubmit={onSubmit} onCancel={onCancel} />);
+      fireEvent.change(screen.getByLabelText("Schedule"), { target: { value: "weekdays" } });
+      const cronField = screen.getByLabelText("Cron Expression") as HTMLInputElement;
+      expect(cronField.value).toBe("0 9 * * 1-5");
+    });
   });
 
   describe("submission", () => {

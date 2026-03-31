@@ -1,5 +1,5 @@
 /** Schedule type presets plus a custom cron option. */
-export type ScheduleType = "hourly" | "daily" | "weekly" | "monthly" | "custom";
+export type ScheduleType = "hourly" | "daily" | "weekly" | "monthly" | "custom" | "every15Minutes" | "every30Minutes" | "every2Hours" | "every6Hours" | "every12Hours" | "weekdays";
 
 /** Mapping from preset schedule types to their cron expressions. */
 export const AUTOMATION_PRESETS: Record<Exclude<ScheduleType, "custom">, string> = {
@@ -7,6 +7,12 @@ export const AUTOMATION_PRESETS: Record<Exclude<ScheduleType, "custom">, string>
   daily: "0 0 * * *",
   weekly: "0 0 * * 1",
   monthly: "0 0 1 * *",
+  every15Minutes: "*/15 * * * *",
+  every30Minutes: "*/30 * * * *",
+  every2Hours: "0 */2 * * *",
+  every6Hours: "0 */6 * * *",
+  every12Hours: "0 */12 * * *",
+  weekdays: "0 9 * * 1-5",
 };
 
 /** Result of a single automation run. */
