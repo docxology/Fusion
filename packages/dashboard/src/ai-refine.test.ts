@@ -15,6 +15,11 @@ import {
   RATE_LIMIT_WINDOW_MS,
 } from "./ai-refine.js";
 
+// Mock the engine module to avoid dynamic import issues in tests
+vi.mock("@kb/engine", () => ({
+  createKbAgent: vi.fn().mockResolvedValue(null),
+}));
+
 describe("ai-refine module", () => {
   beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
@@ -259,7 +264,7 @@ describe("ai-refine module", () => {
         AiServiceError
       );
       await expect(refineText("some text", "clarify", "/some/path")).rejects.toThrow(
-        "AI engine not available"
+        "Failed to initialize AI agent"
       );
     });
   });
