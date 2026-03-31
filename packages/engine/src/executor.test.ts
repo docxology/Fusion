@@ -3356,3 +3356,101 @@ describe("Invalid transition error handling", () => {
     expect(onComplete).toHaveBeenCalledWith(expect.objectContaining({ id: "KB-002" }));
   });
 });
+
+describe("TaskExecutor task_done with summary", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockedExistsSync.mockReturnValue(true);
+  });
+
+  it("accepts and saves summary parameter when task is completed", async () => {
+    const store = createMockStore();
+    let capturedTool: any = null;
+
+    mockedCreateHaiAgent.mockImplementation(async ({ customTools }: any) => {
+      // Capture the task_done tool
+      capturedTool = customTools?.find((t: any) => t.name === "task_done");
+      return {
+        session: {
+          prompt: vi.fn().mockResolvedValue(undefined),
+          dispose: vi.fn(),
+        },
+      } as any;
+    });
+
+    const executor = new TaskExecutor(store, "/tmp/test");
+    
+    // Execute a task
+    await executor.execute({
+      id: "KB-001",
+      title: "Test",
+      description: "Test task",
+      column: "in-progress",
+      dependencies: [],
+      steps: [{ name: "Step 1", status: "in-progress" }],
+      currentStep: 0,
+      log: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+
+    // Verify task_done tool was created
+    expect(capturedTool).toBeDefined();
+    expect(capturedTool.name).toBe("task_done");
+
+    // Verify the tool accepts summary parameter
+    expect(capturedTool.parameters).toBeDefined();
+    
+    // Execute the tool with a summary
+    const result = await capturedTool.execute("tool-1", { summary: "Test summary of changes" });
+    
+    // Verify the task was updated with the summary
+    expect(store.updateTask).toHaveBeenCalledWith("KB-001", { summary: "Test summary of changes" });
+    
+    // Verify success message includes summary mention
+    expect(result.content[0].text).toContain("summary");
+  });
+
+  it("works without summary parameter (backward compatible)", async () => {
+    const store = createMockStore();
+    let capturedTool: any = null;
+
+    mockedCreateHaiAgent.mockImplementation(async ({ customTools }: any) => {
+      capturedTool = customTools?.find((t: any) => t.name === "task_done");
+      return {
+        session: {
+          prompt: vi.fn().mockResolvedValue(undefined),
+          dispose: vi.fn(),
+        },
+      } as any;
+    });
+
+    const executor = new TaskExecutor(store, "/tmp/test");
+    
+    await executor.execute({
+      id: "KB-002",
+      title: "Test",
+      description: "Test task",
+      column: "in-progress",
+      dependencies: [],
+      steps: [{ name: "Step 1", status: "in-progress" }],
+      currentStep: 0,
+      log: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+
+    // Execute the tool without summary
+    const result = await capturedTool.execute("tool-1", {});
+    
+    // Verify summary was not updated
+    const summaryUpdateCalls = store.updateTask.mock.calls.filter(
+      (call: any[]) => call[1]?.summary !== undefined
+    );
+    expect(summaryUpdateCalls).toHaveLength(0);
+    
+    // Verify standard success message
+    expect(result.content[0].text).toBe("Task marked complete. All steps done. Moving to in-review.");
+  });
+});
+
