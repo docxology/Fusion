@@ -290,6 +290,22 @@ export interface Settings {
    *  Must be set together with `defaultProvider`. When both are undefined,
    *  the engine uses pi's automatic model resolution. */
   defaultModelId?: string;
+  /** AI model provider for planning/triage (specification) agent.
+   *  Must be set together with `planningModelId`. When both are undefined,
+   *  falls back to `defaultProvider`/`defaultModelId`. */
+  planningProvider?: string;
+  /** AI model ID for planning/triage (specification) agent.
+   *  Must be set together with `planningProvider`. When both are undefined,
+   *  falls back to `defaultProvider`/`defaultModelId`. */
+  planningModelId?: string;
+  /** AI model provider for validator/reviewer agent.
+   *  Must be set together with `validatorModelId`. When both are undefined,
+   *  falls back to `defaultProvider`/`defaultModelId`. */
+  validatorProvider?: string;
+  /** AI model ID for validator/reviewer agent.
+   *  Must be set together with `validatorProvider`. When both are undefined,
+   *  falls back to `defaultProvider`/`defaultModelId`. */
+  validatorModelId?: string;
   /** Default thinking effort level for AI agent sessions.
    *  Controls how much reasoning effort the model uses — higher levels
    *  produce better results but cost more. When undefined, the engine
@@ -342,6 +358,10 @@ export const DEFAULT_SETTINGS: Settings = {
   includeTaskIdInCommit: true,
   defaultProvider: undefined,
   defaultModelId: undefined,
+  planningProvider: undefined,
+  planningModelId: undefined,
+  validatorProvider: undefined,
+  validatorModelId: undefined,
   defaultThinkingLevel: undefined,
   autoResolveConflicts: true,
   smartConflictResolution: true,

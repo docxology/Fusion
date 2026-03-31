@@ -269,6 +269,12 @@ export function SettingsModal({
         const selectedValue = form.defaultProvider && form.defaultModelId
           ? `${form.defaultProvider}/${form.defaultModelId}`
           : "";
+        const planningValue = form.planningProvider && form.planningModelId
+          ? `${form.planningProvider}/${form.planningModelId}`
+          : "";
+        const validatorValue = form.validatorProvider && form.validatorModelId
+          ? `${form.validatorProvider}/${form.validatorModelId}`
+          : "";
         return (
           <>
             <h4 className="settings-section-heading">Model</h4>
@@ -279,29 +285,77 @@ export function SettingsModal({
                 No models available. Configure authentication first.
               </div>
             ) : (
-              <div className="form-group">
-                <label htmlFor="defaultModel">Default Model</label>
-                <CustomModelDropdown
-                  id="defaultModel"
-                  label="Default Model"
-                  models={availableModels}
-                  value={selectedValue}
-                  onChange={(val) => {
-                    if (!val) {
-                      setForm((f) => ({ ...f, defaultProvider: undefined, defaultModelId: undefined }));
-                    } else {
-                      const slashIdx = val.indexOf("/");
-                      setForm((f) => ({
-                        ...f,
-                        defaultProvider: val.slice(0, slashIdx),
-                        defaultModelId: val.slice(slashIdx + 1),
-                      }));
-                    }
-                  }}
-                  placeholder="Use default"
-                />
-                <small>Select the AI model used for agent sessions. &quot;Use default&quot; lets the engine choose automatically.</small>
-              </div>
+              <>
+                <div className="form-group">
+                  <label htmlFor="defaultModel">Default Model</label>
+                  <CustomModelDropdown
+                    id="defaultModel"
+                    label="Default Model"
+                    models={availableModels}
+                    value={selectedValue}
+                    onChange={(val) => {
+                      if (!val) {
+                        setForm((f) => ({ ...f, defaultProvider: undefined, defaultModelId: undefined }));
+                      } else {
+                        const slashIdx = val.indexOf("/");
+                        setForm((f) => ({
+                          ...f,
+                          defaultProvider: val.slice(0, slashIdx),
+                          defaultModelId: val.slice(slashIdx + 1),
+                        }));
+                      }
+                    }}
+                    placeholder="Use default"
+                  />
+                  <small>Default AI model used for task execution when no per-task override is set. &quot;Use default&quot; lets the engine choose automatically.</small>
+                </div>
+                <div className="form-group">
+                  <label htmlFor="planningModel">Planning Model</label>
+                  <CustomModelDropdown
+                    id="planningModel"
+                    label="Planning Model"
+                    models={availableModels}
+                    value={planningValue}
+                    onChange={(val) => {
+                      if (!val) {
+                        setForm((f) => ({ ...f, planningProvider: undefined, planningModelId: undefined }));
+                      } else {
+                        const slashIdx = val.indexOf("/");
+                        setForm((f) => ({
+                          ...f,
+                          planningProvider: val.slice(0, slashIdx),
+                          planningModelId: val.slice(slashIdx + 1),
+                        }));
+                      }
+                    }}
+                    placeholder="Use default"
+                  />
+                  <small>AI model used for task planning and specification (triage). Falls back to Default Model when not set.</small>
+                </div>
+                <div className="form-group">
+                  <label htmlFor="validatorModel">Validator Model</label>
+                  <CustomModelDropdown
+                    id="validatorModel"
+                    label="Validator Model"
+                    models={availableModels}
+                    value={validatorValue}
+                    onChange={(val) => {
+                      if (!val) {
+                        setForm((f) => ({ ...f, validatorProvider: undefined, validatorModelId: undefined }));
+                      } else {
+                        const slashIdx = val.indexOf("/");
+                        setForm((f) => ({
+                          ...f,
+                          validatorProvider: val.slice(0, slashIdx),
+                          validatorModelId: val.slice(slashIdx + 1),
+                        }));
+                      }
+                    }}
+                    placeholder="Use default"
+                  />
+                  <small>AI model used for code and specification review. Falls back to Default Model when not set.</small>
+                </div>
+              </>
             )}
             {(() => {
               const selectedModel = availableModels.find(

@@ -465,8 +465,13 @@ export class TriageProcessor {
           onThinking: agentLogger.onThinking,
           onToolStart: agentLogger.onToolStart,
           onToolEnd: agentLogger.onToolEnd,
-          defaultProvider: settings.defaultProvider,
-          defaultModelId: settings.defaultModelId,
+          // Use planning model settings if both provider and modelId are set, otherwise fall back to defaults
+          defaultProvider: settings.planningProvider && settings.planningModelId
+            ? settings.planningProvider
+            : settings.defaultProvider,
+          defaultModelId: settings.planningProvider && settings.planningModelId
+            ? settings.planningModelId
+            : settings.defaultModelId,
           defaultThinkingLevel: settings.defaultThinkingLevel,
         });
 
@@ -846,6 +851,8 @@ export class TriageProcessor {
       defaultProvider?: string;
       defaultModelId?: string;
       defaultThinkingLevel?: string;
+      validatorProvider?: string;
+      validatorModelId?: string;
     },
   ): ToolDefinition {
     const store = this.store;
@@ -904,6 +911,8 @@ export class TriageProcessor {
               onText: (delta) => options.onAgentText?.(taskId, delta),
               defaultProvider: settings.defaultProvider,
               defaultModelId: settings.defaultModelId,
+              validatorModelProvider: settings.validatorProvider,
+              validatorModelId: settings.validatorModelId,
               defaultThinkingLevel: settings.defaultThinkingLevel,
               store,
               taskId,

@@ -286,8 +286,30 @@ To clear overrides, select "Use default" for both fields and save.
 
 ### Limitations
 
-- Triage (task specification) always uses global defaults — per-task overrides apply only to execution and review
+- **Planning Model**: Task specification (triage) uses the global `planningProvider`/`planningModelId` settings — there is no per-task override for planning
 - Both provider and modelId must be set together; partial configuration falls back to defaults
+
+## Model Settings Hierarchy
+
+The system uses the following precedence for model selection:
+
+**For Task Specification (Triage):**
+1. Global `planningProvider`/`planningModelId` (if both set)
+2. Global `defaultProvider`/`defaultModelId` (if both set)
+3. Automatic model resolution (fallback)
+
+**For Task Execution (Executor):**
+1. Per-task `modelProvider`/`modelId` (if both set)
+2. Global `defaultProvider`/`defaultModelId` (if both set)
+3. Automatic model resolution (fallback)
+
+**For Code/Spec Review (Reviewer):**
+1. Per-task `validatorModelProvider`/`validatorModelId` (if both set)
+2. Global `validatorProvider`/`validatorModelId` (if both set)
+3. Global `defaultProvider`/`defaultModelId` (if both set)
+4. Automatic model resolution (fallback)
+
+Configure global model settings in the dashboard under **Settings > Model**.
 
 ## Archive Cleanup
 

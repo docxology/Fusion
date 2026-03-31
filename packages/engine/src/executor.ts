@@ -851,8 +851,9 @@ export class TaskExecutor {
               defaultProvider: settings.defaultProvider,
               defaultModelId: settings.defaultModelId,
               defaultThinkingLevel: settings.defaultThinkingLevel,
-              validatorModelProvider: detail.validatorModelProvider,
-              validatorModelId: detail.validatorModelId,
+              // Per-task validator overrides take precedence over global validator settings
+              validatorModelProvider: detail.validatorModelProvider ?? settings.validatorProvider,
+              validatorModelId: detail.validatorModelId ?? settings.validatorModelId,
               store,
               taskId,
             },
