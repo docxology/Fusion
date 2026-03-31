@@ -10,6 +10,7 @@ import { TerminalModal } from "./components/TerminalModal";
 import { FileBrowserModal } from "./components/FileBrowserModal";
 import { SettingsModal } from "./components/SettingsModal";
 import { PlanningModeModal } from "./components/PlanningModeModal";
+import { SubtaskBreakdownModal } from "./components/SubtaskBreakdownModal";
 import type { SectionId } from "./components/SettingsModal";
 import { ToastContainer } from "./components/ToastContainer";
 import { GitHubImportModal } from "./components/GitHubImportModal";
@@ -27,6 +28,8 @@ function AppInner() {
   const [newTaskModalOpen, setNewTaskModalOpen] = useState(false);
   const [isPlanningOpen, setIsPlanningOpen] = useState(false);
   const [planningInitialPlan, setPlanningInitialPlan] = useState<string | null>(null);
+  const [isSubtaskOpen, setIsSubtaskOpen] = useState(false);
+  const [subtaskInitialDescription, setSubtaskInitialDescription] = useState<string | null>(null);
   const [detailTask, setDetailTask] = useState<TaskDetail | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [schedulesOpen, setSchedulesOpen] = useState(false);
@@ -150,9 +153,20 @@ function AppInner() {
 
   // Handle subtask breakdown from inline/quick create
   const handleSubtaskBreakdown = useCallback((description: string) => {
-    // Placeholder for KB-247 integration
-    // For now, show a toast indicating this feature is coming
-    addToast("Subtask breakdown coming soon! Description: " + description.slice(0, 30) + "...", "info");
+    setSubtaskInitialDescription(description);
+    setIsSubtaskOpen(true);
+  }, []);
+
+  const handleSubtaskClose = useCallback(() => {
+    setIsSubtaskOpen(false);
+    setSubtaskInitialDescription(null);
+  }, []);
+
+  const handleSubtaskTasksCreated = useCallback((createdTasks: Task[]) => {
+    const ids = createdTasks.map((task) => task.id).join(", ");
+    addToast(`Created ${ids} from subtask breakdown`, "success");
+    setIsSubtaskOpen(false);
+    setSubtaskInitialDescription(null);
   }, [addToast]);
 
   // Usage indicator handlers
@@ -334,6 +348,12 @@ function AppInner() {
         tasks={tasks}
         initialPlan={planningInitialPlan ?? undefined}
       />
+      <SubtaskBreakdownModal
+        isOpen={isSubtaskOpen}
+        onClose={handleSubtaskClose}
+        initialDescription={subtaskInitialDescription ?? ""}
+        onTasksCreated={handleSubtaskTasksCreated}
+      />
       <TerminalModal
         isOpen={terminalOpen}
         onClose={handleTerminalClose}
@@ -363,6 +383,7 @@ function AppInner() {
         onCreateTask={handleModalCreate}
         addToast={addToast}
         onPlanningMode={handleNewTaskPlanningMode}
+        onSubtaskBreakdown={handleSubtaskBreakdown}
       />
       <ActivityLogModal
         isOpen={activityLogOpen}

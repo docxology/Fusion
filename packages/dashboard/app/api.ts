@@ -922,6 +922,14 @@ export interface PlanningSession {
   summary: PlanningSummary | null;
 }
 
+export interface SubtaskItem {
+  id: string;
+  title: string;
+  description: string;
+  suggestedSize: "S" | "M" | "L";
+  dependsOn: string[];
+}
+
 /** SSE event types for planning session streaming */
 export type PlanningStreamEvent =
   | { type: "thinking"; data: string }
@@ -1261,3 +1269,110 @@ export function getRefineErrorMessage(error: unknown): string {
   return REFINE_ERROR_MESSAGES.NETWORK;
 }
 
+
+export function startSubtaskBreakdown(description: string): Promise<{ sessionId: string }> {
+  return api<{ sessionId: string }>("/subtasks/start-streaming", {
+    method: "POST",
+    body: JSON.stringify({ description }),
+  });
+}
+
+export function getSubtaskStreamUrl(sessionId: string): string {
+  return `/api/subtasks/${encodeURIComponent(sessionId)}/stream`;
+}
+
+export function connectSubtaskStream(
+  sessionId: string,
+  handlers: {
+    onThinking?: (data: string) => void;
+    onSubtasks?: (data: SubtaskItem[]) => void;
+    onError?: (data: string) => void;
+    onComplete?: () => void;
+  }
+): { close: () => void; isConnected: () => boolean } {
+  const eventSource = new EventSource(getSubtaskStreamUrl(sessionId));
+  let isClosed = false;
+
+  eventSource.onopen = () => {
+    isClosed = false;
+  };
+
+  eventSource.addEventListener("thinking", (event: Event) => {
+    const messageEvent = event as MessageEvent;
+    try {
+      handlers.onThinking?.(JSON.parse(messageEvent.data));
+    } catch {
+      handlers.onThinking?.(messageEvent.data);
+    }
+  });
+
+  eventSource.addEventListener("subtasks", (event: Event) => {
+    try {
+      const messageEvent = event as MessageEvent;
+      handlers.onSubtasks?.(JSON.parse(messageEvent.data) as SubtaskItem[]);
+    } catch (err) {
+      console.error("[subtasks] Failed to parse subtasks event:", err);
+    }
+  });
+
+  eventSource.addEventListener("error", (event: Event) => {
+    try {
+      const messageEvent = event as MessageEvent;
+      handlers.onError?.(JSON.parse(messageEvent.data) as string);
+    } catch {
+      handlers.onError?.("Stream error");
+    }
+    isClosed = true;
+    eventSource.close();
+  });
+
+  eventSource.addEventListener("complete", () => {
+    handlers.onComplete?.();
+    isClosed = true;
+    eventSource.close();
+  });
+
+  eventSource.onerror = () => {
+    if (!isClosed) {
+      handlers.onError?.("Connection lost");
+    }
+    isClosed = true;
+    eventSource.close();
+  };
+
+  return {
+    close: () => {
+      isClosed = true;
+      eventSource.close();
+    },
+    isConnected: () => !isClosed,
+  };
+}
+
+export function createTasksFromBreakdown(
+  sessionId: string,
+  subtasks: SubtaskItem[],
+  parentTaskId?: string,
+): Promise<{ tasks: Task[]; parentTaskClosed?: boolean }> {
+  return api<{ tasks: Task[]; parentTaskClosed?: boolean }>("/subtasks/create-tasks", {
+    method: "POST",
+    body: JSON.stringify({
+      sessionId,
+      parentTaskId,
+      subtasks: subtasks.map((subtask) => ({
+        tempId: subtask.id,
+        title: subtask.title,
+        description: subtask.description,
+        size: subtask.suggestedSize,
+        dependsOn: subtask.dependsOn,
+      })),
+    }),
+  });
+}
+
+export function cancelSubtaskBreakdown(sessionId: string): Promise<void> {
+  return api<void>("/subtasks/cancel", {
+    method: "POST",
+    body: JSON.stringify({ sessionId }),
+  });
+}

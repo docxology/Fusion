@@ -8,6 +8,7 @@ import type { TaskStore, TaskAttachment } from "@kb/core";
 import type { TaskDetail } from "@kb/core";
 import type { AuthStorageLike, ModelRegistryLike } from "./routes.js";
 import { __resetPlanningState } from "./planning.js";
+import { __resetSubtaskBreakdownState } from "./subtask-breakdown.js";
 import * as terminalServiceModule from "./terminal-service.js";
 
 // Mock @kb/core for gh CLI auth checks
@@ -376,6 +377,90 @@ describe("POST /tasks", () => {
     expect(res.status).toBe(400);
     expect(res.body.error).toContain("breakIntoSubtasks must be a boolean");
     expect(store.createTask).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /subtasks/*", () => {
+  let store: TaskStore;
+
+  beforeEach(() => {
+    store = createMockStore();
+    __resetPlanningState();
+    __resetSubtaskBreakdownState();
+  });
+
+  function buildApp() {
+    const app = express();
+    app.use(express.json());
+    app.use("/api", createApiRoutes(store));
+    return app;
+  }
+
+  it("starts a subtask streaming session and returns sessionId", async () => {
+    const res = await REQUEST(
+      buildApp(),
+      "POST",
+      "/api/subtasks/start-streaming",
+      JSON.stringify({ description: "Break this feature into subtasks" }),
+      { "Content-Type": "application/json" },
+    );
+
+    expect(res.status).toBe(201);
+    expect(typeof res.body.sessionId).toBe("string");
+  });
+
+  it("creates tasks from a breakdown and resolves dependencies", async () => {
+    (store.createTask as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ ...FAKE_TASK_DETAIL, id: "KB-101", title: "First", column: "triage" })
+      .mockResolvedValueOnce({ ...FAKE_TASK_DETAIL, id: "KB-102", title: "Second", column: "triage" });
+    (store.updateTask as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ ...FAKE_TASK_DETAIL, id: "KB-101", title: "First", column: "triage", size: "S" })
+      .mockResolvedValueOnce({ ...FAKE_TASK_DETAIL, id: "KB-102", title: "Second", column: "triage", size: "M" })
+      .mockResolvedValueOnce({ ...FAKE_TASK_DETAIL, id: "KB-102", title: "Second", column: "triage", dependencies: ["KB-101"] });
+
+    const start = await REQUEST(
+      buildApp(),
+      "POST",
+      "/api/subtasks/start-streaming",
+      JSON.stringify({ description: "Break this feature into subtasks" }),
+      { "Content-Type": "application/json" },
+    );
+
+    const createRes = await REQUEST(
+      buildApp(),
+      "POST",
+      "/api/subtasks/create-tasks",
+      JSON.stringify({
+        sessionId: start.body.sessionId,
+        subtasks: [
+          { tempId: "subtask-1", title: "First", description: "Do first", size: "S", dependsOn: [] },
+          { tempId: "subtask-2", title: "Second", description: "Do second", size: "M", dependsOn: ["subtask-1"] },
+        ],
+      }),
+      { "Content-Type": "application/json" },
+    );
+
+    expect(createRes.status).toBe(201);
+    expect(createRes.body.tasks).toHaveLength(2);
+    expect(store.createTask).toHaveBeenNthCalledWith(1, expect.objectContaining({ title: "First", dependencies: undefined }));
+    expect(store.createTask).toHaveBeenNthCalledWith(2, expect.objectContaining({ title: "Second", dependencies: undefined }));
+    expect(store.updateTask).toHaveBeenCalledWith("KB-102", { dependencies: ["KB-101"] });
+  });
+
+  it("returns 404 for invalid subtask session during batch creation", async () => {
+    const res = await REQUEST(
+      buildApp(),
+      "POST",
+      "/api/subtasks/create-tasks",
+      JSON.stringify({
+        sessionId: "missing-session",
+        subtasks: [{ tempId: "subtask-1", title: "First", description: "Do first" }],
+      }),
+      { "Content-Type": "application/json" },
+    );
+
+    expect(res.status).toBe(404);
+    expect(res.body.error).toContain("not found");
   });
 });
 

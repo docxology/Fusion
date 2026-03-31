@@ -22,6 +22,7 @@ interface NewTaskModalProps {
   onCreateTask: (input: TaskCreateInput) => Promise<Task>;
   addToast: (message: string, type?: ToastType) => void;
   onPlanningMode?: (initialPlan: string) => void;
+  onSubtaskBreakdown?: (description: string) => void;
 }
 
 /**
@@ -302,7 +303,7 @@ function ModelCombobox({
   );
 }
 
-export function NewTaskModal({ isOpen, onClose, tasks, onCreateTask, addToast, onPlanningMode }: NewTaskModalProps) {
+export function NewTaskModal({ isOpen, onClose, tasks, onCreateTask, addToast, onPlanningMode, onSubtaskBreakdown }: NewTaskModalProps) {
   const [description, setDescription] = useState("");
   const [dependencies, setDependencies] = useState<string[]>([]);
   const [showDepDropdown, setShowDepDropdown] = useState(false);
@@ -316,7 +317,6 @@ export function NewTaskModal({ isOpen, onClose, tasks, onCreateTask, addToast, o
   const [settings, setSettings] = useState<Settings | null>(null);
   const [selectedPresetId, setSelectedPresetId] = useState<string>("");
   const [presetMode, setPresetMode] = useState<"default" | "preset" | "custom">("default");
-  const [enablePlanningMode, setEnablePlanningMode] = useState(false);
   const [hasDirtyState, setHasDirtyState] = useState(false);
   const [workflowSteps, setWorkflowSteps] = useState<WorkflowStep[]>([]);
   const [selectedWorkflowSteps, setSelectedWorkflowSteps] = useState<string[]>([]);
@@ -355,10 +355,9 @@ export function NewTaskModal({ isOpen, onClose, tasks, onCreateTask, addToast, o
       pendingImages.length > 0 ||
       executorModel !== "" ||
       validatorModel !== "" ||
-      enablePlanningMode ||
       selectedWorkflowSteps.length > 0;
     setHasDirtyState(isDirty);
-  }, [description, dependencies, pendingImages, executorModel, validatorModel, enablePlanningMode, selectedWorkflowSteps]);
+  }, [description, dependencies, pendingImages, executorModel, validatorModel, selectedWorkflowSteps]);
 
   const availablePresets = settings?.modelPresets || [];
   const selectedPreset = availablePresets.find((preset) => preset.id === selectedPresetId);
@@ -478,7 +477,6 @@ export function NewTaskModal({ isOpen, onClose, tasks, onCreateTask, addToast, o
     setValidatorModel("");
     setSelectedPresetId("");
     setPresetMode("default");
-    setEnablePlanningMode(false);
     setSelectedWorkflowSteps([]);
     setIsRefineMenuOpen(false);
     setIsRefining(false);
@@ -489,33 +487,6 @@ export function NewTaskModal({ isOpen, onClose, tasks, onCreateTask, addToast, o
   const handleSubmit = useCallback(async () => {
     const trimmedDesc = description.trim();
     if (!trimmedDesc || isSubmitting) return;
-
-    // Planning mode flow: skip task creation, open planning modal instead
-    if (enablePlanningMode && onPlanningMode) {
-      setIsSubmitting(true);
-      try {
-        // Clean up object URLs before closing
-        pendingImages.forEach((img) => URL.revokeObjectURL(img.previewUrl));
-        
-        // Clear form state
-        setPendingImages([]);
-        setDescription("");
-        setDependencies([]);
-        setExecutorModel("");
-        setValidatorModel("");
-        setSelectedPresetId("");
-        setPresetMode("default");
-        setEnablePlanningMode(false);
-        setSelectedWorkflowSteps([]);
-        
-        // Close modal and trigger planning mode
-        onClose();
-        onPlanningMode(trimmedDesc);
-      } finally {
-        setIsSubmitting(false);
-      }
-      return;
-    }
 
     setIsSubmitting(true);
     try {
@@ -560,7 +531,6 @@ export function NewTaskModal({ isOpen, onClose, tasks, onCreateTask, addToast, o
       setValidatorModel("");
       setSelectedPresetId("");
       setPresetMode("default");
-      setEnablePlanningMode(false);
       setSelectedWorkflowSteps([]);
 
       addToast(`Created ${task.id}`, "success");
@@ -570,7 +540,7 @@ export function NewTaskModal({ isOpen, onClose, tasks, onCreateTask, addToast, o
     } finally {
       setIsSubmitting(false);
     }
-  }, [description, dependencies, pendingImages, executorModel, validatorModel, enablePlanningMode, isSubmitting, onCreateTask, addToast, onClose, onPlanningMode]);
+  }, [description, dependencies, pendingImages, executorModel, validatorModel, isSubmitting, onCreateTask, addToast, onClose]);
 
   // Handle keyboard shortcuts
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -908,18 +878,43 @@ export function NewTaskModal({ isOpen, onClose, tasks, onCreateTask, addToast, o
             </div>
           )}
 
-          {/* Planning Mode Toggle */}
           <div className="form-group">
-            <label className="checkbox-label">
-              <input
-                type="checkbox"
-                checked={enablePlanningMode}
-                onChange={(e) => setEnablePlanningMode(e.target.checked)}
-                disabled={isSubmitting}
-              />
-              Enable planning mode
-            </label>
-            <small>AI will ask clarifying questions before creating the task specification</small>
+            <label>AI-assisted creation</label>
+            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={() => {
+                  const trimmed = description.trim();
+                  if (!trimmed) {
+                    addToast("Enter a description first", "error");
+                    return;
+                  }
+                  handleClose();
+                  onPlanningMode?.(trimmed);
+                }}
+                disabled={isSubmitting || !description.trim()}
+              >
+                Plan
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={() => {
+                  const trimmed = description.trim();
+                  if (!trimmed) {
+                    addToast("Enter a description first", "error");
+                    return;
+                  }
+                  handleClose();
+                  onSubtaskBreakdown?.(trimmed);
+                }}
+                disabled={isSubmitting || !description.trim()}
+              >
+                Subtask
+              </button>
+            </div>
+            <small>Use Plan for clarifying questions or Subtask to split the work into editable child tasks.</small>
           </div>
 
           {/* Attachments */}

@@ -3538,6 +3538,194 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
 
   // ── Planning Mode Routes ──────────────────────────────────────────────────
 
+  router.post("/subtasks/start-streaming", async (req, res) => {
+    try {
+      const { description } = req.body;
+
+      if (!description || typeof description !== "string") {
+        res.status(400).json({ error: "description is required and must be a string" });
+        return;
+      }
+
+      if (description.length > 1000) {
+        res.status(400).json({ error: "description must be 1000 characters or less" });
+        return;
+      }
+
+      const { createSubtaskSession } = await import("./subtask-breakdown.js");
+      const session = await createSubtaskSession(description, store, store.getRootDir());
+      res.status(201).json({ sessionId: session.sessionId });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Failed to start subtask breakdown" });
+    }
+  });
+
+  router.get("/subtasks/:sessionId/stream", async (req, res) => {
+    const { sessionId } = req.params;
+
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+    res.flushHeaders();
+    res.write(": connected\n\n");
+
+    try {
+      const { subtaskStreamManager, getSubtaskSession } = await import("./subtask-breakdown.js");
+      const session = getSubtaskSession(sessionId);
+      if (!session) {
+        res.write(`event: error\ndata: ${JSON.stringify("Session not found or expired")}\n\n`);
+        res.end();
+        return;
+      }
+
+      const unsubscribe = subtaskStreamManager.subscribe(sessionId, (event) => {
+        try {
+          const data = (event as { data?: unknown }).data;
+          res.write(`event: ${event.type}\ndata: ${JSON.stringify(data ?? {})}\n\n`);
+          if (event.type === "complete" || event.type === "error") {
+            unsubscribe();
+            res.end();
+          }
+        } catch {
+          unsubscribe();
+        }
+      });
+
+      if (session.status === "complete") {
+        res.write(`event: subtasks\ndata: ${JSON.stringify(session.subtasks)}\n\n`);
+        res.write("event: complete\ndata: {}\n\n");
+        unsubscribe();
+        res.end();
+        return;
+      }
+
+      if (session.status === "error") {
+        res.write(`event: error\ndata: ${JSON.stringify(session.error || "Failed to generate subtasks")}\n\n`);
+        unsubscribe();
+        res.end();
+        return;
+      }
+
+      const heartbeat = setInterval(() => {
+        if (res.writableEnded) {
+          clearInterval(heartbeat);
+          return;
+        }
+        res.write(": heartbeat\n\n");
+      }, 30_000);
+
+      req.on("close", () => {
+        clearInterval(heartbeat);
+        unsubscribe();
+      });
+    } catch (err: any) {
+      res.write(`event: error\ndata: ${JSON.stringify(err.message || "Stream error")}\n\n`);
+      res.end();
+    }
+  });
+
+  router.post("/subtasks/create-tasks", async (req, res) => {
+    try {
+      const { sessionId, subtasks, parentTaskId } = req.body as {
+        sessionId?: string;
+        subtasks?: Array<{ tempId: string; title: string; description: string; size?: "S" | "M" | "L"; dependsOn?: string[] }>;
+        parentTaskId?: string;
+      };
+
+      if (!sessionId || typeof sessionId !== "string") {
+        res.status(400).json({ error: "sessionId is required" });
+        return;
+      }
+
+      if (!Array.isArray(subtasks) || subtasks.length === 0) {
+        res.status(400).json({ error: "subtasks must be a non-empty array" });
+        return;
+      }
+
+      const { getSubtaskSession, cleanupSubtaskSession } = await import("./subtask-breakdown.js");
+      const session = getSubtaskSession(sessionId);
+      if (!session) {
+        res.status(404).json({ error: `Subtask session ${sessionId} not found or expired` });
+        return;
+      }
+
+      const createdTasks = [] as Awaited<ReturnType<typeof store.createTask>>[];
+      const tempIdToTaskId = new Map<string, string>();
+
+      for (const item of subtasks) {
+        if (!item || typeof item.tempId !== "string" || typeof item.title !== "string" || !item.title.trim()) {
+          res.status(400).json({ error: "Each subtask must include tempId and title" });
+          return;
+        }
+
+        const task = await store.createTask({
+          title: item.title.trim(),
+          description: typeof item.description === "string" ? item.description.trim() : item.title.trim(),
+          column: "triage",
+          dependencies: undefined,
+        });
+
+        tempIdToTaskId.set(item.tempId, task.id);
+        createdTasks.push(task);
+
+        if (item.size === "S" || item.size === "M" || item.size === "L") {
+          await store.updateTask(task.id, { size: item.size });
+        }
+      }
+
+      for (let index = 0; index < subtasks.length; index++) {
+        const item = subtasks[index]!;
+        const created = createdTasks[index]!;
+        const resolvedDependencies = Array.isArray(item.dependsOn)
+          ? item.dependsOn.map((dep) => tempIdToTaskId.get(dep)).filter((dep): dep is string => Boolean(dep))
+          : [];
+
+        if (resolvedDependencies.length > 0) {
+          const updated = await store.updateTask(created.id, { dependencies: resolvedDependencies });
+          createdTasks[index] = updated;
+        }
+
+        await store.logEntry(created.id, "Created via subtask breakdown", `Source: ${session.initialDescription.slice(0, 200)}`);
+      }
+
+      let parentTaskClosed = false;
+      if (typeof parentTaskId === "string" && parentTaskId.trim()) {
+        try {
+          await store.deleteTask(parentTaskId);
+          parentTaskClosed = true;
+        } catch {
+          parentTaskClosed = false;
+        }
+      }
+
+      cleanupSubtaskSession(sessionId);
+      res.status(201).json({ tasks: createdTasks, parentTaskClosed });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Failed to create tasks from breakdown" });
+    }
+  });
+
+  router.post("/subtasks/cancel", async (req, res) => {
+    try {
+      const { sessionId } = req.body;
+      if (!sessionId || typeof sessionId !== "string") {
+        res.status(400).json({ error: "sessionId is required" });
+        return;
+      }
+
+      const { cancelSubtaskSession } = await import("./subtask-breakdown.js");
+      await cancelSubtaskSession(sessionId);
+      res.json({ success: true });
+    } catch (err: any) {
+      if (err.name === "SessionNotFoundError") {
+        res.status(404).json({ error: err.message });
+      } else {
+        res.status(500).json({ error: err.message || "Failed to cancel subtask session" });
+      }
+    }
+  });
+
   /**
    * POST /api/planning/start
    * Start a new planning session.
