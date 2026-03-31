@@ -28,12 +28,24 @@ const FAKE_DETAIL: TaskDetail = {
   prompt: "# KB-001",
 };
 
-function mockFetchResponse(ok: boolean, body: unknown, status = ok ? 200 : 500) {
+function mockFetchResponse(
+  ok: boolean,
+  body: unknown,
+  status = ok ? 200 : 500,
+  contentType = "application/json"
+) {
+  const bodyText = JSON.stringify(body);
   return Promise.resolve({
     ok,
     status,
+    statusText: ok ? "OK" : "Error",
+    headers: {
+      get: (name: string) =>
+        name.toLowerCase() === "content-type" ? contentType : null,
+    },
     json: () => Promise.resolve(body),
-  } as Response);
+    text: () => Promise.resolve(bodyText),
+  } as unknown as Response);
 }
 
 describe("fetchTaskDetail", () => {
@@ -950,6 +962,145 @@ describe("Planning Mode API", () => {
       );
 
       await expect(createTaskFromPlanning("plan-123")).rejects.toThrow("not found");
+    });
+  });
+});
+
+// --- API Error Handling Tests ---
+
+import { fetchTasks } from "./api";
+
+/** Mock helper for HTML error responses (e.g., 404 page) */
+function mockHtmlErrorResponse(status: number, htmlBody: string) {
+  return Promise.resolve({
+    ok: false,
+    status,
+    statusText: "Not Found",
+    headers: {
+      get: (name: string) =>
+        name.toLowerCase() === "content-type" ? "text/html" : null,
+    },
+    json: () => Promise.reject(new Error("JSON parse error")),
+    text: () => Promise.resolve(htmlBody),
+  } as unknown as Response);
+}
+
+describe("API Error Handling", () => {
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  describe("JSON responses", () => {
+    it("parses successful JSON responses correctly", async () => {
+      const tasks = [{ id: "KB-001", title: "Test Task" }];
+      globalThis.fetch = vi.fn().mockReturnValue(mockFetchResponse(true, tasks));
+
+      const result = await fetchTasks();
+
+      expect(result).toEqual(tasks);
+    });
+
+    it("extracts error field from JSON error responses", async () => {
+      globalThis.fetch = vi.fn().mockReturnValue(
+        mockFetchResponse(false, { error: "Task not found" }, 404)
+      );
+
+      await expect(fetchTasks()).rejects.toThrow("Task not found");
+    });
+
+    it("uses status text when JSON error has no error field", async () => {
+      globalThis.fetch = vi.fn().mockReturnValue(
+        mockFetchResponse(false, { message: "Different field" }, 500)
+      );
+
+      await expect(fetchTasks()).rejects.toThrow("Request failed: 500 Error");
+    });
+  });
+
+  describe("Non-JSON error responses", () => {
+    it("throws meaningful error for HTML 404 response", async () => {
+      const html404 = "<!doctype html><html><body>Not Found</body></html>";
+      globalThis.fetch = vi.fn().mockReturnValue(mockHtmlErrorResponse(404, html404));
+
+      await expect(fetchTasks()).rejects.toThrow("Request failed: 404 Not Found");
+      await expect(fetchTasks()).rejects.toThrow("Not Found");
+    });
+
+    it("truncates long HTML responses in error message", async () => {
+      const longHtml = "<!doctype html>" + "x".repeat(200);
+      globalThis.fetch = vi.fn().mockReturnValue(mockHtmlErrorResponse(500, longHtml));
+
+      await expect(fetchTasks()).rejects.toThrow("...");
+      await expect(fetchTasks()).rejects.not.toThrow(longHtml);
+    });
+
+    it("handles empty HTML error responses", async () => {
+      globalThis.fetch = vi.fn().mockReturnValue(mockHtmlErrorResponse(500, ""));
+
+      await expect(fetchTasks()).rejects.toThrow("Request failed: 500 Not Found");
+    });
+  });
+
+  describe("Non-JSON success responses", () => {
+    it("throws error for successful non-JSON response", async () => {
+      globalThis.fetch = vi.fn().mockReturnValue(
+        Promise.resolve({
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          headers: {
+            get: (name: string) =>
+              name.toLowerCase() === "content-type" ? "text/html" : null,
+          },
+          json: () => Promise.reject(new Error("JSON parse error")),
+          text: () => Promise.resolve("<html>Unexpected HTML</html>"),
+        } as unknown as Response)
+      );
+
+      await expect(fetchTasks()).rejects.toThrow("Unexpected response format: expected JSON, got text/html");
+    });
+
+    it("includes response preview for unexpected success format", async () => {
+      const htmlResponse = "<html><body>SPA Fallback</body></html>";
+      globalThis.fetch = vi.fn().mockReturnValue(
+        Promise.resolve({
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          headers: {
+            get: (name: string) =>
+              name.toLowerCase() === "content-type" ? "text/html" : null,
+          },
+          json: () => Promise.reject(new Error("JSON parse error")),
+          text: () => Promise.resolve(htmlResponse),
+        } as unknown as Response)
+      );
+
+      await expect(fetchTasks()).rejects.toThrow("(Response: <html><body>SPA Fallback</body></html>)");
+    });
+  });
+
+  describe("JSON parsing edge cases", () => {
+    it("handles invalid JSON in error response with JSON content-type", async () => {
+      globalThis.fetch = vi.fn().mockReturnValue(
+        Promise.resolve({
+          ok: false,
+          status: 500,
+          statusText: "Internal Server Error",
+          headers: {
+            get: (name: string) =>
+              name.toLowerCase() === "content-type" ? "application/json" : null,
+          },
+          json: () => Promise.reject(new Error("Invalid JSON")),
+          text: () => Promise.resolve("{invalid json}"),
+        } as unknown as Response)
+      );
+
+      // Should fall back to text-based error when JSON parsing fails
+      await expect(fetchTasks()).rejects.toThrow("Request failed: 500 Internal Server Error");
+      await expect(fetchTasks()).rejects.toThrow("Response:");
     });
   });
 });

@@ -21,8 +21,42 @@ async function api<T = unknown>(path: string, opts: RequestInit = {}): Promise<T
     headers: { "Content-Type": "application/json" },
     ...opts,
   });
+
+  // Check if response is JSON before attempting to parse
+  const contentType = res.headers.get("content-type") ?? "";
+  const isJson = contentType.includes("application/json");
+
+  if (!res.ok) {
+    // For error responses, read as text first
+    const text = await res.text();
+    
+    // Try to extract error from JSON if content-type indicates JSON
+    if (isJson) {
+      try {
+        const data = JSON.parse(text) as { error?: string };
+        throw new Error(data.error || `Request failed: ${res.status} ${res.statusText}`);
+      } catch {
+        // JSON parsing failed - fall through to text-based error below
+      }
+    }
+    
+    // Non-JSON error response: use status text with truncated body preview
+    const textPreview = text.length > 100 ? text.slice(0, 100) + "..." : text;
+    const message = textPreview 
+      ? `Request failed: ${res.status} ${res.statusText} (Response: ${textPreview})`
+      : `Request failed: ${res.status} ${res.statusText}`;
+    throw new Error(message);
+  }
+
+  // For successful responses, parse as JSON if content-type indicates JSON
+  if (!isJson) {
+    // Unexpected non-JSON success response
+    const text = await res.text();
+    const textPreview = text.length > 100 ? text.slice(0, 100) + "..." : text;
+    throw new Error(`Unexpected response format: expected JSON, got ${contentType || "unknown"}${textPreview ? ` (Response: ${textPreview})` : ""}`);
+  }
+
   const data = await res.json();
-  if (!res.ok) throw new Error((data as { error?: string }).error || "Request failed");
   return data as T;
 }
 
