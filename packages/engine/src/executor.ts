@@ -370,7 +370,7 @@ export class TaskExecutor {
 
         // Fall through to fresh worktree creation if pool had nothing
         if (!acquiredFromPool) {
-          this.createWorktree(branchName, worktreePath, baseBranch ?? undefined);
+          worktreePath = await this.createWorktree(branchName, worktreePath, task.id, baseBranch ?? undefined);
           await this.store.updateTask(task.id, { worktree: worktreePath });
 
           if (baseBranch) {
@@ -397,7 +397,7 @@ export class TaskExecutor {
       } else {
         worktreePath = task.worktree || join(this.rootDir, ".worktrees", generateWorktreeName(this.rootDir));
         isResume = existsSync(worktreePath);
-        this.createWorktree(branchName, worktreePath);
+        worktreePath = await this.createWorktree(branchName, worktreePath, task.id);
       }
 
       this.activeWorktrees.set(task.id, worktreePath);
@@ -1199,10 +1199,83 @@ If issues are found that need attention, describe them clearly.`;
     }
   }
 
-  private createWorktree(branch: string, path: string, startPoint?: string): void {
+  private MAX_WORKTREE_RETRIES = 3;
+  private WORKTREE_RETRY_DELAYS = [100, 500, 1000]; // ms
+
+  /**
+   * Create a git worktree with automatic recovery from conflicts.
+   * Implements retry logic with exponential backoff for transient failures.
+   * 
+   * @param branch - The branch name to create (e.g., "kb/kb-123")
+   * @param path - The desired worktree path
+   * @param taskId - The task ID for logging
+   * @param startPoint - Optional base branch/commit for new branch
+   * @returns The actual worktree path (may differ if recovery generated new name)
+   */
+  private async createWorktree(
+    branch: string,
+    path: string,
+    taskId: string,
+    startPoint?: string,
+  ): Promise<string> {
+    // Track the worktree path we're attempting to use (may change during recovery)
+    let currentPath = path;
+
+    for (let attempt = 0; attempt < this.MAX_WORKTREE_RETRIES; attempt++) {
+      try {
+        return await this.tryCreateWorktree(branch, currentPath, taskId, startPoint, attempt);
+      } catch (error: any) {
+        const isLastAttempt = attempt === this.MAX_WORKTREE_RETRIES - 1;
+
+        if (isLastAttempt) {
+          await this.store.logEntry(
+            taskId,
+            `Worktree creation failed after ${this.MAX_WORKTREE_RETRIES} attempts`,
+            error.message,
+          );
+          throw new Error(
+            `Failed to create worktree after ${this.MAX_WORKTREE_RETRIES} attempts: ${error.message}`,
+          );
+        }
+
+        // Wait before retry (exponential backoff)
+        const delay = this.WORKTREE_RETRY_DELAYS[attempt] || 1000;
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+    }
+
+    // Should never reach here, but TypeScript needs a return
+    throw new Error("Unexpected exit from worktree creation retry loop");
+  }
+
+  /**
+   * Single attempt to create a worktree with conflict detection and recovery.
+   * Returns the actual worktree path used (may differ from input if recovery generated new name).
+   */
+  private async tryCreateWorktree(
+    branch: string,
+    path: string,
+    taskId: string,
+    startPoint?: string,
+    attemptNumber = 0,
+  ): Promise<string> {
+    // If directory exists but is not a registered worktree, remove it first
     if (existsSync(path)) {
-      executorLog.log(`Worktree already exists: ${path}`);
-      return;
+      const isRegistered = this.isRegisteredWorktree(path);
+      if (!isRegistered) {
+        await this.store.logEntry(
+          taskId,
+          `Removing existing directory (not a registered worktree): ${path}`,
+        );
+        try {
+          execSync(`rm -rf "${path}"`, { cwd: this.rootDir, stdio: "pipe" });
+        } catch (e: any) {
+          throw new Error(`Failed to remove existing directory ${path}: ${e.message}`);
+        }
+      } else {
+        executorLog.log(`Worktree already exists: ${path}`);
+        return path;
+      }
     }
 
     const createWithBranch = () => {
@@ -1218,44 +1291,228 @@ If issues are found that need attention, describe them clearly.`;
 
     try {
       createWithBranch();
+      executorLog.log(`Worktree created: ${path}${startPoint ? ` (from ${startPoint})` : ""}`);
+      if (attemptNumber > 0) {
+        await this.store.logEntry(taskId, `Worktree created on attempt ${attemptNumber + 1}`, path);
+      }
+      return path;
     } catch (initialError: any) {
-      const conflictPath = this.extractWorktreeConflictPath(initialError);
+      const conflictInfo = this.extractWorktreeConflictInfo(initialError);
 
-      if (conflictPath) {
-        try {
-          execSync(`git worktree remove "${conflictPath}" --force`, {
-            cwd: this.rootDir,
-            stdio: "pipe",
-          });
-          execSync(`git branch -D "${branch}"`, {
-            cwd: this.rootDir,
-            stdio: "pipe",
-          });
-          createWithBranch();
-        } catch (cleanupError: any) {
-          throw new Error(
-            `Failed to create worktree: ${initialError.message} ` +
-            `(automatic cleanup failed: ${cleanupError.message})`,
+      // Handle "already used by worktree" conflict
+      if (conflictInfo.type === "already-used" && conflictInfo.path) {
+        const shouldGenerateNewName = await this.shouldGenerateNewWorktreeName(
+          conflictInfo.path,
+          taskId,
+        );
+
+        if (shouldGenerateNewName) {
+          // Conflicting worktree belongs to an active task - generate new name
+          const newPath = join(this.rootDir, ".worktrees", generateWorktreeName(this.rootDir));
+          await this.store.logEntry(
+            taskId,
+            `Conflicting worktree in use by active task, trying new path`,
+            newPath,
           );
+          return this.tryCreateWorktree(branch, newPath, taskId, startPoint, attemptNumber);
         }
-      } else {
-        try {
-          createFromExistingBranch();
-        } catch (e: any) {
-          throw new Error(`Failed to create worktree: ${e.message}`);
+
+        // Safe to clean up - conflicting worktree is not in use
+        const cleanupSuccess = await this.cleanupConflictingWorktree(
+          conflictInfo.path,
+          branch,
+          taskId,
+        );
+        if (cleanupSuccess) {
+          await this.store.logEntry(taskId, `Cleaned up conflicting worktree, retrying`, path);
+          return this.tryCreateWorktree(branch, path, taskId, startPoint, attemptNumber);
         }
+        throw new Error(
+          `Worktree conflict at ${conflictInfo.path}: automatic cleanup failed`,
+        );
+      }
+
+      // Handle "invalid reference" - stale branch that doesn't exist
+      if (conflictInfo.type === "invalid-reference") {
+        const branchCleaned = await this.cleanupStaleBranch(branch, taskId);
+        if (branchCleaned) {
+          await this.store.logEntry(taskId, `Removed stale branch reference, retrying`);
+          return this.tryCreateWorktree(branch, path, taskId, startPoint, attemptNumber);
+        }
+        throw new Error(
+          `Invalid reference for branch ${branch}: unable to clean up stale reference`,
+        );
+      }
+
+      // Handle "could not create leading directories" - permission/path issues
+      if (conflictInfo.type === "leading-directories") {
+        throw new Error(
+          `Cannot create worktree at ${path}: permission or path issue. ` +
+          `Check that parent directories are writable.`,
+        );
+      }
+
+      // Try creating from existing branch (branch might already exist)
+      try {
+        createFromExistingBranch();
+        executorLog.log(`Worktree created from existing branch: ${path}`);
+        return path;
+      } catch (e: any) {
+        throw new Error(`Failed to create worktree: ${e.message}`);
+      }
+    }
+  }
+
+  /**
+   * Check if a path is registered as a git worktree.
+   */
+  private isRegisteredWorktree(path: string): boolean {
+    try {
+      const output = execSync("git worktree list --porcelain", {
+        cwd: this.rootDir,
+        encoding: "utf-8",
+        stdio: "pipe",
+      });
+      return output.includes(path);
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Determine if we should generate a new worktree name instead of cleaning up.
+   * Returns true if the conflicting worktree is used by an active task.
+   */
+  private async shouldGenerateNewWorktreeName(
+    conflictPath: string,
+    currentTaskId: string,
+  ): Promise<boolean> {
+    // Check if conflicting worktree is in our active set
+    for (const [taskId, worktreePath] of this.activeWorktrees) {
+      if (taskId !== currentTaskId && worktreePath === conflictPath) {
+        return true;
       }
     }
 
-    executorLog.log(`Worktree created: ${path}${startPoint ? ` (from ${startPoint})` : ""}`);
+    // Check if another non-done task uses this worktree
+    const otherUser = await findWorktreeUser(this.store, conflictPath, currentTaskId);
+    return otherUser !== null;
   }
 
-  private extractWorktreeConflictPath(error: any): string | null {
+  /**
+   * Clean up a conflicting worktree and its branch.
+   * Handles locked worktrees by unlocking first.
+   * Returns true if cleanup succeeded.
+   */
+  private async cleanupConflictingWorktree(
+    worktreePath: string,
+    branch: string,
+    taskId: string,
+  ): Promise<boolean> {
+    try {
+      // Check if worktree is locked and unlock if needed
+      try {
+        const lockInfo = execSync(`git worktree unlock "${worktreePath}"`, {
+          cwd: this.rootDir,
+          stdio: "pipe",
+        });
+        if (lockInfo !== undefined) {
+          await this.store.logEntry(taskId, `Unlocked worktree`, worktreePath);
+        }
+      } catch {
+        // Unlock failed - worktree wasn't locked, that's fine
+      }
+
+      // Remove the worktree
+      execSync(`git worktree remove "${worktreePath}" --force`, {
+        cwd: this.rootDir,
+        stdio: "pipe",
+      });
+      await this.store.logEntry(taskId, `Removed conflicting worktree`, worktreePath);
+
+      // Delete the branch if it exists
+      try {
+        execSync(`git branch -D "${branch}"`, {
+          cwd: this.rootDir,
+          stdio: "pipe",
+        });
+        await this.store.logEntry(taskId, `Deleted branch`, branch);
+      } catch {
+        // Branch might not exist, that's fine
+      }
+
+      return true;
+    } catch (error: any) {
+      await this.store.logEntry(
+        taskId,
+        `Failed to clean up conflicting worktree`,
+        `${worktreePath}: ${error.message}`,
+      );
+      return false;
+    }
+  }
+
+  /**
+   * Clean up a stale branch that no longer has a valid reference.
+   * Returns true if cleanup succeeded.
+   */
+  private async cleanupStaleBranch(branch: string, taskId: string): Promise<boolean> {
+    try {
+      execSync(`git branch -D "${branch}"`, {
+        cwd: this.rootDir,
+        stdio: "pipe",
+      });
+      await this.store.logEntry(taskId, `Removed stale branch`, branch);
+      return true;
+    } catch (error: any) {
+      await this.store.logEntry(
+        taskId,
+        `Failed to remove stale branch`,
+        `${branch}: ${error.message}`,
+      );
+      return false;
+    }
+  }
+
+  /**
+   * Extract conflict information from git worktree error output.
+   * Handles multiple error patterns:
+   * - "already used by worktree at '...'"
+   * - "invalid reference"
+   * - "could not create leading directories"
+   * - "working tree already exists"
+   */
+  private extractWorktreeConflictInfo(error: any): {
+    type: "already-used" | "invalid-reference" | "leading-directories" | "already-exists" | "unknown";
+    path?: string;
+    message?: string;
+  } {
     const output = [error?.message, error?.stderr?.toString?.(), error?.stdout?.toString?.()]
       .filter(Boolean)
       .join("\n");
-    const match = output.match(/already used by worktree at '([^']+)'/);
-    return match?.[1] ?? null;
+
+    // Pattern: already used by worktree at '/path/to/worktree'
+    const alreadyUsedMatch = output.match(/already used by worktree at '([^']+)'/);
+    if (alreadyUsedMatch) {
+      return { type: "already-used", path: alreadyUsedMatch[1], message: output };
+    }
+
+    // Pattern: invalid reference: 'branch-name'
+    if (output.match(/invalid reference/i)) {
+      return { type: "invalid-reference", message: output };
+    }
+
+    // Pattern: could not create leading directories
+    if (output.match(/could not create leading directories/i)) {
+      return { type: "leading-directories", message: output };
+    }
+
+    // Pattern: working tree already exists
+    if (output.match(/working tree already exists/i)) {
+      return { type: "already-exists", message: output };
+    }
+
+    return { type: "unknown", message: output };
   }
 
   /**

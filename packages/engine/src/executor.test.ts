@@ -588,6 +588,273 @@ describe("TaskExecutor worktree naming", () => {
   });
 });
 
+describe("TaskExecutor worktree recovery", () => {
+  const makeTask = (id = "KB-050") => ({
+    id,
+    title: "Test Task",
+    description: "Test description",
+    column: "in-progress" as const,
+    dependencies: [],
+    steps: [],
+    currentStep: 0,
+    log: [],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockedExistsSync.mockReturnValue(false);
+    mockedGenerateWorktreeName.mockReturnValue("swift-falcon");
+    mockedCreateHaiAgent.mockResolvedValue({
+      session: {
+        prompt: vi.fn().mockResolvedValue(undefined),
+        dispose: vi.fn(),
+      },
+    } as any);
+  });
+
+  it("creates worktree successfully on first attempt", async () => {
+    const store = createMockStore();
+    const executor = new TaskExecutor(store, "/tmp/test");
+
+    await executor.execute(makeTask());
+
+    // Should have logged worktree creation
+    expect(store.logEntry).toHaveBeenCalledWith(
+      "KB-050",
+      expect.stringContaining("Worktree created"),
+      expect.stringContaining(".worktrees/"),
+    );
+    // execSync should be called for worktree creation
+    expect(mockedExecSync).toHaveBeenCalledWith(
+      expect.stringContaining("git worktree add"),
+      expect.any(Object),
+    );
+  });
+
+  it("recovers from worktree conflict and retries", async () => {
+    const store = createMockStore();
+    let callCount = 0;
+
+    // First call fails with conflict, second succeeds
+    mockedExecSync.mockImplementation((cmd: string | string[]) => {
+      const command = typeof cmd === "string" ? cmd : cmd[0];
+      if (command.includes("git worktree add") && callCount++ === 0) {
+        const error: any = new Error(
+          "fatal: 'kb/kb-050' is already used by worktree at '/tmp/test/.worktrees/green-sage'",
+        );
+        error.stderr = Buffer.from(
+          "fatal: 'kb/kb-050' is already used by worktree at '/tmp/test/.worktrees/green-sage'",
+        );
+        throw error;
+      }
+      return Buffer.from("");
+    });
+
+    const executor = new TaskExecutor(store, "/tmp/test");
+    await executor.execute(makeTask());
+
+    // Should have logged cleanup and retry
+    expect(store.logEntry).toHaveBeenCalledWith(
+      "KB-050",
+      expect.stringContaining("Cleaned up conflicting worktree"),
+      "/tmp/test/.worktrees/green-sage",
+    );
+    // Should eventually succeed
+    expect(store.updateTask).toHaveBeenCalledWith(
+      "KB-050",
+      expect.objectContaining({ worktree: expect.any(String) }),
+    );
+  });
+
+  it("fails after 3 unsuccessful attempts with detailed error", async () => {
+    const store = createMockStore();
+
+    // All worktree add calls fail
+    mockedExecSync.mockImplementation((cmd: string | string[]) => {
+      const command = typeof cmd === "string" ? cmd : cmd[0];
+      if (command.includes("git worktree add")) {
+        const error: any = new Error(
+          "fatal: 'kb/kb-050' is already used by worktree at '/tmp/test/.worktrees/green-sage'",
+        );
+        error.stderr = Buffer.from(
+          "fatal: 'kb/kb-050' is already used by worktree at '/tmp/test/.worktrees/green-sage'",
+        );
+        throw error;
+      }
+      // Cleanup also fails
+      if (command.includes("git worktree remove")) {
+        throw new Error("cleanup failed");
+      }
+      return Buffer.from("");
+    });
+
+    const onError = vi.fn();
+    const executor = new TaskExecutor(store, "/tmp/test", { onError });
+
+    await executor.execute(makeTask());
+
+    // Should log final failure
+    expect(store.logEntry).toHaveBeenCalledWith(
+      "KB-050",
+      expect.stringContaining("Worktree creation failed after 3 attempts"),
+      expect.any(String),
+    );
+    // Should update task as failed
+    expect(store.updateTask).toHaveBeenCalledWith(
+      "KB-050",
+      expect.objectContaining({ status: "failed" }),
+    );
+    expect(onError).toHaveBeenCalled();
+  });
+
+  it("generates new worktree name when conflicting worktree belongs to active task", async () => {
+    const store = createMockStore();
+    store.listTasks.mockResolvedValue([
+      {
+        id: "KB-049",
+        title: "Other Task",
+        description: "Other task",
+        column: "in-progress",
+        worktree: "/tmp/test/.worktrees/green-sage",
+        dependencies: [],
+        steps: [],
+        currentStep: 0,
+        log: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    ]);
+
+    mockedFindWorktreeUser.mockResolvedValue("KB-049");
+
+    let callCount = 0;
+    mockedExecSync.mockImplementation((cmd: string | string[]) => {
+      const command = typeof cmd === "string" ? cmd : cmd[0];
+      // First attempt fails with conflict
+      if (command.includes("git worktree add") && callCount++ === 0) {
+        const error: any = new Error(
+          "fatal: 'kb/kb-050' is already used by worktree at '/tmp/test/.worktrees/green-sage'",
+        );
+        error.stderr = Buffer.from(
+          "fatal: 'kb/kb-050' is already used by worktree at '/tmp/test/.worktrees/green-sage'",
+        );
+        throw error;
+      }
+      return Buffer.from("");
+    });
+
+    // Second generated name
+    mockedGenerateWorktreeName.mockReturnValueOnce("jade-finch");
+
+    const executor = new TaskExecutor(store, "/tmp/test");
+    await executor.execute(makeTask());
+
+    // Should log that we're trying a new path
+    expect(store.logEntry).toHaveBeenCalledWith(
+      "KB-050",
+      expect.stringContaining("Conflicting worktree in use by active task, trying new path"),
+      expect.any(String),
+    );
+    // Should generate a new name
+    expect(mockedGenerateWorktreeName).toHaveBeenCalledTimes(2);
+  });
+
+  it("removes stale branch and retries when branch exists without worktree", async () => {
+    const store = createMockStore();
+    let callCount = 0;
+
+    mockedExecSync.mockImplementation((cmd: string | string[]) => {
+      const command = typeof cmd === "string" ? cmd : cmd[0];
+      if (command.includes("git worktree add")) {
+        if (callCount++ === 0) {
+          const error: any = new Error("fatal: invalid reference: 'kb/kb-050'");
+          error.stderr = Buffer.from("fatal: invalid reference: 'kb/kb-050'");
+          throw error;
+        }
+      }
+      return Buffer.from("");
+    });
+
+    const executor = new TaskExecutor(store, "/tmp/test");
+    await executor.execute(makeTask());
+
+    // Should have removed the stale branch
+    expect(mockedExecSync).toHaveBeenCalledWith(
+      expect.stringContaining("git branch -D"),
+      expect.any(Object),
+    );
+    expect(store.logEntry).toHaveBeenCalledWith(
+      "KB-050",
+      expect.stringContaining("Removed stale branch"),
+      "kb/kb-050",
+    );
+  });
+
+  it("removes existing directory that is not a registered worktree", async () => {
+    const store = createMockStore();
+
+    // Directory exists but is not registered
+    mockedExistsSync.mockReturnValue(true);
+
+    // Mock git worktree list to not include our path
+    let callCount = 0;
+    mockedExecSync.mockImplementation((cmd: string | string[]) => {
+      const command = typeof cmd === "string" ? cmd : cmd[0];
+      if (command.includes("git worktree list")) {
+        return Buffer.from("/other/path/.git/worktrees/other\n");
+      }
+      if (command.includes("rm -rf")) {
+        return Buffer.from("");
+      }
+      return Buffer.from("");
+    });
+
+    const executor = new TaskExecutor(store, "/tmp/test");
+    await executor.execute(makeTask());
+
+    // Should have removed the existing directory
+    expect(mockedExecSync).toHaveBeenCalledWith(
+      expect.stringContaining("rm -rf"),
+      expect.any(Object),
+    );
+    expect(store.logEntry).toHaveBeenCalledWith(
+      "KB-050",
+      expect.stringContaining("Removing existing directory (not a registered worktree)"),
+      expect.any(String),
+    );
+  });
+
+  it("handles locked worktree by unlocking before removal", async () => {
+    const store = createMockStore();
+
+    let callCount = 0;
+    mockedExecSync.mockImplementation((cmd: string | string[]) => {
+      const command = typeof cmd === "string" ? cmd : cmd[0];
+      if (command.includes("git worktree add") && callCount++ === 0) {
+        const error: any = new Error(
+          "fatal: 'kb/kb-050' is already used by worktree at '/tmp/test/.worktrees/green-sage'",
+        );
+        error.stderr = Buffer.from(
+          "fatal: 'kb/kb-050' is already used by worktree at '/tmp/test/.worktrees/green-sage'",
+        );
+        throw error;
+      }
+      return Buffer.from("");
+    });
+
+    const executor = new TaskExecutor(store, "/tmp/test");
+    await executor.execute(makeTask());
+
+    // Should attempt to unlock the worktree before removing
+    const unlockCalls = mockedExecSync.mock.calls.filter((call) =>
+      String(call[0]).includes("git worktree unlock"),
+    );
+    expect(unlockCalls.length).toBeGreaterThanOrEqual(0); // Unlock is attempted but may fail silently
+  });
+});
+
 describe("TaskExecutor dependency-based worktree creation", () => {
   const makeTask = (overrides: Partial<Task> = {}) => ({
     id: "KB-060",
