@@ -444,6 +444,19 @@ describe("Scheduler explicit dep relaxation (in-review as met)", () => {
     expect(store.moveTask).toHaveBeenCalledWith("KB-002", "in-progress");
   });
 
+  it("allows task to start when explicit dep is archived", async () => {
+    const tasks = [
+      makeTask({ id: "KB-001", column: "archived" }),
+      makeTask({ id: "KB-002", column: "todo", dependencies: ["KB-001"] }),
+    ];
+    const store = createMockStore(tasks);
+    const scheduler = new Scheduler(store, { maxConcurrent: 2 });
+
+    await runSchedule(scheduler);
+
+    expect(store.moveTask).toHaveBeenCalledWith("KB-002", "in-progress");
+  });
+
   it("blocks task when explicit dep is in todo", async () => {
     const tasks = [
       makeTask({ id: "KB-001", column: "todo" }),
