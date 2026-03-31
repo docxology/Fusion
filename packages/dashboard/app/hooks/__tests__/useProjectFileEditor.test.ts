@@ -141,8 +141,11 @@ describe("useProjectFileEditor", () => {
       result.current.setContent("modified");
     });
 
-    await expect(result.current.save()).rejects.toThrow("Failed to save file");
-    expect(result.current.error).toBe("Failed to save file");
+    await act(async () => {
+      await expect(result.current.save()).rejects.toThrow("Failed to save file");
+    });
+    // Wait for React state update after the catch block sets error
+    await waitFor(() => expect(result.current.error).toBe("Failed to save file"));
     expect(result.current.hasChanges).toBe(true);
   });
 
@@ -190,8 +193,11 @@ describe("useProjectFileEditor", () => {
       result.current.setContent("modified");
     });
 
-    await expect(result.current.save()).rejects.toThrow("Save failed");
-    expect(result.current.error).toBe("Save failed");
+    await act(async () => {
+      await expect(result.current.save()).rejects.toThrow("Save failed");
+    });
+    // Wait for React state update after the catch block sets error
+    await waitFor(() => expect(result.current.error).toBe("Save failed"));
 
     act(() => {
       result.current.setContent("modified again");
