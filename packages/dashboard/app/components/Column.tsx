@@ -88,12 +88,18 @@ function ColumnComponent({ column, tasks, maxConcurrent, onMoveTask, onOpenDetai
     const taskId = e.dataTransfer.getData("text/plain");
     if (!taskId) return;
 
+    // Check if task is already in this column - if so, skip the API call
+    const task = tasks.find(t => t.id === taskId);
+    if (task && task.column === column) {
+      return; // No-op: task is already in this column
+    }
+
     try {
       await onMoveTask(taskId, column);
     } catch (err: any) {
       addToast(err.message, "error");
     }
-  }, [column, onMoveTask, addToast]);
+  }, [column, onMoveTask, addToast, tasks]);
 
   const worktreeGroups = useMemo(() => {
     if (column !== "in-progress") return [];

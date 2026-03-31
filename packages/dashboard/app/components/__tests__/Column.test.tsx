@@ -199,3 +199,66 @@ describe("Column QuickEntryBox", () => {
     expect(screen.queryByTestId("quick-entry-box")).toBeNull();
   });
 });
+
+describe("Column same-column drop", () => {
+  it("does not call onMoveTask when dropping task into its current column", () => {
+    const onMoveTask = vi.fn().mockResolvedValue({} as Task);
+    const addToast = vi.fn();
+    const tasks = [{ ...makeTask("KB-001"), column: "todo" as ColumnType }];
+    
+    render(<Column {...defaultProps} column="todo" tasks={tasks} onMoveTask={onMoveTask} addToast={addToast} />);
+
+    const columnEl = screen.getByText("1").closest(".column") as HTMLElement;
+    const dataTransfer = {
+      getData: vi.fn().mockReturnValue("KB-001"),
+      dropEffect: "move",
+    };
+
+    fireEvent.drop(columnEl, { dataTransfer });
+
+    expect(onMoveTask).not.toHaveBeenCalled();
+    expect(addToast).not.toHaveBeenCalled();
+  });
+
+  it("removes drag-over styling after drop even on same column", () => {
+    const onMoveTask = vi.fn().mockResolvedValue({} as Task);
+    const tasks = [{ ...makeTask("KB-001"), column: "todo" as ColumnType }];
+    
+    render(<Column {...defaultProps} column="todo" tasks={tasks} onMoveTask={onMoveTask} />);
+
+    const columnEl = screen.getByText("1").closest(".column") as HTMLElement;
+    const dataTransfer = {
+      getData: vi.fn().mockReturnValue("KB-001"),
+      dropEffect: "move",
+    };
+
+    // First trigger dragOver to set drag-over state
+    fireEvent.dragOver(columnEl, { dataTransfer });
+    expect(columnEl.className).toContain("drag-over");
+
+    // Then drop - should remove drag-over class even for same-column drop
+    fireEvent.drop(columnEl, { dataTransfer });
+    expect(columnEl.className).not.toContain("drag-over");
+  });
+
+  it("calls onMoveTask when dropping task into a different column", () => {
+    const onMoveTask = vi.fn().mockResolvedValue({} as Task);
+    const addToast = vi.fn();
+    // Task is in "todo" column - but we're dropping it onto "in-review" column
+    // The "in-review" column should have 0 tasks initially
+    const tasksInTargetColumn: Task[] = [];
+    
+    // Dropping into "in-review" column (which has 0 tasks)
+    render(<Column {...defaultProps} column="in-review" tasks={tasksInTargetColumn} onMoveTask={onMoveTask} addToast={addToast} />);
+
+    const columnEl = screen.getByText("0").closest(".column") as HTMLElement;
+    const dataTransfer = {
+      getData: vi.fn().mockReturnValue("KB-001"),
+      dropEffect: "move",
+    };
+
+    fireEvent.drop(columnEl, { dataTransfer });
+
+    expect(onMoveTask).toHaveBeenCalledWith("KB-001", "in-review");
+  });
+});
