@@ -80,7 +80,7 @@ export function groupByWorktree(
     !t.paused &&
     (t.dependencies || []).every((depId) => {
       const dep = taskById.get(depId);
-      return dep && (dep.column === "done" || dep.column === "in-review");
+      return dep && (dep.column === "done" || dep.column === "in-review" || dep.column === "archived");
     }),
   );
 
