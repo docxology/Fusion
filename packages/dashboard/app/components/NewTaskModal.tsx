@@ -1,9 +1,10 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import type { Task, TaskCreateInput } from "@kb/core";
 import type { ToastType } from "../hooks/useToast";
 import { uploadAttachment, fetchModels, updateTask } from "../api";
 import type { ModelInfo } from "../api";
 import { filterModels } from "../utils/modelFilter";
+import { ProviderIcon } from "./ProviderIcon";
 
 const ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
 
@@ -56,6 +57,13 @@ function ModelCombobox({
     (acc[m.provider] ??= []).push(m);
     return acc;
   }, {});
+
+  // Get current provider from value for icon display
+  const currentProvider = useMemo(() => {
+    if (!value) return null;
+    const slashIdx = value.indexOf("/");
+    return slashIdx === -1 ? null : value.slice(0, slashIdx);
+  }, [value]);
 
   const optionsList = [
     { type: "default" as const, value: "", label: "Use default" },
@@ -191,6 +199,11 @@ function ModelCombobox({
         aria-expanded={isOpen}
         aria-label={label}
       >
+        {currentProvider && (
+          <span className="model-combobox-trigger-icon">
+            <ProviderIcon provider={currentProvider} size="sm" />
+          </span>
+        )}
         <span className="model-combobox-trigger-text">{selectedDisplayText}</span>
         <span className="model-combobox-trigger-arrow">▼</span>
       </button>
@@ -247,7 +260,8 @@ function ModelCombobox({
                     className="model-combobox-optgroup"
                     data-index={groupStartIndex}
                   >
-                    {provider}
+                    <ProviderIcon provider={provider} size="sm" />
+                    <span className="model-combobox-optgroup-text">{provider}</span>
                   </div>
                   {providerModels.map((m) => {
                     const optionValue = `${m.provider}/${m.id}`;
