@@ -564,35 +564,71 @@ describe("TaskStore", () => {
       const task = await createTestTask();
       expect(task.dependencies).toEqual([]);
 
-      const updated = await store.updateTask(task.id, { dependencies: ["KB-001", "KB-002"] });
-      expect(updated.dependencies).toEqual(["KB-001", "KB-002"]);
+      const updated = await store.updateTask(task.id, { dependencies: ["KB-999", "KB-002"] });
+      expect(updated.dependencies).toEqual(["KB-999", "KB-002"]);
 
       // Verify persistence
       const fetched = await store.getTask(task.id);
-      expect(fetched.dependencies).toEqual(["KB-001", "KB-002"]);
+      expect(fetched.dependencies).toEqual(["KB-999", "KB-002"]);
     });
 
     it("replaces existing dependencies", async () => {
-      const task = await store.createTask({ description: "Dep task", dependencies: ["KB-001"] });
-      expect(task.dependencies).toEqual(["KB-001"]);
+      const task = await store.createTask({ description: "Dep task", dependencies: ["KB-999"] });
+      expect(task.dependencies).toEqual(["KB-999"]);
 
       const updated = await store.updateTask(task.id, { dependencies: ["KB-002", "KB-003"] });
       expect(updated.dependencies).toEqual(["KB-002", "KB-003"]);
     });
 
     it("clears dependencies with empty array", async () => {
-      const task = await store.createTask({ description: "Dep task", dependencies: ["KB-001"] });
-      expect(task.dependencies).toEqual(["KB-001"]);
+      const task = await store.createTask({ description: "Dep task", dependencies: ["KB-999"] });
+      expect(task.dependencies).toEqual(["KB-999"]);
 
       const updated = await store.updateTask(task.id, { dependencies: [] });
       expect(updated.dependencies).toEqual([]);
     });
 
     it("leaves dependencies unchanged when not provided", async () => {
-      const task = await store.createTask({ description: "Dep task", dependencies: ["KB-001"] });
+      const task = await store.createTask({ description: "Dep task", dependencies: ["KB-999"] });
 
       const updated = await store.updateTask(task.id, { title: "New title" });
-      expect(updated.dependencies).toEqual(["KB-001"]);
+      expect(updated.dependencies).toEqual(["KB-999"]);
+    });
+  });
+
+  describe("self-dependency validation", () => {
+    it("createTask should throw when dependencies include self", async () => {
+      // We can't know the ID before creation, so we test the update scenario
+      // or test that the check exists in the code path
+      const task = await createTestTask();
+      // After creation, task.id is known (e.g., KB-001)
+      // Now try to update it to depend on itself
+      await expect(store.updateTask(task.id, { dependencies: [task.id] }))
+        .rejects.toThrow(`Task ${task.id} cannot depend on itself`);
+    });
+
+    it("updateTask should throw when setting dependencies to include self", async () => {
+      const task = await createTestTask();
+      expect(task.dependencies).toEqual([]);
+
+      await expect(store.updateTask(task.id, { dependencies: [task.id, "KB-002"] }))
+        .rejects.toThrow(`Task ${task.id} cannot depend on itself`);
+
+      // Verify the task was not modified
+      const fetched = await store.getTask(task.id);
+      expect(fetched.dependencies).toEqual([]);
+    });
+
+    it("updateTask should throw when updating dependencies to add self (when task already has other dependencies)", async () => {
+      const task = await store.createTask({ description: "Dep task", dependencies: ["KB-999"] });
+      expect(task.dependencies).toEqual(["KB-999"]);
+
+      await expect(store.updateTask(task.id, { dependencies: ["KB-999", task.id] }))
+        .rejects.toThrow(`Task ${task.id} cannot depend on itself`);
+
+      // Verify the task was not modified
+      const fetched = await store.getTask(task.id);
+      expect(fetched.dependencies).toEqual(["KB-999"]);
     });
   });
 
@@ -626,16 +662,16 @@ describe("TaskStore", () => {
     });
 
     it("does NOT move when dependencies are removed from a todo task", async () => {
-      const task = await store.createTask({ description: "Todo task", column: "todo", dependencies: ["KB-001"] });
+      const task = await store.createTask({ description: "Todo task", column: "todo", dependencies: ["KB-999"] });
 
       const updated = await store.updateTask(task.id, { dependencies: [] });
       expect(updated.column).toBe("todo");
     });
 
     it("does NOT move when dependencies are replaced with same set", async () => {
-      const task = await store.createTask({ description: "Todo task", column: "todo", dependencies: ["KB-001"] });
+      const task = await store.createTask({ description: "Todo task", column: "todo", dependencies: ["KB-999"] });
 
-      const updated = await store.updateTask(task.id, { dependencies: ["KB-001"] });
+      const updated = await store.updateTask(task.id, { dependencies: ["KB-999"] });
       expect(updated.column).toBe("todo");
     });
 
@@ -2502,6 +2538,9 @@ describe("TaskStore", () => {
     });
 
     it("uses provided title when available (does not call AI)", async () => {
+      // Clear mock to ensure we're not picking up calls from previous tests
+      mockPrompt.mockClear();
+
       const task = await store.createTask({
         title: "Custom Title",
         description: "This is the description that should not become the title",

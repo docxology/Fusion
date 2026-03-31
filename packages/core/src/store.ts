@@ -378,6 +378,10 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
     }
 
     const id = await this.allocateId();
+    // Validate that task doesn't depend on itself
+    if (input.dependencies?.includes(id)) {
+      throw new Error(`Task ${id} cannot depend on itself`);
+    }
     // Generate title from description if not provided
     const generatedTitle = await generateTitleFromDescription(input.description, this.rootDir);
     const title = input.title?.trim() || generatedTitle;
@@ -645,6 +649,11 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
     updates: { title?: string; description?: string; prompt?: string; worktree?: string; status?: string | null; dependencies?: string[]; blockedBy?: string | null; paused?: boolean; baseBranch?: string; size?: "S" | "M" | "L"; reviewLevel?: number; mergeRetries?: number; modelProvider?: string | null; modelId?: string | null; validatorModelProvider?: string | null; validatorModelId?: string | null; error?: string | null; summary?: string | null },
   ): Promise<Task> {
     return this.withTaskLock(id, async () => {
+      // Validate that task doesn't depend on itself
+      if (updates.dependencies?.includes(id)) {
+        throw new Error(`Task ${id} cannot depend on itself`);
+      }
+
       const dir = this.taskDir(id);
       const task = await this.readTaskJson(dir);
 
