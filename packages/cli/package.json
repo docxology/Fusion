@@ -1,5 +1,5 @@
 {
-  "name": "@dustinbyrne/kb",
+  "name": "@gsxdsm/fusion",
   "version": "0.4.0",
   "type": "module",
   "keywords": [
@@ -12,7 +12,7 @@
     "extensions": [
       "./dist/extension.js"
     ],
-    "image": "https://raw.githubusercontent.com/dustinbyrne/kb/main/demo/screenshot.png"
+    "image": "https://raw.githubusercontent.com/gsxdsm/fusion/main/demo/screenshot.png"
   },
   "publishConfig": {
     "access": "public"
@@ -71,6 +71,6 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/dustinbyrne/kb"
+    "url": "https://github.com/gsxdsm/fusion"
   }
 }

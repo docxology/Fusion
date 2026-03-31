@@ -1,4 +1,4 @@
-# @dustinbyrne/kb
+# @gsxdsm/fusion
 
 An automated Kanban board for [pi](https://github.com/badlogic/pi-mono). Fusion is an AI-orchestrated task board where you (or an agent) add high level ideas to your task list, and a team of agents execute them using worktrees.
 
@@ -7,7 +7,7 @@ An automated Kanban board for [pi](https://github.com/badlogic/pi-mono). Fusion 
 ## Installation
 
 ```bash
-pi install npm:@dustinbyrne/kb
+pi install npm:@gsxdsm/fusion
 ```
 
 This gives pi the ability to manage and create tasks in your Fusion dashboard.
@@ -86,7 +86,7 @@ Fusion also works as a standalone CLI outside of pi. See [STANDALONE.md](./STAND
 
 ## Full documentation
 
-For architecture details, development setup, and contributor info, see the [project README](https://github.com/dustinbyrne/kb#readme).
+For architecture details, development setup, and contributor info, see the [project README](https://github.com/gsxdsm/fusion#readme).
 
 ## License
 
