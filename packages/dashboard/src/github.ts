@@ -1917,10 +1917,6 @@ function shouldRetryBatchRequestError(error: unknown): boolean {
   return /rate limit|secondary rate limit|timed out|timeout|fetch failed|econnreset|econnrefused|socket hang up|502|503|504/i.test(message);
 }
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 function buildBadgeBatchQuery(requests: BadgeBatchRequest[]): string {
   const selections = requests
     .map((request) => {

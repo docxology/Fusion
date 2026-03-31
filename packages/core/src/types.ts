@@ -82,6 +82,18 @@ export interface TaskLogEntry {
   outcome?: string;
 }
 
+export type ActivityEventType = "task:created" | "task:moved" | "task:updated" | "task:deleted" | "task:merged" | "task:failed" | "settings:updated";
+
+export interface ActivityLogEntry {
+  id: string;
+  timestamp: string;
+  type: ActivityEventType;
+  taskId?: string;
+  taskTitle?: string;
+  details: string;
+  metadata?: Record<string, unknown>;
+}
+
 /** The set of agent roles that produce log entries. */
 export type AgentRole = "triage" | "executor" | "reviewer" | "merger";
 
