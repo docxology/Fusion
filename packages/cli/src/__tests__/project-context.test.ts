@@ -1,0 +1,146 @@
+/**
+ * Tests for project-context.ts
+ */
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { tmpdir } from "node:os";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { join, resolve } from "node:path";
+import {
+  resolveProject,
+  getDefaultProject,
+  setDefaultProject,
+  clearDefaultProject,
+  detectProjectFromCwd,
+  formatProjectLine,
+  getStoreForProject,
+  clearStoreCache,
+} from "../project-context.js";
+import { CentralCore, GlobalSettingsStore, type RegisteredProject } from "@fusion/core";
+
+describe("project-context", () => {
+  let tempDir: string;
+  let globalDir: string;
+  let central: CentralCore;
+
+  beforeEach(async () => {
+    tempDir = mkdtempSync(join(tmpdir(), "kb-test-"));
+    globalDir = mkdtempSync(join(tmpdir(), "kb-global-"));
+    central = new CentralCore(globalDir);
+    await central.init();
+  });
+
+  afterEach(async () => {
+    await central.close();
+    clearStoreCache();
+    try {
+      rmSync(tempDir, { recursive: true, force: true });
+      rmSync(globalDir, { recursive: true, force: true });
+    } catch {
+      // Ignore cleanup errors
+    }
+  });
+
+  function createMockProject(name: string, parentDir: string = tempDir): string {
+    const projectPath = join(parentDir, name);
+    mkdirSync(join(projectPath, ".kb"), { recursive: true });
+    writeFileSync(join(projectPath, ".kb", "kb.db"), "");
+    return projectPath;
+  }
+
+  describe("detectProjectFromCwd", () => {
+    it("should find project from CWD when .kb/kb.db exists", async () => {
+      const projectPath = createMockProject("my-project");
+      const project = await central.registerProject({
+        name: "my-project",
+        path: resolve(projectPath),
+      });
+
+      const found = await detectProjectFromCwd(projectPath, central);
+
+      expect(found).toBeDefined();
+      expect(found?.id).toBe(project.id);
+      expect(found?.name).toBe("my-project");
+    });
+
+    it("should walk up directory tree to find project", async () => {
+      const projectPath = createMockProject("my-project");
+      const subDir = join(projectPath, "src", "components");
+      mkdirSync(subDir, { recursive: true });
+
+      const project = await central.registerProject({
+        name: "my-project",
+        path: resolve(projectPath),
+      });
+
+      const found = await detectProjectFromCwd(subDir, central);
+
+      expect(found).toBeDefined();
+      expect(found?.id).toBe(project.id);
+    });
+
+    it("should return undefined when no project found", async () => {
+      const randomDir = join(tempDir, "random");
+      mkdirSync(randomDir, { recursive: true });
+
+      const found = await detectProjectFromCwd(randomDir, central);
+
+      expect(found).toBeUndefined();
+    });
+  });
+
+  describe("formatProjectLine", () => {
+    it("should format default project with asterisk", () => {
+      const project: RegisteredProject = {
+        id: "proj_123",
+        name: "my-app",
+        path: "/path/to/app",
+        status: "active",
+        isolationMode: "in-process",
+        createdAt: "2024-01-01T00:00:00Z",
+        updatedAt: "2024-01-01T00:00:00Z",
+      };
+
+      const line = formatProjectLine(project, true);
+
+      expect(line).toContain("* ");
+      expect(line).toContain("my-app");
+      expect(line).toContain("/path/to/app");
+      expect(line).toContain("[active]");
+    });
+
+    it("should format non-default project without asterisk", () => {
+      const project: RegisteredProject = {
+        id: "proj_456",
+        name: "other-app",
+        path: "/path/to/other",
+        status: "paused",
+        isolationMode: "child-process",
+        createdAt: "2024-01-01T00:00:00Z",
+        updatedAt: "2024-01-01T00:00:00Z",
+      };
+
+      const line = formatProjectLine(project, false);
+
+      expect(line).not.toContain("*");
+      expect(line).toContain("other-app");
+      expect(line).toContain("[paused]");
+    });
+  });
+
+  describe("resolveProject errors", () => {
+    it("should throw for unknown project name", async () => {
+      await expect(resolveProject("unknown-project", tempDir)).rejects.toThrow(
+        "not found"
+      );
+    });
+
+    it("should throw when no project can be resolved", async () => {
+      const randomDir = join(tempDir, "no-project-here");
+      mkdirSync(randomDir, { recursive: true });
+
+      await expect(resolveProject(undefined, randomDir)).rejects.toThrow(
+        "No kb project found"
+      );
+    });
+  });
+});
