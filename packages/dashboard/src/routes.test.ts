@@ -81,6 +81,7 @@ function createMockStore(overrides: Partial<TaskStore> = {}): TaskStore {
     updateGlobalSettings: vi.fn(),
     getSettingsByScope: vi.fn().mockResolvedValue({ global: {}, project: {} }),
     getGlobalSettingsStore: vi.fn().mockReturnValue(createMockGlobalSettingsStore()),
+    getActivityLog: vi.fn().mockResolvedValue([]),
     logEntry: vi.fn().mockResolvedValue(undefined),
     getAgentLogs: vi.fn().mockResolvedValue([]),
     getActivityLog: vi.fn().mockResolvedValue([]),
@@ -155,6 +156,163 @@ function buildMultipart(fieldName: string, filename: string, contentType: string
   const body = Buffer.concat([Buffer.from(header), content, Buffer.from(footer)]);
   return { body, boundary };
 }
+
+describe("GET /activity-feed", () => {
+  function mockCentralCoreModule(options?: {
+    entries?: unknown[];
+    getRecentActivityError?: Error;
+  }) {
+    const close = vi.fn().mockResolvedValue(undefined);
+    const getRecentActivity = options?.getRecentActivityError
+      ? vi.fn().mockRejectedValue(options.getRecentActivityError)
+      : vi.fn().mockResolvedValue(options?.entries ?? []);
+
+    class MockCentralCore {
+      init = vi.fn().mockResolvedValue(undefined);
+      getRecentActivity = getRecentActivity;
+      close = close;
+    }
+
+    return { MockCentralCore, getRecentActivity, close };
+  }
+
+  function buildApp(store: TaskStore) {
+    const app = express();
+    app.use(express.json());
+    app.use("/api", createApiRoutes(store));
+    return app;
+  }
+
+  afterEach(() => {
+    vi.doUnmock("@fusion/core");
+  });
+
+  it("returns central activity when available", async () => {
+    const store = createMockStore();
+    const centralEntry = {
+      id: "act_1",
+      timestamp: "2026-01-01T00:00:00.000Z",
+      type: "task:created",
+      projectId: "proj_123",
+      projectName: "Central Project",
+      taskId: "FN-001",
+      taskTitle: "Test Task",
+      details: "Created task",
+      metadata: { source: "central" },
+    };
+    const mockCentral = mockCentralCoreModule({ entries: [centralEntry] });
+
+    vi.doMock("@fusion/core", async () => {
+      const actual = await vi.importActual<typeof import("@fusion/core")>("@fusion/core");
+      return { ...actual, CentralCore: mockCentral.MockCentralCore };
+    });
+
+    const { createApiRoutes: createRoutesWithMock } = await import("./routes.js");
+    const app = express();
+    app.use(express.json());
+    app.use("/api", createRoutesWithMock(store));
+
+    const res = await GET(app, "/api/activity-feed?type=task:created");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([centralEntry]);
+    expect(mockCentral.getRecentActivity).toHaveBeenCalledWith({
+      limit: 50,
+      projectId: undefined,
+      types: ["task:created"],
+    });
+    expect(mockCentral.close).toHaveBeenCalled();
+    expect(store.getActivityLog).not.toHaveBeenCalled();
+  });
+
+  it("falls back to local activity log when central feed is empty", async () => {
+    const store = createMockStore({
+      getRootDir: vi.fn().mockReturnValue("/fake/projects/dashboard-app"),
+      getActivityLog: vi.fn().mockResolvedValue([
+        {
+          id: "local_1",
+          timestamp: "2026-01-01T00:00:00.000Z",
+          type: "task:created",
+          taskId: "FN-001",
+          details: "Task created locally",
+          metadata: { from: "triage", to: "todo" },
+        },
+      ]),
+    });
+    const mockCentral = mockCentralCoreModule({ entries: [] });
+
+    vi.doMock("@fusion/core", async () => {
+      const actual = await vi.importActual<typeof import("@fusion/core")>("@fusion/core");
+      return { ...actual, CentralCore: mockCentral.MockCentralCore };
+    });
+
+    const { createApiRoutes: createRoutesWithMock } = await import("./routes.js");
+    const app = express();
+    app.use(express.json());
+    app.use("/api", createRoutesWithMock(store));
+
+    const res = await GET(app, "/api/activity-feed?type=task:created");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([
+      {
+        id: "local_1",
+        timestamp: "2026-01-01T00:00:00.000Z",
+        type: "task:created",
+        projectId: "local-project",
+        projectName: "dashboard-app",
+        taskId: "FN-001",
+        details: "Task created locally",
+        metadata: { from: "triage", to: "todo" },
+      },
+    ]);
+    expect(store.getActivityLog).toHaveBeenCalledWith({ limit: 50, type: "task:created" });
+    expect(mockCentral.close).toHaveBeenCalled();
+  });
+
+  it("falls back to local activity log when central feed throws", async () => {
+    const store = createMockStore({
+      getRootDir: vi.fn().mockReturnValue("/fake/projects/local-root"),
+      getActivityLog: vi.fn().mockResolvedValue([
+        {
+          id: "local_2",
+          timestamp: "2026-01-02T00:00:00.000Z",
+          type: "task:updated",
+          taskId: "FN-002",
+          details: "Task updated locally",
+        },
+      ]),
+    });
+    const mockCentral = mockCentralCoreModule({ getRecentActivityError: new Error("require is not defined") });
+
+    vi.doMock("@fusion/core", async () => {
+      const actual = await vi.importActual<typeof import("@fusion/core")>("@fusion/core");
+      return { ...actual, CentralCore: mockCentral.MockCentralCore };
+    });
+
+    const { createApiRoutes: createRoutesWithMock } = await import("./routes.js");
+    const app = express();
+    app.use(express.json());
+    app.use("/api", createRoutesWithMock(store));
+
+    const res = await GET(app, "/api/activity-feed?type=task:updated");
+
+    expect(res.status).toBe(200);
+    expect(res.body[0].projectName).toBe("local-root");
+    expect(store.getActivityLog).toHaveBeenCalledWith({ limit: 50, type: "task:updated" });
+    expect(mockCentral.close).toHaveBeenCalled();
+  });
+
+  it("returns 400 for invalid type filters", async () => {
+    const store = createMockStore();
+    const app = buildApp(store);
+
+    const res = await GET(app, "/api/activity-feed?type=not-real");
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("Invalid type");
+  });
+});
 
 describe("GET /tasks", () => {
   let store: TaskStore;

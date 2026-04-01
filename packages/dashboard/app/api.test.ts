@@ -2012,6 +2012,7 @@ describe("fetchActivityFeed", () => {
     expect(call[0]).toContain("since=2026-01-01T00%3A00%3A00.000Z");
     expect(call[0]).toContain("projectId=proj_abc123");
     expect(call[0]).toContain("type=task%3Acreated");
+    expect(call[0]).not.toContain("types=");
   });
 });
 

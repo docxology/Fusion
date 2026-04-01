@@ -1830,7 +1830,7 @@ export function fetchProjectHealth(id: string): Promise<ProjectHealth> {
   return api<ProjectHealth>(`/projects/${encodeURIComponent(id)}/health`);
 }
 
-/** Fetch unified activity feed */
+/** Fetch unified activity feed. Supports singular type filtering and server fallback to the current project's local activity log when the central feed is unavailable or empty. */
 export function fetchActivityFeed(options?: FeedOptions): Promise<ActivityFeedEntry[]> {
   const params = new URLSearchParams();
   if (options?.limit !== undefined) params.set("limit", String(options.limit));

@@ -1662,8 +1662,8 @@ describe("buildExecutionPrompt", () => {
     expect(result).toContain("> Second comment");
   });
 
-  it("omits Comments section when comments is empty", () => {
-    const task = createMockTaskDetail({ comments: [] });
+  it("omits Comments section when steeringComments is empty", () => {
+    const task = createMockTaskDetail({ steeringComments: [] });
     const result = buildExecutionPrompt(task);
 
     expect(result).not.toContain("## Steering Comments");

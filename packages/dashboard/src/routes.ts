@@ -1,6 +1,7 @@
 import { Router, type Request, type Response, type NextFunction } from "express";
 import multer from "multer";
 import { createReadStream, existsSync } from "node:fs";
+import { basename } from "node:path";
 import { execSync } from "node:child_process";
 import type { TaskStore, Column, MergeResult, ScheduleType, ActivityEventType, ModelPreset, AutomationStep } from "@fusion/core";
 import { COLUMNS, VALID_TRANSITIONS, GLOBAL_SETTINGS_KEYS, type BatchStatusEntry, type BatchStatusResponse, type BatchStatusResult, type IssueInfo, type PrInfo, type Task, isGhAuthenticated, AUTOMATION_PRESETS, AutomationStore, validateBackupSchedule, validateBackupRetention, validateBackupDir, syncBackupAutomation, exportSettings, importSettings, validateImportData } from "@fusion/core";
@@ -6667,73 +6668,91 @@ Output ONLY the prompt text (no markdown, no explanations).`;
 
   /**
    * GET /api/activity-feed
-   * Get unified activity feed across all projects.
-   * Falls back to per-project activity when central activity is empty or unavailable.
-   * 
-   * Fallback Strategy:
-   * 1. First attempts to read from CentralCore.getRecentActivity() (multi-project mode)
-   * 2. If central returns empty array OR CentralCore init fails, falls back to store.getActivityLog()
-   * 3. Per-project entries are adapted to ActivityFeedEntry format with projectId="local"
-   * 4. This ensures single-project dashboards show activity even without engine ProjectManager
-   * 
-   * Query: limit, projectId, types
+   * Get unified activity feed across all projects, falling back to the current
+   * project's local activity log when the central feed is unavailable or empty.
+   * Query: limit, projectId, type (preferred), types (legacy comma-separated)
    * Returns: ActivityFeedEntry[]
    */
   router.get("/activity-feed", async (req, res) => {
-    try {
-      const limit = typeof req.query.limit === "string" ? parseInt(req.query.limit, 10) : 50;
-      const projectId = typeof req.query.projectId === "string" ? req.query.projectId : undefined;
-      const typesParam = typeof req.query.types === "string" ? req.query.types.split(",") : undefined;
-      const types = typesParam as import("@fusion/core").ActivityEventType[] | undefined;
-      
-      let centralEntries: any[] = [];
-      let centralError: Error | null = null;
-      
-      // Try to get central activity data first
-      try {
-        const { CentralCore } = await import("@fusion/core");
-        const central = new CentralCore();
-        await central.init();
-        centralEntries = await central.getRecentActivity({ limit, projectId, types });
-        await central.close();
-      } catch (err) {
-        centralError = err as Error;
+    const validTypes: ActivityEventType[] = [
+      "task:created",
+      "task:moved",
+      "task:updated",
+      "task:deleted",
+      "task:merged",
+      "task:failed",
+      "settings:updated",
+    ];
+
+    const limitParam = req.query.limit;
+    const projectId = typeof req.query.projectId === "string" ? req.query.projectId : undefined;
+    const typeParam = typeof req.query.type === "string" ? req.query.type : undefined;
+    const legacyTypesParam = typeof req.query.types === "string" ? req.query.types : undefined;
+
+    const limit = limitParam !== undefined ? Number.parseInt(limitParam as string, 10) : 50;
+    if (!Number.isFinite(limit) || limit < 0) {
+      res.status(400).json({ error: "limit must be a non-negative integer" });
+      return;
+    }
+
+    const requestedTypes = typeParam
+      ? [typeParam]
+      : legacyTypesParam
+        ? legacyTypesParam.split(",").map((value) => value.trim()).filter(Boolean)
+        : undefined;
+
+    if (requestedTypes && requestedTypes.some((value) => !validTypes.includes(value as ActivityEventType))) {
+      res.status(400).json({ error: `Invalid type. Must be one of: ${validTypes.join(", ")}` });
+      return;
+    }
+
+    const types = requestedTypes as ActivityEventType[] | undefined;
+
+    const mapLocalEntryToFeedEntry = (
+      entry: Awaited<ReturnType<TaskStore["getActivityLog"]>>[number],
+    ) => ({
+      id: entry.id,
+      timestamp: entry.timestamp,
+      type: entry.type,
+      projectId: projectId ?? "local-project",
+      projectName: basename(store.getRootDir()),
+      taskId: entry.taskId,
+      taskTitle: undefined,
+      details: entry.details,
+      metadata: entry.metadata,
+    });
+
+    const loadFallbackEntries = async () => {
+      if (projectId && projectId !== "local-project") {
+        return [];
       }
-      
-      // If central data exists and is not empty, return it
-      if (centralEntries.length > 0) {
-        res.json(centralEntries);
+      const localEntries = await store.getActivityLog({ limit, type: typeParam as ActivityEventType | undefined });
+      return localEntries.map(mapLocalEntryToFeedEntry);
+    };
+
+    let central: InstanceType<(typeof import("@fusion/core"))["CentralCore"]> | undefined;
+    try {
+      const { CentralCore } = await import("@fusion/core");
+      central = new CentralCore();
+      await central.init();
+
+      const entries = await central.getRecentActivity({ limit, projectId, types });
+      if (entries.length > 0) {
+        res.json(entries);
         return;
       }
-      
-      // Fall back to per-project activity data
-      const options: { limit?: number; type?: import("@fusion/core").ActivityEventType } = { limit };
-      if (types && types.length === 1) {
-        options.type = types[0];
+    } catch {
+      const fallbackEntries = await loadFallbackEntries();
+      res.json(fallbackEntries);
+      return;
+    } finally {
+      if (central) {
+        await central.close();
       }
-      
-      const perProjectEntries = await store.getActivityLog(options);
-      
-      // Convert per-project ActivityLogEntry[] to ActivityFeedEntry[] format
-      const projectName = (store as any).rootDir ? 
-        require("path").basename((store as any).rootDir) : "Current Project";
-      
-      const feedEntries = perProjectEntries.map((entry) => ({
-        id: entry.id,
-        timestamp: entry.timestamp,
-        type: entry.type,
-        projectId: "local",
-        projectName: projectName,
-        taskId: entry.taskId,
-        taskTitle: entry.taskTitle,
-        details: entry.details,
-        metadata: entry.metadata,
-      }));
-      
-      res.json(feedEntries);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
     }
+
+    const fallbackEntries = await loadFallbackEntries();
+    res.json(fallbackEntries);
   });
 
   /**
