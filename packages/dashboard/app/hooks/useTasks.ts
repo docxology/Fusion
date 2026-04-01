@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import type { Task, Column, TaskCreateInput, MergeResult } from "@fusion/core";
 import * as api from "../api";
 
+const RECONNECT_DELAY_MS = 3000;
+
 function normalizeTask(task: Task): Task {
   return {
     ...task,
@@ -37,32 +39,39 @@ export function useTasks(options?: UseTasksOptions) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [connectionNonce, setConnectionNonce] = useState(0);
   const tasksRef = useRef(tasks);
+  const fetchVersionRef = useRef(0);
+  const lastVisibilityRefreshRef = useRef<number>(0);
   tasksRef.current = tasks;
 
-  // Ref to track last visibility refresh time for debouncing (1 second minimum)
-  const lastVisibilityRefreshRef = useRef<number>(0);
   const VISIBILITY_REFRESH_DEBOUNCE_MS = 1000;
 
   const refreshTasks = useCallback(async (options?: { clearOnError?: boolean }) => {
+    const requestVersion = ++fetchVersionRef.current;
+
     try {
-      const refreshedTasks = projectId
+      const fetchedTasks = projectId
         ? await api.fetchProjectTasks(projectId)
         : await api.fetchTasks();
-      setTasks(refreshedTasks.map(normalizeTask));
+      if (fetchVersionRef.current !== requestVersion) {
+        return;
+      }
+      setTasks(fetchedTasks.map(normalizeTask));
     } catch {
+      if (fetchVersionRef.current !== requestVersion) {
+        return;
+      }
       if (options?.clearOnError) {
         setTasks([]);
+        return;
       }
+      setTasks((current) => current);
     }
   }, [projectId]);
 
-  // Fetch initial tasks
+  // Fetch initial tasks and recover when the tab becomes visible again.
   useEffect(() => {
     void refreshTasks({ clearOnError: true });
-  }, [refreshTasks]);
 
-  // Visibility change listener - refresh tasks when tab becomes visible
-  useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState !== "visible") {
         return;
@@ -79,7 +88,6 @@ export function useTasks(options?: UseTasksOptions) {
     };
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
-
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
@@ -92,6 +100,9 @@ export function useTasks(options?: UseTasksOptions) {
   useEffect(() => {
     let closedByCleanup = false;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    if (connectionNonce > 0) {
+      void refreshTasks();
+    }
     const es = new EventSource("/api/events");
 
     const handleCreated = (e: MessageEvent) => {
@@ -181,7 +192,7 @@ export function useTasks(options?: UseTasksOptions) {
       cleanup();
       reconnectTimer = setTimeout(() => {
         setConnectionNonce((current) => current + 1);
-      }, 3000);
+      }, RECONNECT_DELAY_MS);
     };
 
     es.addEventListener("task:created", handleCreated);
@@ -195,7 +206,7 @@ export function useTasks(options?: UseTasksOptions) {
       closedByCleanup = true;
       cleanup();
     };
-  }, [connectionNonce]);
+  }, [connectionNonce, refreshTasks]);
 
   const createTask = useCallback(async (input: TaskCreateInput): Promise<Task> => {
     return normalizeTask(await api.createTask(input));

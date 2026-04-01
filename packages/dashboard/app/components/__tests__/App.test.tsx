@@ -52,15 +52,22 @@ vi.mock("../../api", async (importOriginal) => {
   };
 });
 
+const mockUseTasks = vi.fn(() => ({
+  tasks: [],
+  createTask: vi.fn(),
+  moveTask: vi.fn(),
+  deleteTask: vi.fn(),
+  mergeTask: vi.fn(),
+  retryTask: vi.fn(),
+  updateTask: vi.fn(),
+  duplicateTask: vi.fn(),
+  archiveTask: vi.fn(),
+  unarchiveTask: vi.fn(),
+  archiveAllDone: vi.fn(),
+}));
+
 vi.mock("../../hooks/useTasks", () => ({
-  useTasks: () => ({
-    tasks: [],
-    createTask: vi.fn(),
-    moveTask: vi.fn(),
-    deleteTask: vi.fn(),
-    mergeTask: vi.fn(),
-    retryTask: vi.fn(),
-  }),
+  useTasks: () => mockUseTasks(),
 }));
 
 vi.mock("../../hooks/useProjects", () => ({
@@ -88,6 +95,20 @@ import { fetchAuthStatus, fetchSettings, fetchTaskDetail, updateSettings } from 
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockUseTasks.mockReset();
+  mockUseTasks.mockImplementation(() => ({
+    tasks: [],
+    createTask: vi.fn(),
+    moveTask: vi.fn(),
+    deleteTask: vi.fn(),
+    mergeTask: vi.fn(),
+    retryTask: vi.fn(),
+    updateTask: vi.fn(),
+    duplicateTask: vi.fn(),
+    archiveTask: vi.fn(),
+    unarchiveTask: vi.fn(),
+    archiveAllDone: vi.fn(),
+  }));
 });
 
 describe("App deep link handling", () => {
