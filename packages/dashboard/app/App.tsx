@@ -103,19 +103,40 @@ function AppInner() {
 
   // Auto-open setup wizard on first run (no projects)
   useEffect(() => {
-    if (!projectsLoading && projects.length === 0 && !setupWizardOpen) {
-      // Delay slightly to allow initial render
-      const timer = setTimeout(() => {
-        setSetupWizardOpen(true);
-      }, 500);
-      return () => clearTimeout(timer);
-    }
-  }, [projectsLoading, projects.length, setupWizardOpen]);
+    // Wait for both loading states to complete before making decision
+    if (projectsLoading || currentProjectLoading) return;
+    
+    // Don't open if wizard is already open
+    if (setupWizardOpen) return;
+    
+    // Don't open if we have projects OR a saved current project
+    // (currentProject from localStorage means user was previously viewing a project)
+    if (projects.length > 0 || currentProject) return;
+    
+    // Only open when truly no projects exist and no project is being restored
+    const timer = setTimeout(() => {
+      setSetupWizardOpen(true);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [projectsLoading, projects.length, currentProjectLoading, currentProject, setupWizardOpen]);
 
   // Persist view mode
   useEffect(() => {
     localStorage.setItem("kb-dashboard-view-mode", viewMode);
   }, [viewMode]);
+
+  // Sync view mode when current project is restored from localStorage
+  // This ensures that if the user refreshed while viewing a specific project,
+  // they return to project view instead of the overview
+  useEffect(() => {
+    // Wait for both loading states to complete before syncing
+    if (projectsLoading || currentProjectLoading) return;
+    
+    // If we have a restored current project but viewMode is overview, sync to project view
+    if (currentProject && viewMode === "overview") {
+      setViewMode("project");
+    }
+  }, [projectsLoading, currentProjectLoading, currentProject]); // intentionally NOT depending on viewMode
 
   // Persist task view
   useEffect(() => {
@@ -610,12 +631,12 @@ function AppInner() {
         onClose={handleCloseAgents}
         addToast={addToast}
       />
-      <SetupWizardModal
-        isOpen={setupWizardOpen}
-        onClose={() => setSetupWizardOpen(false)}
-        onComplete={handleSetupComplete}
-        onRegisterProject={register}
-      />
+      {setupWizardOpen && (
+        <SetupWizardModal
+          onProjectRegistered={handleSetupComplete}
+          onClose={() => setSetupWizardOpen(false)}
+        />
+      )}
       <ToastContainer toasts={toasts} onRemove={removeToast} />
     </>
   );
