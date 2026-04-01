@@ -16,6 +16,8 @@ describe("CentralCore", () => {
   let projectPaths: string[] = [];
 
   beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-01T12:00:00.000Z"));
     tempDir = mkdtempSync(join(tmpdir(), "kb-central-core-test-"));
     central = new CentralCore(tempDir);
     projectPaths = [];
@@ -23,6 +25,7 @@ describe("CentralCore", () => {
 
   afterEach(async () => {
     await central.close();
+    vi.useRealTimers();
     rmSync(tempDir, { recursive: true, force: true });
   });
 
@@ -345,7 +348,7 @@ describe("CentralCore", () => {
         path: projectPath,
       });
 
-      vi.setSystemTime(new Date("2026-04-01T12:00:01.000Z"));
+      vi.setSystemTime(new Date("2026-04-01T12:00:00.010Z"));
 
       const updated = await central.updateProject(project.id, {
         name: "Updated",
@@ -555,7 +558,7 @@ describe("CentralCore", () => {
 
       const beforeActivity = project.lastActivityAt;
 
-      vi.setSystemTime(new Date("2026-04-01T12:00:01.000Z"));
+      vi.setSystemTime(new Date("2026-04-01T12:00:00.010Z"));
 
       await central.logActivity({
         type: "task:moved",
@@ -721,55 +724,62 @@ describe("CentralCore", () => {
       expect(projectCount).toBe(5);
     });
 
-    it("should cleanup only activity entries older than the cutoff", async () => {
-      vi.useFakeTimers();
+    it("should cleanup only entries older than the cutoff and retain the exact boundary", async () => {
+      const projectPath = join(tempDir, "cleanup-activity");
+      mkdirSync(projectPath);
+      projectPaths.push(projectPath);
 
-      try {
-        const projectPath = join(tempDir, "cleanup-activity");
-        mkdirSync(projectPath);
-        projectPaths.push(projectPath);
+      const project = await central.registerProject({
+        name: "Cleanup Activity",
+        path: projectPath,
+      });
 
-        const project = await central.registerProject({
-          name: "Cleanup Activity",
-          path: projectPath,
-        });
+      const now = new Date("2026-04-01T12:00:00.000Z");
+      vi.setSystemTime(now);
 
-        vi.setSystemTime(new Date("2026-04-01T12:00:00.000Z"));
-        await central.logActivity({
-          type: "task:created",
-          projectId: project.id,
-          projectName: project.name,
-          timestamp: "2026-03-31T11:59:59.999Z",
-          details: "Older than cutoff",
-        });
+      const olderThanCutoff = new Date("2026-03-31T11:59:59.999Z").toISOString();
+      const exactlyAtCutoff = new Date("2026-03-31T12:00:00.000Z").toISOString();
+      const newerThanCutoff = new Date("2026-03-31T12:00:00.001Z").toISOString();
 
-        await central.logActivity({
-          type: "task:created",
-          projectId: project.id,
-          projectName: project.name,
-          timestamp: "2026-03-31T12:00:00.000Z",
-          details: "Exactly at cutoff",
-        });
+      await central.logActivity({
+        type: "task:created",
+        projectId: project.id,
+        projectName: project.name,
+        timestamp: olderThanCutoff,
+        details: "Older than cutoff",
+      });
 
-        await central.logActivity({
-          type: "task:created",
-          projectId: project.id,
-          projectName: project.name,
-          timestamp: "2026-03-31T12:00:00.001Z",
-          details: "Newer than cutoff",
-        });
+      await central.logActivity({
+        type: "task:moved",
+        projectId: project.id,
+        projectName: project.name,
+        timestamp: exactlyAtCutoff,
+        details: "Exactly at cutoff",
+      });
 
-        const deleted = await central.cleanupOldActivity(1);
-        expect(deleted).toBe(1);
+      await central.logActivity({
+        type: "task:updated",
+        projectId: project.id,
+        projectName: project.name,
+        timestamp: newerThanCutoff,
+        details: "Newer than cutoff",
+      });
 
-        const remaining = await central.getRecentActivity({ limit: 10, projectId: project.id });
-        expect(remaining.map((entry) => entry.details)).toEqual([
-          "Newer than cutoff",
-          "Exactly at cutoff",
-        ]);
-      } finally {
-        vi.useRealTimers();
-      }
+      const deleted = await central.cleanupOldActivity(1);
+      expect(deleted).toBe(1);
+
+      const countAfter = await central.getActivityCount();
+      expect(countAfter).toBe(2);
+
+      const remaining = await central.getRecentActivity({ limit: 10, projectId: project.id });
+      expect(remaining.map((entry) => entry.details)).toEqual([
+        "Newer than cutoff",
+        "Exactly at cutoff",
+      ]);
+      expect(remaining.map((entry) => entry.timestamp)).toEqual([
+        newerThanCutoff,
+        exactlyAtCutoff,
+      ]);
     });
   });
 
