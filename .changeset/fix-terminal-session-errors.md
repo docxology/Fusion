@@ -2,4 +2,4 @@
 "@gsxdsm/fusion": patch
 ---
 
-Improve terminal session creation error reporting with specific HTTP status codes and actionable messages.
+Fix terminal session creation errors to return specific messages and HTTP status codes.

@@ -4736,9 +4736,13 @@ describe("Terminal session routes", () => {
   });
 
   describe("POST /api/terminal/sessions", () => {
-    it("returns 503 when max sessions reached (session is null)", async () => {
+    it("returns 503 with specific max sessions error", async () => {
       const mockService = {
-        createSession: vi.fn().mockResolvedValue(null),
+        createSession: vi.fn().mockResolvedValue({
+          success: false,
+          code: "max_sessions",
+          error: "Maximum terminal sessions reached. Please close an existing terminal and try again.",
+        }),
       };
       vi.spyOn(terminalServiceModule, "getTerminalService").mockReturnValue(mockService as any);
 
@@ -4751,7 +4755,69 @@ describe("Terminal session routes", () => {
       );
 
       expect(res.status).toBe(503);
-      expect(res.body.error).toContain("Max sessions");
+      expect(res.body).toEqual({
+        error: "Maximum terminal sessions reached. Please close an existing terminal and try again.",
+        code: "max_sessions",
+      });
+
+      vi.restoreAllMocks();
+    });
+
+    it.each([
+      ["invalid_shell", 400, "Shell not allowed. Please use a supported shell (bash, zsh, sh, cmd, powershell)."],
+      ["pty_load_failed", 503, "Terminal service unavailable. The PTY module could not be loaded."],
+      ["pty_spawn_failed", 500, "Failed to start terminal shell process."],
+    ] as const)("returns %s errors with the correct status and body", async (code, status, error) => {
+      const mockService = {
+        createSession: vi.fn().mockResolvedValue({
+          success: false,
+          code,
+          error,
+        }),
+      };
+      vi.spyOn(terminalServiceModule, "getTerminalService").mockReturnValue(mockService as any);
+
+      const res = await REQUEST(
+        buildApp(),
+        "POST",
+        "/api/terminal/sessions",
+        JSON.stringify({ shell: "/bad/shell" }),
+        { "Content-Type": "application/json" },
+      );
+
+      expect(res.status).toBe(status);
+      expect(res.body).toEqual({ error, code });
+
+      vi.restoreAllMocks();
+    });
+
+    it("returns 201 for a successful session creation", async () => {
+      const mockService = {
+        createSession: vi.fn().mockResolvedValue({
+          success: true,
+          session: {
+            id: "term-123",
+            shell: "/bin/zsh",
+            cwd: "/fake/root",
+          },
+        }),
+      };
+      vi.spyOn(terminalServiceModule, "getTerminalService").mockReturnValue(mockService as any);
+
+      const res = await REQUEST(
+        buildApp(),
+        "POST",
+        "/api/terminal/sessions",
+        JSON.stringify({}),
+        { "Content-Type": "application/json" },
+      );
+
+      expect(res.status).toBe(201);
+      expect(res.body).toEqual({
+        sessionId: "term-123",
+        shell: "/bin/zsh",
+        cwd: "/fake/root",
+      });
 
       vi.restoreAllMocks();
     });
