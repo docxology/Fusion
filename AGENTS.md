@@ -462,7 +462,7 @@ Controls how worktree directory names are generated when `recycleWorktrees` is N
 
 **Notes:**
 - This setting has no effect when `recycleWorktrees` is enabled (pooled worktrees retain their existing names)
-- Task branches are always named `kb/{task-id}` regardless of this setting
+- Task branches are always named `fusion/{task-id}` regardless of this setting
 - When using `"task-title"` mode, special characters are replaced with hyphens and the result is lowercased
 
 ### `autoBackupEnabled` (default: `false`)
