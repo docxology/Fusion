@@ -101,7 +101,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   mergeDetails TEXT,
   breakIntoSubtasks INTEGER DEFAULT 0,
   enabledWorkflowSteps TEXT DEFAULT '[]',
-  modifiedFiles TEXT DEFAULT '[]'
+  modifiedFiles TEXT DEFAULT '[]',
+  sliceId TEXT
 );
 
 -- Config table (single row with project settings)

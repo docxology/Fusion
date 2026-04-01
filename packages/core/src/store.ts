@@ -992,6 +992,26 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
         await writeFile(join(dir, "PROMPT.md"), updates.prompt);
       }
 
+      // Regenerate PROMPT.md when title or description changes (but not when explicit prompt update)
+      if (updates.prompt === undefined && (updates.title !== undefined || updates.description !== undefined)) {
+        const promptPath = join(dir, "PROMPT.md");
+        if (existsSync(promptPath)) {
+          const existingPrompt = await readFile(promptPath, "utf-8");
+          let newPrompt: string;
+          
+          if (task.column === "triage") {
+            // Simple format for triage tasks: # heading\n\ndescription
+            const heading = task.title ? `${task.id}: ${task.title}` : task.id;
+            newPrompt = `# ${heading}\n\n${task.description}\n`;
+          } else {
+            // Structured format for other columns - preserve sections
+            newPrompt = this.regeneratePrompt(task, existingPrompt);
+          }
+          
+          await writeFile(promptPath, newPrompt);
+        }
+      }
+
       if (movedToTriage) {
         this.emit("task:moved", { task, from: "todo" as Column, to: "triage" as Column });
       }
@@ -2596,6 +2616,62 @@ ${deps}
 - [ ] All steps complete
 - [ ] All tests passing
 ${notificationsSection}`;
+  }
+
+  /**
+   * Regenerate PROMPT.md when task title or description changes.
+   * Preserves existing sections (Dependencies, Steps, File Scope, etc.) from the original prompt,
+   * while updating the heading and Mission section with new values.
+   */
+  private regeneratePrompt(task: Task, existingPrompt: string): string {
+    // Generate the new heading
+    const heading = task.title ? `${task.id}: ${task.title}` : task.id;
+
+    // Helper to extract a section by heading name
+    const extractSection = (sectionName: string): string | null => {
+      const regex = new RegExp(`^##\\s+${sectionName}\\s*$`, "m");
+      const match = existingPrompt.match(regex);
+      if (!match) return null;
+
+      const startIdx = match.index! + match[0].length;
+      const rest = existingPrompt.slice(startIdx);
+      // Find next ## heading (any level) or end of string
+      const nextHeading = rest.search(/\n##\\s/);
+      const section = nextHeading === -1 ? rest : rest.slice(0, nextHeading);
+      return section.trim();
+    };
+
+    // Extract preserved sections
+    const depsSection = extractSection("Dependencies");
+    const stepsSection = extractSection("Steps");
+    const fileScopeSection = extractSection("File Scope");
+    const acceptanceSection = extractSection("Acceptance Criteria");
+    const notificationsSection = extractSection("Notifications");
+
+    // Reconstruct PROMPT.md with preserved sections
+    let result = `# ${heading}\n\n**Created:** ${task.createdAt.split("T")[0]}\n**Size:** ${task.size || "M"}\n\n## Mission\n\n${task.description}\n`;
+
+    if (depsSection !== null) {
+      result += `\n## Dependencies\n\n${depsSection}\n`;
+    }
+
+    if (stepsSection !== null) {
+      result += `\n## Steps\n\n${stepsSection}\n`;
+    }
+
+    if (fileScopeSection !== null) {
+      result += `\n## File Scope\n\n${fileScopeSection}\n`;
+    }
+
+    if (acceptanceSection !== null) {
+      result += `\n## Acceptance Criteria\n\n${acceptanceSection}\n`;
+    }
+
+    if (notificationsSection !== null) {
+      result += `\n## Notifications\n\n${notificationsSection}\n`;
+    }
+
+    return result;
   }
 
   /**

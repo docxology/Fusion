@@ -1099,6 +1099,226 @@ describe("TaskStore", () => {
     });
   });
 
+  describe("updateTask — PROMPT.md regeneration", () => {
+    it("regenerates PROMPT.md when title is updated", async () => {
+      const task = await store.createTask({ description: "Test task", column: "todo" });
+      const dir = join(rootDir, ".fusion", "tasks", task.id);
+      
+      // Verify initial PROMPT.md
+      const initialPrompt = await readFile(join(dir, "PROMPT.md"), "utf-8");
+      expect(initialPrompt).toContain(`# ${task.id}`);
+      expect(initialPrompt).toContain("Test task");
+
+      // Update title
+      await store.updateTask(task.id, { title: "New Title" });
+
+      // Verify PROMPT.md was regenerated with new title
+      const updatedPrompt = await readFile(join(dir, "PROMPT.md"), "utf-8");
+      expect(updatedPrompt).toContain(`# ${task.id}: New Title`);
+      expect(updatedPrompt).toContain("Test task"); // Description preserved
+    });
+
+    it("regenerates PROMPT.md when description is updated", async () => {
+      const task = await store.createTask({ description: "Old description", column: "todo" });
+      const dir = join(rootDir, ".fusion", "tasks", task.id);
+      
+      // Verify initial PROMPT.md
+      const initialPrompt = await readFile(join(dir, "PROMPT.md"), "utf-8");
+      expect(initialPrompt).toContain("Old description");
+
+      // Update description
+      await store.updateTask(task.id, { description: "New description" });
+
+      // Verify PROMPT.md was regenerated with new description
+      const updatedPrompt = await readFile(join(dir, "PROMPT.md"), "utf-8");
+      expect(updatedPrompt).toContain("New description");
+    });
+
+    it("preserves existing steps when regenerating PROMPT.md", async () => {
+      const task = await store.createTask({ description: "Task with steps", column: "todo" });
+      const dir = join(rootDir, ".fusion", "tasks", task.id);
+      
+      // Write custom steps to PROMPT.md
+      const customPrompt = `# ${task.id}: Task with steps
+
+**Created:** ${task.createdAt.split("T")[0]}
+**Size:** M
+
+## Mission
+
+Task with steps
+
+## Steps
+
+### Step 1: Custom Step
+
+- [ ] Custom action 1
+- [ ] Custom action 2
+
+### Step 2: Another Custom Step
+
+- [ ] Another action
+`;
+      await writeFile(join(dir, "PROMPT.md"), customPrompt);
+
+      // Update title
+      await store.updateTask(task.id, { title: "Updated Title" });
+
+      // Verify custom steps are preserved
+      const updatedPrompt = await readFile(join(dir, "PROMPT.md"), "utf-8");
+      expect(updatedPrompt).toContain(`# ${task.id}: Updated Title`);
+      expect(updatedPrompt).toContain("### Step 1: Custom Step");
+      expect(updatedPrompt).toContain("- [ ] Custom action 1");
+      expect(updatedPrompt).toContain("### Step 2: Another Custom Step");
+      expect(updatedPrompt).toContain("- [ ] Another action");
+    });
+
+    it("preserves file scope when regenerating PROMPT.md", async () => {
+      const task = await store.createTask({ description: "Task with file scope", column: "todo" });
+      const dir = join(rootDir, ".fusion", "tasks", task.id);
+      
+      // Write PROMPT.md with custom file scope
+      const customPrompt = `# ${task.id}: Task with file scope
+
+**Created:** ${task.createdAt.split("T")[0]}
+**Size:** M
+
+## Mission
+
+Task with file scope
+
+## File Scope
+
+- \`src/store.ts\`
+- \`src/db.ts\`
+`;
+      await writeFile(join(dir, "PROMPT.md"), customPrompt);
+
+      // Update description
+      await store.updateTask(task.id, { description: "Updated description" });
+
+      // Verify file scope is preserved
+      const updatedPrompt = await readFile(join(dir, "PROMPT.md"), "utf-8");
+      expect(updatedPrompt).toContain("Updated description");
+      expect(updatedPrompt).toContain("## File Scope");
+      expect(updatedPrompt).toContain("`src/store.ts`");
+      expect(updatedPrompt).toContain("`src/db.ts`");
+    });
+
+    it("preserves dependencies section when regenerating PROMPT.md", async () => {
+      const task = await store.createTask({ description: "Task with deps", column: "todo", dependencies: ["KB-001"] });
+      const dir = join(rootDir, ".fusion", "tasks", task.id);
+      
+      // Verify initial PROMPT.md has dependencies
+      const initialPrompt = await readFile(join(dir, "PROMPT.md"), "utf-8");
+      expect(initialPrompt).toContain("## Dependencies");
+      expect(initialPrompt).toContain("- **Task:** KB-001");
+
+      // Update title
+      await store.updateTask(task.id, { title: "Updated Title" });
+
+      // Verify dependencies section is preserved
+      const updatedPrompt = await readFile(join(dir, "PROMPT.md"), "utf-8");
+      expect(updatedPrompt).toContain("## Dependencies");
+      expect(updatedPrompt).toContain("- **Task:** KB-001");
+    });
+
+    it("preserves acceptance criteria section when regenerating PROMPT.md", async () => {
+      const task = await store.createTask({ description: "Task with acceptance criteria", column: "todo" });
+      const dir = join(rootDir, ".fusion", "tasks", task.id);
+      
+      // Write PROMPT.md with acceptance criteria
+      const customPrompt = `# ${task.id}: Task with acceptance criteria
+
+**Created:** ${task.createdAt.split("T")[0]}
+**Size:** M
+
+## Mission
+
+Task with acceptance criteria
+
+## Acceptance Criteria
+
+- [ ] Criterion 1
+- [ ] Criterion 2
+- [ ] Criterion 3
+`;
+      await writeFile(join(dir, "PROMPT.md"), customPrompt);
+
+      // Update description
+      await store.updateTask(task.id, { description: "Updated description" });
+
+      // Verify acceptance criteria is preserved
+      const updatedPrompt = await readFile(join(dir, "PROMPT.md"), "utf-8");
+      expect(updatedPrompt).toContain("Updated description");
+      expect(updatedPrompt).toContain("## Acceptance Criteria");
+      expect(updatedPrompt).toContain("- [ ] Criterion 1");
+      expect(updatedPrompt).toContain("- [ ] Criterion 2");
+      expect(updatedPrompt).toContain("- [ ] Criterion 3");
+    });
+
+    it("updates simple PROMPT.md for triage tasks", async () => {
+      const task = await store.createTask({ description: "Triage task", column: "triage" });
+      const dir = join(rootDir, ".fusion", "tasks", task.id);
+      
+      // Verify initial simple format
+      const initialPrompt = await readFile(join(dir, "PROMPT.md"), "utf-8");
+      expect(initialPrompt).toBe(`# ${task.id}\n\nTriage task\n`);
+
+      // Update title
+      await store.updateTask(task.id, { title: "Updated Title" });
+
+      // Verify simple format is maintained but updated
+      const updatedPrompt = await readFile(join(dir, "PROMPT.md"), "utf-8");
+      expect(updatedPrompt).toBe(`# ${task.id}: Updated Title\n\nTriage task\n`);
+    });
+
+    it("updates description in simple PROMPT.md for triage tasks", async () => {
+      const task = await store.createTask({ title: "My Task", description: "Original desc", column: "triage" });
+      const dir = join(rootDir, ".fusion", "tasks", task.id);
+      
+      // Verify initial simple format
+      const initialPrompt = await readFile(join(dir, "PROMPT.md"), "utf-8");
+      expect(initialPrompt).toBe(`# ${task.id}: My Task\n\nOriginal desc\n`);
+
+      // Update description
+      await store.updateTask(task.id, { description: "Updated desc" });
+
+      // Verify simple format is maintained but updated
+      const updatedPrompt = await readFile(join(dir, "PROMPT.md"), "utf-8");
+      expect(updatedPrompt).toBe(`# ${task.id}: My Task\n\nUpdated desc\n`);
+    });
+
+    it("does not regenerate PROMPT.md when explicit prompt is provided", async () => {
+      const task = await store.createTask({ description: "Test task", column: "todo" });
+      const dir = join(rootDir, ".fusion", "tasks", task.id);
+      
+      // Update with explicit prompt
+      const customPrompt = "# Custom\n\nCustom prompt content";
+      await store.updateTask(task.id, { title: "Updated Title", prompt: customPrompt });
+
+      // Verify the explicit prompt was used, not regenerated
+      const updatedPrompt = await readFile(join(dir, "PROMPT.md"), "utf-8");
+      expect(updatedPrompt).toBe(customPrompt);
+    });
+
+    it("does not regenerate PROMPT.md when neither title nor description changes", async () => {
+      const task = await store.createTask({ description: "Test task", column: "todo" });
+      const dir = join(rootDir, ".fusion", "tasks", task.id);
+      
+      // Write custom PROMPT.md
+      const customPrompt = `# ${task.id}\n\n**Created:** 2024-01-01\n**Size:** L\n\n## Mission\n\nTest task\n\n## Custom Section\n\nCustom content\n`;
+      await writeFile(join(dir, "PROMPT.md"), customPrompt);
+
+      // Update worktree only
+      await store.updateTask(task.id, { worktree: "/tmp/worktree" });
+
+      // Verify PROMPT.md was not changed
+      const updatedPrompt = await readFile(join(dir, "PROMPT.md"), "utf-8");
+      expect(updatedPrompt).toBe(customPrompt);
+    });
+  });
+
   describe("agent log persistence", () => {
     it("appendAgentLog creates agent.log and getAgentLogs reads it back", async () => {
       const task = await createTestTask();
