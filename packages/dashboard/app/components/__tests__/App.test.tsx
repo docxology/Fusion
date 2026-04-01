@@ -289,7 +289,6 @@ describe("App engine pause (soft pause)", () => {
 });
 
 describe("App view switching", () => {
-  it("keeps the selected board/list view while task data changes underneath it", async () => {
   it("renders Board view by default", async () => {
     render(<App />);
 

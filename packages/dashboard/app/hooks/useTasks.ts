@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import type { Task, Column, TaskCreateInput, MergeResult } from "@fusion/core";
 import * as api from "../api";
 
+const RECONNECT_DELAY_MS = 3000;
+
 function normalizeTask(task: Task): Task {
   return {
     ...task,
@@ -28,17 +30,47 @@ export function useTasks() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [connectionNonce, setConnectionNonce] = useState(0);
   const tasksRef = useRef(tasks);
+  const fetchVersionRef = useRef(0);
   tasksRef.current = tasks;
 
-  // Fetch initial tasks
-  useEffect(() => {
-    api.fetchTasks().then((tasks) => setTasks(tasks.map(normalizeTask))).catch(() => setTasks([]));
+  const refreshTasks = useCallback(async () => {
+    const requestVersion = ++fetchVersionRef.current;
+
+    try {
+      const fetchedTasks = await api.fetchTasks();
+      if (fetchVersionRef.current !== requestVersion) {
+        return;
+      }
+      setTasks(fetchedTasks.map(normalizeTask));
+    } catch {
+      if (fetchVersionRef.current !== requestVersion) {
+        return;
+      }
+      setTasks((current) => current);
+    }
   }, []);
+
+  // Fetch initial tasks and recover when the tab becomes visible again.
+  useEffect(() => {
+    void refreshTasks();
+
+    const handleVisibilityChange = () => {
+      void refreshTasks();
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [refreshTasks]);
 
   // SSE live updates
   useEffect(() => {
     let closedByCleanup = false;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    if (connectionNonce > 0) {
+      void refreshTasks();
+    }
     const es = new EventSource("/api/events");
 
     const handleCreated = (e: MessageEvent) => {
@@ -137,7 +169,7 @@ export function useTasks() {
       cleanup();
       reconnectTimer = setTimeout(() => {
         setConnectionNonce((current) => current + 1);
-      }, 3000);
+      }, RECONNECT_DELAY_MS);
     };
 
     es.addEventListener("task:created", handleCreated);
@@ -151,7 +183,7 @@ export function useTasks() {
       closedByCleanup = true;
       cleanup();
     };
-  }, [connectionNonce]);
+  }, [connectionNonce, refreshTasks]);
 
   const createTask = useCallback(async (input: TaskCreateInput): Promise<Task> => {
     return normalizeTask(await api.createTask(input));

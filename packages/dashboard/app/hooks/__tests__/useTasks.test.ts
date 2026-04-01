@@ -254,6 +254,7 @@ describe("useTasks", () => {
     });
 
     expect(MockEventSource.instances).toHaveLength(2);
+    expect(mockFetchTasks).toHaveBeenCalledTimes(2);
 
     unmount();
   });
@@ -297,6 +298,7 @@ describe("useTasks", () => {
     expect(mockFetchTasks).toHaveBeenCalledTimes(2);
     expect(result.current.tasks[0]?.title).toBe("Fresh title");
   });
+
 
   describe("SSE event: task:updated", () => {
     it("updates task fields", async () => {
