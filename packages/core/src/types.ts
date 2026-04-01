@@ -428,6 +428,8 @@ export interface Task {
   summary?: string;
   /** Files modified during agent execution, captured at task completion time */
   modifiedFiles?: string[];
+  /** Optional ID of the mission this task is linked to (derived from its linked slice hierarchy) */
+  missionId?: string;
   /** Optional ID of the slice this task is linked to (for mission-based work) */
   sliceId?: string;
   /** ISO-8601 timestamp of when the task last entered its current column.

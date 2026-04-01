@@ -185,6 +185,47 @@ describe("MissionStore integration with TaskStore", () => {
     expect(updatedMission?.status).toBe("active");
   });
 
+  it("persists missionId and sliceId when linking a feature to a task", async () => {
+    const missionStore = taskStore.getMissionStore();
+    const mission = missionStore.createMission({ title: "Test Mission" });
+    const milestone = missionStore.addMilestone(mission.id, { title: "Milestone 1" });
+    const slice = missionStore.addSlice(milestone.id, { title: "Slice 1" });
+    const feature = missionStore.addFeature(slice.id, { title: "Feature 1" });
+
+    const task = await taskStore.createTask({
+      description: "Implement feature",
+      title: "Feature implementation",
+      column: "todo",
+    });
+
+    missionStore.linkFeatureToTask(feature.id, task.id);
+
+    const reloaded = await taskStore.getTask(task.id);
+    expect(reloaded.missionId).toBe(mission.id);
+    expect(reloaded.sliceId).toBe(slice.id);
+  });
+
+  it("clears missionId and sliceId when unlinking a feature from a task", async () => {
+    const missionStore = taskStore.getMissionStore();
+    const mission = missionStore.createMission({ title: "Test Mission" });
+    const milestone = missionStore.addMilestone(mission.id, { title: "Milestone 1" });
+    const slice = missionStore.addSlice(milestone.id, { title: "Slice 1" });
+    const feature = missionStore.addFeature(slice.id, { title: "Feature 1" });
+
+    const task = await taskStore.createTask({
+      description: "Implement feature",
+      title: "Feature implementation",
+      column: "todo",
+    });
+
+    missionStore.linkFeatureToTask(feature.id, task.id);
+    missionStore.unlinkFeatureFromTask(feature.id);
+
+    const reloaded = await taskStore.getTask(task.id);
+    expect(reloaded.missionId).toBeUndefined();
+    expect(reloaded.sliceId).toBeUndefined();
+  });
+
   it("cascades mission deletion across milestones, slices, and features", async () => {
     const { missionStore, mission, milestones } = await createHierarchy(taskStore);
     const milestoneIds = milestones.map((milestone) => milestone.id);

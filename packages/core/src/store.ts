@@ -196,6 +196,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       breakIntoSubtasks: row.breakIntoSubtasks ? true : undefined,
       enabledWorkflowSteps: (() => { const e = fromJson<string[]>(row.enabledWorkflowSteps); return e && e.length > 0 ? e : undefined; })(),
       modifiedFiles: (() => { const m = fromJson<string[]>(row.modifiedFiles); return m && m.length > 0 ? m : undefined; })(),
+      missionId: row.missionId || undefined,
       sliceId: row.sliceId || undefined,
     };
   }
@@ -212,10 +213,10 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
         summary, thinkingLevel, createdAt, updatedAt, columnMovedAt,
         dependencies, steps, log, attachments, steeringComments,
         comments, workflowStepResults, prInfo, issueInfo, mergeDetails,
-        breakIntoSubtasks, enabledWorkflowSteps, modifiedFiles, sliceId
+        breakIntoSubtasks, enabledWorkflowSteps, modifiedFiles, missionId, sliceId
       ) VALUES (
         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
       )
     `).run(
       task.id,
@@ -256,6 +257,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       task.breakIntoSubtasks ? 1 : 0,
       toJson(task.enabledWorkflowSteps || []),
       toJson(task.modifiedFiles || []),
+      task.missionId ?? null,
       task.sliceId ?? null,
     );
     this.db.bumpLastModified();
@@ -918,7 +920,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
 
   async updateTask(
     id: string,
-    updates: { title?: string; description?: string; prompt?: string; worktree?: string; status?: string | null; dependencies?: string[]; blockedBy?: string | null; paused?: boolean; baseBranch?: string; baseCommitSha?: string; size?: "S" | "M" | "L"; reviewLevel?: number; mergeRetries?: number; modelProvider?: string | null; modelId?: string | null; validatorModelProvider?: string | null; validatorModelId?: string | null; error?: string | null; summary?: string | null; workflowStepResults?: import("./types.js").WorkflowStepResult[] | null; modifiedFiles?: string[] | null },
+    updates: { title?: string; description?: string; prompt?: string; worktree?: string; status?: string | null; dependencies?: string[]; blockedBy?: string | null; paused?: boolean; baseBranch?: string; baseCommitSha?: string; size?: "S" | "M" | "L"; reviewLevel?: number; mergeRetries?: number; modelProvider?: string | null; modelId?: string | null; validatorModelProvider?: string | null; validatorModelId?: string | null; error?: string | null; summary?: string | null; workflowStepResults?: import("./types.js").WorkflowStepResult[] | null; modifiedFiles?: string[] | null; missionId?: string | null; sliceId?: string | null },
   ): Promise<Task> {
     return this.withTaskLock(id, async () => {
       // Validate that task doesn't depend on itself
@@ -1011,6 +1013,16 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
         task.modifiedFiles = undefined;
       } else if (updates.modifiedFiles !== undefined) {
         task.modifiedFiles = updates.modifiedFiles;
+      }
+      if (updates.missionId === null) {
+        task.missionId = undefined;
+      } else if (updates.missionId !== undefined) {
+        task.missionId = updates.missionId;
+      }
+      if (updates.sliceId === null) {
+        task.sliceId = undefined;
+      } else if (updates.sliceId !== undefined) {
+        task.sliceId = updates.sliceId;
       }
       task.updatedAt = new Date().toISOString();
 

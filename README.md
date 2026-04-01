@@ -70,7 +70,7 @@ Mission ("Build Auth System")
 - **Slice** — Parallel work areas within a milestone (e.g., "Backend Implementation", "Frontend Components")
 - **Feature** — Individual deliverables linked to kb tasks (e.g., "Login Form", "JWT Middleware")
 
-Status flows automatically: when features are linked to tasks and completed, slice status updates. When all slices in a milestone are complete, the milestone becomes complete. When all milestones are done, the mission is complete.
+Status flows automatically: when features are linked to tasks and completed, slice status updates. Linked tasks persist both `missionId` and `sliceId` so mission progress can be observed through normal task reads. When all slices in a milestone are complete, the milestone becomes complete. When all milestones are done, the mission is complete.
 
 **CLI Commands:**
 ```bash

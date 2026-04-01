@@ -494,7 +494,7 @@ describe("MissionStore", () => {
       expect(retrieved).toBeUndefined();
     });
 
-    it("links a feature to a task", () => {
+    it("links a feature to a task and persists missionId/sliceId on the task row", () => {
       createTaskInDb(db, "FN-001");
 
       const mission = store.createMission({ title: "Mission" });
@@ -503,9 +503,15 @@ describe("MissionStore", () => {
       const feature = store.addFeature(slice.id, { title: "Linkable" });
 
       const linked = store.linkFeatureToTask(feature.id, "FN-001");
+      const taskRow = db.prepare("SELECT missionId, sliceId FROM tasks WHERE id = ?").get("FN-001") as {
+        missionId: string | null;
+        sliceId: string | null;
+      };
 
       expect(linked.taskId).toBe("FN-001");
       expect(linked.status).toBe("triaged");
+      expect(taskRow.missionId).toBe(mission.id);
+      expect(taskRow.sliceId).toBe(slice.id);
     });
 
     it("emits feature:linked event", () => {
@@ -524,7 +530,7 @@ describe("MissionStore", () => {
       expect(handler).toHaveBeenCalledWith({ feature: linked, taskId: "FN-001" });
     });
 
-    it("unlinks a feature from a task", () => {
+    it("unlinks a feature from a task and clears missionId/sliceId on the task row", () => {
       createTaskInDb(db, "FN-001");
 
       const mission = store.createMission({ title: "Mission" });
@@ -534,9 +540,15 @@ describe("MissionStore", () => {
       store.linkFeatureToTask(feature.id, "FN-001");
 
       const unlinked = store.unlinkFeatureFromTask(feature.id);
+      const taskRow = db.prepare("SELECT missionId, sliceId FROM tasks WHERE id = ?").get("FN-001") as {
+        missionId: string | null;
+        sliceId: string | null;
+      };
 
       expect(unlinked.taskId).toBeUndefined();
       expect(unlinked.status).toBe("defined");
+      expect(taskRow.missionId).toBeNull();
+      expect(taskRow.sliceId).toBeNull();
     });
 
     it("finds feature by task id", () => {

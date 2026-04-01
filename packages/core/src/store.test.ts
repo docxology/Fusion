@@ -1173,6 +1173,41 @@ describe("TaskStore", () => {
       expect(updated.validatorModelId).toBe("gpt-4o");
       expect(updated.title).toBe("Updated title");
     });
+
+    it("sets and clears mission linkage fields via updateTask", async () => {
+      const task = await createTestTask();
+
+      const linked = await store.updateTask(task.id, {
+        missionId: "M-123",
+        sliceId: "SL-456",
+      });
+      expect(linked.missionId).toBe("M-123");
+      expect(linked.sliceId).toBe("SL-456");
+
+      const reloaded = await store.getTask(task.id);
+      expect(reloaded.missionId).toBe("M-123");
+      expect(reloaded.sliceId).toBe("SL-456");
+
+      const cleared = await store.updateTask(task.id, {
+        missionId: null,
+        sliceId: null,
+      });
+      expect(cleared.missionId).toBeUndefined();
+      expect(cleared.sliceId).toBeUndefined();
+    });
+
+    it("preserves mission linkage when updating unrelated fields", async () => {
+      const task = await createTestTask();
+      await store.updateTask(task.id, {
+        missionId: "M-789",
+        sliceId: "SL-789",
+      });
+
+      const updated = await store.updateTask(task.id, { title: "Linked task" });
+      expect(updated.title).toBe("Linked task");
+      expect(updated.missionId).toBe("M-789");
+      expect(updated.sliceId).toBe("SL-789");
+    });
   });
 
   describe("updateTask — PROMPT.md regeneration", () => {

@@ -905,6 +905,35 @@ export class MissionStore extends EventEmitter<MissionStoreEvents> {
   }
 
   /**
+   * Resolve the mission hierarchy for a slice.
+   *
+   * @param sliceId - Slice ID
+   * @returns The slice, milestone, and mission IDs for the hierarchy
+   * @throws Error if the hierarchy is incomplete
+   */
+  private resolveTaskLinkage(sliceId: string): { sliceId: string; missionId: string } {
+    const slice = this.getSlice(sliceId);
+    if (!slice) {
+      throw new Error(`Slice ${sliceId} not found`);
+    }
+
+    const milestone = this.getMilestone(slice.milestoneId);
+    if (!milestone) {
+      throw new Error(`Milestone ${slice.milestoneId} not found for slice ${sliceId}`);
+    }
+
+    const mission = this.getMission(milestone.missionId);
+    if (!mission) {
+      throw new Error(`Mission ${milestone.missionId} not found for slice ${sliceId}`);
+    }
+
+    return {
+      sliceId: slice.id,
+      missionId: mission.id,
+    };
+  }
+
+  /**
    * Link a feature to a task.
    * Updates the feature's taskId and emits feature:linked event.
    *
@@ -919,15 +948,22 @@ export class MissionStore extends EventEmitter<MissionStoreEvents> {
       throw new Error(`Feature ${featureId} not found`);
     }
 
-    const updated = this.updateFeature(featureId, {
-      taskId,
-      status: "triaged",
-    });
+    const linkage = this.resolveTaskLinkage(feature.sliceId);
 
-    // Also update the task's sliceId for bidirectional linking
-    this.db.prepare(`
-      UPDATE tasks SET sliceId = ? WHERE id = ?
-    `).run(feature.sliceId, taskId);
+    const updated = this.db.transaction(() => {
+      const featureUpdate = this.updateFeature(featureId, {
+        taskId,
+        status: "triaged",
+      });
+
+      // Also update the task's mission/slice linkage for bidirectional linking.
+      this.db.prepare(`
+        UPDATE tasks SET missionId = ?, sliceId = ? WHERE id = ?
+      `).run(linkage.missionId, linkage.sliceId, taskId);
+      this.db.bumpLastModified();
+
+      return featureUpdate;
+    });
 
     this.emit("feature:linked", { feature: updated, taskId });
 
@@ -954,17 +990,22 @@ export class MissionStore extends EventEmitter<MissionStoreEvents> {
     // Get the taskId before clearing it
     const { taskId } = feature;
 
-    const updated = this.updateFeature(featureId, {
-      taskId: undefined,
-      status: "defined",
-    });
+    const updated = this.db.transaction(() => {
+      const featureUpdate = this.updateFeature(featureId, {
+        taskId: undefined,
+        status: "defined",
+      });
 
-    // Clear the task's sliceId
-    if (taskId) {
-      this.db.prepare(`
-        UPDATE tasks SET sliceId = NULL WHERE id = ?
-      `).run(taskId);
-    }
+      // Clear the task's mission/slice linkage together.
+      if (taskId) {
+        this.db.prepare(`
+          UPDATE tasks SET missionId = NULL, sliceId = NULL WHERE id = ?
+        `).run(taskId);
+        this.db.bumpLastModified();
+      }
+
+      return featureUpdate;
+    });
 
     // Recompute slice status
     this.recomputeSliceStatus(updated.sliceId);
