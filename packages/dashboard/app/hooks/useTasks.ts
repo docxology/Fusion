@@ -39,42 +39,43 @@ export function useTasks(options?: UseTasksOptions) {
   const tasksRef = useRef(tasks);
   tasksRef.current = tasks;
 
-  // Ref to track last visibility fetch time for debouncing (1 second minimum)
-  const lastVisibilityFetchRef = useRef<number>(0);
-  const VISIBILITY_FETCH_DEBOUNCE_MS = 1000;
+  // Ref to track last visibility refresh time for debouncing (1 second minimum)
+  const lastVisibilityRefreshRef = useRef<number>(0);
+  const VISIBILITY_REFRESH_DEBOUNCE_MS = 1000;
 
-  // Determine which fetch function to use
-  const fetchTasksFn = useCallback(() => {
-    if (projectId) {
-      return api.fetchProjectTasks(projectId);
+  const refreshTasks = useCallback(async (options?: { clearOnError?: boolean }) => {
+    try {
+      const refreshedTasks = projectId
+        ? await api.fetchProjectTasks(projectId)
+        : await api.fetchTasks();
+      setTasks(refreshedTasks.map(normalizeTask));
+    } catch {
+      if (options?.clearOnError) {
+        setTasks([]);
+      }
     }
-    return api.fetchTasks();
   }, [projectId]);
 
   // Fetch initial tasks
   useEffect(() => {
-    fetchTasksFn()
-      .then((tasks) => setTasks(tasks.map(normalizeTask)))
-      .catch(() => setTasks([]));
-  }, [fetchTasksFn]);
+    void refreshTasks({ clearOnError: true });
+  }, [refreshTasks]);
 
   // Visibility change listener - refresh tasks when tab becomes visible
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible") {
-        const now = Date.now();
-        const timeSinceLastFetch = now - lastVisibilityFetchRef.current;
-
-        // Debounce: only fetch if at least 1 second has passed since last visibility fetch
-        if (timeSinceLastFetch >= VISIBILITY_FETCH_DEBOUNCE_MS) {
-          lastVisibilityFetchRef.current = now;
-          fetchTasksFn()
-            .then((tasks) => setTasks(tasks.map(normalizeTask)))
-            .catch(() => {
-              // Silently ignore fetch errors on visibility change
-            });
-        }
+      if (document.visibilityState !== "visible") {
+        return;
       }
+
+      const now = Date.now();
+      const timeSinceLastRefresh = now - lastVisibilityRefreshRef.current;
+      if (timeSinceLastRefresh < VISIBILITY_REFRESH_DEBOUNCE_MS) {
+        return;
+      }
+
+      lastVisibilityRefreshRef.current = now;
+      void refreshTasks();
     };
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
@@ -82,7 +83,7 @@ export function useTasks(options?: UseTasksOptions) {
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [fetchTasksFn]);
+  }, [refreshTasks]);
 
   // SSE live updates
   // Note: In multi-project mode, SSE receives all task events.
