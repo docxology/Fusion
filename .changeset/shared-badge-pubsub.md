@@ -7,8 +7,8 @@ Add shared badge pub/sub support for multi-instance dashboard deployments
 The dashboard now supports cross-instance badge update delivery via Redis pub/sub. When running multiple dashboard instances behind a load balancer, badge updates detected on one instance are now delivered to subscribed WebSocket clients on other instances.
 
 **Configuration:**
-- `KB_BADGE_PUBSUB_REDIS_URL` - Redis connection URL (enables multi-instance mode)
-- `KB_BADGE_PUBSUB_CHANNEL` - Pub/sub channel name (default: `kb:badge-updates`)
+- `FUSION_BADGE_PUBSUB_REDIS_URL` - Redis connection URL (enables multi-instance mode)
+- `FUSION_BADGE_PUBSUB_CHANNEL` - Pub/sub channel name (default: `fusion:badge-updates`)
 
 **Features:**
 - Badge snapshots are fanned out across instances while preserving per-instance focused polling

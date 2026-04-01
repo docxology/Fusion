@@ -162,7 +162,7 @@ Use `useBadgeWebSocket()` when a UI surface needs live badge snapshots for speci
 - `/api/ws` is badge-specific; do **not** reuse it for general task updates.
 - Badge broadcasts should contain only `prInfo` / `issueInfo` snapshot data, never full task objects.
 - Badge updates are now **push-based via GitHub App webhooks** at `POST /api/github/webhooks`.
-- The server verifies webhook signatures using `KB_GITHUB_WEBHOOK_SECRET`, fetches canonical badge state with GitHub App installation tokens, and broadcasts updates via the existing `task:updated` → `/api/ws` bridge.
+- The server verifies webhook signatures using `FUSION_GITHUB_WEBHOOK_SECRET`, fetches canonical badge state with GitHub App installation tokens, and broadcasts updates via the existing `task:updated` → `/api/ws` bridge.
 - Keep the existing 5-minute refresh endpoints (`/api/tasks/:id/pr/status`, `/api/tasks/:id/issue/status`) as a fallback path when webhook delivery is unavailable.
 
 ## Git

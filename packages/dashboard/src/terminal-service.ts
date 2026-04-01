@@ -33,9 +33,9 @@ function findStagedNativeDir(): string | null {
                process.arch === "x64" ? "x64" : "unknown";
   const prebuildName = `${platform}-${arch}`;
 
-  // Check KB_RUNTIME_DIR env var first
-  if (process.env.KB_RUNTIME_DIR) {
-    const envPath = join(process.env.KB_RUNTIME_DIR, prebuildName);
+  // Check FUSION_RUNTIME_DIR env var first
+  if (process.env.FUSION_RUNTIME_DIR) {
+    const envPath = join(process.env.FUSION_RUNTIME_DIR, prebuildName);
     if (existsSync(join(envPath, "pty.node"))) {
       return envPath;
     }
@@ -69,7 +69,7 @@ async function loadPtyModule(): Promise<typeof import("node-pty")> {
         process.env.NODE_PTY_SPAWN_HELPER_DIR = nativeDir;
       }
       // Store reference for debugging
-      process.env.KB_NATIVE_ASSETS_PATH = nativeDir;
+      process.env.FUSION_NATIVE_ASSETS_PATH = nativeDir;
 
       // Try to pre-load the native module using process.dlopen
       // This can help when the normal require() path fails
@@ -137,7 +137,7 @@ const STRIP_ENV_VARS = [
   "AUTOMAKER_API_KEY",
   "NODE_PATH",
   "GITHUB_TOKEN",
-  "KB_API_KEY",
+  "FUSION_API_KEY",
 ];
 
 export interface TerminalSession {

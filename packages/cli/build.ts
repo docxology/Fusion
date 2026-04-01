@@ -230,7 +230,7 @@ function compileBinary(outFile: string, target: string, isCrossCompile: boolean)
       ...process.env,
       NODE_PATH: join(workspaceRoot, "node_modules"),
       // Tell the runtime where to find native assets
-      KB_RUNTIME_DIR: join(outDir, "runtime"),
+      FUSION_RUNTIME_DIR: join(outDir, "runtime"),
     },
   });
 

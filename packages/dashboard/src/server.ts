@@ -57,13 +57,13 @@ export function createServer(store: TaskStore, options?: ServerOptions): ReturnT
 
   // Serve built React app
   // Resolution order:
-  //   1. KB_CLIENT_DIR env override (explicit)
+  //   1. FUSION_CLIENT_DIR env override (explicit)
   //   2. Next to process.execPath (bun-compiled binary: dist/kb + dist/client/)
   //   3. __dirname/../dist/client  (running from src/ via tsx/ts-node)
   //   4. __dirname/../client        (running from dist/ after tsc)
   const execDir = dirname(process.execPath);
-  const clientDir = process.env.KB_CLIENT_DIR
-    ? process.env.KB_CLIENT_DIR
+  const clientDir = process.env.FUSION_CLIENT_DIR
+    ? process.env.FUSION_CLIENT_DIR
     : existsSync(join(execDir, "client", "index.html"))
       ? join(execDir, "client")
       : existsSync(join(__dirname, "..", "dist", "client"))
@@ -167,7 +167,7 @@ export function createServer(store: TaskStore, options?: ServerOptions): ReturnT
   app.use("/api", rateLimit(RATE_LIMITS.api));
 
   // Planning route diagnostics for production/runtime debugging. Disabled by default.
-  if (process.env.KB_DEBUG_PLANNING_ROUTES === "1") {
+  if (process.env.FUSION_DEBUG_PLANNING_ROUTES === "1") {
     app.use("/api/planning", (req, _res, next) => {
       console.debug("[planning:request]", {
         method: req.method,

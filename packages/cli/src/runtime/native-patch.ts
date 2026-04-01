@@ -39,9 +39,9 @@ function findStagedNativeDir(): string | null {
     return nextToBinary;
   }
 
-  // Check KB_RUNTIME_DIR env var
-  if (process.env.KB_RUNTIME_DIR) {
-    const envPath = join(process.env.KB_RUNTIME_DIR, prebuildName);
+  // Check FUSION_RUNTIME_DIR env var
+  if (process.env.FUSION_RUNTIME_DIR) {
+    const envPath = join(process.env.FUSION_RUNTIME_DIR, prebuildName);
     if (existsSync(join(envPath, "pty.node"))) {
       return envPath;
     }
@@ -99,7 +99,7 @@ export function setupNativeResolution(): { success: boolean; nativeDir: string |
   }
 
   // Store reference for other code to use
-  process.env.KB_NATIVE_ASSETS_PATH = nativeDir;
+  process.env.FUSION_NATIVE_ASSETS_PATH = nativeDir;
 
   // Create the fake bunfs structure
   const tmpRoot = join(tmpdir(), `kb-bunfs-${process.pid}`);
@@ -123,7 +123,7 @@ export function setupNativeResolution(): { success: boolean; nativeDir: string |
     }
 
     // Store the path for potential use
-    process.env.KB_FAKE_BUNFS_ROOT = tmpRoot;
+    process.env.FUSION_FAKE_BUNFS_ROOT = tmpRoot;
 
     // Try to create symlink from /$bunfs/root to our temp directory
     // This allows node-pty's relative require() to find the native module
@@ -184,7 +184,7 @@ export function cleanupNativeResolution(): void {
  */
 export function initNativePatch(): { success: boolean; nativeDir: string | null } {
   if (initialized || !isBunBinary) {
-    return { success: true, nativeDir: process.env.KB_NATIVE_ASSETS_PATH || null };
+    return { success: true, nativeDir: process.env.FUSION_NATIVE_ASSETS_PATH || null };
   }
 
   const result = setupNativeResolution();

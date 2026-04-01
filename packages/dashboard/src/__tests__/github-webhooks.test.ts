@@ -20,10 +20,10 @@ describe("GitHub Webhooks Module", () => {
   beforeEach(() => {
     vi.resetModules();
     process.env = { ...originalEnv };
-    delete process.env.KB_GITHUB_APP_ID;
-    delete process.env.KB_GITHUB_APP_PRIVATE_KEY;
-    delete process.env.KB_GITHUB_APP_PRIVATE_KEY_PATH;
-    delete process.env.KB_GITHUB_WEBHOOK_SECRET;
+    delete process.env.FUSION_GITHUB_APP_ID;
+    delete process.env.FUSION_GITHUB_APP_PRIVATE_KEY;
+    delete process.env.FUSION_GITHUB_APP_PRIVATE_KEY_PATH;
+    delete process.env.FUSION_GITHUB_WEBHOOK_SECRET;
   });
 
   afterEach(() => {
@@ -37,14 +37,14 @@ describe("GitHub Webhooks Module", () => {
     });
 
     it("returns null when only appId is set", () => {
-      process.env.KB_GITHUB_APP_ID = "12345";
+      process.env.FUSION_GITHUB_APP_ID = "12345";
       expect(getGitHubAppConfig()).toBeNull();
     });
 
     it("returns config when all required vars are set via direct key", () => {
-      process.env.KB_GITHUB_APP_ID = "12345";
-      process.env.KB_GITHUB_APP_PRIVATE_KEY = "-----BEGIN RSA PRIVATE KEY-----\ntest\n-----END RSA PRIVATE KEY-----";
-      process.env.KB_GITHUB_WEBHOOK_SECRET = "webhook-secret";
+      process.env.FUSION_GITHUB_APP_ID = "12345";
+      process.env.FUSION_GITHUB_APP_PRIVATE_KEY = "-----BEGIN RSA PRIVATE KEY-----\ntest\n-----END RSA PRIVATE KEY-----";
+      process.env.FUSION_GITHUB_WEBHOOK_SECRET = "webhook-secret";
 
       const config = getGitHubAppConfig();
       expect(config).not.toBeNull();
@@ -54,18 +54,18 @@ describe("GitHub Webhooks Module", () => {
     });
 
     it("returns null when key file cannot be read", () => {
-      process.env.KB_GITHUB_APP_ID = "12345";
-      process.env.KB_GITHUB_APP_PRIVATE_KEY_PATH = "/nonexistent/path/key.pem";
-      process.env.KB_GITHUB_WEBHOOK_SECRET = "webhook-secret";
+      process.env.FUSION_GITHUB_APP_ID = "12345";
+      process.env.FUSION_GITHUB_APP_PRIVATE_KEY_PATH = "/nonexistent/path/key.pem";
+      process.env.FUSION_GITHUB_WEBHOOK_SECRET = "webhook-secret";
 
       expect(getGitHubAppConfig()).toBeNull();
     });
 
     it("prefers direct key over file path when both are set", () => {
-      process.env.KB_GITHUB_APP_ID = "12345";
-      process.env.KB_GITHUB_APP_PRIVATE_KEY = "direct-key-content";
-      process.env.KB_GITHUB_APP_PRIVATE_KEY_PATH = "/nonexistent/path/key.pem";
-      process.env.KB_GITHUB_WEBHOOK_SECRET = "webhook-secret";
+      process.env.FUSION_GITHUB_APP_ID = "12345";
+      process.env.FUSION_GITHUB_APP_PRIVATE_KEY = "direct-key-content";
+      process.env.FUSION_GITHUB_APP_PRIVATE_KEY_PATH = "/nonexistent/path/key.pem";
+      process.env.FUSION_GITHUB_WEBHOOK_SECRET = "webhook-secret";
 
       const config = getGitHubAppConfig();
       expect(config?.privateKey).toBe("direct-key-content");
@@ -78,9 +78,9 @@ describe("GitHub Webhooks Module", () => {
     });
 
     it("returns true when fully configured", () => {
-      process.env.KB_GITHUB_APP_ID = "12345";
-      process.env.KB_GITHUB_APP_PRIVATE_KEY = "private-key";
-      process.env.KB_GITHUB_WEBHOOK_SECRET = "webhook-secret";
+      process.env.FUSION_GITHUB_APP_ID = "12345";
+      process.env.FUSION_GITHUB_APP_PRIVATE_KEY = "private-key";
+      process.env.FUSION_GITHUB_WEBHOOK_SECRET = "webhook-secret";
 
       expect(isGitHubAppConfigured()).toBe(true);
     });

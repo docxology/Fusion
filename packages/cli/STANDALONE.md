@@ -34,10 +34,10 @@ When deploying the dashboard behind a load balancer with multiple instances, con
 
 ```bash
 # Set Redis URL for cross-instance badge synchronization
-export KB_BADGE_PUBSUB_REDIS_URL="redis://redis.example.com:6379"
+export FUSION_BADGE_PUBSUB_REDIS_URL="redis://redis.example.com:6379"
 
-# Optional: customize the pub/sub channel (default: kb:badge-updates)
-export KB_BADGE_PUBSUB_CHANNEL="my-app-badge-updates"
+# Optional: customize the pub/sub channel (default: fusion:badge-updates)
+export FUSION_BADGE_PUBSUB_CHANNEL="my-app-badge-updates"
 
 fn dashboard
 ```
@@ -50,10 +50,10 @@ For real-time PR/issue badge updates, configure a GitHub App to push updates to 
 
 **Required Environment Variables:**
 ```bash
-export KB_GITHUB_APP_ID="123456"
-export KB_GITHUB_APP_PRIVATE_KEY_PATH="/path/to/private-key.pem"
-# Or: export KB_GITHUB_APP_PRIVATE_KEY="$(cat /path/to/private-key.pem)"
-export KB_GITHUB_WEBHOOK_SECRET="your-webhook-secret"
+export FUSION_GITHUB_APP_ID="123456"
+export FUSION_GITHUB_APP_PRIVATE_KEY_PATH="/path/to/private-key.pem"
+# Or: export FUSION_GITHUB_APP_PRIVATE_KEY="$(cat /path/to/private-key.pem)"
+export FUSION_GITHUB_WEBHOOK_SECRET="your-webhook-secret"
 ```
 
 **GitHub App Configuration:**

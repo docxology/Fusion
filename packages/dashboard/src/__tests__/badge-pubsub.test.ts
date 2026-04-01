@@ -98,8 +98,8 @@ describe("createBadgePubSub", () => {
 
   beforeEach(() => {
     process.env = { ...originalEnv };
-    delete process.env.KB_BADGE_PUBSUB_REDIS_URL;
-    delete process.env.KB_BADGE_PUBSUB_CHANNEL;
+    delete process.env.FUSION_BADGE_PUBSUB_REDIS_URL;
+    delete process.env.FUSION_BADGE_PUBSUB_CHANNEL;
   });
 
   afterEach(() => {
@@ -111,24 +111,24 @@ describe("createBadgePubSub", () => {
     expect(pubsub).toBeInstanceOf(InMemoryBadgePubSub);
   });
 
-  it("returns RedisBadgePubSub when KB_BADGE_PUBSUB_REDIS_URL is set", () => {
-    process.env.KB_BADGE_PUBSUB_REDIS_URL = "redis://localhost:6379";
+  it("returns RedisBadgePubSub when FUSION_BADGE_PUBSUB_REDIS_URL is set", () => {
+    process.env.FUSION_BADGE_PUBSUB_REDIS_URL = "redis://localhost:6379";
     const pubsub = createBadgePubSub({ sourceId: "server-1" });
     expect(pubsub).toBeInstanceOf(RedisBadgePubSub);
   });
 
-  it("uses default channel kb:badge-updates when KB_BADGE_PUBSUB_CHANNEL is unset", () => {
-    process.env.KB_BADGE_PUBSUB_REDIS_URL = "redis://localhost:6379";
-    delete process.env.KB_BADGE_PUBSUB_CHANNEL;
+  it("uses default channel fusion:badge-updates when FUSION_BADGE_PUBSUB_CHANNEL is unset", () => {
+    process.env.FUSION_BADGE_PUBSUB_REDIS_URL = "redis://localhost:6379";
+    delete process.env.FUSION_BADGE_PUBSUB_CHANNEL;
     
     const pubsub = createBadgePubSub({ sourceId: "server-1" });
     expect(pubsub).toBeInstanceOf(RedisBadgePubSub);
     // The channel is internal to the adapter; we verify by creating it without error
   });
 
-  it("uses custom channel when KB_BADGE_PUBSUB_CHANNEL is set", () => {
-    process.env.KB_BADGE_PUBSUB_REDIS_URL = "redis://localhost:6379";
-    process.env.KB_BADGE_PUBSUB_CHANNEL = "custom-channel";
+  it("uses custom channel when FUSION_BADGE_PUBSUB_CHANNEL is set", () => {
+    process.env.FUSION_BADGE_PUBSUB_REDIS_URL = "redis://localhost:6379";
+    process.env.FUSION_BADGE_PUBSUB_CHANNEL = "custom-channel";
     
     const pubsub = createBadgePubSub({ sourceId: "server-1" });
     expect(pubsub).toBeInstanceOf(RedisBadgePubSub);
@@ -401,8 +401,8 @@ describe("RedisBadgePubSub (integration)", () => {
   });
 
   it("reads configuration from environment variables", () => {
-    process.env.KB_BADGE_PUBSUB_REDIS_URL = "redis://redis.example.com:6380";
-    process.env.KB_BADGE_PUBSUB_CHANNEL = "prod-badges";
+    process.env.FUSION_BADGE_PUBSUB_REDIS_URL = "redis://redis.example.com:6380";
+    process.env.FUSION_BADGE_PUBSUB_CHANNEL = "prod-badges";
 
     const pubsub = createBadgePubSub({ sourceId: "server-1" });
     expect(pubsub).toBeInstanceOf(RedisBadgePubSub);

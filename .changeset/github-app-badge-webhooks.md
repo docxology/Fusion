@@ -14,9 +14,9 @@ Replace GitHub badge polling with GitHub App webhook ingestion
 - Removed live `/api/ws` dependency on `GitHubPollingService` lifecycle
 
 **Configuration:**
-- `KB_GITHUB_APP_ID` - GitHub App ID
-- `KB_GITHUB_APP_PRIVATE_KEY` or `KB_GITHUB_APP_PRIVATE_KEY_PATH` - PEM private key
-- `KB_GITHUB_WEBHOOK_SECRET` - Webhook secret for signature verification
+- `FUSION_GITHUB_APP_ID` - GitHub App ID
+- `FUSION_GITHUB_APP_PRIVATE_KEY` or `FUSION_GITHUB_APP_PRIVATE_KEY_PATH` - PEM private key
+- `FUSION_GITHUB_WEBHOOK_SECRET` - Webhook secret for signature verification
 
 **Required GitHub App Permissions:**
 - Metadata: Read

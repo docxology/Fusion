@@ -103,8 +103,8 @@ export class InMemoryBadgePubSub extends EventEmitter<BadgePubSubEvents> impleme
  * Uses Redis pub/sub for cross-instance message delivery.
  * 
  * Environment variables:
- * - KB_BADGE_PUBSUB_REDIS_URL: Redis connection URL
- * - KB_BADGE_PUBSUB_CHANNEL: Channel name (default: "kb:badge-updates")
+ * - FUSION_BADGE_PUBSUB_REDIS_URL: Redis connection URL
+ * - FUSION_BADGE_PUBSUB_CHANNEL: Channel name (default: "fusion:badge-updates")
  */
 export class RedisBadgePubSub extends EventEmitter<BadgePubSubEvents> implements BadgePubSub {
   private subscriber: import("ioredis").Redis | null = null;
@@ -280,7 +280,7 @@ export function parseBadgePubSubMessage(
 /**
  * Create a BadgePubSub adapter based on environment configuration.
  * 
- * If KB_BADGE_PUBSUB_REDIS_URL is set, returns a RedisBadgePubSub.
+ * If FUSION_BADGE_PUBSUB_REDIS_URL is set, returns a RedisBadgePubSub.
  * Otherwise, returns an InMemoryBadgePubSub for local-only operation.
  */
 export function createBadgePubSub(options: { sourceId: string }): BadgePubSub {
@@ -298,11 +298,11 @@ export function createBadgePubSub(options: { sourceId: string }): BadgePubSub {
 }
 
 function getRedisUrlFromEnv(): string | undefined {
-  return process.env.KB_BADGE_PUBSUB_REDIS_URL;
+  return process.env.FUSION_BADGE_PUBSUB_REDIS_URL;
 }
 
 function getChannelFromEnv(): string {
-  return process.env.KB_BADGE_PUBSUB_CHANNEL ?? "kb:badge-updates";
+  return process.env.FUSION_BADGE_PUBSUB_CHANNEL ?? "fusion:badge-updates";
 }
 
 export { getRedisUrlFromEnv, getChannelFromEnv };

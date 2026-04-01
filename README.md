@@ -413,10 +413,10 @@ pnpm --filter kb build:exe -- --target bun-linux-x64
 
 The `client/` directory is shared across all binaries (platform-independent assets).
 
-You can override the dashboard asset path via the `KB_CLIENT_DIR` environment variable:
+You can override the dashboard asset path via the `FUSION_CLIENT_DIR` environment variable:
 
 ```bash
-KB_CLIENT_DIR=/path/to/client ./fn dashboard
+FUSION_CLIENT_DIR=/path/to/client ./fn dashboard
 ```
 
 **Prerequisites:** Bun ≥ 1.0 (`bun --version`)
@@ -432,7 +432,7 @@ Tasks with linked GitHub PRs or imported issues display real-time status badges 
 - **PR badges** — Shows open/closed/merged state with check status
 - **Issue badges** — Shows open/closed state
 - **WebSocket updates** — Badge status updates instantly via WebSocket when changes occur on GitHub
-- **Multi-instance support** — Redis pub/sub enables badge updates across load-balanced dashboard instances (configure via `KB_BADGE_PUBSUB_REDIS_URL`)
+- **Multi-instance support** — Redis pub/sub enables badge updates across load-balanced dashboard instances (configure via `FUSION_BADGE_PUBSUB_REDIS_URL`)
 
 ### PR Creation
 

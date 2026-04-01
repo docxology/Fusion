@@ -1049,7 +1049,7 @@ function discardGitChanges(files: string[], cwd?: string): string[] {
 export function createApiRoutes(store: TaskStore, options?: ServerOptions): Router {
   const router = Router();
 
-  if (process.env.KB_DEBUG_PLANNING_ROUTES === "1") {
+  if (process.env.FUSION_DEBUG_PLANNING_ROUTES === "1") {
     const planningRoutes = [
       "POST /planning/start",
       "POST /planning/start-streaming",

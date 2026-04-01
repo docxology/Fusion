@@ -57,19 +57,19 @@ export interface VerificationResult {
 
 /**
  * Read GitHub App configuration from environment variables.
- * Supports KB_GITHUB_APP_PRIVATE_KEY or KB_GITHUB_APP_PRIVATE_KEY_PATH.
+ * Supports FUSION_GITHUB_APP_PRIVATE_KEY or FUSION_GITHUB_APP_PRIVATE_KEY_PATH.
  */
 export function getGitHubAppConfig(): GitHubAppConfig | null {
-  const appId = process.env.KB_GITHUB_APP_ID;
-  const webhookSecret = process.env.KB_GITHUB_WEBHOOK_SECRET;
+  const appId = process.env.FUSION_GITHUB_APP_ID;
+  const webhookSecret = process.env.FUSION_GITHUB_WEBHOOK_SECRET;
 
   let privateKey: string | undefined;
   
-  if (process.env.KB_GITHUB_APP_PRIVATE_KEY) {
-    privateKey = process.env.KB_GITHUB_APP_PRIVATE_KEY;
-  } else if (process.env.KB_GITHUB_APP_PRIVATE_KEY_PATH) {
+  if (process.env.FUSION_GITHUB_APP_PRIVATE_KEY) {
+    privateKey = process.env.FUSION_GITHUB_APP_PRIVATE_KEY;
+  } else if (process.env.FUSION_GITHUB_APP_PRIVATE_KEY_PATH) {
     try {
-      privateKey = readFileSync(process.env.KB_GITHUB_APP_PRIVATE_KEY_PATH, "utf-8");
+      privateKey = readFileSync(process.env.FUSION_GITHUB_APP_PRIVATE_KEY_PATH, "utf-8");
     } catch {
       // Failed to read key file
       return null;

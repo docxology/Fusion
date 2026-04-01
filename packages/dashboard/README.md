@@ -346,10 +346,10 @@ The dashboard server exposes a REST API at `/api`:
 For real-time PR/issue badge updates, configure a GitHub App instead of relying on polling:
 
 **Environment Variables:**
-- `KB_GITHUB_APP_ID` - Your GitHub App ID
-- `KB_GITHUB_APP_PRIVATE_KEY` - PEM private key content (or use `KB_GITHUB_APP_PRIVATE_KEY_PATH`)
-- `KB_GITHUB_APP_PRIVATE_KEY_PATH` - Path to PEM private key file (alternative to direct key)
-- `KB_GITHUB_WEBHOOK_SECRET` - Webhook secret for signature verification
+- `FUSION_GITHUB_APP_ID` - Your GitHub App ID
+- `FUSION_GITHUB_APP_PRIVATE_KEY` - PEM private key content (or use `FUSION_GITHUB_APP_PRIVATE_KEY_PATH`)
+- `FUSION_GITHUB_APP_PRIVATE_KEY_PATH` - Path to PEM private key file (alternative to direct key)
+- `FUSION_GITHUB_WEBHOOK_SECRET` - Webhook secret for signature verification
 
 **GitHub App Configuration:**
 - **Permissions Required:**
@@ -361,7 +361,7 @@ For real-time PR/issue badge updates, configure a GitHub App instead of relying 
 
 **How it Works:**
 1. GitHub sends signed webhook events when PR/issue state changes
-2. Server verifies `X-Hub-Signature-256` using `KB_GITHUB_WEBHOOK_SECRET`
+2. Server verifies `X-Hub-Signature-256` using `FUSION_GITHUB_WEBHOOK_SECRET`
 3. Server fetches canonical badge data using GitHub App installation token
 4. Matching tasks (by parsed badge URL) are updated via `store.updatePrInfo()` / `store.updateIssueInfo()`
 5. `task:updated` event triggers `/api/ws` broadcast to subscribed clients
@@ -375,10 +375,10 @@ When webhook delivery is unavailable, the 5-minute refresh endpoints (`/api/task
 When running the dashboard on multiple instances behind a load balancer, badge updates can be shared across instances using Redis pub/sub. This ensures that a PR/issue badge change detected on instance A is delivered to subscribed WebSocket clients on instance B.
 
 **Configuration:**
-- `KB_BADGE_PUBSUB_REDIS_URL` - Redis connection URL (e.g., `redis://localhost:6379`)
-- `KB_BADGE_PUBSUB_CHANNEL` - Pub/sub channel name (default: `kb:badge-updates`)
+- `FUSION_BADGE_PUBSUB_REDIS_URL` - Redis connection URL (e.g., `redis://localhost:6379`)
+- `FUSION_BADGE_PUBSUB_CHANNEL` - Pub/sub channel name (default: `fusion:badge-updates`)
 
-When `KB_BADGE_PUBSUB_REDIS_URL` is not set, the dashboard uses an in-memory adapter for single-instance deployments.
+When `FUSION_BADGE_PUBSUB_REDIS_URL` is not set, the dashboard uses an in-memory adapter for single-instance deployments.
 
 **Design Notes:**
 - Webhook deliveries to any instance are broadcast to all instances via pub/sub
