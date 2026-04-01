@@ -5535,6 +5535,8 @@ body {
 /* Set width on ID column header to match data cells */
 .list-table th:nth-child(2).list-header-cell {
   width: 70px;
+  min-width: 70px;
+  max-width: 70px;
 }
 
 .list-header-cell:hover {
