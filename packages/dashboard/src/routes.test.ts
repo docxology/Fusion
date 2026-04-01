@@ -465,6 +465,108 @@ describe("POST /subtasks/*", () => {
     expect(res.status).toBe(404);
     expect(res.body.error).toContain("not found");
   });
+
+  it("inherits parent task model settings when creating subtasks", async () => {
+    const parentTask = {
+      ...FAKE_TASK_DETAIL,
+      id: "KB-100",
+      title: "Parent Task",
+      column: "triage",
+      modelProvider: "anthropic",
+      modelId: "claude-sonnet-4-5",
+      validatorModelProvider: "openai",
+      validatorModelId: "gpt-4o",
+    };
+
+    (store.getTask as ReturnType<typeof vi.fn>).mockResolvedValue(parentTask);
+    (store.createTask as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ ...FAKE_TASK_DETAIL, id: "KB-101", title: "First", column: "triage" })
+      .mockResolvedValueOnce({ ...FAKE_TASK_DETAIL, id: "KB-102", title: "Second", column: "triage" });
+    (store.updateTask as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ ...FAKE_TASK_DETAIL, id: "KB-101", title: "First", column: "triage", size: "S" })
+      .mockResolvedValueOnce({ ...FAKE_TASK_DETAIL, id: "KB-102", title: "Second", column: "triage", size: "M" });
+
+    const start = await REQUEST(
+      buildApp(),
+      "POST",
+      "/api/subtasks/start-streaming",
+      JSON.stringify({ description: "Break this feature into subtasks" }),
+      { "Content-Type": "application/json" },
+    );
+
+    const createRes = await REQUEST(
+      buildApp(),
+      "POST",
+      "/api/subtasks/create-tasks",
+      JSON.stringify({
+        sessionId: start.body.sessionId,
+        parentTaskId: "KB-100",
+        subtasks: [
+          { tempId: "subtask-1", title: "First", description: "Do first", size: "S", dependsOn: [] },
+          { tempId: "subtask-2", title: "Second", description: "Do second", size: "M", dependsOn: ["subtask-1"] },
+        ],
+      }),
+      { "Content-Type": "application/json" },
+    );
+
+    expect(createRes.status).toBe(201);
+    expect(store.getTask).toHaveBeenCalledWith("KB-100");
+    expect(store.createTask).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      title: "First",
+      modelProvider: "anthropic",
+      modelId: "claude-sonnet-4-5",
+      validatorModelProvider: "openai",
+      validatorModelId: "gpt-4o",
+    }));
+    expect(store.createTask).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      title: "Second",
+      modelProvider: "anthropic",
+      modelId: "claude-sonnet-4-5",
+      validatorModelProvider: "openai",
+      validatorModelId: "gpt-4o",
+    }));
+  });
+
+  it("handles missing parent task gracefully when creating subtasks", async () => {
+    (store.getTask as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("Task not found"));
+    (store.createTask as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ ...FAKE_TASK_DETAIL, id: "KB-101", title: "First", column: "triage" });
+    (store.updateTask as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ ...FAKE_TASK_DETAIL, id: "KB-101", title: "First", column: "triage", size: "S" });
+
+    const start = await REQUEST(
+      buildApp(),
+      "POST",
+      "/api/subtasks/start-streaming",
+      JSON.stringify({ description: "Break this feature into subtasks" }),
+      { "Content-Type": "application/json" },
+    );
+
+    const createRes = await REQUEST(
+      buildApp(),
+      "POST",
+      "/api/subtasks/create-tasks",
+      JSON.stringify({
+        sessionId: start.body.sessionId,
+        parentTaskId: "KB-NONEXISTENT",
+        subtasks: [
+          { tempId: "subtask-1", title: "First", description: "Do first", size: "S", dependsOn: [] },
+        ],
+      }),
+      { "Content-Type": "application/json" },
+    );
+
+    expect(createRes.status).toBe(201);
+    expect(store.getTask).toHaveBeenCalledWith("KB-NONEXISTENT");
+    // Subtask created without model inheritance (undefined values)
+    expect(store.createTask).toHaveBeenCalledWith(expect.objectContaining({
+      title: "First",
+      modelProvider: undefined,
+      modelId: undefined,
+      validatorModelProvider: undefined,
+      validatorModelId: undefined,
+    }));
+  });
 });
 
 describe("POST /tasks/:id/retry", () => {

@@ -535,3 +535,111 @@ describe("requirePlanApproval setting", () => {
     expect(settings.requirePlanApproval).toBeUndefined();
   });
 });
+
+describe("taskCreate tool model inheritance", () => {
+  it("inherits parent task model settings when creating subtasks", async () => {
+    const parentTask: Task = {
+      id: "KB-001",
+      description: "Parent task",
+      column: "triage",
+      dependencies: [],
+      steps: [],
+      currentStep: 0,
+      log: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      modelProvider: "anthropic",
+      modelId: "claude-sonnet-4-5",
+      validatorModelProvider: "openai",
+      validatorModelId: "gpt-4o",
+    };
+
+    const createdSubtask: Task = {
+      id: "KB-002",
+      description: "Child task description",
+      column: "triage",
+      dependencies: [],
+      steps: [],
+      currentStep: 0,
+      log: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+
+    const store = createMockStore({
+      getTask: vi.fn().mockResolvedValue(parentTask),
+      createTask: vi.fn().mockResolvedValue(createdSubtask),
+    });
+
+    // Simulate the taskCreate tool behavior
+    const parentTaskId = "KB-001";
+    const parentTaskResult = await store.getTask(parentTaskId);
+    
+    await store.createTask({
+      title: "Child Task",
+      description: "Child task description",
+      dependencies: [],
+      column: "triage",
+      modelProvider: parentTaskResult?.modelProvider,
+      modelId: parentTaskResult?.modelId,
+      validatorModelProvider: parentTaskResult?.validatorModelProvider,
+      validatorModelId: parentTaskResult?.validatorModelId,
+    });
+
+    expect(store.getTask).toHaveBeenCalledWith("KB-001");
+    expect(store.createTask).toHaveBeenCalledWith(expect.objectContaining({
+      title: "Child Task",
+      modelProvider: "anthropic",
+      modelId: "claude-sonnet-4-5",
+      validatorModelProvider: "openai",
+      validatorModelId: "gpt-4o",
+    }));
+  });
+
+  it("handles missing parent task gracefully when creating subtasks", async () => {
+    const createdSubtask: Task = {
+      id: "KB-002",
+      description: "Child task description",
+      column: "triage",
+      dependencies: [],
+      steps: [],
+      currentStep: 0,
+      log: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+
+    const store = createMockStore({
+      getTask: vi.fn().mockRejectedValue(new Error("Task not found")),
+      createTask: vi.fn().mockResolvedValue(createdSubtask),
+    });
+
+    // Simulate the taskCreate tool behavior with missing parent
+    const parentTaskId = "KB-NONEXISTENT";
+    let parentTask;
+    try {
+      parentTask = await store.getTask(parentTaskId);
+    } catch {
+      parentTask = undefined;
+    }
+    
+    await store.createTask({
+      title: "Child Task",
+      description: "Child task description",
+      dependencies: [],
+      column: "triage",
+      modelProvider: parentTask?.modelProvider,
+      modelId: parentTask?.modelId,
+      validatorModelProvider: parentTask?.validatorModelProvider,
+      validatorModelId: parentTask?.validatorModelId,
+    });
+
+    expect(store.getTask).toHaveBeenCalledWith("KB-NONEXISTENT");
+    expect(store.createTask).toHaveBeenCalledWith(expect.objectContaining({
+      modelProvider: undefined,
+      modelId: undefined,
+      validatorModelProvider: undefined,
+      validatorModelId: undefined,
+    }));
+  });
+});

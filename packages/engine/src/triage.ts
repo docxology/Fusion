@@ -788,11 +788,25 @@ export class TriageProcessor {
         }
 
         try {
+          // Fetch parent task to inherit model settings
+          let parentTask: Awaited<ReturnType<typeof store.getTask>> | undefined;
+          try {
+            parentTask = await store.getTask(options.parentTaskId);
+          } catch {
+            // Parent task not found or error - proceed without inheritance
+            parentTask = undefined;
+          }
+
           const newTask = await store.createTask({
             title: params.title,
             description: params.description,
             dependencies: params.dependencies || [],
             column: "triage",
+            // Inherit parent's model settings if available
+            modelProvider: parentTask?.modelProvider,
+            modelId: parentTask?.modelId,
+            validatorModelProvider: parentTask?.validatorModelProvider,
+            validatorModelId: parentTask?.validatorModelId,
           });
 
           // Track the created subtask

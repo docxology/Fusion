@@ -4494,6 +4494,17 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         return;
       }
 
+      // Fetch parent task to inherit model settings if parentTaskId is provided
+      let parentTask: Awaited<ReturnType<typeof store.getTask>> | undefined;
+      if (typeof parentTaskId === "string" && parentTaskId.trim()) {
+        try {
+          parentTask = await store.getTask(parentTaskId);
+        } catch {
+          // Parent task not found or error - proceed without inheritance
+          parentTask = undefined;
+        }
+      }
+
       const createdTasks = [] as Awaited<ReturnType<typeof store.createTask>>[];
       const tempIdToTaskId = new Map<string, string>();
 
@@ -4508,6 +4519,11 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
           description: typeof item.description === "string" ? item.description.trim() : item.title.trim(),
           column: "triage",
           dependencies: undefined,
+          // Inherit parent's model settings if available
+          modelProvider: parentTask?.modelProvider,
+          modelId: parentTask?.modelId,
+          validatorModelProvider: parentTask?.validatorModelProvider,
+          validatorModelId: parentTask?.validatorModelId,
         });
 
         tempIdToTaskId.set(item.tempId, task.id);
