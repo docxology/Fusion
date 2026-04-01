@@ -1,0 +1,17 @@
+{
+  "id": "KB-662",
+  "description": "When dashboard becomes visible refresh data",
+  "column": "triage",
+  "dependencies": [],
+  "steps": [],
+  "currentStep": 0,
+  "log": [
+    {
+      "timestamp": "2026-04-01T05:35:18.262Z",
+      "action": "Task created"
+    }
+  ],
+  "columnMovedAt": "2026-04-01T05:35:18.262Z",
+  "createdAt": "2026-04-01T05:35:18.262Z",
+  "updatedAt": "2026-04-01T05:35:18.262Z"
+}

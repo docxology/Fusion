@@ -1,0 +1,67 @@
+{
+  "id": "KB-653",
+  "description": "Truncate board titles to 140 characters",
+  "column": "in-progress",
+  "size": "S",
+  "reviewLevel": 0,
+  "currentStep": 1,
+  "worktree": "/Users/eclipxe/Projects/kb/.worktrees/azure-lotus",
+  "createdAt": "2026-04-01T02:36:33.043Z",
+  "updatedAt": "2026-04-01T05:37:58.833Z",
+  "columnMovedAt": "2026-04-01T05:37:53.057Z",
+  "dependencies": [],
+  "steps": [
+    {
+      "name": "Implement Title Truncation",
+      "status": "done"
+    },
+    {
+      "name": "Testing & Verification",
+      "status": "in-progress"
+    },
+    {
+      "name": "Documentation & Delivery",
+      "status": "pending"
+    }
+  ],
+  "log": [
+    {
+      "timestamp": "2026-04-01T02:36:33.043Z",
+      "action": "Task created"
+    },
+    {
+      "timestamp": "2026-04-01T02:44:35.573Z",
+      "action": "Spec review requested"
+    },
+    {
+      "timestamp": "2026-04-01T02:44:47.414Z",
+      "action": "Spec review: APPROVE",
+      "outcome": "The specification is well-crafted, complete, and ready for implementation. The mission is clear, steps are concrete and verifiable, file scope is accurate, testing requirements are thorough, and the size/review level (S/0) is appropriate for this localized UI change. All referenced files and patterns exist as described."
+    },
+    {
+      "timestamp": "2026-04-01T05:37:53.180Z",
+      "action": "Worktree created at /Users/eclipxe/Projects/kb/.worktrees/azure-lotus"
+    },
+    {
+      "timestamp": "2026-04-01T05:37:53.188Z",
+      "action": "Step 0 (Implement Title Truncation) → pending"
+    },
+    {
+      "timestamp": "2026-04-01T05:37:55.220Z",
+      "action": "Step 0 (Implement Title Truncation) → in-progress"
+    },
+    {
+      "timestamp": "2026-04-01T05:37:58.831Z",
+      "action": "Step 0 (Implement Title Truncation) → done"
+    },
+    {
+      "timestamp": "2026-04-01T05:37:58.832Z",
+      "action": "Step 1 (Testing & Verification) → in-progress"
+    },
+    {
+      "timestamp": "2026-04-01T05:37:58.833Z",
+      "action": "Step 0 complete. Found .card-title div at line ~526 in TaskCard.tsx. Will add truncate utility and modify title display.",
+      "outcome": "Ready to implement title truncation"
+    }
+  ]
+}

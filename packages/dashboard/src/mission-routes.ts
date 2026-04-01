@@ -25,6 +25,8 @@ import type {
   FeatureCreateInput,
   MissionStatus,
   MilestoneStatus,
+  SliceStatus,
+  FeatureStatus,
   InterviewState,
 } from "@fusion/core";
 import {
@@ -117,9 +119,11 @@ function validateOrderedIds(body: unknown): string[] {
 
 // ── Async Handler Wrapper ───────────────────────────────────────────────────
 
-function asyncHandler(fn: (req: Request, res: Response, next: NextFunction) => Promise<void>) {
+type TypedRequest = Request<Record<string, string>>;
+
+function asyncHandler(fn: (req: TypedRequest, res: Response, next: NextFunction) => Promise<void>) {
   return (req: Request, res: Response, next: NextFunction) => {
-    Promise.resolve(fn(req, res, next)).catch(next);
+    Promise.resolve(fn(req as TypedRequest, res, next)).catch(next);
   };
 }
 
