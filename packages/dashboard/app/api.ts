@@ -325,6 +325,8 @@ export function addComment(id: string, text: string): Promise<Task> {
   });
 }
 
+export const addSteeringComment = addComment;
+
 export function requestSpecRevision(id: string, feedback: string): Promise<Task> {
   return api<Task>(`/tasks/${id}/spec/revise`, {
     method: "POST",
@@ -1342,6 +1344,56 @@ export function fetchWorkflowResults(taskId: string): Promise<WorkflowStepResult
   return api<WorkflowStepResult[]>(`/tasks/${encodeURIComponent(taskId)}/workflow-results`);
 }
 
+// ── Scripts ─────────────────────────────────────────────────────────────
+
+export type ScriptsMap = Record<string, string>;
+
+export interface RunScriptResponse {
+  command: string;
+  sessionId: string;
+}
+
+export async function waitForScriptCompletion(sessionId: string): Promise<{ output: string; exitCode: number }> {
+  for (;;) {
+    const session = await getTerminalSession(sessionId);
+    if (!session.running) {
+      return {
+        output: session.output,
+        exitCode: session.exitCode ?? 0,
+      };
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+}
+
+/** Fetch all project-defined scripts */
+export function fetchScripts(): Promise<ScriptsMap> {
+  return api<ScriptsMap>("/scripts");
+}
+
+/** Create a new project-defined script */
+export async function addScript(name: string, command: string): Promise<void> {
+  await api<ScriptsMap>("/scripts", {
+    method: "POST",
+    body: JSON.stringify({ name, command }),
+  });
+}
+
+/** Remove a project-defined script */
+export async function removeScript(name: string): Promise<void> {
+  await api<ScriptsMap>(`/scripts/${encodeURIComponent(name)}`, {
+    method: "DELETE",
+  });
+}
+
+/** Execute a script via the terminal service and return the created session */
+export function runScript(name: string, args?: string[]): Promise<RunScriptResponse> {
+  return api<RunScriptResponse>(`/scripts/${encodeURIComponent(name)}/run`, {
+    method: "POST",
+    body: JSON.stringify({ args }),
+  });
+}
+
 // ── Workflow Step Templates ──────────────────────────────────────────────
 
 /** Re-export WorkflowStepTemplate type from core */
@@ -1922,38 +1974,3 @@ export function fetchTaskDiff(taskId: string): Promise<TaskDiff> {
   return api<TaskDiff>(`/tasks/${encodeURIComponent(taskId)}/diff`);
 }
 
-// ── Scripts API ───────────────────────────────────────────────────────────
-
-/** Script execution result */
-export interface ScriptRunResult {
-  output: string;
-  exitCode: number;
-}
-
-/** Fetch all project-defined scripts */
-export function fetchScripts(): Promise<Record<string, string>> {
-  return api<Record<string, string>>("/scripts");
-}
-
-/** Add or update a script */
-export function addScript(name: string, command: string): Promise<Record<string, string>> {
-  return api<Record<string, string>>("/scripts", {
-    method: "POST",
-    body: JSON.stringify({ name, command }),
-  });
-}
-
-/** Remove a script by name */
-export function removeScript(name: string): Promise<Record<string, string>> {
-  return api<Record<string, string>>(`/scripts/${encodeURIComponent(name)}`, {
-    method: "DELETE",
-  });
-}
-
-/** Execute a script with optional arguments */
-export function runScript(name: string, args?: string[]): Promise<ScriptRunResult> {
-  return api<ScriptRunResult>(`/scripts/${encodeURIComponent(name)}/run`, {
-    method: "POST",
-    body: JSON.stringify({ args }),
-  });
-}

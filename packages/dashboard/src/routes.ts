@@ -5968,6 +5968,22 @@ Output ONLY the prompt text (no markdown, no explanations).`;
 
   // ── Scripts Routes ─────────────────────────────────────────────────────────
 
+  const SCRIPT_NAME_PATTERN = /^[a-zA-Z0-9_-]+$/;
+  const RESERVED_SCRIPT_NAMES = new Set(["run", "list", "add", "remove", "delete", "help"]);
+
+  function validateScriptName(name: string, label = "Script name"): string | null {
+    if (!name.trim()) {
+      return `${label} is required`;
+    }
+    if (!SCRIPT_NAME_PATTERN.test(name)) {
+      return `${label} must be alphanumeric with hyphens and underscores only (no spaces)`;
+    }
+    if (label === "Script name" && RESERVED_SCRIPT_NAMES.has(name.toLowerCase())) {
+      return `Script name '${name}' is reserved`;
+    }
+    return null;
+  }
+
   /**
    * GET /api/scripts
    * Returns all project-defined scripts from settings.
@@ -5984,16 +6000,15 @@ Output ONLY the prompt text (no markdown, no explanations).`;
 
   /**
    * POST /api/scripts
-   * Add or update a script.
+   * Create a new script.
    * Body: { name: string, command: string }
    * Validates name (alphanumeric, hyphens, underscores only, no spaces).
    * Returns: Record<string, string> (updated scripts)
    */
   router.post("/scripts", async (req, res) => {
     try {
-      const { name, command } = req.body;
+      const { name, command } = req.body ?? {};
 
-      // Validate name
       if (!name || typeof name !== "string" || !name.trim()) {
         res.status(400).json({ error: "name is required" });
         return;
@@ -6005,29 +6020,20 @@ Output ONLY the prompt text (no markdown, no explanations).`;
 
       const trimmedName = name.trim();
       const trimmedCommand = command.trim();
-
-      // Validate script name format (alphanumeric, hyphens, underscores only)
-      if (!/^[a-zA-Z0-9_-]+$/.test(trimmedName)) {
-        res.status(400).json({
-          error: "Script name must be alphanumeric with hyphens and underscores only (no spaces)",
-        });
-        return;
-      }
-
-      // Check for reserved/conflicting names
-      const reservedNames = ["run", "list", "add", "remove", "delete", "help"];
-      if (reservedNames.includes(trimmedName.toLowerCase())) {
-        res.status(400).json({ error: `Script name '${trimmedName}' is reserved` });
+      const nameValidationError = validateScriptName(trimmedName);
+      if (nameValidationError) {
+        res.status(400).json({ error: nameValidationError });
         return;
       }
 
       const settings = await store.getSettings();
       const currentScripts = settings.scripts || {};
 
-      // Check if script already exists (for conflict detection)
-      const exists = trimmedName in currentScripts;
+      if (trimmedName in currentScripts) {
+        res.status(409).json({ error: `Script '${trimmedName}' already exists` });
+        return;
+      }
 
-      // Update scripts
       const updatedScripts = {
         ...currentScripts,
         [trimmedName]: trimmedCommand,
@@ -6035,7 +6041,7 @@ Output ONLY the prompt text (no markdown, no explanations).`;
 
       await store.updateSettings({ scripts: updatedScripts });
 
-      res.status(exists ? 200 : 201).json(updatedScripts);
+      res.status(201).json(updatedScripts);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -6055,16 +6061,23 @@ Output ONLY the prompt text (no markdown, no explanations).`;
         return;
       }
 
+      const trimmedName = name.trim();
+      const nameValidationError = validateScriptName(trimmedName);
+      if (nameValidationError) {
+        res.status(400).json({ error: nameValidationError });
+        return;
+      }
+
       const settings = await store.getSettings();
       const currentScripts = settings.scripts || {};
 
-      if (!(name in currentScripts)) {
-        res.status(404).json({ error: `Script '${name}' not found` });
+      if (!(trimmedName in currentScripts)) {
+        res.status(404).json({ error: `Script '${trimmedName}' not found` });
         return;
       }
 
       // Remove the script
-      const { [name]: _removed, ...remainingScripts } = currentScripts;
+      const { [trimmedName]: _removed, ...remainingScripts } = currentScripts;
 
       await store.updateSettings({ scripts: remainingScripts });
 
@@ -6076,21 +6089,27 @@ Output ONLY the prompt text (no markdown, no explanations).`;
 
   /**
    * POST /api/scripts/:name/run
-   * Execute a script with optional args.
+   * Execute a project script by creating a terminal session for the resolved command.
    * Body: { args?: string[] }
-   * Returns: { output: string; exitCode: number }
+   * Returns: { command: string; sessionId: string }
    */
   router.post("/scripts/:name/run", async (req, res) => {
     try {
       const { name } = req.params;
-      const { args } = req.body;
+      const { args } = req.body ?? {};
 
       if (!name || !name.trim()) {
         res.status(400).json({ error: "Script name is required" });
         return;
       }
 
-      // Validate args if provided
+      const trimmedName = name.trim();
+      const nameValidationError = validateScriptName(trimmedName);
+      if (nameValidationError) {
+        res.status(400).json({ error: nameValidationError });
+        return;
+      }
+
       if (args !== undefined && !Array.isArray(args)) {
         res.status(400).json({ error: "args must be an array of strings" });
         return;
@@ -6102,46 +6121,34 @@ Output ONLY the prompt text (no markdown, no explanations).`;
 
       const settings = await store.getSettings();
       const scripts = settings.scripts || {};
-      const command = scripts[name];
+      const command = scripts[trimmedName];
 
       if (!command) {
-        res.status(404).json({ error: `Script '${name}' not found` });
+        res.status(404).json({ error: `Script '${trimmedName}' not found` });
         return;
       }
 
-      // Build the full command with args
-      const sanitizedArgs = (args || [])
-        .map((arg: string) => arg.replace(/["\\]/g, "\\$&"))
-        .join(" ");
-      const fullCommand = sanitizedArgs ? `${command} ${sanitizedArgs}` : command;
+      const quotedArgs = (args || []).map((arg: string) => JSON.stringify(arg)).join(" ");
+      const fullCommand = quotedArgs ? `${command} ${quotedArgs}` : command;
 
-      // Execute the command using terminal service or execSync
       const rootDir = store.getRootDir();
-      let output: string;
-      let exitCode: number;
+      const terminalService = getTerminalService(rootDir);
+      const ptySession = await terminalService.createSession({ cwd: rootDir });
 
-      try {
-        // Use execSync for synchronous execution
-        output = execSync(fullCommand, {
-          encoding: "utf-8",
-          timeout: 300000, // 5 minute timeout
-          cwd: rootDir,
-          stdio: ["pipe", "pipe", "pipe"],
-        });
-        exitCode = 0;
-      } catch (execErr: any) {
-        // Command failed or timed out
-        output = execErr.stdout || "";
-        if (execErr.stderr) {
-          output += (output ? "\n" : "") + execErr.stderr;
-        }
-        if (execErr.message && !execErr.stderr) {
-          output += (output ? "\n" : "") + execErr.message;
-        }
-        exitCode = execErr.status || 1;
+      if (!ptySession.success) {
+        const statusByCode = {
+          max_sessions: 503,
+          invalid_shell: 400,
+          pty_load_failed: 503,
+          pty_spawn_failed: 500,
+        } as const;
+        res.status(statusByCode[ptySession.code]).json({ error: ptySession.error });
+        return;
       }
 
-      res.json({ output: output.trim(), exitCode });
+      terminalService.write(ptySession.session.id, `${fullCommand}\n`);
+
+      res.status(201).json({ command: fullCommand, sessionId: ptySession.session.id });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

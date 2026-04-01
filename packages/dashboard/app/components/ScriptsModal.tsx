@@ -4,7 +4,6 @@ import {
   fetchScripts,
   addScript,
   removeScript,
-  type ScriptRunResult,
 } from "../api";
 import type { ToastType } from "../hooks/useToast";
 

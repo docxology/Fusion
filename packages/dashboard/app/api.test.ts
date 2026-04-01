@@ -28,6 +28,11 @@ import {
   unregisterProject,
   fetchProjectHealth,
   fetchActivityFeed,
+  fetchScripts,
+  addScript,
+  removeScript,
+  runScript,
+  waitForScriptCompletion,
   pauseProject,
   resumeProject,
   fetchFirstRunStatus,
@@ -2154,5 +2159,96 @@ describe("fetchProjectConfig", () => {
 
     expect(result.maxConcurrent).toBe(4);
     expect(result.rootDir).toBe("/path/to/project");
+  });
+});
+
+describe("scripts API helpers", () => {
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    vi.useRealTimers();
+  });
+
+  it("fetchScripts uses GET /api/scripts", async () => {
+    globalThis.fetch = vi.fn().mockReturnValue(mockFetchResponse(true, { build: "pnpm build" }));
+
+    const result = await fetchScripts();
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      "/api/scripts",
+      expect.objectContaining({ headers: { "Content-Type": "application/json" } }),
+    );
+    expect(result).toEqual({ build: "pnpm build" });
+  });
+
+  it("addScript posts the expected payload", async () => {
+    globalThis.fetch = vi.fn().mockReturnValue(mockFetchResponse(true, { build: "pnpm build" }, 201));
+
+    await addScript("build", "pnpm build");
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      "/api/scripts",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ name: "build", command: "pnpm build" }),
+      }),
+    );
+  });
+
+  it("removeScript URL-encodes the script name", async () => {
+    globalThis.fetch = vi.fn().mockReturnValue(mockFetchResponse(true, {}, 200));
+
+    await removeScript("build_script");
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      "/api/scripts/build_script",
+      expect.objectContaining({ method: "DELETE" }),
+    );
+  });
+
+  it("runScript returns the terminal session handle", async () => {
+    globalThis.fetch = vi.fn().mockReturnValue(mockFetchResponse(true, { command: "pnpm test", sessionId: "sess-1" }, 201));
+
+    const result = await runScript("test", ["--watch"]);
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      "/api/scripts/test/run",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ args: ["--watch"] }),
+      }),
+    );
+    expect(result).toEqual({ command: "pnpm test", sessionId: "sess-1" });
+  });
+
+  it("waitForScriptCompletion polls until the session finishes", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi
+      .fn()
+      .mockReturnValueOnce(mockFetchResponse(true, {
+        id: "sess-1",
+        command: "pnpm test",
+        running: true,
+        exitCode: null,
+        output: "starting",
+        startTime: new Date().toISOString(),
+      }))
+      .mockReturnValueOnce(mockFetchResponse(true, {
+        id: "sess-1",
+        command: "pnpm test",
+        running: false,
+        exitCode: 1,
+        output: "done",
+        startTime: new Date().toISOString(),
+      }));
+    globalThis.fetch = fetchMock;
+
+    const promise = waitForScriptCompletion("sess-1");
+    await vi.advanceTimersByTimeAsync(100);
+    const result = await promise;
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result).toEqual({ output: "done", exitCode: 1 });
   });
 });
