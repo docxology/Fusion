@@ -155,7 +155,7 @@ function getSettingLabel(key: string): string {
  * Run settings show command - displays all settings
  */
 export async function runSettingsShow(projectName?: string): Promise<void> {
-  const store = await getStore(projectName);
+  const store = await getStore({ project: projectName });
   const settings = await store.getSettings();
 
   console.log();
@@ -221,7 +221,7 @@ export async function runSettingsSet(key: string, value: string, projectName?: s
     return; // Required for tests where process.exit is mocked
   }
 
-  const store = await getStore(projectName);
+  const store = await getStore({ project: projectName });
 
   try {
     const parsedValue = parseValue(key as ValidSettingKey, value);

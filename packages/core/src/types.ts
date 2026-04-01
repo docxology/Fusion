@@ -961,6 +961,9 @@ export interface RegisteredProject {
   settings?: ProjectSettings;
 }
 
+/** @deprecated Alias for RegisteredProject - use RegisteredProject instead */
+export type ProjectInfo = RegisteredProject;
+
 /** Health metrics for a registered project */
 export interface ProjectHealth {
   /** Project ID reference */

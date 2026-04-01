@@ -117,6 +117,8 @@ export type { CentralCoreEvents } from "./central-core.js";
 export { CentralDatabase, createCentralDatabase } from "./central-db.js";
 export type { 
   RegisteredProject, 
+  /** @deprecated Use RegisteredProject instead */
+  ProjectInfo,
   IsolationMode, 
   ProjectStatus, 
   ProjectHealth, 

@@ -42,14 +42,14 @@ export function SetupProjectForm({
   // Validate path
   const validatePath = useCallback((value: string) => {
     const result = validateProjectPath(value);
-    setPathError(result.valid ? null : result.error);
+    setPathError(result.valid ? null : (result.error ?? null));
     return result.valid;
   }, []);
 
   // Validate name
   const validateNameField = useCallback((value: string) => {
     const result = validateProjectName(value, existingProjects);
-    setNameError(result.valid ? null : result.error);
+    setNameError(result.valid ? null : (result.error ?? null));
     return result.valid;
   }, [existingProjects]);
 
@@ -63,7 +63,9 @@ export function SetupProjectForm({
     // Auto-suggest name if name is empty and path is valid
     if (isValid && !name && value) {
       const suggested = suggestProjectName(value);
-      setName(suggested);
+      if (suggested) {
+        setName(suggested);
+      }
     }
   }, [name, validatePath]);
 

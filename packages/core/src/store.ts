@@ -164,6 +164,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       breakIntoSubtasks: row.breakIntoSubtasks ? true : undefined,
       enabledWorkflowSteps: (() => { const e = fromJson<string[]>(row.enabledWorkflowSteps); return e && e.length > 0 ? e : undefined; })(),
       modifiedFiles: (() => { const m = fromJson<string[]>(row.modifiedFiles); return m && m.length > 0 ? m : undefined; })(),
+      sliceId: row.sliceId || undefined,
     };
   }
 
@@ -179,10 +180,10 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
         summary, thinkingLevel, createdAt, updatedAt, columnMovedAt,
         dependencies, steps, log, attachments,
         comments, workflowStepResults, prInfo, issueInfo, mergeDetails,
-        breakIntoSubtasks, enabledWorkflowSteps, modifiedFiles
+        breakIntoSubtasks, enabledWorkflowSteps, modifiedFiles, sliceId
       ) VALUES (
         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
       )
     `).run(
       task.id,
@@ -223,6 +224,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       task.breakIntoSubtasks ? 1 : 0,
       toJson(task.enabledWorkflowSteps || []),
       toJson(task.modifiedFiles || []),
+      task.sliceId ?? null,
     );
     this.db.bumpLastModified();
   }

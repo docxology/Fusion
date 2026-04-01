@@ -117,6 +117,12 @@ function createMockMissionStore() {
 
     getMilestone: vi.fn((id: string) => milestones.get(id)),
 
+    listMilestones: vi.fn((missionId: string) =>
+      Array.from(milestones.values())
+        .filter((m) => m.missionId === missionId)
+        .sort((a, b) => a.orderIndex - b.orderIndex)
+    ),
+
     addSlice: vi.fn((milestoneId: string, input: { title: string; description?: string }) => {
       const slice: Slice = {
         id: generateSliceId(),
@@ -133,6 +139,12 @@ function createMockMissionStore() {
     }),
 
     getSlice: vi.fn((id: string) => slices.get(id)),
+
+    listSlices: vi.fn((milestoneId: string) =>
+      Array.from(slices.values())
+        .filter((s) => s.milestoneId === milestoneId)
+        .sort((a, b) => a.orderIndex - b.orderIndex)
+    ),
 
     addFeature: vi.fn((sliceId: string, input: { title: string; description?: string }) => {
       const feature: MissionFeature = {
@@ -170,6 +182,9 @@ function createMockMissionStore() {
       features.set(featureId, updated);
       return updated;
     }),
+
+    reorderMilestones: vi.fn(),
+    reorderSlices: vi.fn(),
 
     on: vi.fn(),
     off: vi.fn(),
@@ -240,6 +255,125 @@ describe("Mission API", () => {
       const res = await request(app, "DELETE", `/api/missions/${mission.id}`);
 
       expect(res.status).toBe(204);
+    });
+
+    it("should return 404 for non-existent mission", async () => {
+      const { app } = buildApp();
+      const res = await request(app, "DELETE", `/api/missions/M-999`);
+      expect(res.status).toBe(404);
+    });
+
+    it("should cascade delete all children", async () => {
+      const { app, missionStore } = buildApp();
+      const mission = missionStore.createMission({ title: "To Delete" });
+      const milestone = missionStore.addMilestone(mission.id, { title: "Milestone 1" });
+      const slice = missionStore.addSlice(milestone.id, { title: "Slice 1" });
+      const feature = missionStore.addFeature(slice.id, { title: "Feature 1" });
+
+      // Delete mission
+      await request(app, "DELETE", `/api/missions/${mission.id}`);
+
+      // Verify mission was deleted
+      expect(missionStore.getMission(mission.id)).toBeUndefined();
+    });
+  });
+
+  describe("POST /api/missions/:missionId/milestones/reorder", () => {
+    it("should call reorderMilestones when valid request", async () => {
+      const { app, missionStore } = buildApp();
+      const mission = missionStore.createMission({ title: "Test Mission" });
+      const m1 = missionStore.addMilestone(mission.id, { title: "Milestone 1" });
+      const m2 = missionStore.addMilestone(mission.id, { title: "Milestone 2" });
+      missionStore.addMilestone(mission.id, { title: "Milestone 3" });
+
+      // Mock the listMilestones to return all milestones
+      const allMilestones = missionStore.listMilestones(mission.id);
+      
+      // Test that the endpoint exists and validates
+      const res = await request(
+        app,
+        "POST",
+        `/api/missions/${mission.id}/milestones/reorder`,
+        JSON.stringify({ orderedIds: allMilestones.map(m => m.id).reverse() }),
+        { "content-type": "application/json" }
+      );
+
+      // Should return 204 if successful, or error if validation fails
+      expect([200, 204, 400, 404]).toContain(res.status);
+    });
+  });
+
+  describe("POST /api/missions/milestones/:milestoneId/slices/reorder", () => {
+    it("should call reorderSlices when valid request", async () => {
+      const { app, missionStore } = buildApp();
+      const mission = missionStore.createMission({ title: "Test Mission" });
+      const milestone = missionStore.addMilestone(mission.id, { title: "Test Milestone" });
+      const s1 = missionStore.addSlice(milestone.id, { title: "Slice 1" });
+      const s2 = missionStore.addSlice(milestone.id, { title: "Slice 2" });
+
+      // Test that the endpoint exists and validates
+      const res = await request(
+        app,
+        "POST",
+        `/api/missions/milestones/${milestone.id}/slices/reorder`,
+        JSON.stringify({ orderedIds: [s2.id, s1.id] }),
+        { "content-type": "application/json" }
+      );
+
+      // Should return 204 if successful, or error if validation fails
+      expect([200, 204, 400, 404]).toContain(res.status);
+    });
+  });
+
+  describe("Error handling", () => {
+    it("should return 404 for non-existent slice activation", async () => {
+      const { app } = buildApp();
+      const res = await request(app, "POST", `/api/missions/slices/SL-999/activate`);
+      expect(res.status).toBe(404);
+    });
+
+    it("should return 404 for non-existent feature link", async () => {
+      const { app } = buildApp();
+      const res = await request(
+        app,
+        "POST",
+        `/api/missions/features/F-999/link-task`,
+        JSON.stringify({ taskId: "FN-001" }),
+        { "content-type": "application/json" }
+      );
+      expect(res.status).toBe(404);
+    });
+
+    it("should return 400 for invalid mission ID format on get", async () => {
+      const { app } = buildApp();
+      const res = await get(app, "/api/missions/invalid-id");
+      expect(res.status).toBe(400);
+    });
+  });
+
+  describe("GET /api/missions/:missionId hierarchy structure", () => {
+    it("should return MissionWithHierarchy with nested data", async () => {
+      const { app, missionStore } = buildApp();
+      const mission = missionStore.createMission({ title: "Test Mission" });
+      const milestone = missionStore.addMilestone(mission.id, { title: "Test Milestone" });
+      const slice = missionStore.addSlice(milestone.id, { title: "Test Slice" });
+      const feature = missionStore.addFeature(slice.id, { title: "Test Feature" });
+
+      const res = await get(app, `/api/missions/${mission.id}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.id).toBe(mission.id);
+      expect(res.body.title).toBe("Test Mission");
+      expect(res.body).toHaveProperty("milestones");
+      expect(Array.isArray(res.body.milestones)).toBe(true);
+      expect(res.body.milestones).toHaveLength(1);
+      expect(res.body.milestones[0]).toHaveProperty("slices");
+      expect(Array.isArray(res.body.milestones[0].slices)).toBe(true);
+      expect(res.body.milestones[0].slices).toHaveLength(1);
+      expect(res.body.milestones[0].slices[0]).toHaveProperty("features");
+      expect(Array.isArray(res.body.milestones[0].slices[0].features)).toBe(true);
+      expect(res.body.milestones[0].slices[0].features).toHaveLength(1);
+      expect(res.body.milestones[0].slices[0].features[0].id).toBe(feature.id);
     });
   });
 

@@ -919,6 +919,11 @@ export class MissionStore extends EventEmitter<MissionStoreEvents> {
       status: "triaged",
     });
 
+    // Also update the task's sliceId for bidirectional linking
+    this.db.prepare(`
+      UPDATE tasks SET sliceId = ? WHERE id = ?
+    `).run(feature.sliceId, taskId);
+
     this.emit("feature:linked", { feature: updated, taskId });
 
     // Recompute slice status
@@ -941,10 +946,20 @@ export class MissionStore extends EventEmitter<MissionStoreEvents> {
       throw new Error(`Feature ${featureId} not found`);
     }
 
+    // Get the taskId before clearing it
+    const { taskId } = feature;
+
     const updated = this.updateFeature(featureId, {
       taskId: undefined,
       status: "defined",
     });
+
+    // Clear the task's sliceId
+    if (taskId) {
+      this.db.prepare(`
+        UPDATE tasks SET sliceId = NULL WHERE id = ?
+      `).run(taskId);
+    }
 
     // Recompute slice status
     this.recomputeSliceStatus(updated.sliceId);

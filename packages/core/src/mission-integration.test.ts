@@ -186,6 +186,45 @@ describe("Mission Integration", () => {
       expect(found).toBeDefined();
       expect(found!.id).toBe(feature.id);
     });
+
+    it("should set task.sliceId when linking feature to task", async () => {
+      const mission = missionStore.createMission({ title: "Test Mission" });
+      const milestone = missionStore.addMilestone(mission.id, { title: "Milestone 1" });
+      const slice = missionStore.addSlice(milestone.id, { title: "Slice 1" });
+      const feature = missionStore.addFeature(slice.id, { title: "Feature 1" });
+
+      const task = await taskStore.createTask({
+        description: "Implement feature",
+        title: "Feature implementation",
+      });
+
+      // Link feature to task
+      missionStore.linkFeatureToTask(feature.id, task.id);
+
+      // Reload task and verify sliceId was set
+      const reloaded = await taskStore.getTask(task.id);
+      expect(reloaded.sliceId).toBe(slice.id);
+    });
+
+    it("should clear task.sliceId when unlinking feature from task", async () => {
+      const mission = missionStore.createMission({ title: "Test Mission" });
+      const milestone = missionStore.addMilestone(mission.id, { title: "Milestone 1" });
+      const slice = missionStore.addSlice(milestone.id, { title: "Slice 1" });
+      const feature = missionStore.addFeature(slice.id, { title: "Feature 1" });
+
+      const task = await taskStore.createTask({
+        description: "Implement feature",
+        title: "Feature implementation",
+      });
+
+      // Link and then unlink
+      missionStore.linkFeatureToTask(feature.id, task.id);
+      missionStore.unlinkFeatureFromTask(feature.id);
+
+      // Reload task and verify sliceId was cleared
+      const reloaded = await taskStore.getTask(task.id);
+      expect(reloaded.sliceId).toBeUndefined();
+    });
   });
 
   describe("Status Rollup", () => {
