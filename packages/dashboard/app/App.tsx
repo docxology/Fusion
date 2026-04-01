@@ -59,11 +59,11 @@ function AppInner() {
   const [autoMerge, setAutoMerge] = useState(true);
   const [globalPaused, setGlobalPaused] = useState(false);
   const [enginePaused, setEnginePaused] = useState(false);
-  
+
   // Multi-project state
-  const { projects, loading: projectsLoading, register, update: updateProject, unregister: unregisterProject } = useProjects();
+  const { projects, loading: projectsLoading, update: updateProject, unregister: unregisterProject } = useProjects();
   const { currentProject, setCurrentProject, clearCurrentProject, loading: currentProjectLoading } = useCurrentProject(projects);
-  
+
   // View state: "overview" for all projects, "project" for single project task view
   const [viewMode, setViewMode] = useState<"overview" | "project">(() => {
     if (typeof window !== "undefined") {
@@ -74,7 +74,7 @@ function AppInner() {
     }
     return "overview";
   });
-  
+
   // Task view state (only meaningful when viewMode="project")
   const [taskView, setTaskView] = useState<"board" | "list" | "agents">(() => {
     if (typeof window !== "undefined") {
@@ -85,14 +85,14 @@ function AppInner() {
     }
     return "board";
   });
-  
+
   const [searchQuery, setSearchQuery] = useState("");
   const [githubTokenConfigured, setGithubTokenConfigured] = useState(false);
   const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
-  
+
   // Setup wizard state
   const [setupWizardOpen, setSetupWizardOpen] = useState(false);
-  
+
   // Tasks hook with project context
   const { tasks, createTask, moveTask, deleteTask, mergeTask, retryTask, updateTask, duplicateTask, archiveTask, unarchiveTask, archiveAllDone } = useTasks(
     currentProject ? { projectId: currentProject.id } : undefined
@@ -105,14 +105,14 @@ function AppInner() {
   useEffect(() => {
     // Wait for both loading states to complete before making decision
     if (projectsLoading || currentProjectLoading) return;
-    
+
     // Don't open if wizard is already open
     if (setupWizardOpen) return;
-    
+
     // Don't open if we have projects OR a saved current project
     // (currentProject from localStorage means user was previously viewing a project)
     if (projects.length > 0 || currentProject) return;
-    
+
     // Only open when truly no projects exist and no project is being restored
     const timer = setTimeout(() => {
       setSetupWizardOpen(true);
@@ -131,7 +131,7 @@ function AppInner() {
   useEffect(() => {
     // Wait for both loading states to complete before syncing
     if (projectsLoading || currentProjectLoading) return;
-    
+
     // If we have a restored current project but viewMode is overview, sync to project view
     if (currentProject && viewMode === "overview") {
       setViewMode("project");

@@ -35,6 +35,7 @@ vi.mock("../../api", async (importOriginal) => {
     logoutProvider: vi.fn(() => Promise.resolve({ success: true })),
     fetchModels: vi.fn(() => Promise.resolve([])),
     fetchGitRemotes: vi.fn(() => Promise.resolve([])),
+    fetchAgents: vi.fn(() => Promise.resolve([])),
     fetchTaskDetail: vi.fn((id: string) => Promise.resolve({
       id,
       title: `Task ${id}`,
@@ -512,14 +513,66 @@ describe("App view switching", () => {
     localStorage.removeItem("kb-dashboard-view-mode");
   });
 
-  it("shows view toggle buttons in header", async () => {
+  it("shows view toggle buttons in header including agents", async () => {
     render(<App />);
 
     // Wait for the header to render with view toggle
     await waitFor(() => {
       expect(screen.getByTitle("Board view")).toBeTruthy();
       expect(screen.getByTitle("List view")).toBeTruthy();
+      expect(screen.getByTitle("Agents view")).toBeTruthy();
     });
+  });
+
+  it("renders AgentsView when agents view is selected", async () => {
+    render(<App />);
+
+    // Wait for the header to render
+    await waitFor(() => {
+      expect(screen.getByTitle("Agents view")).toBeTruthy();
+    });
+
+    // Click to switch to agents view
+    fireEvent.click(screen.getByTitle("Agents view"));
+
+    // Agents view should be rendered (it has a agents-view container)
+    await waitFor(() => {
+      expect(document.querySelector(".agents-view")).toBeTruthy();
+    });
+
+    // Should NOT show board or list view
+    expect(document.querySelector(".board")).toBeNull();
+    expect(document.querySelector(".list-view")).toBeNull();
+  });
+
+  it("persists agents view preference to localStorage", async () => {
+    localStorage.removeItem("kb-dashboard-view");
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByTitle("Agents view")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByTitle("Agents view"));
+
+    await waitFor(() => {
+      expect(localStorage.getItem("kb-dashboard-view")).toBe("agents");
+    });
+  });
+
+  it("initializes agents view from localStorage if saved", async () => {
+    localStorage.setItem("kb-dashboard-view", "agents");
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(document.querySelector(".agents-view")).toBeTruthy();
+    });
+
+    expect(screen.getByTitle("Agents view").className).toContain("active");
+
+    localStorage.removeItem("kb-dashboard-view");
   });
 });
 

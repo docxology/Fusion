@@ -251,6 +251,47 @@ describe("Header", () => {
     expect(boardBtn.getAttribute("aria-pressed")).toBe("false");
   });
 
+  // ── Search Visibility by View ─────────────────────────────────────
+
+  it("shows search input when view is 'board'", () => {
+    const onSearchChange = vi.fn();
+    render(
+      <Header
+        view="board"
+        onChangeView={vi.fn()}
+        searchQuery=""
+        onSearchChange={onSearchChange}
+      />
+    );
+    expect(screen.getByPlaceholderText("Search tasks...")).toBeDefined();
+  });
+
+  it("hides search input when view is 'list'", () => {
+    const onSearchChange = vi.fn();
+    render(
+      <Header
+        view="list"
+        onChangeView={vi.fn()}
+        searchQuery=""
+        onSearchChange={onSearchChange}
+      />
+    );
+    expect(screen.queryByPlaceholderText("Search tasks...")).toBeNull();
+  });
+
+  it("hides search input when view is 'agents'", () => {
+    const onSearchChange = vi.fn();
+    render(
+      <Header
+        view="agents"
+        onChangeView={vi.fn()}
+        searchQuery=""
+        onSearchChange={onSearchChange}
+      />
+    );
+    expect(screen.queryByPlaceholderText("Search tasks...")).toBeNull();
+  });
+
   // ── Terminal Button ─────────────────────────────────────────────
 
   it("renders terminal button with correct title", () => {
@@ -647,7 +688,7 @@ describe("Header", () => {
         onViewAllProjects={vi.fn()}
       />
     );
-    
+
     // Open selector
     fireEvent.click(screen.getByTestId("project-selector-trigger"));
     // Click on a project in the dropdown
@@ -668,7 +709,7 @@ describe("Header", () => {
         onViewAllProjects={vi.fn()}
       />
     );
-    
+
     expect(screen.getByText("Project One")).toBeDefined();
   });
 });
