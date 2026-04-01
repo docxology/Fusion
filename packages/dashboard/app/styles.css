@@ -6109,7 +6109,7 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-  z-index: 100;
+  z-index: 500;
   max-height: 320px;
   display: flex;
   flex-direction: column;
