@@ -250,15 +250,15 @@ export function Header({
           </div>
         )}
 
-        {/* Usage button - inline on all screens when onOpenUsage provided */}
-        {onOpenUsage && (
+        {/* Usage button - desktop only (moved to overflow on mobile) */}
+        {!isMobile && onOpenUsage && (
           <button className="btn-icon" onClick={onOpenUsage} title="View usage">
             <Activity size={16} />
           </button>
         )}
 
-        {/* Activity Log button */}
-        {onOpenActivityLog && (
+        {/* Activity Log button - desktop only (moved to overflow on mobile) */}
+        {!isMobile && onOpenActivityLog && (
           <button className="btn-icon" onClick={onOpenActivityLog} title="View Activity Log">
             <History size={16} />
           </button>
@@ -403,16 +403,6 @@ export function Header({
             role="menu"
             aria-label="Additional header actions"
           >
-            {/* Terminal - in overflow on mobile */}
-            <button
-              className="mobile-overflow-item"
-              onClick={() => handleOverflowAction(onToggleTerminal)}
-              role="menuitem"
-              data-testid="overflow-terminal-btn"
-            >
-              <Terminal size={16} />
-              <span>Open Terminal</span>
-            </button>
             {/* Files - in overflow on mobile */}
             {onOpenFiles && (
               <button
@@ -425,6 +415,15 @@ export function Header({
                 <span>Browse Files</span>
               </button>
             )}
+            <button
+              className="mobile-overflow-item"
+              onClick={() => handleOverflowAction(onOpenPlanning)}
+              role="menuitem"
+              data-testid="overflow-planning-btn"
+            >
+              <Lightbulb size={16} />
+              <span>Create a task with AI planning</span>
+            </button>
             {/* Git Manager - in overflow on mobile */}
             {onOpenGitManager && (
               <button
@@ -445,35 +444,7 @@ export function Header({
               <GitHubLogo size={16} />
               <span>Import from GitHub</span>
             </button>
-            <button
-              className="mobile-overflow-item"
-              onClick={() => handleOverflowAction(onOpenPlanning)}
-              role="menuitem"
-              data-testid="overflow-planning-btn"
-            >
-              <Lightbulb size={16} />
-              <span>Create a task with AI planning</span>
-            </button>
-            <button
-              className="mobile-overflow-item"
-              onClick={() => handleOverflowAction(onOpenSchedules)}
-              role="menuitem"
-              data-testid="overflow-schedules-btn"
-            >
-              <Clock size={16} />
-              <span>Scheduled Tasks</span>
-            </button>
-            {onOpenWorkflowSteps && (
-              <button
-                className="mobile-overflow-item"
-                onClick={() => handleOverflowAction(onOpenWorkflowSteps)}
-                role="menuitem"
-                data-testid="overflow-workflow-steps-btn"
-              >
-                <Workflow size={16} />
-                <span>Workflow Steps</span>
-              </button>
-            )}
+            {/* Agents - in overflow on mobile */}
             {onOpenAgents && (
               <button
                 className="mobile-overflow-item"
@@ -487,12 +458,66 @@ export function Header({
             )}
             <button
               className="mobile-overflow-item"
+              onClick={() => handleOverflowAction(onToggleTerminal)}
+              role="menuitem"
+              data-testid="overflow-terminal-btn"
+            >
+              <Terminal size={16} />
+              <span>Open Terminal</span>
+            </button>
+            <button
+              className="mobile-overflow-item"
+              onClick={() => handleOverflowAction(onOpenSchedules)}
+              role="menuitem"
+              data-testid="overflow-schedules-btn"
+            >
+              <Clock size={16} />
+              <span>Scheduled Tasks</span>
+            </button>
+            <button
+              className="mobile-overflow-item"
               onClick={() => handleOverflowAction(onOpenSettings)}
               role="menuitem"
             >
               <Settings size={16} />
               <span>Settings</span>
             </button>
+            {/* Activity Log - in overflow on mobile */}
+            {onOpenActivityLog && (
+              <button
+                className="mobile-overflow-item"
+                onClick={() => handleOverflowAction(onOpenActivityLog)}
+                role="menuitem"
+                data-testid="overflow-activity-log-btn"
+              >
+                <History size={16} />
+                <span>View Activity Log</span>
+              </button>
+            )}
+            {/* Usage - in overflow on mobile */}
+            {onOpenUsage && (
+              <button
+                className="mobile-overflow-item"
+                onClick={() => handleOverflowAction(onOpenUsage)}
+                role="menuitem"
+                data-testid="overflow-usage-btn"
+              >
+                <Activity size={16} />
+                <span>View Usage</span>
+              </button>
+            )}
+            {/* Workflow Steps - in overflow on mobile */}
+            {onOpenWorkflowSteps && (
+              <button
+                className="mobile-overflow-item"
+                onClick={() => handleOverflowAction(onOpenWorkflowSteps)}
+                role="menuitem"
+                data-testid="overflow-workflow-steps-btn"
+              >
+                <Workflow size={16} />
+                <span>Workflow Steps</span>
+              </button>
+            )}
           </div>
         )}
       </div>

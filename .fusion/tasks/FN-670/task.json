@@ -1,17 +1,42 @@
 {
   "id": "FN-670",
   "description": "Make sure the system always ensures build passes before merging to main. Make sure this is in the promots",
-  "column": "todo",
-  "status": "queued",
+  "column": "in-progress",
   "size": "M",
   "reviewLevel": 2,
-  "currentStep": 0,
-  "blockedBy": "KB-622",
+  "currentStep": 2,
+  "worktree": "/Users/eclipxe/Projects/kb/.worktrees/azure-lotus",
+  "baseCommitSha": "d9fa45fb36c9763edcd0b0bdbce057cc811a9026",
   "createdAt": "2026-04-01T13:51:35.917Z",
-  "updatedAt": "2026-04-01T14:01:50.385Z",
-  "columnMovedAt": "2026-04-01T13:55:34.310Z",
+  "updatedAt": "2026-04-01T14:10:02.040Z",
+  "columnMovedAt": "2026-04-01T14:08:26.163Z",
   "dependencies": [],
-  "steps": [],
+  "steps": [
+    {
+      "name": "Update Merger System Prompt for Build Verification",
+      "status": "done"
+    },
+    {
+      "name": "Pass Build Command to Merge Context",
+      "status": "done"
+    },
+    {
+      "name": "Update Executor Prompt Template",
+      "status": "in-progress"
+    },
+    {
+      "name": "Handle Build Failure in Merge Flow",
+      "status": "pending"
+    },
+    {
+      "name": "Testing & Verification",
+      "status": "pending"
+    },
+    {
+      "name": "Documentation & Delivery",
+      "status": "pending"
+    }
+  ],
   "log": [
     {
       "timestamp": "2026-04-01T13:51:35.917Z",
@@ -34,6 +59,61 @@
       "timestamp": "2026-04-01T13:55:30.265Z",
       "action": "Spec review: APPROVE",
       "outcome": "This is a well-crafted specification for a critical safety feature. The mission is clear: add mandatory build verification to the merge path to prevent broken code from reaching main. The spec correctly identifies the touchpoints in `merger.ts` (merge flow), `executor.ts` (execution prompt), and comprehensive test coverage. The review level of 2 with size M is appropriate given the blast radius to core merge infrastructure."
+    },
+    {
+      "timestamp": "2026-04-01T14:08:26.412Z",
+      "action": "Worktree created at /Users/eclipxe/Projects/kb/.worktrees/azure-lotus"
+    },
+    {
+      "timestamp": "2026-04-01T14:08:26.432Z",
+      "action": "Step 0 (Update Merger System Prompt for Build Verification) → pending"
+    },
+    {
+      "timestamp": "2026-04-01T14:08:28.553Z",
+      "action": "Step 0 (Update Merger System Prompt for Build Verification) → in-progress"
+    },
+    {
+      "timestamp": "2026-04-01T14:08:36.726Z",
+      "action": "Step 0 (Update Merger System Prompt for Build Verification) → done"
+    },
+    {
+      "timestamp": "2026-04-01T14:08:37.830Z",
+      "action": "plan review requested for Step 1 (Update Merger System Prompt for Build Verification)"
+    },
+    {
+      "timestamp": "2026-04-01T14:08:55.903Z",
+      "action": "plan review Step 1: APPROVE",
+      "outcome": "The Step 1 plan is well-scoped and clearly defined. It focuses solely on updating the merger's system prompt to include build verification instructions, with exact text specified. The location (after \"## Commit message\" in `buildMergeSystemPrompt()`) is appropriate, and the step correctly defers logic implementation to later steps."
+    },
+    {
+      "timestamp": "2026-04-01T14:08:58.451Z",
+      "action": "Step 1 (Pass Build Command to Merge Context) → in-progress"
+    },
+    {
+      "timestamp": "2026-04-01T14:09:07.502Z",
+      "action": "Step 1 (Pass Build Command to Merge Context) → done"
+    },
+    {
+      "timestamp": "2026-04-01T14:09:07.503Z",
+      "action": "code review requested for Step 1 (Update Merger System Prompt for Build Verification)"
+    },
+    {
+      "timestamp": "2026-04-01T14:09:28.224Z",
+      "action": "code review Step 1: APPROVE",
+      "outcome": "The implementation correctly adds the \"## Build verification\" section to `buildMergeSystemPrompt()` in `merger.ts` with the **exact text** specified in the task requirements. The section is properly placed after the \"## Commit message\" section as required."
+    },
+    {
+      "timestamp": "2026-04-01T14:09:29.932Z",
+      "action": "plan review requested for Step 2 (Pass Build Command to Merge Context)"
+    },
+    {
+      "timestamp": "2026-04-01T14:10:00.644Z",
+      "action": "plan review Step 2: APPROVE",
+      "outcome": "The plan for Step 2 is well-scoped and achievable. The step correctly identifies the functions that need modification (`buildMergePrompt()`, `runAiAgentForCommit()`, and `executeMergeAttempt()`) and specifies clear outcomes for each. The explicit text for the \"## Build command\" section is provided, and the plan appropriately handles the empty string edge case."
+    },
+    {
+      "timestamp": "2026-04-01T14:10:02.040Z",
+      "action": "Step 2 (Update Executor Prompt Template) → in-progress"
     }
   ]
 }

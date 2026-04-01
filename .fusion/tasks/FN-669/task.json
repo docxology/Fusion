@@ -1,19 +1,48 @@
 {
   "id": "FN-669",
   "description": "The main page before you select a project is missing all layouts. It needs to be design properly",
-  "column": "todo",
-  "status": "queued",
+  "column": "in-progress",
   "size": "M",
   "reviewLevel": 2,
-  "currentStep": 0,
-  "blockedBy": "KB-622",
+  "currentStep": 2,
+  "worktree": "/Users/eclipxe/Projects/kb/.worktrees/noble-delta",
+  "baseCommitSha": "8ce74f61d3fa0e2108af78aa2f20f9dbd47fe0f7",
   "modelProvider": "openai-codex",
   "modelId": "gpt-5.4",
   "createdAt": "2026-04-01T13:50:48.191Z",
-  "updatedAt": "2026-04-01T14:01:50.357Z",
-  "columnMovedAt": "2026-04-01T13:53:12.703Z",
+  "updatedAt": "2026-04-01T14:10:00.558Z",
+  "columnMovedAt": "2026-04-01T14:06:26.207Z",
   "dependencies": [],
-  "steps": [],
+  "steps": [
+    {
+      "name": "Add Setting Type and Schema",
+      "status": "done"
+    },
+    {
+      "name": "Update NtfyNotifier to Include Deep Links",
+      "status": "done"
+    },
+    {
+      "name": "Update Notifier Tests",
+      "status": "in-progress"
+    },
+    {
+      "name": "Add Dashboard Deep Link Handling",
+      "status": "pending"
+    },
+    {
+      "name": "Add Dashboard Hostname Setting UI",
+      "status": "pending"
+    },
+    {
+      "name": "Testing & Verification",
+      "status": "pending"
+    },
+    {
+      "name": "Documentation & Delivery",
+      "status": "pending"
+    }
+  ],
   "log": [
     {
       "timestamp": "2026-04-01T13:50:48.191Z",
@@ -27,6 +56,85 @@
       "timestamp": "2026-04-01T13:53:10.734Z",
       "action": "Spec review: APPROVE",
       "outcome": "This is a well-crafted specification for a CSS-only styling task. The spec accurately inventories all class names from both `ProjectOverview.tsx` and `ProjectGridSkeleton.tsx`, correctly references existing CSS patterns and variables, and appropriately scopes the work to a single file. The step breakdown is methodical and verifiable."
+    },
+    {
+      "timestamp": "2026-04-01T14:06:26.421Z",
+      "action": "Worktree created at /Users/eclipxe/Projects/kb/.worktrees/noble-delta"
+    },
+    {
+      "timestamp": "2026-04-01T14:06:26.440Z",
+      "action": "Step 0 (Add Setting Type and Schema) → pending"
+    },
+    {
+      "timestamp": "2026-04-01T14:06:30.688Z",
+      "action": "Step 0 (Add Setting Type and Schema) → in-progress"
+    },
+    {
+      "timestamp": "2026-04-01T14:06:45.989Z",
+      "action": "Completed preflight review of scoped files and current code state.",
+      "outcome": "Task file is provided inline rather than as repo PROMPT.md; existing code already contains partial ntfy deep-link support in core types, notifier, and App.tsx, so remaining work is to verify gaps, add tests/UI validation, and complete end-to-end coverage."
+    },
+    {
+      "timestamp": "2026-04-01T14:06:53.126Z",
+      "action": "Step 0 (Add Setting Type and Schema) → done"
+    },
+    {
+      "timestamp": "2026-04-01T14:07:00.674Z",
+      "action": "Step 1 (Update NtfyNotifier to Include Deep Links) → in-progress"
+    },
+    {
+      "timestamp": "2026-04-01T14:07:11.421Z",
+      "action": "plan review requested for Step 1 (Add Setting Type and Schema)"
+    },
+    {
+      "timestamp": "2026-04-01T14:07:33.751Z",
+      "action": "plan review Step 1: APPROVE",
+      "outcome": "The plan for Step 1 correctly identifies the necessary changes to `packages/core/src/types.ts`. Upon reviewing the codebase, I found that the `ntfyDashboardHost` setting has already been properly added to:\n- `GlobalSettings` interface (line 539)\n- `DEFAULT_GLOBAL_SETTINGS` (line 700) \n- `GLOBAL_SETTINGS_KEYS` array (line 760)\n\nThe type definition follows the existing pattern for other ntfy settings (`ntfyEnabled`, `ntfyTopic`) and is properly exported via `packages/core/src/index.ts`. The option"
+    },
+    {
+      "timestamp": "2026-04-01T14:07:54.814Z",
+      "action": "Attempted scoped core tests for Step 1 verification.",
+      "outcome": "Test run is currently blocked because workspace dependencies are not installed in this worktree (`vitest: command not found`, missing node_modules). Proceeding with code verification since Step 1 code already exists; full test/build verification will need dependencies available."
+    },
+    {
+      "timestamp": "2026-04-01T14:07:58.955Z",
+      "action": "Step 1 implementation already present in the branch before execution.",
+      "outcome": "No source changes or commit were needed for GlobalSettings schema; proceeding to review the existing implementation as the step baseline matches requirements."
+    },
+    {
+      "timestamp": "2026-04-01T14:08:02.064Z",
+      "action": "code review requested for Step 1 (Add Setting Type and Schema)"
+    },
+    {
+      "timestamp": "2026-04-01T14:08:34.407Z",
+      "action": "code review Step 1: APPROVE",
+      "outcome": "The implementation correctly adds the `ntfyDashboardHost` setting to the `GlobalSettings` interface, `DEFAULT_GLOBAL_SETTINGS`, and `GLOBAL_SETTINGS_KEYS` array. The code follows existing patterns for ntfy-related settings and includes proper JSDoc documentation."
+    },
+    {
+      "timestamp": "2026-04-01T14:08:43.629Z",
+      "action": "Step 1 (Update NtfyNotifier to Include Deep Links) → done"
+    },
+    {
+      "timestamp": "2026-04-01T14:08:49.860Z",
+      "action": "Step 2 (Update Notifier Tests) → in-progress"
+    },
+    {
+      "timestamp": "2026-04-01T14:08:57.682Z",
+      "action": "plan review requested for Step 2 (Update NtfyNotifier to Include Deep Links)"
+    },
+    {
+      "timestamp": "2026-04-01T14:09:19.204Z",
+      "action": "plan review Step 2: APPROVE",
+      "outcome": "The implementation for Step 2 is already complete in the codebase. The plan accurately describes the work, but the implementation has been done ahead of the checklist. The code correctly implements all requirements: reading the `ntfyDashboardHost` setting from settings, building task URLs with proper trailing slash handling, and adding the `Click` header to all notification types (in-review, failed, merged)."
+    },
+    {
+      "timestamp": "2026-04-01T14:09:27.535Z",
+      "action": "plan review requested for Step 3 (Update Notifier Tests)"
+    },
+    {
+      "timestamp": "2026-04-01T14:10:00.558Z",
+      "action": "plan review Step 3: APPROVE",
+      "outcome": "The notifier tests for deep link functionality are **already fully implemented** in the codebase. All four test cases specified in the step's checkboxes exist and are more comprehensive than the plan requires. The worker should verify the tests pass rather than writing new ones."
     }
   ]
 }

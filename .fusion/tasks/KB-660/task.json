@@ -1,15 +1,15 @@
 {
   "id": "KB-660",
   "description": "The git manager dialog renders off screen",
-  "column": "in-progress",
+  "column": "done",
   "size": "S",
   "reviewLevel": 1,
-  "currentStep": 4,
-  "worktree": "/Users/eclipxe/Projects/kb/.worktrees/swift-eagle",
+  "currentStep": 5,
   "baseCommitSha": "bd87ea58c97652b4badea1151226f70c205aa58d",
+  "summary": "Fixed the Git Manager dialog rendering issue that caused it to render partially off-screen on mobile viewports.\n\n**Changes made:**\n1. Added `.gm-modal .modal-header { flex-shrink: 0; }` to prevent header compression during flex layout\n2. Fixed mobile responsive styles: changed `height: 100vh` to `height: auto` with `max-height: 90vh` to account for the overlay's `padding-top: 10vh`\n\n**Verification:**\n- All 53 GitManagerModal tests pass\n- CSS-only fix, no TypeScript/React changes required\n- Created changeset for the patch release",
   "createdAt": "2026-04-01T02:41:53.945Z",
-  "updatedAt": "2026-04-01T14:01:33.943Z",
-  "columnMovedAt": "2026-04-01T14:00:05.946Z",
+  "updatedAt": "2026-04-01T14:04:23.608Z",
+  "columnMovedAt": "2026-04-01T14:04:23.608Z",
   "dependencies": [],
   "steps": [
     {
@@ -30,7 +30,7 @@
     },
     {
       "name": "Documentation & Delivery",
-      "status": "in-progress"
+      "status": "done"
     }
   ],
   "log": [
@@ -95,6 +95,23 @@
     {
       "timestamp": "2026-04-01T14:01:33.943Z",
       "action": "Step 4 (Documentation & Delivery) → in-progress"
+    },
+    {
+      "timestamp": "2026-04-01T14:03:08.899Z",
+      "action": "Step 4 (Documentation & Delivery) → done"
+    },
+    {
+      "timestamp": "2026-04-01T14:03:18.972Z",
+      "action": "Completed Git Manager modal CSS fix",
+      "outcome": "Fixed mobile rendering by changing height: 100vh to height: auto with max-height: 90vh, added flex-shrink: 0 to header. All 53 GitManagerModal tests pass."
+    },
+    {
+      "timestamp": "2026-04-01T14:03:18.973Z",
+      "action": "Task marked done by agent"
     }
+  ],
+  "modifiedFiles": [
+    ".changeset/fix-git-manager-modal-rendering.md",
+    "packages/dashboard/app/styles.css"
   ]
 }

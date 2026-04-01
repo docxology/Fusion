@@ -228,23 +228,75 @@ describe("Header", () => {
       expect(screen.getByTitle("View usage")).toBeDefined();
     });
 
-    it("renders usage button inline on mobile when onOpenUsage is provided", () => {
+    it("does not render usage button inline on mobile when onOpenUsage is provided", () => {
       renderHeader({ onOpenUsage: vi.fn() }, true);
-      expect(screen.getByTitle("View usage")).toBeDefined();
+      // Button should NOT be inline on mobile (it's in overflow menu)
+      expect(screen.queryByTitle("View usage")).toBeNull();
     });
 
-    it("calls onOpenUsage when usage button is clicked", () => {
+    it("shows usage in overflow menu on mobile", () => {
+      renderHeader({ onOpenUsage: vi.fn() }, true);
+      fireEvent.click(screen.getByTitle("More header actions"));
+      expect(screen.getByTestId("overflow-usage-btn")).toBeDefined();
+    });
+
+    it("calls onOpenUsage when usage button is clicked on desktop", () => {
       const onOpenUsage = vi.fn();
       renderHeader({ onOpenUsage }, false);
       fireEvent.click(screen.getByTitle("View usage"));
       expect(onOpenUsage).toHaveBeenCalled();
     });
 
-    it("calls onOpenUsage when usage button is clicked on mobile", () => {
+    it("calls onOpenUsage when usage button in overflow menu is clicked", () => {
       const onOpenUsage = vi.fn();
       renderHeader({ onOpenUsage }, true);
-      fireEvent.click(screen.getByTitle("View usage"));
+      fireEvent.click(screen.getByTitle("More header actions"));
+      fireEvent.click(screen.getByTestId("overflow-usage-btn"));
       expect(onOpenUsage).toHaveBeenCalled();
+    });
+  });
+
+  describe("activity log button", () => {
+    it("does not render activity log button when onOpenActivityLog is not provided", () => {
+      renderHeader({}, false);
+      expect(screen.queryByTitle("View Activity Log")).toBeNull();
+    });
+
+    it("does not render activity log button when onOpenActivityLog is not provided on mobile", () => {
+      renderHeader({}, true);
+      expect(screen.queryByTitle("View Activity Log")).toBeNull();
+    });
+
+    it("renders activity log button with correct title when onOpenActivityLog is provided on desktop", () => {
+      renderHeader({ onOpenActivityLog: vi.fn() }, false);
+      expect(screen.getByTitle("View Activity Log")).toBeDefined();
+    });
+
+    it("does not render activity log button inline on mobile when onOpenActivityLog is provided", () => {
+      renderHeader({ onOpenActivityLog: vi.fn() }, true);
+      // Button should NOT be inline on mobile (it's in overflow menu)
+      expect(screen.queryByTitle("View Activity Log")).toBeNull();
+    });
+
+    it("shows activity log in overflow menu on mobile", () => {
+      renderHeader({ onOpenActivityLog: vi.fn() }, true);
+      fireEvent.click(screen.getByTitle("More header actions"));
+      expect(screen.getByTestId("overflow-activity-log-btn")).toBeDefined();
+    });
+
+    it("calls onOpenActivityLog when activity log button is clicked on desktop", () => {
+      const onOpenActivityLog = vi.fn();
+      renderHeader({ onOpenActivityLog }, false);
+      fireEvent.click(screen.getByTitle("View Activity Log"));
+      expect(onOpenActivityLog).toHaveBeenCalled();
+    });
+
+    it("calls onOpenActivityLog when activity log button in overflow menu is clicked", () => {
+      const onOpenActivityLog = vi.fn();
+      renderHeader({ onOpenActivityLog }, true);
+      fireEvent.click(screen.getByTitle("More header actions"));
+      fireEvent.click(screen.getByTestId("overflow-activity-log-btn"));
+      expect(onOpenActivityLog).toHaveBeenCalled();
     });
   });
 

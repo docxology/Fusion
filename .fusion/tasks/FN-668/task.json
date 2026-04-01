@@ -1,16 +1,15 @@
 {
   "id": "FN-668",
   "description": "Project selection needs to have a directory picker that shows all directories from system",
-  "column": "in-review",
+  "column": "done",
   "size": "M",
   "reviewLevel": 2,
   "currentStep": 5,
-  "worktree": "/Users/eclipxe/Projects/kb/.worktrees/jade-moss",
   "baseCommitSha": "cc8cbef97941e0e33fcf46bf877ab645385bf8bf",
   "summary": "Verified the Claude CLI credentials detection fix is already implemented in the codebase. The `readClaudeKeychainCredentials()` function in `packages/dashboard/src/usage.ts` correctly reads credentials from macOS keychain using `security find-generic-password -s \"Claude Code-credentials\" -w`. The fallback chain (file paths → keychain → no-auth) is properly implemented. All 39 usage tests pass, including tests for keychain credential reading, fallback behavior, and plan detection. Build passes successfully. Added changeset file for the patch release.",
   "createdAt": "2026-04-01T13:50:14.873Z",
-  "updatedAt": "2026-04-01T14:01:49.829Z",
-  "columnMovedAt": "2026-04-01T14:01:49.829Z",
+  "updatedAt": "2026-04-01T14:02:59.738Z",
+  "columnMovedAt": "2026-04-01T14:02:59.738Z",
   "dependencies": [],
   "steps": [
     {

@@ -480,10 +480,11 @@ describe("Header", () => {
       expect(screen.getByTitle("Stop AI engine")).toBeDefined();
     });
 
-    it("shows usage button inline when onOpenUsage provided", () => {
+    it("shows usage button in overflow menu when onOpenUsage provided", () => {
       render(<Header onOpenSettings={vi.fn()} onOpenUsage={vi.fn()} />);
-      // Usage button is inline on all screens, not in overflow menu
-      expect(screen.getByTitle("View usage")).toBeDefined();
+      // Usage button is in overflow menu on mobile, not inline
+      fireEvent.click(screen.getByTitle("More header actions"));
+      expect(screen.getByTestId("overflow-usage-btn")).toBeDefined();
     });
 
     it("mobile search input dispatches onSearchChange when typing", () => {

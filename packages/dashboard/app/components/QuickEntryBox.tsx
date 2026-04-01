@@ -3,11 +3,12 @@ import type { ToastType } from "../hooks/useToast";
 import type { Task, TaskCreateInput } from "@fusion/core";
 import type { ModelInfo, RefinementType } from "../api";
 import { fetchModels, refineText, getRefineErrorMessage } from "../api";
-import { Link, Brain, Lightbulb, ListTree, Sparkles, Save } from "lucide-react";
+import { Link, Brain, Lightbulb, ListTree, Sparkles, Save, ChevronUp, ChevronDown } from "lucide-react";
 import { CustomModelDropdown } from "./CustomModelDropdown";
 import { ModelSelectionModal } from "./ModelSelectionModal";
 
 const STORAGE_KEY = "kb-quick-entry-text";
+const DISCLOSURE_STORAGE_KEY = "kb-quick-entry-expanded";
 
 interface QuickEntryBoxProps {
   onCreate?: (input: TaskCreateInput) => Promise<void>;
@@ -57,7 +58,17 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
     return "";
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // isExpanded controls textarea height styling (auto-resize)
   const [isExpanded, setIsExpanded] = useState(false);
+  // isDisclosureExpanded controls visibility of the controls panel (Deps, Models, etc.)
+  const [isDisclosureExpanded, setIsDisclosureExpanded] = useState(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem(DISCLOSURE_STORAGE_KEY);
+      // Default to true (expanded) for backward compatibility - only collapse if explicitly set to "false"
+      return saved !== "false";
+    }
+    return true;
+  });
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const blurTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const justResetRef = useRef(false);
@@ -140,7 +151,14 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
     }
   }, [description]);
 
-  // Cleanup timeout on unmount
+  // Persist disclosure state to localStorage whenever it changes
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem(DISCLOSURE_STORAGE_KEY, isDisclosureExpanded.toString());
+    }
+  }, [isDisclosureExpanded]);
+
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (blurTimeoutRef.current) {
@@ -209,7 +227,8 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
     setIsModelModalOpen(false);
     setIsRefineMenuOpen(false);
     setIsRefining(false);
-    setIsExpanded(false);
+    setIsExpanded(false); // Collapse textarea height on reset
+    // Note: isDisclosureExpanded is NOT reset - user preference persists
     justResetRef.current = true;
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
@@ -295,17 +314,21 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
             localStorage.removeItem(STORAGE_KEY);
           }
         }
-        // Collapse on escape
-        resetForm();
-        // Clear any pending blur timeout
-        if (blurTimeoutRef.current) {
-          clearTimeout(blurTimeoutRef.current);
-          blurTimeoutRef.current = null;
-        }
+        // Collapse textarea and disclosure on escape
+        setIsExpanded(false);
+        setIsDisclosureExpanded(false);
         textareaRef.current?.blur();
       }
     },
-    [handleSubmit, description, isExpanded, showDeps, isModelModalOpen, isRefineMenuOpen, resetForm],
+    [
+      handleSubmit,
+      description,
+      isExpanded,
+      showDeps,
+      isModelModalOpen,
+      isRefineMenuOpen,
+      setIsDisclosureExpanded,
+    ],
   );
 
   const handleFocus = useCallback(() => {
@@ -443,24 +466,43 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
     }
   }, [availableModels]);
 
-  // Show expanded controls only when focused/interacted (isExpanded)
-  const showExpandedControls = isExpanded;
+  // Show expanded controls based on disclosure state (user preference), not textarea focus
+  const showExpandedControls = isDisclosureExpanded;
+
+  const toggleExpanded = useCallback(() => {
+    setIsDisclosureExpanded((prev) => !prev);
+    setIsExpanded((prev) => !prev);
+  }, []);
 
   return (
-    <div className="quick-entry-box" data-testid="quick-entry-box">
-      <textarea
-        ref={textareaRef}
-        className={`quick-entry-input ${isExpanded ? "quick-entry-input--expanded" : ""}`}
-        placeholder={isSubmitting ? "Creating..." : "Add a task..."}
-        value={description}
-        onChange={(e) => setDescription(e.target.value)}
-        onKeyDown={handleKeyDown}
-        onFocus={handleFocus}
-        onBlur={handleBlur}
-        disabled={isSubmitting || isDisabled}
-        data-testid="quick-entry-input"
-        rows={1}
-      />
+    <div className={`quick-entry-box ${isDisclosureExpanded ? "quick-entry-box--expanded" : "quick-entry-box--collapsed"}`} data-testid="quick-entry-box">
+      <div className="quick-entry-main-row">
+        <textarea
+          ref={textareaRef}
+          className={`quick-entry-input ${isExpanded ? "quick-entry-input--expanded" : ""}`}
+          placeholder={isSubmitting ? "Creating..." : "Add a task..."}
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          onKeyDown={handleKeyDown}
+          onFocus={handleFocus}
+          onBlur={handleBlur}
+          disabled={isSubmitting || isDisabled}
+          data-testid="quick-entry-input"
+          rows={1}
+          aria-controls="quick-entry-controls"
+        />
+        <button
+          type="button"
+          className="btn btn-sm quick-entry-toggle"
+          onClick={toggleExpanded}
+          aria-expanded={isDisclosureExpanded}
+          aria-controls="quick-entry-controls"
+          data-testid="quick-entry-toggle"
+          title={isDisclosureExpanded ? "Collapse" : "Expand"}
+        >
+          {isDisclosureExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        </button>
+      </div>
       {showExpandedControls && (
         <div className="quick-entry-controls">
           <div className="quick-entry-controls-left">

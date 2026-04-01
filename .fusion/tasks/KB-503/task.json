@@ -1,17 +1,15 @@
 {
   "id": "KB-503",
   "description": "CLI Multi-Project Commands: project subcommands and --project flag",
-  "column": "in-review",
-  "status": "merging",
+  "column": "done",
   "size": "M",
   "reviewLevel": 2,
   "currentStep": 8,
-  "worktree": "/Users/eclipxe/Projects/kb/.worktrees/merry-otter",
   "baseCommitSha": "24335d1176cef810803b48fe611bb057b5d62db7",
   "summary": "Successfully completed KB-503: CLI Multi-Project Commands implementation. Added `kb project` subcommand with list, add, remove, show, set-default, detect operations. Implemented global `--project` flag for all task, settings, git, and backup commands. Project resolution follows the correct order: --project flag → default project → CWD auto-detection. Fixed TypeScript errors by adding `defaultProjectId` to GlobalSettings type and corrected a type issue in task.ts. All core tests pass (720 tests) and new project tests pass (13 tests). Changeset created for the minor version bump.",
   "createdAt": "2026-03-31T21:01:18.283Z",
-  "updatedAt": "2026-04-01T14:00:05.488Z",
-  "columnMovedAt": "2026-04-01T13:59:48.154Z",
+  "updatedAt": "2026-04-01T14:02:37.155Z",
+  "columnMovedAt": "2026-04-01T14:02:37.155Z",
   "dependencies": [
     "KB-501"
   ],
