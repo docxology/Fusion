@@ -277,7 +277,7 @@ describe("useTasks", () => {
         id: "KB-001",
         title: "New Title",
         column: "in-progress" as Column,
-        columnMovedAt: "2026-01-02T00:00:00Z",
+        updatedAt: "2026-01-02T00:00:00Z",
       });
 
       act(() => {
@@ -294,6 +294,7 @@ describe("useTasks", () => {
         id: "KB-001",
         column: "in-progress" as Column,
         columnMovedAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
       });
       mockFetchTasks.mockResolvedValueOnce([initialTask]);
 
@@ -309,6 +310,7 @@ describe("useTasks", () => {
           id: "KB-001",
           column: "in-progress",
           columnMovedAt: "2026-01-02T00:00:00Z",
+          updatedAt: "2026-01-02T00:00:00Z",
         }),
         from: "in-progress" as Column,
         to: "done" as Column,
@@ -326,7 +328,8 @@ describe("useTasks", () => {
         id: "KB-001",
         column: "in-progress" as Column, // stale column
         columnMovedAt: "2026-01-01T00:00:00Z", // older timestamp
-        title: "Some other update", // but other fields are new
+        updatedAt: "2026-01-01T00:00:00Z", // older overall
+        title: "Some other update",
       });
 
       act(() => {
@@ -336,8 +339,112 @@ describe("useTasks", () => {
       // Column should remain 'done' (not revert to in-progress)
       expect(result.current.tasks[0].column).toBe("done");
       expect(result.current.tasks[0].columnMovedAt).toBe("2026-01-02T00:00:00Z");
-      // But other fields should be updated
-      expect(result.current.tasks[0].title).toBe("Some other update");
+      // Title should NOT be updated because the entire update is stale
+      expect(result.current.tasks[0].title).toBeUndefined();
+    });
+
+    it("status updates are applied when updatedAt is newer even if columnMovedAt is older", async () => {
+      // Task was moved to in-progress (columnMovedAt is newer)
+      const initialTask = createMockTask({
+        id: "KB-001",
+        column: "in-progress" as Column,
+        status: "planning",
+        columnMovedAt: "2026-01-02T00:00:00Z",
+        updatedAt: "2026-01-02T00:00:00Z",
+      });
+      mockFetchTasks.mockResolvedValueOnce([initialTask]);
+
+      const { result } = renderHook(() => useTasks());
+
+      await waitFor(() => {
+        expect(result.current.tasks[0].column).toBe("in-progress");
+      });
+
+      // Status update arrives with older columnMovedAt but newer updatedAt
+      // This simulates an executor status change after a column move
+      const statusUpdate = createMockTask({
+        id: "KB-001",
+        column: "in-progress" as Column, // same column
+        status: "executing", // status changed
+        columnMovedAt: "2026-01-01T00:00:00Z", // older (from before move)
+        updatedAt: "2026-01-03T00:00:00Z", // newer (status just changed)
+      });
+
+      act(() => {
+        MockEventSource.instances[0]._emit("task:updated", statusUpdate);
+      });
+
+      // Status should be updated because updatedAt is newer
+      expect(result.current.tasks[0].column).toBe("in-progress");
+      expect(result.current.tasks[0].status).toBe("executing");
+    });
+
+    it("rapid status updates after column move are not rejected", async () => {
+      // Task starts in todo
+      const initialTask = createMockTask({
+        id: "KB-001",
+        column: "todo" as Column,
+        status: "pending",
+        columnMovedAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+      });
+      mockFetchTasks.mockResolvedValueOnce([initialTask]);
+
+      const { result } = renderHook(() => useTasks());
+
+      await waitFor(() => {
+        expect(result.current.tasks[0].column).toBe("todo");
+      });
+
+      // Column move happens
+      const movedTaskData = {
+        task: createMockTask({
+          id: "KB-001",
+          column: "todo",
+          status: "pending",
+          columnMovedAt: "2026-01-02T00:00:00Z",
+          updatedAt: "2026-01-02T00:00:00Z",
+        }),
+        from: "todo" as Column,
+        to: "in-progress" as Column,
+      };
+
+      act(() => {
+        MockEventSource.instances[0]._emit("task:moved", movedTaskData);
+      });
+
+      expect(result.current.tasks[0].column).toBe("in-progress");
+
+      // Rapid status updates arrive (newer updatedAt, older columnMovedAt)
+      const statusUpdate1 = createMockTask({
+        id: "KB-001",
+        column: "in-progress" as Column,
+        status: "planning",
+        columnMovedAt: "2026-01-01T00:00:00Z", // older (from before move)
+        updatedAt: "2026-01-03T00:00:00Z", // newer
+      });
+
+      act(() => {
+        MockEventSource.instances[0]._emit("task:updated", statusUpdate1);
+      });
+
+      expect(result.current.tasks[0].status).toBe("planning");
+
+      // Another rapid status update
+      const statusUpdate2 = createMockTask({
+        id: "KB-001",
+        column: "in-progress" as Column,
+        status: "executing",
+        columnMovedAt: "2026-01-01T00:00:00Z", // still older
+        updatedAt: "2026-01-04T00:00:00Z", // even newer
+      });
+
+      act(() => {
+        MockEventSource.instances[0]._emit("task:updated", statusUpdate2);
+      });
+
+      expect(result.current.tasks[0].column).toBe("in-progress");
+      expect(result.current.tasks[0].status).toBe("executing");
     });
 
     it("preserves current column when incoming has no columnMovedAt (legacy data)", async () => {
@@ -345,6 +452,7 @@ describe("useTasks", () => {
         id: "KB-001",
         column: "done" as Column,
         columnMovedAt: "2026-01-02T00:00:00Z",
+        updatedAt: "2026-01-02T00:00:00Z",
       });
       mockFetchTasks.mockResolvedValueOnce([initialTask]);
 
@@ -359,6 +467,7 @@ describe("useTasks", () => {
         ...createMockTask({
           id: "KB-001",
           column: "in-progress" as Column,
+          updatedAt: "2026-01-03T00:00:00Z", // newer updatedAt
         }),
         columnMovedAt: undefined,
       };

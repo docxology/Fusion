@@ -64,22 +64,35 @@ export function useTasks() {
         prev.map((t) => {
           if (t.id !== incoming.id) return t;
 
-          // Race condition prevention: If the incoming update has stale column data,
-          // preserve the current column. A task:moved event always carries the
-          // authoritative column in the 'to' field and updates columnMovedAt.
-          // If current state has a newer columnMovedAt, reject the column change.
+          // First check overall freshness using updatedAt
+          const updatedAtCompare = compareTimestamps(incoming.updatedAt, t.updatedAt);
+
+          // If incoming is older overall, skip the update
+          if (updatedAtCompare < 0) {
+            return t;
+          }
+
+          // If columns are the same, no conflict - accept the incoming update
+          if (t.column === incoming.column) {
+            return incoming;
+          }
+
+          // Columns differ - need to check columnMovedAt to resolve conflict
           const columnTimestampCompare = compareTimestamps(t.columnMovedAt, incoming.columnMovedAt);
-          if (columnTimestampCompare > 0 && t.column !== incoming.column) {
+
+          // Edge case: current has columnMovedAt but incoming doesn't (legacy data)
+          // Preserve the column information we have
+          if (t.columnMovedAt && !incoming.columnMovedAt) {
+            return { ...incoming, column: t.column, columnMovedAt: t.columnMovedAt };
+          }
+
+          // If current state has a newer columnMovedAt, reject the column change
+          if (columnTimestampCompare > 0) {
             // Current state is newer - preserve column, merge other fields
             return { ...incoming, column: t.column, columnMovedAt: t.columnMovedAt };
           }
 
-          // Edge case: current has columnMovedAt but incoming doesn't (legacy data)
-          // Preserve the column information we have
-          if (t.columnMovedAt && !incoming.columnMovedAt && t.column !== incoming.column) {
-            return { ...incoming, column: t.column, columnMovedAt: t.columnMovedAt };
-          }
-
+          // Incoming has newer or equal columnMovedAt, accept the update
           return incoming;
         })
       );
