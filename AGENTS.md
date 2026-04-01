@@ -214,6 +214,184 @@ kb has two activity log systems:
 - Cascade deletes ensure no orphaned data when projects are unregistered
 - Foreign key constraints maintain referential integrity
 
+## Multi-Project Runtime Architecture
+
+kb's multi-project support is built on a runtime abstraction layer that enables task execution across multiple projects with configurable isolation modes. This architecture provides both efficiency (in-process) and security (child-process isolation) options.
+
+### Overview
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     HybridExecutor                                │
+│                    (Multi-Project Orchestrator)                   │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │              ProjectManager (internal)                       │ │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌─────────────────┐  │ │
+│  │  │   Project A  │  │   Project B  │  │    Project C    │  │ │
+│  │  │ (in-process) │  │(child-process│  │  (in-process)   │  │ │
+│  │  └──────────────┘  └──────────────┘  └─────────────────┘  │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                    ┌─────────┴──────────┐
+                    ▼                    ▼
+              ┌──────────┐          ┌──────────┐
+              │CentralCore│         │ Scheduler │
+              │ (registry)│         │ (per proj) │
+              └──────────┘          └──────────┘
+```
+
+### ProjectRuntime Interface
+
+The `ProjectRuntime` interface is the core abstraction for multi-project execution:
+
+```typescript
+interface ProjectRuntime extends EventEmitter<ProjectRuntimeEvents> {
+  start(): Promise<void>;           // Initialize and start the runtime
+  stop(): Promise<void>;            // Graceful shutdown
+  getStatus(): RuntimeStatus;        // Current runtime status
+  getTaskStore(): TaskStore;         // Access project task store
+  getScheduler(): Scheduler;         // Access project scheduler
+  getMetrics(): RuntimeMetrics;      // Get current metrics
+}
+```
+
+**RuntimeStatus values:** `starting` → `active` → `stopping` → `stopped`, or `paused`/`errored` for exceptional states.
+
+### Runtime Implementations
+
+#### 1. InProcessRuntime
+
+Runs a project within the main Node.js process:
+
+- **Pros:** Low overhead, fast startup (~0ms), shared memory, direct component access
+- **Cons:** No isolation - crashes or resource leaks affect all projects
+- **Use for:** Trusted projects, development, single-project deployments
+
+```typescript
+const runtime = new InProcessRuntime(config, centralCore);
+await runtime.start();
+
+// Direct access to components
+const taskStore = runtime.getTaskStore();
+const scheduler = runtime.getScheduler();
+```
+
+#### 2. ChildProcessRuntime
+
+Runs a project in an isolated child process via `fork()`:
+
+- **Pros:** Strong isolation, independent memory space, crash containment
+- **Cons:** Higher overhead (~100-300ms startup), IPC communication overhead
+- **Use for:** Untrusted projects, resource-intensive work, multi-tenant deployments
+
+```typescript
+const runtime = new ChildProcessRuntime(config, centralCore);
+await runtime.start();
+
+// Access via IPC only (getTaskStore/getScheduler throw)
+const metrics = runtime.getMetrics();
+```
+
+### IPC Protocol
+
+The IPC protocol enables communication between the host (HybridExecutor) and child process runtimes:
+
+**Command Types (Host → Worker):**
+- `START_RUNTIME` - Initialize and start the in-process runtime inside the child
+- `STOP_RUNTIME` - Graceful shutdown with timeout
+- `GET_STATUS` - Query runtime status
+- `GET_METRICS` - Query runtime metrics
+- `PING` - Health check
+
+**Event Types (Worker → Host, unsolicited):**
+- `TASK_CREATED` - Forwarded from TaskStore
+- `TASK_MOVED` - Forwarded from TaskStore  
+- `TASK_UPDATED` - Forwarded from TaskStore
+- `ERROR_EVENT` - Runtime errors
+- `HEALTH_CHANGED` - Status transitions
+
+### HybridExecutor
+
+The `HybridExecutor` is the main entry point for multi-project task execution:
+
+```typescript
+const central = new CentralCore();
+await central.init();
+
+const executor = new HybridExecutor(central);
+await executor.initialize();
+
+// Add a project runtime
+await executor.addProject({
+  projectId: "proj_abc123",
+  workingDirectory: "/path/to/project",
+  isolationMode: "in-process", // or "child-process"
+  maxConcurrent: 2,
+  maxWorktrees: 4,
+});
+
+// Listen for events across all projects
+executor.on("task:completed", ({ projectId, taskId }) => {
+  console.log(`Task ${taskId} completed in ${projectId}`);
+});
+
+// Graceful shutdown
+await executor.shutdown();
+```
+
+**Key Features:**
+- Automatic loading of registered projects on initialization
+- Event forwarding with project attribution
+- Global concurrency limit enforcement via CentralCore
+- Runtime mode switching (can change isolation mode)
+- Health monitoring with automatic restart (child-process mode)
+
+### Child Process Worker
+
+The `child-process-worker.ts` entry point runs inside forked child processes:
+
+1. Creates an `InProcessRuntime` internally
+2. Sets up `IpcWorker` to handle commands from the host
+3. Forwards all runtime events to the host via IPC
+4. Handles graceful shutdown on SIGTERM
+5. Self-terminates if parent disconnects unexpectedly
+
+### Isolation Mode Selection
+
+Choose isolation mode based on your requirements:
+
+| Factor | In-Process | Child-Process |
+|--------|-----------|---------------|
+| Startup time | ~0ms | ~100-300ms |
+| Memory isolation | No | Yes |
+| Crash containment | No | Yes |
+| IPC overhead | None | Minimal |
+| Use case | Trusted/single | Multi-tenant/isolated |
+
+### Security Considerations
+
+- Child process spawn validates `projectPath` exists and is absolute before forking
+- IPC message validation rejects malformed/unknown message types
+- No credentials passed over IPC - credentials stay in parent
+- Child process `cwd` is restricted to project path only
+- Terminate child on parent exit (prevent orphaned processes)
+- Input validation on all IPC message payloads
+- Path traversal prevention in project path resolution
+
+### Error Handling & Recovery
+
+**Child Process Runtime:**
+- Health monitoring via heartbeat every 5 seconds
+- Automatic restart on crash with exponential backoff (1s, 5s, 15s delays)
+- Max 3 restart attempts before transitioning to `errored` state
+- Graceful shutdown timeout: 30 seconds (SIGTERM → SIGKILL after 5s)
+
+**In-Process Runtime:**
+- Errors are emitted as `error` events
+- Status transitions to `errored` on fatal errors
+- Manual intervention required to restart
+
 ## Pi Extension (`packages/cli/src/extension.ts`)
 
 The pi extension provides tools and a `/kb` command for interacting with kb from within a pi session. It ships as part of `@gsxdsm/fusion` — one `pi install` gives you both the CLI and the extension.
