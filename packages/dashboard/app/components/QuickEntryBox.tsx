@@ -9,7 +9,6 @@ import { CustomModelDropdown } from "./CustomModelDropdown";
 import { ModelSelectionModal } from "./ModelSelectionModal";
 
 const STORAGE_KEY = "kb-quick-entry-text";
-const DISCLOSURE_STORAGE_KEY = "kb-quick-entry-expanded";
 
 interface QuickEntryBoxProps {
   onCreate?: (input: TaskCreateInput) => Promise<void>;
@@ -24,11 +23,6 @@ interface QuickEntryBoxProps {
    * Called when the user clicks the "Subtask" button to trigger subtask breakdown.
    */
   onSubtaskBreakdown?: (description: string) => void;
-  /**
-   * When false, the component will not auto-expand on focus.
-   * Defaults to true for backward compatibility.
-   */
-  autoExpand?: boolean;
 }
 
 function getModelSelectionValue(provider?: string, modelId?: string): string {
@@ -51,7 +45,7 @@ function parseModelSelection(value: string): { provider?: string; modelId?: stri
   };
 }
 
-export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels, onPlanningMode, onSubtaskBreakdown, autoExpand = true }: QuickEntryBoxProps) {
+export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels, onPlanningMode, onSubtaskBreakdown }: QuickEntryBoxProps) {
   const [description, setDescription] = useState(() => {
     if (typeof window !== "undefined") {
       return localStorage.getItem(STORAGE_KEY) || "";
@@ -59,17 +53,7 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
     return "";
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
-  // isExpanded controls textarea height styling (auto-resize)
   const [isExpanded, setIsExpanded] = useState(false);
-  // isDisclosureExpanded controls visibility of the controls panel (Deps, Models, etc.)
-  const [isDisclosureExpanded, setIsDisclosureExpanded] = useState(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem(DISCLOSURE_STORAGE_KEY);
-      // Default to true (expanded) for backward compatibility - only collapse if explicitly set to "false"
-      return saved !== "false";
-    }
-    return true;
-  });
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const justResetRef = useRef(false);
 
@@ -151,13 +135,6 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
     }
   }, [description]);
 
-  // Persist disclosure state to localStorage whenever it changes
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem(DISCLOSURE_STORAGE_KEY, isDisclosureExpanded.toString());
-    }
-  }, [isDisclosureExpanded]);
-
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -225,8 +202,7 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
     setIsModelModalOpen(false);
     setIsRefineMenuOpen(false);
     setIsRefining(false);
-    setIsExpanded(false); // Collapse textarea height on reset
-    // Note: isDisclosureExpanded is NOT reset - user preference persists
+    setIsExpanded(false);
     justResetRef.current = true;
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
@@ -312,34 +288,13 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
             localStorage.removeItem(STORAGE_KEY);
           }
         }
-        // Collapse textarea and disclosure on escape
+        // Collapse on escape
         setIsExpanded(false);
-        setIsDisclosureExpanded(false);
         textareaRef.current?.blur();
       }
     },
-    [
-      handleSubmit,
-      description,
-      isExpanded,
-      showDeps,
-      isModelModalOpen,
-      isRefineMenuOpen,
-      setIsDisclosureExpanded,
-    ],
+    [handleSubmit, description, isExpanded, showDeps, isModelModalOpen, isRefineMenuOpen],
   );
-
-  const handleFocus = useCallback(() => {
-    // Skip expanding if we just reset the form (prevents controls showing after successful creation)
-    if (justResetRef.current) {
-      justResetRef.current = false;
-      return;
-    }
-    // Only auto-expand if autoExpand prop is true (defaults to true for backward compatibility)
-    if (autoExpand) {
-      setIsExpanded(true);
-    }
-  }, [autoExpand]);
 
   const handleBlur = useCallback(() => {
     // No auto-collapse on blur — state persists until manually toggled or task is submitted/cancelled
@@ -452,16 +407,15 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
     }
   }, [availableModels]);
 
-  // Show expanded controls based on disclosure state (user preference), not textarea focus
-  const showExpandedControls = isDisclosureExpanded;
+  // Show expanded controls only when manually expanded (isExpanded)
+  const showExpandedControls = isExpanded;
 
   const toggleExpanded = useCallback(() => {
-    setIsDisclosureExpanded((prev) => !prev);
     setIsExpanded((prev) => !prev);
   }, []);
 
   return (
-    <div className={`quick-entry-box ${isDisclosureExpanded ? "quick-entry-box--expanded" : "quick-entry-box--collapsed"}`} data-testid="quick-entry-box">
+    <div className={`quick-entry-box ${isExpanded ? "quick-entry-box--expanded" : "quick-entry-box--collapsed"}`} data-testid="quick-entry-box">
       <div className="quick-entry-main-row">
         <textarea
           ref={textareaRef}
@@ -470,198 +424,201 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           onKeyDown={handleKeyDown}
-          onFocus={handleFocus}
           onBlur={handleBlur}
           disabled={isSubmitting || isDisabled}
           data-testid="quick-entry-input"
           rows={1}
           aria-controls="quick-entry-controls"
+          aria-expanded={isExpanded}
         />
         <button
           type="button"
           className="btn btn-sm quick-entry-toggle"
           onClick={toggleExpanded}
-          aria-expanded={isDisclosureExpanded}
+          aria-expanded={isExpanded}
           aria-controls="quick-entry-controls"
           data-testid="quick-entry-toggle"
-          title={isDisclosureExpanded ? "Collapse" : "Expand"}
+          title={isExpanded ? "Collapse" : "Expand"}
         >
-          {isDisclosureExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
         </button>
       </div>
-      {showExpandedControls && (
-        <div id="quick-entry-controls" className="quick-entry-controls">
-          <div className="quick-entry-controls-left">
-            <div className="dep-trigger-wrap">
-              <button
-                type="button"
-                className="btn btn-sm dep-trigger"
-                onClick={toggleDepsDropdown}
-                data-testid="quick-entry-deps-button"
-              >
-                <Link size={12} style={{ verticalAlign: "middle" }} />
-                {dependencies.length > 0 ? ` ${dependencies.length} deps` : " Deps"}
-              </button>
-              {showDeps && (() => {
-                const term = depSearch.toLowerCase();
-                const filtered = (term
-                  ? tasks.filter((t) =>
-                      t.id.toLowerCase().includes(term) ||
-                      (t.title && t.title.toLowerCase().includes(term)) ||
-                      (t.description && t.description.toLowerCase().includes(term))
-                    )
-                  : [...tasks]
-                ).sort((a, b) => {
-                  const cmp = b.createdAt.localeCompare(a.createdAt);
-                  if (cmp !== 0) return cmp;
-                  const aNum = parseInt(a.id.slice(a.id.lastIndexOf("-") + 1), 10) || 0;
-                  const bNum = parseInt(b.id.slice(b.id.lastIndexOf("-") + 1), 10) || 0;
-                  return bNum - aNum;
-                });
-                return (
-                  <div className="dep-dropdown" onMouseDown={(e) => e.preventDefault()}>
-                    <input
-                      className="dep-dropdown-search"
-                      placeholder="Search tasks…"
-                      autoFocus
-                      value={depSearch}
-                      onChange={(e) => setDepSearch(e.target.value)}
-                      onClick={(e) => e.stopPropagation()}
-                    />
-                    {filtered.length === 0 ? (
-                      <div className="dep-dropdown-empty">No existing tasks</div>
-                    ) : (
-                      filtered.map((t) => (
-                        <div
-                          key={t.id}
-                          className={`dep-dropdown-item${dependencies.includes(t.id) ? " selected" : ""}`}
-                          onMouseDown={(e) => e.preventDefault()}
-                          onClick={() => toggleDep(t.id)}
-                        >
-                          <span className="dep-dropdown-id">{t.id}</span>
-                          <span className="dep-dropdown-title">{truncate(t.title || t.description || t.id, 30)}</span>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                );
-              })()}
-            </div>
-
-            <div className="quick-entry-model-wrap">
-              <button
-                type="button"
-                className="btn btn-sm quick-entry-model-trigger"
-                onClick={openModelModal}
-                aria-expanded={isModelModalOpen}
-                aria-haspopup="dialog"
-                data-testid="quick-entry-models-button"
-              >
-                <Brain size={12} style={{ verticalAlign: "middle" }} />
-                {selectedModelCount > 0
-                  ? ` ${selectedModelCount} model${selectedModelCount === 1 ? "" : "s"}`
-                  : " Models"}
-              </button>
-            </div>
-
-            {!isSubmitting && (
-              <>
-                <button
-                  type="button"
-                  className="btn btn-sm"
-                  onClick={handlePlanClick}
-                  onMouseDown={(e) => e.preventDefault()}
-                  disabled={!description.trim()}
-                  data-testid="plan-button"
-                  title="Open planning mode with current description"
-                >
-                  <Lightbulb size={12} style={{ verticalAlign: "middle" }} />
-                  Plan
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-sm"
-                  onClick={handleSubtaskClick}
-                  onMouseDown={(e) => e.preventDefault()}
-                  disabled={!description.trim()}
-                  data-testid="subtask-button"
-                  title="Break down into AI-generated subtasks"
-                >
-                  <ListTree size={12} style={{ verticalAlign: "middle" }} />
-                  Subtask
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-sm"
-                  onClick={handleSaveClick}
-                  onMouseDown={(e) => e.preventDefault()}
-                  disabled={!description.trim() || isSubmitting}
-                  data-testid="save-button"
-                  title="Create task"
-                >
-                  <Save size={12} style={{ verticalAlign: "middle" }} />
-                  Save
-                </button>
-                <div className="refine-trigger-wrap" ref={refineMenuRef}>
-                  <button
-                    type="button"
-                    className={`btn btn-sm refine-button ${isRefining ? "refine-button--loading" : ""}`}
-                    onClick={() => setIsRefineMenuOpen((prev) => !prev)}
-                    disabled={!description.trim() || isRefining}
-                    data-testid="refine-button"
-                    title="Refine description with AI"
-                  >
-                    <Sparkles size={12} style={{ verticalAlign: "middle" }} />
-                    {isRefining ? "Refining..." : "Refine"}
-                  </button>
-                  {isRefineMenuOpen && (
-                    <div
-                      className="refine-menu"
-                      onMouseDown={(e) => e.preventDefault()}
-                    >
+      <div
+        id="quick-entry-controls"
+        className="quick-entry-controls"
+        hidden={!showExpandedControls}
+        aria-hidden={!showExpandedControls}
+      >
+        <div className="quick-entry-controls-left">
+          <div className="dep-trigger-wrap">
+            <button
+              type="button"
+              className="btn btn-sm dep-trigger"
+              onClick={toggleDepsDropdown}
+              data-testid="quick-entry-deps-button"
+            >
+              <Link size={12} style={{ verticalAlign: "middle" }} />
+              {dependencies.length > 0 ? ` ${dependencies.length} deps` : " Deps"}
+            </button>
+            {showDeps && (() => {
+              const term = depSearch.toLowerCase();
+              const filtered = (term
+                ? tasks.filter((t) =>
+                    t.id.toLowerCase().includes(term) ||
+                    (t.title && t.title.toLowerCase().includes(term)) ||
+                    (t.description && t.description.toLowerCase().includes(term))
+                  )
+                : [...tasks]
+              ).sort((a, b) => {
+                const cmp = b.createdAt.localeCompare(a.createdAt);
+                if (cmp !== 0) return cmp;
+                const aNum = parseInt(a.id.slice(a.id.lastIndexOf("-") + 1), 10) || 0;
+                const bNum = parseInt(b.id.slice(b.id.lastIndexOf("-") + 1), 10) || 0;
+                return bNum - aNum;
+              });
+              return (
+                <div className="dep-dropdown" onMouseDown={(e) => e.preventDefault()}>
+                  <input
+                    className="dep-dropdown-search"
+                    placeholder="Search tasks…"
+                    autoFocus
+                    value={depSearch}
+                    onChange={(e) => setDepSearch(e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                  {filtered.length === 0 ? (
+                    <div className="dep-dropdown-empty">No existing tasks</div>
+                  ) : (
+                    filtered.map((t) => (
                       <div
-                        className="refine-menu-item"
-                        onClick={() => handleRefine("clarify")}
-                        data-testid="refine-clarify"
+                        key={t.id}
+                        className={`dep-dropdown-item${dependencies.includes(t.id) ? " selected" : ""}`}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => toggleDep(t.id)}
                       >
-                        <div className="refine-menu-item-title">Clarify</div>
-                        <div className="refine-menu-item-desc">Make the description clearer and more specific</div>
+                        <span className="dep-dropdown-id">{t.id}</span>
+                        <span className="dep-dropdown-title">{truncate(t.title || t.description || t.id, 30)}</span>
                       </div>
-                      <div
-                        className="refine-menu-item"
-                        onClick={() => handleRefine("add-details")}
-                        data-testid="refine-add-details"
-                      >
-                        <div className="refine-menu-item-title">Add details</div>
-                        <div className="refine-menu-item-desc">Add implementation details and context</div>
-                      </div>
-                      <div
-                        className="refine-menu-item"
-                        onClick={() => handleRefine("expand")}
-                        data-testid="refine-expand"
-                      >
-                        <div className="refine-menu-item-title">Expand</div>
-                        <div className="refine-menu-item-desc">Expand into a more comprehensive description</div>
-                      </div>
-                      <div
-                        className="refine-menu-item"
-                        onClick={() => handleRefine("simplify")}
-                        data-testid="refine-simplify"
-                      >
-                        <div className="refine-menu-item-title">Simplify</div>
-                        <div className="refine-menu-item-desc">Simplify and make more concise</div>
-                      </div>
-                    </div>
+                    ))
                   )}
                 </div>
-              </>
-            )}
+              );
+            })()}
           </div>
-          <div className="quick-entry-hint">
-            Enter to create · Esc to cancel
+
+          <div className="quick-entry-model-wrap">
+            <button
+              type="button"
+              className="btn btn-sm quick-entry-model-trigger"
+              onClick={openModelModal}
+              aria-expanded={isModelModalOpen}
+              aria-haspopup="dialog"
+              data-testid="quick-entry-models-button"
+            >
+              <Brain size={12} style={{ verticalAlign: "middle" }} />
+              {selectedModelCount > 0
+                ? ` ${selectedModelCount} model${selectedModelCount === 1 ? "" : "s"}`
+                : " Models"}
+            </button>
           </div>
+
+          {!isSubmitting && (
+            <>
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={handlePlanClick}
+                onMouseDown={(e) => e.preventDefault()}
+                disabled={!description.trim()}
+                data-testid="plan-button"
+                title="Open planning mode with current description"
+              >
+                <Lightbulb size={12} style={{ verticalAlign: "middle" }} />
+                Plan
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={handleSubtaskClick}
+                onMouseDown={(e) => e.preventDefault()}
+                disabled={!description.trim()}
+                data-testid="subtask-button"
+                title="Break down into AI-generated subtasks"
+              >
+                <ListTree size={12} style={{ verticalAlign: "middle" }} />
+                Subtask
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={handleSaveClick}
+                onMouseDown={(e) => e.preventDefault()}
+                disabled={!description.trim() || isSubmitting}
+                data-testid="save-button"
+                title="Create task"
+              >
+                <Save size={12} style={{ verticalAlign: "middle" }} />
+                Save
+              </button>
+              <div className="refine-trigger-wrap" ref={refineMenuRef}>
+                <button
+                  type="button"
+                  className={`btn btn-sm refine-button ${isRefining ? "refine-button--loading" : ""}`}
+                  onClick={() => setIsRefineMenuOpen((prev) => !prev)}
+                  disabled={!description.trim() || isRefining}
+                  data-testid="refine-button"
+                  title="Refine description with AI"
+                >
+                  <Sparkles size={12} style={{ verticalAlign: "middle" }} />
+                  {isRefining ? "Refining..." : "Refine"}
+                </button>
+                {isRefineMenuOpen && (
+                  <div
+                    className="refine-menu"
+                    onMouseDown={(e) => e.preventDefault()}
+                  >
+                    <div
+                      className="refine-menu-item"
+                      onClick={() => handleRefine("clarify")}
+                      data-testid="refine-clarify"
+                    >
+                      <div className="refine-menu-item-title">Clarify</div>
+                      <div className="refine-menu-item-desc">Make the description clearer and more specific</div>
+                    </div>
+                    <div
+                      className="refine-menu-item"
+                      onClick={() => handleRefine("add-details")}
+                      data-testid="refine-add-details"
+                    >
+                      <div className="refine-menu-item-title">Add details</div>
+                      <div className="refine-menu-item-desc">Add implementation details and context</div>
+                    </div>
+                    <div
+                      className="refine-menu-item"
+                      onClick={() => handleRefine("expand")}
+                      data-testid="refine-expand"
+                    >
+                      <div className="refine-menu-item-title">Expand</div>
+                      <div className="refine-menu-item-desc">Expand into a more comprehensive description</div>
+                    </div>
+                    <div
+                      className="refine-menu-item"
+                      onClick={() => handleRefine("simplify")}
+                      data-testid="refine-simplify"
+                    >
+                      <div className="refine-menu-item-title">Simplify</div>
+                      <div className="refine-menu-item-desc">Simplify and make more concise</div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </div>
-      )}
+        <div className="quick-entry-hint">
+          Enter to create · Esc to cancel
+        </div>
+      </div>
 
       {typeof document !== "undefined"
         ? createPortal(

@@ -190,21 +190,33 @@ export function InlineCreateCard({
     [loadedModels],
   );
 
-  // Track focus-out for justResetRef cleanup only (no auto-cancel on blur)
+  // Track focus-out for conditional cancel behavior and justResetRef cleanup.
   useEffect(() => {
     const card = cardRef.current;
     if (!card) return;
+
     const handleFocusOut = (e: FocusEvent) => {
       // relatedTarget is the element receiving focus — if it's inside the card, ignore
       if (e.relatedTarget instanceof Node && card.contains(e.relatedTarget)) return;
-      // Clear justResetRef flag when focus actually leaves the card
+
       if (justResetRef.current) {
         justResetRef.current = false;
+        return;
+      }
+
+      const hasOpenOverlay = showDeps || showModels || showPresets;
+      const hasDescription = description.trim().length > 0;
+      const shouldCancelWhenCollapsed = !isExpanded && !hasDescription && !hasOpenOverlay;
+      const shouldCancelWhenExpanded = isExpanded && !hasDescription && !hasOpenOverlay;
+
+      if (shouldCancelWhenCollapsed || shouldCancelWhenExpanded) {
+        onCancel();
       }
     };
+
     card.addEventListener("focusout", handleFocusOut);
     return () => card.removeEventListener("focusout", handleFocusOut);
-  }, []);
+  }, [description, isExpanded, onCancel, showDeps, showModels, showPresets]);
 
   // Clean up object URLs on unmount to prevent memory leaks
   useEffect(() => {
@@ -289,6 +301,10 @@ export function InlineCreateCard({
       pendingImages.forEach((img) => URL.revokeObjectURL(img.previewUrl));
       setPendingImages([]);
 
+      setDescription("");
+      if (inputRef.current) {
+        inputRef.current.style.height = "auto";
+      }
       setSelectedPresetId(undefined);
       setExecutorProvider(undefined);
       setExecutorModelId(undefined);
@@ -324,6 +340,7 @@ export function InlineCreateCard({
     pendingImages,
     onSubmit,
     addToast,
+    selectedPresetId,
   ]);
 
   const handleKeyDown = useCallback(
@@ -425,6 +442,7 @@ export function InlineCreateCard({
     setShowDeps(false);
     setShowModels(false);
     setShowPresets(false);
+    setIsExpanded(false);
   }, [description, onPlanningMode, addToast]);
 
   const handleSubtaskClick = useCallback(() => {
@@ -445,17 +463,13 @@ export function InlineCreateCard({
     setShowDeps(false);
     setShowModels(false);
     setShowPresets(false);
+    setIsExpanded(false);
   }, [description, onSubtaskBreakdown, addToast]);
 
   const truncate = (s: string, len: number) =>
     s.length > len ? s.slice(0, len) + "…" : s;
 
   const toggleExpanded = useCallback(() => {
-    // Skip if we just reset the form (prevents re-expanding after successful creation)
-    if (justResetRef.current) {
-      justResetRef.current = false;
-      return;
-    }
     setIsExpanded((prev) => !prev);
   }, []);
 
@@ -477,14 +491,15 @@ export function InlineCreateCard({
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
           disabled={submitting}
-          aria-controls="inline-create-controls"
+          aria-controls={isExpanded ? "inline-create-controls" : undefined}
         />
         <button
           type="button"
           className="btn btn-sm inline-create-toggle"
           onClick={toggleExpanded}
           aria-expanded={isExpanded}
-          aria-controls="inline-create-controls"
+          aria-controls={isExpanded ? "inline-create-controls" : undefined}
+          aria-label={isExpanded ? "Collapse advanced task options" : "Expand advanced task options"}
           data-testid="inline-create-toggle"
           title={isExpanded ? "Collapse" : "Expand"}
         >
@@ -533,224 +548,224 @@ export function InlineCreateCard({
                 ).sort((a, b) => {
                   const cmp = b.createdAt.localeCompare(a.createdAt);
                   if (cmp !== 0) return cmp;
-                const aNum = parseInt(a.id.slice(a.id.lastIndexOf("-") + 1), 10) || 0;
-                const bNum = parseInt(b.id.slice(b.id.lastIndexOf("-") + 1), 10) || 0;
-                return bNum - aNum;
-              });
-              return (
-                <div className="dep-dropdown" onMouseDown={(e) => e.preventDefault()}>
-                  <input
-                    className="dep-dropdown-search"
-                    placeholder="Search tasks…"
-                    autoFocus
-                    value={depSearch}
-                    onChange={(e) => setDepSearch(e.target.value)}
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                  {filtered.length === 0 ? (
-                    <div className="dep-dropdown-empty">No existing tasks</div>
-                  ) : (
-                    filtered.map((t) => (
-                      <div
-                        key={t.id}
-                        className={`dep-dropdown-item${dependencies.includes(t.id) ? " selected" : ""}`}
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => toggleDep(t.id)}
-                      >
-                        <span className="dep-dropdown-id">{t.id}</span>
-                        <span className="dep-dropdown-title">{truncate(t.title || t.description || t.id, 30)}</span>
-                      </div>
-                    ))
-                  )}
-                </div>
-              );
-            })()}
-          </div>
-
-          <div className="inline-create-model-wrap">
-            <button
-              type="button"
-              className="btn btn-sm inline-create-model-trigger"
-              onClick={() => {
-                setShowPresets((prev) => {
-                  const next = !prev;
-                  if (next) {
-                    setShowDeps(false);
-                    setShowModels(false);
-                  }
-                  return next;
+                  const aNum = parseInt(a.id.slice(a.id.lastIndexOf("-") + 1), 10) || 0;
+                  const bNum = parseInt(b.id.slice(b.id.lastIndexOf("-") + 1), 10) || 0;
+                  return bNum - aNum;
                 });
-              }}
-              aria-expanded={showPresets}
-              aria-haspopup="listbox"
-            >
-              <Zap size={12} style={{ verticalAlign: "middle" }} />
-              {selectedPreset ? ` ${selectedPreset.name}` : " Preset"}
-            </button>
-            {showPresets && (
-              <div className="inline-create-model-dropdown" onMouseDown={handleModelDropdownMouseDown}>
-                <button
-                  type="button"
-                  className="btn btn-sm"
-                  onClick={() => {
-                    setSelectedPresetId(undefined);
-                    setExecutorProvider(undefined);
-                    setExecutorModelId(undefined);
-                    setValidatorProvider(undefined);
-                    setValidatorModelId(undefined);
-                    setShowPresets(false);
-                  }}
-                >
-                  Use default
-                </button>
-                {availablePresets.map((preset) => (
+                return (
+                  <div className="dep-dropdown" onMouseDown={(e) => e.preventDefault()}>
+                    <input
+                      className="dep-dropdown-search"
+                      placeholder="Search tasks…"
+                      autoFocus
+                      value={depSearch}
+                      onChange={(e) => setDepSearch(e.target.value)}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                    {filtered.length === 0 ? (
+                      <div className="dep-dropdown-empty">No existing tasks</div>
+                    ) : (
+                      filtered.map((t) => (
+                        <div
+                          key={t.id}
+                          className={`dep-dropdown-item${dependencies.includes(t.id) ? " selected" : ""}`}
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => toggleDep(t.id)}
+                        >
+                          <span className="dep-dropdown-id">{t.id}</span>
+                          <span className="dep-dropdown-title">{truncate(t.title || t.description || t.id, 30)}</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+
+            <div className="inline-create-model-wrap">
+              <button
+                type="button"
+                className="btn btn-sm inline-create-model-trigger"
+                onClick={() => {
+                  setShowPresets((prev) => {
+                    const next = !prev;
+                    if (next) {
+                      setShowDeps(false);
+                      setShowModels(false);
+                    }
+                    return next;
+                  });
+                }}
+                aria-expanded={showPresets}
+                aria-haspopup="listbox"
+              >
+                <Zap size={12} style={{ verticalAlign: "middle" }} />
+                {selectedPreset ? ` ${selectedPreset.name}` : " Preset"}
+              </button>
+              {showPresets && (
+                <div className="inline-create-model-dropdown" onMouseDown={handleModelDropdownMouseDown}>
                   <button
-                    key={preset.id}
                     type="button"
                     className="btn btn-sm"
                     onClick={() => {
-                      const selection = applyPresetToSelection(preset);
-                      const executor = parseModelSelection(selection.executorValue);
-                      const validator = parseModelSelection(selection.validatorValue);
-                      setSelectedPresetId(preset.id);
-                      setExecutorProvider(executor.provider);
-                      setExecutorModelId(executor.modelId);
-                      setValidatorProvider(validator.provider);
-                      setValidatorModelId(validator.modelId);
+                      setSelectedPresetId(undefined);
+                      setExecutorProvider(undefined);
+                      setExecutorModelId(undefined);
+                      setValidatorProvider(undefined);
+                      setValidatorModelId(undefined);
                       setShowPresets(false);
                     }}
                   >
-                    {preset.name}
+                    Use default
                   </button>
-                ))}
+                  {availablePresets.map((preset) => (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      className="btn btn-sm"
+                      onClick={() => {
+                        const selection = applyPresetToSelection(preset);
+                        const executor = parseModelSelection(selection.executorValue);
+                        const validator = parseModelSelection(selection.validatorValue);
+                        setSelectedPresetId(preset.id);
+                        setExecutorProvider(executor.provider);
+                        setExecutorModelId(executor.modelId);
+                        setValidatorProvider(validator.provider);
+                        setValidatorModelId(validator.modelId);
+                        setShowPresets(false);
+                      }}
+                    >
+                      {preset.name}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    onClick={() => setShowPresets(false)}
+                  >
+                    Custom
+                  </button>
+                </div>
+              )}
+              <button
+                type="button"
+                className="btn btn-sm inline-create-model-trigger"
+                onClick={toggleModelsDropdown}
+                aria-expanded={showModels}
+                aria-haspopup="dialog"
+              >
+                <Brain size={12} style={{ verticalAlign: "middle" }} />
+                {selectedPreset
+                  ? ` ${selectedPreset.name} · ${selectedModelCount} model${selectedModelCount === 1 ? "" : "s"}`
+                  : selectedModelCount > 0
+                    ? ` ${selectedModelCount} model${selectedModelCount === 1 ? "" : "s"}`
+                    : " Models"}
+              </button>
+              {showModels && (
+                <div
+                  className="inline-create-model-dropdown"
+                  onMouseDown={handleModelDropdownMouseDown}
+                >
+                  {modelsLoading ? (
+                    <div className="inline-create-model-empty">Loading models…</div>
+                  ) : modelsError ? (
+                    <div className="inline-create-model-empty">
+                      <span>Failed to load models.</span>
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        onClick={() => void loadModels()}
+                      >
+                        Retry
+                      </button>
+                    </div>
+                  ) : loadedModels.length === 0 ? (
+                    <div className="inline-create-model-empty">
+                      No models available. Configure authentication in Settings to enable model selection.
+                    </div>
+                  ) : (
+                    <>
+                      <div className="inline-create-model-row">
+                        <label htmlFor="inline-create-executor-model" className="inline-create-model-label">
+                          Executor Model
+                        </label>
+                        <span className={`model-badge ${hasExecutorOverride ? "model-badge-custom" : "model-badge-default"}`}>
+                          {getModelBadgeLabel(executorProvider, executorModelId)}
+                        </span>
+                        <CustomModelDropdown
+                          id="inline-create-executor-model"
+                          label="Executor Model"
+                          value={executorSelectionValue}
+                          onChange={handleExecutorChange}
+                          models={loadedModels}
+                          disabled={submitting}
+                          placeholder="Select executor model…"
+                        />
+                      </div>
+
+                      <div className="inline-create-model-row">
+                        <label htmlFor="inline-create-validator-model" className="inline-create-model-label">
+                          Validator Model
+                        </label>
+                        <span className={`model-badge ${hasValidatorOverride ? "model-badge-custom" : "model-badge-default"}`}>
+                          {getModelBadgeLabel(validatorProvider, validatorModelId)}
+                        </span>
+                        <CustomModelDropdown
+                          id="inline-create-validator-model"
+                          label="Validator Model"
+                          value={validatorSelectionValue}
+                          onChange={handleValidatorChange}
+                          models={loadedModels}
+                          disabled={submitting}
+                          placeholder="Select validator model…"
+                        />
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {!submitting && (
+              <>
                 <button
                   type="button"
                   className="btn btn-sm"
-                  onClick={() => setShowPresets(false)}
+                  onClick={handlePlanClick}
+                  disabled={!description.trim()}
+                  data-testid="plan-button"
+                  title="Open planning mode with current description"
                 >
-                  Custom
+                  <Lightbulb size={12} style={{ verticalAlign: "middle" }} />
+                  Plan
                 </button>
-              </div>
-            )}
-            <button
-              type="button"
-              className="btn btn-sm inline-create-model-trigger"
-              onClick={toggleModelsDropdown}
-              aria-expanded={showModels}
-              aria-haspopup="dialog"
-            >
-              <Brain size={12} style={{ verticalAlign: "middle" }} />
-              {selectedPreset
-                ? ` ${selectedPreset.name} · ${selectedModelCount} model${selectedModelCount === 1 ? "" : "s"}`
-                : selectedModelCount > 0
-                  ? ` ${selectedModelCount} model${selectedModelCount === 1 ? "" : "s"}`
-                  : " Models"}
-            </button>
-            {showModels && (
-              <div
-                className="inline-create-model-dropdown"
-                onMouseDown={handleModelDropdownMouseDown}
-              >
-                {modelsLoading ? (
-                  <div className="inline-create-model-empty">Loading models…</div>
-                ) : modelsError ? (
-                  <div className="inline-create-model-empty">
-                    <span>Failed to load models.</span>
-                    <button
-                      type="button"
-                      className="btn btn-sm"
-                      onClick={() => void loadModels()}
-                    >
-                      Retry
-                    </button>
-                  </div>
-                ) : loadedModels.length === 0 ? (
-                  <div className="inline-create-model-empty">
-                    No models available. Configure authentication in Settings to enable model selection.
-                  </div>
-                ) : (
-                  <>
-                    <div className="inline-create-model-row">
-                      <label htmlFor="inline-create-executor-model" className="inline-create-model-label">
-                        Executor Model
-                      </label>
-                      <span className={`model-badge ${hasExecutorOverride ? "model-badge-custom" : "model-badge-default"}`}>
-                        {getModelBadgeLabel(executorProvider, executorModelId)}
-                      </span>
-                      <CustomModelDropdown
-                        id="inline-create-executor-model"
-                        label="Executor Model"
-                        value={executorSelectionValue}
-                        onChange={handleExecutorChange}
-                        models={loadedModels}
-                        disabled={submitting}
-                        placeholder="Select executor model…"
-                      />
-                    </div>
-
-                    <div className="inline-create-model-row">
-                      <label htmlFor="inline-create-validator-model" className="inline-create-model-label">
-                        Validator Model
-                      </label>
-                      <span className={`model-badge ${hasValidatorOverride ? "model-badge-custom" : "model-badge-default"}`}>
-                        {getModelBadgeLabel(validatorProvider, validatorModelId)}
-                      </span>
-                      <CustomModelDropdown
-                        id="inline-create-validator-model"
-                        label="Validator Model"
-                        value={validatorSelectionValue}
-                        onChange={handleValidatorChange}
-                        models={loadedModels}
-                        disabled={submitting}
-                        placeholder="Select validator model…"
-                      />
-                    </div>
-                  </>
-                )}
-              </div>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={handleSubtaskClick}
+                  disabled={!description.trim()}
+                  data-testid="subtask-button"
+                  title="Break down into AI-generated subtasks"
+                >
+                  <ListTree size={12} style={{ verticalAlign: "middle" }} />
+                  Subtask
+                </button>
+              </>
             )}
           </div>
-
-          {!submitting && (
-            <>
-              <button
-                type="button"
-                className="btn btn-sm"
-                onClick={handlePlanClick}
-                disabled={!description.trim()}
-                data-testid="plan-button"
-                title="Open planning mode with current description"
-              >
-                <Lightbulb size={12} style={{ verticalAlign: "middle" }} />
-                Plan
-              </button>
-              <button
-                type="button"
-                className="btn btn-sm"
-                onClick={handleSubtaskClick}
-                disabled={!description.trim()}
-                data-testid="subtask-button"
-                title="Break down into AI-generated subtasks"
-              >
-                <ListTree size={12} style={{ verticalAlign: "middle" }} />
-                Subtask
-              </button>
-            </>
-          )}
+          <div className="inline-create-actions">
+            <span className="inline-create-hint">Enter to create · Esc to cancel</span>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={handleSubmit}
+              disabled={!description.trim() || submitting}
+            >
+              {submitting ? "Creating..." : "Save"}
+            </button>
+          </div>
         </div>
-        <div className="inline-create-actions">
-          <span className="inline-create-hint">Enter to create · Esc to cancel</span>
-          <button
-            type="button"
-            className="btn btn-primary btn-sm"
-            onClick={handleSubmit}
-            disabled={!description.trim() || submitting}
-          >
-            {submitting ? "Creating..." : "Save"}
-          </button>
-        </div>
-      </div>
-    )}
+      )}
     </div>
   );
 }

@@ -110,30 +110,64 @@ beforeEach(() => {
 describe("InlineCreateCard toggle button", () => {
   it("toggle button expands the view", () => {
     renderCard();
+    const toggleButton = screen.getByTestId("inline-create-toggle");
     const textarea = screen.getByPlaceholderText("What needs to be done?");
 
     // Initially, footer controls are not visible
     expect(document.querySelector(".inline-create-footer")).toBeNull();
+    expect(document.querySelector(".inline-create-card")?.classList.contains("inline-create-card--collapsed")).toBe(true);
+    expect(document.querySelector(".inline-create-card")?.className).toContain("inline-create-card");
+    expect(toggleButton.getAttribute("aria-expanded")).toBe("false");
+    expect(toggleButton.getAttribute("aria-controls")).toBeNull();
+    expect(textarea.getAttribute("aria-controls")).toBeNull();
 
     // Click toggle to expand
     expandInlineCreate();
 
     // Now footer controls should be visible
     expect(document.querySelector(".inline-create-footer")).toBeTruthy();
+    expect(document.querySelector(".inline-create-card")?.classList.contains("inline-create-card--expanded")).toBe(true);
+    expect(screen.getByText(/Deps/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Models/i })).toBeTruthy();
+    expect(screen.getByTestId("plan-button")).toBeTruthy();
+    expect(screen.getByTestId("subtask-button")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Save/i })).toBeTruthy();
+    expect(toggleButton.getAttribute("aria-expanded")).toBe("true");
+    expect(toggleButton.getAttribute("aria-controls")).toBe("inline-create-controls");
+    expect(textarea.getAttribute("aria-controls")).toBe("inline-create-controls");
   });
 
   it("toggle button collapses the view when expanded", () => {
     renderCard();
+    const toggleButton = screen.getByTestId("inline-create-toggle");
 
     // Expand first
     expandInlineCreate();
     expect(document.querySelector(".inline-create-footer")).toBeTruthy();
+    expect(toggleButton.getAttribute("aria-expanded")).toBe("true");
 
     // Click toggle again to collapse
     expandInlineCreate();
 
     // Footer should be hidden
     expect(document.querySelector(".inline-create-footer")).toBeNull();
+    expect(document.querySelector(".inline-create-card")?.classList.contains("inline-create-card--collapsed")).toBe(true);
+    expect(toggleButton.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("maintains the collapsed and expanded styling contract on the inline create container", () => {
+    renderCard();
+    const card = document.querySelector(".inline-create-card");
+
+    expect(card?.classList.contains("inline-create-card--collapsed")).toBe(true);
+    expect(card?.classList.contains("inline-create-card--expanded")).toBe(false);
+    expect(document.querySelector(".inline-create-footer")).toBeNull();
+
+    expandInlineCreate();
+
+    expect(card?.classList.contains("inline-create-card--expanded")).toBe(true);
+    expect(card?.classList.contains("inline-create-card--collapsed")).toBe(false);
+    expect(document.querySelector(".inline-create-footer")).toBeTruthy();
   });
 
   it("does NOT expand on focus", () => {
@@ -145,18 +179,46 @@ describe("InlineCreateCard toggle button", () => {
     expect(document.querySelector(".inline-create-footer")).toBeNull();
   });
 
-  it("does NOT collapse on blur", () => {
-    renderCard();
+  it("calls onCancel on blur when collapsed and empty", () => {
+    const { props } = renderCard();
     const textarea = screen.getByPlaceholderText("What needs to be done?");
 
-    // Expand first
+    fireEvent.focusOut(textarea, { relatedTarget: null });
+
+    expect(props.onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not cancel on blur when collapsed and has content", () => {
+    const { props } = renderCard();
+    const textarea = screen.getByPlaceholderText("What needs to be done?");
+
+    fireEvent.change(textarea, { target: { value: "Keep collapsed draft" } });
+    fireEvent.focusOut(textarea, { relatedTarget: null });
+
+    expect(props.onCancel).not.toHaveBeenCalled();
+  });
+
+  it("calls onCancel on blur when expanded and empty", () => {
+    const { props } = renderCard();
+    const textarea = screen.getByPlaceholderText("What needs to be done?");
+
     expandInlineCreate();
     expect(document.querySelector(".inline-create-footer")).toBeTruthy();
 
-    // Blur should not collapse
     fireEvent.focusOut(textarea, { relatedTarget: null });
 
-    // Should still be expanded
+    expect(props.onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not cancel on blur when expanded and has content", () => {
+    const { props } = renderCard();
+    const textarea = screen.getByPlaceholderText("What needs to be done?");
+
+    expandInlineCreate();
+    fireEvent.change(textarea, { target: { value: "Keep drafting" } });
+    fireEvent.focusOut(textarea, { relatedTarget: null });
+
+    expect(props.onCancel).not.toHaveBeenCalled();
     expect(document.querySelector(".inline-create-footer")).toBeTruthy();
   });
 });
@@ -316,6 +378,17 @@ describe("InlineCreateCard model selector", () => {
     expect(props.onCancel).not.toHaveBeenCalled();
   });
 
+  it("does NOT call onCancel when expanded, empty, and a dropdown is open", () => {
+    const { props } = renderCard();
+    expandInlineCreate();
+    const textarea = screen.getByPlaceholderText("What needs to be done?");
+
+    fireEvent.click(screen.getByText(/Deps/));
+    fireEvent.focusOut(textarea, { relatedTarget: null });
+
+    expect(props.onCancel).not.toHaveBeenCalled();
+  });
+
   it("does NOT call onCancel when focus leaves while the preset dropdown is open", () => {
     vi.mocked(fetchSettings).mockResolvedValueOnce({
       modelPresets: [{ id: "budget", name: "Budget", executorProvider: "anthropic", executorModelId: "claude-sonnet-4-5" }],
@@ -361,7 +434,7 @@ describe("InlineCreateCard model selector", () => {
     });
   });
 
-  it("does NOT call onCancel after a model override is selected and focus leaves the card", () => {
+  it("calls onCancel after a model override is selected and focus leaves the card while empty", () => {
     const { props } = renderCard();
     expandInlineCreate();
     const textarea = screen.getByPlaceholderText("What needs to be done?");
@@ -373,7 +446,7 @@ describe("InlineCreateCard model selector", () => {
     textarea.focus();
     fireEvent.focusOut(textarea, { relatedTarget: null });
 
-    expect(props.onCancel).not.toHaveBeenCalled();
+    expect(props.onCancel).toHaveBeenCalledTimes(1);
   });
 
   it("prevents default on model option mouseDown to retain focus while selecting", () => {
@@ -539,30 +612,34 @@ describe("InlineCreateCard Plan and Subtask buttons", () => {
     expect(subtaskButton.disabled).toBe(false);
   });
 
-  it("calls onPlanningMode with description and clears input when Plan clicked", () => {
+  it("calls onPlanningMode and collapses after Plan clicked", () => {
     const onPlanningMode = vi.fn();
     renderCard([], { onPlanningMode });
     expandInlineCreate();
-    const textarea = screen.getByPlaceholderText("What needs to be done?");
+    const textarea = screen.getByPlaceholderText("What needs to be done?") as HTMLTextAreaElement;
 
     fireEvent.change(textarea, { target: { value: "Plan this task" } });
     fireEvent.click(screen.getByTestId("plan-button"));
 
     expect(onPlanningMode).toHaveBeenCalledWith("Plan this task");
-    expect((textarea as HTMLTextAreaElement).value).toBe("");
+    expect(textarea.value).toBe("");
+    expect(screen.getByTestId("inline-create-toggle").getAttribute("aria-expanded")).toBe("false");
+    expect(document.querySelector(".inline-create-footer")).toBeNull();
   });
 
-  it("calls onSubtaskBreakdown with description and clears input when Subtask clicked", () => {
+  it("calls onSubtaskBreakdown and collapses after Subtask clicked", () => {
     const onSubtaskBreakdown = vi.fn();
     renderCard([], { onSubtaskBreakdown });
     expandInlineCreate();
-    const textarea = screen.getByPlaceholderText("What needs to be done?");
+    const textarea = screen.getByPlaceholderText("What needs to be done?") as HTMLTextAreaElement;
 
     fireEvent.change(textarea, { target: { value: "Break this down" } });
     fireEvent.click(screen.getByTestId("subtask-button"));
 
     expect(onSubtaskBreakdown).toHaveBeenCalledWith("Break this down");
-    expect((textarea as HTMLTextAreaElement).value).toBe("");
+    expect(textarea.value).toBe("");
+    expect(screen.getByTestId("inline-create-toggle").getAttribute("aria-expanded")).toBe("false");
+    expect(document.querySelector(".inline-create-footer")).toBeNull();
   });
 
   it("shows toast when Plan clicked with empty description (via direct handler call)", () => {
@@ -627,10 +704,10 @@ describe("InlineCreateCard localStorage persistence", () => {
     });
   });
 
-  it("clears localStorage after successful task creation", async () => {
+  it("clears textarea and localStorage after successful task creation", async () => {
     const { props } = renderCard();
     expandInlineCreate();
-    const textarea = screen.getByPlaceholderText("What needs to be done?");
+    const textarea = screen.getByPlaceholderText("What needs to be done?") as HTMLTextAreaElement;
 
     // Type something to set localStorage
     fireEvent.change(textarea, { target: { value: "Task to create" } });
@@ -645,8 +722,28 @@ describe("InlineCreateCard localStorage persistence", () => {
       expect(props.onSubmit).toHaveBeenCalled();
     });
 
+    expect(textarea.value).toBe("");
+    expect(screen.getByTestId("inline-create-toggle").getAttribute("aria-expanded")).toBe("false");
     // localStorage should be cleared
     expect(localStorage.getItem("kb-inline-create-text")).toBeNull();
+  });
+
+  it("allows immediately re-expanding after successful submit", async () => {
+    const { props } = renderCard();
+    expandInlineCreate();
+    const textarea = screen.getByPlaceholderText("What needs to be done?") as HTMLTextAreaElement;
+    const toggleButton = screen.getByTestId("inline-create-toggle");
+
+    fireEvent.change(textarea, { target: { value: "Task to create" } });
+    fireEvent.click(screen.getByRole("button", { name: /Save/i }));
+
+    await waitFor(() => {
+      expect(props.onSubmit).toHaveBeenCalled();
+    });
+
+    fireEvent.click(toggleButton);
+    expect(toggleButton.getAttribute("aria-expanded")).toBe("true");
+    expect(document.querySelector(".inline-create-footer")).toBeTruthy();
   });
 
   it("clears localStorage when cancelling via Escape key", async () => {
