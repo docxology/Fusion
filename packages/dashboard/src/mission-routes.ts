@@ -23,6 +23,10 @@ import type {
   MilestoneCreateInput,
   SliceCreateInput,
   FeatureCreateInput,
+  MissionStatus,
+  MilestoneStatus,
+  SliceStatus,
+  FeatureStatus,
   InterviewState,
 } from "@fusion/core";
 import {
@@ -39,29 +43,20 @@ function validateUuid(id: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 }
 
-function validateMissionId(id: string | string[]): boolean {
-  const str = Array.isArray(id) ? id[0] : id;
-  return /^M-\d+$/.test(str);
+function validateMissionId(id: string): boolean {
+  return /^M-\d+$/.test(id);
 }
 
-function validateMilestoneId(id: string | string[]): boolean {
-  const str = Array.isArray(id) ? id[0] : id;
-  return /^MS-\d+$/.test(str);
+function validateMilestoneId(id: string): boolean {
+  return /^MS-\d+$/.test(id);
 }
 
-function validateSliceId(id: string | string[]): boolean {
-  const str = Array.isArray(id) ? id[0] : id;
-  return /^SL-\d+$/.test(str);
+function validateSliceId(id: string): boolean {
+  return /^SL-\d+$/.test(id);
 }
 
-function validateFeatureId(id: string | string[]): boolean {
-  const str = Array.isArray(id) ? id[0] : id;
-  return /^F-\d+$/.test(str);
-}
-
-/** Helper to extract string from Express param (handles string | string[]) */
-function paramString(value: string | string[]): string {
-  return Array.isArray(value) ? value[0] : value;
+function validateFeatureId(id: string): boolean {
+  return /^F-\d+$/.test(id);
 }
 
 function validateTitle(title: unknown): string {
@@ -79,14 +74,14 @@ function validateDescription(desc: unknown): string | undefined {
   return desc.trim() || undefined;
 }
 
-function validateStatus<TStatus extends string>(status: unknown, allowedStatuses: readonly TStatus[]): TStatus {
+function validateStatus(status: unknown, allowedStatuses: readonly string[]): string {
   if (!status || typeof status !== "string") {
     throw new Error(`Status is required and must be one of: ${allowedStatuses.join(", ")}`);
   }
-  if (!allowedStatuses.includes(status as TStatus)) {
+  if (!allowedStatuses.includes(status)) {
     throw new Error(`Invalid status. Must be one of: ${allowedStatuses.join(", ")}`);
   }
-  return status as TStatus;
+  return status;
 }
 
 function validateInterviewState(state: unknown): InterviewState {
@@ -183,7 +178,7 @@ export function createMissionRouter(store: TaskStore): Router {
   router.get(
     "/:missionId",
     asyncHandler(async (req, res) => {
-      const missionId = paramString(req.params.missionId);
+      const { missionId } = req.params;
 
       if (!validateMissionId(missionId)) {
         res.status(400).json({ error: "Invalid mission ID format" });
@@ -207,7 +202,7 @@ export function createMissionRouter(store: TaskStore): Router {
   router.patch(
     "/:missionId",
     asyncHandler(async (req, res) => {
-      const missionId = paramString(req.params.missionId);
+      const { missionId } = req.params;
       const { title, description, status } = req.body;
 
       if (!validateMissionId(missionId)) {
@@ -224,7 +219,7 @@ export function createMissionRouter(store: TaskStore): Router {
         updates.description = validateDescription(description);
       }
       if (status !== undefined) {
-        updates.status = validateStatus(status, MISSION_STATUSES);
+        updates.status = validateStatus(status, MISSION_STATUSES) as MissionStatus;
       }
 
       if (Object.keys(updates).length === 0) {
@@ -252,7 +247,7 @@ export function createMissionRouter(store: TaskStore): Router {
   router.delete(
     "/:missionId",
     asyncHandler(async (req, res) => {
-      const missionId = paramString(req.params.missionId);
+      const { missionId } = req.params;
 
       if (!validateMissionId(missionId)) {
         res.status(400).json({ error: "Invalid mission ID format" });
@@ -277,7 +272,7 @@ export function createMissionRouter(store: TaskStore): Router {
   router.get(
     "/:missionId/status",
     asyncHandler(async (req, res) => {
-      const missionId = paramString(req.params.missionId);
+      const { missionId } = req.params;
 
       if (!validateMissionId(missionId)) {
         res.status(400).json({ error: "Invalid mission ID format" });
@@ -304,7 +299,7 @@ export function createMissionRouter(store: TaskStore): Router {
   router.get(
     "/:missionId/interview-state",
     asyncHandler(async (req, res) => {
-      const missionId = paramString(req.params.missionId);
+      const { missionId } = req.params;
 
       if (!validateMissionId(missionId)) {
         res.status(400).json({ error: "Invalid mission ID format" });
@@ -328,7 +323,7 @@ export function createMissionRouter(store: TaskStore): Router {
   router.post(
     "/:missionId/interview-state",
     asyncHandler(async (req, res) => {
-      const missionId = paramString(req.params.missionId);
+      const { missionId } = req.params;
       const { state } = req.body;
 
       if (!validateMissionId(missionId)) {
@@ -360,7 +355,7 @@ export function createMissionRouter(store: TaskStore): Router {
   router.get(
     "/:missionId/milestones",
     asyncHandler(async (req, res) => {
-      const missionId = paramString(req.params.missionId);
+      const { missionId } = req.params;
 
       if (!validateMissionId(missionId)) {
         res.status(400).json({ error: "Invalid mission ID format" });
@@ -387,7 +382,7 @@ export function createMissionRouter(store: TaskStore): Router {
   router.post(
     "/:missionId/milestones",
     asyncHandler(async (req, res) => {
-      const missionId = paramString(req.params.missionId);
+      const { missionId } = req.params;
       const { title, description, dependencies } = req.body;
 
       if (!validateMissionId(missionId)) {
@@ -423,7 +418,7 @@ export function createMissionRouter(store: TaskStore): Router {
   router.post(
     "/:missionId/milestones/reorder",
     asyncHandler(async (req, res) => {
-      const missionId = paramString(req.params.missionId);
+      const { missionId } = req.params;
 
       if (!validateMissionId(missionId)) {
         res.status(400).json({ error: "Invalid mission ID format" });
@@ -465,7 +460,7 @@ export function createMissionRouter(store: TaskStore): Router {
   router.get(
     "/milestones/:milestoneId",
     asyncHandler(async (req, res) => {
-      const milestoneId = paramString(req.params.milestoneId);
+      const { milestoneId } = req.params;
 
       if (!validateMilestoneId(milestoneId)) {
         res.status(400).json({ error: "Invalid milestone ID format" });
@@ -489,7 +484,7 @@ export function createMissionRouter(store: TaskStore): Router {
   router.patch(
     "/milestones/:milestoneId",
     asyncHandler(async (req, res) => {
-      const milestoneId = paramString(req.params.milestoneId);
+      const { milestoneId } = req.params;
       const { title, description, status, dependencies } = req.body;
 
       if (!validateMilestoneId(milestoneId)) {
@@ -506,7 +501,7 @@ export function createMissionRouter(store: TaskStore): Router {
         updates.description = validateDescription(description);
       }
       if (status !== undefined) {
-        updates.status = validateStatus(status, MILESTONE_STATUSES);
+        updates.status = validateStatus(status, MILESTONE_STATUSES) as MilestoneStatus;
       }
       if (dependencies !== undefined) {
         updates.dependencies = validateStringArray(dependencies, "dependencies");
@@ -537,7 +532,7 @@ export function createMissionRouter(store: TaskStore): Router {
   router.delete(
     "/milestones/:milestoneId",
     asyncHandler(async (req, res) => {
-      const milestoneId = paramString(req.params.milestoneId);
+      const { milestoneId } = req.params;
 
       if (!validateMilestoneId(milestoneId)) {
         res.status(400).json({ error: "Invalid milestone ID format" });
@@ -564,7 +559,7 @@ export function createMissionRouter(store: TaskStore): Router {
   router.get(
     "/milestones/:milestoneId/interview-state",
     asyncHandler(async (req, res) => {
-      const milestoneId = paramString(req.params.milestoneId);
+      const { milestoneId } = req.params;
 
       if (!validateMilestoneId(milestoneId)) {
         res.status(400).json({ error: "Invalid milestone ID format" });
@@ -588,7 +583,7 @@ export function createMissionRouter(store: TaskStore): Router {
   router.post(
     "/milestones/:milestoneId/interview-state",
     asyncHandler(async (req, res) => {
-      const milestoneId = paramString(req.params.milestoneId);
+      const { milestoneId } = req.params;
       const { state } = req.body;
 
       if (!validateMilestoneId(milestoneId)) {
@@ -620,7 +615,7 @@ export function createMissionRouter(store: TaskStore): Router {
   router.get(
     "/milestones/:milestoneId/slices",
     asyncHandler(async (req, res) => {
-      const milestoneId = paramString(req.params.milestoneId);
+      const { milestoneId } = req.params;
 
       if (!validateMilestoneId(milestoneId)) {
         res.status(400).json({ error: "Invalid milestone ID format" });
@@ -647,7 +642,7 @@ export function createMissionRouter(store: TaskStore): Router {
   router.post(
     "/milestones/:milestoneId/slices",
     asyncHandler(async (req, res) => {
-      const milestoneId = paramString(req.params.milestoneId);
+      const { milestoneId } = req.params;
       const { title, description } = req.body;
 
       if (!validateMilestoneId(milestoneId)) {
@@ -681,7 +676,7 @@ export function createMissionRouter(store: TaskStore): Router {
   router.post(
     "/milestones/:milestoneId/slices/reorder",
     asyncHandler(async (req, res) => {
-      const milestoneId = paramString(req.params.milestoneId);
+      const { milestoneId } = req.params;
 
       if (!validateMilestoneId(milestoneId)) {
         res.status(400).json({ error: "Invalid milestone ID format" });
@@ -723,7 +718,7 @@ export function createMissionRouter(store: TaskStore): Router {
   router.get(
     "/slices/:sliceId",
     asyncHandler(async (req, res) => {
-      const sliceId = paramString(req.params.sliceId);
+      const { sliceId } = req.params;
 
       if (!validateSliceId(sliceId)) {
         res.status(400).json({ error: "Invalid slice ID format" });
@@ -747,7 +742,7 @@ export function createMissionRouter(store: TaskStore): Router {
   router.patch(
     "/slices/:sliceId",
     asyncHandler(async (req, res) => {
-      const sliceId = paramString(req.params.sliceId);
+      const { sliceId } = req.params;
       const { title, description, status } = req.body;
 
       if (!validateSliceId(sliceId)) {
@@ -764,7 +759,7 @@ export function createMissionRouter(store: TaskStore): Router {
         updates.description = validateDescription(description);
       }
       if (status !== undefined) {
-        updates.status = validateStatus(status, SLICE_STATUSES);
+        updates.status = validateStatus(status, SLICE_STATUSES) as SliceStatus;
       }
 
       if (Object.keys(updates).length === 0) {
@@ -792,7 +787,7 @@ export function createMissionRouter(store: TaskStore): Router {
   router.delete(
     "/slices/:sliceId",
     asyncHandler(async (req, res) => {
-      const sliceId = paramString(req.params.sliceId);
+      const { sliceId } = req.params;
 
       if (!validateSliceId(sliceId)) {
         res.status(400).json({ error: "Invalid slice ID format" });
@@ -817,7 +812,7 @@ export function createMissionRouter(store: TaskStore): Router {
   router.post(
     "/slices/:sliceId/activate",
     asyncHandler(async (req, res) => {
-      const sliceId = paramString(req.params.sliceId);
+      const { sliceId } = req.params;
 
       if (!validateSliceId(sliceId)) {
         res.status(400).json({ error: "Invalid slice ID format" });
@@ -846,7 +841,7 @@ export function createMissionRouter(store: TaskStore): Router {
   router.get(
     "/slices/:sliceId/features",
     asyncHandler(async (req, res) => {
-      const sliceId = paramString(req.params.sliceId);
+      const { sliceId } = req.params;
 
       if (!validateSliceId(sliceId)) {
         res.status(400).json({ error: "Invalid slice ID format" });
@@ -871,7 +866,7 @@ export function createMissionRouter(store: TaskStore): Router {
   router.post(
     "/slices/:sliceId/features",
     asyncHandler(async (req, res) => {
-      const sliceId = paramString(req.params.sliceId);
+      const { sliceId } = req.params;
       const { title, description, acceptanceCriteria } = req.body;
 
       if (!validateSliceId(sliceId)) {
@@ -907,7 +902,7 @@ export function createMissionRouter(store: TaskStore): Router {
   router.get(
     "/features/:featureId",
     asyncHandler(async (req, res) => {
-      const featureId = paramString(req.params.featureId);
+      const { featureId } = req.params;
 
       if (!validateFeatureId(featureId)) {
         res.status(400).json({ error: "Invalid feature ID format" });
@@ -931,7 +926,7 @@ export function createMissionRouter(store: TaskStore): Router {
   router.patch(
     "/features/:featureId",
     asyncHandler(async (req, res) => {
-      const featureId = paramString(req.params.featureId);
+      const { featureId } = req.params;
       const { title, description, acceptanceCriteria, status } = req.body;
 
       if (!validateFeatureId(featureId)) {
@@ -951,7 +946,7 @@ export function createMissionRouter(store: TaskStore): Router {
         updates.acceptanceCriteria = validateDescription(acceptanceCriteria);
       }
       if (status !== undefined) {
-        updates.status = validateStatus(status, FEATURE_STATUSES);
+        updates.status = validateStatus(status, FEATURE_STATUSES) as FeatureStatus;
       }
 
       if (Object.keys(updates).length === 0) {
@@ -979,7 +974,7 @@ export function createMissionRouter(store: TaskStore): Router {
   router.delete(
     "/features/:featureId",
     asyncHandler(async (req, res) => {
-      const featureId = paramString(req.params.featureId);
+      const { featureId } = req.params;
 
       if (!validateFeatureId(featureId)) {
         res.status(400).json({ error: "Invalid feature ID format" });
@@ -1004,7 +999,7 @@ export function createMissionRouter(store: TaskStore): Router {
   router.post(
     "/features/:featureId/link-task",
     asyncHandler(async (req, res) => {
-      const featureId = paramString(req.params.featureId);
+      const { featureId } = req.params;
       const { taskId } = req.body;
 
       if (!validateFeatureId(featureId)) {
@@ -1043,7 +1038,7 @@ export function createMissionRouter(store: TaskStore): Router {
   router.post(
     "/features/:featureId/unlink-task",
     asyncHandler(async (req, res) => {
-      const featureId = paramString(req.params.featureId);
+      const { featureId } = req.params;
 
       if (!validateFeatureId(featureId)) {
         res.status(400).json({ error: "Invalid feature ID format" });

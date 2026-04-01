@@ -1,0 +1,39 @@
+{
+  "id": "FN-679",
+  "description": "Worktree init script and recycle worktree settings not being persisted",
+  "column": "triage",
+  "currentStep": 0,
+  "createdAt": "2026-04-01T22:01:24.562Z",
+  "updatedAt": "2026-04-01T22:06:19.516Z",
+  "columnMovedAt": "2026-04-01T22:01:24.562Z",
+  "dependencies": [],
+  "steps": [],
+  "log": [
+    {
+      "timestamp": "2026-04-01T22:01:24.562Z",
+      "action": "Task created"
+    },
+    {
+      "timestamp": "2026-04-01T22:05:04.827Z",
+      "action": "Spec review requested"
+    },
+    {
+      "timestamp": "2026-04-01T22:05:34.402Z",
+      "action": "Spec review: REVISE",
+      "outcome": "The spec has a clear mission and mostly concrete, testable outcomes, but it currently includes at least one likely incorrect file path in the migration/backward-compat docs and misses an explicit requirement to update the core settings key allowlists/type plumbing where this regression is most likely rooted. As written, implementation could “pass” step checks while still leaving one update path dropping `worktreeInitCommand`/`recycleWorktrees`. Tightening file scope and required verification poi"
+    },
+    {
+      "timestamp": "2026-04-01T22:05:59.399Z",
+      "action": "Spec review requested"
+    },
+    {
+      "timestamp": "2026-04-01T22:06:15.556Z",
+      "action": "Spec review: REVISE",
+      "outcome": "The specification is strong on mission clarity and includes concrete outcomes for core and CLI behavior, but it contains a critical mismatch with the current codebase around storage path conventions and one scope inconsistency in documentation requirements. The referenced files and APIs are real (`TaskStore.updateSettings/getSettings`, CLI `VALID_SETTINGS`/`parseValue`) and the testing expectations are generally appropriate. However, as written, Step 4 would push the implementer toward a wrong s"
+    },
+    {
+      "timestamp": "2026-04-01T22:06:19.514Z",
+      "action": "Spec review not approved (verdict was REVISE) — specification not approved"
+    }
+  ]
+}

@@ -327,6 +327,13 @@ export interface TaskAttachment {
   createdAt: string;
 }
 
+export interface SteeringComment {
+  id: string;
+  text: string;
+  createdAt: string;
+  author: "user" | "agent";
+}
+
 export interface TaskComment {
   id: string;
   text: string;
@@ -380,14 +387,9 @@ export interface Task {
    *  unmerged branch. The executor reads this to branch from the
    *  dependency's branch instead of HEAD. Cleared after worktree creation. */
   baseBranch?: string;
-  /** Commit SHA of the base branch at worktree creation time.
-   *  Used for computing file diffs when reviewing task changes.
-   *  Set by the executor when creating the worktree. */
-  baseCommitSha?: string;
   attachments?: TaskAttachment[];
+  steeringComments?: SteeringComment[];
   comments?: TaskComment[];
-  /** Steering comments injected during task execution for real-time guidance */
-  steeringComments?: TaskComment[];
   /** PR information for tasks linked to GitHub pull requests */
   prInfo?: PrInfo;
   mergeDetails?: MergeDetails;
@@ -426,12 +428,6 @@ export interface Task {
   error?: string;
   /** Optional summary of what was changed/fixed when task is completed */
   summary?: string;
-  /** Files modified during agent execution, captured at task completion time */
-  modifiedFiles?: string[];
-  /** Optional ID of the mission this task is linked to (derived from its linked slice hierarchy) */
-  missionId?: string;
-  /** Optional ID of the slice this task is linked to (for mission-based work) */
-  sliceId?: string;
   /** ISO-8601 timestamp of when the task last entered its current column.
    *  Used to sort cards within a column so that recently-moved cards appear at the top. */
   columnMovedAt?: string;
@@ -527,17 +523,10 @@ export interface GlobalSettings {
   /** ntfy.sh topic name for push notifications. When set along with ntfyEnabled,
    *  notifications are sent to https://ntfy.sh/{topic} when tasks complete or fail. */
   ntfyTopic?: string;
-  /** Default project ID to use when no explicit project is specified and
-   *  no project can be auto-detected from the current directory.
-   *  Used for multi-project CLI workflows. */
+  /** The default project ID for CLI operations when --project flag is not provided.
+   *  Used to determine which project to operate on when not in a project directory.
+   *  Set via `kb project set-default <name>`. */
   defaultProjectId?: string;
-  /** Dashboard hostname for ntfy.sh deep links. When set along with ntfyEnabled
-   *  and ntfyTopic, notifications include a Click URL that opens the dashboard
-   *  directly to the task. Example: "http://localhost:3000" or "https://fusion.example.com" */
-  ntfyDashboardHost?: string;
-  /** When true, indicates the first-run setup wizard has been completed.
-   *  Set by FirstRunExperience.completeSetup() after successful migration. */
-  setupComplete?: boolean;
 }
 
 /**
@@ -671,16 +660,6 @@ export interface ProjectSettings {
    *  Must be set together with `titleSummarizerProvider`. Falls back to planningModelId,
    *  then defaultModelId if not specified. */
   titleSummarizerModelId?: string;
-  /** Project-defined shell scripts for quick command execution.
-   *  Key is the script name, value is the shell command to execute.
-   *  Script names must be alphanumeric with hyphens and underscores only. */
-  scripts?: Record<string, string>;
-  /** Name of a script from the `scripts` map to run automatically when
-   *  fresh worktrees are created. Runs after `worktreeInitCommand` (if both
-   *  are configured). Has no effect on pooled/recycled worktrees.
-   *  If the referenced script doesn't exist, a warning is logged and
-   *  the task continues. */
-  setupScript?: string;
 }
 
 /**
@@ -707,8 +686,6 @@ export const DEFAULT_GLOBAL_SETTINGS: Required<Pick<GlobalSettings, "themeMode" 
   defaultThinkingLevel: undefined,
   ntfyEnabled: false,
   ntfyTopic: undefined,
-  defaultProjectId: undefined,
-  ntfyDashboardHost: undefined,
 };
 
 /** Default values for project-level settings. */
@@ -746,8 +723,6 @@ export const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
   autoSummarizeTitles: false,
   titleSummarizerProvider: undefined,
   titleSummarizerModelId: undefined,
-  scripts: {},
-  setupScript: undefined,
 };
 
 /**
@@ -770,7 +745,6 @@ export const GLOBAL_SETTINGS_KEYS: ReadonlyArray<keyof GlobalSettings> = [
   "ntfyEnabled",
   "ntfyTopic",
   "defaultProjectId",
-  "ntfyDashboardHost",
 ] as const;
 
 /** Keys that belong to the project settings scope. */
@@ -810,8 +784,6 @@ export const PROJECT_SETTINGS_KEYS: ReadonlyArray<keyof ProjectSettings> = [
   "autoSummarizeTitles",
   "titleSummarizerProvider",
   "titleSummarizerModelId",
-  "scripts",
-  "setupScript",
 ] as const;
 
 export interface BoardConfig {
@@ -894,59 +866,8 @@ export interface ArchivedTaskEntry {
   breakIntoSubtasks?: boolean;
   paused?: boolean;
   baseBranch?: string;
-  baseCommitSha?: string;
   mergeRetries?: number;
   error?: string;
-  /** Files modified during agent execution, captured at task completion time */
-  modifiedFiles?: string[];
-}
-
-/** Detected project from filesystem scanning */
-export interface DetectedProject {
-  path: string;
-  name: string;
-  hasDb: boolean;
-}
-
-/** State for the first-run setup wizard UI */
-export interface SetupState {
-  isFirstRun: boolean;
-  hasDetectedProjects: boolean;
-  detectedProjects: DetectedProject[];
-  registeredProjects: RegisteredProject[];
-  recommendedAction: "auto-detect" | "create-new" | "manual-setup";
-}
-
-/** Input type for completing project setup */
-export interface ProjectSetupInput {
-  path: string;
-  name: string;
-  isolationMode?: IsolationMode;
-}
-
-/** Result of setup completion */
-export interface SetupCompletionResult {
-  success: boolean;
-  projects: RegisteredProject[];
-  errors?: Array<{ path: string; error: string }>;
-  nextSteps: string[];
-}
-
-/** Options for migration orchestration */
-export interface MigrationOptions {
-  startPath?: string;
-  maxDepth?: number;
-  autoRegister?: boolean;
-  dryRun?: boolean;
-  onProgress?: (completed: number, total: number, phase: string) => void;
-}
-
-/** Result of migration run */
-export interface MigrationResult {
-  projectsDetected: DetectedProject[];
-  projectsRegistered: RegisteredProject[];
-  projectsSkipped: Array<{ path: string; reason: string }>;
-  errors: Array<{ path: string; error: string }>;
 }
 
 /** Type of planning question presented to the user */
@@ -979,9 +900,6 @@ export interface RegisteredProject {
   /** Cached project settings snapshot */
   settings?: ProjectSettings;
 }
-
-/** @deprecated Alias for RegisteredProject - use RegisteredProject instead */
-export type ProjectInfo = RegisteredProject;
 
 /** Health metrics for a registered project */
 export interface ProjectHealth {

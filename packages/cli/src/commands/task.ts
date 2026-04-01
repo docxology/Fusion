@@ -1,4 +1,4 @@
-import { TaskStore, COLUMNS, COLUMN_LABELS, type Column, type MergeResult, type StepStatus, type AgentLogType, type AgentLogEntry } from "@fusion/core";
+import { TaskStore, COLUMNS, COLUMN_LABELS, type Column, type MergeResult, type StepStatus, type AgentLogType, type AgentLogEntry, type Task } from "@fusion/core";
 import { aiMergeTask } from "@fusion/engine";
 import { createInterface } from "node:readline/promises";
 import type { PlanningQuestion, PlanningSummary } from "@fusion/core";
@@ -7,19 +7,83 @@ import { watchFile, unwatchFile, statSync, existsSync, readFileSync } from "node
 import { join } from "node:path";
 import { GitHubClient } from "@fusion/dashboard";
 import { isGhAvailable, isGhAuthenticated, getCurrentRepo } from "@fusion/core/gh-cli";
-import { getStore as getStoreFromResolver, resolveProject } from "../project-resolver.js";
+import { resolveProject, type ProjectContext } from "../project-context.js";
 
 const STEP_STATUSES: StepStatus[] = ["pending", "in-progress", "done", "skipped"];
 
-async function getStore(projectName?: string): Promise<TaskStore> {
+interface CommandContext {
+  store: TaskStore;
+  projectPath: string;
+  projectName?: string;
+  explicit: boolean;
+}
+
+function asLocalProjectContext(store: TaskStore): ProjectContext {
+  const cwd = process.cwd();
+  return {
+    projectId: cwd,
+    projectPath: cwd,
+    projectName: cwd.split("/").filter(Boolean).at(-1) ?? "current-project",
+    isRegistered: false,
+    store,
+  };
+}
+
+async function getCommandContext(projectName?: string): Promise<CommandContext> {
   if (projectName) {
-    return getStoreFromResolver({ project: projectName });
+    const context = await resolveProject(projectName);
+    return {
+      store: context.store,
+      projectPath: context.projectPath,
+      projectName: context.projectName,
+      explicit: true,
+    };
   }
-  return getStoreFromResolver();
+
+  try {
+    const context = await resolveProject(undefined);
+    return {
+      store: context.store,
+      projectPath: context.projectPath,
+      projectName: context.projectName,
+      explicit: false,
+    };
+  } catch (error) {
+    const store = new TaskStore(process.cwd());
+    await store.init();
+    return {
+      store,
+      projectPath: process.cwd(),
+      projectName: undefined,
+      explicit: false,
+    };
+  }
+}
+
+async function getStore(projectName?: string): Promise<TaskStore> {
+  return (await getCommandContext(projectName)).store;
+}
+
+async function getProjectContext(projectName?: string): Promise<ProjectContext | undefined> {
+  if (projectName) {
+    return resolveProject(projectName);
+  }
+
+  try {
+    return await resolveProject(undefined);
+  } catch {
+    const store = await getStore();
+    return asLocalProjectContext(store);
+  }
+}
+
+async function getProjectPath(projectName?: string): Promise<string> {
+  return (await getCommandContext(projectName)).projectPath;
 }
 
 export async function runTaskCreate(descriptionArg?: string, attachFiles?: string[], depends?: string[], projectName?: string) {
   let description = descriptionArg;
+  const projectContext = await getProjectContext(projectName);
 
   if (!description) {
     const rl = createInterface({ input: process.stdin, output: process.stdout });
@@ -32,7 +96,7 @@ export async function runTaskCreate(descriptionArg?: string, attachFiles?: strin
     process.exit(1);
   }
 
-  const store = await getStore(projectName);
+  const store = projectContext?.store ?? await getStore(projectName);
   const task = await store.createTask({ description: description.trim(), dependencies: depends });
 
   const label = task.description.length > 60
@@ -40,12 +104,15 @@ export async function runTaskCreate(descriptionArg?: string, attachFiles?: strin
     : task.description;
 
   console.log();
+  if (projectContext) {
+    console.log(`  Project: ${projectContext.projectName}`);
+  }
   console.log(`  ✓ Created ${task.id}: ${label}`);
   console.log(`    Column: triage`);
   if (task.dependencies.length > 0) {
     console.log(`    Dependencies: ${task.dependencies.join(", ")}`);
   }
-  console.log(`    Path:   .fusion/tasks/${task.id}/`);
+  console.log(`    Path:   .kb/tasks/${task.id}/`);
 
   if (attachFiles && attachFiles.length > 0) {
     const { readFile } = await import("node:fs/promises");
@@ -80,7 +147,8 @@ export async function runTaskCreate(descriptionArg?: string, attachFiles?: strin
 }
 
 export async function runTaskList(projectName?: string) {
-  const store = await getStore(projectName);
+  const projectContext = await getProjectContext(projectName);
+  const store = projectContext?.store ?? await getStore(projectName);
   const tasks = await store.listTasks();
 
   if (tasks.length === 0) {
@@ -89,6 +157,10 @@ export async function runTaskList(projectName?: string) {
   }
 
   console.log();
+  if (projectContext && projectName) {
+    console.log(`  Tasks for project '${projectContext.projectName}':`);
+    console.log();
+  }
 
   for (const col of COLUMNS) {
     const colTasks = tasks.filter((t) => t.column === col);
@@ -218,7 +290,8 @@ function filterEntries(entries: AgentLogEntry[], options: LogsOptions): AgentLog
 }
 
 export async function runTaskLogs(id: string, options: LogsOptions = {}, projectName?: string) {
-  const store = await getStore(projectName);
+  const projectContext = await getProjectContext(projectName);
+  const store = projectContext?.store ?? await getStore(projectName);
 
   // Verify task exists
   try {
@@ -236,15 +309,19 @@ export async function runTaskLogs(id: string, options: LogsOptions = {}, project
     return;
   }
 
+  if (projectContext && projectName) {
+    console.log(`  Logs for project '${projectContext.projectName}':`);
+  }
+
   // Print existing entries (filtered)
   const filteredEntries = filterEntries(entries, options);
   printEntries(filteredEntries);
 
   // Follow mode: watch for new entries
   if (options.follow) {
-    const store = await getStore(projectName);
-    const projectPath = (await resolveProject(projectName)).projectPath;
-    const logPath = join(projectPath, ".fusion", "tasks", id, "agent.log");
+    const followStore = store;
+    const projectPath = projectContext?.projectPath ?? process.cwd();
+    const logPath = join(projectPath, ".kb", "tasks", id, "agent.log");
 
     if (!existsSync(logPath)) {
       console.log(`\n  Waiting for log file to be created...`);
@@ -364,7 +441,7 @@ export async function runTaskShow(id: string, projectName?: string) {
 
 export async function runTaskMerge(id: string, projectName?: string) {
   const store = await getStore(projectName);
-  const { projectPath } = await resolveProject(projectName);
+  const projectPath = await getProjectPath(projectName);
 
   console.log(`\n  Merging ${id} with AI...\n`);
 
@@ -437,7 +514,7 @@ export async function runTaskAttach(id: string, filePath: string, projectName?: 
   console.log();
   console.log(`  ✓ Attached to ${id}: ${attachment.originalName}`);
   console.log(`    File: ${attachment.filename} (${sizeKB} KB)`);
-  console.log(`    Path: .fusion/tasks/${id}/attachments/${attachment.filename}`);
+  console.log(`    Path: .kb/tasks/${id}/attachments/${attachment.filename}`);
   console.log();
 }
 
@@ -480,7 +557,7 @@ export async function runTaskDuplicate(id: string, projectName?: string) {
 
   console.log();
   console.log(`  ✓ Duplicated ${id} → ${newTask.id}`);
-  console.log(`    Path: .fusion/tasks/${newTask.id}/`);
+  console.log(`    Path: .kb/tasks/${newTask.id}/`);
   console.log();
 }
 
@@ -512,7 +589,7 @@ export async function runTaskRefine(id: string, feedbackArg?: string, projectNam
   console.log(`  ✓ Created refinement ${newTask.id} for ${id}`);
   console.log(`    Column: triage`);
   console.log(`    Dependency: ${id}`);
-  console.log(`    Path: .fusion/tasks/${newTask.id}/`);
+  console.log(`    Path: .kb/tasks/${newTask.id}/`);
   console.log();
 }
 
@@ -977,7 +1054,7 @@ export async function runTaskSteer(id: string, message?: string, projectName?: s
   // Add steering comment
   let task;
   try {
-    task = await store.addComment(id, trimmed, "user");
+    task = await store.addSteeringComment(id, trimmed, "user");
   } catch (err: any) {
     if (err.code === "ENOENT") {
       console.error(`Error: Task not found: ${id}`);
@@ -989,7 +1066,7 @@ export async function runTaskSteer(id: string, message?: string, projectName?: s
   // Show success with preview
   const preview = trimmed.length > 60 ? trimmed.slice(0, 60) + "…" : trimmed;
   console.log();
-  console.log(`  ✓ Comment added to ${task.id}`);
+  console.log(`  ✓ Steering comment added to ${task.id}`);
   console.log(`    "${preview}"`);
   console.log();
 }
@@ -1043,7 +1120,8 @@ export async function runTaskPrCreate(id: string, options: PrCreateOptions = {},
     owner = o;
     repo = r;
   } else {
-    const gitRepo = getCurrentRepo(process.cwd());
+    const projectPath = await getProjectPath(projectName);
+    const gitRepo = getCurrentRepo(projectPath);
     if (!gitRepo) {
       console.error("Error: Could not determine GitHub repository. Set GITHUB_REPOSITORY env var or configure git remote.");
       process.exit(1);
@@ -1060,8 +1138,8 @@ export async function runTaskPrCreate(id: string, options: PrCreateOptions = {},
     process.exit(1);
   }
 
-  // Build branch name
-  const branchName = `kb/${id.toLowerCase()}`;
+  // Build branch name using the established project convention
+  const branchName = `fusion/${id.toLowerCase()}`;
 
   // Build PR title
   let title: string;
@@ -1347,7 +1425,8 @@ export async function runTaskPlan(initialPlanArg?: string, yesFlag = false, proj
 
   try {
     showThinking();
-    const result = await createSession("127.0.0.1", initialPlan.trim(), store, process.cwd());
+    const projectPath = await getProjectPath(projectName);
+    const result = await createSession("127.0.0.1", initialPlan.trim(), store, projectPath);
     clearThinking();
     sessionId = result.sessionId;
     firstQuestion = result.firstQuestion;
@@ -1421,7 +1500,7 @@ export async function runTaskPlan(initialPlanArg?: string, yesFlag = false, proj
 
       try {
         showThinking();
-        result = await submitResponse(sessionId, response as Record<string, unknown>) as typeof result;
+        result = await submitResponse(sessionId, response) as typeof result;
         clearThinking();
       } catch (err) {
         clearThinking();
@@ -1468,7 +1547,7 @@ export async function runTaskPlan(initialPlanArg?: string, yesFlag = false, proj
           if (task.dependencies.length > 0) {
             console.log(`    Dependencies: ${task.dependencies.join(", ")}`);
           }
-          console.log(`    Path:   .fusion/tasks/${task.id}/`);
+          console.log(`    Path:   .kb/tasks/${task.id}/`);
           console.log();
         } else {
           console.log("\n  Task creation cancelled.\n");

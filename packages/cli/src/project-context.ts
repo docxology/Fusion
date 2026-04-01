@@ -17,6 +17,8 @@ export interface ProjectContext {
   projectPath: string;
   /** Project name */
   projectName: string;
+  /** Whether the project is registered in the central registry */
+  isRegistered: boolean;
   /** TaskStore instance for this project */
   store: TaskStore;
 }
@@ -71,12 +73,24 @@ export async function resolveProject(
 
     // 3. Auto-detect from CWD
     if (!project) {
-      project = await detectProjectFromCwd(cwd, central);
-      if (!project) {
+      const detected = await detectProjectFromCwd(cwd, central);
+      if (!detected) {
         throw new Error(
           `No kb project found in current directory. Use --project or run from a project directory.`
         );
       }
+
+      const store = detected.id
+        ? await getStoreForProject(detected.id, detected.path)
+        : await createLocalStore(detected.path);
+
+      return {
+        projectId: detected.id,
+        projectPath: detected.path,
+        projectName: detected.name,
+        isRegistered: Boolean(detected.id),
+        store,
+      };
     }
 
     const store = await getStoreForProject(project.id, project.path);
@@ -85,6 +99,7 @@ export async function resolveProject(
       projectId: project.id,
       projectPath: project.path,
       projectName: project.name,
+      isRegistered: true,
       store,
     };
   } finally {
@@ -160,7 +175,7 @@ export async function clearDefaultProject(): Promise<void> {
 export async function detectProjectFromCwd(
   cwd: string,
   central: CentralCore
-): Promise<RegisteredProject | undefined> {
+): Promise<RegisteredProject | { id: string; name: string; path: string } | undefined> {
   let currentDir = resolve(cwd);
 
   // Walk up the directory tree
@@ -174,8 +189,12 @@ export async function detectProjectFromCwd(
         return project;
       }
       // Not registered, but has .kb/kb.db - still use it as a valid project
-      // This allows unregistered projects to work with the CLI
-      return undefined;
+      // This preserves legacy single-project CLI behavior.
+      return {
+        id: currentDir,
+        name: currentDir.split("/").filter(Boolean).at(-1) ?? "current-project",
+        path: currentDir,
+      };
     }
 
     // Move up to parent
@@ -241,6 +260,12 @@ export async function getStoreForProject(
  */
 export function clearStoreCache(): void {
   storeCache.clear();
+}
+
+async function createLocalStore(projectPath: string): Promise<TaskStore> {
+  const store = new TaskStore(projectPath);
+  await store.init();
+  return store;
 }
 
 /**

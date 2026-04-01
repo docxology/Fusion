@@ -6,6 +6,16 @@ import {
 } from "@fusion/core";
 import { resolveProject } from "../project-context.js";
 
+async function resolveBackupStore(projectName?: string): Promise<TaskStore> {
+  try {
+    return (await resolveProject(projectName)).store;
+  } catch {
+    const store = new TaskStore(process.cwd());
+    await store.init();
+    return store;
+  }
+}
+
 /**
  * Find the project root and create a backup manager.
  */
@@ -14,12 +24,7 @@ async function getBackupManager(projectName?: string): Promise<{
   store: TaskStore;
   kbDir: string;
 }> {
-  const store = projectName 
-    ? (await resolveProject(projectName)).store
-    : new TaskStore(process.cwd());
-  if (!projectName) {
-    await store.init();
-  }
+  const store = await resolveBackupStore(projectName);
   // Access the private kbDir property via type assertion
   const kbDir = (store as unknown as { kbDir: string }).kbDir;
   const settings = await store.getSettings();

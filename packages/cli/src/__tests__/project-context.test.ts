@@ -86,6 +86,16 @@ describe("project-context", () => {
 
       expect(found).toBeUndefined();
     });
+
+    it("should detect unregistered local project for legacy single-project usage", async () => {
+      const projectPath = createMockProject("legacy-project");
+
+      const found = await detectProjectFromCwd(projectPath, central);
+
+      expect(found).toBeDefined();
+      expect(found?.path).toBe(resolve(projectPath));
+      expect(found?.name).toBe("legacy-project");
+    });
   });
 
   describe("formatProjectLine", () => {
@@ -127,11 +137,21 @@ describe("project-context", () => {
     });
   });
 
-  describe("resolveProject errors", () => {
+  describe("resolveProject", () => {
     it("should throw for unknown project name", async () => {
       await expect(resolveProject("unknown-project", tempDir)).rejects.toThrow(
         "not found"
       );
+    });
+
+    it("should resolve unregistered local project from cwd", async () => {
+      const projectPath = createMockProject("legacy-project");
+
+      const context = await resolveProject(undefined, projectPath);
+
+      expect(context.projectPath).toBe(resolve(projectPath));
+      expect(context.projectName).toBe("legacy-project");
+      expect(context.isRegistered).toBe(false);
     });
 
     it("should throw when no project can be resolved", async () => {

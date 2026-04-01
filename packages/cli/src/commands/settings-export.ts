@@ -1,7 +1,7 @@
 import { writeFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { TaskStore, exportSettings, generateExportFilename } from "@fusion/core";
+import { resolveProject } from "../project-context.js";
 
 /**
  * Run settings export command.
@@ -9,40 +9,37 @@ import { TaskStore, exportSettings, generateExportFilename } from "@fusion/core"
  *
  * @param options.output - Custom output file path (optional, auto-generates if not provided)
  * @param options.scope - Which settings to export: 'global', 'project', or 'both' (default: 'both')
+ * @param options.projectName - Optional project name for project-scoped export
  */
 export async function runSettingsExport(options: {
   output?: string;
   scope?: "global" | "project" | "both";
+  projectName?: string;
 } = {}): Promise<void> {
-  const store = new TaskStore(process.cwd());
-  await store.init();
-
   const scope = options.scope ?? "both";
+  const project = options.projectName ? await resolveProject(options.projectName) : undefined;
+
+  const store = new TaskStore(project?.projectPath ?? process.cwd());
+  await store.init();
   const outputPath = options.output;
 
   try {
-    // Export settings
     const exportData = await exportSettings(store, { scope });
 
-    // Determine output file path
     let targetPath: string;
     if (outputPath) {
       targetPath = resolve(outputPath);
     } else {
-      // Generate timestamped filename in current directory
       const filename = generateExportFilename();
       targetPath = join(process.cwd(), filename);
     }
 
-    // Write to file with pretty-printed JSON
     const jsonContent = JSON.stringify(exportData, null, 2);
     await writeFile(targetPath, jsonContent);
 
-    // Output success message
     console.log();
     console.log(`  ✓ Settings exported to ${targetPath}`);
-    
-    // Show what was exported
+
     const parts: string[] = [];
     if (exportData.global) {
       const globalKeys = Object.keys(exportData.global).filter(
@@ -60,12 +57,12 @@ export async function runSettingsExport(options: {
         parts.push(`${projectKeys.length} project setting(s)`);
       }
     }
-    
+
     if (parts.length > 0) {
       console.log(`    Exported: ${parts.join(", ")}`);
     }
     console.log();
-    
+
     process.exit(0);
   } catch (err) {
     console.error(`Error: ${(err as Error).message}`);

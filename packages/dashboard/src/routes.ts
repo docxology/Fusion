@@ -1,7 +1,6 @@
 import { Router, type Request, type Response, type NextFunction } from "express";
 import multer from "multer";
 import { createReadStream, existsSync } from "node:fs";
-import { basename } from "node:path";
 import { execSync } from "node:child_process";
 import type { TaskStore, Column, MergeResult, ScheduleType, ActivityEventType, ModelPreset, AutomationStep } from "@fusion/core";
 import { COLUMNS, VALID_TRANSITIONS, GLOBAL_SETTINGS_KEYS, type BatchStatusEntry, type BatchStatusResponse, type BatchStatusResult, type IssueInfo, type PrInfo, type Task, isGhAuthenticated, AUTOMATION_PRESETS, AutomationStore, validateBackupSchedule, validateBackupRetention, validateBackupDir, syncBackupAutomation, exportSettings, importSettings, validateImportData } from "@fusion/core";
@@ -1063,78 +1062,9 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
     console.debug("[planning:routes:registered]", planningRoutes);
   }
   const sessionFilesCache = new Map<string, { files: string[]; expiresAt: number }>();
-  const taskFileDiffsCache = new Map<
-    string,
-    {
-      files: Array<{ path: string; status: "added" | "modified" | "deleted" | "renamed"; diff: string; oldPath?: string }>;
-      expiresAt: number;
-    }
-  >();
 
   // Get GitHub token from options or env
   const githubToken = options?.githubToken ?? process.env.GITHUB_TOKEN;
-
-  // ── Setup and Migration Routes ───────────────────────────────────────────
-
-  /**
-   * GET /api/setup-state
-   * Returns the first-run state and detected projects for migration/setup wizard.
-   * Response: { state: FirstRunState, detectedProjects: DetectedProject[], hasCentralDb: boolean }
-   */
-  router.get("/setup-state", async (_req, res) => {
-    try {
-      const { FirstRunDetector } = await import("@fusion/core");
-      const { CentralCore } = await import("@fusion/core");
-      
-      const detector = new FirstRunDetector();
-      const state = await detector.detectFirstRunState();
-      const detectedProjects = await detector.detectExistingProjects(process.cwd());
-      
-      res.json({
-        state,
-        detectedProjects,
-        hasCentralDb: detector.hasCentralDb(),
-      });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  /**
-   * POST /api/complete-setup
-   * Complete setup by registering selected projects.
-   * Body: { projects: Array<{ path: string, name: string, isolationMode?: string }> }
-   * Response: { success: boolean, registered: string[], errors: string[] }
-   */
-  router.post("/complete-setup", async (req, res) => {
-    try {
-      const { projects } = req.body;
-      if (!Array.isArray(projects)) {
-        res.status(400).json({ error: "projects array is required" });
-        return;
-      }
-
-      const { CentralCore, MigrationCoordinator } = await import("@fusion/core");
-      
-      const central = new CentralCore();
-      await central.init();
-      
-      try {
-        const coordinator = new MigrationCoordinator(central);
-        const result = await coordinator.completeSetup(projects);
-        
-        res.json({
-          success: result.success,
-          registered: result.projectsRegistered,
-          errors: result.errors,
-        });
-      } finally {
-        await central.close();
-      }
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
 
   // Scheduler config (includes persisted settings)
   router.get("/config", async (_req, res) => {
@@ -1447,42 +1377,6 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
 
       if (offset !== undefined && (!Number.isFinite(offset) || offset < 0)) {
         res.status(400).json({ error: "offset must be a non-negative integer" });
-        return;
-      }
-
-      // When projectId is provided, delegate to that project's TaskStore via CentralCore
-      const projectId = typeof req.query.projectId === "string" ? req.query.projectId : undefined;
-      if (projectId) {
-        try {
-          const { CentralCore, TaskStore: ProjectTaskStore } = await import("@fusion/core");
-          const central = new CentralCore();
-          await central.init();
-
-          let project;
-          try {
-            project = await central.getProject(projectId);
-          } finally {
-            await central.close();
-          }
-
-          if (!project) {
-            res.status(404).json({ error: "Project not found" });
-            return;
-          }
-
-          const projectStore = new ProjectTaskStore(project.path);
-          await projectStore.init();
-          try {
-            const tasks = await projectStore.listTasks({ limit, offset });
-            res.json(tasks);
-          } finally {
-            projectStore.close();
-          }
-        } catch (err: any) {
-          if (res.headersSent) return;
-          // Graceful degradation: CentralCore unavailable or other error → empty array
-          res.json([]);
-        }
         return;
       }
 
@@ -1912,42 +1806,24 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         return;
       }
 
+      const baseBranch = task.baseBranch ?? "main";
       let files: string[] = [];
 
       try {
-        let baseRef = task.baseCommitSha;
+        const output = execSync(`git diff --name-only ${baseBranch}...HEAD`, {
+          cwd: task.worktree,
+          encoding: "utf-8",
+          timeout: 5000,
+        }).trim();
 
-        if (!baseRef) {
-          try {
-            baseRef = execSync("git merge-base HEAD origin/main 2>/dev/null || git merge-base HEAD main", {
-              cwd: task.worktree,
-              encoding: "utf-8",
-              timeout: 5000,
-            }).trim();
-          } catch {
-            try {
-              baseRef = execSync("git rev-parse HEAD~1", {
-                cwd: task.worktree,
-                encoding: "utf-8",
-                timeout: 5000,
-              }).trim();
-            } catch {
-              baseRef = undefined;
-            }
-          }
-        }
-
-        if (baseRef) {
-          const output = execSync(`git diff --name-only ${baseRef}..HEAD`, {
-            cwd: task.worktree,
-            encoding: "utf-8",
-            timeout: 5000,
-          }).trim();
-
-          files = output ? output.split("\n").filter(Boolean) : [];
-        }
+        files = output ? output.split("\n").filter(Boolean) : [];
       } catch {
-        files = [];
+        const fallback = execSync("git diff --name-only HEAD", {
+          cwd: task.worktree,
+          encoding: "utf-8",
+          timeout: 5000,
+        }).trim();
+        files = fallback ? fallback.split("\n").filter(Boolean) : [];
       }
 
       sessionFilesCache.set(task.id, {
@@ -1956,357 +1832,6 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
       });
 
       res.json(files);
-    } catch (err: any) {
-      if (err.code === "ENOENT") {
-        res.status(404).json({ error: `Task ${req.params.id} not found` });
-      } else {
-        res.status(500).json({ error: err.message || "Internal server error" });
-      }
-    }
-  });
-
-  router.get("/tasks/:id/file-diffs", async (req, res) => {
-    try {
-      const task = await store.getTask(req.params.id);
-      if (!task.worktree || !existsSync(task.worktree)) {
-        res.json([]);
-        return;
-      }
-
-      const now = Date.now();
-      const cached = taskFileDiffsCache.get(task.id);
-      if (cached && cached.expiresAt > now) {
-        res.json(cached.files);
-        return;
-      }
-
-      const baseBranch = task.baseBranch ?? "main";
-      type TaskFileDiff = { path: string; status: "added" | "modified" | "deleted" | "renamed"; diff: string; oldPath?: string };
-      let files: TaskFileDiff[] = [];
-
-      const parseNameStatus = (output: string): TaskFileDiff[] => {
-        const entries: TaskFileDiff[] = [];
-
-        for (const rawLine of output.split("\n")) {
-          const line = rawLine.trim();
-          if (!line) continue;
-
-          const parts = line.split("\t");
-          const rawStatus = parts[0] ?? "M";
-          const statusCode = rawStatus[0];
-
-          if (statusCode === "R") {
-            const oldPath = parts[1];
-            const path = parts[2];
-            if (!path) continue;
-            entries.push({
-              path,
-              oldPath,
-              status: "renamed",
-              diff: "",
-            });
-            continue;
-          }
-
-          const path = parts[1];
-          if (!path) continue;
-
-          entries.push({
-            path,
-            status:
-              statusCode === "A"
-                ? "added"
-                : statusCode === "D"
-                  ? "deleted"
-                  : "modified",
-            diff: "",
-          });
-        }
-
-        return entries;
-      };
-
-      const loadWorkingTreeFiles = (): TaskFileDiff[] => {
-        const workingTreeFallback = execSync("git status --short", {
-          cwd: task.worktree,
-          encoding: "utf-8",
-          timeout: 5000,
-        }).trim();
-
-        return workingTreeFallback
-          ? workingTreeFallback
-              .split("\n")
-              .map((line) => line.trimEnd())
-              .filter(Boolean)
-              .map((line) => {
-                const indexStatus = line[0] ?? " ";
-                const worktreeStatus = line[1] ?? " ";
-                const statusCode = indexStatus !== " " ? indexStatus : worktreeStatus;
-                const remainder = line.slice(2).trim();
-                const normalizedStatus = statusCode === "?"
-                  ? "A"
-                  : statusCode === "!"
-                    ? "D"
-                    : statusCode || "M";
-                const normalized = normalizedStatus === "R"
-                  ? `R\t${remainder.replace(/\s+->\s+/, "\t")}`
-                  : `${normalizedStatus}\t${remainder}`;
-                return normalized;
-              })
-              .map((line) => parseNameStatus(line)[0])
-              .filter((entry): entry is TaskFileDiff => Boolean(entry))
-          : [];
-      };
-
-      try {
-        const output = execSync(`git diff --name-status ${baseBranch}...HEAD`, {
-          cwd: task.worktree,
-          encoding: "utf-8",
-          timeout: 5000,
-        }).trim();
-
-        files = output ? parseNameStatus(output) : [];
-        if (files.length === 0) {
-          files = loadWorkingTreeFiles();
-        }
-      } catch {
-        try {
-          const fallback = execSync("git diff --name-status HEAD", {
-            cwd: task.worktree,
-            encoding: "utf-8",
-            timeout: 5000,
-          }).trim();
-          files = fallback ? parseNameStatus(fallback) : [];
-          if (files.length === 0) {
-            files = loadWorkingTreeFiles();
-          }
-        } catch {
-          files = loadWorkingTreeFiles();
-        }
-      }
-
-      if (files.length === 0) {
-        taskFileDiffsCache.set(task.id, {
-          files: [],
-          expiresAt: now + 10000,
-        });
-        res.json([]);
-        return;
-      }
-
-      const filesWithDiffs = files.map((file) => {
-        const escapedPath = file.path.replace(/"/g, '\\"');
-        const escapedOldPath = file.oldPath?.replace(/"/g, '\\"');
-        const diffCommands = file.status === "added"
-          ? [
-              `git diff --no-index -- /dev/null "${escapedPath}"`,
-              `git diff --cached -- "${escapedPath}"`,
-              `git diff HEAD -- "${escapedPath}"`,
-              `git diff -- "${escapedPath}"`,
-            ]
-          : file.status === "deleted"
-            ? [
-                escapedOldPath ? `git diff --no-index -- "${escapedOldPath}" /dev/null` : "",
-                `git diff HEAD -- "${escapedPath}"`,
-                `git diff -- "${escapedPath}"`,
-              ].filter(Boolean)
-            : file.status === "renamed"
-              ? [
-                  escapedOldPath
-                    ? `git diff ${baseBranch}...HEAD --find-renames -- "${escapedOldPath}" "${escapedPath}"`
-                    : `git diff ${baseBranch}...HEAD --find-renames`,
-                  escapedOldPath
-                    ? `git diff HEAD --find-renames -- "${escapedOldPath}" "${escapedPath}"`
-                    : `git diff HEAD --find-renames`,
-                  escapedOldPath
-                    ? `git diff --find-renames -- "${escapedOldPath}" "${escapedPath}"`
-                    : `git diff --find-renames`,
-                ]
-              : [
-                  `git diff ${baseBranch}...HEAD -- "${escapedPath}"`,
-                  `git diff HEAD -- "${escapedPath}"`,
-                  `git diff -- "${escapedPath}"`,
-                ];
-
-        for (const command of diffCommands) {
-          try {
-            const diff = execSync(command, {
-              cwd: task.worktree,
-              encoding: "utf-8",
-              timeout: 10000,
-            });
-
-            if (diff.trim()) {
-              return { ...file, diff };
-            }
-          } catch (error: any) {
-            if (typeof error?.stdout === "string" && error.stdout.trim()) {
-              return { ...file, diff: error.stdout };
-            }
-          }
-        }
-
-        return file;
-      });
-
-      taskFileDiffsCache.set(task.id, {
-        files: filesWithDiffs,
-        expiresAt: now + 10000,
-      });
-
-      res.json(filesWithDiffs);
-    } catch (err: any) {
-      if (err.code === "ENOENT") {
-        res.status(404).json({ error: `Task ${req.params.id} not found` });
-      } else {
-        res.status(500).json({ error: err.message || "Internal server error" });
-      }
-    }
-  });
-
-  /**
-   * GET /api/tasks/:id/diff
-   * Get detailed diff information for files modified during task execution.
-   * Returns: { files: string[]; diffs: Record<string, { stat: string; patch: string }> }
-   */
-  router.get("/tasks/:id/diff", async (req, res) => {
-    try {
-      const task = await store.getTask(req.params.id);
-      
-      // Only tasks with worktrees can have diffs
-      if (!task.worktree || !existsSync(task.worktree)) {
-        res.json({ files: [], diffs: {} });
-        return;
-      }
-
-      // Use stored modifiedFiles if available, otherwise compute on-the-fly
-      let files = task.modifiedFiles;
-      
-      if (!files || files.length === 0) {
-        // Fallback: compute files using git diff
-        try {
-          const baseRef = task.baseCommitSha ?? "HEAD~1";
-          const output = execSync(`git diff --name-only ${baseRef}..HEAD`, {
-            cwd: task.worktree,
-            encoding: "utf-8",
-            timeout: 5000,
-          }).trim();
-          files = output ? output.split("\n").filter(Boolean) : [];
-        } catch {
-          files = [];
-        }
-      }
-
-      if (files.length === 0) {
-        res.json({ files: [], diffs: {} });
-        return;
-      }
-
-      // Compute diffs for each file
-      const diffs: Record<string, { stat: string; patch: string }> = {};
-      const baseRef = task.baseCommitSha ?? "HEAD~1";
-
-      for (const file of files) {
-        try {
-          // Get stat for this file
-          const stat = execSync(`git diff --stat ${baseRef}..HEAD -- "${file}"`, {
-            cwd: task.worktree,
-            encoding: "utf-8",
-            timeout: 5000,
-          }).trim();
-
-          // Get patch for this file
-          const patch = execSync(`git diff ${baseRef}..HEAD -- "${file}"`, {
-            cwd: task.worktree,
-            encoding: "utf-8",
-            timeout: 10000,
-          });
-
-          diffs[file] = { stat, patch };
-        } catch (err: any) {
-          // Log error but continue with other files
-          console.warn(`Failed to get diff for ${file}:`, err.message);
-          diffs[file] = { stat: "", patch: "" };
-        }
-      }
-
-      res.json({ files, diffs });
-    } catch (err: any) {
-      if (err.code === "ENOENT") {
-        res.status(404).json({ error: `Task ${req.params.id} not found` });
-      } else {
-        res.status(500).json({ error: err.message || "Internal server error" });
-      }
-    }
-  });
-
-  /**
-   * GET /api/tasks/:id/diff
-   * Get detailed diff information for files modified during task execution.
-   * Returns: { files: string[]; diffs: Record<string, { stat: string; patch: string }> }
-   */
-  router.get("/tasks/:id/diff", async (req, res) => {
-    try {
-      const task = await store.getTask(req.params.id);
-      
-      // Only tasks with worktrees can have diffs
-      if (!task.worktree || !existsSync(task.worktree)) {
-        res.json({ files: [], diffs: {} });
-        return;
-      }
-
-      // Use stored modifiedFiles if available, otherwise compute on-the-fly
-      let files = task.modifiedFiles;
-      
-      if (!files || files.length === 0) {
-        // Fallback: compute files using git diff
-        try {
-          const baseRef = task.baseCommitSha ?? "HEAD~1";
-          const output = execSync(`git diff --name-only ${baseRef}..HEAD`, {
-            cwd: task.worktree,
-            encoding: "utf-8",
-            timeout: 5000,
-          }).trim();
-          files = output ? output.split("\n").filter(Boolean) : [];
-        } catch {
-          files = [];
-        }
-      }
-
-      if (files.length === 0) {
-        res.json({ files: [], diffs: {} });
-        return;
-      }
-
-      // Compute diffs for each file
-      const diffs: Record<string, { stat: string; patch: string }> = {};
-      const baseRef = task.baseCommitSha ?? "HEAD~1";
-
-      for (const file of files) {
-        try {
-          // Get stat for this file
-          const stat = execSync(`git diff --stat ${baseRef}..HEAD -- "${file}"`, {
-            cwd: task.worktree,
-            encoding: "utf-8",
-            timeout: 5000,
-          }).trim();
-
-          // Get patch for this file
-          const patch = execSync(`git diff ${baseRef}..HEAD -- "${file}"`, {
-            cwd: task.worktree,
-            encoding: "utf-8",
-            timeout: 10000,
-          });
-
-          diffs[file] = { stat, patch };
-        } catch (err: any) {
-          // Log error but continue with other files
-          console.warn(`Failed to get diff for ${file}:`, err.message);
-          diffs[file] = { stat: "", patch: "" };
-        }
-      }
-
-      res.json({ files, diffs });
     } catch (err: any) {
       if (err.code === "ENOENT") {
         res.status(404).json({ error: `Task ${req.params.id} not found` });
@@ -2513,7 +2038,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         res.status(400).json({ error: "text must be between 1 and 2000 characters" });
         return;
       }
-      const task = await store.addComment(req.params.id, text, "user");
+      const task = await store.addSteeringComment(req.params.id, text, "user");
       res.json(task);
     } catch (err: any) {
       const status = err.code === "ENOENT" ? 404 : 500;
@@ -4620,28 +4145,21 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
       const { cwd, cols, rows } = req.body;
       const terminalService = getTerminalService(store.getRootDir());
 
-      const result = await terminalService.createSession({
+      const session = await terminalService.createSession({
         cwd,
         cols: typeof cols === "number" ? cols : undefined,
         rows: typeof rows === "number" ? rows : undefined,
       });
 
-      if (!result.success) {
-        const statusByCode = {
-          max_sessions: 503,
-          invalid_shell: 400,
-          pty_load_failed: 503,
-          pty_spawn_failed: 500,
-        } as const;
-
-        res.status(statusByCode[result.code]).json({ error: result.error });
+      if (!session) {
+        res.status(503).json({ error: "Failed to create session. Max sessions may be reached." });
         return;
       }
 
       res.status(201).json({
-        sessionId: result.session.id,
-        shell: result.session.shell,
-        cwd: result.session.cwd,
+        sessionId: session.id,
+        shell: session.shell,
+        cwd: session.cwd,
       });
     } catch (err: any) {
       res.status(500).json({ error: err.message || "Failed to create terminal session" });
@@ -6090,194 +5608,6 @@ Output ONLY the prompt text (no markdown, no explanations).`;
     }
   });
 
-  // ── Scripts Routes ─────────────────────────────────────────────────────────
-
-  const SCRIPT_NAME_PATTERN = /^[a-zA-Z0-9_-]+$/;
-  const RESERVED_SCRIPT_NAMES = new Set(["run", "list", "add", "remove", "delete", "help"]);
-
-  function validateScriptName(name: string, label = "Script name"): string | null {
-    if (!name.trim()) {
-      return `${label} is required`;
-    }
-    if (!SCRIPT_NAME_PATTERN.test(name)) {
-      return `${label} must be alphanumeric with hyphens and underscores only (no spaces)`;
-    }
-    if (label === "Script name" && RESERVED_SCRIPT_NAMES.has(name.toLowerCase())) {
-      return `Script name '${name}' is reserved`;
-    }
-    return null;
-  }
-
-  /**
-   * GET /api/scripts
-   * Returns all project-defined scripts from settings.
-   * Response: Record<string, string>
-   */
-  router.get("/scripts", async (_req, res) => {
-    try {
-      const settings = await store.getSettings();
-      res.json(settings.scripts || {});
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  /**
-   * POST /api/scripts
-   * Create a new script.
-   * Body: { name: string, command: string }
-   * Validates name (alphanumeric, hyphens, underscores only, no spaces).
-   * Returns: Record<string, string> (updated scripts)
-   */
-  router.post("/scripts", async (req, res) => {
-    try {
-      const { name, command } = req.body ?? {};
-
-      if (!name || typeof name !== "string" || !name.trim()) {
-        res.status(400).json({ error: "name is required" });
-        return;
-      }
-      if (!command || typeof command !== "string" || !command.trim()) {
-        res.status(400).json({ error: "command is required" });
-        return;
-      }
-
-      const trimmedName = name.trim();
-      const trimmedCommand = command.trim();
-      const nameValidationError = validateScriptName(trimmedName);
-      if (nameValidationError) {
-        res.status(400).json({ error: nameValidationError });
-        return;
-      }
-
-      const settings = await store.getSettings();
-      const currentScripts = settings.scripts || {};
-
-      if (trimmedName in currentScripts) {
-        res.status(409).json({ error: `Script '${trimmedName}' already exists` });
-        return;
-      }
-
-      const updatedScripts = {
-        ...currentScripts,
-        [trimmedName]: trimmedCommand,
-      };
-
-      await store.updateSettings({ scripts: updatedScripts });
-
-      res.status(201).json(updatedScripts);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  /**
-   * DELETE /api/scripts/:name
-   * Remove a script by name.
-   * Returns: Record<string, string> (updated scripts)
-   */
-  router.delete("/scripts/:name", async (req, res) => {
-    try {
-      const { name } = req.params;
-
-      if (!name || !name.trim()) {
-        res.status(400).json({ error: "Script name is required" });
-        return;
-      }
-
-      const trimmedName = name.trim();
-      const nameValidationError = validateScriptName(trimmedName);
-      if (nameValidationError) {
-        res.status(400).json({ error: nameValidationError });
-        return;
-      }
-
-      const settings = await store.getSettings();
-      const currentScripts = settings.scripts || {};
-
-      if (!(trimmedName in currentScripts)) {
-        res.status(404).json({ error: `Script '${trimmedName}' not found` });
-        return;
-      }
-
-      // Remove the script
-      const { [trimmedName]: _removed, ...remainingScripts } = currentScripts;
-
-      await store.updateSettings({ scripts: remainingScripts });
-
-      res.json(remainingScripts);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  /**
-   * POST /api/scripts/:name/run
-   * Execute a project script by creating a terminal session for the resolved command.
-   * Body: { args?: string[] }
-   * Returns: { command: string; sessionId: string }
-   */
-  router.post("/scripts/:name/run", async (req, res) => {
-    try {
-      const { name } = req.params;
-      const { args } = req.body ?? {};
-
-      if (!name || !name.trim()) {
-        res.status(400).json({ error: "Script name is required" });
-        return;
-      }
-
-      const trimmedName = name.trim();
-      const nameValidationError = validateScriptName(trimmedName);
-      if (nameValidationError) {
-        res.status(400).json({ error: nameValidationError });
-        return;
-      }
-
-      if (args !== undefined && !Array.isArray(args)) {
-        res.status(400).json({ error: "args must be an array of strings" });
-        return;
-      }
-      if (args && args.some((arg: unknown) => typeof arg !== "string")) {
-        res.status(400).json({ error: "args must be an array of strings" });
-        return;
-      }
-
-      const settings = await store.getSettings();
-      const scripts = settings.scripts || {};
-      const command = scripts[trimmedName];
-
-      if (!command) {
-        res.status(404).json({ error: `Script '${trimmedName}' not found` });
-        return;
-      }
-
-      const quotedArgs = (args || []).map((arg: string) => JSON.stringify(arg)).join(" ");
-      const fullCommand = quotedArgs ? `${command} ${quotedArgs}` : command;
-
-      const rootDir = store.getRootDir();
-      const terminalService = getTerminalService(rootDir);
-      const ptySession = await terminalService.createSession({ cwd: rootDir });
-
-      if (!ptySession.success) {
-        const statusByCode = {
-          max_sessions: 503,
-          invalid_shell: 400,
-          pty_load_failed: 503,
-          pty_spawn_failed: 500,
-        } as const;
-        res.status(statusByCode[ptySession.code]).json({ error: ptySession.error });
-        return;
-      }
-
-      terminalService.write(ptySession.session.id, `${fullCommand}\n`);
-
-      res.status(201).json({ command: fullCommand, sessionId: ptySession.session.id });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
   // ── Agent Routes ───────────────────────────────────────────────────────────
 
   /**
@@ -6484,7 +5814,6 @@ Output ONLY the prompt text (no markdown, no explanations).`;
    * GET /api/projects
    * List all registered projects with their basic info.
    * Returns: ProjectInfo[]
-   * Gracefully returns empty array if CentralCore not available.
    */
   router.get("/projects", async (_req, res) => {
     try {
@@ -6496,134 +5825,6 @@ Output ONLY the prompt text (no markdown, no explanations).`;
       await central.close();
       
       res.json(projects);
-    } catch {
-      // Graceful fallback: return empty array if CentralCore unavailable
-      res.json([]);
-    }
-  });
-
-  /**
-   * GET /api/projects/:id
-   * Get a specific project by ID.
-   * Returns: ProjectInfo
-   */
-  router.get("/projects/:id", async (req, res) => {
-    try {
-      const { CentralCore } = await import("@fusion/core");
-      const central = new CentralCore();
-      await central.init();
-      
-      const project = await central.getProject(req.params.id);
-      await central.close();
-      
-      if (!project) {
-        res.status(404).json({ error: "Project not found" });
-        return;
-      }
-      
-      res.json(project);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  /**
-   * PATCH /api/projects/:id
-   * Update a project's metadata.
-   * Body: { name?: string, isolationMode?: "in-process" | "child-process", status?: "active" | "paused" }
-   * Returns: Updated ProjectInfo
-   */
-  router.patch("/projects/:id", async (req, res) => {
-    try {
-      const { name, isolationMode, status } = req.body;
-      
-      // Validate isolationMode if provided
-      if (isolationMode !== undefined && !["in-process", "child-process"].includes(isolationMode)) {
-        res.status(400).json({ error: "isolationMode must be 'in-process' or 'child-process'" });
-        return;
-      }
-      
-      // Validate status if provided
-      if (status !== undefined && !["active", "paused", "errored", "initializing"].includes(status)) {
-        res.status(400).json({ error: "status must be 'active', 'paused', 'errored', or 'initializing'" });
-        return;
-      }
-      
-      const updates: { name?: string; isolationMode?: "in-process" | "child-process"; status?: "active" | "paused" | "errored" | "initializing" } = {};
-      if (name !== undefined) updates.name = name;
-      if (isolationMode !== undefined) updates.isolationMode = isolationMode;
-      if (status !== undefined) updates.status = status;
-      
-      const { CentralCore } = await import("@fusion/core");
-      const central = new CentralCore();
-      await central.init();
-      
-      const project = await central.updateProject(req.params.id, updates);
-      await central.close();
-      
-      res.json(project);
-    } catch (err: any) {
-      const status = err.message?.includes("not found") ? 404 : 500;
-      res.status(status).json({ error: err.message });
-    }
-  });
-
-  /**
-   * POST /api/projects/detect
-   * Auto-detect kb projects in a given base path.
-   * Body: { basePath?: string } (defaults to home directory)
-   * Returns: Array of detected projects with path and suggested name
-   */
-  router.post("/projects/detect", async (req, res) => {
-    try {
-      const { basePath } = req.body;
-      const { existsSync } = await import("node:fs");
-      const { join, basename } = await import("node:path");
-      const { readdir, stat } = await import("node:fs/promises");
-      const { homedir } = await import("node:os");
-      
-      const searchPath = basePath || homedir();
-      
-      if (!existsSync(searchPath)) {
-        res.status(400).json({ error: "Base path does not exist" });
-        return;
-      }
-      
-      const detectedProjects: Array<{ path: string; suggestedName: string; existing: boolean }> = [];
-      const { CentralCore } = await import("@fusion/core");
-      const central = new CentralCore();
-      await central.init();
-      
-      // Get list of already registered paths to avoid duplicates
-      const registeredProjects = await central.listProjects();
-      const registeredPaths = new Set(registeredProjects.map(p => p.path));
-      await central.close();
-      
-      // Scan immediate subdirectories for .fusion/kb.db
-      try {
-        const entries = await readdir(searchPath, { withFileTypes: true });
-        
-        for (const entry of entries) {
-          if (!entry.isDirectory()) continue;
-          
-          const projectPath = join(searchPath, entry.name);
-          const fusionDir = join(projectPath, ".fusion");
-          const dbPath = join(fusionDir, "kb.db");
-          
-          // Check if this directory has a .fusion/kb.db file
-          if (existsSync(dbPath)) {
-            detectedProjects.push({
-              path: projectPath,
-              suggestedName: entry.name,
-              existing: registeredPaths.has(projectPath),
-            });
-          }
-        }
-      } catch {
-        // Ignore errors reading directories
-      }
-      
-      res.json({ projects: detectedProjects });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -6799,91 +6000,28 @@ Output ONLY the prompt text (no markdown, no explanations).`;
 
   /**
    * GET /api/activity-feed
-   * Get unified activity feed across all projects, falling back to the current
-   * project's local activity log when the central feed is unavailable or empty.
-   * Query: limit, projectId, type (preferred), types (legacy comma-separated)
+   * Get unified activity feed across all projects.
+   * Query: limit, projectId, types
    * Returns: ActivityFeedEntry[]
    */
   router.get("/activity-feed", async (req, res) => {
-    const validTypes: ActivityEventType[] = [
-      "task:created",
-      "task:moved",
-      "task:updated",
-      "task:deleted",
-      "task:merged",
-      "task:failed",
-      "settings:updated",
-    ];
-
-    const limitParam = req.query.limit;
-    const projectId = typeof req.query.projectId === "string" ? req.query.projectId : undefined;
-    const typeParam = typeof req.query.type === "string" ? req.query.type : undefined;
-    const legacyTypesParam = typeof req.query.types === "string" ? req.query.types : undefined;
-
-    const limit = limitParam !== undefined ? Number.parseInt(limitParam as string, 10) : 50;
-    if (!Number.isFinite(limit) || limit < 0) {
-      res.status(400).json({ error: "limit must be a non-negative integer" });
-      return;
-    }
-
-    const requestedTypes = typeParam
-      ? [typeParam]
-      : legacyTypesParam
-        ? legacyTypesParam.split(",").map((value) => value.trim()).filter(Boolean)
-        : undefined;
-
-    if (requestedTypes && requestedTypes.some((value) => !validTypes.includes(value as ActivityEventType))) {
-      res.status(400).json({ error: `Invalid type. Must be one of: ${validTypes.join(", ")}` });
-      return;
-    }
-
-    const types = requestedTypes as ActivityEventType[] | undefined;
-
-    const mapLocalEntryToFeedEntry = (
-      entry: Awaited<ReturnType<TaskStore["getActivityLog"]>>[number],
-    ) => ({
-      id: entry.id,
-      timestamp: entry.timestamp,
-      type: entry.type,
-      projectId: projectId ?? "local-project",
-      projectName: basename(store.getRootDir()),
-      taskId: entry.taskId,
-      taskTitle: undefined,
-      details: entry.details,
-      metadata: entry.metadata,
-    });
-
-    const loadFallbackEntries = async () => {
-      if (projectId && projectId !== "local-project") {
-        return [];
-      }
-      const localEntries = await store.getActivityLog({ limit, type: typeParam as ActivityEventType | undefined });
-      return localEntries.map(mapLocalEntryToFeedEntry);
-    };
-
-    let central: InstanceType<(typeof import("@fusion/core"))["CentralCore"]> | undefined;
     try {
+      const limit = typeof req.query.limit === "string" ? parseInt(req.query.limit, 10) : 50;
+      const projectId = typeof req.query.projectId === "string" ? req.query.projectId : undefined;
+      const typesParam = typeof req.query.types === "string" ? req.query.types.split(",") : undefined;
+      const types = typesParam as import("@fusion/core").ActivityEventType[] | undefined;
+      
       const { CentralCore } = await import("@fusion/core");
-      central = new CentralCore();
+      const central = new CentralCore();
       await central.init();
-
+      
       const entries = await central.getRecentActivity({ limit, projectId, types });
-      if (entries.length > 0) {
-        res.json(entries);
-        return;
-      }
-    } catch {
-      const fallbackEntries = await loadFallbackEntries();
-      res.json(fallbackEntries);
-      return;
-    } finally {
-      if (central) {
-        await central.close();
-      }
+      await central.close();
+      
+      res.json(entries);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
     }
-
-    const fallbackEntries = await loadFallbackEntries();
-    res.json(fallbackEntries);
   });
 
   /**

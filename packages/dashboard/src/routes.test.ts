@@ -7,7 +7,7 @@ import { EventEmitter } from "node:events";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { execFileSync, execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { createApiRoutes } from "./routes.js";
 import { GitHubClient } from "./github.js";
 import { githubRateLimiter } from "./github-poll.js";
@@ -25,24 +25,12 @@ vi.mock("@fusion/core", async () => {
   return {
     ...actual,
     isGhAuthenticated: vi.fn(),
-    CentralCore: vi.fn().mockImplementation(() => ({
-      init: vi.fn().mockResolvedValue(undefined),
-      close: vi.fn().mockResolvedValue(undefined),
-      getProject: vi.fn().mockResolvedValue(null),
-    })),
-    TaskStore: vi.fn().mockImplementation(() => ({
-      init: vi.fn().mockResolvedValue(undefined),
-      listTasks: vi.fn().mockResolvedValue([]),
-      close: vi.fn(),
-    })),
   };
 });
 
-import { isGhAuthenticated, CentralCore, TaskStore as TaskStoreClass } from "@fusion/core";
+import { isGhAuthenticated } from "@fusion/core";
 
 const mockIsGhAuthenticated = vi.mocked(isGhAuthenticated);
-const MockCentralCore = vi.mocked(CentralCore);
-const MockTaskStoreClass = vi.mocked(TaskStoreClass);
 
 function createMockGlobalSettingsStore() {
   return {
@@ -50,18 +38,6 @@ function createMockGlobalSettingsStore() {
     updateSettings: vi.fn().mockResolvedValue({}),
     getSettingsPath: vi.fn().mockReturnValue("/fake/home/.pi/kb/settings.json"),
     init: vi.fn().mockResolvedValue(false),
-  };
-}
-
-function createMockMissionStore() {
-  return {
-    createSession: vi.fn().mockResolvedValue({ id: "session-1", status: "active" }),
-    getSession: vi.fn().mockResolvedValue({ id: "session-1", status: "active", answers: [] }),
-    updateSession: vi.fn().mockResolvedValue(undefined),
-    addAnswer: vi.fn().mockResolvedValue(undefined),
-    deleteSession: vi.fn().mockResolvedValue(undefined),
-    listSessions: vi.fn().mockResolvedValue([]),
-    generatePlan: vi.fn().mockResolvedValue({ plan: "Test plan", steps: [] }),
   };
 }
 
@@ -81,11 +57,9 @@ function createMockStore(overrides: Partial<TaskStore> = {}): TaskStore {
     updateGlobalSettings: vi.fn(),
     getSettingsByScope: vi.fn().mockResolvedValue({ global: {}, project: {} }),
     getGlobalSettingsStore: vi.fn().mockReturnValue(createMockGlobalSettingsStore()),
-    getActivityLog: vi.fn().mockResolvedValue([]),
     logEntry: vi.fn().mockResolvedValue(undefined),
     getAgentLogs: vi.fn().mockResolvedValue([]),
-    getActivityLog: vi.fn().mockResolvedValue([]),
-    addComment: vi.fn(),
+    addSteeringComment: vi.fn(),
     addTaskComment: vi.fn(),
     updateTaskComment: vi.fn(),
     deleteTaskComment: vi.fn(),
@@ -97,7 +71,24 @@ function createMockStore(overrides: Partial<TaskStore> = {}): TaskStore {
     getWorkflowStep: vi.fn(),
     updateWorkflowStep: vi.fn(),
     deleteWorkflowStep: vi.fn(),
-    getMissionStore: vi.fn().mockReturnValue(createMockMissionStore()),
+    getMissionStore: vi.fn().mockReturnValue({
+      listMissions: vi.fn().mockReturnValue([]),
+      createMission: vi.fn(),
+      getMissionWithHierarchy: vi.fn(),
+      updateMission: vi.fn(),
+      getMission: vi.fn(),
+      deleteMission: vi.fn(),
+      listMilestonesByMission: vi.fn().mockReturnValue([]),
+      createMilestone: vi.fn(),
+      updateMilestone: vi.fn(),
+      getMilestone: vi.fn(),
+      deleteMilestone: vi.fn(),
+      listTasksByMilestone: vi.fn().mockReturnValue([]),
+      createMissionTask: vi.fn(),
+      updateMissionTask: vi.fn(),
+      getMissionTask: vi.fn(),
+      deleteMissionTask: vi.fn(),
+    }),
     ...overrides,
   } as unknown as TaskStore;
 }
@@ -140,163 +131,6 @@ function buildMultipart(fieldName: string, filename: string, contentType: string
   return { body, boundary };
 }
 
-describe("GET /activity-feed", () => {
-  function mockCentralCoreModule(options?: {
-    entries?: unknown[];
-    getRecentActivityError?: Error;
-  }) {
-    const close = vi.fn().mockResolvedValue(undefined);
-    const getRecentActivity = options?.getRecentActivityError
-      ? vi.fn().mockRejectedValue(options.getRecentActivityError)
-      : vi.fn().mockResolvedValue(options?.entries ?? []);
-
-    class MockCentralCore {
-      init = vi.fn().mockResolvedValue(undefined);
-      getRecentActivity = getRecentActivity;
-      close = close;
-    }
-
-    return { MockCentralCore, getRecentActivity, close };
-  }
-
-  function buildApp(store: TaskStore) {
-    const app = express();
-    app.use(express.json());
-    app.use("/api", createApiRoutes(store));
-    return app;
-  }
-
-  afterEach(() => {
-    vi.doUnmock("@fusion/core");
-  });
-
-  it("returns central activity when available", async () => {
-    const store = createMockStore();
-    const centralEntry = {
-      id: "act_1",
-      timestamp: "2026-01-01T00:00:00.000Z",
-      type: "task:created",
-      projectId: "proj_123",
-      projectName: "Central Project",
-      taskId: "FN-001",
-      taskTitle: "Test Task",
-      details: "Created task",
-      metadata: { source: "central" },
-    };
-    const mockCentral = mockCentralCoreModule({ entries: [centralEntry] });
-
-    vi.doMock("@fusion/core", async () => {
-      const actual = await vi.importActual<typeof import("@fusion/core")>("@fusion/core");
-      return { ...actual, CentralCore: mockCentral.MockCentralCore };
-    });
-
-    const { createApiRoutes: createRoutesWithMock } = await import("./routes.js");
-    const app = express();
-    app.use(express.json());
-    app.use("/api", createRoutesWithMock(store));
-
-    const res = await GET(app, "/api/activity-feed?type=task:created");
-
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual([centralEntry]);
-    expect(mockCentral.getRecentActivity).toHaveBeenCalledWith({
-      limit: 50,
-      projectId: undefined,
-      types: ["task:created"],
-    });
-    expect(mockCentral.close).toHaveBeenCalled();
-    expect(store.getActivityLog).not.toHaveBeenCalled();
-  });
-
-  it("falls back to local activity log when central feed is empty", async () => {
-    const store = createMockStore({
-      getRootDir: vi.fn().mockReturnValue("/fake/projects/dashboard-app"),
-      getActivityLog: vi.fn().mockResolvedValue([
-        {
-          id: "local_1",
-          timestamp: "2026-01-01T00:00:00.000Z",
-          type: "task:created",
-          taskId: "FN-001",
-          details: "Task created locally",
-          metadata: { from: "triage", to: "todo" },
-        },
-      ]),
-    });
-    const mockCentral = mockCentralCoreModule({ entries: [] });
-
-    vi.doMock("@fusion/core", async () => {
-      const actual = await vi.importActual<typeof import("@fusion/core")>("@fusion/core");
-      return { ...actual, CentralCore: mockCentral.MockCentralCore };
-    });
-
-    const { createApiRoutes: createRoutesWithMock } = await import("./routes.js");
-    const app = express();
-    app.use(express.json());
-    app.use("/api", createRoutesWithMock(store));
-
-    const res = await GET(app, "/api/activity-feed?type=task:created");
-
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual([
-      {
-        id: "local_1",
-        timestamp: "2026-01-01T00:00:00.000Z",
-        type: "task:created",
-        projectId: "local-project",
-        projectName: "dashboard-app",
-        taskId: "FN-001",
-        details: "Task created locally",
-        metadata: { from: "triage", to: "todo" },
-      },
-    ]);
-    expect(store.getActivityLog).toHaveBeenCalledWith({ limit: 50, type: "task:created" });
-    expect(mockCentral.close).toHaveBeenCalled();
-  });
-
-  it("falls back to local activity log when central feed throws", async () => {
-    const store = createMockStore({
-      getRootDir: vi.fn().mockReturnValue("/fake/projects/local-root"),
-      getActivityLog: vi.fn().mockResolvedValue([
-        {
-          id: "local_2",
-          timestamp: "2026-01-02T00:00:00.000Z",
-          type: "task:updated",
-          taskId: "FN-002",
-          details: "Task updated locally",
-        },
-      ]),
-    });
-    const mockCentral = mockCentralCoreModule({ getRecentActivityError: new Error("require is not defined") });
-
-    vi.doMock("@fusion/core", async () => {
-      const actual = await vi.importActual<typeof import("@fusion/core")>("@fusion/core");
-      return { ...actual, CentralCore: mockCentral.MockCentralCore };
-    });
-
-    const { createApiRoutes: createRoutesWithMock } = await import("./routes.js");
-    const app = express();
-    app.use(express.json());
-    app.use("/api", createRoutesWithMock(store));
-
-    const res = await GET(app, "/api/activity-feed?type=task:updated");
-
-    expect(res.status).toBe(200);
-    expect(res.body[0].projectName).toBe("local-root");
-    expect(store.getActivityLog).toHaveBeenCalledWith({ limit: 50, type: "task:updated" });
-    expect(mockCentral.close).toHaveBeenCalled();
-  });
-
-  it("returns 400 for invalid type filters", async () => {
-    const store = createMockStore();
-    const app = buildApp(store);
-
-    const res = await GET(app, "/api/activity-feed?type=not-real");
-
-    expect(res.status).toBe(400);
-    expect(res.body.error).toContain("Invalid type");
-  });
-});
-
 describe("GET /tasks", () => {
   let store: TaskStore;
 
@@ -326,118 +160,6 @@ describe("GET /tasks", () => {
 
     expect(res.status).toBe(400);
     expect(res.body.error).toContain("limit");
-  });
-
-  describe("with projectId query parameter", () => {
-    beforeEach(() => {
-      vi.clearAllMocks();
-    });
-
-    it("returns 404 when project is not found", async () => {
-      const mockCentralInstance = {
-        init: vi.fn().mockResolvedValue(undefined),
-        close: vi.fn().mockResolvedValue(undefined),
-        getProject: vi.fn().mockResolvedValue(null),
-      };
-      MockCentralCore.mockImplementation(() => mockCentralInstance as any);
-
-      const res = await GET(buildApp(), "/api/tasks?projectId=nonexistent");
-
-      expect(res.status).toBe(404);
-      expect(res.body.error).toBe("Project not found");
-    });
-
-    it("returns tasks from the project store when project is found", async () => {
-      const projectPath = "/test/project/path";
-      const projectTasks = [FAKE_TASK_DETAIL];
-
-      const mockProjectStoreInstance = {
-        init: vi.fn().mockResolvedValue(undefined),
-        listTasks: vi.fn().mockResolvedValue(projectTasks),
-        close: vi.fn(),
-      };
-      MockTaskStoreClass.mockImplementation(() => mockProjectStoreInstance as any);
-
-      const mockCentralInstance = {
-        init: vi.fn().mockResolvedValue(undefined),
-        close: vi.fn().mockResolvedValue(undefined),
-        getProject: vi.fn().mockResolvedValue({
-          id: "proj_abc",
-          name: "Test Project",
-          path: projectPath,
-          status: "active",
-          isolationMode: "in-process",
-          createdAt: "2026-01-01T00:00:00.000Z",
-          updatedAt: "2026-01-01T00:00:00.000Z",
-        }),
-      };
-      MockCentralCore.mockImplementation(() => mockCentralInstance as any);
-
-      const res = await GET(buildApp(), "/api/tasks?projectId=proj_abc");
-
-      expect(res.status).toBe(200);
-      expect(res.body).toHaveLength(1);
-      expect(res.body[0].id).toBe("FN-001");
-      // Verify project store was initialized with correct path
-      expect(MockTaskStoreClass).toHaveBeenCalledWith(projectPath);
-      expect(mockProjectStoreInstance.init).toHaveBeenCalled();
-      expect(mockProjectStoreInstance.listTasks).toHaveBeenCalledWith({ limit: undefined, offset: undefined });
-      expect(mockProjectStoreInstance.close).toHaveBeenCalled();
-      // Verify CentralCore was properly closed
-      expect(mockCentralInstance.close).toHaveBeenCalled();
-    });
-
-    it("passes limit and offset to the project store", async () => {
-      const mockProjectStoreInstance = {
-        init: vi.fn().mockResolvedValue(undefined),
-        listTasks: vi.fn().mockResolvedValue([]),
-        close: vi.fn(),
-      };
-      MockTaskStoreClass.mockImplementation(() => mockProjectStoreInstance as any);
-
-      const mockCentralInstance = {
-        init: vi.fn().mockResolvedValue(undefined),
-        close: vi.fn().mockResolvedValue(undefined),
-        getProject: vi.fn().mockResolvedValue({
-          id: "proj_abc",
-          name: "Test Project",
-          path: "/test/path",
-          status: "active",
-          isolationMode: "in-process",
-          createdAt: "2026-01-01T00:00:00.000Z",
-          updatedAt: "2026-01-01T00:00:00.000Z",
-        }),
-      };
-      MockCentralCore.mockImplementation(() => mockCentralInstance as any);
-
-      const res = await GET(buildApp(), "/api/tasks?projectId=proj_abc&limit=5&offset=10");
-
-      expect(res.status).toBe(200);
-      expect(mockProjectStoreInstance.listTasks).toHaveBeenCalledWith({ limit: 5, offset: 10 });
-    });
-
-    it("returns 200 with empty array on graceful degradation when CentralCore is unavailable", async () => {
-      MockCentralCore.mockImplementation(() => {
-        throw new Error("CentralCore unavailable");
-      });
-
-      const res = await GET(buildApp(), "/api/tasks?projectId=proj_abc");
-
-      expect(res.status).toBe(200);
-      expect(res.body).toEqual([]);
-    });
-
-    it("still uses default store when projectId is not provided", async () => {
-      (store.listTasks as ReturnType<typeof vi.fn>).mockResolvedValueOnce([FAKE_TASK_DETAIL]);
-
-      const res = await GET(buildApp(), "/api/tasks");
-
-      expect(res.status).toBe(200);
-      expect(res.body).toHaveLength(1);
-      expect(store.listTasks).toHaveBeenCalled();
-      // CentralCore should not be used when no projectId
-      expect(MockCentralCore).not.toHaveBeenCalled();
-    });
   });
 });
 
@@ -2124,16 +1846,16 @@ describe("Pause/Unpause endpoints", () => {
     it("adds a steering comment to a task", async () => {
       const mockComment = {
         id: "FN-001",
-        comments: [
+        steeringComments: [
           {
             id: "1234567890-abc123",
             text: "Please handle the edge case",
             createdAt: "2026-01-01T00:00:00.000Z",
-            author: "user",
+            author: "user" as const,
           },
         ],
       };
-      (store.addComment as ReturnType<typeof vi.fn>).mockResolvedValue(mockComment);
+      (store.addSteeringComment as ReturnType<typeof vi.fn>).mockResolvedValue(mockComment);
 
       const res = await REQUEST(
         buildApp(),
@@ -2145,7 +1867,7 @@ describe("Pause/Unpause endpoints", () => {
 
       expect(res.status).toBe(200);
       expect(res.body).toEqual(mockComment);
-      expect(store.addComment).toHaveBeenCalledWith(
+      expect(store.addSteeringComment).toHaveBeenCalledWith(
         "KB-001",
         "Please handle the edge case",
         "user"
@@ -2192,7 +1914,7 @@ describe("Pause/Unpause endpoints", () => {
     it("returns 404 when task not found", async () => {
       const error = new Error("Task not found") as Error & { code?: string };
       error.code = "ENOENT";
-      (store.addComment as ReturnType<typeof vi.fn>).mockRejectedValue(error);
+      (store.addSteeringComment as ReturnType<typeof vi.fn>).mockRejectedValue(error);
 
       const res = await REQUEST(
         buildApp(),
@@ -2206,7 +1928,7 @@ describe("Pause/Unpause endpoints", () => {
     });
 
     it("returns 500 on unexpected errors", async () => {
-      (store.addComment as ReturnType<typeof vi.fn>).mockRejectedValue(
+      (store.addSteeringComment as ReturnType<typeof vi.fn>).mockRejectedValue(
         new Error("Database error")
       );
 
@@ -3934,142 +3656,6 @@ describe("POST /tasks/:id/reject-plan", () => {
 // --- Git Management route tests ---
 // These are integration tests that run against the actual git repository
 
-describe("GET /tasks/:id/file-diffs", () => {
-  let store: TaskStore;
-  let worktreeDir: string;
-  let testRoot: string;
-
-  beforeEach(() => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-04-01T00:00:00.000Z"));
-    testRoot = mkdtempSync(join(tmpdir(), "kb-dashboard-file-diffs-"));
-    worktreeDir = join(testRoot, "repo");
-    mkdirSync(worktreeDir, { recursive: true });
-    execFileSync("git", ["init", "-b", "main", worktreeDir]);
-    execFileSync("git", ["-C", worktreeDir, "config", "user.email", "kb-tests@example.com"]);
-    execFileSync("git", ["-C", worktreeDir, "config", "user.name", "KB Tests"]);
-    writeFileSync(join(worktreeDir, "README.md"), "base\n");
-    writeFileSync(join(worktreeDir, "keep.txt"), "keep\n");
-    execFileSync("git", ["-C", worktreeDir, "add", "."]);
-    execFileSync("git", ["-C", worktreeDir, "commit", "-m", "base"]);
-
-    store = createMockStore({
-      getTask: vi.fn().mockResolvedValue({
-        ...FAKE_TASK_DETAIL,
-        id: "KB-651",
-        worktree: worktreeDir,
-        baseBranch: "main",
-      }),
-      getRootDir: vi.fn().mockReturnValue(worktreeDir),
-    });
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-    rmSync(testRoot, { recursive: true, force: true });
-  });
-
-  function buildApp() {
-    const app = express();
-    app.use(express.json());
-    app.use("/api", createApiRoutes(store));
-    return app;
-  }
-
-  it("returns changed files with statuses and diffs", async () => {
-    writeFileSync(join(worktreeDir, "README.md"), "base\nchanged\n");
-    writeFileSync(join(worktreeDir, "added.txt"), "new file\n");
-    execFileSync("git", ["-C", worktreeDir, "rm", "keep.txt"]);
-    expect(execSync("git status --short", { cwd: worktreeDir, encoding: "utf-8" })).not.toBe("");
-
-    const res = await GET(buildApp(), "/api/tasks/KB-651/file-diffs");
-
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ path: "README.md", status: "modified", diff: expect.stringContaining("+changed") }),
-        expect.objectContaining({ path: "added.txt", status: "added", diff: expect.stringContaining("+++ b/added.txt") }),
-        expect.objectContaining({ path: "keep.txt", status: "deleted", diff: expect.stringContaining("--- a/keep.txt") }),
-      ]),
-    );
-  });
-
-  it("returns renamed files with oldPath and diff content", async () => {
-    execFileSync("git", ["-C", worktreeDir, "mv", "keep.txt", "renamed.txt"]);
-    expect(execSync("git status --short", { cwd: worktreeDir, encoding: "utf-8" })).not.toBe("");
-
-    const res = await GET(buildApp(), "/api/tasks/KB-651/file-diffs");
-
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual([
-      expect.objectContaining({
-        path: "renamed.txt",
-        oldPath: "keep.txt",
-        status: "renamed",
-        diff: expect.stringContaining("rename from keep.txt"),
-      }),
-    ]);
-  });
-
-  it.skip("caches results for 10 seconds before refreshing", async () => {
-    const originalDateNow = Date.now;
-    let now = 1_000;
-    Date.now = vi.fn(() => now);
-
-    try {
-      writeFileSync(join(worktreeDir, "README.md"), "base\nchanged once\n");
-
-      const first = await GET(buildApp(), "/api/tasks/KB-651/file-diffs");
-      expect(first.status).toBe(200);
-      expect(first.body).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ path: "README.md", diff: expect.stringContaining("+changed once") }),
-        ]),
-      );
-
-      writeFileSync(join(worktreeDir, "README.md"), "base\nchanged twice\n");
-
-      now += 5_000;
-      const cached = await GET(buildApp(), "/api/tasks/KB-651/file-diffs");
-      expect(cached.status).toBe(200);
-      expect(cached.body).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ path: "README.md", diff: expect.stringContaining("+changed once") }),
-        ]),
-      );
-
-      now += 5_001;
-      const refreshed = await GET(buildApp(), "/api/tasks/KB-651/file-diffs");
-      expect(refreshed.status).toBe(200);
-      expect(refreshed.body).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ path: "README.md", diff: expect.stringContaining("+changed twice") }),
-        ]),
-      );
-    } finally {
-      Date.now = originalDateNow;
-    }
-  });
-
-  it("returns empty array when worktree is missing", async () => {
-    store = createMockStore({
-      getTask: vi.fn().mockResolvedValue({ ...FAKE_TASK_DETAIL, id: "KB-651", worktree: join(testRoot, "missing"), baseBranch: "main" }),
-    });
-
-    const res = await GET(buildApp(), "/api/tasks/KB-651/file-diffs");
-
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual([]);
-  });
-
-  it("returns empty array when there are no changes", async () => {
-    const res = await GET(buildApp(), "/api/tasks/KB-651/file-diffs");
-
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual([]);
-  });
-});
-
 describe("Git Management endpoints", () => {
   let store: TaskStore;
   let gitRepoDir: string;
@@ -5150,13 +4736,9 @@ describe("Terminal session routes", () => {
   });
 
   describe("POST /api/terminal/sessions", () => {
-    it("returns 503 when max sessions reached", async () => {
+    it("returns 503 when max sessions reached (session is null)", async () => {
       const mockService = {
-        createSession: vi.fn().mockResolvedValue({
-          success: false,
-          code: "max_sessions",
-          error: "Maximum terminal sessions reached. Please close an existing terminal and try again.",
-        }),
+        createSession: vi.fn().mockResolvedValue(null),
       };
       vi.spyOn(terminalServiceModule, "getTerminalService").mockReturnValue(mockService as any);
 
@@ -5169,102 +4751,7 @@ describe("Terminal session routes", () => {
       );
 
       expect(res.status).toBe(503);
-      expect(res.body.error).toBe("Maximum terminal sessions reached. Please close an existing terminal and try again.");
-
-      vi.restoreAllMocks();
-    });
-
-    it("returns 400 when shell is not allowed", async () => {
-      const mockService = {
-        createSession: vi.fn().mockResolvedValue({
-          success: false,
-          code: "invalid_shell",
-          error: "Shell not allowed. Please use a supported shell (bash, zsh, sh, cmd, powershell).",
-        }),
-      };
-      vi.spyOn(terminalServiceModule, "getTerminalService").mockReturnValue(mockService as any);
-
-      const res = await REQUEST(
-        buildApp(),
-        "POST",
-        "/api/terminal/sessions",
-        JSON.stringify({}),
-        { "Content-Type": "application/json" },
-      );
-
-      expect(res.status).toBe(400);
-      expect(res.body.error).toBe("Shell not allowed. Please use a supported shell (bash, zsh, sh, cmd, powershell).");
-
-      vi.restoreAllMocks();
-    });
-
-    it("returns 503 when PTY module fails to load", async () => {
-      const mockService = {
-        createSession: vi.fn().mockResolvedValue({
-          success: false,
-          code: "pty_load_failed",
-          error: "Terminal service unavailable. The PTY module could not be loaded.",
-        }),
-      };
-      vi.spyOn(terminalServiceModule, "getTerminalService").mockReturnValue(mockService as any);
-
-      const res = await REQUEST(
-        buildApp(),
-        "POST",
-        "/api/terminal/sessions",
-        JSON.stringify({}),
-        { "Content-Type": "application/json" },
-      );
-
-      expect(res.status).toBe(503);
-      expect(res.body.error).toBe("Terminal service unavailable. The PTY module could not be loaded.");
-
-      vi.restoreAllMocks();
-    });
-
-    it("returns 500 when PTY spawn fails", async () => {
-      const mockService = {
-        createSession: vi.fn().mockResolvedValue({
-          success: false,
-          code: "pty_spawn_failed",
-          error: "Failed to start terminal shell process.",
-        }),
-      };
-      vi.spyOn(terminalServiceModule, "getTerminalService").mockReturnValue(mockService as any);
-
-      const res = await REQUEST(
-        buildApp(),
-        "POST",
-        "/api/terminal/sessions",
-        JSON.stringify({}),
-        { "Content-Type": "application/json" },
-      );
-
-      expect(res.status).toBe(500);
-      expect(res.body.error).toBe("Failed to start terminal shell process.");
-
-      vi.restoreAllMocks();
-    });
-
-    it("returns 201 when session creation succeeds", async () => {
-      const mockService = {
-        createSession: vi.fn().mockResolvedValue({
-          success: true,
-          session: { id: "term-123", shell: "/bin/zsh", cwd: "/test" },
-        }),
-      };
-      vi.spyOn(terminalServiceModule, "getTerminalService").mockReturnValue(mockService as any);
-
-      const res = await REQUEST(
-        buildApp(),
-        "POST",
-        "/api/terminal/sessions",
-        JSON.stringify({}),
-        { "Content-Type": "application/json" },
-      );
-
-      expect(res.status).toBe(201);
-      expect(res.body).toEqual({ sessionId: "term-123", shell: "/bin/zsh", cwd: "/test" });
+      expect(res.body.error).toContain("Max sessions");
 
       vi.restoreAllMocks();
     });
@@ -6317,145 +5804,5 @@ describe("POST /workflow-step-templates/:id/create", () => {
 
     expect(res.status).toBe(409);
     expect(res.body.error).toContain("already exists");
-  });
-});
-
-// ── Activity Feed Tests ─────────────────────────────────────────────
-
-describe("GET /api/activity-feed", () => {
-  let store: TaskStore;
-
-  beforeEach(() => {
-    store = createMockStore();
-  });
-
-  function buildApp() {
-    const app = express();
-    app.use(express.json());
-    app.use("/api", createApiRoutes(store));
-    return app;
-  }
-  it("returns empty array when both central and per-project activities are empty", async () => {
-    const store = createMockStore();
-    
-    // Override the module-level CentralCore mock to return empty array
-    const mockCentralInstance = {
-      init: vi.fn().mockResolvedValue(undefined),
-      close: vi.fn().mockResolvedValue(undefined),
-      getRecentActivity: vi.fn().mockResolvedValue([]),
-    };
-    MockCentralCore.mockImplementation(() => mockCentralInstance as any);
-
-    const app = buildApp(store);
-    const res = await REQUEST(app, "GET", "/api/activity-feed");
-
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual([]);
-  });
-
-  it("returns central activity when available", async () => {
-    const store = createMockStore();
-    store.getActivityLog.mockResolvedValue([]);
-
-    const centralEntries = [
-      {
-        id: "central-1",
-        timestamp: "2026-04-01T11:00:00.000Z",
-        type: "task:moved" as const,
-        projectId: "proj-123",
-        projectName: "Test Project",
-        taskId: "KB-002",
-        details: "Moved task to done",
-      },
-    ];
-
-    // Override the module-level CentralCore mock to return data
-    const mockCentralInstance = {
-      init: vi.fn().mockResolvedValue(undefined),
-      close: vi.fn().mockResolvedValue(undefined),
-      getRecentActivity: vi.fn().mockResolvedValue(centralEntries),
-    };
-    MockCentralCore.mockImplementation(() => mockCentralInstance as any);
-
-    const app = buildApp(store);
-    const res = await REQUEST(app, "GET", "/api/activity-feed");
-
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual(centralEntries);
-    
-    // Should not call per-project activity when central data exists
-    expect(store.getActivityLog).not.toHaveBeenCalled();
-  });
-
-  it("handles CentralCore initialization failure gracefully", async () => {
-    const store = createMockStore();
-    
-    // Override the module-level CentralCore mock to throw error on init
-    const mockCentralInstance = {
-      init: vi.fn().mockRejectedValue(new Error("CentralCore init failed")),
-      close: vi.fn().mockResolvedValue(undefined),
-      getRecentActivity: vi.fn(),
-    };
-    MockCentralCore.mockImplementation(() => mockCentralInstance as any);
-
-    const app = buildApp(store);
-    const res = await REQUEST(app, "GET", "/api/activity-feed");
-
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual([]); // Fallback returns empty array from mock store
-  });
-
-  it("passes through limit query parameter", async () => {
-    const store = createMockStore();
-    
-    // Override the module-level CentralCore mock to return empty
-    const mockCentralInstance = {
-      init: vi.fn().mockResolvedValue(undefined),
-      close: vi.fn().mockResolvedValue(undefined),
-      getRecentActivity: vi.fn().mockResolvedValue([]),
-    };
-    MockCentralCore.mockImplementation(() => mockCentralInstance as any);
-
-    const app = buildApp(store);
-    const res = await REQUEST(app, "GET", "/api/activity-feed?limit=25");
-
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual([]);
-  });
-
-  it("handles type filter query parameter", async () => {
-    const store = createMockStore();
-    
-    // Override the module-level CentralCore mock to return empty
-    const mockCentralInstance = {
-      init: vi.fn().mockResolvedValue(undefined),
-      close: vi.fn().mockResolvedValue(undefined),
-      getRecentActivity: vi.fn().mockResolvedValue([]),
-    };
-    MockCentralCore.mockImplementation(() => mockCentralInstance as any);
-
-    const app = buildApp(store);
-    const res = await REQUEST(app, "GET", "/api/activity-feed?types=task:moved");
-
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual([]);
-  });
-
-  it("validates fallback route path exists", async () => {
-    const store = createMockStore();
-    
-    // Override the module-level CentralCore mock to return empty - this ensures fallback path is taken
-    const mockCentralInstance = {
-      init: vi.fn().mockResolvedValue(undefined),
-      close: vi.fn().mockResolvedValue(undefined),
-      getRecentActivity: vi.fn().mockResolvedValue([]),
-    };
-    MockCentralCore.mockImplementation(() => mockCentralInstance as any);
-
-    const app = buildApp(store);
-    const res = await REQUEST(app, "GET", "/api/activity-feed");
-
-    expect(res.status).toBe(200);
-    expect(Array.isArray(res.body)).toBe(true);
   });
 });

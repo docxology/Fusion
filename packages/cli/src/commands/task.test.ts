@@ -52,6 +52,14 @@ vi.mock("@fusion/dashboard", () => ({
   })),
 }));
 
+vi.mock("@fusion/dashboard/planning", () => ({
+  createSession: vi.fn(),
+  submitResponse: vi.fn(),
+  RateLimitError: class RateLimitError extends Error {},
+  SessionNotFoundError: class SessionNotFoundError extends Error {},
+  InvalidSessionStateError: class InvalidSessionStateError extends Error {},
+}));
+
 // Mock @fusion/core/gh-cli
 vi.mock("@fusion/core/gh-cli", () => ({
   isGhAvailable: vi.fn(),
@@ -65,6 +73,7 @@ vi.mock("../project-context.js", () => ({
     projectId: "proj_test",
     projectPath: "/test",
     projectName: "test",
+    isRegistered: true,
     store: {},
   }),
   getStore: vi.fn().mockResolvedValue({}),
@@ -75,10 +84,12 @@ vi.mock("../project-context.js", () => ({
 import { createInterface } from "node:readline/promises";
 import { TaskStore } from "@fusion/core";
 import { watchFile, unwatchFile, statSync, existsSync, readFileSync } from "node:fs";
-import { runTaskShow, runTaskCreate, runTaskDuplicate, runTaskRefine, runTaskDelete, runTaskRetry, runTaskLogs, runTaskComment, runTaskComments, runTaskPrCreate, type LogsOptions } from "./task.js";
+import { runTaskShow, runTaskCreate, runTaskDuplicate, runTaskRefine, runTaskDelete, runTaskRetry, runTaskLogs, runTaskComment, runTaskComments, runTaskPrCreate, runTaskPlan, runTaskMove, runTaskAttach, runTaskPause, runTaskUnpause, runTaskArchive, runTaskUnarchive, runTaskSteer, runTaskImportFromGitHub, runTaskImportGitHubInteractive, runTaskUpdate, runTaskLog, runTaskMerge, type LogsOptions } from "./task.js";
 import { isGhAvailable, isGhAuthenticated, getCurrentRepo } from "@fusion/core/gh-cli";
 import { GitHubClient } from "@fusion/dashboard";
+import { createSession } from "@fusion/dashboard/planning";
 import { resolveProject } from "../project-context.js";
+import { aiMergeTask } from "@fusion/engine";
 
 function makeTask(overrides: Record<string, unknown> = {}) {
   return {
@@ -153,6 +164,490 @@ describe("runTaskShow", () => {
 vi.mock("node:fs/promises", () => ({
   readFile: vi.fn(),
 }));
+
+describe("project-aware task command behavior", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("runTaskList prints project header when project name is provided", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => { throw new Error("process.exit"); }) as (code?: number) => never);
+    const mockListTasks = vi.fn().mockResolvedValue([
+      makeTask({ id: "FN-001", column: "triage", description: "Task one" }),
+    ]);
+
+    vi.mocked(resolveProject).mockResolvedValue({
+      projectId: "proj_test",
+      projectPath: "/test",
+      projectName: "demo-project",
+      isRegistered: true,
+      store: { listTasks: mockListTasks } as unknown as TaskStore,
+    });
+
+    await expect(runTaskList("demo-project")).rejects.toThrow("process.exit");
+
+    expect(resolveProject).toHaveBeenCalledWith("demo-project");
+    expect(mockListTasks).toHaveBeenCalledOnce();
+    expect(logSpy.mock.calls.some((call) => String(call[0]).includes("Tasks for project 'demo-project':"))).toBe(true);
+
+    logSpy.mockRestore();
+    exitSpy.mockRestore();
+  });
+
+  it("runTaskList without project flag uses shared resolution flow before local fallback", async () => {
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => { throw new Error("process.exit"); }) as (code?: number) => never);
+    const mockListTasks = vi.fn().mockResolvedValue([
+      makeTask({ id: "FN-001", column: "triage", description: "Default task" }),
+    ]);
+
+    vi.mocked(resolveProject).mockResolvedValue({
+      projectId: "proj_default",
+      projectPath: "/default/project",
+      projectName: "default-project",
+      isRegistered: true,
+      store: { listTasks: mockListTasks } as unknown as TaskStore,
+    });
+
+    await expect(runTaskList()).rejects.toThrow("process.exit");
+
+    expect(resolveProject).toHaveBeenCalledWith(undefined);
+    expect(mockListTasks).toHaveBeenCalledOnce();
+    exitSpy.mockRestore();
+  });
+
+  it("runTaskList without project flag falls back to TaskStore(process.cwd()) when shared resolution fails", async () => {
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => { throw new Error("process.exit"); }) as (code?: number) => never);
+    const cwdSpy = vi.spyOn(process, "cwd").mockReturnValue("/current/project");
+    const mockListTasks = vi.fn().mockResolvedValue([
+      makeTask({ id: "FN-009", column: "triage", description: "Detected local task" }),
+    ]);
+    const init = vi.fn();
+
+    vi.mocked(resolveProject).mockRejectedValueOnce(
+      new Error("No kb project found in current directory. Use --project or run from a project directory.")
+    );
+
+    (TaskStore as unknown as ReturnType<typeof vi.fn>).mockImplementation((projectPath: string) => ({
+      init,
+      listTasks: mockListTasks,
+      projectPath,
+    }));
+
+    await expect(runTaskList()).rejects.toThrow("process.exit");
+
+    expect(resolveProject).toHaveBeenCalledWith(undefined);
+    expect(TaskStore).toHaveBeenCalledWith("/current/project");
+    expect(init).toHaveBeenCalledOnce();
+    expect(mockListTasks).toHaveBeenCalledOnce();
+    cwdSpy.mockRestore();
+    exitSpy.mockRestore();
+  });
+
+  it("runTaskCreate uses resolved project store and prints project context", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const mockCreateTask = vi.fn().mockResolvedValue(makeTask({ id: "FN-002", description: "test task" }));
+    const mockAddAttachment = vi.fn();
+
+    vi.mocked(resolveProject).mockResolvedValue({
+      projectId: "proj_test",
+      projectPath: "/test",
+      projectName: "demo-project",
+      isRegistered: true,
+      store: { createTask: mockCreateTask, addAttachment: mockAddAttachment } as unknown as TaskStore,
+    });
+
+    await runTaskCreate("test task", undefined, undefined, "demo-project");
+
+    expect(resolveProject).toHaveBeenCalledWith("demo-project");
+    expect(mockCreateTask).toHaveBeenCalledWith({ description: "test task", dependencies: undefined });
+    expect(logSpy.mock.calls.some((call) => String(call[0]).includes("Project: demo-project"))).toBe(true);
+
+    logSpy.mockRestore();
+  });
+
+  it("runTaskCreate without project flag uses shared resolution flow", async () => {
+    const mockCreateTask = vi.fn().mockResolvedValue(makeTask({ id: "FN-003", description: "default task" }));
+    vi.mocked(resolveProject).mockResolvedValue({
+      projectId: "proj_default",
+      projectPath: "/default/project",
+      projectName: "default-project",
+      isRegistered: true,
+      store: { createTask: mockCreateTask, addAttachment: vi.fn() } as unknown as TaskStore,
+    });
+
+    await runTaskCreate("default task");
+
+    expect(resolveProject).toHaveBeenCalledWith(undefined);
+    expect(mockCreateTask).toHaveBeenCalledWith({ description: "default task", dependencies: undefined });
+  });
+
+  it("runTaskCreate without project flag falls back to TaskStore(process.cwd()) when resolution fails", async () => {
+    const cwdSpy = vi.spyOn(process, "cwd").mockReturnValue("/current/project");
+    const mockCreateTask = vi.fn().mockResolvedValue(makeTask({ id: "FN-004", description: "local task" }));
+    const init = vi.fn();
+
+    vi.mocked(resolveProject).mockRejectedValueOnce(
+      new Error("No kb project found in current directory. Use --project or run from a project directory.")
+    );
+
+    (TaskStore as unknown as ReturnType<typeof vi.fn>).mockImplementation((projectPath: string) => ({
+      init,
+      createTask: mockCreateTask,
+      addAttachment: vi.fn(),
+      projectPath,
+    }));
+
+    await runTaskCreate("local task");
+
+    expect(resolveProject).toHaveBeenCalledWith(undefined);
+    expect(TaskStore).toHaveBeenCalledWith("/current/project");
+    expect(init).toHaveBeenCalledOnce();
+    expect(mockCreateTask).toHaveBeenCalledWith({ description: "local task", dependencies: undefined });
+    cwdSpy.mockRestore();
+  });
+
+  it("runTaskLogs uses resolved project path in follow mode", async () => {
+    const mockGetTask = vi.fn().mockResolvedValue(makeTask({ id: "FN-001" }));
+    const mockGetAgentLogs = vi.fn().mockResolvedValue([]);
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => { throw new Error("process.exit"); }) as (code?: number) => never);
+    const sigintHandlers: Array<() => void> = [];
+    vi.spyOn(process, "on").mockImplementation((event: string, handler: () => void) => {
+      if (event === "SIGINT") {
+        sigintHandlers.push(handler);
+      }
+      return process;
+    });
+
+    vi.mocked(resolveProject).mockResolvedValue({
+      projectId: "proj_test",
+      projectPath: "/resolved/project",
+      projectName: "demo-project",
+      isRegistered: true,
+      store: { getTask: mockGetTask, getAgentLogs: mockGetAgentLogs } as unknown as TaskStore,
+    });
+
+    vi.mocked(existsSync).mockReturnValue(false);
+    const promise = runTaskLogs("FN-001", { follow: true }, "demo-project");
+    await Promise.resolve();
+    expect(vi.mocked(watchFile)).toHaveBeenCalledWith(
+      expect.stringContaining("/resolved/project/.kb/tasks/FN-001/agent.log"),
+      expect.any(Function),
+    );
+    expect(sigintHandlers).toHaveLength(1);
+    expect(() => sigintHandlers[0]()).toThrow("process.exit");
+    await expect(promise).rejects.toThrow("process.exit");
+
+    expect(resolveProject).toHaveBeenCalledWith("demo-project");
+    expect(logSpy.mock.calls.some((call) => String(call[0]).includes("Logs for project 'demo-project':"))).toBe(true);
+
+    logSpy.mockRestore();
+    exitSpy.mockRestore();
+  });
+
+  it("runTaskPrCreate falls back to current working directory without project flag", async () => {
+    const cwdSpy = vi.spyOn(process, "cwd").mockReturnValue("/local/project");
+    const mockCreatePr = vi.fn().mockResolvedValue({ number: 123, url: "https://example.com/pr/123" });
+    vi.mocked(isGhAvailable).mockReturnValue(true);
+    vi.mocked(isGhAuthenticated).mockReturnValue(true);
+    vi.mocked(getCurrentRepo).mockReturnValue({ owner: "acme", repo: "demo" });
+    vi.mocked(GitHubClient).mockImplementation(() => ({ createPr: mockCreatePr }) as never);
+
+    (TaskStore as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => ({
+      init: vi.fn(),
+      getTask: vi.fn().mockResolvedValue(makeTask({ id: "FN-001", column: "in-review", branchName: "fusion/fn-001" })),
+      updateTask: vi.fn().mockResolvedValue(undefined),
+      logEntry: vi.fn().mockResolvedValue(undefined),
+    }));
+
+    await runTaskPrCreate("FN-001", {});
+
+    expect(getCurrentRepo).toHaveBeenCalledWith("/local/project");
+    expect(mockCreatePr).toHaveBeenCalledWith(expect.objectContaining({ head: "fusion/fn-001" }));
+    cwdSpy.mockRestore();
+  });
+
+  it("runTaskPlan uses resolved project path only when project name is provided", async () => {
+    const mockCreateTask = vi.fn().mockResolvedValue(makeTask({ id: "FN-010", description: "planned task" }));
+    (TaskStore as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => ({
+      init: vi.fn(),
+      createTask: mockCreateTask,
+    }));
+    vi.mocked(createSession).mockResolvedValue({
+      sessionId: "sess-1",
+      summary: { description: "planned task", steps: [], reviewLevel: 1, sizeEstimate: "M", clarifications: [] },
+      questions: [],
+      isComplete: true,
+    } as never);
+
+    await runTaskPlan("planned task", true, "demo-project");
+
+    expect(resolveProject).toHaveBeenCalledWith("demo-project");
+    expect(createSession).toHaveBeenCalledWith("127.0.0.1", "planned task", expect.anything(), "/test");
+  });
+
+  it("runTaskShow uses resolved project store when project name is provided", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const mockGetTask = vi.fn().mockResolvedValue(makeTask({ id: "FN-123", description: "from project store" }));
+
+    vi.mocked(resolveProject).mockResolvedValue({
+      projectId: "proj_test",
+      projectPath: "/test",
+      projectName: "demo-project",
+      isRegistered: true,
+      store: { getTask: mockGetTask } as unknown as TaskStore,
+    });
+
+    await runTaskShow("FN-123", "demo-project");
+
+    expect(resolveProject).toHaveBeenCalledWith("demo-project");
+    expect(mockGetTask).toHaveBeenCalledWith("FN-123");
+    logSpy.mockRestore();
+  });
+
+  it("runTaskMove uses resolved project store when project name is provided", async () => {
+    const mockMoveTask = vi.fn().mockResolvedValue(makeTask({ id: "FN-123", column: "done" }));
+
+    vi.mocked(resolveProject).mockResolvedValue({
+      projectId: "proj_test",
+      projectPath: "/test",
+      projectName: "demo-project",
+      isRegistered: true,
+      store: { moveTask: mockMoveTask } as unknown as TaskStore,
+    });
+
+    await runTaskMove("FN-123", "done", "demo-project");
+
+    expect(resolveProject).toHaveBeenCalledWith("demo-project");
+    expect(mockMoveTask).toHaveBeenCalledWith("FN-123", "done");
+  });
+
+  it("runTaskAttach uses resolved project store when project name is provided", async () => {
+    const mockAddAttachment = vi.fn().mockResolvedValue({
+      originalName: "notes.txt",
+      size: 10,
+    });
+    const readFileMock = vi.fn().mockResolvedValue(Buffer.from("hello"));
+    vi.doMock("node:fs/promises", () => ({ readFile: readFileMock }));
+
+    vi.mocked(resolveProject).mockResolvedValue({
+      projectId: "proj_test",
+      projectPath: "/test",
+      projectName: "demo-project",
+      isRegistered: true,
+      store: { addAttachment: mockAddAttachment } as unknown as TaskStore,
+    });
+
+    await runTaskAttach("FN-123", "/tmp/notes.txt", "demo-project");
+
+    expect(resolveProject).toHaveBeenCalledWith("demo-project");
+    expect(mockAddAttachment).toHaveBeenCalled();
+  });
+
+  it("runTaskPause and runTaskUnpause use resolved project store", async () => {
+    const pauseTask = vi.fn()
+      .mockResolvedValueOnce(makeTask({ id: "FN-123", status: "paused" }))
+      .mockResolvedValueOnce(makeTask({ id: "FN-123", status: undefined }));
+
+    vi.mocked(resolveProject).mockResolvedValue({
+      projectId: "proj_test",
+      projectPath: "/test",
+      projectName: "demo-project",
+      isRegistered: true,
+      store: { pauseTask } as unknown as TaskStore,
+    });
+
+    await runTaskPause("FN-123", "demo-project");
+    await runTaskUnpause("FN-123", "demo-project");
+
+    expect(pauseTask).toHaveBeenNthCalledWith(1, "FN-123", true);
+    expect(pauseTask).toHaveBeenNthCalledWith(2, "FN-123", false);
+  });
+
+  it("runTaskArchive and runTaskUnarchive use resolved project store", async () => {
+    const archiveTask = vi.fn().mockResolvedValue(makeTask({ id: "FN-123", column: "archived" }));
+    const unarchiveTask = vi.fn().mockResolvedValue(makeTask({ id: "FN-123", column: "done" }));
+
+    vi.mocked(resolveProject).mockResolvedValue({
+      projectId: "proj_test",
+      projectPath: "/test",
+      projectName: "demo-project",
+      isRegistered: true,
+      store: { archiveTask, unarchiveTask } as unknown as TaskStore,
+    });
+
+    await runTaskArchive("FN-123", "demo-project");
+    await runTaskUnarchive("FN-123", "demo-project");
+
+    expect(archiveTask).toHaveBeenCalledWith("FN-123");
+    expect(unarchiveTask).toHaveBeenCalledWith("FN-123");
+  });
+
+  it("runTaskRetry uses resolved project store", async () => {
+    const getTask = vi.fn().mockResolvedValue(makeTask({ id: "FN-123", status: "failed", column: "in-progress" }));
+    const updateTask = vi.fn().mockResolvedValue(makeTask({ id: "FN-123", status: undefined }));
+    const moveTask = vi.fn().mockResolvedValue(makeTask({ id: "FN-123", column: "todo" }));
+    const logEntry = vi.fn().mockResolvedValue(undefined);
+
+    vi.mocked(resolveProject).mockResolvedValue({
+      projectId: "proj_test",
+      projectPath: "/test",
+      projectName: "demo-project",
+      isRegistered: true,
+      store: { getTask, updateTask, moveTask, logEntry } as unknown as TaskStore,
+    });
+
+    await runTaskRetry("FN-123", "demo-project");
+
+    expect(getTask).toHaveBeenCalledWith("FN-123");
+    expect(updateTask).toHaveBeenCalled();
+    expect(moveTask).toHaveBeenCalledWith("FN-123", "todo");
+    expect(logEntry).toHaveBeenCalled();
+  });
+
+  it("runTaskDelete uses resolved project store", async () => {
+    const getTask = vi.fn().mockResolvedValue(makeTask({ id: "FN-123" }));
+    const deleteTask = vi.fn().mockResolvedValue(undefined);
+
+    vi.mocked(resolveProject).mockResolvedValue({
+      projectId: "proj_test",
+      projectPath: "/test",
+      projectName: "demo-project",
+      isRegistered: true,
+      store: { getTask, deleteTask } as unknown as TaskStore,
+    });
+
+    await runTaskDelete("FN-123", true, "demo-project");
+
+    expect(getTask).toHaveBeenCalledWith("FN-123");
+    expect(deleteTask).toHaveBeenCalledWith("FN-123");
+  });
+
+  it("runTaskComment, runTaskComments, and runTaskSteer use resolved project store", async () => {
+    const addTaskComment = vi.fn().mockResolvedValue({ author: "user", message: "hello" });
+    const getTask = vi.fn().mockResolvedValue(makeTask({ id: "FN-123", steeringComments: [], comments: [{ author: "user", message: "hello", createdAt: new Date().toISOString() }] }));
+    const addSteeringComment = vi.fn().mockResolvedValue(makeTask({ id: "FN-123" }));
+
+    vi.mocked(resolveProject).mockResolvedValue({
+      projectId: "proj_test",
+      projectPath: "/test",
+      projectName: "demo-project",
+      isRegistered: true,
+      store: { addTaskComment, getTask, addSteeringComment } as unknown as TaskStore,
+    });
+
+    await runTaskComment("FN-123", "hello", "user", "demo-project");
+    await runTaskComments("FN-123", "demo-project");
+    await runTaskSteer("FN-123", "steer", "demo-project");
+
+    expect(addTaskComment).toHaveBeenCalled();
+    expect(getTask).toHaveBeenCalledWith("FN-123");
+    expect(addSteeringComment).toHaveBeenCalled();
+  });
+
+  it("runTaskUpdate, runTaskLog, runTaskMerge, runTaskDuplicate, and runTaskRefine use resolved project context", async () => {
+    const updateStep = vi.fn().mockResolvedValue({ ...makeTask({ id: "FN-123" }), steps: [{ name: "Step 1", status: "done" }] });
+    const logEntry = vi.fn().mockResolvedValue(undefined);
+    const getTask = vi.fn().mockResolvedValue(makeTask({ id: "FN-123", column: "in-review" }));
+    const duplicateTask = vi.fn().mockResolvedValue(makeTask({ id: "FN-124" }));
+    const refineTask = vi.fn().mockResolvedValue(makeTask({ id: "FN-125" }));
+
+    const resolvedStore = { updateStep, logEntry, getTask, duplicateTask, refineTask } as unknown as TaskStore;
+    vi.mocked(resolveProject).mockResolvedValue({
+      projectId: "proj_test",
+      projectPath: "/test",
+      projectName: "demo-project",
+      isRegistered: true,
+      store: resolvedStore,
+    });
+    vi.mocked(aiMergeTask).mockResolvedValue({
+      merged: true,
+      task: makeTask({ id: "FN-123" }),
+      branch: "fusion/fn-123",
+      worktreeRemoved: true,
+      branchDeleted: true,
+    } as never);
+
+    await runTaskUpdate("FN-123", "0", "done", "demo-project");
+    await runTaskLog("FN-123", "hello", undefined, "demo-project");
+    await runTaskMerge("FN-123", "demo-project");
+    await runTaskDuplicate("FN-123", "demo-project");
+    await runTaskRefine("FN-123", "more tests", "demo-project");
+
+    expect(updateStep).toHaveBeenCalled();
+    expect(logEntry).toHaveBeenCalled();
+    expect(aiMergeTask).toHaveBeenCalledWith(resolvedStore, "/test", "FN-123", expect.any(Object));
+    expect(duplicateTask).toHaveBeenCalledWith("FN-123");
+    expect(refineTask).toHaveBeenCalledWith("FN-123", "more tests");
+  });
+
+  it("routes GitHub import commands through the resolved project store", async () => {
+    const listTasks = vi.fn().mockResolvedValue([]);
+    const createTask = vi.fn().mockResolvedValue(makeTask({ id: "FN-200" }));
+
+    vi.mocked(resolveProject).mockResolvedValue({
+      projectId: "proj_test",
+      projectPath: "/test",
+      projectName: "demo-project",
+      isRegistered: true,
+      store: { listTasks, createTask } as unknown as TaskStore,
+    });
+
+    const fetchSpy = vi.spyOn(global, "fetch" as any).mockResolvedValue({
+      ok: true,
+      json: async () => ([{ number: 1, title: "Issue 1", body: "Body", html_url: "https://github.com/acme/demo/issues/1", labels: [] }]),
+    } as Response);
+
+    await runTaskImportFromGitHub("acme/demo", { limit: 1 }, "demo-project");
+    expect(resolveProject).toHaveBeenCalledWith("demo-project");
+    expect(listTasks).toHaveBeenCalled();
+
+    fetchSpy.mockRestore();
+  });
+
+  it("routes interactive GitHub import through the resolved project store", async () => {
+    const listTasks = vi.fn().mockResolvedValue([]);
+    const createTask = vi.fn().mockResolvedValue(makeTask({ id: "FN-201" }));
+    const mockQuestion = vi.fn().mockResolvedValue("all");
+
+    vi.mocked(createInterface).mockReturnValue({
+      question: mockQuestion,
+      close: vi.fn(),
+    } as never);
+
+    vi.mocked(resolveProject).mockResolvedValue({
+      projectId: "proj_test",
+      projectPath: "/test",
+      projectName: "demo-project",
+      isRegistered: true,
+      store: { listTasks, createTask } as unknown as TaskStore,
+    });
+
+    const fetchSpy = vi.spyOn(global, "fetch" as any).mockResolvedValue({
+      ok: true,
+      json: async () => ([{ number: 2, title: "Issue 2", body: "Body", html_url: "https://github.com/acme/demo/issues/2", labels: [] }]),
+    } as Response);
+
+    await runTaskImportGitHubInteractive("acme/demo", { limit: 1 }, "demo-project");
+
+    expect(resolveProject).toHaveBeenCalledWith("demo-project");
+    expect(listTasks).toHaveBeenCalled();
+    expect(createTask).toHaveBeenCalled();
+
+    fetchSpy.mockRestore();
+  });
+
+  it("surfaces project resolution failures from shared context when project flag is explicit", async () => {
+    vi.mocked(resolveProject).mockRejectedValueOnce(
+      new Error("Project 'demo-project' not found. Run 'kb project list' to see registered projects.")
+    );
+
+    await expect(runTaskList("demo-project")).rejects.toThrow(
+      "Project 'demo-project' not found. Run 'kb project list' to see registered projects."
+    );
+  });
+});
 
 describe("runTaskCreate with --attach", () => {
   let logSpy: ReturnType<typeof vi.spyOn>;
@@ -1384,6 +1879,7 @@ describe("runTaskLogs", () => {
       projectId: "proj_test",
       projectPath: "/test",
       projectName: "test",
+      isRegistered: true,
       store: {} as TaskStore,
     });
 

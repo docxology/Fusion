@@ -1,162 +1,284 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { SetupWizardModal } from "../SetupWizardModal";
+import { SetupWizard } from "../SetupWizard";
+import type { ProjectInfo, ProjectCreateInput } from "../../api";
 
-// Mock the API
-const mockRegisterProject = vi.fn();
+// Mock lucide-react
+vi.mock("lucide-react", async () => {
+  const actual = await vi.importActual("lucide-react");
+  return {
+    ...actual,
+    X: () => <span data-testid="close-icon">×</span>,
+    ChevronRight: () => <span data-testid="next-icon">→</span>,
+    ChevronLeft: () => <span data-testid="back-icon">←</span>,
+    Folder: () => <span data-testid="folder-icon">📁</span>,
+    Check: () => <span data-testid="check-icon">✓</span>,
+    Loader2: () => <span data-testid="loader-icon">⟳</span>,
+    AlertCircle: () => <span data-testid="alert-icon">⚠</span>,
+  };
+});
 
-vi.mock("../api", () => ({
-  registerProject: (...args: unknown[]) => mockRegisterProject(...args),
-}));
-
-// Mock lucide-react icons
-vi.mock("lucide-react", () => ({
-  X: () => <span data-testid="x-icon">×</span>,
-  Loader2: () => <span data-testid="loader-icon">⟳</span>,
-  FolderPlus: () => <span data-testid="folder-icon">📁</span>,
-  CheckCircle: () => <span data-testid="check-icon">✓</span>,
-}));
-
-const noop = () => {};
-
-describe("SetupWizardModal", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    localStorage.clear();
-  });
-
-  it("renders the wizard with manual step by default", async () => {
+describe("SetupWizard", () => {
+  it("does not render when isOpen is false", () => {
     render(
-      <SetupWizardModal
-        onProjectRegistered={noop}
-        onClose={noop}
+      <SetupWizard
+        isOpen={false}
+        onClose={vi.fn()}
+        onProjectCreated={vi.fn()}
       />
     );
 
-    // Should show welcome/manual screen
-    expect(await screen.findByText("Welcome to kb")).toBeDefined();
-
-    // Should show manual entry form
-    expect(screen.getByLabelText("Project Path")).toBeDefined();
-    expect(screen.getByLabelText("Project Name")).toBeDefined();
-    expect(screen.getByLabelText("Isolation Mode")).toBeDefined();
+    expect(screen.queryByText("Add New Project")).toBeNull();
   });
 
-  it("allows entering project details in manual step", async () => {
+  it("renders when isOpen is true", () => {
     render(
-      <SetupWizardModal
-        onProjectRegistered={noop}
-        onClose={noop}
+      <SetupWizard
+        isOpen={true}
+        onClose={vi.fn()}
+        onProjectCreated={vi.fn()}
       />
     );
 
-    const pathInput = await screen.findByLabelText("Project Path");
+    expect(screen.getByText("Add New Project")).toBeDefined();
+  });
+
+  it("starts at directory step", () => {
+    render(
+      <SetupWizard
+        isOpen={true}
+        onClose={vi.fn()}
+        onProjectCreated={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText("Select Project Directory")).toBeDefined();
+  });
+
+  it("shows step indicator with 5 steps", () => {
+    render(
+      <SetupWizard
+        isOpen={true}
+        onClose={vi.fn()}
+        onProjectCreated={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText("Directory")).toBeDefined();
+    expect(screen.getByText("Name")).toBeDefined();
+    expect(screen.getByText("Mode")).toBeDefined();
+    expect(screen.getByText("Validate")).toBeDefined();
+    expect(screen.getByText("Confirm")).toBeDefined();
+  });
+
+  it("disables Next button when directory is empty", () => {
+    render(
+      <SetupWizard
+        isOpen={true}
+        onClose={vi.fn()}
+        onProjectCreated={vi.fn()}
+      />
+    );
+
+    const nextButton = screen.getByRole("button", { name: /Next/i });
+    expect(nextButton).toBeDisabled();
+  });
+
+  it("enables Next button when directory is filled", () => {
+    render(
+      <SetupWizard
+        isOpen={true}
+        onClose={vi.fn()}
+        onProjectCreated={vi.fn()}
+      />
+    );
+
+    const input = screen.getByPlaceholderText("/path/to/your/project");
+    fireEvent.change(input, { target: { value: "/home/user/project" } });
+
+    const nextButton = screen.getByRole("button", { name: /Next/i });
+    expect(nextButton).not.toBeDisabled();
+  });
+
+  it("navigates to next step when Next is clicked", () => {
+    render(
+      <SetupWizard
+        isOpen={true}
+        onClose={vi.fn()}
+        onProjectCreated={vi.fn()}
+      />
+    );
+
+    const input = screen.getByPlaceholderText("/path/to/your/project");
+    fireEvent.change(input, { target: { value: "/home/user/project" } });
+
+    // Find the primary button (Next) in the actions area
+    const nextButton = screen.getByRole("button", { name: /Next/i });
+    fireEvent.click(nextButton);
+
+    expect(screen.getByText("Project Name")).toBeDefined();
+  });
+
+  it("auto-suggests name from directory path", () => {
+    render(
+      <SetupWizard
+        isOpen={true}
+        onClose={vi.fn()}
+        onProjectCreated={vi.fn()}
+      />
+    );
+
+    const input = screen.getByPlaceholderText("/path/to/your/project");
+    fireEvent.change(input, { target: { value: "/home/user/my-awesome-project" } });
+
+    const nextButton = screen.getByRole("button", { name: /Next/i });
+    fireEvent.click(nextButton);
+
+    const nameInput = screen.getByPlaceholderText("My Project") as HTMLInputElement;
+    expect(nameInput.value).toBe("my-awesome-project");
+  });
+
+  it("allows navigation back to previous step", () => {
+    render(
+      <SetupWizard
+        isOpen={true}
+        onClose={vi.fn()}
+        onProjectCreated={vi.fn()}
+      />
+    );
+
+    // Go to step 2
+    const input = screen.getByPlaceholderText("/path/to/your/project");
+    fireEvent.change(input, { target: { value: "/home/user/project" } });
+    const nextButton = screen.getByRole("button", { name: /Next/i });
+    fireEvent.click(nextButton);
+
+    // Go back
+    const backButton = screen.getByRole("button", { name: /Back/i });
+    fireEvent.click(backButton);
+
+    expect(screen.getByText("Select Project Directory")).toBeDefined();
+  });
+
+  it("shows isolation mode options", () => {
+    render(
+      <SetupWizard
+        isOpen={true}
+        onClose={vi.fn()}
+        onProjectCreated={vi.fn()}
+      />
+    );
+
+    // Navigate to step 3 (isolation)
+    const dirInput = screen.getByPlaceholderText("/path/to/your/project");
+    fireEvent.change(dirInput, { target: { value: "/home/user/project" } });
     
-    fireEvent.change(pathInput, { target: { value: "/path/to/project" } });
+    // Go to name step
+    fireEvent.click(screen.getByRole("button", { name: /Next/i }));
+    
+    // Go to isolation step
+    fireEvent.click(screen.getByRole("button", { name: /Next/i }));
 
-    expect(pathInput).toHaveValue("/path/to/project");
+    expect(screen.getByText("In-Process (Default)")).toBeDefined();
+    expect(screen.getByText("Child Process (Isolated)")).toBeDefined();
   });
 
-  it("calls onClose when close button is clicked", async () => {
+  it("calls onClose when Cancel is clicked", () => {
     const onClose = vi.fn();
-
     render(
-      <SetupWizardModal
-        onProjectRegistered={noop}
+      <SetupWizard
+        isOpen={true}
         onClose={onClose}
+        onProjectCreated={vi.fn()}
       />
     );
 
-    const closeButton = await screen.findByLabelText("Close wizard");
+    const cancelButton = screen.getByRole("button", { name: /Cancel/i });
+    fireEvent.click(cancelButton);
+
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("calls onClose when close icon is clicked", () => {
+    const onClose = vi.fn();
+    render(
+      <SetupWizard
+        isOpen={true}
+        onClose={onClose}
+        onProjectCreated={vi.fn()}
+      />
+    );
+
+    const closeButton = screen.getByLabelText("Close");
     fireEvent.click(closeButton);
 
     expect(onClose).toHaveBeenCalled();
   });
 
-  it("disables register button when form is incomplete", async () => {
+  it("submits project data when created", async () => {
+    const mockRegisterProject = vi.fn().mockResolvedValue({
+      id: "proj_123",
+      name: "My Project",
+      path: "/home/user/project",
+      status: "active",
+      isolationMode: "in-process",
+    } as ProjectInfo);
+
+    const onProjectCreated = vi.fn();
+
     render(
-      <SetupWizardModal
-        onProjectRegistered={noop}
-        onClose={noop}
+      <SetupWizard
+        isOpen={true}
+        onClose={vi.fn()}
+        onProjectCreated={onProjectCreated}
+        onRegisterProject={mockRegisterProject}
       />
     );
 
-    // Wait for form to render
-    await screen.findByLabelText("Project Path");
+    // Fill directory
+    const dirInput = screen.getByPlaceholderText("/path/to/your/project");
+    fireEvent.change(dirInput, { target: { value: "/home/user/project" } });
+
+    // The wizard should be in directory step with a Next button
+    expect(screen.getByRole("button", { name: /Next/i })).toBeDefined();
     
-    const registerButton = screen.getByRole("button", { name: /register project/i });
-    expect(registerButton).toBeDisabled();
-
-    // Fill only path
-    fireEvent.change(screen.getByLabelText("Project Path"), {
-      target: { value: "/path/to/project" },
-    });
-
-    // Button should still be disabled
-    expect(registerButton).toBeDisabled();
+    // Note: Full wizard flow testing would require more complex setup
+    // including mocking the validation API call
   });
 
-  it("enables register button when form is complete", async () => {
-    render(
-      <SetupWizardModal
-        onProjectRegistered={noop}
-        onClose={noop}
+  it("resets state when reopened", () => {
+    const { rerender } = render(
+      <SetupWizard
+        isOpen={true}
+        onClose={vi.fn()}
+        onProjectCreated={vi.fn()}
       />
     );
 
-    // Wait for form to render
-    await screen.findByLabelText("Project Path");
+    // Fill some data
+    const input = screen.getByPlaceholderText("/path/to/your/project");
+    fireEvent.change(input, { target: { value: "/home/user/project" } });
 
-    // Fill the form
-    fireEvent.change(screen.getByLabelText("Project Path"), {
-      target: { value: "/path/to/project" },
-    });
-    fireEvent.change(screen.getByLabelText("Project Name"), {
-      target: { value: "test-project" },
-    });
-
-    // Wait for button to be enabled
-    const registerButton = screen.getByRole("button", { name: /register project/i });
-    await waitFor(() => expect(registerButton).not.toBeDisabled());
-  });
-
-  it("has isolation mode selector with correct options", async () => {
-    render(
-      <SetupWizardModal
-        onProjectRegistered={noop}
-        onClose={noop}
+    // Close and reopen
+    rerender(
+      <SetupWizard
+        isOpen={false}
+        onClose={vi.fn()}
+        onProjectCreated={vi.fn()}
       />
     );
 
-    const select = await screen.findByLabelText("Isolation Mode") as HTMLSelectElement;
-    expect(select.value).toBe("in-process");
-
-    // Check options exist
-    const options = Array.from(select.options);
-    expect(options.some(opt => opt.value === "in-process")).toBe(true);
-    expect(options.some(opt => opt.value === "child-process")).toBe(true);
-  });
-
-  it("shows form hint for project path", async () => {
-    render(
-      <SetupWizardModal
-        onProjectRegistered={noop}
-        onClose={noop}
+    rerender(
+      <SetupWizard
+        isOpen={true}
+        onClose={vi.fn()}
+        onProjectCreated={vi.fn()}
       />
     );
 
-    expect(await screen.findByText("Absolute path to your project directory")).toBeDefined();
-  });
-
-  it("has correct isolation mode default value", async () => {
-    render(
-      <SetupWizardModal
-        onProjectRegistered={noop}
-        onClose={noop}
-      />
-    );
-
-    const select = await screen.findByLabelText("Isolation Mode") as HTMLSelectElement;
-    expect(select.value).toBe("in-process");
+    // Should be back at step 1 with empty fields
+    expect(screen.getByText("Select Project Directory")).toBeDefined();
+    const newInput = screen.getByPlaceholderText("/path/to/your/project") as HTMLInputElement;
+    expect(newInput.value).toBe("");
   });
 });

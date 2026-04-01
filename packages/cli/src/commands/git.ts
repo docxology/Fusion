@@ -2,6 +2,18 @@ import { execSync } from "node:child_process";
 import { createInterface } from "node:readline/promises";
 import { resolveProject } from "../project-context.js";
 
+async function resolveGitCwd(projectName?: string): Promise<string> {
+  if (projectName) {
+    return (await resolveProject(projectName)).projectPath;
+  }
+
+  try {
+    return (await resolveProject(undefined)).projectPath;
+  } catch {
+    return process.cwd();
+  }
+}
+
 // ── Types ────────────────────────────────────────────────────────────────
 
 /** Git status data structure */
@@ -109,9 +121,9 @@ export function getGitStatus(cwd: string = process.cwd()): GitStatus | null {
 /**
  * Count dirty files by parsing git status output.
  */
-export function getDirtyFileCount(): { added: number; modified: number; deleted: number } {
+export function getDirtyFileCount(cwd: string = process.cwd()): { added: number; modified: number; deleted: number } {
   try {
-    const output = execSync("git status --porcelain", { encoding: "utf-8", timeout: 5000 }).trim();
+    const output = execSync("git status --porcelain", { encoding: "utf-8", timeout: 5000, cwd }).trim();
     if (!output) return { added: 0, modified: 0, deleted: 0 };
 
     const lines = output.split("\n").filter(Boolean);
@@ -136,12 +148,12 @@ export function getDirtyFileCount(): { added: number; modified: number; deleted:
 /**
  * Fetch from origin or specified remote.
  */
-export function fetchGitRemote(remote: string = "origin"): GitFetchResult {
+export function fetchGitRemote(remote: string = "origin", cwd: string = process.cwd()): GitFetchResult {
   if (!isValidBranchName(remote)) {
     throw new Error("Invalid remote name");
   }
   try {
-    const output = execSync(`git fetch ${remote}`, { encoding: "utf-8", timeout: 30000 });
+    const output = execSync(`git fetch ${remote}`, { encoding: "utf-8", timeout: 30000, cwd });
     return { fetched: true, message: output.trim() || "Fetch completed" };
   } catch (err: any) {
     const message = err.message || String(err);
@@ -156,9 +168,9 @@ export function fetchGitRemote(remote: string = "origin"): GitFetchResult {
 /**
  * Pull the current branch.
  */
-export function pullGitBranch(): GitPullResult {
+export function pullGitBranch(cwd: string = process.cwd()): GitPullResult {
   try {
-    const output = execSync("git pull", { encoding: "utf-8", timeout: 30000 });
+    const output = execSync("git pull", { encoding: "utf-8", timeout: 30000, cwd });
     return { success: true, message: output.trim() };
   } catch (err: any) {
     const message = err.message || String(err);
@@ -172,9 +184,9 @@ export function pullGitBranch(): GitPullResult {
 /**
  * Push the current branch.
  */
-export function pushGitBranch(): GitPushResult {
+export function pushGitBranch(cwd: string = process.cwd()): GitPushResult {
   try {
-    const output = execSync("git push", { encoding: "utf-8", timeout: 30000 });
+    const output = execSync("git push", { encoding: "utf-8", timeout: 30000, cwd });
     return { success: true, message: output.trim() || "Push completed" };
   } catch (err: any) {
     const message = err.message || String(err);
@@ -194,8 +206,7 @@ export function pushGitBranch(): GitPushResult {
  * Run the git status command and display formatted output.
  */
 export async function runGitStatus(projectName?: string): Promise<void> {
-  // Resolve project path
-  const { projectPath } = projectName ? await resolveProject(projectName) : { projectPath: process.cwd() };
+  const projectPath = await resolveGitCwd(projectName);
 
   // Validate directory is a git repo
   if (!isGitRepo(projectPath)) {
@@ -215,7 +226,7 @@ export async function runGitStatus(projectName?: string): Promise<void> {
 
   // Status line
   if (status.isDirty) {
-    const counts = getDirtyFileCount();
+    const counts = getDirtyFileCount(projectPath);
     const parts: string[] = [];
     if (counts.added) parts.push(`+${counts.added}`);
     if (counts.modified) parts.push(`~${counts.modified}`);
@@ -246,8 +257,7 @@ export async function runGitStatus(projectName?: string): Promise<void> {
 export async function runGitFetch(remote?: string, projectName?: string): Promise<void> {
   const targetRemote = remote || "origin";
 
-  // Resolve project path
-  const { projectPath } = projectName ? await resolveProject(projectName) : { projectPath: process.cwd() };
+  const projectPath = await resolveGitCwd(projectName);
 
   // Validate directory is a git repo
   if (!isGitRepo(projectPath)) {
@@ -278,8 +288,7 @@ export async function runGitFetch(remote?: string, projectName?: string): Promis
  * @param options.projectName - Optional project name to target
  */
 export async function runGitPull(options: { skipConfirm?: boolean; projectName?: string } = {}): Promise<void> {
-  // Resolve project path
-  const { projectPath } = options.projectName ? await resolveProject(options.projectName) : { projectPath: process.cwd() };
+  const projectPath = await resolveGitCwd(options.projectName);
 
   // Validate directory is a git repo
   if (!isGitRepo(projectPath)) {
@@ -336,8 +345,7 @@ export async function runGitPull(options: { skipConfirm?: boolean; projectName?:
  * @param options.projectName - Optional project name to target
  */
 export async function runGitPush(options: { skipConfirm?: boolean; projectName?: string } = {}): Promise<void> {
-  // Resolve project path
-  const { projectPath } = options.projectName ? await resolveProject(options.projectName) : { projectPath: process.cwd() };
+  const projectPath = await resolveGitCwd(options.projectName);
 
   // Validate directory is a git repo
   if (!isGitRepo(projectPath)) {

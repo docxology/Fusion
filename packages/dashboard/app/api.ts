@@ -283,17 +283,6 @@ export function fetchSessionFiles(taskId: string): Promise<string[]> {
   return api<string[]>(`/tasks/${taskId}/session-files`);
 }
 
-export interface TaskFileDiff {
-  path: string;
-  status: "added" | "modified" | "deleted" | "renamed";
-  diff: string;
-  oldPath?: string;
-}
-
-export function fetchTaskFileDiffs(taskId: string): Promise<TaskFileDiff[]> {
-  return api<TaskFileDiff[]>(`/tasks/${taskId}/file-diffs`);
-}
-
 export function fetchTaskComments(id: string): Promise<TaskComment[]> {
   return api<TaskComment[]>(`/tasks/${id}/comments`);
 }
@@ -318,14 +307,12 @@ export function deleteTaskComment(id: string, commentId: string): Promise<Task> 
   });
 }
 
-export function addComment(id: string, text: string): Promise<Task> {
-  return api<Task>(`/tasks/${id}/comments`, {
+export function addSteeringComment(id: string, text: string): Promise<Task> {
+  return api<Task>(`/tasks/${id}/steer`, {
     method: "POST",
     body: JSON.stringify({ text }),
   });
 }
-
-export const addSteeringComment = addComment;
 
 export function requestSpecRevision(id: string, feedback: string): Promise<Task> {
   return api<Task>(`/tasks/${id}/spec/revise`, {
@@ -1344,56 +1331,6 @@ export function fetchWorkflowResults(taskId: string): Promise<WorkflowStepResult
   return api<WorkflowStepResult[]>(`/tasks/${encodeURIComponent(taskId)}/workflow-results`);
 }
 
-// ── Scripts ─────────────────────────────────────────────────────────────
-
-export type ScriptsMap = Record<string, string>;
-
-export interface RunScriptResponse {
-  command: string;
-  sessionId: string;
-}
-
-export async function waitForScriptCompletion(sessionId: string): Promise<{ output: string; exitCode: number }> {
-  for (;;) {
-    const session = await getTerminalSession(sessionId);
-    if (!session.running) {
-      return {
-        output: session.output,
-        exitCode: session.exitCode ?? 0,
-      };
-    }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-}
-
-/** Fetch all project-defined scripts */
-export function fetchScripts(): Promise<ScriptsMap> {
-  return api<ScriptsMap>("/scripts");
-}
-
-/** Create a new project-defined script */
-export async function addScript(name: string, command: string): Promise<void> {
-  await api<ScriptsMap>("/scripts", {
-    method: "POST",
-    body: JSON.stringify({ name, command }),
-  });
-}
-
-/** Remove a project-defined script */
-export async function removeScript(name: string): Promise<void> {
-  await api<ScriptsMap>(`/scripts/${encodeURIComponent(name)}`, {
-    method: "DELETE",
-  });
-}
-
-/** Execute a script via the terminal service and return the created session */
-export function runScript(name: string, args?: string[]): Promise<RunScriptResponse> {
-  return api<RunScriptResponse>(`/scripts/${encodeURIComponent(name)}/run`, {
-    method: "POST",
-    body: JSON.stringify({ args }),
-  });
-}
-
 // ── Workflow Step Templates ──────────────────────────────────────────────
 
 /** Re-export WorkflowStepTemplate type from core */
@@ -1882,7 +1819,7 @@ export function fetchProjectHealth(id: string): Promise<ProjectHealth> {
   return api<ProjectHealth>(`/projects/${encodeURIComponent(id)}/health`);
 }
 
-/** Fetch unified activity feed. Supports singular type filtering and server fallback to the current project's local activity log when the central feed is unavailable or empty. */
+/** Fetch unified activity feed */
 export function fetchActivityFeed(options?: FeedOptions): Promise<ActivityFeedEntry[]> {
   const params = new URLSearchParams();
   if (options?.limit !== undefined) params.set("limit", String(options.limit));
@@ -1905,37 +1842,6 @@ export function pauseProject(id: string): Promise<ProjectInfo> {
 export function resumeProject(id: string): Promise<ProjectInfo> {
   return api<ProjectInfo>(`/projects/${encodeURIComponent(id)}/resume`, {
     method: "POST",
-  });
-}
-
-/** Fetch a specific project by ID */
-export function fetchProject(id: string): Promise<ProjectInfo> {
-  return api<ProjectInfo>(`/projects/${encodeURIComponent(id)}`);
-}
-
-/** Update a project */
-export function updateProject(
-  id: string,
-  updates: { name?: string; isolationMode?: "in-process" | "child-process"; status?: "active" | "paused" | "errored" | "initializing" }
-): Promise<ProjectInfo> {
-  return api<ProjectInfo>(`/projects/${encodeURIComponent(id)}`, {
-    method: "PATCH",
-    body: JSON.stringify(updates),
-  });
-}
-
-/** Detected project from auto-scan */
-export interface DetectedProject {
-  path: string;
-  suggestedName: string;
-  existing: boolean;
-}
-
-/** Auto-detect kb projects in a given base path */
-export function detectProjects(basePath?: string): Promise<{ projects: DetectedProject[] }> {
-  return api<{ projects: DetectedProject[] }>("/projects/detect", {
-    method: "POST",
-    body: JSON.stringify({ basePath }),
   });
 }
 
@@ -1962,15 +1868,3 @@ export function fetchProjectTasks(projectId: string, limit?: number, offset?: nu
 export function fetchProjectConfig(projectId: string): Promise<{ maxConcurrent: number; rootDir: string }> {
   return api<{ maxConcurrent: number; rootDir: string }>(`/projects/${encodeURIComponent(projectId)}/config`);
 }
-
-/** Diff information for a task */
-export interface TaskDiff {
-  files: string[];
-  diffs: Record<string, { stat: string; patch: string }>;
-}
-
-/** Fetch diff information for a task */
-export function fetchTaskDiff(taskId: string): Promise<TaskDiff> {
-  return api<TaskDiff>(`/tasks/${encodeURIComponent(taskId)}/diff`);
-}
-

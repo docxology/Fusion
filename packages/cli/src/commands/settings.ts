@@ -1,5 +1,5 @@
-import { TaskStore, type Settings, DEFAULT_SETTINGS } from "@fusion/core";
-import { getStore } from "../project-resolver.js";
+import { GlobalSettingsStore, type Settings, DEFAULT_SETTINGS } from "@fusion/core";
+import { resolveProject } from "../project-context.js";
 
 // Settings that can be updated via CLI
 export const VALID_SETTINGS = [
@@ -13,6 +13,17 @@ export const VALID_SETTINGS = [
   "requirePlanApproval",
   "ntfyEnabled",
   "defaultModel",
+] as const;
+
+const GLOBAL_ONLY_SETTINGS = ["ntfyEnabled", "ntfyTopic", "defaultModel"] as const;
+const PROJECT_ONLY_SETTINGS = [
+  "maxConcurrent",
+  "maxWorktrees",
+  "worktreeNaming",
+  "taskPrefix",
+  "autoResolveConflicts",
+  "smartConflictResolution",
+  "requirePlanApproval",
 ] as const;
 
 type ValidSettingKey = (typeof VALID_SETTINGS)[number];
@@ -38,6 +49,20 @@ const NUMBER_RANGES: Record<string, { min: number; max: number }> = {
   maxConcurrent: { min: 1, max: 10 },
   maxWorktrees: { min: 1, max: 20 },
 };
+
+async function getGlobalSettingsStore(): Promise<GlobalSettingsStore> {
+  const store = new GlobalSettingsStore();
+  await store.init();
+  return store;
+}
+
+function isGlobalOnlySetting(key: ValidSettingKey): boolean {
+  return GLOBAL_ONLY_SETTINGS.includes(key as (typeof GLOBAL_ONLY_SETTINGS)[number]);
+}
+
+function isProjectOnlySetting(key: ValidSettingKey): boolean {
+  return PROJECT_ONLY_SETTINGS.includes(key as (typeof PROJECT_ONLY_SETTINGS)[number]);
+}
 
 /**
  * Parse and validate a setting value based on its key's expected type
@@ -83,11 +108,9 @@ export function parseValue(key: ValidSettingKey, value: string): unknown {
 
   // String settings (default)
   if (STRING_SETTINGS.includes(key)) {
-    // Allow empty string to clear the value (will be stored as empty string, merged with default)
     return trimmed;
   }
 
-  // Fallback for any other settings - treat as string
   return trimmed;
 }
 
@@ -99,34 +122,27 @@ function formatSettingValue(
   value: unknown,
   settings: Settings
 ): string {
-  // Special case for githubTokenConfigured - show as indicator
   if (key === "githubTokenConfigured") {
     return value ? "(configured)" : "(not configured)";
   }
 
-  // Handle arrays
   if (Array.isArray(value)) {
     return value.length > 0 ? `[${value.join(", ")}]` : "[]";
   }
 
-  // Handle undefined
   if (value === undefined) {
     return "(not set)";
   }
 
-  // Handle booleans
   if (typeof value === "boolean") {
     return value ? "true" : "false";
   }
 
-  // Handle numbers
   if (typeof value === "number") {
     return String(value);
   }
 
-  // Handle strings
   if (typeof value === "string") {
-    // Check if this is the same as default
     const defaultValue = DEFAULT_SETTINGS[key];
     if (value === defaultValue) {
       return `"${value}" (default)`;
@@ -141,28 +157,33 @@ function formatSettingValue(
  * Get display name for a setting (convert camelCase to readable)
  */
 function getSettingLabel(key: string): string {
-  // Special cases
   if (key === "ntfyEnabled") return "ntfy Enabled";
   if (key === "ntfyTopic") return "ntfy Topic";
 
-  // Convert camelCase to space-separated words with capital first letters
   return key
     .replace(/([A-Z])/g, " $1")
     .replace(/^./, (str) => str.toUpperCase());
 }
 
 /**
- * Run settings show command - displays all settings
+ * Run settings show command.
+ *
+ * Behavior:
+ * - `kb settings` shows global settings
+ * - `kb settings --project <name>` shows project settings for that project
  */
 export async function runSettingsShow(projectName?: string): Promise<void> {
-  const store = await getStore({ project: projectName });
-  const settings = await store.getSettings();
+  const project = projectName ? await resolveProject(projectName) : undefined;
+  const settings = project
+    ? await project.store.getSettings()
+    : await (await getGlobalSettingsStore()).getSettings();
 
   console.log();
-  console.log("  kb Configuration Settings");
+  console.log(project
+    ? `  kb Settings for project '${project.projectName}'`
+    : "  kb Global Settings");
   console.log("  " + "─".repeat(50));
 
-  // Define the order and grouping of settings for display
   const settingGroups = [
     {
       title: "Engine",
@@ -191,7 +212,6 @@ export async function runSettingsShow(projectName?: string): Promise<void> {
   ];
 
   for (const group of settingGroups) {
-    // Check if any setting in this group has a value
     const hasValues = group.keys.some((key) => settings[key as keyof Settings] !== undefined);
     if (!hasValues) continue;
 
@@ -210,23 +230,41 @@ export async function runSettingsShow(projectName?: string): Promise<void> {
 }
 
 /**
- * Run settings set command - updates a single setting
+ * Run settings set command - updates a single setting.
+ *
+ * Scope rules:
+ * - Global-only settings (`ntfy*`, `defaultModel`) update global settings
+ * - Project-only settings require an explicit `--project` target
  */
 export async function runSettingsSet(key: string, value: string, projectName?: string): Promise<void> {
-  // Validate the setting key is allowed
   if (!VALID_SETTINGS.includes(key as ValidSettingKey)) {
     console.error(`Error: Unknown setting "${key}"`);
     console.error(`Valid settings: ${VALID_SETTINGS.join(", ")}`);
     process.exit(1);
-    return; // Required for tests where process.exit is mocked
+    return;
   }
 
-  const store = await getStore({ project: projectName });
+  const validKey = key as ValidSettingKey;
+
+  if (projectName && isGlobalOnlySetting(validKey)) {
+    console.error(`Error: Setting "${key}" is global-only. Omit --project to update it.`);
+    process.exit(1);
+    return;
+  }
+
+  if (!projectName && isProjectOnlySetting(validKey)) {
+    console.error(`Error: Setting "${key}" is project-only. Use --project or run from a project directory.`);
+    process.exit(1);
+    return;
+  }
+
+  const projectContext = projectName ? await resolveProject(projectName) : undefined;
+  const store = projectContext?.store;
+  const globalStore = store ? undefined : await getGlobalSettingsStore();
 
   try {
-    const parsedValue = parseValue(key as ValidSettingKey, value);
+    const parsedValue = parseValue(validKey, value);
 
-    // Special handling for defaultModel - splits into provider and modelId
     if (key === "defaultModel") {
       const parts = (parsedValue as string).split("/");
       if (parts.length !== 2) {
@@ -234,26 +272,34 @@ export async function runSettingsSet(key: string, value: string, projectName?: s
           `Error: Invalid format for defaultModel. Use "provider/model-id" (e.g., "anthropic/claude-sonnet-4-5")`
         );
         process.exit(1);
-        return; // Required for tests where process.exit is mocked
+        return;
       }
       const [provider, modelId] = parts;
-      await store.updateSettings({ defaultProvider: provider, defaultModelId: modelId });
+      if (store) {
+        await store.updateSettings({ defaultProvider: provider, defaultModelId: modelId });
+      } else {
+        await globalStore!.updateSettings({ defaultProvider: provider, defaultModelId: modelId });
+      }
       console.log();
       console.log(`  ✓ Updated default model to ${provider}/${modelId}`);
       console.log();
       return;
     }
 
-    // Normal single-setting update
     const patch: Partial<Settings> = { [key]: parsedValue };
-    await store.updateSettings(patch);
+    if (store) {
+      await store.updateSettings(patch);
+    } else {
+      await globalStore!.updateSettings(patch);
+    }
 
+    const currentSettings = store ? await store.getSettings() : await globalStore!.getSettings();
     console.log();
-    console.log(`  ✓ Updated ${getSettingLabel(key)} to ${formatSettingValue(key as keyof Settings, parsedValue, await store.getSettings())}`);
+    console.log(`  ✓ Updated ${getSettingLabel(key)} to ${formatSettingValue(key as keyof Settings, parsedValue, currentSettings as Settings)}`);
     console.log();
   } catch (err: any) {
     console.error(`Error: ${err.message}`);
     process.exit(1);
-    return; // Required for tests where process.exit is mocked
+    return;
   }
 }

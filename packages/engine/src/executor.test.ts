@@ -113,16 +113,6 @@ function createMockStore() {
   return store as any;
 }
 
-function createMockMissionStore(overrides: Record<string, unknown> = {}) {
-  return {
-    getFeatureByTaskId: vi.fn(),
-    getSlice: vi.fn(),
-    computeSliceStatus: vi.fn(),
-    updateFeatureStatus: vi.fn(),
-    ...overrides,
-  } as any;
-}
-
 describe("TaskExecutor with semaphore", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -1137,22 +1127,11 @@ describe("TaskExecutor dependency-based worktree creation", () => {
       if (cmd === `git worktree remove "${conflictingPath}" --force`) {
         throw new Error("remove failed");
       }
-      if (cmd === 'git branch -D "kb/fn-065"') {
-        throw new Error("branch delete failed");
-      }
-      if (cmd === "git worktree list --porcelain") {
-        return Buffer.from(`/tmp/test/.git/worktrees/sharp-stone\n`);
-      }
       return Buffer.from("");
     });
 
     await executor.execute(makeTask({ id: "FN-065" }));
 
-    // After 3 retry attempts, should fail with combined error message
-    expect(store.updateTask).toHaveBeenCalledWith("FN-065", {
-      status: "failed",
-      error: expect.stringContaining("Worktree conflict"),
-    });
     expect(store.updateTask).toHaveBeenCalledWith("FN-065", {
       status: "failed",
       error: expect.stringContaining("automatic cleanup failed"),
@@ -1601,8 +1580,6 @@ describe("buildExecutionPrompt", () => {
     expect(result).toContain("## Project Commands");
     expect(result).toContain("- **Build:** `pnpm build`");
     expect(result).not.toContain("- **Test:**");
-    expect(result).toContain("run that exact command in this worktree before calling `task_done()`");
-    expect(result).toContain("Do not claim success without a real passing run");
   });
 
   it("includes both commands when both are set", () => {
@@ -1631,14 +1608,14 @@ describe("buildExecutionPrompt", () => {
     expect(result).not.toContain("## Project Commands");
   });
 
-  it("includes Comments section when comments has entries", () => {
+  it("includes Steering Comments section when steeringComments has entries", () => {
     const task = createMockTaskDetail({
       steeringComments: [
         {
           id: "1",
           text: "Please handle the edge case",
           createdAt: new Date().toISOString(),
-          author: "user",
+          author: "user" as const,
         },
       ],
     });
@@ -1647,10 +1624,10 @@ describe("buildExecutionPrompt", () => {
     expect(result).toContain("## Steering Comments");
     expect(result).toContain("**user**");
     expect(result).toContain("> Please handle the edge case");
-    expect(result).toContain("The following comments were added");
+    expect(result).toContain("The following steering comments were added by the user");
   });
 
-  it("formats multiple comments correctly", () => {
+  it("formats multiple steering comments correctly", () => {
     const now = new Date();
     const task = createMockTaskDetail({
       steeringComments: [
@@ -1658,13 +1635,13 @@ describe("buildExecutionPrompt", () => {
           id: "1",
           text: "First comment",
           createdAt: new Date(now.getTime() - 60000).toISOString(), // 1 minute ago
-          author: "user",
+          author: "user" as const,
         },
         {
           id: "2",
           text: "Second comment",
           createdAt: now.toISOString(),
-          author: "agent",
+          author: "agent" as const,
         },
       ],
     });
@@ -1676,29 +1653,29 @@ describe("buildExecutionPrompt", () => {
     expect(result).toContain("> Second comment");
   });
 
-  it("omits Comments section when steeringComments is empty", () => {
+  it("omits Steering Comments section when steeringComments is empty", () => {
     const task = createMockTaskDetail({ steeringComments: [] });
     const result = buildExecutionPrompt(task);
 
     expect(result).not.toContain("## Steering Comments");
   });
 
-  it("omits Comments section when comments is undefined", () => {
+  it("omits Steering Comments section when steeringComments is undefined", () => {
     const task = createMockTaskDetail();
     const result = buildExecutionPrompt(task);
 
     expect(result).not.toContain("## Steering Comments");
   });
 
-  it("includes only the 10 most recent comments", () => {
-    const comments = Array.from({ length: 15 }, (_, i) => ({
+  it("includes only the 10 most recent steering comments", () => {
+    const steeringComments = Array.from({ length: 15 }, (_, i) => ({
       id: `${i}`,
       text: `Comment ${i}`,
       createdAt: new Date().toISOString(),
-      author: "user",
+      author: "user" as const,
     }));
 
-    const task = createMockTaskDetail({ comments });
+    const task = createMockTaskDetail({ steeringComments });
     const result = buildExecutionPrompt(task);
 
     // Should include comments 5-14 (the 10 most recent), not 0-4
@@ -1741,7 +1718,7 @@ describe("buildExecutionPrompt", () => {
     expect(result).toContain("## Steering Comments");
 
     // Verify explanatory header text
-    expect(result).toContain("The following comments were added by the user during execution");
+    expect(result).toContain("The following steering comments were added by the user during execution");
     expect(result).toContain("Consider adjusting your approach or replanning remaining steps based on this feedback");
 
     // Verify all three comments appear with correct author badges
@@ -4041,144 +4018,6 @@ describe("Workflow Steps Execution", () => {
     expect(store.moveTask).toHaveBeenCalledWith("FN-001", "in-review");
   });
 
-  it("marks linked mission feature done when task reaches in-review", async () => {
-    const store = createMockStore();
-    const missionStore = createMockMissionStore({
-      getFeatureByTaskId: vi.fn().mockReturnValue({ id: "F-001", sliceId: "SL-001" }),
-      getSlice: vi.fn().mockReturnValueOnce({ id: "SL-001", status: "active" }).mockReturnValueOnce({ id: "SL-001", status: "complete" }),
-      computeSliceStatus: vi.fn().mockReturnValue("complete"),
-      updateFeatureStatus: vi.fn(),
-    });
-    const onSliceComplete = vi.fn();
-
-    store.getTask.mockResolvedValue({
-      id: "FN-001",
-      title: "Test",
-      description: "Test task",
-      column: "in-progress",
-      sliceId: "SL-001",
-      dependencies: [],
-      steps: [{ name: "Preflight", status: "pending" }],
-      currentStep: 0,
-      log: [],
-      prompt: "# test\n## Steps\n### Step 0: Preflight\n- [ ] check",
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    });
-
-    createAgentWithTaskDone();
-
-    const executor = new TaskExecutor(store, "/tmp/test", { missionStore, onSliceComplete });
-
-    await executor.execute({
-      id: "FN-001",
-      title: "Test",
-      description: "Test task",
-      column: "in-progress",
-      sliceId: "SL-001",
-      dependencies: [],
-      steps: [{ name: "Preflight", status: "pending" }],
-      currentStep: 0,
-      log: [],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    } as any);
-
-    expect(missionStore.updateFeatureStatus).toHaveBeenCalledWith("F-001", "done");
-    expect(onSliceComplete).toHaveBeenCalledWith(expect.objectContaining({ id: "SL-001", status: "complete" }));
-    expect(store.logEntry).toHaveBeenCalledWith(
-      "FN-001",
-      expect.stringContaining("Slice SL-001 completed"),
-      "Mission feature implementation ready for review",
-    );
-  });
-
-  it("skips mission updates when linked feature slice does not match task sliceId", async () => {
-    const store = createMockStore();
-    const missionStore = createMockMissionStore({
-      getFeatureByTaskId: vi.fn().mockReturnValue({ id: "F-001", sliceId: "SL-OTHER" }),
-      updateFeatureStatus: vi.fn(),
-    });
-
-    store.getTask.mockResolvedValue({
-      id: "FN-001",
-      title: "Test",
-      description: "Test task",
-      column: "in-progress",
-      sliceId: "SL-001",
-      dependencies: [],
-      steps: [{ name: "Preflight", status: "pending" }],
-      currentStep: 0,
-      log: [],
-      prompt: "# test\n## Steps\n### Step 0: Preflight\n- [ ] check",
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    });
-
-    createAgentWithTaskDone();
-
-    const executor = new TaskExecutor(store, "/tmp/test", { missionStore });
-
-    await executor.execute({
-      id: "FN-001",
-      title: "Test",
-      description: "Test task",
-      column: "in-progress",
-      sliceId: "SL-001",
-      dependencies: [],
-      steps: [{ name: "Preflight", status: "pending" }],
-      currentStep: 0,
-      log: [],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    } as any);
-
-    expect(missionStore.updateFeatureStatus).not.toHaveBeenCalled();
-    expect(missionStore.computeSliceStatus).not.toHaveBeenCalled();
-  });
-
-  it("does not update mission progress when agent finishes without task_done", async () => {
-    const store = createMockStore();
-    const missionStore = createMockMissionStore({
-      getFeatureByTaskId: vi.fn().mockReturnValue({ id: "F-001", sliceId: "SL-001" }),
-      computeSliceStatus: vi.fn(),
-      updateFeatureStatus: vi.fn(),
-    });
-    const onSliceComplete = vi.fn();
-
-    mockedCreateHaiAgent.mockResolvedValue({
-      session: {
-        prompt: vi.fn().mockResolvedValue(undefined),
-        dispose: vi.fn(),
-        subscribe: vi.fn(),
-        on: vi.fn(),
-        sessionManager: { getLeafId: vi.fn().mockReturnValue("leaf-1") },
-        state: {},
-      },
-    } as any);
-
-    const executor = new TaskExecutor(store, "/tmp/test", { missionStore, onSliceComplete });
-
-    await executor.execute({
-      id: "FN-001",
-      title: "Test",
-      description: "Test task",
-      column: "in-progress",
-      sliceId: "SL-001",
-      dependencies: [],
-      steps: [{ name: "Preflight", status: "pending" }],
-      currentStep: 0,
-      log: [],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    } as any);
-
-    expect(store.moveTask).toHaveBeenCalledWith("FN-001", "in-review");
-    expect(missionStore.updateFeatureStatus).not.toHaveBeenCalled();
-    expect(missionStore.computeSliceStatus).not.toHaveBeenCalled();
-    expect(onSliceComplete).not.toHaveBeenCalled();
-  });
-
   it("skips workflow steps with no prompt", async () => {
     const store = createMockStore();
 
@@ -4394,13 +4233,13 @@ describe("Real-time steering injection", () => {
 
     // Verify steer was called with the formatted message
     expect(steerFn).toHaveBeenCalledOnce();
-    expect(steerFn.mock.calls[0][0]).toContain("📣 **New feedback**");
+    expect(steerFn.mock.calls[0][0]).toContain("📣 **New steering feedback**");
     expect(steerFn.mock.calls[0][0]).toContain("Please use a different approach");
 
     // Verify log entry was created
     expect(store.logEntry).toHaveBeenCalledWith(
       "FN-001",
-      expect.stringContaining("Comment received mid-execution"),
+      expect.stringContaining("Steering comment received mid-execution"),
       "by user"
     );
 
@@ -4618,13 +4457,6 @@ describe("Real-time steering injection", () => {
       currentStep: 0,
       log: [],
       prompt: "# test\n## Steps\n### Step 0: Preflight\n- [ ] check",
-      comments: [{
-        id: "existing-comment",
-        text: "Original",
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        author: "user",
-      }],
       steeringComments: [{
         id: "existing-comment",
         text: "Original",

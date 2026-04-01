@@ -41,7 +41,7 @@ kb uses a hybrid storage architecture: structured metadata lives in SQLite while
 
 - **Project database:** `.kb/kb.db` — SQLite database with WAL mode enabled
 - **Blob files:** `.kb/tasks/{ID}/PROMPT.md`, `agent.log`, `attachments/` — remain on filesystem
-- **Global settings:** `~/.pi/kb/settings.json` — remains file-based (not in SQLite)
+- **Global settings:** `~/.pi/fusion/settings.json` — remains file-based (not in SQLite)
 
 ### Tables
 
@@ -94,15 +94,6 @@ pnpm build         # build all packages
 
 Tests are required. Typechecks and manual verification are not substitutes for real tests with assertions.
 
-### Test Optimization Patterns
-
-When writing tests, follow these patterns to keep the test suite fast:
-
-- **Use fake timers** (`vi.useFakeTimers()`, `vi.setSystemTime()`) instead of real `setTimeout` for timestamp-dependent tests. See `packages/core/src/backup.test.ts` for an example.
-- **Default to `fileParallelism: true`** in vitest configs; use `test.sequential()` for specific tests that truly need isolation
-- **Avoid real delays** — Never use `setTimeout`, `sleep`, or waiting for actual time to pass in tests. Use Vitest's timer mocks instead.
-- **Use unique temp directories** — Each test should use isolated temp directories (e.g., `mkdtempSync`) to avoid conflicts in parallel execution
-
 ## Multi-Project Architecture / Central Core
 
 kb supports multi-project coordination through a central infrastructure that provides:
@@ -114,7 +105,7 @@ kb supports multi-project coordination through a central infrastructure that pro
 
 ### Central Database Location
 
-The central database is stored at `~/.pi/kb/kb-central.db` (global user directory):
+The central database is stored at `~/.pi/fusion/fusion-central.db` (global user directory):
 
 | Table | Purpose |
 |-------|---------|
@@ -210,7 +201,7 @@ kb has two activity log systems:
    - Contains events for a single project
    - Used by the dashboard for project-specific views
    
-2. **Unified central activity log** (`~/.pi/kb/kb-central.db` → `centralActivityLog` table)
+2. **Unified central activity log** (`~/.pi/fusion/fusion-central.db` → `centralActivityLog` table)
    - Contains events from all projects
    - Used for global dashboards and cross-project reporting
    - Includes `projectId` and `projectName` for attribution
@@ -535,95 +526,6 @@ kb task list --project api-service
 kb task list --project web-ui
 ```
 
-## Multi-Project Dashboard
-
-The kb dashboard provides a visual interface for managing multiple projects simultaneously. When multiple projects are registered, the dashboard shows a Project Overview page as the home view, with drill-down capability into individual project task boards.
-
-### Project Overview Page
-
-The Project Overview (`ProjectOverview` component) displays all registered projects in a responsive grid:
-
-- **Quick Stats Header**: Total projects, active projects, active tasks across all projects, total tasks
-- **Filter & Sort**: Filter by status (all, active, paused, errored, initializing); sort by name, last activity, or status
-- **Project Cards**: Each card shows:
-  - Project name and truncated path
-  - Status badge (color-coded: green=active, yellow=paused, red=errored, blue=initializing)
-  - Health metrics: active task count, running agents, completed tasks
-  - Last activity timestamp (relative, e.g., "5m ago")
-  - Actions: Open, Pause/Resume, Remove
-
-**Empty State**: When no projects exist, shows a welcome prompt to add the first project or run the setup wizard.
-
-### Project Selector
-
-The `ProjectSelector` component appears in the header when 2+ projects exist:
-
-- **Trigger Button**: Shows current project name with status dot indicator
-- **Dropdown Menu** (desktop ≥769px): 
-  - "All Projects" option to return to overview
-  - Project list sorted by status (active first) then alphabetically
-  - Status badges next to each project name
-  - "Add Project..." and "Manage Projects..." shortcuts
-- **Mobile Bottom Sheet** (mobile ≤768px):
-  - Compact trigger with truncated project name (max 8 chars) and status dot
-  - Full-screen bottom sheet with slide-up animation
-  - Swipe-down gesture to close
-  - Backdrop tap to close
-  - Touch-friendly project items (min 44px height)
-- **Keyboard Navigation**: Arrow keys, Enter to select, Escape to close
-
-**Single-Project Mode**: When only one project exists, the selector is hidden for a cleaner UI.
-
-### Project Drill-Down
-
-Clicking a project card opens that project's task view:
-
-- **Context Preservation**: The Board or ListView shows only that project's tasks
-- **Back Navigation**: "Back to All Projects" button returns to overview
-- **View Preference**: Board vs List preference is persisted per project in localStorage
-- **Project Context**: TaskDetailModal shows project breadcrumb in header
-
-### Setup Wizard
-
-The `SetupWizardModal` provides a first-run experience for new users:
-
-**Flow**:
-1. **Welcome**: Introduction to multi-project mode
-2. **Auto-detect**: Scans home directory for `.fusion/kb.db` files
-3. **Review**: Shows detected projects with checkboxes for selection, editable names
-4. **Manual**: Option to add project by path if auto-detect finds nothing
-5. **Complete**: Summary of registered projects
-
-**Features**:
-- Auto-opens when `fetchFirstRunStatus()` returns `hasProjects: false`
-- Persists state to localStorage (`kb-setup-wizard-state`) for resume capability
-- Bulk registration of selected detected projects
-- Already-registered projects shown as disabled in review list
-
-### Project Health Indicators
-
-Project health is polled every 10 seconds when the overview is visible:
-
-| Indicator | Meaning |
-|-----------|---------|
-| **Active Tasks** | Tasks currently in non-terminal columns (todo, in-progress, in-review) |
-| **Agents** | Currently running executor/reviewer agents for this project |
-| **Completed** | Cumulative count of tasks moved to "done" |
-| **Last Activity** | Timestamp of last task movement, creation, or update |
-| **Status Badge** | Project state: active (healthy), paused (suspended), errored (failed), initializing (starting up) |
-
-Health data comes from `useProjectHealth(projectId)` hook which calls `/api/projects/:id/health`.
-
-### Global Activity Feed
-
-The Activity Log (`ActivityLogModal`) shows events across all projects when viewing from the overview:
-
-- **Project Badges**: Each entry shows a folder icon with project name when viewing global activity
-- **Project Filter**: Dropdown to filter by specific project (only shown when 2+ projects)
-- **Event Types**: Same events as single-project mode (task:created, task:moved, etc.)
-
-When viewing a specific project's task board, the activity log is automatically filtered to that project.
-
 ## Pi Extension (`packages/cli/src/extension.ts`)
 
 The pi extension provides tools and a `/kb` command for interacting with kb from within a pi session. It ships as part of `@gsxdsm/fusion` — one `pi install` gives you both the CLI and the extension.
@@ -705,14 +607,14 @@ Use `useBadgeWebSocket()` when a UI surface needs live badge snapshots for speci
 
 kb uses a two-tier settings hierarchy:
 
-- **Global settings** — User preferences stored in `~/.pi/kb/settings.json`. These persist across all kb projects for the current user.
+- **Global settings** — User preferences stored in `~/.pi/fusion/settings.json`. These persist across all kb projects for the current user.
 - **Project settings** — Project-specific workflow and resource settings stored in `.kb/config.json`. These control how the engine operates for a particular project.
 
 When reading settings, project values override global values. The merged view is what the engine and dashboard use.
 
 ### Settings Hierarchy
 
-**Global settings** (`~/.pi/kb/settings.json`):
+**Global settings** (`~/.pi/fusion/settings.json`):
 - `themeMode` — UI theme preference (dark/light/system)
 - `colorTheme` — Color theme (default/ocean/forest/etc)
 - `defaultProvider` — Default AI model provider
@@ -858,7 +760,7 @@ Controls how worktree directory names are generated when `recycleWorktrees` is N
 
 **Valid values:**
 - `"random"` — Human-friendly random names like `swift-falcon`, `calm-river` (default)
-- `"task-id"` — Use the task ID as the directory name, e.g., `kb-042`
+- `"task-id"` — Use the task ID as the directory name, e.g., `fn-042`
 - `"task-title"` — Use a slugified version of the task title, e.g., `fix-login-bug`
 
 **Example:**
@@ -872,7 +774,7 @@ Controls how worktree directory names are generated when `recycleWorktrees` is N
 
 **Notes:**
 - This setting has no effect when `recycleWorktrees` is enabled (pooled worktrees retain their existing names)
-- Task branches are always named `kb/{task-id}` regardless of this setting
+- Task branches are always named `fusion/{task-id}` regardless of this setting
 - When using `"task-title"` mode, special characters are replaced with hyphens and the result is lowercased
 
 ### `autoBackupEnabled` (default: `false`)
@@ -1245,107 +1147,3 @@ When you add a template:
 1. The template data is copied to a new workflow step (templates themselves are immutable)
 2. The new step is enabled by default
 3. You can edit the step after creation to customize the prompt
-
-## Multi-Project Migration
-
-kb supports migrating from single-project mode to multi-project mode seamlessly. When you upgrade to a multi-project capable version, the system automatically detects existing projects and registers them in the central project registry.
-
-### Auto-Migration Behavior
-
-On first run after upgrade, kb will:
-1. **Detect** existing `.kb/kb.db` files in the current directory tree
-2. **Register** the discovered project in the central database at `~/.pi/kb/kb-central.db`
-3. **Preserve** all existing data — nothing is moved or deleted
-4. **Report** the auto-registration via console output
-
-This process is:
-- **Idempotent** — Re-running migration is a no-op for already-registered projects
-- **Safe** — Original `.kb/` directories are never modified
-- **Reversible** — Deleting `~/.pi/kb/kb-central.db` reverts to single-project mode
-
-### Backward Compatibility
-
-Single-project workflows continue working without changes:
-- No `--project` flag required when only one project is registered
-- Existing CLI commands work exactly as before
-- Dashboard opens directly to the project overview
-
-When multiple projects are registered, explicit project selection is required:
-```bash
-fn task list --project my-frontend
-fn dashboard --project my-backend
-```
-
-### Manual Project Registration
-
-To initialize a new project or register an existing project manually:
-
-```bash
-# Initialize new project (creates .kb/ and registers in central)
-fn init
-
-# Initialize with custom name
-fn init --name "My Custom Project"
-
-# Register existing project at specific directory
-fn project add /path/to/project --name "Existing Project"
-```
-
-### Rollback Procedure
-
-If the central database causes issues:
-
-1. **Delete the central database**:
-   ```bash
-   rm ~/.pi/kb/kb-central.db
-   ```
-   This only removes the project registry. All per-project data in `.kb/kb.db` remains intact.
-
-2. **kb falls back to single-project legacy mode** automatically
-
-3. **Re-register projects** if needed:
-   ```bash
-   fn init
-   # or
-   fn project add /path/to/project
-   ```
-
-4. **Emergency bypass** (disable auto-migration):
-   ```bash
-   KB_SKIP_MIGRATION=1 fn task list
-   ```
-
-### Dashboard First-Run Experience
-
-The dashboard provides setup endpoints for the first-run wizard:
-
-- `GET /api/setup-state` — Returns migration state (`fresh-install`, `needs-migration`, `setup-wizard`, `normal-operation`) and detected projects
-- `POST /api/complete-setup` — Registers selected projects from the wizard
-
-When the dashboard detects `needs-migration` or `setup-wizard` states, it shows appropriate prompts to guide users through initial setup.
-
-### Migration API
-
-Core migration functions are available in `@fusion/core`:
-
-```typescript
-import { 
-  FirstRunDetector, 
-  MigrationCoordinator, 
-  BackwardCompat,
-  needsCentralMigration,
-  autoMigrateToCentral 
-} from "@fusion/core";
-
-// Detect first-run state
-const detector = new FirstRunDetector();
-const state = await detector.detectFirstRunState(); // "fresh-install" | "needs-migration" | "setup-wizard" | "normal-operation"
-
-// Coordinate migration
-const coordinator = new MigrationCoordinator(central);
-const result = await coordinator.registerSingleProject("/path/to/project");
-
-// Backward compatibility resolution
-const compat = new BackwardCompat(central);
-const context = await compat.resolveProjectContext("/cwd"); // Auto-resolves single project
-```

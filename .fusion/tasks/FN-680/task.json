@@ -1,0 +1,22 @@
+{
+  "id": "FN-680",
+  "description": "Commands settings not being persisted and restored",
+  "column": "triage",
+  "status": "specifying",
+  "currentStep": 0,
+  "createdAt": "2026-04-01T22:01:55.348Z",
+  "updatedAt": "2026-04-01T22:06:04.879Z",
+  "columnMovedAt": "2026-04-01T22:01:55.348Z",
+  "dependencies": [],
+  "steps": [],
+  "log": [
+    {
+      "timestamp": "2026-04-01T22:01:55.348Z",
+      "action": "Task created"
+    },
+    {
+      "timestamp": "2026-04-01T22:06:04.879Z",
+      "action": "Spec review requested"
+    }
+  ]
+}

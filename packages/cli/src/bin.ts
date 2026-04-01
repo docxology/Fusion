@@ -45,14 +45,12 @@ const { runSettingsExport } = await import("./commands/settings-export.js");
 const { runSettingsImport } = await import("./commands/settings-import.js");
 const { runGitStatus, runGitFetch, runGitPull, runGitPush } = await import("./commands/git.js");
 const { runBackupCreate, runBackupList, runBackupRestore, runBackupCleanup } = await import("./commands/backup.js");
-const { runMissionCreate, runMissionList, runMissionShow, runMissionDelete, runMissionActivateSlice } = await import("./commands/mission.js");
-const { runProjectList, runProjectAdd, runProjectRemove, runProjectInfo } = await import("./commands/project.js");
+const { runProjectList, runProjectAdd, runProjectRemove, runProjectShow, runProjectSetDefault, runProjectDetect } = await import("./commands/project.js");
 
 const HELP = `
 fn — AI-orchestrated task board
 
 Usage:
-  fn init                          Initialize a new kb project in current directory
   fn dashboard                        Start the board web UI
   fn dashboard --paused               Start with automation paused
   fn dashboard --dev                  Start web UI only (no AI engine)
@@ -77,17 +75,19 @@ Usage:
   fn task unpause <id>                Unpause a task (resumes automation)
   fn task comment <id> [message]      Add task comment (prompts if message omitted)
   fn task comments <id>               List task comments
-  fn task steer <id> [message]        Alias for 'task comment'
+  fn task steer <id> [message]        Add steering comment (prompts if message omitted)
   fn task retry <id>                  Retry a failed task (clears error, moves to todo)
   fn task pr-create <id> [--title <title>] [--base <branch>] [--body <body>]
                          Create a GitHub PR for an in-review task
   fn task import <owner/repo> [opts]  Import GitHub issues as tasks
-  fn project list                     List all registered projects
-  fn project add <name> <path> [opts] Register a new project
-  fn project remove <name> [--force]  Unregister a project
-  fn project show <name>                Show project details
-  fn project set-default <name>         Set default project
-  fn project detect                     Detect project from current directory
+  fn project list | ls                List all registered projects
+  fn project add <name> <path> [opts]  Register a new project
+  fn project remove | rm <name> [--force]
+                                      Unregister a project
+  fn project show <name>               Show project details
+  fn project set-default | default <name>
+                                      Set default project
+  fn project detect                    Detect project from current directory
   fn settings                          Show current Fusion configuration
   fn settings set <key> <value>        Update a configuration setting
   fn settings export [opts]              Export settings to a JSON file
@@ -101,14 +101,9 @@ Usage:
   fn backup --list           List all database backups
   fn backup --restore <file> Restore database from a backup file
   fn backup --cleanup        Remove old backups exceeding retention limit
-  fn mission create [title] [description...]  Create a new mission
-  fn mission list                       List all missions
-  fn mission show <id>                  Show mission with hierarchy
-  fn mission delete <id> [--force]      Delete mission
-  fn mission activate-slice <slice-id>  Activate a pending slice
 
 Options:
-  --project, -P <name>       Target a specific project (for task/settings commands)
+  --project, -P <name>       Target a specific project (bypasses CWD detection)
   --port, -p <port>          Dashboard port (default: 4040)
   --interactive              Interactive mode (port selection for dashboard, issue selection for import)
   --paused                   Start with engine paused (automation disabled)
@@ -129,132 +124,42 @@ The AI engine uses pi (github.com/badlogic/pi-mono) for agent sessions.
 Requires configured API keys — run "pi" first to set up authentication.
 `.trim();
 
-async function main() {
-  let args = process.argv.slice(2);
+function extractGlobalProjectFlag(argv: string[]): { cleanedArgs: string[]; projectName?: string } {
+  const cleanedArgs: string[] = [];
+  let projectName: string | undefined;
 
-  // Extract --project flag before command dispatch
-  let projectFlag: string | undefined;
-  const projectIdx = args.indexOf("--project");
-  if (projectIdx !== -1 && projectIdx + 1 < args.length) {
-    projectFlag = args[projectIdx + 1];
-    // Remove --project and its value from args so subcommands don't see it
-    args.splice(projectIdx, 2);
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === "--project" || arg === "-P") {
+      if (projectName) {
+        throw new Error("Duplicate --project flag. Specify a project only once.");
+      }
+      const value = argv[i + 1];
+      if (!value || value.startsWith("-")) {
+        throw new Error("Usage: --project <name>");
+      }
+      projectName = value;
+      i++;
+      continue;
+    }
+    cleanedArgs.push(arg);
   }
-  // Store for subcommands to access via resolveProject
-  if (projectFlag) {
-    process.env.FN_PROJECT = projectFlag;
-  }
+
+  return { cleanedArgs, projectName };
+}
+
+async function main() {
+  const { cleanedArgs: args, projectName } = extractGlobalProjectFlag(process.argv.slice(2));
 
   if (args.length === 0 || args.includes("--help") || args.includes("-h")) {
     console.log(HELP);
     process.exit(0);
   }
 
-  // Extract --project flag before command routing
-  let projectName: string | undefined;
-  const projectFlagIdx = args.indexOf("--project");
-  const projectFlagShortIdx = args.indexOf("-P");
-  const resolvedProjectIdx = projectFlagIdx !== -1 ? projectFlagIdx : projectFlagShortIdx;
-  if (resolvedProjectIdx !== -1 && resolvedProjectIdx + 1 < args.length) {
-    projectName = args[resolvedProjectIdx + 1];
-    // Remove --project and its value from args
-    args.splice(resolvedProjectIdx, 2);
-  }
-
-  // Extract command early (needed for migration check)
   const command = args[0];
-
-  // Migration check for first-run experience
-  // Skip for init command and help flags
-  if (command !== "init" && command !== "--help" && command !== "-h") {
-    try {
-      const { FirstRunDetector, MigrationCoordinator } = await import("@fusion/core");
-      const { CentralCore } = await import("@fusion/core");
-      
-      const detector = new FirstRunDetector();
-      const state = await detector.detectFirstRunState();
-      
-      if (state === "needs-migration") {
-        const cwd = process.cwd();
-        const detected = await detector.detectExistingProjects(cwd);
-        const projectRoot = detected[0]?.path;
-
-        if (projectRoot) {
-          const central = new CentralCore();
-          await central.init();
-
-          try {
-            const coordinator = new MigrationCoordinator(central);
-            const result = await coordinator.registerSingleProject(projectRoot);
-
-            if (result.success && result.projectsRegistered.length > 0) {
-              const project = await central.getProject(result.projectsRegistered[0]);
-              if (project) {
-                console.log(`✓ Auto-registered project: ${project.name}`);
-              }
-            } else if (result.errors.length > 0) {
-              console.warn(`Migration warning: ${result.errors[0]}`);
-            }
-          } finally {
-            await central.close();
-          }
-        }
-      }
-    } catch {
-      // Silently ignore migration errors - user can manually run fn init
-    }
-  }
 
   try {
     switch (command) {
-      case "init": {
-        // Initialize a new kb project
-        const { existsSync, mkdirSync } = await import("node:fs");
-        const { join } = await import("node:path");
-        const { CentralCore } = await import("@fusion/core");
-        const { Database } = await import("@fusion/core");
-        
-        const cwd = process.cwd();
-        const kbDir = join(cwd, ".kb");
-        
-        // Check if already initialized
-        if (existsSync(kbDir)) {
-          // Check if already registered in central
-          const central = new CentralCore();
-          await central.init();
-          const existing = await central.getProjectByPath(cwd);
-          
-          if (existing) {
-            console.log(`Project "${existing.name}" already initialized at ${cwd}`);
-            await central.close();
-            break;
-          }
-          
-          // Directory exists but not registered - just register it
-          const project = await central.autoRegisterProject(cwd);
-          console.log(`✓ Registered project "${project.name}" at ${cwd}`);
-          await central.close();
-          break;
-        }
-        
-        // Create .kb directory
-        mkdirSync(kbDir, { recursive: true });
-        
-        // Initialize SQLite database
-        const db = new Database(kbDir);
-        db.init();
-        db.close();
-        
-        // Register in central
-        const central = new CentralCore();
-        await central.init();
-        
-        const project = await central.autoRegisterProject(cwd);
-        console.log(`✓ Initialized kb project "${project.name}" at ${cwd}`);
-        await central.close();
-        break;
-      }
-
       case "dashboard": {
         // Initialize native module resolution for Bun binary before starting dashboard
         // This sets up the paths so node-pty can find its native assets
@@ -301,17 +206,17 @@ async function main() {
           }
           case "show": {
             const name = args[2];
-            await runProjectInfo(name, { interactive: false });
+            await runProjectShow(name);
             break;
           }
           case "set-default":
           case "default": {
             const name = args[2];
-            await runProjectInfo(name, { setAsDefault: true, interactive: false });
+            await runProjectSetDefault(name);
             break;
           }
           case "detect":
-            await runProjectInfo(undefined, { detect: true, interactive: false });
+            await runProjectDetect();
             break;
           default:
             console.error(`Unknown subcommand: project ${subcommand || ""}`);
@@ -626,7 +531,7 @@ async function main() {
             ? args[outputIdx + 1]
             : undefined;
 
-          await runSettingsExport({ scope, output });
+          await runSettingsExport({ scope, output, projectName });
           break;
         }
         if (subcommand === "import") {
@@ -646,7 +551,7 @@ async function main() {
           const merge = args.includes("--merge");
           const yes = args.includes("--yes");
 
-          await runSettingsImport(file, { scope, merge, yes });
+          await runSettingsImport(file, { scope, merge, yes, projectName });
           break;
         }
         console.error(`Unknown settings subcommand: ${subcommand}`);
@@ -701,57 +606,6 @@ async function main() {
         } else {
           console.error("Usage: fn backup --create | --list | --cleanup | --restore <filename>");
           process.exit(1);
-        }
-        break;
-      }
-
-      case "mission": {
-        const subcommand = args[1];
-        switch (subcommand) {
-          case "create": {
-            const title = args[2];
-            const description = args.length > 3 ? args.slice(3).join(" ") : undefined;
-            await runMissionCreate(title, description, projectName);
-            break;
-          }
-          case "list":
-          case "ls":
-            await runMissionList(projectName);
-            break;
-          case "show":
-          case "info": {
-            const id = args[2];
-            if (!id) {
-              console.error("Usage: fn mission show <id>");
-              process.exit(1);
-            }
-            await runMissionShow(id, projectName);
-            break;
-          }
-          case "delete":
-          case "rm": {
-            const id = args[2];
-            if (!id) {
-              console.error("Usage: fn mission delete <id> [--force]");
-              process.exit(1);
-            }
-            const force = args.includes("--force");
-            await runMissionDelete(id, force, projectName);
-            break;
-          }
-          case "activate-slice": {
-            const id = args[2];
-            if (!id) {
-              console.error("Usage: fn mission activate-slice <slice-id>");
-              process.exit(1);
-            }
-            await runMissionActivateSlice(id, projectName);
-            break;
-          }
-          default:
-            console.error(`Unknown subcommand: mission ${subcommand || ""}`);
-            console.error("Try: fn mission create | list | show <id> | delete <id> | activate-slice <id>");
-            process.exit(1);
         }
         break;
       }
