@@ -1725,7 +1725,7 @@ describe("buildExecutionPrompt", () => {
     expect(result).toContain("## Steering Comments");
 
     // Verify explanatory header text
-    expect(result).toContain("The following comments were added during execution");
+    expect(result).toContain("The following comments were added by the user during execution");
     expect(result).toContain("Consider adjusting your approach or replanning remaining steps based on this feedback");
 
     // Verify all three comments appear with correct author badges
@@ -4240,13 +4240,13 @@ describe("Real-time steering injection", () => {
 
     // Verify steer was called with the formatted message
     expect(steerFn).toHaveBeenCalledOnce();
-    expect(steerFn.mock.calls[0][0]).toContain("📣 **New steering feedback**");
+    expect(steerFn.mock.calls[0][0]).toContain("📣 **New feedback**");
     expect(steerFn.mock.calls[0][0]).toContain("Please use a different approach");
 
     // Verify log entry was created
     expect(store.logEntry).toHaveBeenCalledWith(
       "FN-001",
-      expect.stringContaining("Steering comment received mid-execution"),
+      expect.stringContaining("Comment received mid-execution"),
       "by user"
     );
 
@@ -4464,6 +4464,13 @@ describe("Real-time steering injection", () => {
       currentStep: 0,
       log: [],
       prompt: "# test\n## Steps\n### Step 0: Preflight\n- [ ] check",
+      comments: [{
+        id: "existing-comment",
+        text: "Original",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        author: "user",
+      }],
       steeringComments: [{
         id: "existing-comment",
         text: "Original",

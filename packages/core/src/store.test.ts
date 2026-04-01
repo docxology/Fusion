@@ -1587,7 +1587,7 @@ Task with acceptance criteria
       const task = await createTestTask();
       const updated = await store.addComment(task.id, "Comment with log");
 
-      expect(updated.log.some((l) => l.action === "Comment added by user")).toBe(true);
+      expect(updated.log.some((l) => l.action === "Comment added" && l.outcome === "by user")).toBe(true);
     });
 
     it("updates updatedAt timestamp", async () => {

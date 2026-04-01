@@ -162,15 +162,15 @@ async function migrateTasks(kbDir: string, db: Database): Promise<void> {
   const insertStmt = db.prepare(`
     INSERT OR REPLACE INTO tasks (
       id, title, description, "column", status, size, reviewLevel, currentStep,
-      worktree, blockedBy, paused, baseBranch, modelPresetId, modelProvider,
-      modelId, validatorModelProvider, validatorModelId, mergeRetries, error,
-      summary, thinkingLevel, createdAt, updatedAt, columnMovedAt,
-      dependencies, steps, log, attachments,
+      worktree, blockedBy, paused, baseBranch, baseCommitSha, modelPresetId,
+      modelProvider, modelId, validatorModelProvider, validatorModelId,
+      mergeRetries, error, summary, thinkingLevel, createdAt, updatedAt,
+      columnMovedAt, dependencies, steps, log, attachments, steeringComments,
       comments, workflowStepResults, prInfo, issueInfo, mergeDetails,
-      breakIntoSubtasks, enabledWorkflowSteps
+      breakIntoSubtasks, enabledWorkflowSteps, modifiedFiles, sliceId
     ) VALUES (
       ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-      ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+      ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
     )
   `);
 
@@ -184,16 +184,20 @@ async function migrateTasks(kbDir: string, db: Database): Promise<void> {
       const raw = await readFile(taskJsonPath, "utf-8");
       const task: Task = JSON.parse(raw);
 
-      // Merge steeringComments into comments (unified comments field)
-      const existingComments = task.comments || [];
-      const steeringComments = (task as any).steeringComments || [];
-      const mergedComments = [...existingComments, ...steeringComments.map((sc: any) => ({
-        id: sc.id,
-        text: sc.text,
-        author: sc.author,
-        createdAt: sc.createdAt,
-        updatedAt: sc.createdAt, // Steering comments didn't have updatedAt
-      }))];
+      const steeringComments = Array.isArray((task as any).steeringComments)
+        ? (task as any).steeringComments
+        : [];
+      const comments = Array.isArray(task.comments) ? task.comments : [];
+      const mergedComments = [
+        ...steeringComments.map((comment: any) => ({
+          id: comment.id,
+          text: comment.text,
+          author: comment.author,
+          createdAt: comment.createdAt,
+          updatedAt: comment.updatedAt ?? comment.createdAt,
+        })),
+        ...comments,
+      ];
 
       insertStmt.run(
         task.id,
@@ -208,6 +212,7 @@ async function migrateTasks(kbDir: string, db: Database): Promise<void> {
         task.blockedBy ?? null,
         task.paused ? 1 : 0,
         task.baseBranch ?? null,
+        task.baseCommitSha ?? null,
         task.modelPresetId ?? null,
         task.modelProvider ?? null,
         task.modelId ?? null,
@@ -224,16 +229,16 @@ async function migrateTasks(kbDir: string, db: Database): Promise<void> {
         toJson(task.steps || []),
         toJson(task.log || []),
         toJson(task.attachments || []),
-        toJson(task.attachments || []),
-        "[]", // steeringComments column - no longer used, write empty array
-        // Merge legacy steeringComments into unified comments field during migration
-        toJson([...((task as any).steeringComments || []), ...(task.comments || [])]),
+        "[]",
+        toJson(mergedComments),
         toJson(task.workflowStepResults || []),
         toJsonNullable(task.prInfo),
         toJsonNullable(task.issueInfo),
         toJsonNullable(task.mergeDetails),
         task.breakIntoSubtasks ? 1 : 0,
         toJson(task.enabledWorkflowSteps || []),
+        toJson(task.modifiedFiles || []),
+        task.sliceId ?? null,
       );
       migrated++;
     } catch (err) {

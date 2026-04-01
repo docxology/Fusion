@@ -712,29 +712,36 @@ describe("CentralCore", () => {
     });
 
     it("should cleanup old activity entries", async () => {
-      const projectPath = join(tempDir, "cleanup-activity");
-      mkdirSync(projectPath);
-      projectPaths.push(projectPath);
+      vi.useFakeTimers();
+      const now = new Date("2026-01-15T12:00:00.000Z");
+      vi.setSystemTime(now);
 
-      const project = await central.registerProject({
-        name: "Cleanup Activity",
-        path: projectPath,
-      });
+      try {
+        const projectPath = join(tempDir, "cleanup-activity");
+        mkdirSync(projectPath);
+        projectPaths.push(projectPath);
 
-      // Log a recent activity
-      await central.logActivity({
-        type: "task:created",
-        projectId: project.id,
-        projectName: project.name,
-        timestamp: new Date().toISOString(),
-        details: "Recent",
-      });
+        const project = await central.registerProject({
+          name: "Cleanup Activity",
+          path: projectPath,
+        });
 
-      const deleted = await central.cleanupOldActivity(0); // Delete all older than 0 days
-      expect(deleted).toBe(0); // The recent one shouldn't be deleted
+        await central.logActivity({
+          type: "task:created",
+          projectId: project.id,
+          projectName: project.name,
+          timestamp: now.toISOString(),
+          details: "Recent",
+        });
 
-      const countAfter = await central.getActivityCount();
-      expect(countAfter).toBe(1);
+        const deleted = await central.cleanupOldActivity(-1);
+        expect(deleted).toBe(0);
+
+        const countAfter = await central.getActivityCount();
+        expect(countAfter).toBe(1);
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 

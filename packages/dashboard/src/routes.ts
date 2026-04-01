@@ -2005,27 +2005,31 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
             if (statusCode === "R") {
               const oldPath = parts[1];
               const path = parts[2];
-              return {
-                path,
-                oldPath,
-                status: "renamed" as const,
-                diff: "",
-              };
+              return path
+                ? {
+                    path,
+                    oldPath,
+                    status: "renamed" as const,
+                    diff: "",
+                  }
+                : null;
             }
 
             const path = parts[1];
-            return {
-              path,
-              status:
-                statusCode === "A"
-                  ? ("added" as const)
-                  : statusCode === "D"
-                    ? ("deleted" as const)
-                    : ("modified" as const),
-              diff: "",
-            };
+            return path
+              ? {
+                  path,
+                  status:
+                    statusCode === "A"
+                      ? ("added" as const)
+                      : statusCode === "D"
+                        ? ("deleted" as const)
+                        : ("modified" as const),
+                  diff: "",
+                }
+              : null;
           })
-          .filter((entry): entry is TaskFileDiff => Boolean(entry.path));
+          .filter((entry): entry is TaskFileDiff => entry !== null);
       };
 
       try {
