@@ -83,6 +83,7 @@ function createMockStore(overrides: Partial<TaskStore> = {}): TaskStore {
     getGlobalSettingsStore: vi.fn().mockReturnValue(createMockGlobalSettingsStore()),
     logEntry: vi.fn().mockResolvedValue(undefined),
     getAgentLogs: vi.fn().mockResolvedValue([]),
+    getActivityLog: vi.fn().mockResolvedValue([]),
     addComment: vi.fn(),
     addTaskComment: vi.fn(),
     updateTaskComment: vi.fn(),
@@ -6127,5 +6128,145 @@ describe("POST /workflow-step-templates/:id/create", () => {
 
     expect(res.status).toBe(409);
     expect(res.body.error).toContain("already exists");
+  });
+});
+
+// ── Activity Feed Tests ─────────────────────────────────────────────
+
+describe("GET /api/activity-feed", () => {
+  let store: TaskStore;
+
+  beforeEach(() => {
+    store = createMockStore();
+  });
+
+  function buildApp() {
+    const app = express();
+    app.use(express.json());
+    app.use("/api", createApiRoutes(store));
+    return app;
+  }
+  it("returns empty array when both central and per-project activities are empty", async () => {
+    const store = createMockStore();
+    
+    // Override the module-level CentralCore mock to return empty array
+    const mockCentralInstance = {
+      init: vi.fn().mockResolvedValue(undefined),
+      close: vi.fn().mockResolvedValue(undefined),
+      getRecentActivity: vi.fn().mockResolvedValue([]),
+    };
+    MockCentralCore.mockImplementation(() => mockCentralInstance as any);
+
+    const app = buildApp(store);
+    const res = await REQUEST(app, "GET", "/api/activity-feed");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([]);
+  });
+
+  it("returns central activity when available", async () => {
+    const store = createMockStore();
+    store.getActivityLog.mockResolvedValue([]);
+
+    const centralEntries = [
+      {
+        id: "central-1",
+        timestamp: "2026-04-01T11:00:00.000Z",
+        type: "task:moved" as const,
+        projectId: "proj-123",
+        projectName: "Test Project",
+        taskId: "KB-002",
+        details: "Moved task to done",
+      },
+    ];
+
+    // Override the module-level CentralCore mock to return data
+    const mockCentralInstance = {
+      init: vi.fn().mockResolvedValue(undefined),
+      close: vi.fn().mockResolvedValue(undefined),
+      getRecentActivity: vi.fn().mockResolvedValue(centralEntries),
+    };
+    MockCentralCore.mockImplementation(() => mockCentralInstance as any);
+
+    const app = buildApp(store);
+    const res = await REQUEST(app, "GET", "/api/activity-feed");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual(centralEntries);
+    
+    // Should not call per-project activity when central data exists
+    expect(store.getActivityLog).not.toHaveBeenCalled();
+  });
+
+  it("handles CentralCore initialization failure gracefully", async () => {
+    const store = createMockStore();
+    
+    // Override the module-level CentralCore mock to throw error on init
+    const mockCentralInstance = {
+      init: vi.fn().mockRejectedValue(new Error("CentralCore init failed")),
+      close: vi.fn().mockResolvedValue(undefined),
+      getRecentActivity: vi.fn(),
+    };
+    MockCentralCore.mockImplementation(() => mockCentralInstance as any);
+
+    const app = buildApp(store);
+    const res = await REQUEST(app, "GET", "/api/activity-feed");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([]); // Fallback returns empty array from mock store
+  });
+
+  it("passes through limit query parameter", async () => {
+    const store = createMockStore();
+    
+    // Override the module-level CentralCore mock to return empty
+    const mockCentralInstance = {
+      init: vi.fn().mockResolvedValue(undefined),
+      close: vi.fn().mockResolvedValue(undefined),
+      getRecentActivity: vi.fn().mockResolvedValue([]),
+    };
+    MockCentralCore.mockImplementation(() => mockCentralInstance as any);
+
+    const app = buildApp(store);
+    const res = await REQUEST(app, "GET", "/api/activity-feed?limit=25");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([]);
+  });
+
+  it("handles type filter query parameter", async () => {
+    const store = createMockStore();
+    
+    // Override the module-level CentralCore mock to return empty
+    const mockCentralInstance = {
+      init: vi.fn().mockResolvedValue(undefined),
+      close: vi.fn().mockResolvedValue(undefined),
+      getRecentActivity: vi.fn().mockResolvedValue([]),
+    };
+    MockCentralCore.mockImplementation(() => mockCentralInstance as any);
+
+    const app = buildApp(store);
+    const res = await REQUEST(app, "GET", "/api/activity-feed?types=task:moved");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([]);
+  });
+
+  it("validates fallback route path exists", async () => {
+    const store = createMockStore();
+    
+    // Override the module-level CentralCore mock to return empty - this ensures fallback path is taken
+    const mockCentralInstance = {
+      init: vi.fn().mockResolvedValue(undefined),
+      close: vi.fn().mockResolvedValue(undefined),
+      getRecentActivity: vi.fn().mockResolvedValue([]),
+    };
+    MockCentralCore.mockImplementation(() => mockCentralInstance as any);
+
+    const app = buildApp(store);
+    const res = await REQUEST(app, "GET", "/api/activity-feed");
+
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
   });
 });

@@ -6666,6 +6666,14 @@ Output ONLY the prompt text (no markdown, no explanations).`;
   /**
    * GET /api/activity-feed
    * Get unified activity feed across all projects.
+   * Falls back to per-project activity when central activity is empty or unavailable.
+   * 
+   * Fallback Strategy:
+   * 1. First attempts to read from CentralCore.getRecentActivity() (multi-project mode)
+   * 2. If central returns empty array OR CentralCore init fails, falls back to store.getActivityLog()
+   * 3. Per-project entries are adapted to ActivityFeedEntry format with projectId="local"
+   * 4. This ensures single-project dashboards show activity even without engine ProjectManager
+   * 
    * Query: limit, projectId, types
    * Returns: ActivityFeedEntry[]
    */
@@ -6676,14 +6684,51 @@ Output ONLY the prompt text (no markdown, no explanations).`;
       const typesParam = typeof req.query.types === "string" ? req.query.types.split(",") : undefined;
       const types = typesParam as import("@fusion/core").ActivityEventType[] | undefined;
       
-      const { CentralCore } = await import("@fusion/core");
-      const central = new CentralCore();
-      await central.init();
+      let centralEntries: any[] = [];
+      let centralError: Error | null = null;
       
-      const entries = await central.getRecentActivity({ limit, projectId, types });
-      await central.close();
+      // Try to get central activity data first
+      try {
+        const { CentralCore } = await import("@fusion/core");
+        const central = new CentralCore();
+        await central.init();
+        centralEntries = await central.getRecentActivity({ limit, projectId, types });
+        await central.close();
+      } catch (err) {
+        centralError = err as Error;
+      }
       
-      res.json(entries);
+      // If central data exists and is not empty, return it
+      if (centralEntries.length > 0) {
+        res.json(centralEntries);
+        return;
+      }
+      
+      // Fall back to per-project activity data
+      const options: { limit?: number; type?: import("@fusion/core").ActivityEventType } = { limit };
+      if (types && types.length === 1) {
+        options.type = types[0];
+      }
+      
+      const perProjectEntries = await store.getActivityLog(options);
+      
+      // Convert per-project ActivityLogEntry[] to ActivityFeedEntry[] format
+      const projectName = (store as any).rootDir ? 
+        require("path").basename((store as any).rootDir) : "Current Project";
+      
+      const feedEntries = perProjectEntries.map((entry) => ({
+        id: entry.id,
+        timestamp: entry.timestamp,
+        type: entry.type,
+        projectId: "local",
+        projectName: projectName,
+        taskId: entry.taskId,
+        taskTitle: entry.taskTitle,
+        details: entry.details,
+        metadata: entry.metadata,
+      }));
+      
+      res.json(feedEntries);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
