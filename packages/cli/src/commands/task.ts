@@ -7,18 +7,9 @@ import { watchFile, unwatchFile, statSync, existsSync, readFileSync } from "node
 import { join } from "node:path";
 import { GitHubClient } from "@fusion/dashboard";
 import { isGhAvailable, isGhAuthenticated, getCurrentRepo } from "@fusion/core/gh-cli";
-import { resolveProject, getStore as getStoreFromContext } from "../project-context.js";
+import { getStore, resolveProject } from "../project-resolver.js";
 
 const STEP_STATUSES: StepStatus[] = ["pending", "in-progress", "done", "skipped"];
-
-async function getStore(projectName?: string): Promise<TaskStore> {
-  if (projectName) {
-    return getStoreFromContext(projectName);
-  }
-  const store = new TaskStore(process.cwd());
-  await store.init();
-  return store;
-}
 
 export async function runTaskCreate(descriptionArg?: string, attachFiles?: string[], depends?: string[], projectName?: string) {
   let description = descriptionArg;
@@ -34,7 +25,7 @@ export async function runTaskCreate(descriptionArg?: string, attachFiles?: strin
     process.exit(1);
   }
 
-  const store = await getStore(projectName);
+  const store = await getStore({ project: projectName });
   const task = await store.createTask({ description: description.trim(), dependencies: depends });
 
   const label = task.description.length > 60
@@ -82,7 +73,7 @@ export async function runTaskCreate(descriptionArg?: string, attachFiles?: strin
 }
 
 export async function runTaskList(projectName?: string) {
-  const store = await getStore(projectName);
+  const store = await getStore({ project: projectName });
   const tasks = await store.listTasks();
 
   if (tasks.length === 0) {
@@ -127,7 +118,7 @@ export async function runTaskUpdate(id: string, stepStr: string, status: string,
     process.exit(1);
   }
 
-  const store = await getStore(projectName);
+  const store = await getStore({ project: projectName });
   const task = await store.updateStep(id, stepIndex, status as StepStatus);
 
   const step = task.steps[stepIndex];
@@ -138,7 +129,7 @@ export async function runTaskUpdate(id: string, stepStr: string, status: string,
 }
 
 export async function runTaskLog(id: string, message: string, outcome?: string, projectName?: string) {
-  const store = await getStore(projectName);
+  const store = await getStore({ project: projectName });
   await store.logEntry(id, message, outcome);
 
   console.log();
@@ -220,7 +211,7 @@ function filterEntries(entries: AgentLogEntry[], options: LogsOptions): AgentLog
 }
 
 export async function runTaskLogs(id: string, options: LogsOptions = {}, projectName?: string) {
-  const store = await getStore(projectName);
+  const store = await getStore({ project: projectName });
 
   // Verify task exists
   try {
@@ -244,8 +235,8 @@ export async function runTaskLogs(id: string, options: LogsOptions = {}, project
 
   // Follow mode: watch for new entries
   if (options.follow) {
-    const store = await getStore(projectName);
-    const projectPath = (await resolveProject(projectName)).projectPath;
+    const store = await getStore({ project: projectName });
+    const projectPath = (await resolveProject({ project: projectName })).directory;
     const logPath = join(projectPath, ".fusion", "tasks", id, "agent.log");
 
     if (!existsSync(logPath)) {
@@ -326,7 +317,7 @@ export async function runTaskLogs(id: string, options: LogsOptions = {}, project
 }
 
 export async function runTaskShow(id: string, projectName?: string) {
-  const store = await getStore(projectName);
+  const store = await getStore({ project: projectName });
   const task = await store.getTask(id);
 
   console.log();
@@ -365,13 +356,13 @@ export async function runTaskShow(id: string, projectName?: string) {
 }
 
 export async function runTaskMerge(id: string, projectName?: string) {
-  const store = await getStore(projectName);
-  const { projectPath } = await resolveProject(projectName);
+  const store = await getStore({ project: projectName });
+  const { directory } = await resolveProject({ project: projectName });
 
   console.log(`\n  Merging ${id} with AI...\n`);
 
   try {
-    const result = await aiMergeTask(store, projectPath, id, {
+    const result = await aiMergeTask(store, directory, id, {
       onAgentText: (delta) => process.stdout.write(delta),
     });
 
@@ -432,7 +423,7 @@ export async function runTaskAttach(id: string, filePath: string, projectName?: 
     process.exit(1);
   }
 
-  const store = await getStore(projectName);
+  const store = await getStore({ project: projectName });
   const attachment = await store.addAttachment(id, filename, content, mimeType);
 
   const sizeKB = (attachment.size / 1024).toFixed(1);
@@ -444,7 +435,7 @@ export async function runTaskAttach(id: string, filePath: string, projectName?: 
 }
 
 export async function runTaskPause(id: string, projectName?: string) {
-  const store = await getStore(projectName);
+  const store = await getStore({ project: projectName });
   const task = await store.pauseTask(id, true);
 
   console.log();
@@ -453,7 +444,7 @@ export async function runTaskPause(id: string, projectName?: string) {
 }
 
 export async function runTaskUnpause(id: string, projectName?: string) {
-  const store = await getStore(projectName);
+  const store = await getStore({ project: projectName });
   const task = await store.pauseTask(id, false);
 
   console.log();
@@ -468,7 +459,7 @@ export async function runTaskMove(id: string, column: string, projectName?: stri
     process.exit(1);
   }
 
-  const store = await getStore(projectName);
+  const store = await getStore({ project: projectName });
   const task = await store.moveTask(id, column as Column);
 
   console.log();
@@ -477,7 +468,7 @@ export async function runTaskMove(id: string, column: string, projectName?: stri
 }
 
 export async function runTaskDuplicate(id: string, projectName?: string) {
-  const store = await getStore(projectName);
+  const store = await getStore({ project: projectName });
   const newTask = await store.duplicateTask(id);
 
   console.log();
@@ -487,7 +478,7 @@ export async function runTaskDuplicate(id: string, projectName?: string) {
 }
 
 export async function runTaskRefine(id: string, feedbackArg?: string, projectName?: string) {
-  const store = await getStore(projectName);
+  const store = await getStore({ project: projectName });
   
   // Get feedback interactively only if not provided (undefined)
   let feedback = feedbackArg;
@@ -519,7 +510,7 @@ export async function runTaskRefine(id: string, feedbackArg?: string, projectNam
 }
 
 export async function runTaskArchive(id: string, projectName?: string) {
-  const store = await getStore(projectName);
+  const store = await getStore({ project: projectName });
   const task = await store.archiveTask(id);
 
   console.log();
@@ -528,7 +519,7 @@ export async function runTaskArchive(id: string, projectName?: string) {
 }
 
 export async function runTaskUnarchive(id: string, projectName?: string) {
-  const store = await getStore(projectName);
+  const store = await getStore({ project: projectName });
   const task = await store.unarchiveTask(id);
 
   console.log();
@@ -537,7 +528,7 @@ export async function runTaskUnarchive(id: string, projectName?: string) {
 }
 
 export async function runTaskRetry(id: string, projectName?: string) {
-  const store = await getStore(projectName);
+  const store = await getStore({ project: projectName });
   
   // Fetch task and validate it exists
   let task;
@@ -567,7 +558,7 @@ export async function runTaskRetry(id: string, projectName?: string) {
 }
 
 export async function runTaskDelete(id: string, force?: boolean, projectName?: string) {
-  const store = await getStore(projectName);
+  const store = await getStore({ project: projectName });
 
   // Check if task exists first
   let task;
@@ -620,7 +611,7 @@ export async function runTaskImportGitHubInteractive(
 
   console.log(`\n  Fetching issues from ${owner}/${repo}...\n`);
 
-  const store = await getStore(projectName);
+  const store = await getStore({ project: projectName });
   const existingTasks = await store.listTasks();
 
   // Build a set of already-imported issue URLs
@@ -838,7 +829,7 @@ export async function runTaskImportFromGitHub(
 
   console.log(`\n  Importing issues from ${owner}/${repo}...\n`);
 
-  const store = await getStore(projectName);
+  const store = await getStore({ project: projectName });
   const existingTasks = await store.listTasks();
 
   // Build a set of already-imported issue URLs
@@ -902,7 +893,7 @@ export async function runTaskImportFromGitHub(
 }
 
 export async function runTaskComment(id: string, message?: string, author = "user", projectName?: string) {
-  const store = await getStore(projectName);
+  const store = await getStore({ project: projectName });
 
   let text = message;
   if (text === undefined) {
@@ -934,7 +925,7 @@ export async function runTaskComment(id: string, message?: string, author = "use
 }
 
 export async function runTaskComments(id: string, projectName?: string) {
-  const store = await getStore(projectName);
+  const store = await getStore({ project: projectName });
   const task = await store.getTask(id);
   const comments = task.comments || [];
 
@@ -954,7 +945,7 @@ export async function runTaskComments(id: string, projectName?: string) {
 }
 
 export async function runTaskSteer(id: string, message?: string, projectName?: string) {
-  const store = await getStore(projectName);
+  const store = await getStore({ project: projectName });
 
   // Get message interactively if not provided as argument
   let text = message;
@@ -1005,7 +996,7 @@ export interface PrCreateOptions {
 }
 
 export async function runTaskPrCreate(id: string, options: PrCreateOptions = {}, projectName?: string) {
-  const store = await getStore(projectName);
+  const store = await getStore({ project: projectName });
 
   // Fetch task and validate it exists
   let task;
@@ -1341,7 +1332,7 @@ export async function runTaskPlan(initialPlanArg?: string, yesFlag = false, proj
     }
   }
 
-  const store = await getStore(projectName);
+  const store = await getStore({ project: projectName });
 
   // Create planning session
   let sessionId: string;
@@ -1381,7 +1372,7 @@ export async function runTaskPlan(initialPlanArg?: string, yesFlag = false, proj
   try {
     while (!cancelled) {
       // Get user response based on question type
-      let response: unknown;
+      let response: Record<string, unknown>;
 
       try {
         switch (currentQuestion.type) {

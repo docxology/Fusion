@@ -45,7 +45,7 @@ const { runSettingsExport } = await import("./commands/settings-export.js");
 const { runSettingsImport } = await import("./commands/settings-import.js");
 const { runGitStatus, runGitFetch, runGitPull, runGitPush } = await import("./commands/git.js");
 const { runBackupCreate, runBackupList, runBackupRestore, runBackupCleanup } = await import("./commands/backup.js");
-const { runProjectList, runProjectAdd, runProjectRemove, runProjectShow, runProjectSetDefault, runProjectDetect } = await import("./commands/project.js");
+const { runProjectList, runProjectAdd, runProjectRemove, runProjectInfo } = await import("./commands/project.js");
 
 const HELP = `
 fn — AI-orchestrated task board
@@ -80,16 +80,10 @@ Usage:
   fn task pr-create <id> [--title <title>] [--base <branch>] [--body <body>]
                          Create a GitHub PR for an in-review task
   fn task import <owner/repo> [opts]  Import GitHub issues as tasks
-  fn project list                     List all registered projects
-  fn project add <name> <path> [opts] Register a new project
+  fn project list [--json]   List all registered projects
+  fn project add [dir] [--name <name>] [--isolation <mode>]  Register a project
   fn project remove <name> [--force]  Unregister a project
-  fn project show <name>                Show project details
-  fn project set-default <name>         Set default project
-  fn project detect                     Detect project from current directory
-  fn settings                          Show current Fusion configuration
-  fn settings set <key> <value>        Update a configuration setting
-  fn settings export [opts]              Export settings to a JSON file
-  fn settings import <file> [opts]       Import settings from a JSON file
+  fn project info [name]     Show project details
 
   fn git status              Show current branch, commit, dirty state, ahead/behind
   fn git push                Push current branch
@@ -101,7 +95,7 @@ Usage:
   fn backup --cleanup        Remove old backups exceeding retention limit
 
 Options:
-  --project, -P <name>       Target a specific project (bypasses CWD detection)
+  --project <name>           Target a specific project (for task/settings commands)
   --port, -p <port>          Dashboard port (default: 4040)
   --interactive              Interactive mode (port selection for dashboard, issue selection for import)
   --paused                   Start with engine paused (automation disabled)
@@ -123,7 +117,7 @@ Requires configured API keys — run "pi" first to set up authentication.
 `.trim();
 
 async function main() {
-  const args = process.argv.slice(2);
+  let args = process.argv.slice(2);
 
   if (args.length === 0 || args.includes("--help") || args.includes("-h")) {
     console.log(HELP);
@@ -139,6 +133,10 @@ async function main() {
     projectName = args[projectIdx + 1];
     // Remove --project and its value from args
     args.splice(projectIdx, 2);
+  }
+  // Store for subcommands to access via resolveProject
+  if (projectName) {
+    process.env.FN_PROJECT = projectName;
   }
 
   const command = args[0];
@@ -168,44 +166,42 @@ async function main() {
         const subcommand = args[1];
         switch (subcommand) {
           case "list":
-          case "ls":
-            await runProjectList();
+          case "ls": {
+            const json = args.includes("--json");
+            await runProjectList({ json });
             break;
+          }
           case "add": {
-            const name = args[2];
-            const path = args[3];
+            const dir = args[2];
+            const nameIdx = args.indexOf("--name");
+            const name = nameIdx !== -1 && nameIdx + 1 < args.length ? args[nameIdx + 1] : undefined;
             const isolationIdx = args.indexOf("--isolation");
             const isolation = isolationIdx !== -1 && isolationIdx + 1 < args.length
-              ? args[isolationIdx + 1]
+              ? args[isolationIdx + 1] as "in-process" | "child-process"
               : undefined;
-            const force = args.includes("--force");
-            await runProjectAdd(name, path, { isolation, force });
+            await runProjectAdd(dir, { name, isolation });
             break;
           }
           case "remove":
           case "rm": {
             const name = args[2];
+            if (!name) {
+              console.error("Usage: fn project remove <name> [--force]");
+              process.exit(1);
+            }
             const force = args.includes("--force");
-            await runProjectRemove(name, force);
+            await runProjectRemove(name, { force });
             break;
           }
+          case "info":
           case "show": {
             const name = args[2];
-            await runProjectShow(name);
+            await runProjectInfo(name);
             break;
           }
-          case "set-default":
-          case "default": {
-            const name = args[2];
-            await runProjectSetDefault(name);
-            break;
-          }
-          case "detect":
-            await runProjectDetect();
-            break;
           default:
             console.error(`Unknown subcommand: project ${subcommand || ""}`);
-            console.log("Try: fn project list | add | remove | show | set-default | detect");
+            console.error("Try: fn project list | add [dir] | remove <name> | info [name]");
             process.exit(1);
         }
         break;
