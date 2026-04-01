@@ -378,8 +378,8 @@ describe("ListView", () => {
     renderListView({ tasks });
 
     const depCells = screen.getAllByRole("cell");
-    // Find the cell that should contain deps (5th column, index 4)
-    const depCell = depCells[4];
+    // Find the cell that should contain deps (6th column, index 5 - after checkbox column)
+    const depCell = depCells[5];
     expect(depCell.textContent).toBe("-");
   });
 
@@ -1714,5 +1714,154 @@ describe("ListView Collapsible Sections", () => {
     // The "No tasks" placeholder for todo section should not be visible anymore
     // (we can't easily verify this without complex DOM traversal, but the collapse
     // class is the primary indicator that the section is collapsed)
+  });
+});
+
+describe("ListView - Bulk Selection", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+  });
+
+  const createMockTask = (overrides: Partial<Task> = {}): Task => ({
+    id: "KB-001",
+    description: "Test task description",
+    title: "Test Task",
+    column: "triage",
+    dependencies: [],
+    steps: [],
+    currentStep: 0,
+    status: "pending",
+    paused: false,
+    log: [],
+    createdAt: "2024-01-01T00:00:00Z",
+    updatedAt: "2024-01-01T00:00:00Z",
+    ...overrides,
+  });
+
+  it("shows selection checkbox in header", () => {
+    const tasks = [createMockTask({ id: "KB-001" })];
+    render(<ListView tasks={tasks} onMoveTask={vi.fn()} onOpenDetail={vi.fn()} addToast={mockAddToast} />);
+
+    const headerCheckbox = screen.getByLabelText("Select all visible tasks");
+    expect(headerCheckbox).toBeDefined();
+  });
+
+  it("shows selection checkbox for each task row", () => {
+    const tasks = [
+      createMockTask({ id: "KB-001" }),
+      createMockTask({ id: "KB-002" }),
+    ];
+    render(<ListView tasks={tasks} onMoveTask={vi.fn()} onOpenDetail={vi.fn()} addToast={mockAddToast} />);
+
+    const checkboxes = screen.getAllByLabelText(/Select KB-/);
+    expect(checkboxes).toHaveLength(2);
+  });
+
+  it("disables checkbox for archived tasks", () => {
+    const tasks = [
+      createMockTask({ id: "KB-001", column: "archived" }),
+    ];
+    render(<ListView tasks={tasks} onMoveTask={vi.fn()} onOpenDetail={vi.fn()} addToast={mockAddToast} />);
+
+    const checkbox = screen.getByLabelText("Select KB-001");
+    expect(checkbox).toBeDisabled();
+  });
+
+  it("shows selection count when tasks are selected", () => {
+    const tasks = [
+      createMockTask({ id: "KB-001" }),
+      createMockTask({ id: "KB-002" }),
+    ];
+    render(<ListView tasks={tasks} onMoveTask={vi.fn()} onOpenDetail={vi.fn()} addToast={mockAddToast} />);
+
+    const checkbox = screen.getByLabelText("Select KB-001");
+    fireEvent.click(checkbox);
+
+    expect(screen.getByText("1 selected")).toBeDefined();
+  });
+
+  it("clears selection when clear button clicked", () => {
+    const tasks = [
+      createMockTask({ id: "KB-001" }),
+    ];
+    render(<ListView tasks={tasks} onMoveTask={vi.fn()} onOpenDetail={vi.fn()} addToast={mockAddToast} />);
+
+    const checkbox = screen.getByLabelText("Select KB-001");
+    fireEvent.click(checkbox);
+    expect(screen.getByText("1 selected")).toBeDefined();
+
+    const clearButton = screen.getByText("Clear");
+    fireEvent.click(clearButton);
+
+    expect(screen.queryByText("1 selected")).toBeNull();
+  });
+
+  it("toggles all visible tasks with select all checkbox", () => {
+    const tasks = [
+      createMockTask({ id: "KB-001" }),
+      createMockTask({ id: "KB-002" }),
+    ];
+    render(<ListView tasks={tasks} onMoveTask={vi.fn()} onOpenDetail={vi.fn()} addToast={mockAddToast} />);
+
+    const selectAllCheckbox = screen.getByLabelText("Select all visible tasks");
+    fireEvent.click(selectAllCheckbox);
+
+    expect(screen.getByText("2 selected")).toBeDefined();
+  });
+
+  it("shows bulk edit toolbar when tasks are selected", () => {
+    const availableModels = [
+      { provider: "openai", id: "gpt-4o", name: "GPT-4o", reasoning: false, contextWindow: 128000 },
+    ];
+    const tasks = [createMockTask({ id: "KB-001" })];
+
+    render(
+      <ListView
+        tasks={tasks}
+        onMoveTask={vi.fn()}
+        onOpenDetail={vi.fn()}
+        addToast={mockAddToast}
+        availableModels={availableModels}
+      />
+    );
+
+    const checkbox = screen.getByLabelText("Select KB-001");
+    fireEvent.click(checkbox);
+
+    expect(screen.getByText("Bulk Edit Models:")).toBeDefined();
+  });
+
+  it("disables apply button when no model changes selected", () => {
+    const availableModels = [
+      { provider: "openai", id: "gpt-4o", name: "GPT-4o", reasoning: false, contextWindow: 128000 },
+    ];
+    const tasks = [createMockTask({ id: "KB-001" })];
+
+    render(
+      <ListView
+        tasks={tasks}
+        onMoveTask={vi.fn()}
+        onOpenDetail={vi.fn()}
+        addToast={mockAddToast}
+        availableModels={availableModels}
+      />
+    );
+
+    const checkbox = screen.getByLabelText("Select KB-001");
+    fireEvent.click(checkbox);
+
+    const applyButton = screen.getByText("Apply");
+    expect(applyButton).toBeDisabled();
+  });
+
+  it("persists selection to localStorage", () => {
+    const tasks = [createMockTask({ id: "KB-001" })];
+    render(<ListView tasks={tasks} onMoveTask={vi.fn()} onOpenDetail={vi.fn()} addToast={mockAddToast} />);
+
+    const checkbox = screen.getByLabelText("Select KB-001");
+    fireEvent.click(checkbox);
+
+    expect(localStorage.getItem("kb-dashboard-selected-tasks")).toBe('["KB-001"]');
   });
 });

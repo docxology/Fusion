@@ -202,140 +202,10 @@ export function ListView({
     });
   }, []);
 
-  // Toggle all visible tasks
-  const toggleSelectAll = useCallback(() => {
-    const visibleTaskIds = Object.values(groupedTasks)
-      .flat()
-      .filter((t) => t.column !== "archived") // Can't bulk edit archived
-      .map((t) => t.id);
-
-    setSelectedTaskIds((prev) => {
-      const allSelected = visibleTaskIds.every((id) => prev.has(id));
-      if (allSelected) {
-        // Deselect all visible
-        const next = new Set(prev);
-        visibleTaskIds.forEach((id) => next.delete(id));
-        return next;
-      } else {
-        // Select all visible
-        return new Set([...prev, ...visibleTaskIds]);
-      }
-    });
-  }, [groupedTasks]);
-
   // Clear selection
   const clearSelection = useCallback(() => {
     setSelectedTaskIds(new Set());
   }, []);
-
-  // Check if all visible tasks are selected
-  const isSelectAll = useMemo(() => {
-    const visibleTaskIds = Object.values(groupedTasks)
-      .flat()
-      .filter((t) => t.column !== "archived");
-    if (visibleTaskIds.length === 0) return false;
-    return visibleTaskIds.every((t) => selectedTaskIds.has(t.id));
-  }, [groupedTasks, selectedTaskIds]);
-
-  // Check if some (but not all) visible tasks are selected
-  const isSelectIndeterminate = useMemo(() => {
-    const visibleTaskIds = Object.values(groupedTasks)
-      .flat()
-      .filter((t) => t.column !== "archived");
-    if (visibleTaskIds.length === 0) return false;
-    const selectedCount = visibleTaskIds.filter((t) => selectedTaskIds.has(t.id)).length;
-    return selectedCount > 0 && selectedCount < visibleTaskIds.length;
-  }, [groupedTasks, selectedTaskIds]);
-
-  // Bulk edit state
-  const [executorModel, setExecutorModel] = useState<string>("__no_change__");
-  const [validatorModel, setValidatorModel] = useState<string>("__no_change__");
-  const [isApplying, setIsApplying] = useState(false);
-
-  // Handle apply bulk model update
-  const handleApplyBulkUpdate = useCallback(async () => {
-    if (selectedTaskIds.size === 0) return;
-
-    const taskIds = Array.from(selectedTaskIds).filter((id) => {
-      const task = tasks.find((t) => t.id === id);
-      return task && task.column !== "archived";
-    });
-
-    if (taskIds.length === 0) {
-      addToast("No valid tasks to update (archived tasks cannot be modified)", "error");
-      return;
-    }
-
-    // Build payload - only include fields that changed from "__no_change__"
-    const payload: {
-      taskIds: string[];
-      modelProvider?: string | null;
-      modelId?: string | null;
-      validatorModelProvider?: string | null;
-      validatorModelId?: string | null;
-    } = { taskIds };
-
-    if (executorModel !== "__no_change__") {
-      if (executorModel === "") {
-        // "Use default" - clear override
-        payload.modelProvider = null;
-        payload.modelId = null;
-      } else {
-        const slashIdx = executorModel.indexOf("/");
-        if (slashIdx !== -1) {
-          payload.modelProvider = executorModel.slice(0, slashIdx);
-          payload.modelId = executorModel.slice(slashIdx + 1);
-        }
-      }
-    }
-
-    if (validatorModel !== "__no_change__") {
-      if (validatorModel === "") {
-        // "Use default" - clear override
-        payload.validatorModelProvider = null;
-        payload.validatorModelId = null;
-      } else {
-        const slashIdx = validatorModel.indexOf("/");
-        if (slashIdx !== -1) {
-          payload.validatorModelProvider = validatorModel.slice(0, slashIdx);
-          payload.validatorModelId = validatorModel.slice(slashIdx + 1);
-        }
-      }
-    }
-
-    // Check if any changes were made
-    if (Object.keys(payload).length === 1) {
-      addToast("No changes to apply", "info");
-      return;
-    }
-
-    setIsApplying(true);
-    try {
-      const result = await batchUpdateTaskModels(
-        payload.taskIds,
-        payload.modelProvider,
-        payload.modelId,
-        payload.validatorModelProvider,
-        payload.validatorModelId,
-      );
-
-      // Optimistically update parent with returned tasks
-      if (onTasksUpdated && result.updated.length > 0) {
-        onTasksUpdated(result.updated);
-      }
-
-      addToast(`Updated ${result.count} task${result.count === 1 ? "" : "s"}`, "success");
-
-      // Reset state
-      clearSelection();
-      setExecutorModel("__no_change__");
-      setValidatorModel("__no_change__");
-    } catch (err: any) {
-      addToast(err.message || "Failed to update models", "error");
-    } finally {
-      setIsApplying(false);
-    }
-  }, [selectedTaskIds, tasks, executorModel, validatorModel, addToast, clearSelection, onTasksUpdated]);
 
   // Toggle a column's visibility
   const toggleColumn = useCallback((column: ListColumn) => {
@@ -486,6 +356,138 @@ export function ListView({
     if (!hideDoneTasks) return 0;
     return completedTaskCount;
   }, [hideDoneTasks, completedTaskCount]);
+
+  // Selection logic that depends on groupedTasks (must be after groupedTasks definition)
+  // Toggle all visible tasks
+  const toggleSelectAll = useCallback(() => {
+    const visibleTaskIds = Object.values(groupedTasks)
+      .flat()
+      .filter((t) => t.column !== "archived") // Can't bulk edit archived
+      .map((t) => t.id);
+
+    setSelectedTaskIds((prev) => {
+      const allSelected = visibleTaskIds.every((id) => prev.has(id));
+      if (allSelected) {
+        // Deselect all visible
+        const next = new Set(prev);
+        visibleTaskIds.forEach((id) => next.delete(id));
+        return next;
+      } else {
+        // Select all visible
+        return new Set([...prev, ...visibleTaskIds]);
+      }
+    });
+  }, [groupedTasks]);
+
+  // Check if all visible tasks are selected
+  const isSelectAll = useMemo(() => {
+    const visibleTaskIds = Object.values(groupedTasks)
+      .flat()
+      .filter((t) => t.column !== "archived");
+    if (visibleTaskIds.length === 0) return false;
+    return visibleTaskIds.every((t) => selectedTaskIds.has(t.id));
+  }, [groupedTasks, selectedTaskIds]);
+
+  // Check if some (but not all) visible tasks are selected
+  const isSelectIndeterminate = useMemo(() => {
+    const visibleTaskIds = Object.values(groupedTasks)
+      .flat()
+      .filter((t) => t.column !== "archived");
+    if (visibleTaskIds.length === 0) return false;
+    const selectedCount = visibleTaskIds.filter((t) => selectedTaskIds.has(t.id)).length;
+    return selectedCount > 0 && selectedCount < visibleTaskIds.length;
+  }, [groupedTasks, selectedTaskIds]);
+
+  // Bulk edit state and handlers (must be after groupedTasks and clearSelection definition)
+  const [executorModel, setExecutorModel] = useState<string>("__no_change__");
+  const [validatorModel, setValidatorModel] = useState<string>("__no_change__");
+  const [isApplying, setIsApplying] = useState(false);
+
+  // Handle apply bulk model update
+  const handleApplyBulkUpdate = useCallback(async () => {
+    if (selectedTaskIds.size === 0) return;
+
+    const taskIds = Array.from(selectedTaskIds).filter((id) => {
+      const task = tasks.find((t) => t.id === id);
+      return task && task.column !== "archived";
+    });
+
+    if (taskIds.length === 0) {
+      addToast("No valid tasks to update (archived tasks cannot be modified)", "error");
+      return;
+    }
+
+    // Build payload - only include fields that changed from "__no_change__"
+    const payload: {
+      taskIds: string[];
+      modelProvider?: string | null;
+      modelId?: string | null;
+      validatorModelProvider?: string | null;
+      validatorModelId?: string | null;
+    } = { taskIds };
+
+    if (executorModel !== "__no_change__") {
+      if (executorModel === "") {
+        // "Use default" - clear override
+        payload.modelProvider = null;
+        payload.modelId = null;
+      } else {
+        const slashIdx = executorModel.indexOf("/");
+        if (slashIdx !== -1) {
+          payload.modelProvider = executorModel.slice(0, slashIdx);
+          payload.modelId = executorModel.slice(slashIdx + 1);
+        }
+      }
+    }
+
+    if (validatorModel !== "__no_change__") {
+      if (validatorModel === "") {
+        // "Use default" - clear override
+        payload.validatorModelProvider = null;
+        payload.validatorModelId = null;
+      } else {
+        const slashIdx = validatorModel.indexOf("/");
+        if (slashIdx !== -1) {
+          payload.validatorModelProvider = validatorModel.slice(0, slashIdx);
+          payload.validatorModelId = validatorModel.slice(slashIdx + 1);
+        }
+      }
+    }
+
+    // Check if any changes were made
+    if (Object.keys(payload).length === 1) {
+      addToast("No changes to apply", "info");
+      return;
+    }
+
+    setIsApplying(true);
+    try {
+      const result = await batchUpdateTaskModels(
+        payload.taskIds,
+        payload.modelProvider,
+        payload.modelId,
+        payload.validatorModelProvider,
+        payload.validatorModelId,
+      );
+
+      // Optimistically update parent with returned tasks
+      if (onTasksUpdated && result.updated.length > 0) {
+        onTasksUpdated(result.updated);
+      }
+
+      addToast(`Updated ${result.count} task${result.count === 1 ? "" : "s"}`, "success");
+
+      // Reset state
+      clearSelection();
+      setExecutorModel("__no_change__");
+      setValidatorModel("__no_change__");
+    } catch (err: any) {
+      addToast(err.message || "Failed to update models", "error");
+    } finally {
+      setIsApplying(false);
+    }
+  }, [selectedTaskIds, tasks, executorModel, validatorModel, addToast, clearSelection, onTasksUpdated]);
+
   const handleRowClick = useCallback(
     async (task: Task) => {
       try {
