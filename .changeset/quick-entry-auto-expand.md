@@ -1,7 +1,5 @@
 ---
-"@fusion/dashboard": patch
+"@gsxdsm/fusion": patch
 ---
 
-Don't auto expand the quick add view in list view
-
-Added `autoExpand` prop to QuickEntryBox component to control auto-expand behavior. List view now passes `autoExpand={false}` to keep the interface clean, while board view continues to auto-expand by default.
+Keep the list-view quick add input collapsed on focus while preserving board-view auto-expand behavior.

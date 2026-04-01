@@ -210,6 +210,16 @@ describe("QuickEntryBox", () => {
     expect(textarea.classList.contains("quick-entry-input--expanded")).toBe(true);
   });
 
+  it("does not expand on focus when autoExpand is false", () => {
+    renderQuickEntryBox({ autoExpand: false });
+    const textarea = screen.getByTestId("quick-entry-input");
+
+    fireEvent.focus(textarea);
+
+    // Should not expand when autoExpand is false
+    expect(textarea.classList.contains("quick-entry-input--expanded")).toBe(false);
+  });
+
   it("toggle button collapses the view when expanded", () => {
     renderQuickEntryBox();
     const textarea = screen.getByTestId("quick-entry-input");

@@ -325,8 +325,11 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
       justResetRef.current = false;
       return;
     }
-    // No auto-expand on focus — manual toggle only
-  }, []);
+    // Only auto-expand if autoExpand prop is true (defaults to true for backward compatibility)
+    if (autoExpand) {
+      setIsExpanded(true);
+    }
+  }, [autoExpand]);
 
   const handleBlur = useCallback(() => {
     // No auto-collapse on blur — state persists until manually toggled or task is submitted/cancelled
