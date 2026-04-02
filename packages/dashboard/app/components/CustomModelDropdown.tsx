@@ -177,13 +177,27 @@ export function CustomModelDropdown({
     return optionsList.findIndex((opt) => opt.value === value);
   }, [optionsList, value]);
 
+  // Estimated max height for dropdown (desktop default: 320px)
+  // Mobile uses 60-70vh via CSS, but we use 320px as the safe default estimate
+  const ESTIMATED_DROPDOWN_HEIGHT = 320;
+
   const updateDropdownPosition = useCallback(() => {
     const trigger = triggerRef.current;
     if (!trigger) return;
 
     const rect = trigger.getBoundingClientRect();
+    const viewportHeight = window.innerHeight;
+
+    // Calculate space below and above the trigger
+    const spaceBelow = viewportHeight - rect.bottom;
+    const spaceAbove = rect.top;
+
+    // Determine if we should open upward
+    // Open upward if: not enough space below AND enough space above
+    const openUpward = spaceBelow < ESTIMATED_DROPDOWN_HEIGHT && spaceAbove >= ESTIMATED_DROPDOWN_HEIGHT;
+
     setDropdownPosition({
-      top: rect.bottom + 4,
+      top: openUpward ? rect.top - ESTIMATED_DROPDOWN_HEIGHT - 4 : rect.bottom + 4,
       left: rect.left,
       width: rect.width,
     });

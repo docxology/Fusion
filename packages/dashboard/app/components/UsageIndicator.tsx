@@ -34,9 +34,10 @@ function UsageWindowRow({ window, viewMode }: UsageWindowRowProps) {
   const isRemainingMode = viewMode === 'remaining';
   
   // Display percentage based on view mode, but color always based on actual usage
-  const displayPercent = isRemainingMode ? window.percentLeft : window.percentUsed;
-  const headerText = isRemainingMode ? `${window.percentLeft}% remaining` : `${window.percentUsed}% used`;
-  const footerText = isRemainingMode ? `${window.percentUsed}% used` : `${window.percentLeft}% left`;
+  // Round percentages for cleaner display
+  const displayPercent = Math.round(isRemainingMode ? window.percentLeft : window.percentUsed);
+  const headerText = isRemainingMode ? `${Math.round(window.percentLeft)}% remaining` : `${Math.round(window.percentUsed)}% used`;
+  const footerText = isRemainingMode ? `${Math.round(window.percentUsed)}% used` : `${Math.round(window.percentLeft)}% left`;
 
   // Use pace from backend if available (for weekly windows)
   const pace = window.pace;
@@ -242,6 +243,21 @@ export function UsageIndicator({ isOpen, onClose }: UsageIndicatorProps) {
   const [viewMode, setViewMode] = useState<'used' | 'remaining'>('used');
   const contentRef = useRef<HTMLDivElement>(null);
   const wasOpenRef = useRef(isOpen);
+  const hasCompletedInitialFetchRef = useRef(false);
+
+  // Reset initial fetch flag when modal closes to show skeleton on next open
+  useEffect(() => {
+    if (!isOpen) {
+      hasCompletedInitialFetchRef.current = false;
+    }
+  }, [isOpen]);
+
+  // Track when initial fetch completes (providers are populated)
+  useEffect(() => {
+    if (providers.length > 0) {
+      hasCompletedInitialFetchRef.current = true;
+    }
+  }, [providers.length]);
 
   // Trigger refresh when modal opens (isOpen transitions from false to true)
   useEffect(() => {
@@ -343,7 +359,7 @@ export function UsageIndicator({ isOpen, onClose }: UsageIndicatorProps) {
         </div>
 
         <div className="usage-content" ref={contentRef}>
-          {loading && providers.length === 0 ? (
+          {(loading || (!hasCompletedInitialFetchRef.current && !error)) && providers.length === 0 ? (
             <UsageSkeleton />
           ) : error && providers.length === 0 ? (
             <div className="usage-error">

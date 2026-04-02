@@ -280,4 +280,226 @@ describe("CustomModelDropdown", () => {
     });
   });
 
+  describe("Smart Dropdown Positioning", () => {
+    // Helper to mock getBoundingClientRect on Element.prototype
+    const setupBoundingRectMock = (rectValues: DOMRect) => {
+      const originalGetBCR = Element.prototype.getBoundingClientRect;
+      Element.prototype.getBoundingClientRect = vi.fn(() => rectValues as DOMRect);
+      return () => {
+        Element.prototype.getBoundingClientRect = originalGetBCR;
+      };
+    };
+
+    it("opens downward when space below the trigger is sufficient", async () => {
+      const user = userEvent.setup();
+      const onChange = vi.fn();
+
+      // Trigger at top of viewport (top: 100px, bottom: 140px), plenty of space below
+      // Space below: 800 - 140 = 660px (sufficient, more than 320px)
+      const restore = setupBoundingRectMock({
+        top: 100,
+        left: 50,
+        bottom: 140,
+        width: 300,
+        height: 40,
+        right: 350,
+        x: 50,
+        y: 100,
+      } as DOMRect);
+
+      // Spy on window.innerHeight
+      const originalInnerHeight = window.innerHeight;
+      Object.defineProperty(window, "innerHeight", {
+        writable: true,
+        configurable: true,
+        value: 800,
+      });
+
+      try {
+        render(
+          <CustomModelDropdown
+            label="Executor Model"
+            value=""
+            onChange={onChange}
+            models={MOCK_MODELS}
+          />,
+        );
+
+        await user.click(screen.getByRole("button", { name: "Executor Model" }));
+
+        const portal = await screen.findByTestId("model-combobox-portal");
+        const top = parseFloat(portal.style.top);
+
+        // Should position downward: rect.bottom + 4 = 140 + 4 = 144
+        expect(top).toBe(144);
+      } finally {
+        restore();
+        Object.defineProperty(window, "innerHeight", {
+          writable: true,
+          configurable: true,
+          value: originalInnerHeight,
+        });
+      }
+    });
+
+    it("opens upward when space below is insufficient but space above is sufficient", async () => {
+      const user = userEvent.setup();
+      const onChange = vi.fn();
+
+      // Trigger near bottom of viewport (bottom: 750px in 800px viewport)
+      // Space below: 800 - 750 = 50px (insufficient, less than 320px)
+      // Space above: 750px (sufficient)
+      const restore = setupBoundingRectMock({
+        top: 710,
+        left: 50,
+        bottom: 750,
+        width: 300,
+        height: 40,
+        right: 350,
+        x: 50,
+        y: 710,
+      } as DOMRect);
+
+      const originalInnerHeight = window.innerHeight;
+      Object.defineProperty(window, "innerHeight", {
+        writable: true,
+        configurable: true,
+        value: 800,
+      });
+
+      try {
+        render(
+          <CustomModelDropdown
+            label="Executor Model"
+            value=""
+            onChange={onChange}
+            models={MOCK_MODELS}
+          />,
+        );
+
+        await user.click(screen.getByRole("button", { name: "Executor Model" }));
+
+        const portal = await screen.findByTestId("model-combobox-portal");
+        const top = parseFloat(portal.style.top);
+
+        // Should position upward: rect.top - estimatedHeight - 4 = 710 - 320 - 4 = 386
+        expect(top).toBe(386);
+      } finally {
+        restore();
+        Object.defineProperty(window, "innerHeight", {
+          writable: true,
+          configurable: true,
+          value: originalInnerHeight,
+        });
+      }
+    });
+
+    it("opens downward when both directions have room (prefers downward)", async () => {
+      const user = userEvent.setup();
+      const onChange = vi.fn();
+
+      // Trigger in middle of viewport
+      // Space below: 600px (sufficient)
+      // Space above: 200px (also sufficient but less than below)
+      const restore = setupBoundingRectMock({
+        top: 200,
+        left: 50,
+        bottom: 240,
+        width: 300,
+        height: 40,
+        right: 350,
+        x: 50,
+        y: 200,
+      } as DOMRect);
+
+      const originalInnerHeight = window.innerHeight;
+      Object.defineProperty(window, "innerHeight", {
+        writable: true,
+        configurable: true,
+        value: 800,
+      });
+
+      try {
+        render(
+          <CustomModelDropdown
+            label="Executor Model"
+            value=""
+            onChange={onChange}
+            models={MOCK_MODELS}
+          />,
+        );
+
+        await user.click(screen.getByRole("button", { name: "Executor Model" }));
+
+        const portal = await screen.findByTestId("model-combobox-portal");
+        const top = parseFloat(portal.style.top);
+
+        // Should position downward since there's enough space below
+        // rect.bottom + 4 = 240 + 4 = 244
+        expect(top).toBe(244);
+      } finally {
+        restore();
+        Object.defineProperty(window, "innerHeight", {
+          writable: true,
+          configurable: true,
+          value: originalInnerHeight,
+        });
+      }
+    });
+
+    it("opens downward when there is space below even if above is also constrained", async () => {
+      const user = userEvent.setup();
+      const onChange = vi.fn();
+
+      // Trigger at very top of viewport (top: 10px, bottom: 50px)
+      // Space below: 800 - 50 = 750px (sufficient)
+      // Space above: 10px (insufficient for upward)
+      // This test ensures downward is used when there's sufficient space below
+      const restore = setupBoundingRectMock({
+        top: 10,
+        left: 50,
+        bottom: 50,
+        width: 300,
+        height: 40,
+        right: 350,
+        x: 50,
+        y: 10,
+      } as DOMRect);
+
+      const originalInnerHeight = window.innerHeight;
+      Object.defineProperty(window, "innerHeight", {
+        writable: true,
+        configurable: true,
+        value: 800,
+      });
+
+      try {
+        render(
+          <CustomModelDropdown
+            label="Executor Model"
+            value=""
+            onChange={onChange}
+            models={MOCK_MODELS}
+          />,
+        );
+
+        await user.click(screen.getByRole("button", { name: "Executor Model" }));
+
+        const portal = await screen.findByTestId("model-combobox-portal");
+        const top = parseFloat(portal.style.top);
+
+        // Should position downward since there's sufficient space below (750 >= 320)
+        // rect.bottom + 4 = 50 + 4 = 54
+        expect(top).toBe(54);
+      } finally {
+        restore();
+        Object.defineProperty(window, "innerHeight", {
+          writable: true,
+          configurable: true,
+          value: originalInnerHeight,
+        });
+      }
+    });
+  });
+
 });

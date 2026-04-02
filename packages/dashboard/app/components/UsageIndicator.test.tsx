@@ -63,6 +63,8 @@ describe("UsageIndicator", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // Clear localStorage to ensure clean view mode state
+    localStorage.removeItem("kb-usage-view-mode");
   });
 
   it("renders nothing when isOpen is false", () => {
@@ -150,7 +152,9 @@ describe("UsageIndicator", () => {
     expect(screen.getByText("Retry")).toBeInTheDocument();
   });
 
-  it("shows empty state when no providers", () => {
+  it("shows skeleton when no providers (empty result after fetch completes)", () => {
+    // When useUsageData completes its initial fetch and returns empty providers,
+    // we now show the skeleton (not the empty state) to indicate we're waiting
     mockUseUsageData.mockReturnValue({
       providers: [],
       loading: false,
@@ -161,10 +165,8 @@ describe("UsageIndicator", () => {
 
     render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
 
-    expect(screen.getByText("No AI providers configured")).toBeInTheDocument();
-    expect(
-      screen.getByText("Configure authentication in Settings to see usage data.")
-    ).toBeInTheDocument();
+    // Should show skeleton because initial fetch completed but returned empty
+    expect(document.querySelector(".usage-skeleton")).toBeInTheDocument();
   });
 
   it("calls refresh when refresh button clicked", async () => {
@@ -1013,5 +1015,173 @@ describe("UsageIndicator", () => {
 
     // refresh should be called again on reopen
     expect(mockRefresh).toHaveBeenCalledTimes(2);
+  });
+
+  // Initial loading state tests
+  it("shows skeleton when modal opens with no cached data", () => {
+    // Simulate: initial fetch has not completed, providers array is empty
+    mockUseUsageData.mockReturnValue({
+      providers: [],
+      loading: false, // loading is false, but no providers yet
+      error: null,
+      lastUpdated: null,
+      refresh: mockRefresh,
+    });
+
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+
+    // Should show skeleton because initial fetch hasn't completed
+    expect(document.querySelector(".usage-skeleton")).toBeInTheDocument();
+  });
+
+  it("shows skeleton when modal reopens after being closed with data", () => {
+    const { rerender } = render(<UsageIndicator isOpen={false} onClose={mockOnClose} />);
+
+    // First open: show data
+    mockUseUsageData.mockReturnValue({
+      providers: mockProviders,
+      loading: false,
+      error: null,
+      lastUpdated: new Date(),
+      refresh: mockRefresh,
+    });
+
+    rerender(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+
+    // Should show providers, not skeleton
+    expect(screen.getByText("Anthropic")).toBeInTheDocument();
+    expect(document.querySelector(".usage-skeleton")).not.toBeInTheDocument();
+
+    // Close the modal
+    rerender(<UsageIndicator isOpen={false} onClose={mockOnClose} />);
+
+    // Reopen with no providers (simulating stale state before fetch completes)
+    mockUseUsageData.mockReturnValue({
+      providers: [], // Empty - will show skeleton until fetch completes
+      loading: false,
+      error: null,
+      lastUpdated: null,
+      refresh: mockRefresh,
+    });
+
+    rerender(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+
+    // Should show skeleton on reopen until providers arrive
+    expect(document.querySelector(".usage-skeleton")).toBeInTheDocument();
+  });
+
+  it("shows providers once data arrives after initial skeleton", () => {
+    // First render: empty providers, no data yet
+    mockUseUsageData.mockReturnValue({
+      providers: [],
+      loading: false,
+      error: null,
+      lastUpdated: null,
+      refresh: mockRefresh,
+    });
+
+    const { rerender } = render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+
+    // Should show skeleton initially
+    expect(document.querySelector(".usage-skeleton")).toBeInTheDocument();
+
+    // Simulate data arriving
+    mockUseUsageData.mockReturnValue({
+      providers: mockProviders,
+      loading: false,
+      error: null,
+      lastUpdated: new Date(),
+      refresh: mockRefresh,
+    });
+
+    // Trigger a re-render with new data
+    rerender(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+
+    // Now should show providers
+    expect(screen.getByText("Anthropic")).toBeInTheDocument();
+    expect(document.querySelector(".usage-skeleton")).not.toBeInTheDocument();
+  });
+
+  // Percentage rounding tests
+  it("rounds percentage values in display text (whole numbers)", () => {
+    // Use decimal percentages to verify rounding
+    mockUseUsageData.mockReturnValue({
+      providers: [
+        {
+          name: "TestProvider",
+          icon: "🧪",
+          status: "ok",
+          windows: [
+            { label: "Session", percentUsed: 45.678, percentLeft: 54.322, resetText: "resets in 2h" },
+          ],
+        },
+      ],
+      loading: false,
+      error: null,
+      lastUpdated: new Date(),
+      refresh: mockRefresh,
+    });
+
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+
+    // Should display rounded values: 46% used, 54% left
+    expect(screen.getByText("46% used")).toBeInTheDocument();
+    expect(screen.getByText("54% left")).toBeInTheDocument();
+  });
+
+  it("rounds percentage values in remaining view mode", () => {
+    // Use decimal percentages to verify rounding
+    mockUseUsageData.mockReturnValue({
+      providers: [
+        {
+          name: "TestProvider",
+          icon: "🧪",
+          status: "ok",
+          windows: [
+            { label: "Session", percentUsed: 33.333, percentLeft: 66.667, resetText: "resets in 3h" },
+          ],
+        },
+      ],
+      loading: false,
+      error: null,
+      lastUpdated: new Date(),
+      refresh: mockRefresh,
+    });
+
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+
+    // Switch to remaining mode
+    const remainingBtn = screen.getByTestId("usage-view-toggle-remaining");
+    fireEvent.click(remainingBtn);
+
+    // Should display rounded values: 67% remaining, 33% used
+    expect(screen.getByText("67% remaining")).toBeInTheDocument();
+    expect(screen.getByText("33% used")).toBeInTheDocument();
+  });
+
+  it("rounds percentage values in progress bar width", () => {
+    mockUseUsageData.mockReturnValue({
+      providers: [
+        {
+          name: "TestProvider",
+          icon: "🧪",
+          status: "ok",
+          windows: [
+            { label: "Session", percentUsed: 45.678, percentLeft: 54.322, resetText: "resets in 2h" },
+          ],
+        },
+      ],
+      loading: false,
+      error: null,
+      lastUpdated: new Date(),
+      refresh: mockRefresh,
+    });
+
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+
+    // Check progress bar width is rounded
+    const progressBar = document.querySelector(".usage-progress-fill") as HTMLElement;
+    expect(progressBar).toBeInTheDocument();
+    expect(progressBar.style.width).toBe("46%"); // 45.678 rounds to 46
   });
 });
