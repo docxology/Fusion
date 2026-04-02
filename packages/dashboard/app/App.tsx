@@ -27,6 +27,7 @@ import { MissionManager } from "./components/MissionManager";
 import { AgentListModal } from "./components/AgentListModal";
 import { AgentsView } from "./components/AgentsView";
 import { ScriptsModal } from "./components/ScriptsModal";
+import { ExecutorStatusBar } from "./components/ExecutorStatusBar";
 import { useTasks } from "./hooks/useTasks";
 import { useProjects } from "./hooks/useProjects";
 import { useCurrentProject } from "./hooks/useCurrentProject";
@@ -524,6 +525,9 @@ function AppInner() {
         onViewAllProjects={handleViewAllProjects}
       />
       {renderMainContent()}
+      {viewMode === "project" && currentProject && (
+        <ExecutorStatusBar projectId={currentProject.id} />
+      )}
       {detailTask && (
         <TaskDetailModal
           task={detailTask}
