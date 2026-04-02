@@ -343,6 +343,7 @@ export interface ModelInfo {
 export interface ModelsResponse {
   models: ModelInfo[];
   favoriteProviders: string[];
+  favoriteModels: string[];
 }
 
 /** Fetch available AI models from the model registry along with favoriteProviders */
