@@ -547,6 +547,12 @@ export interface GlobalSettings {
   /** List of favorite provider names. Favorite providers appear at the top of
    *  model selection dropdowns. Order is preserved - earlier entries appear higher. */
   favoriteProviders?: string[];
+  /** List of favorite model identifiers. Each entry is formatted as `{provider}/{modelId}`
+   *  (e.g., `"anthropic/claude-sonnet-4-5"`). Favorited models appear as pinned rows
+   *  at the very top of model selection dropdowns, before provider groups. Order is
+   *  preserved - earlier entries appear higher. */
+  favoriteModels?: string[];
+
 }
 
 /**
