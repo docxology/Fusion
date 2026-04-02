@@ -911,4 +911,132 @@ describe("NtfyNotifier", () => {
       expect(fetchMock).not.toHaveBeenCalled();
     });
   });
+
+  describe("event filtering", () => {
+    beforeEach(() => {
+      store.setSettings({ ntfyEnabled: true, ntfyTopic: "test-topic" });
+      fetchMock.mockResolvedValue({ ok: true });
+    });
+
+    it("does not send in-review notification when 'in-review' is not in ntfyEvents", async () => {
+      store.setSettings({ ntfyEnabled: true, ntfyTopic: "test-topic", ntfyEvents: ["merged", "failed"] });
+      notifier = new NtfyNotifier(store);
+      await notifier.start();
+
+      store.triggerTaskMoved(createTask("FN-001", "Test Task"), "in-progress", "in-review");
+      await flushAsyncWork();
+
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("does not send merged notification when 'merged' is not in ntfyEvents", async () => {
+      store.setSettings({ ntfyEnabled: true, ntfyTopic: "test-topic", ntfyEvents: ["in-review", "failed"] });
+      notifier = new NtfyNotifier(store);
+      await notifier.start();
+
+      const mergeResult: MergeResult = {
+        task: createTask("FN-001", "Test Task"),
+        branch: "fusion/fn-001",
+        merged: true,
+        worktreeRemoved: true,
+        branchDeleted: true,
+      };
+      store.triggerTaskMerged(mergeResult);
+      await flushAsyncWork();
+
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("does not send failed notification when 'failed' is not in ntfyEvents", async () => {
+      store.setSettings({ ntfyEnabled: true, ntfyTopic: "test-topic", ntfyEvents: ["in-review", "merged"] });
+      notifier = new NtfyNotifier(store);
+      await notifier.start();
+
+      const failedTask = createTask("FN-001", "Test Task", "failed");
+      store.triggerTaskUpdated(failedTask);
+      await flushAsyncWork();
+
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("sends notification for enabled events while others are disabled", async () => {
+      store.setSettings({ ntfyEnabled: true, ntfyTopic: "test-topic", ntfyEvents: ["in-review"] });
+      notifier = new NtfyNotifier(store);
+      await notifier.start();
+
+      // in-review - should send
+      store.triggerTaskMoved(createTask("FN-001", "Test Task"), "in-progress", "in-review");
+      await flushAsyncWork();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+
+      // merged - should NOT send
+      const mergeResult: MergeResult = {
+        task: createTask("FN-002", "Test Task 2"),
+        branch: "fusion/fn-002",
+        merged: true,
+        worktreeRemoved: true,
+        branchDeleted: true,
+      };
+      store.triggerTaskMerged(mergeResult);
+      await flushAsyncWork();
+      expect(fetchMock).toHaveBeenCalledTimes(1); // Still 1, no new call
+
+      // failed - should NOT send
+      const failedTask = createTask("FN-003", "Test Task 3", "failed");
+      store.triggerTaskUpdated(failedTask);
+      await flushAsyncWork();
+      expect(fetchMock).toHaveBeenCalledTimes(1); // Still 1, no new call
+    });
+
+    it("defaults to all events when ntfyEvents is undefined", async () => {
+      store.setSettings({ ntfyEnabled: true, ntfyTopic: "test-topic", ntfyEvents: undefined });
+      notifier = new NtfyNotifier(store);
+      await notifier.start();
+
+      store.triggerTaskMoved(createTask("FN-001", "Test Task"), "in-progress", "in-review");
+      await flushAsyncWork();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+
+      const mergeResult: MergeResult = {
+        task: createTask("FN-002", "Test Task 2"),
+        branch: "fusion/fn-002",
+        merged: true,
+        worktreeRemoved: true,
+        branchDeleted: true,
+      };
+      store.triggerTaskMerged(mergeResult);
+      await flushAsyncWork();
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+
+      const failedTask = createTask("FN-003", "Test Task 3", "failed");
+      store.triggerTaskUpdated(failedTask);
+      await flushAsyncWork();
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+    });
+
+    it("updates notifications when ntfyEvents changes at runtime", async () => {
+      store.setSettings({ ntfyEnabled: true, ntfyTopic: "test-topic", ntfyEvents: ["in-review", "merged", "failed"] });
+      notifier = new NtfyNotifier(store);
+      await notifier.start();
+
+      // Initially all events enabled
+      store.triggerTaskMoved(createTask("FN-001", "Test Task"), "in-progress", "in-review");
+      await flushAsyncWork();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+
+      // Disable in-review
+      store.setSettings({ ntfyEvents: ["merged", "failed"] });
+
+      store.triggerTaskMoved(createTask("FN-002", "Test Task 2"), "in-progress", "in-review");
+      await flushAsyncWork();
+      expect(fetchMock).toHaveBeenCalledTimes(1); // No new call for in-review
+
+      // Enable in-review again
+      store.setSettings({ ntfyEvents: ["in-review", "merged", "failed"] });
+
+      store.triggerTaskMoved(createTask("FN-003", "Test Task 3"), "in-progress", "in-review");
+      await flushAsyncWork();
+      expect(fetchMock).toHaveBeenCalledTimes(2); // New call for in-review
+    });
+  });
 });
