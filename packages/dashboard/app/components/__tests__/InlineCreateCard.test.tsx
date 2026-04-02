@@ -21,7 +21,7 @@ vi.mock("lucide-react", () => ({
 
 // Mock the api module
 vi.mock("../../api", () => ({
-  fetchModels: vi.fn().mockResolvedValue([]),
+  fetchModels: vi.fn().mockResolvedValue({ models: [], favoriteProviders: [] }),
   fetchSettings: vi.fn().mockResolvedValue({
     modelPresets: [],
     autoSelectModelPreset: false,
@@ -91,7 +91,7 @@ function chooseModel(label: "Executor Model" | "Validator Model", optionText: st
 beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
-  vi.mocked(fetchModels).mockResolvedValue(MOCK_MODELS);
+  vi.mocked(fetchModels).mockResolvedValue({ models: MOCK_MODELS, favoriteProviders: [] });
   vi.mocked(fetchSettings).mockResolvedValue({
     modelPresets: [],
     autoSelectModelPreset: false,

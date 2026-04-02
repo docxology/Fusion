@@ -12,6 +12,10 @@ export interface CustomModelDropdownProps {
   disabled?: boolean;
   id?: string;
   label: string;
+  /** List of favorite provider names in preferred order */
+  favoriteProviders?: string[];
+  /** Called when user toggles a provider's favorite status */
+  onToggleFavorite?: (provider: string) => void;
 }
 
 interface DropdownPosition {
@@ -41,6 +45,8 @@ export function CustomModelDropdown({
   disabled = false,
   id,
   label,
+  favoriteProviders = [],
+  onToggleFavorite,
 }: CustomModelDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [localFilter, setLocalFilter] = useState("");
@@ -57,13 +63,37 @@ export function CustomModelDropdown({
   // Filter models based on local filter text
   const filteredModels = useMemo(() => filterModels(models, localFilter), [models, localFilter]);
 
-  // Group filtered models by provider
+  // Group filtered models by provider and sort by favorites
   const modelsByProvider = useMemo(() => {
     return filteredModels.reduce<Record<string, ModelInfo[]>>((acc, m) => {
       (acc[m.provider] ??= []).push(m);
       return acc;
     }, {});
   }, [filteredModels]);
+
+  // Sort providers: favorites first (in order), then alphabetically
+  const sortedProviderEntries = useMemo(() => {
+    const entries = Object.entries(modelsByProvider);
+    const favoritesSet = new Set(favoriteProviders);
+
+    return entries.sort(([a], [b]) => {
+      const aFavorite = favoritesSet.has(a);
+      const bFavorite = favoritesSet.has(b);
+
+      if (aFavorite && !bFavorite) return -1;
+      if (!aFavorite && bFavorite) return 1;
+
+      // Both favorites: sort by favoriteProviders order
+      if (aFavorite && bFavorite) {
+        const aIdx = favoriteProviders.indexOf(a);
+        const bIdx = favoriteProviders.indexOf(b);
+        if (aIdx !== bIdx) return aIdx - bIdx;
+      }
+
+      // Neither favorite: alphabetical
+      return a.localeCompare(b);
+    });
+  }, [modelsByProvider, favoriteProviders]);
 
   // Get current provider from value
   const currentProvider = useMemo(() => {
@@ -78,7 +108,7 @@ export function CustomModelDropdown({
       { type: "default", value: "", label: "Use default" },
     ];
 
-    Object.entries(modelsByProvider).forEach(([provider, providerModels]) => {
+    sortedProviderEntries.forEach(([provider, providerModels]) => {
       options.push({ type: "provider", value: `__group_${provider}`, label: provider, provider });
       providerModels.forEach((m) => {
         options.push({
@@ -91,7 +121,7 @@ export function CustomModelDropdown({
     });
 
     return options;
-  }, [modelsByProvider]);
+  }, [sortedProviderEntries]);
 
   // Get current selection display text
   const selectedDisplayText = useMemo(() => {
@@ -328,14 +358,29 @@ export function CustomModelDropdown({
           <span className="model-combobox-option-text model-combobox-option-text--default">Use default</span>
         </div>
 
-        {Object.entries(modelsByProvider).map(([provider, providerModels]) => {
+        {sortedProviderEntries.map(([provider, providerModels]) => {
           const groupStartIndex = optionsList.findIndex((opt) => opt.value === `__group_${provider}`);
+          const isFavorite = favoriteProviders.includes(provider);
 
           return (
             <div key={provider} className="model-combobox-group">
               <div className="model-combobox-optgroup" data-index={groupStartIndex}>
                 <ProviderIcon provider={provider} size="sm" />
                 <span className="model-combobox-optgroup-text">{provider}</span>
+                {onToggleFavorite && (
+                  <button
+                    type="button"
+                    className={`model-combobox-optgroup-favorite ${isFavorite ? "model-combobox-optgroup-favorite--active" : ""}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleFavorite(provider);
+                    }}
+                    title={isFavorite ? "Remove from favorites" : "Add to favorites"}
+                    aria-label={isFavorite ? `Remove ${provider} from favorites` : `Add ${provider} to favorites`}
+                  >
+                    ★
+                  </button>
+                )}
               </div>
               {providerModels.map((m) => {
                 const optionValue = `${m.provider}/${m.id}`;

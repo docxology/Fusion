@@ -39,6 +39,12 @@ const MOCK_MODELS = [
   { provider: "openai", id: "gpt-4o", name: "GPT-4o", reasoning: false, contextWindow: 128000 },
 ];
 
+// Mock response format (with models and favoriteProviders)
+const MOCK_MODELS_RESPONSE = {
+  models: MOCK_MODELS,
+  favoriteProviders: [],
+};
+
 describe("ModelSelectorTab", () => {
   const mockAddToast = vi.fn();
 
@@ -76,7 +82,7 @@ describe("ModelSelectorTab", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockFetchModels.mockResolvedValue(MOCK_MODELS);
+    mockFetchModels.mockResolvedValue(MOCK_MODELS_RESPONSE);
     mockUpdateTask.mockImplementation(async (_id: string, updates: Record<string, unknown>) => ({
       ...FAKE_TASK,
       ...updates,
@@ -350,7 +356,7 @@ describe("ModelSelectorTab", () => {
   });
 
   it("shows empty state when no models available", async () => {
-    mockFetchModels.mockResolvedValue([]);
+    mockFetchModels.mockResolvedValue({ models: [], favoriteProviders: [] });
 
     render(<ModelSelectorTab task={FAKE_TASK} addToast={mockAddToast} />);
 

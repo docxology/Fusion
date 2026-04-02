@@ -1,4 +1,4 @@
-import { GlobalSettingsStore, type Settings, DEFAULT_SETTINGS } from "@fusion/core";
+import { GlobalSettingsStore, type Settings, type GlobalSettings, DEFAULT_SETTINGS } from "@fusion/core";
 import { resolveProject } from "../project-context.js";
 
 // Settings that can be updated via CLI
@@ -120,12 +120,8 @@ export function parseValue(key: ValidSettingKey, value: string): unknown {
 function formatSettingValue(
   key: keyof Settings,
   value: unknown,
-  settings: Settings
+  _settings: GlobalSettings | Settings
 ): string {
-  if (key === "githubTokenConfigured") {
-    return value ? "(configured)" : "(not configured)";
-  }
-
   if (Array.isArray(value)) {
     return value.length > 0 ? `[${value.join(", ")}]` : "[]";
   }
@@ -202,24 +198,21 @@ export async function runSettingsShow(projectName?: string): Promise<void> {
       keys: ["ntfyEnabled", "ntfyTopic"],
     },
     {
-      title: "GitHub",
-      keys: ["githubTokenConfigured"],
-    },
-    {
       title: "AI Model",
       keys: ["defaultProvider", "defaultModelId", "defaultThinkingLevel"],
     },
   ];
 
   for (const group of settingGroups) {
-    const hasValues = group.keys.some((key) => settings[key as keyof Settings] !== undefined);
+    const settingsRecord = settings as Record<string, unknown>;
+    const hasValues = group.keys.some((key) => settingsRecord[key] !== undefined);
     if (!hasValues) continue;
 
     console.log();
     console.log(`  ${group.title}:`);
 
     for (const key of group.keys) {
-      const value = settings[key as keyof Settings];
+      const value = settingsRecord[key];
       const label = getSettingLabel(key);
       const formattedValue = formatSettingValue(key as keyof Settings, value, settings);
       console.log(`    ${label.padEnd(25)} ${formattedValue}`);

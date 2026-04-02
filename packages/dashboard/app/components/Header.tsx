@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Settings, Pause, Play, Square, LayoutGrid, List, Terminal, Lightbulb, Search, X, Activity, MoreHorizontal, Clock, Folder, History, GitBranch, Workflow, Bot, ChevronLeft } from "lucide-react";
+import { Settings, Pause, Play, Square, LayoutGrid, List, Terminal, Lightbulb, Search, X, Activity, MoreHorizontal, Clock, Folder, History, GitBranch, Workflow, Bot, ChevronLeft, Target } from "lucide-react";
 import type { ProjectInfo } from "../api";
 import { ProjectSelector } from "./ProjectSelector";
 import { QuickScriptsDropdown } from "./QuickScriptsDropdown";
@@ -28,6 +28,7 @@ export interface HeaderProps {
   onOpenSchedules?: () => void;
   onOpenGitManager?: () => void;
   onOpenWorkflowSteps?: () => void;
+  onOpenMissions?: () => void;
   onOpenAgents?: () => void;
   onOpenScripts?: () => void;
   onRunScript?: (name: string, command: string) => void;
@@ -76,6 +77,7 @@ export function Header({
   onOpenSchedules,
   onOpenGitManager,
   onOpenWorkflowSteps,
+  onOpenMissions,
   onOpenAgents,
   onOpenScripts,
   onRunScript,
@@ -383,6 +385,18 @@ export function Header({
             data-testid="workflow-steps-btn"
           >
             <Workflow size={16} />
+          </button>
+        )}
+
+        {/* Missions - desktop only */}
+        {!isMobile && onOpenMissions && (
+          <button
+            className="btn-icon"
+            onClick={onOpenMissions}
+            title="Mission Manager"
+            data-testid="missions-btn"
+          >
+            <Target size={16} />
           </button>
         )}
 

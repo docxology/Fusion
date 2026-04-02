@@ -2011,6 +2011,48 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
     return this.addComment(id, text, author);
   }
 
+  /**
+   * Add a steering comment to a task (legacy support).
+   * Steering comments are injected into the AI execution context.
+   * @deprecated Use addComment instead - comments are now unified
+   */
+  async addSteeringComment(id: string, text: string, author: "user" | "agent" = "user"): Promise<Task> {
+    return this.withTaskLock(id, async () => {
+      const dir = this.taskDir(id);
+      const task = await this.readTaskJson(dir);
+
+      // Initialize steeringComments array if missing
+      if (!task.steeringComments) {
+        task.steeringComments = [];
+      }
+
+      const comment: import("./types.js").SteeringComment = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        text,
+        createdAt: new Date().toISOString(),
+        author,
+      };
+
+      task.steeringComments.push(comment);
+      task.updatedAt = new Date().toISOString();
+
+      // Initialize log array if missing (for legacy tasks)
+      if (!task.log) {
+        task.log = [];
+      }
+      task.log.push({
+        timestamp: task.updatedAt,
+        action: `Steering comment added by ${author}`,
+      });
+
+      await this.atomicWriteTaskJson(dir, task);
+      if (this.watcher) this.taskCache.set(id, { ...task });
+
+      this.emit("task:updated", task);
+      return task;
+    });
+  }
+
   async updateTaskComment(id: string, commentId: string, text: string): Promise<Task> {
     return this.withTaskLock(id, async () => {
       const dir = this.taskDir(id);

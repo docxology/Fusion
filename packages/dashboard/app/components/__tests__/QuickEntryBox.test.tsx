@@ -49,7 +49,7 @@ const mockTasks: Task[] = [
 
 // Mock the api module
 vi.mock("../../api", () => ({
-  fetchModels: vi.fn().mockResolvedValue([
+  fetchModels: vi.fn().mockResolvedValue({ models: [
     {
       provider: "anthropic",
       id: "claude-sonnet-4-5",
@@ -64,7 +64,7 @@ vi.mock("../../api", () => ({
       reasoning: true,
       contextWindow: 128_000,
     },
-  ]),
+  ], favoriteProviders: [] }),
   refineText: vi.fn(),
   getRefineErrorMessage: vi.fn((err) => err?.message || "Failed to refine text. Please try again."),
 }));

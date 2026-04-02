@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { Brain, Link, Lightbulb, ListTree, Zap, ChevronDown, ChevronUp } from "lucide-react";
 import type { Task, TaskCreateInput, Settings } from "@fusion/core";
 import type { ToastType } from "../hooks/useToast";
-import { fetchModels, uploadAttachment, fetchSettings } from "../api";
+import { fetchModels, uploadAttachment, fetchSettings, updateGlobalSettings } from "../api";
 import type { ModelInfo } from "../api";
 import { CustomModelDropdown } from "./CustomModelDropdown";
 import { applyPresetToSelection } from "../utils/modelPresets";
@@ -85,6 +85,7 @@ export function InlineCreateCard({
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelsError, setModelsError] = useState<string | null>(null);
   const [loadedModels, setLoadedModels] = useState<ModelInfo[]>(availableModels ?? []);
+  const [favoriteProviders, setFavoriteProviders] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -110,7 +111,9 @@ export function InlineCreateCard({
     setModelsLoading(true);
     setModelsError(null);
     try {
-      setLoadedModels(await fetchModels());
+      const response = await fetchModels();
+      setLoadedModels(response.models);
+      setFavoriteProviders(response.favoriteProviders);
     } catch (err: any) {
       setModelsError(err?.message || "Failed to load models");
     } finally {
@@ -139,9 +142,10 @@ export function InlineCreateCard({
     setModelsLoading(true);
     setModelsError(null);
     fetchModels()
-      .then((models) => {
+      .then((response) => {
         if (!cancelled) {
-          setLoadedModels(models);
+          setLoadedModels(response.models);
+          setFavoriteProviders(response.favoriteProviders);
         }
       })
       .catch((err: any) => {
@@ -412,6 +416,23 @@ export function InlineCreateCard({
     setValidatorProvider(next.provider);
     setValidatorModelId(next.modelId);
   }, []);
+
+  const handleToggleFavorite = useCallback(async (provider: string) => {
+    const currentFavorites = favoriteProviders;
+    const isFavorite = currentFavorites.includes(provider);
+    const newFavorites = isFavorite
+      ? currentFavorites.filter((p) => p !== provider)
+      : [provider, ...currentFavorites];
+
+    setFavoriteProviders(newFavorites);
+
+    try {
+      await updateGlobalSettings({ favoriteProviders: newFavorites });
+    } catch {
+      // Revert on error
+      setFavoriteProviders(currentFavorites);
+    }
+  }, [favoriteProviders]);
 
   const handleModelDropdownMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const target = e.target;
@@ -700,6 +721,8 @@ export function InlineCreateCard({
                           models={loadedModels}
                           disabled={submitting}
                           placeholder="Select executor model…"
+                          favoriteProviders={favoriteProviders}
+                          onToggleFavorite={handleToggleFavorite}
                         />
                       </div>
 
@@ -718,6 +741,8 @@ export function InlineCreateCard({
                           models={loadedModels}
                           disabled={submitting}
                           placeholder="Select validator model…"
+                          favoriteProviders={favoriteProviders}
+                          onToggleFavorite={handleToggleFavorite}
                         />
                       </div>
                     </>

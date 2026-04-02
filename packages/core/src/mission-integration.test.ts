@@ -139,7 +139,7 @@ describe("MissionStore integration with TaskStore", () => {
     expect(linkedFeature.status).toBe("triaged");
     expect(storedTask.sliceId).toBe(milestones[0].slices[0].id);
     expect(taskRow?.sliceId).toBe(milestones[0].slices[0].id);
-    expect(taskRow?.missionId).toBeNull();
+    expect(taskRow?.missionId).toBe(mission.id);
 
     const linkedHierarchy = missionStore.getMissionWithHierarchy(mission.id);
     expect(linkedHierarchy?.milestones[0].slices[0].features[0].taskId).toBe(linkedTask.id);

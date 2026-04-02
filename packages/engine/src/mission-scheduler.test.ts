@@ -21,6 +21,7 @@ function createMockMissionStore(): any {
     getSlice: vi.fn(),
     getMilestone: vi.fn(),
     getMission: vi.fn(),
+    getMissionWithHierarchy: vi.fn(),
     getFeatureByTaskId: vi.fn(),
     updateFeatureStatus: vi.fn().mockResolvedValue(undefined),
     computeSliceStatus: vi.fn(),
@@ -125,25 +126,52 @@ describe("Scheduler Mission Integration", () => {
 
   describe("activateNextPendingSlice", () => {
     it("should find and activate next pending slice", async () => {
-      const mockSlice = createMockSlice({ id: "SL-002", status: "pending" });
       const mockActivated = createMockSlice({ id: "SL-002", status: "active" });
 
-      missionStore.findNextPendingSlice.mockReturnValue(mockSlice);
+      missionStore.getMissionWithHierarchy.mockReturnValue({
+        id: "M-001",
+        status: "active",
+        milestones: [
+          {
+            id: "MS-001",
+            orderIndex: 0,
+            dependencies: [],
+            slices: [
+              { id: "SL-001", status: "complete", orderIndex: 0 },
+              { id: "SL-002", status: "pending", orderIndex: 1 },
+            ],
+          },
+        ],
+      });
       missionStore.activateSlice.mockReturnValue(mockActivated);
 
       const result = await scheduler.activateNextPendingSlice("M-001");
 
-      expect(missionStore.findNextPendingSlice).toHaveBeenCalledWith("M-001");
+      expect(missionStore.getMissionWithHierarchy).toHaveBeenCalledWith("M-001");
       expect(missionStore.activateSlice).toHaveBeenCalledWith("SL-002");
       expect(result).toEqual(mockActivated);
     });
 
     it("should return null when no pending slices", async () => {
-      missionStore.findNextPendingSlice.mockReturnValue(null);
+      missionStore.getMissionWithHierarchy.mockReturnValue({
+        id: "M-001",
+        status: "active",
+        milestones: [
+          {
+            id: "MS-001",
+            orderIndex: 0,
+            dependencies: [],
+            slices: [
+              { id: "SL-001", status: "complete", orderIndex: 0 },
+              { id: "SL-002", status: "complete", orderIndex: 1 },
+            ],
+          },
+        ],
+      });
 
       const result = await scheduler.activateNextPendingSlice("M-001");
 
-      expect(missionStore.findNextPendingSlice).toHaveBeenCalledWith("M-001");
+      expect(missionStore.getMissionWithHierarchy).toHaveBeenCalledWith("M-001");
       expect(result).toBeNull();
     });
 
@@ -161,7 +189,7 @@ describe("Scheduler Mission Integration", () => {
     });
 
     it("should handle errors gracefully", async () => {
-      missionStore.findNextPendingSlice.mockImplementation(() => {
+      missionStore.getMissionWithHierarchy.mockImplementation(() => {
         throw new Error("Database error");
       });
 

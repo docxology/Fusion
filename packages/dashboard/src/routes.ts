@@ -1369,7 +1369,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
   });
 
   // Models
-  registerModelsRoute(router, options?.modelRegistry);
+  registerModelsRoute(router, options?.modelRegistry, store);
 
   // List all tasks
   router.get("/tasks", async (req, res) => {
@@ -6753,15 +6753,16 @@ async function refreshIssueInBackground(
 
 /**
  * Register the GET /api/models route.
- * Returns available AI models from the ModelRegistry for the UI model selector.
+ * Returns available AI models from the ModelRegistry for the UI model selector,
+ * along with favoriteProviders for UI ordering.
  * If no ModelRegistry is provided, returns an empty array.
  */
-function registerModelsRoute(router: Router, modelRegistry?: ModelRegistryLike): void {
-  router.get("/models", (_req, res) => {
+function registerModelsRoute(router: Router, modelRegistry?: ModelRegistryLike, store?: TaskStore): void {
+  router.get("/models", async (_req, res) => {
     // Always return 200 with empty array instead of 404 when no models available.
     // This ensures the frontend can handle empty states gracefully.
     if (!modelRegistry) {
-      res.json([]);
+      res.json({ models: [], favoriteProviders: [] });
       return;
     }
 
@@ -6774,11 +6775,24 @@ function registerModelsRoute(router: Router, modelRegistry?: ModelRegistryLike):
         reasoning: m.reasoning,
         contextWindow: m.contextWindow,
       }));
-      res.json(models);
+
+      // Get favoriteProviders from global settings
+      let favoriteProviders: string[] = [];
+      if (store) {
+        try {
+          const globalStore = store.getGlobalSettingsStore();
+          const globalSettings = await globalStore.getSettings();
+          favoriteProviders = globalSettings.favoriteProviders ?? [];
+        } catch {
+          // Silently ignore settings errors - just return empty favorites
+        }
+      }
+
+      res.json({ models, favoriteProviders });
     } catch (err: any) {
       const message = err instanceof Error ? err.message : String(err);
       console.log(`[models] Failed to load models: ${message}`);
-      res.json([]);
+      res.json({ models: [], favoriteProviders: [] });
     }
   });
 }

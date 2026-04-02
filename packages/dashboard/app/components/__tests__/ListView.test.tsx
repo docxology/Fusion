@@ -5,7 +5,7 @@ import type { Task, TaskDetail } from "@fusion/core";
 
 // Mock the API
 vi.mock("../../api", () => ({
-  fetchModels: vi.fn().mockResolvedValue([]),
+  fetchModels: vi.fn().mockResolvedValue({ models: [], favoriteProviders: [] }),
   fetchTaskDetail: vi.fn(),
   batchUpdateTaskModels: vi.fn(),
 }));

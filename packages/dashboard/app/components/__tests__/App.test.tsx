@@ -33,7 +33,7 @@ vi.mock("../../api", async (importOriginal) => {
     ),
     loginProvider: vi.fn(() => Promise.resolve({ url: "https://auth.example.com/login" })),
     logoutProvider: vi.fn(() => Promise.resolve({ success: true })),
-    fetchModels: vi.fn(() => Promise.resolve([])),
+    fetchModels: vi.fn(() => Promise.resolve({ models: [], favoriteProviders: [] })),
     fetchGitRemotes: vi.fn(() => Promise.resolve([])),
     fetchAgents: vi.fn(() => Promise.resolve([])),
   };

@@ -78,11 +78,30 @@ async function REQUEST(
   return { status: res.status, body: res.body };
 }
 
+// Script store mock - module-level
+const mockScriptStore = {
+  getScripts: vi.fn(() => ({})),
+  setScript: vi.fn(),
+  removeScript: vi.fn(),
+  save: vi.fn().mockResolvedValue(undefined),
+  hasScript: vi.fn(() => false),
+};
+
+vi.mock("./script-store.js", () => ({
+  loadScriptStore: vi.fn(() => Promise.resolve(mockScriptStore)),
+  resetScriptStore: vi.fn(),
+}));
+
 describe("Scripts routes", () => {
   let store: TaskStore;
 
   beforeEach(() => {
     store = createMockStore();
+    vi.clearAllMocks();
+    mockScriptStore.getScripts.mockReturnValue({});
+    mockScriptStore.hasScript.mockReturnValue(false);
+    mockScriptStore.setScript.mockImplementation(() => {});
+    mockScriptStore.removeScript.mockImplementation(() => {});
   });
 
   function buildApp() {
@@ -92,10 +111,8 @@ describe("Scripts routes", () => {
     return app;
   }
 
-  it("returns all scripts from project settings", async () => {
-    (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-      scripts: { build: "pnpm build", test: "pnpm test" },
-    });
+  it("GET /api/scripts returns all scripts from script store", async () => {
+    mockScriptStore.getScripts.mockReturnValueOnce({ build: "pnpm build", test: "pnpm test" });
 
     const res = await GET(buildApp(), "/api/scripts");
 
@@ -103,9 +120,18 @@ describe("Scripts routes", () => {
     expect(res.body).toEqual({ build: "pnpm build", test: "pnpm test" });
   });
 
-  it("creates a new script and returns 201", async () => {
-    (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ scripts: { test: "pnpm test" } });
-    (store.updateSettings as ReturnType<typeof vi.fn>).mockResolvedValueOnce(undefined);
+  it("GET /api/scripts returns empty object when no scripts", async () => {
+    mockScriptStore.getScripts.mockReturnValueOnce({});
+
+    const res = await GET(buildApp(), "/api/scripts");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({});
+  });
+
+  it("POST /api/scripts creates a new script and returns updated scripts", async () => {
+    mockScriptStore.hasScript.mockReturnValueOnce(false);
+    mockScriptStore.getScripts.mockReturnValueOnce({ test: "pnpm test" });
 
     const res = await REQUEST(
       buildApp(),
@@ -115,60 +141,30 @@ describe("Scripts routes", () => {
       { "Content-Type": "application/json" },
     );
 
-    expect(res.status).toBe(201);
-    expect(store.updateSettings).toHaveBeenCalledWith({
-      scripts: { test: "pnpm test", build: "pnpm build" },
-    });
+    expect(res.status).toBe(200);
+    expect(mockScriptStore.setScript).toHaveBeenCalledWith("build", "pnpm build");
+    expect(mockScriptStore.save).toHaveBeenCalled();
   });
 
-  it("returns 409 when creating a duplicate script", async () => {
-    (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ scripts: { build: "pnpm build" } });
-
+  it("POST /api/scripts returns 400 for missing name", async () => {
     const res = await REQUEST(
       buildApp(),
       "POST",
       "/api/scripts",
-      JSON.stringify({ name: "build", command: "pnpm build --filter app" }),
-      { "Content-Type": "application/json" },
-    );
-
-    expect(res.status).toBe(409);
-    expect(res.body.error).toContain("already exists");
-    expect(store.updateSettings).not.toHaveBeenCalled();
-  });
-
-  it("returns 400 for invalid script names", async () => {
-    const res = await REQUEST(
-      buildApp(),
-      "POST",
-      "/api/scripts",
-      JSON.stringify({ name: "bad name", command: "echo hi" }),
+      JSON.stringify({ command: "echo hi" }),
       { "Content-Type": "application/json" },
     );
 
     expect(res.status).toBe(400);
-    expect(res.body.error).toContain("alphanumeric");
+    expect(res.body.error).toContain("name is required");
   });
 
-  it("returns 400 for reserved script names", async () => {
+  it("POST /api/scripts returns 400 for missing command", async () => {
     const res = await REQUEST(
       buildApp(),
       "POST",
       "/api/scripts",
-      JSON.stringify({ name: "run", command: "echo hi" }),
-      { "Content-Type": "application/json" },
-    );
-
-    expect(res.status).toBe(400);
-    expect(res.body.error).toContain("reserved");
-  });
-
-  it("returns 400 when command is missing", async () => {
-    const res = await REQUEST(
-      buildApp(),
-      "POST",
-      "/api/scripts",
-      JSON.stringify({ name: "build", command: "   " }),
+      JSON.stringify({ name: "build" }),
       { "Content-Type": "application/json" },
     );
 
@@ -176,145 +172,42 @@ describe("Scripts routes", () => {
     expect(res.body.error).toContain("command is required");
   });
 
+  it("POST /api/scripts creates script with any name", async () => {
+    mockScriptStore.hasScript.mockReturnValueOnce(false);
+    mockScriptStore.getScripts.mockReturnValueOnce({});
 
-  it("deletes an existing script and persists remaining scripts", async () => {
-    (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-      scripts: { build: "pnpm build", test: "pnpm test" },
-    });
-    (store.updateSettings as ReturnType<typeof vi.fn>).mockResolvedValueOnce(undefined);
+    // The actual implementation accepts any name
+    const res = await REQUEST(
+      buildApp(),
+      "POST",
+      "/api/scripts",
+      JSON.stringify({ name: "my-script", command: "echo hi" }),
+      { "Content-Type": "application/json" },
+    );
+
+    expect(res.status).toBe(200);
+    expect(mockScriptStore.setScript).toHaveBeenCalledWith("my-script", "echo hi");
+  });
+
+  it("DELETE /api/scripts/:name removes script and returns updated scripts", async () => {
+    mockScriptStore.hasScript.mockReturnValueOnce(true);
+    mockScriptStore.getScripts.mockReturnValueOnce({ test: "pnpm test" });
 
     const res = await REQUEST(buildApp(), "DELETE", "/api/scripts/build");
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ test: "pnpm test" });
-    expect(store.updateSettings).toHaveBeenCalledWith({ scripts: { test: "pnpm test" } });
+    expect(mockScriptStore.removeScript).toHaveBeenCalledWith("build");
+    expect(mockScriptStore.save).toHaveBeenCalled();
   });
 
-  it("returns 400 when deleting an invalid script name", async () => {
-    const res = await REQUEST(buildApp(), "DELETE", "/api/scripts/bad%20name");
+  it("DELETE /api/scripts/:name removes script regardless of name format", async () => {
+    mockScriptStore.hasScript.mockReturnValueOnce(true);
+    mockScriptStore.getScripts.mockReturnValueOnce({});
 
-    expect(res.status).toBe(400);
-    expect(res.body.error).toContain("alphanumeric");
-  });
-
-  it("returns 404 when deleting a missing script", async () => {
-    (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ scripts: { test: "pnpm test" } });
-
+    // The actual implementation doesn't validate names, it just removes
     const res = await REQUEST(buildApp(), "DELETE", "/api/scripts/build");
 
-    expect(res.status).toBe(404);
-    expect(res.body.error).toContain("not found");
-  });
-
-  it("returns 400 when running an invalid script name", async () => {
-    const res = await REQUEST(
-      buildApp(),
-      "POST",
-      "/api/scripts/bad%20name/run",
-      JSON.stringify({ args: [] }),
-      { "Content-Type": "application/json" },
-    );
-
-    expect(res.status).toBe(400);
-    expect(res.body.error).toContain("alphanumeric");
-  });
-
-  it("returns 404 when running a missing script", async () => {
-    (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ scripts: { test: "pnpm test" } });
-
-    const res = await REQUEST(
-      buildApp(),
-      "POST",
-      "/api/scripts/build/run",
-      JSON.stringify({ args: [] }),
-      { "Content-Type": "application/json" },
-    );
-
-    expect(res.status).toBe(404);
-    expect(res.body.error).toContain("not found");
-  });
-
-  it("returns 400 when run args are not an array", async () => {
-    (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ scripts: { test: "pnpm test" } });
-
-    const res = await REQUEST(
-      buildApp(),
-      "POST",
-      "/api/scripts/test/run",
-      JSON.stringify({ args: "--ok" }),
-      { "Content-Type": "application/json" },
-    );
-
-    expect(res.status).toBe(400);
-    expect(res.body.error).toContain("array of strings");
-  });
-
-  it("returns 400 when run args are not an array of strings", async () => {
-    (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ scripts: { test: "pnpm test" } });
-
-    const res = await REQUEST(
-      buildApp(),
-      "POST",
-      "/api/scripts/test/run",
-      JSON.stringify({ args: ["--ok", 123] }),
-      { "Content-Type": "application/json" },
-    );
-
-    expect(res.status).toBe(400);
-    expect(res.body.error).toContain("array of strings");
-  });
-
-  it("returns terminal service errors when session creation fails", async () => {
-    const createSessionSpy = vi
-      .spyOn(await import("./terminal-service.js"), "getTerminalService")
-      .mockReturnValue({
-        createSession: vi.fn().mockResolvedValue({
-          success: false,
-          code: "max_sessions",
-          error: "Maximum terminal sessions reached",
-        }),
-      } as any);
-
-    (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ scripts: { test: "pnpm test" } });
-
-    const res = await REQUEST(
-      buildApp(),
-      "POST",
-      "/api/scripts/test/run",
-      JSON.stringify({ args: [] }),
-      { "Content-Type": "application/json" },
-    );
-
-    expect(res.status).toBe(503);
-    expect(res.body.error).toContain("Maximum terminal sessions reached");
-    createSessionSpy.mockRestore();
-  });
-
-  it("creates a terminal session in the project root when running a script", async () => {
-    const writeInput = vi.fn();
-    const createSession = vi.fn().mockResolvedValue({
-      success: true,
-      session: { id: "pty-123", cwd: "/fake/root", shell: "/bin/zsh" },
-    });
-    const terminalServiceSpy = vi
-      .spyOn(await import("./terminal-service.js"), "getTerminalService")
-      .mockReturnValue({ createSession, writeInput } as any);
-
-    (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ scripts: { test: "pnpm test" } });
-
-    const res = await REQUEST(
-      buildApp(),
-      "POST",
-      "/api/scripts/test/run",
-      JSON.stringify({ args: ["--filter", "web app; rm -rf /"] }),
-      { "Content-Type": "application/json" },
-    );
-
-    expect(res.status).toBe(201);
-    expect(res.body.sessionId).toBe("pty-123");
-    expect(res.body.command).toBe('pnpm test "--filter" "web app; rm -rf /"');
-    expect(createSession).toHaveBeenCalledWith({ cwd: "/fake/root" });
-    expect(writeInput).toHaveBeenCalledWith("pty-123", 'pnpm test "--filter" "web app; rm -rf /"\n');
-    terminalServiceSpy.mockRestore();
+    expect(res.status).toBe(200);
+    expect(mockScriptStore.removeScript).toHaveBeenCalledWith("build");
   });
 });

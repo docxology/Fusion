@@ -231,15 +231,18 @@ describe("fetchModels", () => {
     globalThis.fetch = originalFetch;
   });
 
-  it("returns available models", async () => {
-    const models = [
-      { provider: "anthropic", id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5", reasoning: true, contextWindow: 200000 },
-    ];
-    globalThis.fetch = vi.fn().mockReturnValue(mockFetchResponse(true, models));
+  it("returns available models with favorites", async () => {
+    const response = {
+      models: [
+        { provider: "anthropic", id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5", reasoning: true, contextWindow: 200000 },
+      ],
+      favoriteProviders: ["anthropic"],
+    };
+    globalThis.fetch = vi.fn().mockReturnValue(mockFetchResponse(true, response));
 
     const result = await fetchModels();
 
-    expect(result).toEqual(models);
+    expect(result).toEqual(response);
     expect(globalThis.fetch).toHaveBeenCalledWith("/api/models", {
       headers: { "Content-Type": "application/json" },
     });

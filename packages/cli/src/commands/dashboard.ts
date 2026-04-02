@@ -71,7 +71,7 @@ export function getMergeStrategy(settings: Pick<Settings, "mergeStrategy">): Non
 }
 
 export function getTaskBranchName(taskId: string): string {
-  return `kb/${taskId.toLowerCase()}`;
+  return `fusion/${taskId.toLowerCase()}`;
 }
 
 function buildPullRequestTitle(task: Pick<TaskDetail, "id" | "title">): string {
@@ -643,25 +643,29 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
     // Kick off the first retry after the current poll interval
     scheduleMergeRetry();
 
-    process.on("SIGINT", () => {
+    const shutdown = () => {
       stuckTaskDetector.stop();
       triage.stop();
       scheduler.stop();
       cronRunner.stop();
       notifier.stop();
       if (mergeRetryTimer) clearTimeout(mergeRetryTimer);
-      store.stopWatching();
+      store.close();
       process.exit(0);
-    });
+    };
+    process.on("SIGINT", shutdown);
+    process.on("SIGTERM", shutdown);
   }
 
-  // Dev mode: simplified SIGINT handler (no engine components)
+  // Dev mode: simplified shutdown handlers (no engine components)
   if (opts.dev) {
-    process.on("SIGINT", () => {
+    const devShutdown = () => {
       notifier.stop();
-      store.stopWatching();
+      store.close();
       process.exit(0);
-    });
+    };
+    process.on("SIGINT", devShutdown);
+    process.on("SIGTERM", devShutdown);
   }
 
   const server = app.listen(selectedPort);

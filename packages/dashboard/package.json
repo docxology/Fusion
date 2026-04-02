@@ -24,7 +24,8 @@
     "build:client": "vite build",
     "dev": "vite build --watch",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.app.json"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.app.json",
+    "postinstall": "chmod +x node_modules/.pnpm/node-pty*/node_modules/node-pty/prebuilds/darwin-*/spawn-helper node_modules/.pnpm/node-pty*/node_modules/node-pty/prebuilds/darwin-*/*.node 2>/dev/null || true"
   },
   "dependencies": {
     "@codemirror/basic-setup": "^0.20.0",

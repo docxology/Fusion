@@ -48,6 +48,10 @@ interface ListViewProps {
    * Allows parent to refresh task list or handle optimistically.
    */
   onTasksUpdated?: (updatedTasks: Task[]) => void;
+  /** Project ID for multi-project context (optional) */
+  projectId?: string;
+  /** Project name for display (optional) */
+  projectName?: string;
 }
 
 function getStepProgress(steps: TaskStep[]): string {
@@ -726,7 +730,6 @@ export function ListView({
             availableModels={availableModels}
             onPlanningMode={onPlanningMode}
             onSubtaskBreakdown={onSubtaskBreakdown}
-            autoExpand={false}
           />
         </div>
         {filteredCount === 0 ? (

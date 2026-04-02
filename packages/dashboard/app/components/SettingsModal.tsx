@@ -95,6 +95,7 @@ export function SettingsModal({
 
   // Model state
   const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
+  const [favoriteProviders, setFavoriteProviders] = useState<string[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
 
   // Test notification state
@@ -142,7 +143,10 @@ export function SettingsModal({
     if (activeSection === "model") {
       setModelsLoading(true);
       fetchModels()
-        .then((models) => setAvailableModels(models))
+        .then((response) => {
+          setAvailableModels(response.models);
+          setFavoriteProviders(response.favoriteProviders);
+        })
         .catch(() => setAvailableModels([]))
         .finally(() => setModelsLoading(false));
     }
@@ -312,7 +316,7 @@ export function SettingsModal({
     try {
       const result = await importSettings(importPreview, { scope: importScope, merge: importMerge });
       if (result.success) {
-        const parts = [];
+        const parts: string[] = [];
         if (result.globalCount > 0) parts.push(`${result.globalCount} global`);
         if (result.projectCount > 0) parts.push(`${result.projectCount} project`);
         addToast(`Imported ${parts.join(", ")} setting(s)`, "success");
@@ -426,6 +430,24 @@ export function SettingsModal({
     setPresetIdTouched(false);
   };
 
+  /** Toggle provider favorite status */
+  const handleToggleFavorite = useCallback(async (provider: string) => {
+    const currentFavorites = favoriteProviders;
+    const isFavorite = currentFavorites.includes(provider);
+    const newFavorites = isFavorite
+      ? currentFavorites.filter((p) => p !== provider)
+      : [provider, ...currentFavorites];
+
+    setFavoriteProviders(newFavorites);
+
+    try {
+      await updateGlobalSettings({ favoriteProviders: newFavorites });
+    } catch {
+      // Revert on error
+      setFavoriteProviders(currentFavorites);
+    }
+  }, [favoriteProviders]);
+
   /** Render a scope indicator banner for the current section */
   const renderScopeBanner = () => {
     if (activeSectionScope === "global") {
@@ -532,6 +554,8 @@ export function SettingsModal({
                       }
                     }}
                     placeholder="Use default"
+                    favoriteProviders={favoriteProviders}
+                    onToggleFavorite={handleToggleFavorite}
                   />
                   <small>Default AI model used for task execution when no per-task override is set. &quot;Use default&quot; lets the engine choose automatically.</small>
                 </div>
@@ -555,6 +579,8 @@ export function SettingsModal({
                       }
                     }}
                     placeholder="Use default"
+                    favoriteProviders={favoriteProviders}
+                    onToggleFavorite={handleToggleFavorite}
                   />
                   <small>AI model used for task planning and specification (triage). Falls back to Default Model when not set.</small>
                 </div>
@@ -578,6 +604,8 @@ export function SettingsModal({
                       }
                     }}
                     placeholder="Use default"
+                    favoriteProviders={favoriteProviders}
+                    onToggleFavorite={handleToggleFavorite}
                   />
                   <small>AI model used for code and specification review. Falls back to Default Model when not set.</small>
                 </div>
@@ -753,6 +781,8 @@ export function SettingsModal({
                           } : current);
                         }}
                         placeholder="Use default"
+                        favoriteProviders={favoriteProviders}
+                        onToggleFavorite={handleToggleFavorite}
                       />
                     </div>
                     <div className="form-group">
@@ -775,6 +805,8 @@ export function SettingsModal({
                           } : current);
                         }}
                         placeholder="Use default"
+                        favoriteProviders={favoriteProviders}
+                        onToggleFavorite={handleToggleFavorite}
                       />
                     </div>
                   </>
@@ -887,6 +919,8 @@ export function SettingsModal({
                         }));
                       }}
                       placeholder="Use fallback model"
+                      favoriteProviders={favoriteProviders}
+                      onToggleFavorite={handleToggleFavorite}
                     />
                   )}
                   <small>

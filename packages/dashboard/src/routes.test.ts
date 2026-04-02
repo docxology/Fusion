@@ -1537,7 +1537,7 @@ describe("GET /models", () => {
     const res = await GET(buildApp(modelRegistry), "/api/models");
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual([
+    expect(res.body.models).toEqual([
       { provider: "anthropic", id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5", reasoning: true, contextWindow: 200000 },
       { provider: "openai", id: "gpt-4o", name: "GPT-4o", reasoning: false, contextWindow: 128000 },
     ]);
@@ -1548,7 +1548,7 @@ describe("GET /models", () => {
     const res = await GET(buildApp(), "/api/models");
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual([]);
+    expect(res.body.models).toEqual([]);
   });
 
   it("returns empty array when registry has no available models", async () => {
@@ -1558,7 +1558,7 @@ describe("GET /models", () => {
     const res = await GET(buildApp(modelRegistry), "/api/models");
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual([]);
+    expect(res.body.models).toEqual([]);
   });
 
   it("returns empty array when registry throws", async () => {
@@ -1570,7 +1570,7 @@ describe("GET /models", () => {
     const res = await GET(buildApp(modelRegistry), "/api/models");
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual([]);
+    expect(res.body.models).toEqual([]);
   });
 });
 

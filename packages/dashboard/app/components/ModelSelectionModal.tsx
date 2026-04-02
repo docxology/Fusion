@@ -14,6 +14,8 @@ interface ModelSelectionModalProps {
   modelsLoading: boolean;
   modelsError: string | null;
   onRetry: () => void;
+  favoriteProviders?: string[];
+  onToggleFavorite?: (provider: string) => void;
 }
 
 function getModelBadgeLabel(models: ModelInfo[], value: string): string {
@@ -37,6 +39,8 @@ export function ModelSelectionModal({
   modelsLoading,
   modelsError,
   onRetry,
+  favoriteProviders = [],
+  onToggleFavorite,
 }: ModelSelectionModalProps) {
   // Handle Escape key
   useEffect(() => {
@@ -129,6 +133,8 @@ export function ModelSelectionModal({
                         onChange={onExecutorChange}
                         models={models}
                         placeholder="Select executor model…"
+                        favoriteProviders={favoriteProviders}
+                        onToggleFavorite={onToggleFavorite}
                       />
                     </div>
                   </div>
@@ -151,6 +157,8 @@ export function ModelSelectionModal({
                         onChange={onValidatorChange}
                         models={models}
                         placeholder="Select validator model…"
+                        favoriteProviders={favoriteProviders}
+                        onToggleFavorite={onToggleFavorite}
                       />
                     </div>
                   </div>

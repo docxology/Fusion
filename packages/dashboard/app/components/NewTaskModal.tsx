@@ -1,11 +1,10 @@
-import { useState, useCallback, useEffect, useRef, useMemo } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import type { Task, TaskCreateInput, ModelPreset, Settings, WorkflowStep } from "@fusion/core";
 import type { ToastType } from "../hooks/useToast";
-import { uploadAttachment, fetchModels, fetchSettings, fetchWorkflowSteps, refineText, getRefineErrorMessage, type RefinementType } from "../api";
+import { uploadAttachment, fetchModels, fetchSettings, fetchWorkflowSteps, refineText, getRefineErrorMessage, updateGlobalSettings, type RefinementType } from "../api";
 import type { ModelInfo } from "../api";
-import { filterModels } from "../utils/modelFilter";
 import { applyPresetToSelection, getRecommendedPresetForSize } from "../utils/modelPresets";
-import { ProviderIcon } from "./ProviderIcon";
+import { CustomModelDropdown } from "./CustomModelDropdown";
 import { Sparkles } from "lucide-react";
 
 const ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
@@ -25,284 +24,6 @@ interface NewTaskModalProps {
   onSubtaskBreakdown?: (description: string) => void;
 }
 
-/**
- * Simplified ModelCombobox for the New Task modal.
- * Reuses the same interaction pattern as ModelSelectorTab.
- */
-function ModelCombobox({
-  value,
-  onChange,
-  models,
-  disabled = false,
-  placeholder = "Select a model…",
-  label,
-  id,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  models: ModelInfo[];
-  disabled?: boolean;
-  placeholder?: string;
-  label: string;
-  id: string;
-}) {
-  const [isOpen, setIsOpen] = useState(false);
-  const [localFilter, setLocalFilter] = useState("");
-  const [highlightedIndex, setHighlightedIndex] = useState(0);
-  
-  const containerRef = useRef<HTMLDivElement>(null);
-  const searchInputRef = useRef<HTMLInputElement>(null);
-  const listRef = useRef<HTMLDivElement>(null);
-
-  const filteredModels = filterModels(models, localFilter);
-
-  const modelsByProvider = filteredModels.reduce<Record<string, ModelInfo[]>>((acc, m) => {
-    (acc[m.provider] ??= []).push(m);
-    return acc;
-  }, {});
-
-  // Get current provider from value for icon display
-  const currentProvider = useMemo(() => {
-    if (!value) return null;
-    const slashIdx = value.indexOf("/");
-    return slashIdx === -1 ? null : value.slice(0, slashIdx);
-  }, [value]);
-
-  const optionsList = [
-    { type: "default" as const, value: "", label: "Use default" },
-    ...Object.entries(modelsByProvider).flatMap(([provider, providerModels]) => [
-      { type: "provider" as const, value: `__group_${provider}`, label: provider, provider },
-      ...providerModels.map((m) => ({ 
-        type: "model" as const, 
-        value: `${m.provider}/${m.id}`, 
-        label: m.name,
-        provider: m.provider 
-      })),
-    ]),
-  ];
-
-  const selectedDisplayText = !value 
-    ? "Use default" 
-    : (() => {
-        const slashIdx = value.indexOf("/");
-        if (slashIdx === -1) return value;
-        const provider = value.slice(0, slashIdx);
-        const modelId = value.slice(slashIdx + 1);
-        const model = models.find((m) => m.provider === provider && m.id === modelId);
-        return model?.name || value;
-      })();
-
-  const currentValueIndex = optionsList.findIndex((opt) => opt.value === value);
-
-  useEffect(() => {
-    if (isOpen) {
-      const selectableIndex = optionsList.findIndex((opt, idx) => 
-        idx >= (currentValueIndex >= 0 ? currentValueIndex : 0) && opt.type !== "provider"
-      );
-      setHighlightedIndex(selectableIndex >= 0 ? selectableIndex : 0);
-      setTimeout(() => searchInputRef.current?.focus(), 0);
-    }
-  }, [isOpen, optionsList, currentValueIndex]);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleClickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setIsOpen(false);
-        setLocalFilter("");
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [isOpen]);
-
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    switch (e.key) {
-      case "ArrowDown":
-        e.preventDefault();
-        if (!isOpen) {
-          setIsOpen(true);
-        } else {
-          let nextIndex = highlightedIndex;
-          for (let i = 1; i <= optionsList.length; i++) {
-            const idx = (highlightedIndex + i) % optionsList.length;
-            if (optionsList[idx]?.type !== "provider") {
-              nextIndex = idx;
-              break;
-            }
-          }
-          setHighlightedIndex(nextIndex);
-        }
-        break;
-      case "ArrowUp":
-        e.preventDefault();
-        if (isOpen) {
-          let prevIndex = highlightedIndex;
-          for (let i = 1; i <= optionsList.length; i++) {
-            const idx = (highlightedIndex - i + optionsList.length) % optionsList.length;
-            if (optionsList[idx]?.type !== "provider") {
-              prevIndex = idx;
-              break;
-            }
-          }
-          setHighlightedIndex(prevIndex);
-        }
-        break;
-      case "Enter":
-        e.preventDefault();
-        if (isOpen) {
-          const option = optionsList[highlightedIndex];
-          if (option && option.type !== "provider") {
-            onChange(option.value);
-            setIsOpen(false);
-            setLocalFilter("");
-          }
-        } else {
-          setIsOpen(true);
-        }
-        break;
-      case "Escape":
-        e.preventDefault();
-        setIsOpen(false);
-        setLocalFilter("");
-        break;
-      case "Tab":
-        if (isOpen) {
-          setIsOpen(false);
-          setLocalFilter("");
-        }
-        break;
-    }
-  }, [isOpen, highlightedIndex, optionsList, onChange]);
-
-  const handleSelect = useCallback((optionValue: string) => {
-    onChange(optionValue);
-    setIsOpen(false);
-    setLocalFilter("");
-  }, [onChange]);
-
-  useEffect(() => {
-    if (isOpen && listRef.current) {
-      const highlightedEl = listRef.current.querySelector(`[data-index="${highlightedIndex}"]`);
-      if (highlightedEl && typeof highlightedEl.scrollIntoView === "function") {
-        highlightedEl.scrollIntoView({ block: "nearest" });
-      }
-    }
-  }, [highlightedIndex, isOpen]);
-
-  return (
-    <div ref={containerRef} className="model-combobox" onKeyDown={handleKeyDown}>
-      <button
-        type="button"
-        id={id}
-        className="model-combobox-trigger"
-        onClick={() => setIsOpen((prev) => !prev)}
-        disabled={disabled}
-        aria-haspopup="listbox"
-        aria-expanded={isOpen}
-        aria-label={label}
-      >
-        {currentProvider && (
-          <span className="model-combobox-trigger-icon">
-            <ProviderIcon provider={currentProvider} size="sm" />
-          </span>
-        )}
-        <span className="model-combobox-trigger-text">{selectedDisplayText}</span>
-        <span className="model-combobox-trigger-arrow">▼</span>
-      </button>
-
-      {isOpen && (
-        <div className="model-combobox-dropdown" role="listbox">
-          <div className="model-combobox-search-wrapper">
-            <input
-              ref={searchInputRef}
-              type="text"
-              className="model-combobox-search"
-              placeholder="Filter models…"
-              value={localFilter}
-              onChange={(e) => setLocalFilter(e.target.value)}
-              onClick={(e) => e.stopPropagation()}
-            />
-            {localFilter && (
-              <button
-                type="button"
-                className="model-combobox-clear"
-                onClick={() => {
-                  setLocalFilter("");
-                  searchInputRef.current?.focus();
-                }}
-                aria-label="Clear filter"
-              >
-                ×
-              </button>
-            )}
-          </div>
-
-          <div className="model-combobox-results-count">
-            {filteredModels.length} model{filteredModels.length !== 1 ? "s" : ""}
-          </div>
-
-          <div ref={listRef} className="model-combobox-list">
-            <div
-              data-index={0}
-              className={`model-combobox-option ${highlightedIndex === 0 ? "model-combobox-option--highlighted" : ""} ${value === "" ? "model-combobox-option--selected" : ""}`}
-              onClick={() => handleSelect("")}
-              onMouseEnter={() => setHighlightedIndex(0)}
-              role="option"
-              aria-selected={value === ""}
-            >
-              <span className="model-combobox-option-text model-combobox-option-text--default">Use default</span>
-            </div>
-
-            {Object.entries(modelsByProvider).map(([provider, providerModels]) => {
-              const groupStartIndex = optionsList.findIndex((opt) => opt.value === `__group_${provider}`);
-              
-              return (
-                <div key={provider} className="model-combobox-group">
-                  <div 
-                    className="model-combobox-optgroup"
-                    data-index={groupStartIndex}
-                  >
-                    <ProviderIcon provider={provider} size="sm" />
-                    <span className="model-combobox-optgroup-text">{provider}</span>
-                  </div>
-                  {providerModels.map((m) => {
-                    const optionValue = `${m.provider}/${m.id}`;
-                    const optionIndex = optionsList.findIndex((opt) => opt.value === optionValue);
-                    const isHighlighted = highlightedIndex === optionIndex;
-                    const isSelected = value === optionValue;
-                    
-                    return (
-                      <div
-                        key={optionValue}
-                        data-index={optionIndex}
-                        className={`model-combobox-option ${isHighlighted ? "model-combobox-option--highlighted" : ""} ${isSelected ? "model-combobox-option--selected" : ""}`}
-                        onClick={() => handleSelect(optionValue)}
-                        onMouseEnter={() => setHighlightedIndex(optionIndex)}
-                        role="option"
-                        aria-selected={isSelected}
-                      >
-                        <span className="model-combobox-option-text">{m.name}</span>
-                        <span className="model-combobox-option-id">{m.id}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              );
-            })}
-
-            {filteredModels.length === 0 && localFilter && (
-              <div className="model-combobox-no-results">
-                No models match &apos;{localFilter}&apos;
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 export function NewTaskModal({ isOpen, onClose, tasks, onCreateTask, addToast, onPlanningMode, onSubtaskBreakdown }: NewTaskModalProps) {
   const [description, setDescription] = useState("");
   const [dependencies, setDependencies] = useState<string[]>([]);
@@ -311,6 +32,7 @@ export function NewTaskModal({ isOpen, onClose, tasks, onCreateTask, addToast, o
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
+  const [favoriteProviders, setFavoriteProviders] = useState<string[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [executorModel, setExecutorModel] = useState("");
   const [validatorModel, setValidatorModel] = useState("");
@@ -335,7 +57,10 @@ export function NewTaskModal({ isOpen, onClose, tasks, onCreateTask, addToast, o
     if (isOpen) {
       setModelsLoading(true);
       fetchModels()
-        .then((models) => setAvailableModels(models))
+        .then((response) => {
+          setAvailableModels(response.models);
+          setFavoriteProviders(response.favoriteProviders);
+        })
         .catch(() => {/* silently fail - models just won't be available */})
         .finally(() => setModelsLoading(false));
       fetchSettings()
@@ -582,6 +307,23 @@ export function NewTaskModal({ isOpen, onClose, tasks, onCreateTask, addToast, o
     }
   }, [description, isRefining, addToast]);
 
+  const handleToggleFavorite = useCallback(async (provider: string) => {
+    const currentFavorites = favoriteProviders;
+    const isFavorite = currentFavorites.includes(provider);
+    const newFavorites = isFavorite
+      ? currentFavorites.filter((p) => p !== provider)
+      : [provider, ...currentFavorites];
+
+    setFavoriteProviders(newFavorites);
+
+    try {
+      await updateGlobalSettings({ favoriteProviders: newFavorites });
+    } catch {
+      // Revert on error
+      setFavoriteProviders(currentFavorites);
+    }
+  }, [favoriteProviders]);
+
   if (!isOpen) return null;
 
   const availableDeps = tasks
@@ -806,7 +548,7 @@ export function NewTaskModal({ isOpen, onClose, tasks, onCreateTask, addToast, o
                 ) : null}
                 <div className="model-select-row">
                   <label htmlFor="executor-model" className="model-select-label">Executor</label>
-                  <ModelCombobox
+                  <CustomModelDropdown
                     id="executor-model"
                     label="Executor Model"
                     value={executorModel}
@@ -817,11 +559,13 @@ export function NewTaskModal({ isOpen, onClose, tasks, onCreateTask, addToast, o
                     }}
                     models={availableModels}
                     disabled={isSubmitting || presetMode === "preset"}
+                    favoriteProviders={favoriteProviders}
+                    onToggleFavorite={handleToggleFavorite}
                   />
                 </div>
                 <div className="model-select-row">
                   <label htmlFor="validator-model" className="model-select-label">Validator</label>
-                  <ModelCombobox
+                  <CustomModelDropdown
                     id="validator-model"
                     label="Validator Model"
                     value={validatorModel}
@@ -832,6 +576,8 @@ export function NewTaskModal({ isOpen, onClose, tasks, onCreateTask, addToast, o
                     }}
                     models={availableModels}
                     disabled={isSubmitting || presetMode === "preset"}
+                    favoriteProviders={favoriteProviders}
+                    onToggleFavorite={handleToggleFavorite}
                   />
                 </div>
               </>

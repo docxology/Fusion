@@ -16,6 +16,14 @@ vi.mock("@fusion/core", async () => {
       self.init = vi.fn().mockResolvedValue(undefined);
       self.listTasks = vi.fn().mockResolvedValue([]);
       self.getSettings = vi.fn().mockResolvedValue({});
+      self.getMissionStore = vi.fn().mockReturnValue({
+        getMissionWithHierarchy: vi.fn().mockReturnValue(null),
+        findNextPendingSlice: vi.fn().mockReturnValue(null),
+        activateSlice: vi.fn(),
+        on: vi.fn(),
+        off: vi.fn(),
+        emit: vi.fn(),
+      });
       self.on = vi.fn().mockReturnValue(self);
       self.emit = vi.fn().mockReturnValue(true);
       return self;

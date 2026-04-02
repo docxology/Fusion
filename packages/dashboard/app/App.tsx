@@ -23,6 +23,7 @@ import { NewTaskModal } from "./components/NewTaskModal";
 import { ScheduledTasksModal } from "./components/ScheduledTasksModal";
 import { ActivityLogModal } from "./components/ActivityLogModal";
 import { WorkflowStepManager } from "./components/WorkflowStepManager";
+import { MissionManager } from "./components/MissionManager";
 import { AgentListModal } from "./components/AgentListModal";
 import { AgentsView } from "./components/AgentsView";
 import { ScriptsModal } from "./components/ScriptsModal";
@@ -85,6 +86,7 @@ function AppInner() {
   const [activityLogOpen, setActivityLogOpen] = useState(false);
   const [gitManagerOpen, setGitManagerOpen] = useState(false);
   const [workflowStepsOpen, setWorkflowStepsOpen] = useState(false);
+  const [missionsOpen, setMissionsOpen] = useState(false);
   const [agentsOpen, setAgentsOpen] = useState(false);
   const [scriptsOpen, setScriptsOpen] = useState(false);
   const [terminalInitialCommand, setTerminalInitialCommand] = useState<string | undefined>(undefined);
@@ -177,7 +179,7 @@ function AppInner() {
   // Fetch available models
   useEffect(() => {
     fetchModels()
-      .then((models) => setAvailableModels(models))
+      .then((response) => setAvailableModels(response.models))
       .catch(() => {/* keep empty array on failure */});
   }, []);
 
@@ -484,6 +486,7 @@ function AppInner() {
         onOpenSchedules={handleOpenSchedules}
         onOpenGitManager={handleOpenGitManager}
         onOpenWorkflowSteps={() => setWorkflowStepsOpen(true)}
+        onOpenMissions={() => setMissionsOpen(true)}
         onOpenAgents={handleOpenAgents}
         onOpenScripts={handleOpenScripts}
         onRunScript={handleRunScript}
@@ -620,6 +623,18 @@ function AppInner() {
         isOpen={workflowStepsOpen}
         onClose={() => setWorkflowStepsOpen(false)}
         addToast={addToast}
+      />
+      <MissionManager
+        isOpen={missionsOpen}
+        onClose={() => setMissionsOpen(false)}
+        addToast={addToast}
+        availableTasks={tasks.map((t) => ({ id: t.id, title: t.title }))}
+        onSelectTask={(taskId) => {
+          const task = tasks.find((t) => t.id === taskId);
+          if (task) {
+            setDetailTask(task as TaskDetail);
+          }
+        }}
       />
       <AgentListModal
         isOpen={agentsOpen}

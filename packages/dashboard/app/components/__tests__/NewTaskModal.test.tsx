@@ -6,10 +6,10 @@ import type { Task, Column } from "@fusion/core";
 // Mock the api module
 vi.mock("../../api", () => ({
   uploadAttachment: vi.fn().mockResolvedValue({}),
-  fetchModels: vi.fn().mockResolvedValue([
+  fetchModels: vi.fn().mockResolvedValue({ models: [
     { provider: "anthropic", id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5", reasoning: true, contextWindow: 200000 },
     { provider: "openai", id: "gpt-4o", name: "GPT-4o", reasoning: false, contextWindow: 128000 },
-  ]),
+  ], favoriteProviders: [] }),
   fetchSettings: vi.fn().mockResolvedValue({
     modelPresets: [],
     autoSelectModelPreset: false,

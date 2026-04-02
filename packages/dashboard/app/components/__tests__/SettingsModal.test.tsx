@@ -32,10 +32,10 @@ vi.mock("../../api", () => ({
   fetchAuthStatus: vi.fn(() => Promise.resolve({ providers: [{ id: "anthropic", name: "Anthropic", authenticated: false }] })),
   loginProvider: vi.fn(() => Promise.resolve({ url: "https://auth.example.com/login" })),
   logoutProvider: vi.fn(() => Promise.resolve({ success: true })),
-  fetchModels: vi.fn(() => Promise.resolve([
+  fetchModels: vi.fn(() => Promise.resolve({ models: [
     { provider: "anthropic", id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5", reasoning: true, contextWindow: 200000 },
     { provider: "openai", id: "gpt-4o", name: "GPT-4o", reasoning: false, contextWindow: 128000 },
-  ])),
+  ], favoriteProviders: [] })),
   testNtfyNotification: vi.fn(() => Promise.resolve({ success: true })),
 }));
 
@@ -540,7 +540,7 @@ describe("SettingsModal", () => {
   });
 
   it("shows empty state when no models available", async () => {
-    (fetchModels as ReturnType<typeof vi.fn>).mockResolvedValueOnce([]);
+    (fetchModels as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ models: [], favoriteProviders: [] });
 
     render(<SettingsModal onClose={onClose} addToast={addToast} />);
     await waitFor(() => expect(fetchSettings).toHaveBeenCalled());

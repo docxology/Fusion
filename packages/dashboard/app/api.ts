@@ -287,6 +287,13 @@ export function fetchTaskComments(id: string): Promise<TaskComment[]> {
   return api<TaskComment[]>(`/tasks/${id}/comments`);
 }
 
+export function addComment(id: string, text: string): Promise<Task> {
+  return api<Task>(`/tasks/${id}/steer`, {
+    method: "POST",
+    body: JSON.stringify({ text }),
+  });
+}
+
 export function addTaskComment(id: string, text: string, author?: string): Promise<Task> {
   return api<Task>(`/tasks/${id}/comments`, {
     method: "POST",
@@ -339,9 +346,15 @@ export interface ModelInfo {
   contextWindow: number;
 }
 
-/** Fetch available AI models from the model registry */
-export function fetchModels(): Promise<ModelInfo[]> {
-  return api<ModelInfo[]>("/models");
+/** Response from the models endpoint */
+export interface ModelsResponse {
+  models: ModelInfo[];
+  favoriteProviders: string[];
+}
+
+/** Fetch available AI models from the model registry along with favoriteProviders */
+export function fetchModels(): Promise<ModelsResponse> {
+  return api<ModelsResponse>("/models");
 }
 
 // --- Usage API ---
@@ -1530,8 +1543,8 @@ export function cancelSubtaskBreakdown(sessionId: string): Promise<void> {
 
 // ── Agent API ────────────────────────────────────────────────────────────
 
-import type { Agent, AgentDetail, AgentCapability, AgentState, AgentHeartbeatEvent, AgentCreateInput, AgentUpdateInput } from "@fusion/core";
-export type { Agent, AgentDetail, AgentCapability, AgentState, AgentHeartbeatEvent, AgentCreateInput, AgentUpdateInput };
+import type { Agent, AgentDetail, AgentCapability, AgentState, AgentHeartbeatEvent, AgentHeartbeatRun, AgentCreateInput, AgentUpdateInput } from "@fusion/core";
+export type { Agent, AgentDetail, AgentCapability, AgentState, AgentHeartbeatEvent, AgentHeartbeatRun, AgentCreateInput, AgentUpdateInput };
 
 /** Fetch all agents, optionally filtered by state or role */
 export function fetchAgents(filter?: { state?: AgentState; role?: AgentCapability }): Promise<Agent[]> {
@@ -1956,6 +1969,241 @@ export interface TaskFileDiff {
 /** Fetch file diffs for a task */
 export function fetchTaskFileDiffs(taskId: string): Promise<TaskFileDiff[]> {
   return api<TaskFileDiff[]>(`/tasks/${encodeURIComponent(taskId)}/file-diffs`);
+}
+
+// ── Mission API ───────────────────────────────────────────────────────────
+
+/** Mission status values */
+export type MissionStatus = "planning" | "active" | "blocked" | "complete" | "archived";
+
+/** Milestone status values */
+export type MilestoneStatus = "planning" | "active" | "blocked" | "complete";
+
+/** Slice status values */
+export type SliceStatus = "pending" | "active" | "complete";
+
+/** Feature status values */
+export type FeatureStatus = "defined" | "triaged" | "in-progress" | "done";
+
+/** Mission entity */
+export interface Mission {
+  id: string;
+  title: string;
+  description?: string;
+  status: MissionStatus;
+  interviewState: "not_started" | "in_progress" | "completed" | "needs_update";
+  autoAdvance?: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Milestone entity */
+export interface Milestone {
+  id: string;
+  missionId: string;
+  title: string;
+  description?: string;
+  status: MilestoneStatus;
+  orderIndex: number;
+  interviewState: "not_started" | "in_progress" | "completed" | "needs_update";
+  dependencies: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Slice entity */
+export interface Slice {
+  id: string;
+  milestoneId: string;
+  title: string;
+  description?: string;
+  status: SliceStatus;
+  orderIndex: number;
+  activatedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Feature entity */
+export interface MissionFeature {
+  id: string;
+  sliceId: string;
+  taskId?: string;
+  title: string;
+  description?: string;
+  acceptanceCriteria?: string;
+  status: FeatureStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Milestone with slices (each slice has features) */
+export interface MilestoneWithSlices extends Milestone {
+  slices: SliceWithFeatures[];
+}
+
+/** Slice with features */
+export interface SliceWithFeatures extends Slice {
+  features: MissionFeature[];
+}
+
+/** Full mission hierarchy */
+export interface MissionWithHierarchy extends Mission {
+  milestones: MilestoneWithSlices[];
+}
+
+/** Fetch all missions */
+export function fetchMissions(): Promise<Mission[]> {
+  return api<Mission[]>("/missions");
+}
+
+/** Create a new mission */
+export function createMission(input: { title: string; description?: string }): Promise<Mission> {
+  return api<Mission>("/missions", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+/** Get mission with full hierarchy */
+export function fetchMission(missionId: string): Promise<MissionWithHierarchy> {
+  return api<MissionWithHierarchy>(`/missions/${encodeURIComponent(missionId)}`);
+}
+
+/** Update mission */
+export function updateMission(missionId: string, updates: Partial<Mission>): Promise<Mission> {
+  return api<Mission>(`/missions/${encodeURIComponent(missionId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(updates),
+  });
+}
+
+/** Delete mission */
+export function deleteMission(missionId: string): Promise<void> {
+  return api<void>(`/missions/${encodeURIComponent(missionId)}`, {
+    method: "DELETE",
+  });
+}
+
+/** Get mission computed status */
+export function fetchMissionStatus(missionId: string): Promise<{ status: string }> {
+  return api<{ status: string }>(`/missions/${encodeURIComponent(missionId)}/status`);
+}
+
+/** Add milestone to mission */
+export function createMilestone(
+  missionId: string,
+  input: { title: string; description?: string; dependencies?: string[] }
+): Promise<Milestone> {
+  return api<Milestone>(`/missions/${encodeURIComponent(missionId)}/milestones`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+/** Update milestone */
+export function updateMilestone(milestoneId: string, updates: Partial<Milestone>): Promise<Milestone> {
+  return api<Milestone>(`/missions/milestones/${encodeURIComponent(milestoneId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(updates),
+  });
+}
+
+/** Delete milestone */
+export function deleteMilestone(milestoneId: string): Promise<void> {
+  return api<void>(`/missions/milestones/${encodeURIComponent(milestoneId)}`, {
+    method: "DELETE",
+  });
+}
+
+/** Reorder milestones */
+export function reorderMilestones(missionId: string, orderedIds: string[]): Promise<void> {
+  return api<void>(`/missions/${encodeURIComponent(missionId)}/milestones/reorder`, {
+    method: "POST",
+    body: JSON.stringify({ orderedIds }),
+  });
+}
+
+/** Add slice to milestone */
+export function createSlice(
+  milestoneId: string,
+  input: { title: string; description?: string }
+): Promise<Slice> {
+  return api<Slice>(`/missions/milestones/${encodeURIComponent(milestoneId)}/slices`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+/** Update slice */
+export function updateSlice(sliceId: string, updates: Partial<Slice>): Promise<Slice> {
+  return api<Slice>(`/missions/slices/${encodeURIComponent(sliceId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(updates),
+  });
+}
+
+/** Delete slice */
+export function deleteSlice(sliceId: string): Promise<void> {
+  return api<void>(`/missions/slices/${encodeURIComponent(sliceId)}`, {
+    method: "DELETE",
+  });
+}
+
+/** Activate slice */
+export function activateSlice(sliceId: string): Promise<Slice> {
+  return api<Slice>(`/missions/slices/${encodeURIComponent(sliceId)}/activate`, {
+    method: "POST",
+  });
+}
+
+/** Reorder slices */
+export function reorderSlices(milestoneId: string, orderedIds: string[]): Promise<void> {
+  return api<void>(`/missions/milestones/${encodeURIComponent(milestoneId)}/slices/reorder`, {
+    method: "POST",
+    body: JSON.stringify({ orderedIds }),
+  });
+}
+
+/** Add feature to slice */
+export function createFeature(
+  sliceId: string,
+  input: { title: string; description?: string; acceptanceCriteria?: string }
+): Promise<MissionFeature> {
+  return api<MissionFeature>(`/missions/slices/${encodeURIComponent(sliceId)}/features`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+/** Update feature */
+export function updateFeature(featureId: string, updates: Partial<MissionFeature>): Promise<MissionFeature> {
+  return api<MissionFeature>(`/missions/features/${encodeURIComponent(featureId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(updates),
+  });
+}
+
+/** Delete feature */
+export function deleteFeature(featureId: string): Promise<void> {
+  return api<void>(`/missions/features/${encodeURIComponent(featureId)}`, {
+    method: "DELETE",
+  });
+}
+
+/** Link feature to task */
+export function linkFeatureToTask(featureId: string, taskId: string): Promise<MissionFeature> {
+  return api<MissionFeature>(`/missions/features/${encodeURIComponent(featureId)}/link-task`, {
+    method: "POST",
+    body: JSON.stringify({ taskId }),
+  });
+}
+
+/** Unlink feature from task */
+export function unlinkFeatureFromTask(featureId: string): Promise<MissionFeature> {
+  return api<MissionFeature>(`/missions/features/${encodeURIComponent(featureId)}/unlink-task`, {
+    method: "POST",
+  });
 }
 
 

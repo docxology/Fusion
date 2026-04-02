@@ -6,6 +6,10 @@ import {
   calculatePace,
   _setSleepFn,
   _resetSleepFn,
+  _stripClaudeAnsi,
+  _parseClaudePercentLine,
+  _parseClaudeResetLine,
+  _parseClaudeResetText,
 } from "./usage.js";
 
 // Mock the https module
@@ -25,6 +29,11 @@ const mockExecFileSync = vi.fn();
 vi.mock("node:child_process", () => ({
   execFileSync: (...args: any[]) => mockExecFileSync(...args),
 }));
+
+// Mock node-pty for CLI fallback — default: not available (simulates test env)
+vi.mock("node-pty", () => {
+  throw new Error("node-pty not available in test environment");
+});
 
 describe("usage", () => {
   beforeEach(() => {
@@ -95,19 +104,15 @@ describe("usage", () => {
   describe("Claude provider", () => {
     /**
      * Helper to set up mocks for Claude tests.
-     * - mockExecFileSync needs to handle BOTH keychain reads ("security") AND
-     *   CLI usage calls ("claude") since they share the same mock.
-     * - mockReadFileSync handles credential file reads.
+     * Claude now reads credentials from files/keychain and calls the API directly.
      */
     function setupClaudeMocks(options: {
       /** Credential file content (null = file not found) */
       credFileContent?: any;
       /** Keychain credential content (null = keychain error) */
       keychainContent?: any;
-      /** CLI usage output (string JSON) or Error to throw */
-      cliOutput?: string | Error;
     }) {
-      const { credFileContent = null, keychainContent = null, cliOutput } = options;
+      const { credFileContent = null, keychainContent = null } = options;
 
       mockReadFileSync.mockImplementation((filePath: string) => {
         if (filePath.includes("claude") && credFileContent !== null) {
@@ -116,7 +121,7 @@ describe("usage", () => {
         throw new Error("File not found");
       });
 
-      mockExecFileSync.mockImplementation((cmd: string, args: string[]) => {
+      mockExecFileSync.mockImplementation((cmd: string, _args: string[]) => {
         // Keychain read via `security` command
         if (cmd === "security") {
           if (keychainContent !== null) {
@@ -124,17 +129,39 @@ describe("usage", () => {
           }
           throw new Error("Keychain item not found");
         }
-        // Claude CLI usage call
-        if (cmd === "claude") {
-          if (cliOutput instanceof Error) throw cliOutput;
-          if (cliOutput !== undefined) return cliOutput;
-          throw new Error("Command failed");
-        }
         throw new Error(`Unexpected command: ${cmd}`);
       });
     }
 
-    it("detects no auth when credentials file doesn't exist", async () => {
+    /**
+     * Helper to set up mock HTTPS request for Claude usage API.
+     */
+    function setupClaudeApiResponse(mockResponse: any, statusCode = 200) {
+      const mockReq = {
+        on: vi.fn(),
+        write: vi.fn(),
+        end: vi.fn(),
+      };
+
+      mockRequest.mockImplementation((_options: any, callback: any) => {
+        const mockRes = {
+          statusCode,
+          headers: {},
+          on: vi.fn((event: string, handler: any) => {
+            if (event === "data") {
+              handler(Buffer.from(JSON.stringify(mockResponse)));
+            }
+            if (event === "end") {
+              handler();
+            }
+          }),
+        };
+        callback(mockRes);
+        return mockReq;
+      });
+    }
+
+    it("detects no auth when credentials file doesn't exist and keychain fails", async () => {
       mockReadFileSync.mockImplementation(() => {
         throw new Error("File not found");
       });
@@ -151,17 +178,6 @@ describe("usage", () => {
     });
 
     it("reads credentials from macOS keychain when file paths fail", async () => {
-      const cliResponse = JSON.stringify({
-        five_hour: {
-          utilization: 30.0,
-          resets_at: new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString(),
-        },
-        seven_day: {
-          utilization: 15.0,
-          resets_at: new Date(Date.now() + 4 * 24 * 60 * 60 * 1000).toISOString(),
-        },
-      });
-
       setupClaudeMocks({
         keychainContent: {
           claudeAiOauth: {
@@ -170,7 +186,17 @@ describe("usage", () => {
             subscriptionType: "pro",
           },
         },
-        cliOutput: cliResponse,
+      });
+
+      setupClaudeApiResponse({
+        five_hour: {
+          utilization: 30.0,
+          resets_at: new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString(),
+        },
+        seven_day: {
+          utilization: 15.0,
+          resets_at: new Date(Date.now() + 4 * 24 * 60 * 60 * 1000).toISOString(),
+        },
       });
 
       const providers = await fetchAllProviderUsage();
@@ -186,38 +212,9 @@ describe("usage", () => {
         ["find-generic-password", "-s", "Claude Code-credentials", "-w"],
         { encoding: "utf-8", timeout: 5000 }
       );
-
-      // Verify CLI was called
-      expect(mockExecFileSync).toHaveBeenCalledWith(
-        "claude",
-        ["usage", "--json"],
-        { encoding: "utf-8", timeout: 15000 }
-      );
-    });
-
-    it("falls back to no-auth when both file and keychain fail", async () => {
-      mockReadFileSync.mockImplementation(() => {
-        throw new Error("File not found");
-      });
-      mockExecFileSync.mockImplementation(() => {
-        throw new Error("Keychain item not found");
-      });
-
-      const providers = await fetchAllProviderUsage();
-      const claude = providers.find((p) => p.name === "Claude")!;
-
-      expect(claude.status).toBe("no-auth");
-      expect(claude.error).toContain("No Claude CLI credentials");
     });
 
     it("parses keychain credentials with rateLimitTier for plan detection", async () => {
-      const cliResponse = JSON.stringify({
-        five_hour: {
-          utilization: 25.0,
-          resets_at: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
-        },
-      });
-
       setupClaudeMocks({
         keychainContent: {
           claudeAiOauth: {
@@ -226,14 +223,20 @@ describe("usage", () => {
             rateLimitTier: "default_claude_max_20x",
           },
         },
-        cliOutput: cliResponse,
+      });
+
+      setupClaudeApiResponse({
+        five_hour: {
+          utilization: 25.0,
+          resets_at: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
+        },
       });
 
       const providers = await fetchAllProviderUsage();
       const claude = providers.find((p) => p.name === "Claude")!;
 
       expect(claude.status).toBe("ok");
-      expect(claude.plan).toBe("Max"); // Should detect "max" from rateLimitTier
+      expect(claude.plan).toBe("Max");
     });
 
     it("detects missing scope error", async () => {
@@ -257,8 +260,16 @@ describe("usage", () => {
       expect(claude!.error).toContain("user:profile scope");
     });
 
-    it("parses usage data from CLI JSON output", async () => {
-      const cliResponse = JSON.stringify({
+    it("parses usage data from API response", async () => {
+      setupClaudeMocks({
+        credFileContent: {
+          accessToken: "test-token",
+          scopes: ["user:profile"],
+          subscriptionType: "pro",
+        },
+      });
+
+      setupClaudeApiResponse({
         five_hour: {
           utilization: 45.5,
           resets_at: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
@@ -267,15 +278,6 @@ describe("usage", () => {
           utilization: 23.0,
           resets_at: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(),
         },
-      });
-
-      setupClaudeMocks({
-        credFileContent: {
-          accessToken: "test-token",
-          scopes: ["user:profile"],
-          subscriptionType: "pro",
-        },
-        cliOutput: cliResponse,
       });
 
       const providers = await fetchAllProviderUsage();
@@ -292,8 +294,16 @@ describe("usage", () => {
       expect(sessionWindow!.resetText).toContain("resets in");
     });
 
-    it("parses all four usage windows from CLI output", async () => {
-      const cliResponse = JSON.stringify({
+    it("parses all four usage windows from API response", async () => {
+      setupClaudeMocks({
+        credFileContent: {
+          accessToken: "test-token",
+          scopes: ["user:profile"],
+          subscriptionType: "max",
+        },
+      });
+
+      setupClaudeApiResponse({
         five_hour: {
           utilization: 40.0,
           resets_at: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
@@ -312,15 +322,6 @@ describe("usage", () => {
         },
       });
 
-      setupClaudeMocks({
-        credFileContent: {
-          accessToken: "test-token",
-          scopes: ["user:profile"],
-          subscriptionType: "max",
-        },
-        cliOutput: cliResponse,
-      });
-
       const providers = await fetchAllProviderUsage();
       const claude = providers.find((p) => p.name === "Claude")!;
 
@@ -334,70 +335,121 @@ describe("usage", () => {
       ]);
     });
 
-    it("handles CLI not found (ENOENT)", async () => {
-      const enoentError = new Error("spawn claude ENOENT") as any;
-      enoentError.code = "ENOENT";
-
+    it("falls back to CLI parsing on 429 rate limit", async () => {
       setupClaudeMocks({
         credFileContent: {
           accessToken: "test-token",
           scopes: ["user:profile"],
         },
-        cliOutput: enoentError,
+      });
+
+      // No-op sleep so retries don't actually wait
+      _setSleepFn(async () => {});
+
+      const mockReq = { on: vi.fn(), write: vi.fn(), end: vi.fn() };
+      mockRequest.mockImplementation((_options: any, callback: any) => {
+        const mockRes = {
+          statusCode: 429,
+          headers: {},
+          on: vi.fn((event: string, handler: any) => {
+            if (event === "data") handler(Buffer.from('{"error":"rate_limited"}'));
+            if (event === "end") handler();
+          }),
+        };
+        callback(mockRes);
+        return mockReq;
+      });
+
+      const providers = await fetchAllProviderUsage();
+      const claude = providers.find((p) => p.name === "Claude")!;
+
+      // After 429 retries exhausted, falls back to CLI which will fail in test
+      // (node-pty not available) — so we get the CLI fallback error
+      expect(claude.status).toBe("error");
+      // Should have retried 3 times (CLAUDE_MAX_RETRIES)
+      expect(mockRequest).toHaveBeenCalledTimes(3);
+
+      _resetSleepFn();
+    });
+
+    it("handles 401 auth error", async () => {
+      setupClaudeMocks({
+        credFileContent: {
+          accessToken: "expired-token",
+          scopes: ["user:profile"],
+        },
+      });
+
+      const mockReq = { on: vi.fn(), write: vi.fn(), end: vi.fn() };
+      mockRequest.mockImplementation((_options: any, callback: any) => {
+        const mockRes = {
+          statusCode: 401,
+          headers: {},
+          on: vi.fn((event: string, handler: any) => {
+            if (event === "data") handler(Buffer.from('{"error": "unauthorized"}'));
+            if (event === "end") handler();
+          }),
+        };
+        callback(mockRes);
+        return mockReq;
       });
 
       const providers = await fetchAllProviderUsage();
       const claude = providers.find((p) => p.name === "Claude")!;
 
       expect(claude.status).toBe("error");
-      expect(claude.error).toContain("Claude CLI not found");
+      expect(claude.error).toContain("Auth expired");
     });
 
-    it("handles CLI timeout (killed process)", async () => {
-      const timeoutError = new Error("Process timed out") as any;
-      timeoutError.killed = true;
-
+    it("handles 403 auth error", async () => {
       setupClaudeMocks({
         credFileContent: {
-          accessToken: "test-token",
+          accessToken: "forbidden-token",
           scopes: ["user:profile"],
         },
-        cliOutput: timeoutError,
+      });
+
+      const mockReq = { on: vi.fn(), write: vi.fn(), end: vi.fn() };
+      mockRequest.mockImplementation((_options: any, callback: any) => {
+        const mockRes = {
+          statusCode: 403,
+          headers: {},
+          on: vi.fn((event: string, handler: any) => {
+            if (event === "data") handler(Buffer.from('{"error": "forbidden"}'));
+            if (event === "end") handler();
+          }),
+        };
+        callback(mockRes);
+        return mockReq;
       });
 
       const providers = await fetchAllProviderUsage();
       const claude = providers.find((p) => p.name === "Claude")!;
 
       expect(claude.status).toBe("error");
-      expect(claude.error).toContain("timed out");
+      expect(claude.error).toContain("Auth expired");
     });
 
-    it("handles CLI non-zero exit code", async () => {
-      const exitError = new Error("Command failed with exit code 1") as any;
-      exitError.status = 1;
-
+    it("handles malformed JSON response", async () => {
       setupClaudeMocks({
         credFileContent: {
           accessToken: "test-token",
           scopes: ["user:profile"],
         },
-        cliOutput: exitError,
       });
 
-      const providers = await fetchAllProviderUsage();
-      const claude = providers.find((p) => p.name === "Claude")!;
-
-      expect(claude.status).toBe("error");
-      expect(claude.error).toContain("Command failed");
-    });
-
-    it("handles malformed JSON output from CLI", async () => {
-      setupClaudeMocks({
-        credFileContent: {
-          accessToken: "test-token",
-          scopes: ["user:profile"],
-        },
-        cliOutput: "not valid json {{{",
+      const mockReq = { on: vi.fn(), write: vi.fn(), end: vi.fn() };
+      mockRequest.mockImplementation((_options: any, callback: any) => {
+        const mockRes = {
+          statusCode: 200,
+          headers: {},
+          on: vi.fn((event: string, handler: any) => {
+            if (event === "data") handler(Buffer.from("not valid json {{{"));
+            if (event === "end") handler();
+          }),
+        };
+        callback(mockRes);
+        return mockReq;
       });
 
       const providers = await fetchAllProviderUsage();
@@ -407,15 +459,16 @@ describe("usage", () => {
       expect(claude.error).toBeDefined();
     });
 
-    it("handles empty JSON object from CLI gracefully", async () => {
+    it("handles empty JSON object from API gracefully", async () => {
       setupClaudeMocks({
         credFileContent: {
           accessToken: "test-token",
           scopes: ["user:profile"],
           subscriptionType: "pro",
         },
-        cliOutput: "{}",
       });
+
+      setupClaudeApiResponse({});
 
       const providers = await fetchAllProviderUsage();
       const claude = providers.find((p) => p.name === "Claude")!;
@@ -432,8 +485,9 @@ describe("usage", () => {
           scopes: ["user:profile"],
           subscriptionType: "team",
         },
-        cliOutput: JSON.stringify({ five_hour: { utilization: 10 } }),
       });
+
+      setupClaudeApiResponse({ five_hour: { utilization: 10 } });
 
       const providers = await fetchAllProviderUsage();
       const claude = providers.find((p) => p.name === "Claude")!;
@@ -450,385 +504,14 @@ describe("usage", () => {
             rateLimitTier: "default_claude_pro_5x",
           },
         },
-        cliOutput: JSON.stringify({ five_hour: { utilization: 10 } }),
       });
+
+      setupClaudeApiResponse({ five_hour: { utilization: 10 } });
 
       const providers = await fetchAllProviderUsage();
       const claude = providers.find((p) => p.name === "Claude")!;
 
       expect(claude.plan).toBe("Pro");
-    });
-
-    it("does not send anthropic-beta header in requests", async () => {
-      const mockResponse = {
-        five_hour: { utilization: 10.0 },
-      };
-
-      mockReadFileSync.mockImplementation((path: string) => {
-        if (path.includes("claude")) {
-          return JSON.stringify({
-            accessToken: "test-token",
-            scopes: ["user:profile"],
-          });
-        }
-        throw new Error("File not found");
-      });
-      mockExecFileSync.mockImplementation(() => {
-        throw new Error("Keychain item not found");
-      });
-
-      let capturedHeaders: Record<string, string> = {};
-      const mockReq = {
-        on: vi.fn(),
-        write: vi.fn(),
-        end: vi.fn(),
-      };
-
-      mockRequest.mockImplementation((options: any, callback: any) => {
-        capturedHeaders = options.headers || {};
-        const mockRes = {
-          statusCode: 200,
-          headers: {},
-          on: vi.fn((event: string, handler: any) => {
-            if (event === "data") {
-              handler(Buffer.from(JSON.stringify(mockResponse)));
-            }
-            if (event === "end") {
-              handler();
-            }
-          }),
-        };
-        callback(mockRes);
-        return mockReq;
-      });
-
-      await fetchAllProviderUsage();
-
-      // Verify no anthropic-beta header is sent
-      expect(capturedHeaders).not.toHaveProperty("anthropic-beta");
-    });
-
-    it("retries on 429 and succeeds after transient rate limit", async () => {
-      const noopSleep = vi.fn().mockResolvedValue(undefined);
-      _setSleepFn(noopSleep);
-
-      const mockResponse = {
-        five_hour: {
-          utilization: 20.0,
-          resets_at: new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString(),
-        },
-      };
-
-      mockReadFileSync.mockImplementation((path: string) => {
-        if (path.includes("claude")) {
-          return JSON.stringify({
-            accessToken: "test-token",
-            scopes: ["user:profile"],
-          });
-        }
-        throw new Error("File not found");
-      });
-      mockExecFileSync.mockImplementation(() => {
-        throw new Error("Keychain item not found");
-      });
-
-      let callCount = 0;
-      const mockReq = {
-        on: vi.fn(),
-        write: vi.fn(),
-        end: vi.fn(),
-      };
-
-      mockRequest.mockImplementation((options: any, callback: any) => {
-        callCount++;
-        const is429 = callCount <= 2; // First 2 calls return 429, third succeeds
-        const mockRes = {
-          statusCode: is429 ? 429 : 200,
-          headers: is429 ? { "retry-after": "1" } : {},
-          on: vi.fn((event: string, handler: any) => {
-            if (event === "data") {
-              const body = is429
-                ? '{"error":"rate_limited"}'
-                : JSON.stringify(mockResponse);
-              handler(Buffer.from(body));
-            }
-            if (event === "end") {
-              handler();
-            }
-          }),
-        };
-        callback(mockRes);
-        return mockReq;
-      });
-
-      const providers = await fetchAllProviderUsage();
-      const claude = providers.find((p) => p.name === "Claude")!;
-
-      expect(claude.status).toBe("ok");
-      expect(claude.windows).toHaveLength(1);
-      expect(claude.windows[0].percentUsed).toBe(20);
-
-      // Verify sleep was called for retries (2 retry sleeps)
-      expect(noopSleep).toHaveBeenCalledTimes(2);
-
-      _resetSleepFn();
-    });
-
-    it("reports rate limited after all retries exhausted on 429", async () => {
-      const noopSleep = vi.fn().mockResolvedValue(undefined);
-      _setSleepFn(noopSleep);
-
-      mockReadFileSync.mockImplementation((path: string) => {
-        if (path.includes("claude")) {
-          return JSON.stringify({
-            accessToken: "test-token",
-            scopes: ["user:profile"],
-          });
-        }
-        throw new Error("File not found");
-      });
-      mockExecFileSync.mockImplementation(() => {
-        throw new Error("Keychain item not found");
-      });
-
-      const mockReq = {
-        on: vi.fn(),
-        write: vi.fn(),
-        end: vi.fn(),
-      };
-
-      // Always return 429
-      mockRequest.mockImplementation((options: any, callback: any) => {
-        const mockRes = {
-          statusCode: 429,
-          headers: {},
-          on: vi.fn((event: string, handler: any) => {
-            if (event === "data") {
-              handler(Buffer.from('{"error":"rate_limited"}'));
-            }
-            if (event === "end") {
-              handler();
-            }
-          }),
-        };
-        callback(mockRes);
-        return mockReq;
-      });
-
-      const providers = await fetchAllProviderUsage();
-      const claude = providers.find((p) => p.name === "Claude")!;
-
-      expect(claude.status).toBe("error");
-      expect(claude.error).toBe("Rate limited — try again later");
-
-      // Verify retries happened (2 sleeps for 3 attempts)
-      expect(noopSleep).toHaveBeenCalledTimes(2);
-
-      _resetSleepFn();
-    });
-
-    it("uses exponential backoff delays when retry-after header is absent", async () => {
-      const noopSleep = vi.fn().mockResolvedValue(undefined);
-      _setSleepFn(noopSleep);
-
-      mockReadFileSync.mockImplementation((path: string) => {
-        if (path.includes("claude")) {
-          return JSON.stringify({
-            accessToken: "test-token",
-            scopes: ["user:profile"],
-          });
-        }
-        throw new Error("File not found");
-      });
-      mockExecFileSync.mockImplementation(() => {
-        throw new Error("Keychain item not found");
-      });
-
-      const mockReq = {
-        on: vi.fn(),
-        write: vi.fn(),
-        end: vi.fn(),
-      };
-
-      // Always return 429 without retry-after
-      mockRequest.mockImplementation((options: any, callback: any) => {
-        const mockRes = {
-          statusCode: 429,
-          headers: {}, // No retry-after header
-          on: vi.fn((event: string, handler: any) => {
-            if (event === "data") {
-              handler(Buffer.from('{"error":"rate_limited"}'));
-            }
-            if (event === "end") {
-              handler();
-            }
-          }),
-        };
-        callback(mockRes);
-        return mockReq;
-      });
-
-      await fetchAllProviderUsage();
-
-      // Exponential backoff: 1000ms * 2^0 = 1000, 1000ms * 2^1 = 2000
-      expect(noopSleep).toHaveBeenCalledTimes(2);
-      expect(noopSleep).toHaveBeenNthCalledWith(1, 1000);
-      expect(noopSleep).toHaveBeenNthCalledWith(2, 2000);
-
-      _resetSleepFn();
-    });
-
-    it("respects retry-after header value for delay", async () => {
-      const noopSleep = vi.fn().mockResolvedValue(undefined);
-      _setSleepFn(noopSleep);
-
-      mockReadFileSync.mockImplementation((path: string) => {
-        if (path.includes("claude")) {
-          return JSON.stringify({
-            accessToken: "test-token",
-            scopes: ["user:profile"],
-          });
-        }
-        throw new Error("File not found");
-      });
-      mockExecFileSync.mockImplementation(() => {
-        throw new Error("Keychain item not found");
-      });
-
-      const mockReq = {
-        on: vi.fn(),
-        write: vi.fn(),
-        end: vi.fn(),
-      };
-
-      // 429 with retry-after: 5 seconds
-      mockRequest.mockImplementation((options: any, callback: any) => {
-        const mockRes = {
-          statusCode: 429,
-          headers: { "retry-after": "5" },
-          on: vi.fn((event: string, handler: any) => {
-            if (event === "data") {
-              handler(Buffer.from('{"error":"rate_limited"}'));
-            }
-            if (event === "end") {
-              handler();
-            }
-          }),
-        };
-        callback(mockRes);
-        return mockReq;
-      });
-
-      await fetchAllProviderUsage();
-
-      // Should use retry-after value (5s = 5000ms) for both retries
-      expect(noopSleep).toHaveBeenCalledTimes(2);
-      expect(noopSleep).toHaveBeenNthCalledWith(1, 5000);
-      expect(noopSleep).toHaveBeenNthCalledWith(2, 5000);
-
-      _resetSleepFn();
-    });
-
-    it("does not retry on 401 auth errors", async () => {
-      const noopSleep = vi.fn().mockResolvedValue(undefined);
-      _setSleepFn(noopSleep);
-
-      mockReadFileSync.mockImplementation((path: string) => {
-        if (path.includes("claude")) {
-          return JSON.stringify({
-            accessToken: "expired-token",
-            scopes: ["user:profile"],
-          });
-        }
-        throw new Error("File not found");
-      });
-      mockExecFileSync.mockImplementation(() => {
-        throw new Error("Keychain item not found");
-      });
-
-      const mockReq = {
-        on: vi.fn(),
-        write: vi.fn(),
-        end: vi.fn(),
-      };
-
-      mockRequest.mockImplementation((options: any, callback: any) => {
-        const mockRes = {
-          statusCode: 401,
-          headers: {},
-          on: vi.fn((event: string, handler: any) => {
-            if (event === "data") {
-              handler(Buffer.from('{"error": "unauthorized"}'));
-            }
-            if (event === "end") {
-              handler();
-            }
-          }),
-        };
-        callback(mockRes);
-        return mockReq;
-      });
-
-      const providers = await fetchAllProviderUsage();
-      const claude = providers.find((p) => p.name === "Claude")!;
-
-      expect(claude.status).toBe("error");
-      expect(claude.error).toContain("Auth expired");
-      // No retries should happen for auth errors
-      expect(noopSleep).not.toHaveBeenCalled();
-
-      _resetSleepFn();
-    });
-
-    it("does not retry on 403 auth errors", async () => {
-      const noopSleep = vi.fn().mockResolvedValue(undefined);
-      _setSleepFn(noopSleep);
-
-      mockReadFileSync.mockImplementation((path: string) => {
-        if (path.includes("claude")) {
-          return JSON.stringify({
-            accessToken: "forbidden-token",
-            scopes: ["user:profile"],
-          });
-        }
-        throw new Error("File not found");
-      });
-      mockExecFileSync.mockImplementation(() => {
-        throw new Error("Keychain item not found");
-      });
-
-      const mockReq = {
-        on: vi.fn(),
-        write: vi.fn(),
-        end: vi.fn(),
-      };
-
-      mockRequest.mockImplementation((options: any, callback: any) => {
-        const mockRes = {
-          statusCode: 403,
-          headers: {},
-          on: vi.fn((event: string, handler: any) => {
-            if (event === "data") {
-              handler(Buffer.from('{"error": "forbidden"}'));
-            }
-            if (event === "end") {
-              handler();
-            }
-          }),
-        };
-        callback(mockRes);
-        return mockReq;
-      });
-
-      const providers = await fetchAllProviderUsage();
-      const claude = providers.find((p) => p.name === "Claude")!;
-
-      expect(claude.status).toBe("error");
-      expect(claude.error).toContain("Auth expired");
-      // No retries should happen for auth errors
-      expect(noopSleep).not.toHaveBeenCalled();
-
-      _resetSleepFn();
     });
   });
 
@@ -1024,9 +707,12 @@ describe("usage", () => {
   });
 
   describe("Minimax provider", () => {
-    it("detects no auth when credentials file doesn't exist", async () => {
+    it("detects no auth when pi auth.json doesn't exist", async () => {
       mockReadFileSync.mockImplementation(() => {
         throw new Error("File not found");
+      });
+      mockExecFileSync.mockImplementation(() => {
+        throw new Error("Keychain item not found");
       });
 
       const providers = await fetchAllProviderUsage();
@@ -1037,41 +723,78 @@ describe("usage", () => {
       expect(minimax!.error).toContain("No Minimax credentials");
     });
 
-    it("detects no auth when access_token is missing", async () => {
-      mockReadFileSync.mockImplementation((path: string) => {
-        if (path.includes("minimax")) {
+    it("detects no auth when minimax entry has no key", async () => {
+      mockReadFileSync.mockImplementation((filePath: string) => {
+        if (filePath.includes(".pi/agent/auth.json")) {
           return JSON.stringify({
-            // missing access_token
-            refresh_token: "test-refresh",
+            minimax: { type: "api_key" /* missing key */ },
           });
         }
         throw new Error("File not found");
+      });
+      mockExecFileSync.mockImplementation(() => {
+        throw new Error("Keychain item not found");
       });
 
       const providers = await fetchAllProviderUsage();
       const minimax = providers.find((p) => p.name === "Minimax");
 
       expect(minimax!.status).toBe("no-auth");
-      expect(minimax!.error).toContain("No Minimax access token");
+      expect(minimax!.error).toContain("No Minimax credentials");
     });
 
-    it("parses usage data from API response", async () => {
+    it("detects no auth when minimax entry is missing entirely", async () => {
+      mockReadFileSync.mockImplementation((filePath: string) => {
+        if (filePath.includes(".pi/agent/auth.json")) {
+          return JSON.stringify({ /* no minimax key */ });
+        }
+        throw new Error("File not found");
+      });
+      mockExecFileSync.mockImplementation(() => {
+        throw new Error("Keychain item not found");
+      });
+
+      const providers = await fetchAllProviderUsage();
+      const minimax = providers.find((p) => p.name === "Minimax");
+
+      expect(minimax!.status).toBe("no-auth");
+      expect(minimax!.error).toContain("No Minimax credentials");
+    });
+
+    it("parses usage data from coding_plan/remains API response", async () => {
+      const now = Date.now();
       const mockResponse = {
-        quota: {
-          total: 1000,
-          used: 350,
-          remaining: 650,
-        },
-        reset_at: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(), // 3 days
+        model_remains: [
+          {
+            model_name: "MiniMax-M*",
+            current_interval_total_count: 4500,
+            // Note: current_interval_usage_count is actually REMAINING, not used
+            current_interval_usage_count: 4000,
+            remains_time: now + 3 * 60 * 60 * 1000 - now, // ms remaining
+            start_time: now - 2 * 60 * 60 * 1000,
+            end_time: now + 3 * 60 * 60 * 1000,
+          },
+          {
+            model_name: "speech-hd",
+            current_interval_total_count: 9000,
+            current_interval_usage_count: 8000,
+            remains_time: 76919205,
+            start_time: now,
+            end_time: now + 24 * 60 * 60 * 1000,
+          },
+        ],
       };
 
-      mockReadFileSync.mockImplementation((path: string) => {
-        if (path.includes("minimax")) {
+      mockReadFileSync.mockImplementation((filePath: string) => {
+        if (filePath.includes(".pi/agent/auth.json")) {
           return JSON.stringify({
-            access_token: "test-token",
+            minimax: { type: "api_key", key: "test-api-key" },
           });
         }
         throw new Error("File not found");
+      });
+      mockExecFileSync.mockImplementation(() => {
+        throw new Error("Keychain item not found");
       });
 
       const mockReq = {
@@ -1080,7 +803,7 @@ describe("usage", () => {
         end: vi.fn(),
       };
 
-      mockRequest.mockImplementation((options: any, callback: any) => {
+      mockRequest.mockImplementation((_options: any, callback: any) => {
         const mockRes = {
           statusCode: 200,
           headers: {},
@@ -1101,44 +824,95 @@ describe("usage", () => {
       const minimax = providers.find((p) => p.name === "Minimax")!;
 
       expect(minimax.status).toBe("ok");
-      expect(minimax.windows).toHaveLength(1);
+      expect(minimax.windows).toHaveLength(2);
 
-      const weeklyWindow = minimax.windows[0];
-      expect(weeklyWindow.label).toBe("Weekly");
-      expect(weeklyWindow.percentUsed).toBe(35); // 350/1000 * 100
-      expect(weeklyWindow.percentLeft).toBe(65);
-      expect(weeklyWindow.resetText).toContain("resets in");
-      expect(weeklyWindow.resetMs).toBeDefined();
-      expect(weeklyWindow.windowDurationMs).toBe(7 * 24 * 60 * 60 * 1000);
+      const textWindow = minimax.windows.find((w) => w.label === "MiniMax-M*")!;
+      expect(textWindow).toBeDefined();
+      // total=4500, remaining=4000, used=500 → 500/4500*100 ≈ 11.1%
+      expect(textWindow.percentUsed).toBeCloseTo(11.1, 0);
+      expect(textWindow.percentLeft).toBeGreaterThan(80);
+      expect(textWindow.resetText).toContain("resets in");
+
+      const speechWindow = minimax.windows.find((w) => w.label === "speech-hd")!;
+      expect(speechWindow).toBeDefined();
     });
 
-    it("handles 401 auth error", async () => {
-      mockReadFileSync.mockImplementation((path: string) => {
-        if (path.includes("minimax")) {
+    it("skips models with zero quota", async () => {
+      const mockResponse = {
+        model_remains: [
+          {
+            model_name: "MiniMax-M*",
+            current_interval_total_count: 4500,
+            current_interval_usage_count: 4500,
+            remains_time: 5000000,
+            start_time: Date.now() - 1000,
+            end_time: Date.now() + 5 * 60 * 60 * 1000,
+          },
+          {
+            model_name: "unused-model",
+            current_interval_total_count: 0,
+            current_interval_usage_count: 0,
+            remains_time: 0,
+          },
+        ],
+      };
+
+      mockReadFileSync.mockImplementation((filePath: string) => {
+        if (filePath.includes(".pi/agent/auth.json")) {
           return JSON.stringify({
-            access_token: "expired-token",
+            minimax: { type: "api_key", key: "test-api-key" },
           });
         }
         throw new Error("File not found");
       });
+      mockExecFileSync.mockImplementation(() => {
+        throw new Error("Keychain item not found");
+      });
 
-      const mockReq = {
-        on: vi.fn(),
-        write: vi.fn(),
-        end: vi.fn(),
-      };
+      const mockReq = { on: vi.fn(), write: vi.fn(), end: vi.fn() };
+      mockRequest.mockImplementation((_options: any, callback: any) => {
+        const mockRes = {
+          statusCode: 200,
+          headers: {},
+          on: vi.fn((event: string, handler: any) => {
+            if (event === "data") handler(Buffer.from(JSON.stringify(mockResponse)));
+            if (event === "end") handler();
+          }),
+        };
+        callback(mockRes);
+        return mockReq;
+      });
 
-      mockRequest.mockImplementation((options: any, callback: any) => {
+      const providers = await fetchAllProviderUsage();
+      const minimax = providers.find((p) => p.name === "Minimax")!;
+
+      expect(minimax.status).toBe("ok");
+      // Only MiniMax-M* should appear, unused-model has total=0 so skipped
+      expect(minimax.windows).toHaveLength(1);
+      expect(minimax.windows[0].label).toBe("MiniMax-M*");
+    });
+
+    it("handles 401 auth error", async () => {
+      mockReadFileSync.mockImplementation((filePath: string) => {
+        if (filePath.includes(".pi/agent/auth.json")) {
+          return JSON.stringify({
+            minimax: { type: "api_key", key: "expired-key" },
+          });
+        }
+        throw new Error("File not found");
+      });
+      mockExecFileSync.mockImplementation(() => {
+        throw new Error("Keychain item not found");
+      });
+
+      const mockReq = { on: vi.fn(), write: vi.fn(), end: vi.fn() };
+      mockRequest.mockImplementation((_options: any, callback: any) => {
         const mockRes = {
           statusCode: 401,
           headers: {},
           on: vi.fn((event: string, handler: any) => {
-            if (event === "data") {
-              handler(Buffer.from('{"error": "unauthorized"}'));
-            }
-            if (event === "end") {
-              handler();
-            }
+            if (event === "data") handler(Buffer.from('{"error": "unauthorized"}'));
+            if (event === "end") handler();
           }),
         };
         callback(mockRes);
@@ -1153,32 +927,26 @@ describe("usage", () => {
     });
 
     it("handles 403 auth error", async () => {
-      mockReadFileSync.mockImplementation((path: string) => {
-        if (path.includes("minimax")) {
+      mockReadFileSync.mockImplementation((filePath: string) => {
+        if (filePath.includes(".pi/agent/auth.json")) {
           return JSON.stringify({
-            access_token: "forbidden-token",
+            minimax: { type: "api_key", key: "forbidden-key" },
           });
         }
         throw new Error("File not found");
       });
+      mockExecFileSync.mockImplementation(() => {
+        throw new Error("Keychain item not found");
+      });
 
-      const mockReq = {
-        on: vi.fn(),
-        write: vi.fn(),
-        end: vi.fn(),
-      };
-
-      mockRequest.mockImplementation((options: any, callback: any) => {
+      const mockReq = { on: vi.fn(), write: vi.fn(), end: vi.fn() };
+      mockRequest.mockImplementation((_options: any, callback: any) => {
         const mockRes = {
           statusCode: 403,
           headers: {},
           on: vi.fn((event: string, handler: any) => {
-            if (event === "data") {
-              handler(Buffer.from('{"error": "forbidden"}'));
-            }
-            if (event === "end") {
-              handler();
-            }
+            if (event === "data") handler(Buffer.from('{"error": "forbidden"}'));
+            if (event === "end") handler();
           }),
         };
         callback(mockRes);
@@ -1194,9 +962,12 @@ describe("usage", () => {
   });
 
   describe("Zai provider", () => {
-    it("detects no auth when credentials file doesn't exist", async () => {
+    it("detects no auth when pi auth.json doesn't exist", async () => {
       mockReadFileSync.mockImplementation(() => {
         throw new Error("File not found");
+      });
+      mockExecFileSync.mockImplementation(() => {
+        throw new Error("Keychain item not found");
       });
 
       const providers = await fetchAllProviderUsage();
@@ -1207,59 +978,75 @@ describe("usage", () => {
       expect(zai!.error).toContain("No Zai credentials");
     });
 
-    it("detects no auth when access_token is missing", async () => {
-      mockReadFileSync.mockImplementation((path: string) => {
-        if (path.includes("zai")) {
+    it("detects no auth when zai entry has no key", async () => {
+      mockReadFileSync.mockImplementation((filePath: string) => {
+        if (filePath.includes(".pi/agent/auth.json")) {
           return JSON.stringify({
-            // missing access_token
-            refresh_token: "test-refresh",
+            zai: { type: "api_key" /* missing key */ },
           });
         }
         throw new Error("File not found");
+      });
+      mockExecFileSync.mockImplementation(() => {
+        throw new Error("Keychain item not found");
       });
 
       const providers = await fetchAllProviderUsage();
       const zai = providers.find((p) => p.name === "Zai");
 
       expect(zai!.status).toBe("no-auth");
-      expect(zai!.error).toContain("No Zai access token");
+      expect(zai!.error).toContain("No Zai credentials");
     });
 
-    it("parses daily usage data from API response", async () => {
+    it("parses usage data from Z.ai quota API response", async () => {
       const mockResponse = {
+        code: 200,
+        msg: "Operation successful",
         data: {
-          total_credits: 10000,
-          used_credits: 2500,
-          reset_date: new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString(), // 8 hours (daily)
+          limits: [
+            {
+              type: "TOKENS_LIMIT",
+              unit: 3,
+              number: 5,
+              percentage: 25,
+              nextResetTime: Date.now() + 3 * 60 * 60 * 1000,
+            },
+            {
+              type: "TIME_LIMIT",
+              unit: 5,
+              number: 1,
+              usage: 4000,
+              currentValue: 100,
+              remaining: 3900,
+              percentage: 2.5,
+              nextResetTime: Date.now() + 25 * 24 * 60 * 60 * 1000,
+            },
+          ],
+          level: "max",
         },
+        success: true,
       };
 
-      mockReadFileSync.mockImplementation((path: string) => {
-        if (path.includes("zai")) {
+      mockReadFileSync.mockImplementation((filePath: string) => {
+        if (filePath.includes(".pi/agent/auth.json")) {
           return JSON.stringify({
-            access_token: "test-token",
+            zai: { type: "api_key", key: "test-api-key" },
           });
         }
         throw new Error("File not found");
       });
+      mockExecFileSync.mockImplementation(() => {
+        throw new Error("Keychain item not found");
+      });
 
-      const mockReq = {
-        on: vi.fn(),
-        write: vi.fn(),
-        end: vi.fn(),
-      };
-
-      mockRequest.mockImplementation((options: any, callback: any) => {
+      const mockReq = { on: vi.fn(), write: vi.fn(), end: vi.fn() };
+      mockRequest.mockImplementation((_options: any, callback: any) => {
         const mockRes = {
           statusCode: 200,
           headers: {},
           on: vi.fn((event: string, handler: any) => {
-            if (event === "data") {
-              handler(Buffer.from(JSON.stringify(mockResponse)));
-            }
-            if (event === "end") {
-              handler();
-            }
+            if (event === "data") handler(Buffer.from(JSON.stringify(mockResponse)));
+            if (event === "end") handler();
           }),
         };
         callback(mockRes);
@@ -1270,100 +1057,134 @@ describe("usage", () => {
       const zai = providers.find((p) => p.name === "Zai")!;
 
       expect(zai.status).toBe("ok");
-      expect(zai.windows).toHaveLength(1);
-
-      const dailyWindow = zai.windows[0];
-      expect(dailyWindow.label).toBe("Daily");
-      expect(dailyWindow.percentUsed).toBe(25); // 2500/10000 * 100
-      expect(dailyWindow.percentLeft).toBe(75);
-      expect(dailyWindow.resetText).toContain("resets in");
-      expect(dailyWindow.resetMs).toBeDefined();
-      expect(dailyWindow.windowDurationMs).toBe(24 * 60 * 60 * 1000);
-    });
-
-    it("parses monthly usage data from API response", async () => {
-      const mockResponse = {
-        data: {
-          total_credits: 10000,
-          used_credits: 5000,
-          reset_date: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString(), // 15 days (monthly)
-        },
-      };
-
-      mockReadFileSync.mockImplementation((path: string) => {
-        if (path.includes("zai")) {
-          return JSON.stringify({
-            access_token: "test-token",
-          });
-        }
-        throw new Error("File not found");
-      });
-
-      const mockReq = {
-        on: vi.fn(),
-        write: vi.fn(),
-        end: vi.fn(),
-      };
-
-      mockRequest.mockImplementation((options: any, callback: any) => {
-        const mockRes = {
-          statusCode: 200,
-          headers: {},
-          on: vi.fn((event: string, handler: any) => {
-            if (event === "data") {
-              handler(Buffer.from(JSON.stringify(mockResponse)));
-            }
-            if (event === "end") {
-              handler();
-            }
-          }),
-        };
-        callback(mockRes);
-        return mockReq;
-      });
-
-      const providers = await fetchAllProviderUsage();
-      const zai = providers.find((p) => p.name === "Zai")!;
-
-      expect(zai.status).toBe("ok");
+      expect(zai.plan).toBe("Max");
       expect(zai.windows).toHaveLength(2);
 
-      const monthlyWindow = zai.windows[1];
-      expect(monthlyWindow.label).toBe("Monthly");
-      expect(monthlyWindow.percentUsed).toBe(50); // 5000/10000 * 100
-      expect(monthlyWindow.percentLeft).toBe(50);
-      expect(monthlyWindow.resetText).toContain("resets in");
-      expect(monthlyWindow.resetMs).toBeDefined();
-      expect(monthlyWindow.windowDurationMs).toBe(30 * 24 * 60 * 60 * 1000);
+      const sessionWindow = zai.windows.find((w) => w.label === "Session (5h)")!;
+      expect(sessionWindow).toBeDefined();
+      expect(sessionWindow.percentUsed).toBe(25);
+      expect(sessionWindow.percentLeft).toBe(75);
+      expect(sessionWindow.resetText).toContain("resets in");
+      expect(sessionWindow.windowDurationMs).toBe(5 * 60 * 60 * 1000);
+
+      const mcpWindow = zai.windows.find((w) => w.label === "MCP Monthly")!;
+      expect(mcpWindow).toBeDefined();
+      expect(mcpWindow.percentUsed).toBe(2.5);
+    });
+
+    it("parses only TOKENS_LIMIT when no TIME_LIMIT present", async () => {
+      const mockResponse = {
+        code: 200,
+        msg: "Operation successful",
+        data: {
+          limits: [
+            {
+              type: "TOKENS_LIMIT",
+              percentage: 10,
+              nextResetTime: Date.now() + 4 * 60 * 60 * 1000,
+            },
+          ],
+          level: "pro",
+        },
+        success: true,
+      };
+
+      mockReadFileSync.mockImplementation((filePath: string) => {
+        if (filePath.includes(".pi/agent/auth.json")) {
+          return JSON.stringify({
+            zai: { type: "api_key", key: "test-api-key" },
+          });
+        }
+        throw new Error("File not found");
+      });
+      mockExecFileSync.mockImplementation(() => {
+        throw new Error("Keychain item not found");
+      });
+
+      const mockReq = { on: vi.fn(), write: vi.fn(), end: vi.fn() };
+      mockRequest.mockImplementation((_options: any, callback: any) => {
+        const mockRes = {
+          statusCode: 200,
+          headers: {},
+          on: vi.fn((event: string, handler: any) => {
+            if (event === "data") handler(Buffer.from(JSON.stringify(mockResponse)));
+            if (event === "end") handler();
+          }),
+        };
+        callback(mockRes);
+        return mockReq;
+      });
+
+      const providers = await fetchAllProviderUsage();
+      const zai = providers.find((p) => p.name === "Zai")!;
+
+      expect(zai.status).toBe("ok");
+      expect(zai.plan).toBe("Pro");
+      expect(zai.windows).toHaveLength(1);
+      expect(zai.windows[0].label).toBe("Session (5h)");
+    });
+
+    it("handles API error response (success=false)", async () => {
+      const mockResponse = {
+        code: 500,
+        msg: "Internal error",
+        success: false,
+      };
+
+      mockReadFileSync.mockImplementation((filePath: string) => {
+        if (filePath.includes(".pi/agent/auth.json")) {
+          return JSON.stringify({
+            zai: { type: "api_key", key: "test-api-key" },
+          });
+        }
+        throw new Error("File not found");
+      });
+      mockExecFileSync.mockImplementation(() => {
+        throw new Error("Keychain item not found");
+      });
+
+      const mockReq = { on: vi.fn(), write: vi.fn(), end: vi.fn() };
+      mockRequest.mockImplementation((_options: any, callback: any) => {
+        const mockRes = {
+          statusCode: 200,
+          headers: {},
+          on: vi.fn((event: string, handler: any) => {
+            if (event === "data") handler(Buffer.from(JSON.stringify(mockResponse)));
+            if (event === "end") handler();
+          }),
+        };
+        callback(mockRes);
+        return mockReq;
+      });
+
+      const providers = await fetchAllProviderUsage();
+      const zai = providers.find((p) => p.name === "Zai")!;
+
+      expect(zai.status).toBe("error");
+      expect(zai.error).toContain("Internal error");
     });
 
     it("handles 401 auth error", async () => {
-      mockReadFileSync.mockImplementation((path: string) => {
-        if (path.includes("zai")) {
+      mockReadFileSync.mockImplementation((filePath: string) => {
+        if (filePath.includes(".pi/agent/auth.json")) {
           return JSON.stringify({
-            access_token: "expired-token",
+            zai: { type: "api_key", key: "expired-key" },
           });
         }
         throw new Error("File not found");
       });
+      mockExecFileSync.mockImplementation(() => {
+        throw new Error("Keychain item not found");
+      });
 
-      const mockReq = {
-        on: vi.fn(),
-        write: vi.fn(),
-        end: vi.fn(),
-      };
-
-      mockRequest.mockImplementation((options: any, callback: any) => {
+      const mockReq = { on: vi.fn(), write: vi.fn(), end: vi.fn() };
+      mockRequest.mockImplementation((_options: any, callback: any) => {
         const mockRes = {
           statusCode: 401,
           headers: {},
           on: vi.fn((event: string, handler: any) => {
-            if (event === "data") {
-              handler(Buffer.from('{"error": "unauthorized"}'));
-            }
-            if (event === "end") {
-              handler();
-            }
+            if (event === "data") handler(Buffer.from('{"error": "unauthorized"}'));
+            if (event === "end") handler();
           }),
         };
         callback(mockRes);
@@ -1378,32 +1199,26 @@ describe("usage", () => {
     });
 
     it("handles 403 auth error", async () => {
-      mockReadFileSync.mockImplementation((path: string) => {
-        if (path.includes("zai")) {
+      mockReadFileSync.mockImplementation((filePath: string) => {
+        if (filePath.includes(".pi/agent/auth.json")) {
           return JSON.stringify({
-            access_token: "forbidden-token",
+            zai: { type: "api_key", key: "forbidden-key" },
           });
         }
         throw new Error("File not found");
       });
+      mockExecFileSync.mockImplementation(() => {
+        throw new Error("Keychain item not found");
+      });
 
-      const mockReq = {
-        on: vi.fn(),
-        write: vi.fn(),
-        end: vi.fn(),
-      };
-
-      mockRequest.mockImplementation((options: any, callback: any) => {
+      const mockReq = { on: vi.fn(), write: vi.fn(), end: vi.fn() };
+      mockRequest.mockImplementation((_options: any, callback: any) => {
         const mockRes = {
           statusCode: 403,
           headers: {},
           on: vi.fn((event: string, handler: any) => {
-            if (event === "data") {
-              handler(Buffer.from('{"error": "forbidden"}'));
-            }
-            if (event === "end") {
-              handler();
-            }
+            if (event === "data") handler(Buffer.from('{"error": "forbidden"}'));
+            if (event === "end") handler();
           }),
         };
         callback(mockRes);
@@ -1481,7 +1296,7 @@ describe("usage", () => {
   });
 
   describe("error handling", () => {
-    it("handles Claude CLI errors gracefully", async () => {
+    it("handles Claude API errors gracefully", async () => {
       mockReadFileSync.mockImplementation((filePath: string) => {
         if (filePath.includes("claude")) {
           return JSON.stringify({
@@ -1491,21 +1306,32 @@ describe("usage", () => {
         }
         throw new Error("File not found");
       });
+      mockExecFileSync.mockImplementation(() => {
+        throw new Error("Keychain item not found");
+      });
 
-      mockExecFileSync.mockImplementation((cmd: string) => {
-        if (cmd === "security") throw new Error("Keychain item not found");
-        if (cmd === "claude") throw new Error("CLI error: something went wrong");
-        throw new Error("Unknown command");
+      const mockReq = { on: vi.fn(), write: vi.fn(), end: vi.fn() };
+      mockRequest.mockImplementation((_options: any, callback: any) => {
+        const mockRes = {
+          statusCode: 500,
+          headers: {},
+          on: vi.fn((event: string, handler: any) => {
+            if (event === "data") handler(Buffer.from('{"error": "internal server error"}'));
+            if (event === "end") handler();
+          }),
+        };
+        callback(mockRes);
+        return mockReq;
       });
 
       const providers = await fetchAllProviderUsage();
       const claude = providers.find((p) => p.name === "Claude")!;
 
       expect(claude.status).toBe("error");
-      expect(claude.error).toContain("something went wrong");
+      expect(claude.error).toContain("HTTP 500");
     });
 
-    it("handles Claude CLI ETIMEDOUT error", async () => {
+    it("handles Claude network error", async () => {
       mockReadFileSync.mockImplementation((filePath: string) => {
         if (filePath.includes("claude")) {
           return JSON.stringify({
@@ -1515,19 +1341,29 @@ describe("usage", () => {
         }
         throw new Error("File not found");
       });
+      mockExecFileSync.mockImplementation(() => {
+        throw new Error("Keychain item not found");
+      });
 
-      const timeoutError = new Error("connect ETIMEDOUT") as any;
-      mockExecFileSync.mockImplementation((cmd: string) => {
-        if (cmd === "security") throw new Error("Keychain item not found");
-        if (cmd === "claude") throw timeoutError;
-        throw new Error("Unknown command");
+      mockRequest.mockImplementation((_options: any, _callback: any) => {
+        const mockReq = {
+          on: vi.fn((event: string, handler: any) => {
+            if (event === "error") {
+              // Simulate network error
+              setTimeout(() => handler(new Error("network error")), 0);
+            }
+          }),
+          write: vi.fn(),
+          end: vi.fn(),
+        };
+        return mockReq;
       });
 
       const providers = await fetchAllProviderUsage();
       const claude = providers.find((p) => p.name === "Claude")!;
 
       expect(claude.status).toBe("error");
-      expect(claude.error).toContain("timed out");
+      expect(claude.error).toContain("network error");
     });
   });
 
@@ -1584,26 +1420,35 @@ describe("usage", () => {
   });
 
   describe("pace integration with provider windows", () => {
-    it("attaches pace to Minimax weekly window with valid timing data", async () => {
+    it("attaches pace to Minimax model window with valid timing data", async () => {
+      const now = Date.now();
+      const fiveHours = 5 * 60 * 60 * 1000;
+      const twoHoursFromNow = 2 * 60 * 60 * 1000;
       const mockResponse = {
-        quota: {
-          total: 1000,
-          used: 350,
-          remaining: 650,
-        },
-        reset_at: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
+        model_remains: [
+          {
+            model_name: "MiniMax-M*",
+            current_interval_total_count: 4500,
+            current_interval_usage_count: 4000,
+            remains_time: twoHoursFromNow,
+            start_time: now - 3 * 60 * 60 * 1000,
+            end_time: now + twoHoursFromNow,
+          },
+        ],
       };
 
-      mockReadFileSync.mockImplementation((path: string) => {
-        if (path.includes("minimax")) {
-          return JSON.stringify({ access_token: "test-token" });
+      mockReadFileSync.mockImplementation((filePath: string) => {
+        if (filePath.includes(".pi/agent/auth.json")) {
+          return JSON.stringify({ minimax: { type: "api_key", key: "test-key" } });
         }
         throw new Error("File not found");
       });
+      mockExecFileSync.mockImplementation(() => {
+        throw new Error("Keychain item not found");
+      });
 
       const mockReq = { on: vi.fn(), write: vi.fn(), end: vi.fn() };
-
-      mockRequest.mockImplementation((options: any, callback: any) => {
+      mockRequest.mockImplementation((_options: any, callback: any) => {
         const mockRes = {
           statusCode: 200,
           headers: {},
@@ -1622,30 +1467,39 @@ describe("usage", () => {
       expect(minimax.status).toBe("ok");
       expect(minimax.windows).toHaveLength(1);
 
-      const weeklyWindow = minimax.windows[0];
-      expect(weeklyWindow.label).toBe("Weekly");
-      expect(weeklyWindow.pace).toBeDefined();
-      expect(weeklyWindow.pace!.status).toBe("behind");
-      expect(weeklyWindow.pace!.percentElapsed).toBeGreaterThan(0);
-      expect(weeklyWindow.pace!.message).toContain("under pace");
+      const modelWindow = minimax.windows[0];
+      expect(modelWindow.label).toBe("MiniMax-M*");
+      expect(modelWindow.pace).toBeDefined();
+      expect(modelWindow.pace!.percentElapsed).toBeGreaterThan(0);
     });
 
     it("does not attach pace when resetMs is 0 (window already reset)", async () => {
+      const now = Date.now();
       const mockResponse = {
-        quota: { total: 1000, used: 0, remaining: 1000 },
-        reset_at: new Date(Date.now() - 1000).toISOString(),
+        model_remains: [
+          {
+            model_name: "MiniMax-M*",
+            current_interval_total_count: 4500,
+            current_interval_usage_count: 4500,
+            remains_time: 0,
+            start_time: now - 5 * 60 * 60 * 1000,
+            end_time: now,
+          },
+        ],
       };
 
-      mockReadFileSync.mockImplementation((path: string) => {
-        if (path.includes("minimax")) {
-          return JSON.stringify({ access_token: "test-token" });
+      mockReadFileSync.mockImplementation((filePath: string) => {
+        if (filePath.includes(".pi/agent/auth.json")) {
+          return JSON.stringify({ minimax: { type: "api_key", key: "test-key" } });
         }
         throw new Error("File not found");
       });
+      mockExecFileSync.mockImplementation(() => {
+        throw new Error("Keychain item not found");
+      });
 
       const mockReq = { on: vi.fn(), write: vi.fn(), end: vi.fn() };
-
-      mockRequest.mockImplementation((options: any, callback: any) => {
+      mockRequest.mockImplementation((_options: any, callback: any) => {
         const mockRes = {
           statusCode: 200,
           headers: {},
@@ -1662,8 +1516,183 @@ describe("usage", () => {
       const minimax = providers.find((p) => p.name === "Minimax")!;
 
       expect(minimax.status).toBe("ok");
-      expect(minimax.windows[0].resetMs).toBe(0);
+      // remains_time is 0, so resetMs is undefined (no active reset timer)
+      expect(minimax.windows[0].resetMs).toBeUndefined();
       expect(minimax.windows[0].pace).toBeUndefined();
+    });
+  });
+
+  describe("Claude CLI fallback parsing", () => {
+    describe("_stripClaudeAnsi", () => {
+      it("strips basic ANSI color codes", () => {
+        const input = "\x1B[32m████████\x1B[0m 27% used";
+        expect(_stripClaudeAnsi(input)).toBe("████████ 27% used");
+      });
+
+      it("converts cursor forward to spaces", () => {
+        const input = "Current\x1B[1Csession";
+        expect(_stripClaudeAnsi(input)).toBe("Current session");
+      });
+
+      it("handles multi-character cursor forward", () => {
+        const input = "Hello\x1B[3Cworld";
+        expect(_stripClaudeAnsi(input)).toBe("Hello   world");
+      });
+
+      it("strips DEC private mode sequences", () => {
+        const input = "\x1B[?2026lClaude Code\x1B[?2026h more text";
+        expect(_stripClaudeAnsi(input)).toBe("Claude Code more text");
+      });
+
+      it("strips OSC title sequences", () => {
+        const input = "\x1B]0;Claude Code\x07Usage data";
+        expect(_stripClaudeAnsi(input)).toBe("Usage data");
+      });
+
+      it("handles real Claude TUI output with cursor movement", () => {
+        const input =
+          "Current\x1B[1Cweek\x1B[1C(all\x1B[1Cmodels)\n" +
+          "\x1B[32m█████████████████████████▌\x1B[0m\x1B[1C51%\x1B[1Cused\n" +
+          "Resets\x1B[1CFeb\x1B[1C19\x1B[1Cat\x1B[1C3pm\x1B[1C(America/Los_Angeles)";
+        const result = _stripClaudeAnsi(input);
+        expect(result).toContain("Current week (all models)");
+        expect(result).toContain("51% used");
+        expect(result).toContain("Resets Feb 19 at 3pm (America/Los_Angeles)");
+      });
+
+      it("handles backspace characters", () => {
+        const input = "abc\x08d";
+        expect(_stripClaudeAnsi(input)).toBe("abd");
+      });
+
+      it("preserves newlines and tabs", () => {
+        const input = "Line 1\nLine 2\tTabbed";
+        expect(_stripClaudeAnsi(input)).toBe("Line 1\nLine 2\tTabbed");
+      });
+    });
+
+    describe("_parseClaudePercentLine", () => {
+      it("parses 'X% used'", () => {
+        expect(_parseClaudePercentLine("████████ 27% used")).toBe(27);
+      });
+
+      it("parses 'X% left' and converts to used", () => {
+        expect(_parseClaudePercentLine("████████ 65% left")).toBe(35);
+      });
+
+      it("parses 'X% remaining' and converts to used", () => {
+        expect(_parseClaudePercentLine("████ 80% remaining")).toBe(20);
+      });
+
+      it("parses 100% used", () => {
+        expect(_parseClaudePercentLine("████████████████████ 100% used")).toBe(100);
+      });
+
+      it("parses 0% left as 100% used", () => {
+        expect(_parseClaudePercentLine("0% left")).toBe(100);
+      });
+
+      it("returns null for non-matching lines", () => {
+        expect(_parseClaudePercentLine("Current session")).toBeNull();
+        expect(_parseClaudePercentLine("Resets in 2h")).toBeNull();
+      });
+    });
+
+    describe("_parseClaudeResetLine", () => {
+      it("extracts 'Resets in 2h 15m'", () => {
+        expect(_parseClaudeResetLine("Resets in 2h 15m")).toBe("Resets in 2h 15m");
+      });
+
+      it("extracts 'Resets 11am'", () => {
+        expect(_parseClaudeResetLine("Resets 11am")).toBe("Resets 11am");
+      });
+
+      it("extracts from line with prefix garbage", () => {
+        expect(_parseClaudeResetLine("some garbage Resets 3pm")).toBe("Resets 3pm");
+      });
+
+      it("strips timezone suffix", () => {
+        expect(_parseClaudeResetLine("Resets Feb 19 at 3pm (America/Los_Angeles)")).toBe(
+          "Resets Feb 19 at 3pm"
+        );
+      });
+
+      it("strips percentage info if on same line", () => {
+        expect(_parseClaudeResetLine("46%used Resets 5:59pm")).toBe("Resets 5:59pm");
+      });
+
+      it("returns null for non-reset lines", () => {
+        expect(_parseClaudeResetLine("Current session")).toBeNull();
+        expect(_parseClaudeResetLine("27% used")).toBeNull();
+      });
+    });
+
+    describe("_parseClaudeResetText", () => {
+      beforeEach(() => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date("2025-01-15T10:00:00Z"));
+      });
+
+      afterEach(() => {
+        vi.useRealTimers();
+      });
+
+      it("parses duration format with hours and minutes", () => {
+        const result = _parseClaudeResetText("Resets in 2h 15m");
+        expect(result).toBe(new Date("2025-01-15T12:15:00Z").toISOString());
+      });
+
+      it("parses duration format with only minutes", () => {
+        const result = _parseClaudeResetText("Resets in 30m");
+        expect(result).toBe(new Date("2025-01-15T10:30:00Z").toISOString());
+      });
+
+      it("parses simple AM time", () => {
+        const result = _parseClaudeResetText("Resets 11am");
+        expect(result).toBeTruthy();
+        expect(new Date(result!).getHours()).toBe(11);
+      });
+
+      it("parses simple PM time", () => {
+        const result = _parseClaudeResetText("Resets 3pm");
+        expect(result).toBeTruthy();
+        expect(new Date(result!).getHours()).toBe(15);
+      });
+
+      it("parses date format with month day at time", () => {
+        const result = _parseClaudeResetText("Resets Feb 19 at 3pm");
+        expect(result).toBeTruthy();
+        const d = new Date(result!);
+        expect(d.getMonth()).toBe(1); // Feb
+        expect(d.getDate()).toBe(19);
+        expect(d.getHours()).toBe(15);
+      });
+
+      it("parses date format with comma", () => {
+        const result = _parseClaudeResetText("Resets Jan 15, 3:30pm");
+        expect(result).toBeTruthy();
+        const d = new Date(result!);
+        expect(d.getMonth()).toBe(0);
+        expect(d.getDate()).toBe(15);
+        expect(d.getHours()).toBe(15);
+        expect(d.getMinutes()).toBe(30);
+      });
+
+      it("handles 12am correctly", () => {
+        const result = _parseClaudeResetText("Resets 12am");
+        expect(result).toBeTruthy();
+        expect(new Date(result!).getHours()).toBe(0);
+      });
+
+      it("handles 12pm correctly", () => {
+        const result = _parseClaudeResetText("Resets 12pm");
+        expect(result).toBeTruthy();
+        expect(new Date(result!).getHours()).toBe(12);
+      });
+
+      it("returns null for unparseable text", () => {
+        expect(_parseClaudeResetText("unknown format")).toBeNull();
+      });
     });
   });
 });

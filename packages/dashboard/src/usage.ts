@@ -209,6 +209,24 @@ function decodeJwtPayload(token: string): any {
   }
 }
 
+// ── Pi auth storage reader ──────────────────────────────────────────────────
+
+/**
+ * Read an API key from pi's auth storage (~/.pi/agent/auth.json).
+ * Returns the API key string or null if not found.
+ */
+function readPiAuthKey(provider: string): string | null {
+  const authPath = path.join(process.env.HOME || "~", ".pi", "agent", "auth.json");
+  try {
+    const auth = JSON.parse(fs.readFileSync(authPath, "utf-8"));
+    const entry = auth?.[provider];
+    if (entry && (entry.type === "api_key" || entry.type === "key") && entry.key) {
+      return entry.key;
+    }
+  } catch {}
+  return null;
+}
+
 // ── Claude fetcher ─────────────────────────────────────────────────────────
 
 /**
@@ -228,19 +246,369 @@ function readClaudeKeychainCredentials(): any | null {
   }
 }
 
+/** Max number of retries for transient 429 responses */
+const CLAUDE_MAX_RETRIES = 3;
+/** Initial retry delay in ms (doubles each attempt) */
+const CLAUDE_INITIAL_RETRY_MS = 1000;
+
 /**
- * Fetch Claude usage data by spawning the `claude` CLI.
+ * Sleep for the given duration. Exported for test mocking.
+ */
+export const _sleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
+
+// Allow tests to swap the sleep implementation
+let sleepFn = _sleep;
+export function _setSleepFn(fn: typeof _sleep): void {
+  sleepFn = fn;
+}
+export function _resetSleepFn(): void {
+  sleepFn = _sleep;
+}
+
+// ── Claude CLI fallback (parses `claude /usage` TUI output) ──────────────────
+
+/**
+ * Strip ANSI escape codes from Claude CLI output.
+ * Handles cursor-forward (ESC[nC) by converting to spaces to preserve word
+ * boundaries — the Claude TUI uses these instead of real spaces.
+ */
+export function _stripClaudeAnsi(text: string): string {
+  let clean = text
+    // Cursor forward (CSI n C): replace with n spaces
+    .replace(/\x1B\[(\d+)C/g, (_m, n) => " ".repeat(parseInt(n, 10)))
+    // Cursor movement (up/down/back/position)
+    .replace(/\x1B\[\d*[ABD]/g, "")
+    .replace(/\x1B\[\d+;\d+[Hf]/g, "\n")
+    // Remaining CSI sequences (colors, modes, etc.)
+    .replace(/\x1B\[[0-9;?]*[A-Za-z@]/g, "")
+    // OSC sequences
+    .replace(/\x1B\][^\x07\x1B]*(?:\x07|\x1B\\)?/g, "")
+    // Other ESC sequences
+    .replace(/\x1B[A-Za-z]/g, "")
+    // Carriage returns
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n");
+
+  // Handle backspaces
+  while (clean.includes("\x08")) {
+    clean = clean.replace(/[^\x08]\x08/, "");
+    clean = clean.replace(/^\x08+/, "");
+  }
+
+  // Strip remaining non-printable control characters (except newline)
+  clean = clean.replace(/[\x00-\x08\x0B-\x1F\x7F]/g, "");
+  return clean;
+}
+
+/**
+ * Parse a percentage line from Claude CLI usage output.
+ * Lines look like: "█████████████▌ 27% used" or "████████ 65% left"
+ * Returns the USED percentage (0-100).
+ */
+export function _parseClaudePercentLine(line: string): number | null {
+  const match = line.match(/(\d{1,3})\s*%\s*(left|used|remaining)/i);
+  if (!match) return null;
+  const value = parseInt(match[1], 10);
+  const isUsed = match[2].toLowerCase() === "used";
+  return isUsed ? value : 100 - value;
+}
+
+/**
+ * Parse a reset line from Claude CLI usage output.
+ * Lines like: "Resets in 2h 15m", "Resets 11am", "Resets Feb 19 at 3pm"
+ */
+export function _parseClaudeResetLine(line: string): string | null {
+  const match = line.match(/(Resets?.*)$/i);
+  if (!match) return null;
+  let text = match[1];
+  // Clean up percentage info that might be on the same line
+  text = text.replace(/(\d{1,3})\s*%\s*(left|used|remaining)/i, "").trim();
+  // Ensure space after "Resets" if missing
+  text = text.replace(/(resets?)(\d)/i, "$1 $2");
+  // Strip timezone like "(America/Los_Angeles)"
+  text = text.replace(/\s*\([A-Za-z_/]+\)\s*$/, "").trim();
+  return text || null;
+}
+
+/**
+ * Parse a reset-time text into an approximate ISO date string.
+ */
+export function _parseClaudeResetText(text: string): string | null {
+  const now = Date.now();
+
+  // "Resets in 2h 15m" or "Resets in 30m"
+  const durationMatch = text.match(/(\d+)\s*h(?:ours?)?(?:\s+(\d+)\s*m(?:in)?)?|(\d+)\s*m(?:in)?/i);
+  if (durationMatch) {
+    let hours = 0;
+    let minutes = 0;
+    if (durationMatch[1]) {
+      hours = parseInt(durationMatch[1], 10);
+      minutes = durationMatch[2] ? parseInt(durationMatch[2], 10) : 0;
+    } else if (durationMatch[3]) {
+      minutes = parseInt(durationMatch[3], 10);
+    }
+    return new Date(now + (hours * 60 + minutes) * 60 * 1000).toISOString();
+  }
+
+  // "Resets 11am" or "Resets 3pm"
+  const simpleTimeMatch = text.match(/resets?\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i);
+  if (simpleTimeMatch) {
+    let hours = parseInt(simpleTimeMatch[1], 10);
+    const minutes = simpleTimeMatch[2] ? parseInt(simpleTimeMatch[2], 10) : 0;
+    const ampm = simpleTimeMatch[3].toLowerCase();
+    if (ampm === "pm" && hours !== 12) hours += 12;
+    else if (ampm === "am" && hours === 12) hours = 0;
+    const resetDate = new Date(now);
+    resetDate.setHours(hours, minutes, 0, 0);
+    if (resetDate.getTime() <= now) resetDate.setDate(resetDate.getDate() + 1);
+    return resetDate.toISOString();
+  }
+
+  // "Resets Feb 19 at 3pm" or "Resets Jan 15, 3:30pm"
+  const dateMatch = text.match(
+    /(?:resets?\s*)?(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})(?:\s+at\s+|\s*,?\s*)(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i
+  );
+  if (dateMatch) {
+    const months: Record<string, number> = {
+      jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+      jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
+    };
+    const month = months[dateMatch[1].toLowerCase().substring(0, 3)];
+    const day = parseInt(dateMatch[2], 10);
+    let hours = parseInt(dateMatch[3], 10);
+    const minutes = dateMatch[4] ? parseInt(dateMatch[4], 10) : 0;
+    const ampm = dateMatch[5].toLowerCase();
+    if (ampm === "pm" && hours !== 12) hours += 12;
+    else if (ampm === "am" && hours === 12) hours = 0;
+    if (month !== undefined) {
+      const resetDate = new Date(new Date().getFullYear(), month, day, hours, minutes);
+      if (resetDate.getTime() < now) resetDate.setFullYear(resetDate.getFullYear() + 1);
+      return resetDate.toISOString();
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Fetch Claude usage by spawning `claude /usage` via PTY and parsing the TUI output.
+ * Used as a fallback when the OAuth API returns 429 (rate limited).
+ */
+async function fetchClaudeUsageViaCli(): Promise<ProviderUsage> {
+  const usage: ProviderUsage = {
+    name: "Claude",
+    icon: "🟠",
+    status: "error",
+    windows: [],
+  };
+
+  try {
+    // Dynamically import node-pty
+    const pty = await import("node-pty");
+    const isWindows = process.platform === "win32";
+    const shell = isWindows ? "cmd.exe" : "/bin/sh";
+    const cwd = process.cwd();
+    const args = isWindows
+      ? ["/c", "claude", "--add-dir", cwd]
+      : ["-c", `claude --add-dir "${cwd}"`];
+
+    const ptyOptions: any = {
+      name: "xterm-256color",
+      cols: 120,
+      rows: 30,
+      cwd,
+      env: { ...process.env, TERM: "xterm-256color" },
+    };
+    if (isWindows) ptyOptions.useConpty = false;
+
+    const output = await new Promise<string>((resolve, reject) => {
+      let buf = "";
+      let settled = false;
+      let sentCommand = false;
+      let approvedTrust = false;
+      let seenUsageData = false;
+
+      const ptyProcess = pty.spawn(shell, args, ptyOptions);
+
+      const timeout = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        try { ptyProcess.kill(); } catch {}
+        // Return whatever we have if it contains usage data
+        const clean = _stripClaudeAnsi(buf);
+        if (clean.includes("Current session") || clean.includes("% left") || clean.includes("% used")) {
+          resolve(buf);
+        } else {
+          reject(new Error("Claude CLI timed out"));
+        }
+      }, 30000);
+
+      ptyProcess.onData((data: string) => {
+        if (settled) return;
+        buf += data;
+
+        const clean = _stripClaudeAnsi(buf);
+
+        // Check for auth errors
+        if (
+          clean.includes("OAuth token does not meet scope requirement") ||
+          clean.includes("token_expired") ||
+          clean.includes('"type":"authentication_error"') ||
+          clean.includes('"type": "authentication_error"')
+        ) {
+          settled = true;
+          clearTimeout(timeout);
+          try { ptyProcess.kill(); } catch {}
+          reject(new Error("Claude CLI auth error"));
+          return;
+        }
+
+        // Auto-approve trust prompt
+        if (
+          !approvedTrust &&
+          (clean.includes("Do you want to work in this folder?") ||
+            clean.includes("Ready to code here") ||
+            clean.includes("permission to work with your files") ||
+            clean.includes("trust this folder"))
+        ) {
+          approvedTrust = true;
+          setTimeout(() => {
+            if (!settled) ptyProcess.write("\r");
+          }, 1000);
+        }
+
+        // Detect REPL prompt and send /usage
+        const isReplReady =
+          clean.includes("❯") ||
+          clean.includes("? for shortcuts");
+        if (!sentCommand && isReplReady) {
+          sentCommand = true;
+          setTimeout(() => {
+            if (!settled) {
+              ptyProcess.write("/usage\r");
+              // Confirm if autocomplete menu appeared
+              setTimeout(() => {
+                if (!settled) ptyProcess.write("\r");
+              }, 1200);
+            }
+          }, 1500);
+        }
+
+        // Detect usage data, then exit after brief delay
+        const hasUsage =
+          clean.includes("Current session") ||
+          clean.includes("Current week") ||
+          /\d+%\s*(left|used|remaining)/i.test(clean);
+        if (!seenUsageData && hasUsage && sentCommand) {
+          seenUsageData = true;
+          setTimeout(() => {
+            if (!settled) {
+              ptyProcess.write("\x1b"); // ESC to exit
+              // Fallback kill after 2s
+              setTimeout(() => {
+                if (!settled) {
+                  settled = true;
+                  clearTimeout(timeout);
+                  try { ptyProcess.kill(); } catch {}
+                  resolve(buf);
+                }
+              }, 2000);
+            }
+          }, 3000);
+        }
+      });
+
+      ptyProcess.onExit(() => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        resolve(buf);
+      });
+    });
+
+    // Parse the output
+    const cleanOutput = _stripClaudeAnsi(output);
+    const lines = cleanOutput.split("\n").map((l) => l.trim()).filter(Boolean);
+
+    // Find sections by looking for known headers (use LAST occurrence since PTY output has redraws)
+    const sections: { label: string; windowMs: number }[] = [
+      { label: "Current session", windowMs: 5 * 60 * 60 * 1000 },
+      { label: "Current week (all models)", windowMs: 7 * 24 * 60 * 60 * 1000 },
+      { label: "Current week (Sonnet", windowMs: 7 * 24 * 60 * 60 * 1000 },
+      { label: "Current week (Opus", windowMs: 7 * 24 * 60 * 60 * 1000 },
+    ];
+
+    usage.status = "ok";
+    for (const section of sections) {
+      // Find last occurrence
+      let sectionIdx = -1;
+      for (let i = lines.length - 1; i >= 0; i--) {
+        if (lines[i].toLowerCase().includes(section.label.toLowerCase())) {
+          sectionIdx = i;
+          break;
+        }
+      }
+      if (sectionIdx === -1) continue;
+
+      const searchLines = lines.slice(sectionIdx, sectionIdx + 5);
+      let percentUsed: number | null = null;
+      let resetText: string | null = null;
+
+      for (const line of searchLines) {
+        if (percentUsed === null) {
+          percentUsed = _parseClaudePercentLine(line);
+        }
+        if (!resetText) {
+          resetText = _parseClaudeResetLine(line);
+        }
+      }
+
+      if (percentUsed !== null) {
+        const window: UsageWindow = {
+          label: section.label,
+          percentUsed: Math.min(100, Math.max(0, percentUsed)),
+          percentLeft: Math.min(100, Math.max(0, 100 - percentUsed)),
+          resetText,
+          windowDurationMs: section.windowMs,
+          resetMs: undefined,
+        };
+
+        // Parse reset time to calculate resetMs
+        if (resetText) {
+          const iso = _parseClaudeResetText(resetText);
+          if (iso) {
+            const msLeft = new Date(iso).getTime() - Date.now();
+            window.resetMs = msLeft > 0 ? msLeft : 0;
+            if (!window.resetText) {
+              window.resetText = msLeft > 0 ? `resets in ${formatDuration(msLeft)}` : "resetting now";
+            }
+          }
+        }
+
+        usage.windows.push(window);
+      }
+    }
+
+    if (usage.windows.length === 0) {
+      usage.status = "error";
+      usage.error = "Could not parse usage from CLI output";
+    }
+  } catch (e: any) {
+    usage.status = "error";
+    usage.error = e.message || "CLI fallback failed";
+  }
+
+  return usage;
+}
+
+/**
+ * Fetch Claude usage data via the Anthropic OAuth usage API.
  *
- * Uses `claude usage --json` to retrieve usage information. The CLI manages
- * its own caching and rate-limiting, avoiding the 429 errors that occurred
- * with direct HTTPS requests to api.anthropic.com/api/oauth/usage.
- *
- * Credential files and the macOS keychain are still read for plan/tier
- * detection (subscriptionType, rateLimitTier) since the CLI output may
- * not include subscription metadata.
- *
- * If the CLI is not installed or the `usage` subcommand is unavailable,
- * the function returns an error status with a descriptive message.
+ * Reads credentials from the Claude CLI's credential store (files or macOS
+ * keychain) and calls api.anthropic.com/api/oauth/usage directly.
+ * Includes retry logic with exponential backoff for transient 429 responses.
+ * Falls back to parsing `claude /usage` CLI output when rate limited.
  */
 async function fetchClaudeUsage(): Promise<ProviderUsage> {
   const usage: ProviderUsage = {
@@ -282,7 +650,7 @@ async function fetchClaudeUsage(): Promise<ProviderUsage> {
     return usage;
   }
 
-  // Infer plan from credential metadata (CLI handles auth for the API call)
+  // Infer plan from credential metadata
   if (oauthCreds.subscriptionType) {
     usage.plan = oauthCreds.subscriptionType.charAt(0).toUpperCase() + oauthCreds.subscriptionType.slice(1);
   } else if (oauthCreds.rateLimitTier) {
@@ -293,15 +661,64 @@ async function fetchClaudeUsage(): Promise<ProviderUsage> {
     else usage.plan = oauthCreds.rateLimitTier;
   }
 
-  // ── Fetch usage via Claude CLI ──────────────────────────────────────
+  // ── Fetch usage via direct API call with retry for 429 ─────────────
   try {
-    const cliOutput = child_process.execFileSync(
-      "claude",
-      ["usage", "--json"],
-      { encoding: "utf-8", timeout: 15000 }
-    );
+    let res: { status: number; headers: Record<string, string>; body: string } | undefined;
+    let lastStatus = 0;
 
-    const data = JSON.parse(cliOutput.trim());
+    for (let attempt = 0; attempt < CLAUDE_MAX_RETRIES; attempt++) {
+      res = await httpsRequest("https://api.anthropic.com/api/oauth/usage", {
+        method: "GET",
+        headers: {
+          authorization: `Bearer ${oauthCreds.accessToken}`,
+        },
+      });
+
+      lastStatus = res.status;
+
+      // Auth errors are not transient — fail immediately
+      if (res.status === 401 || res.status === 403) {
+        usage.status = "error";
+        usage.error = "Auth expired — run 'claude' to re-login";
+        return usage;
+      }
+
+      // 429 is potentially transient — retry with exponential backoff
+      if (res.status === 429) {
+        if (attempt < CLAUDE_MAX_RETRIES - 1) {
+          // Use retry-after header if available, otherwise exponential backoff
+          const retryAfter = res.headers["retry-after"];
+          let delayMs: number;
+          if (retryAfter && !isNaN(Number(retryAfter))) {
+            delayMs = Number(retryAfter) * 1000;
+          } else {
+            delayMs = CLAUDE_INITIAL_RETRY_MS * Math.pow(2, attempt);
+          }
+          await sleepFn(delayMs);
+          continue;
+        }
+        // All retries exhausted — fall back to CLI parsing
+        return fetchClaudeUsageViaCli();
+      }
+
+      // Any other non-200 status — fail immediately (not transient)
+      if (res.status !== 200) {
+        usage.status = "error";
+        usage.error = `HTTP ${res.status}`;
+        return usage;
+      }
+
+      // Success — break out of retry loop
+      break;
+    }
+
+    if (!res || lastStatus !== 200) {
+      usage.status = "error";
+      usage.error = `HTTP ${lastStatus}`;
+      return usage;
+    }
+
+    const data = JSON.parse(res.body);
     usage.status = "ok";
 
     const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;
@@ -342,17 +759,8 @@ async function fetchClaudeUsage(): Promise<ProviderUsage> {
     if (sonnet) usage.windows.push(sonnet);
     if (opus) usage.windows.push(opus);
   } catch (e: any) {
-    // Distinguish CLI-not-found from other errors
-    if (e.code === "ENOENT") {
-      usage.status = "error";
-      usage.error = "Claude CLI not found — install from https://claude.ai/download";
-    } else if (e.message?.includes("ETIMEDOUT") || e.killed) {
-      usage.status = "error";
-      usage.error = "Claude CLI timed out — try again later";
-    } else {
-      usage.status = "error";
-      usage.error = e.message || "Failed to fetch usage via Claude CLI";
-    }
+    usage.status = "error";
+    usage.error = e.message || "Failed to fetch Claude usage";
   }
 
   return usage;
@@ -611,33 +1019,25 @@ async function fetchMinimaxUsage(): Promise<ProviderUsage> {
     windows: [],
   };
 
-  // Load Minimax credentials
-  const credPath = path.join(process.env.HOME || "~", ".minimax", "credentials.json");
-  let creds: any = null;
-  try {
-    creds = JSON.parse(fs.readFileSync(credPath, "utf-8"));
-  } catch {
-    usage.error = "No Minimax credentials configured";
-    return usage;
-  }
-
-  const accessToken = creds?.access_token;
-  if (!accessToken) {
-    usage.error = "No Minimax access token found";
+  // Load Minimax API key from pi's auth storage
+  const apiKey = readPiAuthKey("minimax");
+  if (!apiKey) {
+    usage.error = "No Minimax credentials — add API key to pi";
     return usage;
   }
 
   try {
-    const res = await httpsRequest("https://api.minimaxi.com/user/quota", {
+    const res = await httpsRequest("https://api.minimax.io/v1/api/openplatform/coding_plan/remains", {
       method: "GET",
       headers: {
-        authorization: `Bearer ${accessToken}`,
+        authorization: `Bearer ${apiKey}`,
+        "content-type": "application/json",
       },
     });
 
     if (res.status === 401 || res.status === 403) {
       usage.status = "error";
-      usage.error = "Auth expired";
+      usage.error = "Auth expired — check your Minimax API key";
       return usage;
     }
 
@@ -650,35 +1050,47 @@ async function fetchMinimaxUsage(): Promise<ProviderUsage> {
     const data = JSON.parse(res.body);
     usage.status = "ok";
 
-    const quota = data?.quota;
-    if (quota && typeof quota === "object") {
-      const total: number = quota.total ?? 0;
-      const used: number = quota.used ?? 0;
-      const remaining: number = quota.remaining ?? Math.max(0, total - used);
+    // Parse model_remains array — group by model family
+    const modelRemains: any[] = data?.model_remains || [];
+    if (Array.isArray(modelRemains) && modelRemains.length > 0) {
+      for (const model of modelRemains) {
+        const modelName: string = model.model_name || "Unknown";
+        const total: number = model.current_interval_total_count ?? 0;
+        // Note: Minimax's current_interval_usage_count is actually REMAINING, not used
+        // (known API quirk per https://github.com/MiniMax-AI/MiniMax-M2/issues/99)
+        const remaining: number = model.current_interval_usage_count ?? 0;
+        const used: number = Math.max(0, total - remaining);
 
-      const percentUsed = total > 0 ? (used / total) * 100 : 0;
+        const percentUsed = total > 0 ? (used / total) * 100 : 0;
 
-      let resetText: string | null = null;
-      let resetMs: number | undefined;
-      let windowDurationMs: number | undefined;
+        let resetText: string | null = null;
+        let resetMs: number | undefined;
+        let windowDurationMs: number | undefined;
 
-      const resetAt = data?.reset_at;
-      if (resetAt) {
-        const msLeft = new Date(resetAt).getTime() - Date.now();
-        resetMs = msLeft > 0 ? msLeft : 0;
-        resetText = msLeft > 0 ? `resets in ${formatDuration(msLeft)}` : "resetting now";
-        // Weekly window duration (7 days)
-        windowDurationMs = 7 * 24 * 60 * 60 * 1000;
+        const remainsTime: number = model.remains_time;
+        if (remainsTime && remainsTime > 0) {
+          resetMs = remainsTime;
+          resetText = `resets in ${formatDuration(remainsTime)}`;
+        }
+
+        const startTime: number = model.start_time;
+        const endTime: number = model.end_time;
+        if (startTime && endTime) {
+          windowDurationMs = endTime - startTime;
+        }
+
+        // Only show models that have a quota > 0 (skip unused model types)
+        if (total > 0) {
+          usage.windows.push({
+            label: modelName,
+            percentUsed: Math.min(100, Math.max(0, percentUsed)),
+            percentLeft: Math.min(100, Math.max(0, 100 - percentUsed)),
+            resetText,
+            resetMs,
+            windowDurationMs,
+          });
+        }
       }
-
-      usage.windows.push({
-        label: "Weekly",
-        percentUsed: Math.min(100, Math.max(0, percentUsed)),
-        percentLeft: Math.min(100, Math.max(0, 100 - percentUsed)),
-        resetText,
-        resetMs,
-        windowDurationMs,
-      });
     }
   } catch (e: any) {
     usage.status = "error";
@@ -698,33 +1110,26 @@ async function fetchZaiUsage(): Promise<ProviderUsage> {
     windows: [],
   };
 
-  // Load Zai credentials
-  const authPath = path.join(process.env.HOME || "~", ".zai", "auth.json");
-  let auth: any = null;
-  try {
-    auth = JSON.parse(fs.readFileSync(authPath, "utf-8"));
-  } catch {
-    usage.error = "No Zai credentials configured";
-    return usage;
-  }
-
-  const accessToken = auth?.access_token;
-  if (!accessToken) {
-    usage.error = "No Zai access token found";
+  // Load Zai API key from pi's auth storage
+  const apiKey = readPiAuthKey("zai");
+  if (!apiKey) {
+    usage.error = "No Zai credentials — add API key to pi";
     return usage;
   }
 
   try {
-    const res = await httpsRequest("https://api.zhipuai.com/v1/user/usage", {
+    // Z.ai quota endpoint — uses raw API key in Authorization header (not Bearer)
+    const res = await httpsRequest("https://api.z.ai/api/monitor/usage/quota/limit", {
       method: "GET",
       headers: {
-        authorization: `Bearer ${accessToken}`,
+        authorization: apiKey,
+        "content-type": "application/json",
       },
     });
 
     if (res.status === 401 || res.status === 403) {
       usage.status = "error";
-      usage.error = "Auth expired";
+      usage.error = "Auth expired — check your Zai API key";
       return usage;
     }
 
@@ -735,60 +1140,79 @@ async function fetchZaiUsage(): Promise<ProviderUsage> {
     }
 
     const data = JSON.parse(res.body);
+    if (!data?.success || data?.code !== 200) {
+      usage.status = "error";
+      usage.error = data?.msg || "API returned error";
+      return usage;
+    }
+
     usage.status = "ok";
 
-    const usageData = data?.data;
-    if (usageData && typeof usageData === "object") {
-      const totalCredits: number = usageData.total_credits ?? 0;
-      const usedCredits: number = usageData.used_credits ?? 0;
+    const limits: any[] = data?.data?.limits || [];
 
-      const percentUsed = totalCredits > 0 ? (usedCredits / totalCredits) * 100 : 0;
+    // Find TOKENS_LIMIT (5-hour rolling window)
+    const tokensLimit = limits.find((l: any) => l.type === "TOKENS_LIMIT");
+    if (tokensLimit) {
+      const percentage: number = tokensLimit.percentage ?? 0;
+      // The percentage field represents percentage USED
+      // But the API actually reports percentage as the utilization level
+      // remaining = 100 - percentage (if percentage is used%)
+      // However the opencode-mystatus source treats it differently:
+      // remainPercent = 100 - percentage (where percentage is used %)
+      // Actually from the response: percentage=1 means 1% used, so 99% remaining
 
-      let dailyResetText: string | null = null;
-      let dailyResetMs: number | undefined;
-      let monthlyResetText: string | null = null;
-      let monthlyResetMs: number | undefined;
+      let resetText: string | null = null;
+      let resetMs: number | undefined;
+      let windowDurationMs: number | undefined;
 
-      const resetDate = usageData.reset_date;
-      if (resetDate) {
-        const resetTime = new Date(resetDate).getTime();
-        const msLeft = resetTime - Date.now();
-        
-        // Determine if this is daily or monthly based on time until reset
-        const hoursLeft = msLeft / (1000 * 60 * 60);
-        
-        if (hoursLeft <= 24) {
-          // Daily window
-          dailyResetMs = msLeft > 0 ? msLeft : 0;
-          dailyResetText = msLeft > 0 ? `resets in ${formatDuration(msLeft)}` : "resetting now";
-        } else {
-          // Monthly window
-          monthlyResetMs = msLeft > 0 ? msLeft : 0;
-          monthlyResetText = msLeft > 0 ? `resets in ${formatDuration(msLeft)}` : "resetting now";
-        }
+      const nextResetTime: number | undefined = tokensLimit.nextResetTime;
+      if (nextResetTime) {
+        resetMs = Math.max(0, nextResetTime - Date.now());
+        resetText = resetMs > 0 ? `resets in ${formatDuration(resetMs)}` : "resetting now";
+        // 5-hour window
+        windowDurationMs = 5 * 60 * 60 * 1000;
       }
 
-      // Add Daily window
       usage.windows.push({
-        label: "Daily",
-        percentUsed: Math.min(100, Math.max(0, percentUsed)),
-        percentLeft: Math.min(100, Math.max(0, 100 - percentUsed)),
-        resetText: dailyResetText,
-        resetMs: dailyResetMs,
-        windowDurationMs: dailyResetMs ? 24 * 60 * 60 * 1000 : undefined,
+        label: "Session (5h)",
+        percentUsed: Math.min(100, Math.max(0, percentage)),
+        percentLeft: Math.min(100, Math.max(0, 100 - percentage)),
+        resetText,
+        resetMs,
+        windowDurationMs,
       });
+    }
 
-      // Add Monthly window if applicable
-      if (monthlyResetMs) {
-        usage.windows.push({
-          label: "Monthly",
-          percentUsed: Math.min(100, Math.max(0, percentUsed)),
-          percentLeft: Math.min(100, Math.max(0, 100 - percentUsed)),
-          resetText: monthlyResetText,
-          resetMs: monthlyResetMs,
-          windowDurationMs: 30 * 24 * 60 * 60 * 1000, // Approximate 30 days
-        });
+    // Find TIME_LIMIT (MCP monthly search quota)
+    const timeLimit = limits.find((l: any) => l.type === "TIME_LIMIT");
+    if (timeLimit) {
+      const total: number = timeLimit.usage ?? 0;
+      const used: number = timeLimit.currentValue ?? 0;
+      const remaining: number = timeLimit.remaining ?? Math.max(0, total - used);
+      const percentage: number = timeLimit.percentage ?? 0;
+
+      let resetText: string | null = null;
+      let resetMs: number | undefined;
+
+      const nextResetTime: number | undefined = timeLimit.nextResetTime;
+      if (nextResetTime) {
+        resetMs = Math.max(0, nextResetTime - Date.now());
+        resetText = resetMs > 0 ? `resets in ${formatDuration(resetMs)}` : "resetting now";
       }
+
+      usage.windows.push({
+        label: "MCP Monthly",
+        percentUsed: Math.min(100, Math.max(0, percentage)),
+        percentLeft: Math.min(100, Math.max(0, 100 - percentage)),
+        resetText,
+        resetMs,
+        windowDurationMs: 30 * 24 * 60 * 60 * 1000,
+      });
+    }
+
+    // Extract plan level if available
+    if (data?.data?.level) {
+      usage.plan = data.data.level.charAt(0).toUpperCase() + data.data.level.slice(1);
     }
   } catch (e: any) {
     usage.status = "error";

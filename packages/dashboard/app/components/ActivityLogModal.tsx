@@ -317,13 +317,6 @@ export function ActivityLogModal({
                     <span className="activity-log-entry-type">
                       {EVENT_TYPE_LABELS[entry.type]}
                     </span>
-                    {/* Project name badge */}
-                    {entry.projectName && (
-                      <span className="activity-log-entry-project">
-                        <Folder size={10} />
-                        {entry.projectName}
-                      </span>
-                    )}
                     <span className="activity-log-entry-time">
                       {formatTimestamp(entry.timestamp)}
                     </span>

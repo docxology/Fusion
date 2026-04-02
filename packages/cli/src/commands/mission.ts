@@ -4,7 +4,7 @@ import { getStore } from "../project-resolver.js";
 
 // ── Status Labels for Display ───────────────────────────────────────────────
 
-const MISSION_STATUS_LABELS: Record<MissionStatus, string> = {
+const MISSION_STATUS_LABELS: Record<string, string> = {
   planning: "Planning",
   active: "Active",
   blocked: "Blocked",

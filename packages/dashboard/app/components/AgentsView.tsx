@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import type { JSX } from "react";
-import { Plus, Play, Pause, Square, Activity, Heart, Trash2, RefreshCw, Bot, LayoutGrid, List } from "lucide-react";
+import { Plus, Play, Pause, Square, Activity, Heart, Trash2, RefreshCw, Bot, LayoutGrid, List, ChevronRight } from "lucide-react";
 import type { Agent, AgentCapability, AgentState } from "../api";
 import { fetchAgents, createAgent, updateAgent, updateAgentState, deleteAgent } from "../api";
+import { AgentDetailView } from "./AgentDetailView";
 
 export interface AgentsViewProps {
   addToast: (message: string, type?: "success" | "error") => void;
@@ -31,6 +32,7 @@ export function AgentsView({ addToast }: AgentsViewProps) {
   const [newAgentName, setNewAgentName] = useState("");
   const [newAgentRole, setNewAgentRole] = useState<AgentCapability>("custom");
   const [filterState, setFilterState] = useState<AgentState | "all">("all");
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [agentView, setAgentView] = useState<"board" | "list">(() => {
     if (typeof window === "undefined") return "list";
     const saved = localStorage.getItem("kb-agent-view");
@@ -251,26 +253,34 @@ export function AgentsView({ addToast }: AgentsViewProps) {
               const stateStyle = STATE_COLORS[agent.state];
               return (
                 <div key={agent.id} className="agent-board-card" style={{ borderColor: stateStyle.border }}>
-                  <div className="agent-board-header">
-                    <span className="agent-board-icon">{getRoleIcon(agent.role)}</span>
-                    <span
-                      className="agent-board-badge"
-                      style={{
-                        background: stateStyle.bg,
-                        color: stateStyle.text,
-                        border: `1px solid ${stateStyle.border}`,
-                      }}
-                    >
-                      {agent.state}
-                    </span>
-                    <span className="agent-board-health" style={{ color: health.color }} title={health.label}>
-                      {health.icon}
-                    </span>
+                  <div 
+                    className="agent-board-clickable"
+                    onClick={() => setSelectedAgentId(agent.id)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => e.key === "Enter" && setSelectedAgentId(agent.id)}
+                  >
+                    <div className="agent-board-header">
+                      <span className="agent-board-icon">{getRoleIcon(agent.role)}</span>
+                      <span
+                        className="agent-board-badge"
+                        style={{
+                          background: stateStyle.bg,
+                          color: stateStyle.text,
+                          border: `1px solid ${stateStyle.border}`,
+                        }}
+                      >
+                        {agent.state}
+                      </span>
+                      <span className="agent-board-health" style={{ color: health.color }} title={health.label}>
+                        {health.icon}
+                      </span>
+                    </div>
+                    <div className="agent-board-name" title={agent.name}>
+                      {agent.name}
+                    </div>
+                    <div className="agent-board-id">{agent.id}</div>
                   </div>
-                  <div className="agent-board-name" title={agent.name}>
-                    {agent.name}
-                  </div>
-                  <div className="agent-board-id">{agent.id}</div>
                   <div className="agent-board-actions">
                     {agent.state === "idle" && (
                       <button
@@ -338,7 +348,13 @@ export function AgentsView({ addToast }: AgentsViewProps) {
               return (
                 <div key={agent.id} className="agent-card" style={{ borderLeftColor: stateStyle.border }}>
                   <div className="agent-card-header">
-                    <div className="agent-info">
+                    <div 
+                      className="agent-info agent-info--clickable"
+                      onClick={() => setSelectedAgentId(agent.id)}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => e.key === "Enter" && setSelectedAgentId(agent.id)}
+                    >
                       {editingRoleForAgent === agent.id ? (
                         <select
                           ref={roleSelectRef}
@@ -358,12 +374,16 @@ export function AgentsView({ addToast }: AgentsViewProps) {
                       ) : (
                         <span
                           className="agent-icon agent-icon--clickable"
-                          onClick={() => setEditingRoleForAgent(agent.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingRoleForAgent(agent.id);
+                          }}
                           title="Click to change role"
                           role="button"
                           tabIndex={0}
                           onKeyDown={(e) => {
                             if (e.key === "Enter" || e.key === " ") {
+                              e.stopPropagation();
                               setEditingRoleForAgent(agent.id);
                             }
                           }}
@@ -375,6 +395,7 @@ export function AgentsView({ addToast }: AgentsViewProps) {
                         <span className="agent-name">{agent.name}</span>
                         <span className="agent-id text-secondary">{agent.id}</span>
                       </div>
+                      <ChevronRight size={20} className="agent-card-chevron" />
                     </div>
                     <div className="agent-badges">
                       <span
@@ -473,6 +494,15 @@ export function AgentsView({ addToast }: AgentsViewProps) {
           )}
         </div>
       </div>
+
+      {/* Agent Detail Modal */}
+      {selectedAgentId && (
+        <AgentDetailView
+          agentId={selectedAgentId}
+          onClose={() => setSelectedAgentId(null)}
+          addToast={addToast}
+        />
+      )}
 
       <style>{`
         .agents-view {
@@ -621,6 +651,14 @@ export function AgentsView({ addToast }: AgentsViewProps) {
           color: var(--text-secondary);
         }
 
+        .agent-board-clickable {
+          cursor: pointer;
+        }
+
+        .agent-board-clickable:hover .agent-board-name {
+          color: var(--accent);
+        }
+
         .agent-board-actions {
           display: flex;
           gap: 6px;
@@ -695,6 +733,37 @@ export function AgentsView({ addToast }: AgentsViewProps) {
         .agent-meta {
           display: flex;
           flex-direction: column;
+        }
+
+        .agent-info--clickable {
+          flex: 1;
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          cursor: pointer;
+          padding: 4px;
+          margin: -4px;
+          border-radius: 4px;
+          transition: background 0.15s ease;
+        }
+
+        .agent-info--clickable:hover {
+          background: var(--bg-hover);
+        }
+
+        .agent-info--clickable:hover .agent-name {
+          color: var(--accent);
+        }
+
+        .agent-card-chevron {
+          color: var(--text-muted);
+          margin-left: auto;
+          opacity: 0;
+          transition: opacity 0.15s ease;
+        }
+
+        .agent-info--clickable:hover .agent-card-chevron {
+          opacity: 1;
         }
 
         .agent-name {

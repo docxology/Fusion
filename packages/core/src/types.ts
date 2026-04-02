@@ -387,6 +387,15 @@ export interface Task {
    *  unmerged branch. The executor reads this to branch from the
    *  dependency's branch instead of HEAD. Cleared after worktree creation. */
   baseBranch?: string;
+  /** Base commit SHA for creating this task's worktree. Used with baseBranch
+   *  to establish the exact starting point for the worktree. */
+  baseCommitSha?: string;
+  /** List of files modified by this task (populated during execution) */
+  modifiedFiles?: string[];
+  /** Mission ID this task is linked to (for mission hierarchy) */
+  missionId?: string;
+  /** Slice ID this task is linked to (for mission hierarchy) */
+  sliceId?: string;
   attachments?: TaskAttachment[];
   steeringComments?: SteeringComment[];
   comments?: TaskComment[];
@@ -469,6 +478,10 @@ export interface TaskCreateInput {
   thinkingLevel?: ThinkingLevel;
   /** When true, trigger AI title summarization if description is long and no title provided */
   summarize?: boolean;
+  /** Mission ID to link this task to (for mission hierarchy) */
+  missionId?: string;
+  /** Slice ID to link this task to (for mission hierarchy) */
+  sliceId?: string;
 }
 
 // ── Settings Scope Types ────────────────────────────────────────────────
@@ -527,6 +540,13 @@ export interface GlobalSettings {
    *  Used to determine which project to operate on when not in a project directory.
    *  Set via `kb project set-default <name>`. */
   defaultProjectId?: string;
+  /** Whether the first-run setup wizard has been completed.
+   *  Set to true when the user completes the multi-project setup process.
+   *  Default: false (undefined until setup is completed). */
+  setupComplete?: boolean;
+  /** List of favorite provider names. Favorite providers appear at the top of
+   *  model selection dropdowns. Order is preserved - earlier entries appear higher. */
+  favoriteProviders?: string[];
 }
 
 /**
@@ -660,6 +680,15 @@ export interface ProjectSettings {
    *  Must be set together with `titleSummarizerProvider`. Falls back to planningModelId,
    *  then defaultModelId if not specified. */
   titleSummarizerModelId?: string;
+  /** Named scripts that can be referenced by setupScript or other automation.
+   *  A map of script name to shell command. */
+  scripts?: Record<string, string>;
+  /** Reference to a named script in the scripts map that runs before task execution.
+   *  Used for pre-task setup like environment preparation. */
+  setupScript?: string;
+  /** Dashboard host URL for ntfy notifications (e.g., "http://localhost:3000").
+   *  When set, notifications include links to the dashboard. */
+  ntfyDashboardHost?: string;
 }
 
 /**
@@ -866,6 +895,14 @@ export interface ArchivedTaskEntry {
   breakIntoSubtasks?: boolean;
   paused?: boolean;
   baseBranch?: string;
+  /** Base commit SHA for the task's worktree */
+  baseCommitSha?: string;
+  /** List of files modified by this task */
+  modifiedFiles?: string[];
+  /** Mission ID this task is linked to */
+  missionId?: string;
+  /** Slice ID this task is linked to */
+  sliceId?: string;
   mergeRetries?: number;
   error?: string;
 }
@@ -900,6 +937,9 @@ export interface RegisteredProject {
   /** Cached project settings snapshot */
   settings?: ProjectSettings;
 }
+
+/** @deprecated Use RegisteredProject instead */
+export type ProjectInfo = RegisteredProject;
 
 /** Health metrics for a registered project */
 export interface ProjectHealth {
@@ -1081,4 +1121,76 @@ export interface AgentUpdateInput {
   name?: string;
   role?: AgentCapability;
   metadata?: Record<string, unknown>;
+}
+
+// ── Multi-Project First-Run & Migration Types ───────────────────────────────
+
+/** Detected project for migration consideration */
+export interface DetectedProject {
+  /** Absolute path to project directory */
+  path: string;
+  /** Auto-generated or derived project name */
+  name: string;
+  /** Whether the project has a valid kb.db */
+  hasDb: boolean;
+}
+
+/** Setup state for the first-run wizard UI */
+export interface SetupState {
+  /** Whether this is a first-run scenario (no projects registered) */
+  isFirstRun: boolean;
+  /** Whether any projects were detected on the filesystem */
+  hasDetectedProjects: boolean;
+  /** Projects detected on filesystem for potential registration */
+  detectedProjects: DetectedProject[];
+  /** Projects already registered in the central database */
+  registeredProjects: RegisteredProject[];
+  /** Recommended action based on current state */
+  recommendedAction: "auto-detect" | "create-new" | "manual-setup";
+}
+
+/** Input for setting up a project via the wizard */
+export interface ProjectSetupInput {
+  /** Project path */
+  path: string;
+  /** Display name */
+  name: string;
+  /** Isolation mode preference */
+  isolationMode?: "in-process" | "child-process";
+}
+
+/** Result of completing the first-run setup */
+export interface SetupCompletionResult {
+  /** Whether the setup completed successfully */
+  success: boolean;
+  /** Projects that were registered */
+  projects: RegisteredProject[];
+  /** Recommended next steps for the user */
+  nextSteps: string[];
+}
+
+/** Options for running a migration */
+export interface MigrationOptions {
+  /** Path to start scanning for projects (default: process.cwd()) */
+  startPath?: string;
+  /** Maximum recursion depth for scanning (default: 5) */
+  maxDepth?: number;
+  /** Whether to simulate without making changes */
+  dryRun?: boolean;
+  /** Whether to auto-register detected projects */
+  autoRegister?: boolean;
+  /** Progress callback for long-running operations */
+  onProgress?: (current: number, total: number, path: string) => void;
+}
+
+/** Result of a migration operation (from MigrationOrchestrator) */
+export interface MigrationResult {
+  /** Projects detected during scanning */
+  projectsDetected: DetectedProject[];
+  /** Projects that were registered */
+  projectsRegistered: RegisteredProject[];
+  /** Projects that were skipped with reasons */
+  projectsSkipped: Array<{ path: string; reason: string }>;
+  /** Errors encountered during migration */
+  errors: Array<{ path: string; error: string }>;
 }

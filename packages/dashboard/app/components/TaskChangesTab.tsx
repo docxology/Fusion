@@ -54,7 +54,7 @@ export function TaskChangesTab({ taskId, worktree }: TaskChangesTabProps) {
       setDiffData(data);
       // Auto-expand first file if there are files
       if (data.files.length > 0) {
-        setExpandedFiles(new Set([data.files[0]]));
+        setExpandedFiles(new Set([data.files[0].path]));
       }
     } catch (err: any) {
       setError(err.message || "Failed to load diff");
@@ -146,19 +146,18 @@ export function TaskChangesTab({ taskId, worktree }: TaskChangesTabProps) {
       </div>
 
       <div className="changes-file-list">
-        {diffData.files.map((file) => {
-          const fileDiff = diffData.diffs[file];
-          const status = getFileStatus(file, fileDiff?.patch || "");
-          const isExpanded = expandedFiles.has(file);
+        {diffData.files.map((fileEntry) => {
+          const { path, status, patch } = fileEntry;
+          const isExpanded = expandedFiles.has(path);
 
           return (
             <div
-              key={file}
+              key={path}
               className={`changes-file-item ${isExpanded ? "expanded" : ""}`}
             >
               <button
                 className="changes-file-header"
-                onClick={() => toggleFile(file)}
+                onClick={() => toggleFile(path)}
               >
                 <span className="changes-file-toggle">
                   {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
@@ -171,22 +170,19 @@ export function TaskChangesTab({ taskId, worktree }: TaskChangesTabProps) {
                   {status === "added" && "A"}
                   {status === "modified" && "M"}
                   {status === "deleted" && "D"}
-                  {status === "unknown" && "?"}
                 </span>
-                <span className="changes-file-path" title={file}>
-                  {file}
+                <span className="changes-file-path" title={path}>
+                  {path}
                 </span>
-                {fileDiff?.stat && (
-                  <span className="changes-file-stat" title={fileDiff.stat}>
-                    {fileDiff.stat}
-                  </span>
-                )}
+                <span className="changes-file-stat" title={`+${fileEntry.additions} -${fileEntry.deletions}`}>
+                  +{fileEntry.additions} -{fileEntry.deletions}
+                </span>
               </button>
 
-              {isExpanded && fileDiff?.patch && (
+              {isExpanded && patch && (
                 <div className="changes-file-content">
                   <pre className="changes-diff-patch">
-                    <code>{fileDiff.patch}</code>
+                    <code>{patch}</code>
                   </pre>
                 </div>
               )}

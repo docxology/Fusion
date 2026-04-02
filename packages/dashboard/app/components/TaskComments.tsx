@@ -1,7 +1,9 @@
 import { useMemo, useState } from "react";
 import type { Task, TaskComment } from "@fusion/core";
-import { addTaskComment, updateTaskComment, deleteTaskComment } from "../api";
+import { addSteeringComment, addTaskComment, updateTaskComment, deleteTaskComment } from "../api";
 import type { ToastType } from "../hooks/useToast";
+
+const MAX_COMMENT_LENGTH = 2000;
 
 interface TaskCommentsProps {
   task: Task;
@@ -10,10 +12,16 @@ interface TaskCommentsProps {
   currentAuthor?: string;
 }
 
+type CommentType = "comment" | "guidance";
+
 function formatCommentTimestamp(comment: TaskComment): string {
   const timestamp = comment.updatedAt || comment.createdAt;
   const label = new Date(timestamp).toLocaleString();
   return comment.updatedAt ? `${label} (edited)` : label;
+}
+
+function isAIGuidanceComment(author: string): boolean {
+  return author === "agent" || author === "system";
 }
 
 export function TaskComments({ task, onTaskUpdated, addToast, currentAuthor = "user" }: TaskCommentsProps) {
@@ -22,18 +30,33 @@ export function TaskComments({ task, onTaskUpdated, addToast, currentAuthor = "u
   const [editingText, setEditingText] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [commentType, setCommentType] = useState<CommentType>("comment");
 
-  const comments = useMemo(() => task.comments || [], [task.comments]);
+  // Sort comments by createdAt descending (newest first)
+  const comments = useMemo(() => {
+    return [...(task.comments || [])].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+  }, [task.comments]);
+
+  const isOverLimit = draft.length > MAX_COMMENT_LENGTH;
 
   async function handleAddComment() {
     const text = draft.trim();
     if (!text) return;
     setSubmitting(true);
     try {
-      const updated = await addTaskComment(task.id, text, currentAuthor);
-      setDraft("");
-      onTaskUpdated?.(updated);
-      addToast("Comment added", "success");
+      if (commentType === "guidance") {
+        const updated = await addSteeringComment(task.id, text);
+        setDraft("");
+        onTaskUpdated?.(updated);
+        addToast("AI Guidance added", "success");
+      } else {
+        const updated = await addTaskComment(task.id, text, currentAuthor);
+        setDraft("");
+        onTaskUpdated?.(updated);
+        addToast("Comment added", "success");
+      }
     } catch (error: any) {
       addToast(error.message || "Failed to add comment", "error");
     } finally {
@@ -71,6 +94,16 @@ export function TaskComments({ task, onTaskUpdated, addToast, currentAuthor = "u
     }
   }
 
+  function handleKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+      event.preventDefault();
+      void handleAddComment();
+    }
+  }
+
+  const placeholder = commentType === "guidance" ? "Add guidance for the AI agent" : "Add a comment";
+  const buttonLabel = commentType === "guidance" ? "Add Guidance" : "Add Comment";
+
   return (
     <div className="detail-section">
       <h4>Comments</h4>
@@ -81,12 +114,17 @@ export function TaskComments({ task, onTaskUpdated, addToast, currentAuthor = "u
           {comments.map((comment) => {
             const canEdit = comment.author === currentAuthor;
             const isEditing = editingId === comment.id;
+            const isAIGuidance = isAIGuidanceComment(comment.author);
             return (
               <div key={comment.id} className="detail-log-entry">
                 <div className="detail-log-header" style={{ justifyContent: "space-between", gap: 12 }}>
-                  <div>
-                    <strong>{comment.author}</strong>
-                    <span className="detail-log-timestamp" style={{ marginLeft: 8 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    {isAIGuidance ? (
+                      <span className="ai-guidance-badge" data-testid="ai-guidance-badge">AI Guidance</span>
+                    ) : (
+                      <strong>{comment.author}</strong>
+                    )}
+                    <span className="detail-log-timestamp" style={{ marginLeft: isAIGuidance ? 0 : 8 }}>
                       {formatCommentTimestamp(comment)}
                     </span>
                   </div>
@@ -148,16 +186,43 @@ export function TaskComments({ task, onTaskUpdated, addToast, currentAuthor = "u
       )}
 
       <div style={{ display: "grid", gap: 8, marginTop: 12 }}>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            className={`btn btn-sm ${commentType === "comment" ? "btn-primary" : ""}`}
+            onClick={() => setCommentType("comment")}
+          >
+            Comment
+          </button>
+          <button
+            className={`btn btn-sm ${commentType === "guidance" ? "btn-primary" : ""}`}
+            onClick={() => setCommentType("guidance")}
+          >
+            AI Guidance
+          </button>
+        </div>
+        {commentType === "guidance" && (
+          <div style={{ fontSize: "0.875rem", color: "var(--color-text-muted, #666)" }}>
+            AI Guidance comments are injected into the task execution context
+          </div>
+        )}
         <textarea
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={handleKeyDown}
           rows={3}
-          placeholder="Add a comment"
+          placeholder={placeholder}
           className="spec-editor-feedback"
         />
-        <div style={{ display: "flex", justifyContent: "flex-end" }}>
-          <button className="btn btn-primary btn-sm" onClick={() => void handleAddComment()} disabled={submitting || !draft.trim()}>
-            {submitting ? "Posting…" : "Add Comment"}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span style={{ fontSize: "0.75rem", color: isOverLimit ? "var(--color-danger, red)" : undefined }}>
+            {draft.length} / {MAX_COMMENT_LENGTH}
+          </span>
+          <button
+            className="btn btn-primary btn-sm"
+            onClick={() => void handleAddComment()}
+            disabled={submitting || !draft.trim() || isOverLimit}
+          >
+            {submitting ? "Posting…" : buttonLabel}
           </button>
         </div>
       </div>
