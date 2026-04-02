@@ -1,4 +1,4 @@
-// Local type definitions for MissionManager
+// Mission types for MissionManager - local copy to avoid module resolution issues
 
 export type MissionStatus = "planning" | "active" | "blocked" | "complete" | "archived";
 export type MilestoneStatus = "planning" | "active" | "blocked" | "complete";
@@ -41,6 +41,8 @@ export interface Slice {
   features: MissionFeature[];
 }
 
+export type SliceWithFeatures = Slice;
+
 export interface Milestone {
   id: string;
   missionId: string;
@@ -54,6 +56,8 @@ export interface Milestone {
   updatedAt: string;
   slices: Slice[];
 }
+
+export type MilestoneWithSlices = Milestone;
 
 export interface MissionWithHierarchy extends Mission {
   milestones: Milestone[];

@@ -17,6 +17,7 @@ import {
   Unlink,
   Play,
 } from "lucide-react";
+import type { ToastType } from "../hooks/useToast";
 import type {
   Mission,
   MissionWithHierarchy,
@@ -29,8 +30,7 @@ import type {
   FeatureStatus,
   MilestoneWithSlices,
   SliceWithFeatures,
-} from "../api";
-import type { ToastType } from "../hooks/useToast";
+} from "./mission-types";
 import {
   fetchMissions,
   createMission,

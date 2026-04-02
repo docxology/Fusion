@@ -111,7 +111,7 @@ export function ChangedFilesModal({ taskId, worktree, column, isOpen, onClose }:
             ) : null}
 
             {selectedFile ? (
-              <div className="gm-diff-section" aria-label={`Diff for ${selectedFile.path}`}>
+              <div className="gm-diff-section changed-files-diff-section" aria-label={`Diff for ${selectedFile.path}`}>
                 <div className="file-browser-toolbar">
                   <div className="file-browser-file-info">
                     <strong>{selectedFile.path}</strong>

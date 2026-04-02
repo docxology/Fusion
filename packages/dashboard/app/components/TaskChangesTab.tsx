@@ -82,7 +82,7 @@ export function TaskChangesTab({ taskId, worktree }: TaskChangesTabProps) {
   if (loading) {
     return (
       <div className="detail-section">
-        <div className="detail-loading">
+        <div className="task-changes-state task-changes-state--loading">
           <div className="loading-spinner" />
           <span>Loading changes...</span>
         </div>
@@ -93,7 +93,7 @@ export function TaskChangesTab({ taskId, worktree }: TaskChangesTabProps) {
   if (error) {
     return (
       <div className="detail-section">
-        <div className="detail-error">
+        <div className="task-changes-state task-changes-state--error">
           <AlertCircle size={16} />
           <span>Error loading changes: {error}</span>
         </div>
@@ -104,10 +104,10 @@ export function TaskChangesTab({ taskId, worktree }: TaskChangesTabProps) {
   if (!worktree) {
     return (
       <div className="detail-section">
-        <div className="detail-empty-state">
+        <div className="task-changes-state task-changes-state--empty">
           <FileCode size={24} />
           <p>No worktree available for this task.</p>
-          <span className="detail-empty-hint">
+          <span className="task-changes-state-hint">
             Changes will be shown once the task is in progress.
           </span>
         </div>
@@ -118,10 +118,10 @@ export function TaskChangesTab({ taskId, worktree }: TaskChangesTabProps) {
   if (!diffData || diffData.files.length === 0) {
     return (
       <div className="detail-section">
-        <div className="detail-empty-state">
+        <div className="task-changes-state task-changes-state--empty">
           <FileCode size={24} />
           <p>No files modified.</p>
-          <span className="detail-empty-hint">
+          <span className="task-changes-state-hint">
             The agent did not modify any files during execution.
           </span>
         </div>
@@ -174,7 +174,10 @@ export function TaskChangesTab({ taskId, worktree }: TaskChangesTabProps) {
                 <span className="changes-file-path" title={path}>
                   {path}
                 </span>
-                <span className="changes-file-stat" title={`+${fileEntry.additions} -${fileEntry.deletions}`}>
+                <span
+                  className="changes-file-stat"
+                  title={`+${fileEntry.additions} -${fileEntry.deletions}${fileEntry.size ? ` · ${formatFileSize(fileEntry.size)}` : ""}`}
+                >
                   +{fileEntry.additions} -{fileEntry.deletions}
                 </span>
               </button>

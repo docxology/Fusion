@@ -5,7 +5,7 @@ import { TaskStore, AutomationStore } from "@fusion/core";
 import type { Settings, TaskDetail, PrInfo } from "@fusion/core";
 import { createServer, GitHubClient } from "@fusion/dashboard";
 import { TriageProcessor, TaskExecutor, Scheduler, AgentSemaphore, WorktreePool, aiMergeTask, UsageLimitPauser, PRIORITY_MERGE, scanIdleWorktrees, cleanupOrphanedWorktrees, NtfyNotifier, PrMonitor, PrCommentHandler, CronRunner, StuckTaskDetector } from "@fusion/engine";
-import { AuthStorage, ModelRegistry, discoverAndLoadExtensions, createExtensionRuntime } from "@mariozechner/pi-coding-agent";
+import { AuthStorage, DefaultPackageManager, ModelRegistry, SettingsManager, discoverAndLoadExtensions, getAgentDir, createExtensionRuntime } from "@mariozechner/pi-coding-agent";
 
 /**
  * Prompt the user for a port number interactively.
@@ -453,7 +453,23 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
   const modelRegistry = new ModelRegistry(authStorage);
 
   try {
-    const extensionsResult = await discoverAndLoadExtensions([], cwd, undefined);
+    // Resolve extension paths from pi settings packages (npm, git, local).
+    // This picks up extensions like @howaboua/pi-glm-via-anthropic that
+    // register custom providers (e.g. glm-5.1) via registerProvider().
+    const agentDir = getAgentDir();
+    const piSettingsManager = SettingsManager.create(cwd, agentDir);
+    const packageManager = new DefaultPackageManager({
+      cwd,
+      agentDir,
+      settingsManager: piSettingsManager,
+    });
+    const resolvedPaths = await packageManager.resolve();
+    const packageExtensionPaths = resolvedPaths.extensions
+      .filter((r) => r.enabled)
+      .map((r) => r.path);
+
+    // Load all extensions: filesystem-discovered + package-resolved
+    const extensionsResult = await discoverAndLoadExtensions(packageExtensionPaths, cwd, undefined);
 
     for (const { path, error } of extensionsResult.errors) {
       console.log(`[extensions] Failed to load ${path}: ${error}`);

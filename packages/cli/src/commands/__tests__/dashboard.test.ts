@@ -116,7 +116,14 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
   AuthStorage: {
     create: vi.fn(() => mockAuthStorage),
   },
+  DefaultPackageManager: vi.fn().mockImplementation(() => ({
+    resolve: vi.fn().mockResolvedValue({ extensions: [] }),
+  })),
   ModelRegistry: vi.fn().mockImplementation(() => mockModelRegistry),
+  SettingsManager: {
+    create: vi.fn(() => ({})),
+  },
+  getAgentDir: vi.fn(() => "/mock/agent/dir"),
   discoverAndLoadExtensions: mockDiscoverAndLoadExtensions,
   createExtensionRuntime: mockCreateExtensionRuntime,
 }));
