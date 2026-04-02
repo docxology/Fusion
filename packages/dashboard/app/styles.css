@@ -11183,11 +11183,14 @@ html .column.drag-over * {
    GIT MANAGER MODAL
    ══════════════════════════════════════════════════════════════════ */
 
-/* Modal size override */
+/* Modal size override - flex layout for sidebar + content */
 .gm-modal {
   width: 900px;
   max-width: 95vw;
   max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 /* Main layout: sidebar + content */
@@ -12285,6 +12288,7 @@ html .column.drag-over * {
   .gm-modal {
     width: 100%;
     max-width: 100%;
+    height: 100vh;
     max-height: 100vh;
     border-radius: 0;
   }
@@ -12322,7 +12326,7 @@ html .column.drag-over * {
   }
 
   .gm-content {
-    min-height: 300px;
+    min-height: 200px;
     padding: var(--space-md);
   }
 
