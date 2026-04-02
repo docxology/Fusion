@@ -58,6 +58,9 @@ export interface WorkflowStep {
 }
 
 /** Input for creating a new workflow step. */
+/** Event types that can trigger ntfy notifications */
+export type NtfyNotificationEvent = "in-review" | "merged" | "failed";
+
 export interface WorkflowStepInput {
   name: string;
   description: string;
@@ -572,6 +575,11 @@ export interface GlobalSettings {
   /** ntfy.sh topic name for push notifications. When set along with ntfyEnabled,
    *  notifications are sent to https://ntfy.sh/{topic} when tasks complete or fail. */
   ntfyTopic?: string;
+  /** List of notification events to send via ntfy.sh.
+   *  When ntfyEnabled is true, only events in this list will trigger notifications.
+   *  If undefined or empty when ntfyEnabled is true, all events are sent (backward compatible).
+   *  Default: ["in-review", "merged", "failed"] */
+  ntfyEvents?: NtfyNotificationEvent[];
   /** The default project ID for CLI operations when --project flag is not provided.
    *  Used to determine which project to operate on when not in a project directory.
    *  Set via `kb project set-default <name>`. */
@@ -757,6 +765,7 @@ export const DEFAULT_GLOBAL_SETTINGS: Required<Pick<GlobalSettings, "themeMode" 
   defaultThinkingLevel: undefined,
   ntfyEnabled: false,
   ntfyTopic: undefined,
+  ntfyEvents: ["in-review", "merged", "failed"],
 };
 
 /** Default values for project-level settings. */
@@ -815,6 +824,7 @@ export const GLOBAL_SETTINGS_KEYS: ReadonlyArray<keyof GlobalSettings> = [
   "defaultThinkingLevel",
   "ntfyEnabled",
   "ntfyTopic",
+  "ntfyEvents",
   "defaultProjectId",
 ] as const;
 
