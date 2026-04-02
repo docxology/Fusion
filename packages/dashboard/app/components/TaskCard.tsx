@@ -134,7 +134,10 @@ function TaskCardComponent({
   const [editTitle, setEditTitle] = useState(task.title || "");
   const [editDescription, setEditDescription] = useState(task.description || "");
   const [isSaving, setIsSaving] = useState(false);
-  const [showSteps, setShowSteps] = useState(task.column === "in-progress");
+  const [showSteps, setShowSteps] = useState(
+    task.column === "in-progress" ||
+    (task.column === "triage" && task.steps.some(s => s.status === "done" || s.status === "skipped"))
+  );
 
   const titleInputRef = useRef<HTMLInputElement>(null);
   const descTextareaRef = useRef<HTMLTextAreaElement>(null);

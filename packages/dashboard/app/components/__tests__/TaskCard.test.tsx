@@ -1653,11 +1653,11 @@ describe("TaskCard steps auto-expand", () => {
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
   });
 
-  it("steps are collapsed by default for 'triage' column tasks", () => {
+  it("steps are collapsed by default for fresh 'triage' column tasks (no completed steps)", () => {
     const task = makeTask({
       column: "triage",
       steps: [
-        { name: "Step 1", status: "done" },
+        { name: "Step 1", status: "pending" },
         { name: "Step 2", status: "pending" },
       ],
     });
@@ -1677,6 +1677,57 @@ describe("TaskCard steps auto-expand", () => {
     // Toggle should show "Show steps"
     const toggle = screen.getByRole("button", { name: /Show steps/i });
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("steps are auto-expanded for re-triaged tasks with completed steps", () => {
+    const task = makeTask({
+      column: "triage",
+      steps: [
+        { name: "Step 1", status: "done" },
+        { name: "Step 2", status: "pending" },
+      ],
+    });
+
+    render(
+      <TaskCard
+        task={task}
+        onOpenDetail={vi.fn()}
+        addToast={noopToast}
+      />
+    );
+
+    // Steps should be visible without clicking
+    expect(screen.getByText("Step 1")).toBeDefined();
+    expect(screen.getByText("Step 2")).toBeDefined();
+
+    // Toggle should show "Hide steps"
+    const toggle = screen.getByRole("button", { name: /Hide steps/i });
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("steps are auto-expanded for re-triaged tasks with skipped steps", () => {
+    const task = makeTask({
+      column: "triage",
+      steps: [
+        { name: "Step 1", status: "skipped" },
+        { name: "Step 2", status: "pending" },
+      ],
+    });
+
+    render(
+      <TaskCard
+        task={task}
+        onOpenDetail={vi.fn()}
+        addToast={noopToast}
+      />
+    );
+
+    // Steps should be visible without clicking
+    expect(screen.getByText("Step 1")).toBeDefined();
+    expect(screen.getByText("Step 2")).toBeDefined();
+
+    const toggle = screen.getByRole("button", { name: /Hide steps/i });
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
   });
 
   it("steps are collapsed by default for 'todo' column tasks", () => {
