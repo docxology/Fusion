@@ -49,6 +49,7 @@ function createMockStore(overrides: Partial<TaskStore> = {}): TaskStore {
     parseFileScopeFromPrompt: vi.fn().mockResolvedValue([]),
     logEntry: vi.fn().mockResolvedValue(undefined),
     getRootDir: vi.fn().mockReturnValue("/test/project"),
+    getTasksDir: vi.fn().mockReturnValue("/test/project/.fusion/tasks"),
     on: vi.fn(),
     off: vi.fn(),
     ...overrides,
@@ -276,7 +277,7 @@ describe("Scheduler", () => {
 
       vi.mocked(existsSync).mockImplementation((path) => {
         const value = String(path);
-        return value.includes(".kb/tasks/FN-010") || value.includes("PROMPT.md");
+        return value.includes(".fusion/tasks/FN-010") || value.includes("PROMPT.md");
       });
       vi.mocked(readFile).mockResolvedValue("# Prompt\n" as any);
 
@@ -301,6 +302,7 @@ describe("Scheduler", () => {
         getSettings: vi.fn().mockResolvedValue({ maxConcurrent: 2, maxWorktrees: 4 }),
         updateTask: vi.fn().mockResolvedValue(undefined),
         getRootDir: vi.fn().mockReturnValue("/test/project"),
+        getTasksDir: vi.fn().mockReturnValue("/test/project/.fusion/tasks"),
       });
       
       // Set up mocks directly on the store
@@ -341,6 +343,7 @@ describe("Scheduler", () => {
         getSettings: vi.fn().mockResolvedValue({ maxConcurrent: 2, maxWorktrees: 4 }),
         updateTask: vi.fn().mockResolvedValue(undefined),
         getRootDir: vi.fn().mockReturnValue("/test/project"),
+        getTasksDir: vi.fn().mockReturnValue("/test/project/.fusion/tasks"),
       });
 
       const moveTask = vi.fn().mockResolvedValue(undefined);
@@ -381,6 +384,7 @@ describe("Scheduler", () => {
         getSettings: vi.fn().mockResolvedValue({ maxConcurrent: 2, maxWorktrees: 4 }),
         updateTask: vi.fn().mockResolvedValue(undefined),
         getRootDir: vi.fn().mockReturnValue("/test/project"),
+        getTasksDir: vi.fn().mockReturnValue("/test/project/.fusion/tasks"),
       });
 
       const moveTask = vi.fn().mockResolvedValue(undefined);
@@ -418,6 +422,7 @@ describe("Scheduler", () => {
         getSettings: vi.fn().mockResolvedValue({ maxConcurrent: 2, maxWorktrees: 4 }),
         updateTask: vi.fn().mockResolvedValue(undefined),
         getRootDir: vi.fn().mockReturnValue("/test/project"),
+        getTasksDir: vi.fn().mockReturnValue("/test/project/.fusion/tasks"),
       });
 
       const moveTask = vi.fn().mockResolvedValue(undefined);
@@ -459,6 +464,7 @@ describe("Scheduler", () => {
         getSettings: vi.fn().mockResolvedValue({ maxConcurrent: 2, maxWorktrees: 4 }),
         updateTask: vi.fn().mockResolvedValue(undefined),
         getRootDir: vi.fn().mockReturnValue("/test/project"),
+        getTasksDir: vi.fn().mockReturnValue("/test/project/.fusion/tasks"),
       });
 
       const moveTask = vi.fn().mockResolvedValue(undefined);

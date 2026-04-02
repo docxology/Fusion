@@ -2652,6 +2652,10 @@ ${stepsSection}`;
     return this.rootDir;
   }
 
+  getTasksDir(): string {
+    return this.tasksDir;
+  }
+
   private generateSpecifiedPrompt(task: Task): string {
     const deps =
       task.dependencies.length > 0

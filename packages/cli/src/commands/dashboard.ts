@@ -184,7 +184,7 @@ export async function processPullRequestMergeTask(
   return "merged";
 }
 
-export async function runDashboard(port: number, opts: { paused?: boolean; dev?: boolean; interactive?: boolean } = {}) {
+export async function runDashboard(port: number, opts: { paused?: boolean; dev?: boolean; interactive?: boolean; open?: boolean } = {}) {
   // Handle interactive port selection
   let selectedPort = port;
   if (opts.interactive) {

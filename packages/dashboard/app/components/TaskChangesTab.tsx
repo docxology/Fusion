@@ -176,7 +176,7 @@ export function TaskChangesTab({ taskId, worktree }: TaskChangesTabProps) {
                 </span>
                 <span
                   className="changes-file-stat"
-                  title={`+${fileEntry.additions} -${fileEntry.deletions}${fileEntry.size ? ` · ${formatFileSize(fileEntry.size)}` : ""}`}
+                  title={`+${fileEntry.additions} -${fileEntry.deletions}`}
                 >
                   +{fileEntry.additions} -{fileEntry.deletions}
                 </span>

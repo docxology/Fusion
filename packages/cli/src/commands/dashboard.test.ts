@@ -94,7 +94,7 @@ function createMockServer(portToReturn: number = 0) {
   return server;
 }
 
-const mockListen = vi.fn((port: number) => {
+const mockListen = vi.fn<(port: number) => EventEmitter<DefaultEventMap> & { listen: ReturnType<typeof vi.fn>; address: ReturnType<typeof vi.fn>; close: ReturnType<typeof vi.fn> }>((port: number) => {
   const server = createMockServer(port);
   process.nextTick(() => server.emit("listening"));
   return server;
@@ -460,7 +460,7 @@ describe("runDashboard — PR-first auto-merge queue", () => {
     });
 
     const { TaskStore } = await import("@fusion/core");
-    (TaskStore as ReturnType<typeof vi.fn>).mockImplementation(() => mockStore);
+    (TaskStore as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => mockStore);
   });
 
   it("uses PR lifecycle instead of aiMergeTask when mergeStrategy is pull-request", async () => {
@@ -485,7 +485,7 @@ describe("runDashboard — WorktreePool wiring", () => {
     resetGitHubMocks();
     // Re-set TaskStore mock (clearAllMocks wipes implementations)
     const { TaskStore } = await import("@fusion/core");
-    (TaskStore as ReturnType<typeof vi.fn>).mockImplementation(() => makeMockStore());
+    (TaskStore as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => makeMockStore());
     // Re-set engine mocks
     const engine = await import("@fusion/engine");
     (engine.aiMergeTask as ReturnType<typeof vi.fn>).mockImplementation(() =>
@@ -553,7 +553,7 @@ describe("runDashboard — auto-merge pause exclusion", () => {
     resetGitHubMocks();
     mockStore = makeMockStore();
     const { TaskStore } = await import("@fusion/core");
-    (TaskStore as ReturnType<typeof vi.fn>).mockImplementation(() => mockStore);
+    (TaskStore as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => mockStore);
     const engine = await import("@fusion/engine");
     (engine.aiMergeTask as ReturnType<typeof vi.fn>).mockImplementation(() =>
       Promise.resolve({ merged: true }),
@@ -631,7 +631,7 @@ describe("runDashboard — immediate resume on unpause", () => {
     resetGitHubMocks();
     mockStore = makeMockStore();
     const { TaskStore } = await import("@fusion/core");
-    (TaskStore as ReturnType<typeof vi.fn>).mockImplementation(() => mockStore);
+    (TaskStore as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => mockStore);
     const engine = await import("@fusion/engine");
     (engine.aiMergeTask as ReturnType<typeof vi.fn>).mockImplementation(() =>
       Promise.resolve({ merged: true }),
@@ -737,7 +737,7 @@ describe("runDashboard — engine pause/unpause cycle", () => {
     resetGitHubMocks();
     mockStore = makeMockStore();
     const { TaskStore } = await import("@fusion/core");
-    (TaskStore as ReturnType<typeof vi.fn>).mockImplementation(() => mockStore);
+    (TaskStore as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => mockStore);
     const engine = await import("@fusion/engine");
     (engine.aiMergeTask as ReturnType<typeof vi.fn>).mockImplementation(() =>
       Promise.resolve({ merged: true }),
@@ -778,7 +778,7 @@ describe("runDashboard — port fallback on EADDRINUSE", () => {
     vi.clearAllMocks();
     resetGitHubMocks();
     const { TaskStore } = await import("@fusion/core");
-    (TaskStore as ReturnType<typeof vi.fn>).mockImplementation(() => makeMockStore());
+    (TaskStore as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => makeMockStore());
     const engine = await import("@fusion/engine");
     (engine.TaskExecutor as unknown as ReturnType<typeof vi.fn>).mockImplementation(
       () => ({ resumeOrphaned: vi.fn().mockResolvedValue(undefined) }),
@@ -896,7 +896,7 @@ describe("runDashboard — enginePaused (soft pause)", () => {
     resetGitHubMocks();
     mockStore = makeMockStore();
     const { TaskStore } = await import("@fusion/core");
-    (TaskStore as ReturnType<typeof vi.fn>).mockImplementation(() => mockStore);
+    (TaskStore as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => mockStore);
     const engine = await import("@fusion/engine");
     (engine.aiMergeTask as ReturnType<typeof vi.fn>).mockImplementation(() =>
       Promise.resolve({ merged: true }),
@@ -1011,7 +1011,7 @@ describe("runDashboard — --paused flag", () => {
     resetGitHubMocks();
     mockStore = makeMockStore();
     const { TaskStore } = await import("@fusion/core");
-    (TaskStore as ReturnType<typeof vi.fn>).mockImplementation(() => mockStore);
+    (TaskStore as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => mockStore);
     const engine = await import("@fusion/engine");
     (engine.aiMergeTask as ReturnType<typeof vi.fn>).mockImplementation(() =>
       Promise.resolve({ merged: true }),
@@ -1072,7 +1072,7 @@ describe("runDashboard — --paused flag", () => {
     resetGitHubMocks();
     mockStore = makeMockStore();
     const { TaskStore } = await import("@fusion/core");
-    (TaskStore as ReturnType<typeof vi.fn>).mockImplementation(() => mockStore);
+    (TaskStore as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => mockStore);
     const engine = await import("@fusion/engine");
     (engine.TaskExecutor as unknown as ReturnType<typeof vi.fn>).mockImplementation(
       () => ({ resumeOrphaned: vi.fn().mockResolvedValue(undefined) }),
@@ -1125,7 +1125,7 @@ describe("runDashboard — --dev mode", () => {
     resetGitHubMocks();
     mockStore = makeMockStore();
     const { TaskStore } = await import("@fusion/core");
-    (TaskStore as ReturnType<typeof vi.fn>).mockImplementation(() => mockStore);
+    (TaskStore as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => mockStore);
     const engine = await import("@fusion/engine");
     (engine.aiMergeTask as ReturnType<typeof vi.fn>).mockImplementation(() =>
       Promise.resolve({ merged: true }),
@@ -1239,7 +1239,7 @@ describe("runDashboard — merge conflict retry logic", () => {
     resetGitHubMocks();
     mockStore = makeMockStore();
     const { TaskStore } = await import("@fusion/core");
-    (TaskStore as ReturnType<typeof vi.fn>).mockImplementation(() => mockStore);
+    (TaskStore as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => mockStore);
 
     // Default mock store.getTask implementation
     mockStore.getTask = vi.fn().mockImplementation(async (id: string) => ({
@@ -1573,16 +1573,16 @@ describe("promptForPort", () => {
     vi.mocked(createInterface).mockReturnValue(mockRl as unknown as ReturnType<typeof createInterface>);
 
     // Simulate that the promise rejects when SIGINT is triggered
-    const removeListenerSpy = vi.spyOn(process, "removeListener").mockImplementation(() => {});
+    const removeListenerSpy = vi.spyOn(process, "removeListener").mockImplementation(() => process as unknown as void);
 
     // Trigger SIGINT handler immediately to test rejection
     let sigintHandler: (() => void) | null = null;
-    const onSpy = vi.spyOn(process, "on").mockImplementation((event: string, handler: (...args: unknown[]) => void) => {
+    const onSpy = vi.spyOn(process, "on" as never).mockImplementation(((event: string, handler: (...args: unknown[]) => void) => {
       if (event === "SIGINT") {
         sigintHandler = handler as () => void;
       }
       return process;
-    });
+    }) as never);
 
     mockRl.question.mockImplementation(() => {
       // Simulate SIGINT during prompt

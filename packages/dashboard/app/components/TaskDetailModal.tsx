@@ -770,7 +770,7 @@ export function TaskDetailModal({
           </div>
           <div className="detail-section">
             {!isEditingSpec && (
-              <div style={{ marginBottom: "12px" }}>
+              <div className="detail-spec-edit-trigger">
                 <button className="btn btn-sm" onClick={enterSpecEditMode}>
                   Edit
                 </button>
@@ -848,19 +848,11 @@ export function TaskDetailModal({
           <div className="detail-section">
             <h4>Attachments</h4>
             {attachments.length > 0 ? (
-              <div style={{ display: "flex", flexWrap: "wrap", gap: "12px", marginBottom: "8px" }}>
+              <div className="detail-attachments-grid">
                 {attachments.map((a) => (
-                  <div
-                    key={a.filename}
-                    style={{
-                      position: "relative",
-                      border: "1px solid var(--border, #333)",
-                      borderRadius: "6px",
-                      padding: "4px",
-                      background: "var(--bg-secondary, #1a1a2e)",
-                    }}
-                  >
+                  <div key={a.filename} className="detail-attachment-card">
                     <a
+                      className="detail-attachment-link"
                       href={`/api/tasks/${task.id}/attachments/${a.filename}`}
                       target="_blank"
                       rel="noopener noreferrer"
@@ -868,30 +860,15 @@ export function TaskDetailModal({
                       <img
                         src={`/api/tasks/${task.id}/attachments/${a.filename}`}
                         alt={a.originalName}
-                        style={{ maxWidth: "150px", maxHeight: "100px", display: "block", borderRadius: "4px" }}
+                        className="detail-attachment-image"
                       />
                     </a>
-                    <div style={{ fontSize: "11px", marginTop: "4px", opacity: 0.7 }}>
+                    <div className="detail-attachment-meta">
                       {a.originalName} ({formatBytes(a.size)})
                     </div>
                     <button
+                      className="detail-attachment-delete"
                       onClick={() => handleDeleteAttachment(a.filename)}
-                      style={{
-                        position: "absolute",
-                        top: "2px",
-                        right: "2px",
-                        background: "rgba(0,0,0,0.6)",
-                        color: "#fff",
-                        border: "none",
-                        borderRadius: "50%",
-                        width: "20px",
-                        height: "20px",
-                        cursor: "pointer",
-                        fontSize: "12px",
-                        lineHeight: "20px",
-                        textAlign: "center",
-                        padding: 0,
-                      }}
                       title="Delete attachment"
                     >
                       ×
@@ -900,14 +877,14 @@ export function TaskDetailModal({
                 ))}
               </div>
             ) : (
-              <div style={{ opacity: 0.5, marginBottom: "8px" }}>(no attachments)</div>
+              <div className="detail-empty-inline">(no attachments)</div>
             )}
             <input
+              className="detail-hidden-file-input"
               ref={fileInputRef}
               type="file"
               accept="image/*"
               onChange={handleUpload}
-              style={{ display: "none" }}
             />
             <button
               className="btn btn-sm"
@@ -942,15 +919,6 @@ export function TaskDetailModal({
                       className="dep-remove-btn"
                       onClick={(e) => handleRemoveDep(e, dep)}
                       title={`Remove dependency ${dep}`}
-                      style={{
-                        marginLeft: "6px",
-                        background: "none",
-                        border: "none",
-                        color: "var(--text-secondary, #888)",
-                        cursor: "pointer",
-                        fontSize: "14px",
-                        padding: "0 4px",
-                      }}
                     >
                       ×
                     </button>
@@ -958,9 +926,9 @@ export function TaskDetailModal({
                 ))}
               </ul>
             ) : (
-              <div style={{ opacity: 0.5, marginBottom: "8px" }}>(no dependencies)</div>
+              <div className="detail-empty-inline">(no dependencies)</div>
             )}
-            <div className="dep-trigger-wrap" style={{ position: "relative" }}>
+            <div className="dep-trigger-wrap">
               <button
                 type="button"
                 className="btn btn-sm dep-trigger"
@@ -1070,7 +1038,7 @@ export function TaskDetailModal({
               </button>
             </>
           )}
-          <div style={{ flex: 1 }} />
+          <div className="modal-actions-spacer" />
           {task.column === "in-review" ? (
             <>
               <button className="btn btn-sm" onClick={() => handleMove("in-progress")}>
@@ -1096,56 +1064,33 @@ export function TaskDetailModal({
         </div>
         {showRefineModal && (
           <div
-            className="modal-overlay open"
-            style={{
-              position: "absolute",
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              background: "rgba(0, 0, 0, 0.7)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              zIndex: 100,
-            }}
+            className="modal-overlay open detail-refine-overlay"
             onClick={handleCloseRefineModal}
           >
             <div
-              className="modal"
-              style={{ maxWidth: "500px", width: "90%", margin: "0" }}
+              className="modal detail-refine-modal"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="modal-header">
-                <h3 style={{ margin: 0 }}>Refine</h3>
+                <h3 className="detail-refine-title">Refine</h3>
                 <button className="modal-close" onClick={handleCloseRefineModal}>
                   &times;
                 </button>
               </div>
               <div className="detail-body">
-                <p style={{ marginBottom: "12px", opacity: 0.8 }}>
+                <p className="detail-refine-help">
                   Describe what needs to be refined or improved...
                 </p>
                 <textarea
+                  className="detail-refine-textarea"
                   value={refineFeedback}
                   onChange={(e) => setRefineFeedback(e.target.value)}
                   placeholder="Enter your feedback here..."
                   rows={6}
-                  style={{
-                    width: "100%",
-                    padding: "12px",
-                    borderRadius: "6px",
-                    border: "1px solid var(--border, #30363d)",
-                    background: "var(--bg-primary, #0d1117)",
-                    color: "var(--text-primary, #c9d1d9)",
-                    fontSize: "14px",
-                    resize: "vertical",
-                    minHeight: "120px",
-                  }}
                   maxLength={2000}
                   autoFocus
                 />
-                <div style={{ marginTop: "8px", textAlign: "right", fontSize: "12px", opacity: 0.6 }}>
+                <div className="detail-refine-char-count">
                   {refineFeedback.length}/2000 characters
                 </div>
               </div>

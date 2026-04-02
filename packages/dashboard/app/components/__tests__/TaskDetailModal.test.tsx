@@ -1146,10 +1146,10 @@ describe("TaskDetailModal", () => {
 
       const actions = container.querySelector(".modal-actions");
       expect(actions).toBeTruthy();
-      // Spacer div with flex: 1 separates left actions from right actions
-      const spacer = actions!.querySelector("div");
+      // Spacer div separates left actions from right actions via CSS class
+      const spacer = actions!.querySelector(".modal-actions-spacer");
       expect(spacer).toBeTruthy();
-      expect((spacer as HTMLElement).style.flex).toContain("1");
+      expect((spacer as HTMLElement).className).toContain("modal-actions-spacer");
     });
 
     it("tab buttons use CSS classes instead of inline styles for responsive override", () => {

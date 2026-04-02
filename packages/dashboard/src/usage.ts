@@ -1228,19 +1228,60 @@ async function fetchZaiUsage(): Promise<ProviderUsage> {
  * Fetch usage data from all configured providers with caching.
  * Results are cached for 30 seconds to avoid hitting provider API rate limits.
  */
+/** Max time to wait for any individual provider fetch (ms) */
+const PROVIDER_FETCH_TIMEOUT_MS = 10_000; // 10 seconds
+
+/**
+ * Wrap a provider fetch with a timeout. Returns the provider result or an
+ * error provider if the fetch takes longer than PROVIDER_FETCH_TIMEOUT_MS.
+ */
+function withTimeout(
+  providerPromise: Promise<ProviderUsage>,
+  providerName: string,
+  timeoutMs: number = PROVIDER_FETCH_TIMEOUT_MS,
+): Promise<ProviderUsage> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      resolve({
+        name: providerName,
+        icon: "⏱️",
+        status: "error",
+        error: "Timed out",
+        windows: [],
+      });
+    }, timeoutMs);
+
+    providerPromise
+      .then((result) => {
+        clearTimeout(timer);
+        resolve(result);
+      })
+      .catch((err: any) => {
+        clearTimeout(timer);
+        resolve({
+          name: providerName,
+          icon: "⏱️",
+          status: "error",
+          error: err.message || "Failed",
+          windows: [],
+        });
+      });
+  });
+}
+
 export async function fetchAllProviderUsage(_authStorage?: AuthStorageLike): Promise<ProviderUsage[]> {
   // Check cache
   if (usageCache && Date.now() - usageCache.timestamp < CACHE_TTL_MS) {
     return usageCache.data;
   }
 
-  // Fetch all providers in parallel
+  // Fetch all providers in parallel with per-provider timeout
   const results = await Promise.allSettled([
-    fetchClaudeUsage(),
-    fetchCodexUsage(),
-    fetchGeminiUsage(),
-    fetchMinimaxUsage(),
-    fetchZaiUsage(),
+    withTimeout(fetchClaudeUsage(), "Claude"),
+    withTimeout(fetchCodexUsage(), "Codex"),
+    withTimeout(fetchGeminiUsage(), "Gemini"),
+    withTimeout(fetchMinimaxUsage(), "Minimax"),
+    withTimeout(fetchZaiUsage(), "Zai"),
   ]);
 
   const providers: ProviderUsage[] = [];

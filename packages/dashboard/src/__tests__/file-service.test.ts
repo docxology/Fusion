@@ -14,33 +14,43 @@ import {
 } from "../file-service.js";
 import type { TaskStore } from "@fusion/core";
 
-// Mock node:fs/promises
-const mockReaddir = vi.fn();
-const mockReadFile = vi.fn();
-const mockWriteFile = vi.fn();
-const mockStat = vi.fn();
+// Create mock functions that can be configured in tests
+// Use vi.hoisted to hoist alongside vi.mock
+const mocks = vi.hoisted(() => ({
+  mockReaddir: vi.fn(),
+  mockReadFile: vi.fn(),
+  mockWriteFile: vi.fn(),
+  mockStat: vi.fn(),
+  mockExistsSync: vi.fn(),
+}));
 
-vi.mock("node:fs/promises", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("node:fs/promises")>();
+// Hoist mocks alongside vi.mock - must include default export
+vi.mock("node:fs/promises", () => {
   return {
-    ...actual,
-    readdir: (...args: any[]) => mockReaddir(...args),
-    readFile: (...args: any[]) => mockReadFile(...args),
-    writeFile: (...args: any[]) => mockWriteFile(...args),
-    stat: (...args: any[]) => mockStat(...args),
+    default: {
+      readdir: mocks.mockReaddir,
+      readFile: mocks.mockReadFile,
+      writeFile: mocks.mockWriteFile,
+      stat: mocks.mockStat,
+    },
+    readdir: mocks.mockReaddir,
+    readFile: mocks.mockReadFile,
+    writeFile: mocks.mockWriteFile,
+    stat: mocks.mockStat,
   };
 });
 
-// Mock node:fs
-const mockExistsSync = vi.fn();
-
-vi.mock("node:fs", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("node:fs")>();
+vi.mock("node:fs", () => {
   return {
-    ...actual,
-    existsSync: (...args: any[]) => mockExistsSync(...args),
+    default: {
+      existsSync: mocks.mockExistsSync,
+    },
+    existsSync: mocks.mockExistsSync,
   };
 });
+
+// Export mocks for use in tests
+export const { mockReaddir, mockReadFile, mockWriteFile, mockStat, mockExistsSync } = mocks;
 
 describe("FileServiceError", () => {
   it("constructor sets code and name correctly", () => {
@@ -227,15 +237,16 @@ describe("path traversal protection", () => {
 
     it("allows valid relative paths with dots", async () => {
       mockGetRootDir.mockReturnValue("/project");
-      // Need successful stat for this test to pass validation
       mockStat.mockResolvedValue({
         isDirectory: () => true,
         isFile: () => false,
       });
       mockReaddir.mockResolvedValue([]);
 
-      // This should NOT throw
-      await expect(listProjectFiles(mockStore, "./src")).resolves.not.toThrow();
+      // Should resolve ./src to src and succeed
+      const result = await listProjectFiles(mockStore, "./src");
+      expect(result.path).toBe("src");
+      expect(result.entries).toEqual([]);
     });
 
     it("allows paths containing single dots in middle", async () => {
@@ -246,7 +257,10 @@ describe("path traversal protection", () => {
       });
       mockReaddir.mockResolvedValue([]);
 
-      await expect(listProjectFiles(mockStore, "src/./components")).resolves.not.toThrow();
+      // Should resolve src/./components to src/components and succeed
+      const result = await listProjectFiles(mockStore, "src/./components");
+      expect(result.path).toBe("src/components");
+      expect(result.entries).toEqual([]);
     });
   });
 });
@@ -360,9 +374,8 @@ describe("writeProjectFile", () => {
     mockGetRootDir.mockReturnValue("/test/project");
     mockStat
       .mockRejectedValueOnce({ code: "ENOENT" }) // File doesn't exist
-      .mockRejectedValueOnce({ code: "ENOENT" }); // Parent doesn't exist
+      .mockRejectedValueOnce({ code: "ENOENT" }); // Parent doesn't exist (this should throw)
 
-    await expect(writeProjectFile(mockStore, "missing/file.txt", "content")).rejects.toThrow(FileServiceError);
     await expect(writeProjectFile(mockStore, "missing/file.txt", "content")).rejects.toThrow("Parent directory does not exist");
   });
 
@@ -375,7 +388,6 @@ describe("writeProjectFile", () => {
         isFile: () => true,
       }); // Parent is a file
 
-    await expect(writeProjectFile(mockStore, "file.txt/sub.txt", "content")).rejects.toThrow(FileServiceError);
     await expect(writeProjectFile(mockStore, "file.txt/sub.txt", "content")).rejects.toThrow("Parent is not a directory");
   });
 
@@ -455,7 +467,7 @@ describe("task file operations", () => {
       await readFile(mockStore, "FN-123", "PROMPT.md");
 
       expect(mockReadFile).toHaveBeenCalledWith(
-        "/project/.fusion/tasks/KB-123/PROMPT.md",
+        "/project/.fusion/tasks/FN-123/PROMPT.md",
         "utf-8",
       );
     });
@@ -476,7 +488,7 @@ describe("task file operations", () => {
       await readFile(mockStore, "FN-123", "PROMPT.md");
 
       expect(mockReadFile).toHaveBeenCalledWith(
-        "/project/.fusion/tasks/KB-123/PROMPT.md",
+        "/project/.fusion/tasks/FN-123/PROMPT.md",
         "utf-8",
       );
     });

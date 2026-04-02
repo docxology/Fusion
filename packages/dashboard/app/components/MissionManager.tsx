@@ -1123,28 +1123,34 @@ export function MissionManager({ isOpen, onClose, addToast, onSelectTask, availa
               )}
 
               {/* Mission items */}
-              {missions.map((mission) => (
+              {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+              {missions.map((mission: any) => {
+                const m = mission as { id: string; title: string; description?: string; status: string };
+                const selId = selectedMission as { id: string } | null;
+                const isSelected = selId && selId.id === m.id;
+                const statusColors = missionStatusColors[m.status as MissionStatus] || { bg: "", text: "" };
+                return (
                 <div
-                  key={mission.id}
-                  className={`mission-item ${selectedMission?.id === mission.id ? "selected" : ""}`}
+                  key={m.id}
+                  className={`mission-item ${isSelected ? "selected" : ""}`}
                   onClick={() => handleSelectMission(mission)}
                 >
                   <div className="mission-item-content">
                     <div className="mission-item-header">
                       <Target size={16} />
-                      <span className="mission-item-title">{mission.title}</span>
+                      <span className="mission-item-title">{m.title}</span>
                       <span
                         className="status-badge small"
                         style={{
-                          backgroundColor: missionStatusColors[mission.status].bg,
-                          color: missionStatusColors[mission.status].text,
+                          backgroundColor: statusColors.bg,
+                          color: statusColors.text,
                         }}
                       >
-                        {mission.status}
+                        {m.status}
                       </span>
                     </div>
-                    {mission.description && (
-                      <p className="mission-item-description">{mission.description}</p>
+                    {m.description && (
+                      <p className="mission-item-description">{m.description}</p>
                     )}
                   </div>
                   <div className="mission-item-actions" onClick={(e) => e.stopPropagation()}>
@@ -1157,14 +1163,15 @@ export function MissionManager({ isOpen, onClose, addToast, onSelectTask, availa
                     </button>
                     <button
                       className="icon-btn small danger"
-                      onClick={() => setDeleteConfirmId({ type: "mission", id: mission.id })}
+                      onClick={() => setDeleteConfirmId({ type: "mission", id: m.id })}
                       title="Delete mission"
                     >
                       <Trash2 size={14} />
                     </button>
                   </div>
                 </div>
-              ))}
+              );
+              })}
 
               {/* Edit mission form */}
               {editingMissionId && (
