@@ -183,6 +183,11 @@ export class ProjectManager extends EventEmitter<ProjectManagerEvents> {
       updatedAt: new Date().toISOString(),
     });
 
+    // Update project status from "initializing" to "active"
+    await this.centralCore.updateProject(project.id, {
+      status: "active",
+    });
+
     // Store runtime
     this.runtimes.set(config.projectId, runtime);
 
