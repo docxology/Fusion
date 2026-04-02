@@ -1,0 +1,509 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { renderHook, waitFor, act } from "@testing-library/react";
+import { useTerminalSessions } from "../useTerminalSessions";
+import * as apiModule from "../../api";
+
+// Mock API
+vi.mock("../../api", () => ({
+  createTerminalSession: vi.fn(),
+  killPtyTerminalSession: vi.fn(),
+  listTerminalSessions: vi.fn(),
+}));
+
+const mockCreateTerminalSession = vi.mocked(apiModule.createTerminalSession);
+const mockKillPtyTerminalSession = vi.mocked(apiModule.killPtyTerminalSession);
+const mockListTerminalSessions = vi.mocked(apiModule.listTerminalSessions);
+
+// Mock localStorage
+const localStorageMock = {
+  getItem: vi.fn(),
+  setItem: vi.fn(),
+  removeItem: vi.fn(),
+  clear: vi.fn(),
+};
+
+Object.defineProperty(window, "localStorage", {
+  value: localStorageMock,
+});
+
+describe("useTerminalSessions", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorageMock.getItem.mockReturnValue(null);
+    localStorageMock.setItem.mockImplementation(() => {});
+    
+    // Default mock implementations
+    mockCreateTerminalSession.mockResolvedValue({
+      sessionId: "session-1",
+      shell: "/bin/bash",
+      cwd: "/project",
+    });
+    mockKillPtyTerminalSession.mockResolvedValue({ killed: true });
+    mockListTerminalSessions.mockResolvedValue([]);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  describe("initial tab creation", () => {
+    it("auto-creates first tab when no tabs exist in localStorage", async () => {
+      localStorageMock.getItem.mockReturnValue(null);
+      mockListTerminalSessions.mockResolvedValue([]);
+
+      const { result } = renderHook(() => useTerminalSessions());
+
+      await waitFor(() => {
+        expect(result.current.isReady).toBe(true);
+      });
+
+      await waitFor(() => {
+        expect(result.current.tabs.length).toBe(1);
+        expect(result.current.activeTab).not.toBeNull();
+      });
+
+      expect(mockCreateTerminalSession).toHaveBeenCalled();
+    });
+
+    it("restores tabs from localStorage on mount", async () => {
+      const storedTabs = [
+        {
+          id: "tab-1",
+          sessionId: "session-1",
+          title: "bash",
+          isActive: true,
+          createdAt: Date.now(),
+        },
+      ];
+      localStorageMock.getItem.mockReturnValue(JSON.stringify(storedTabs));
+      
+      // Session is still valid on server
+      mockListTerminalSessions.mockResolvedValue([{ id: "session-1", shell: "/bin/bash", cwd: "/project" }]);
+
+      const { result } = renderHook(() => useTerminalSessions());
+
+      await waitFor(() => {
+        expect(result.current.isReady).toBe(true);
+      });
+
+      expect(result.current.tabs.length).toBe(1);
+      expect(result.current.tabs[0].sessionId).toBe("session-1");
+      expect(result.current.activeTab?.id).toBe("tab-1");
+      
+      // Should not create a new session if restoring existing ones
+      expect(mockCreateTerminalSession).not.toHaveBeenCalled();
+    });
+
+    it("filters out stale sessions that no longer exist on server", async () => {
+      const storedTabs = [
+        {
+          id: "tab-1",
+          sessionId: "session-stale",
+          title: "bash",
+          isActive: true,
+          createdAt: Date.now(),
+        },
+        {
+          id: "tab-2",
+          sessionId: "session-valid",
+          title: "zsh",
+          isActive: false,
+          createdAt: Date.now(),
+        },
+      ];
+      localStorageMock.getItem.mockReturnValue(JSON.stringify(storedTabs));
+      
+      // Only session-valid still exists on server
+      mockListTerminalSessions.mockResolvedValue([
+        { id: "session-valid", shell: "/bin/zsh", cwd: "/project" }
+      ]);
+
+      const { result } = renderHook(() => useTerminalSessions());
+
+      await waitFor(() => {
+        expect(result.current.isReady).toBe(true);
+      });
+
+      await waitFor(() => {
+        expect(result.current.tabs.length).toBe(1);
+      });
+
+      expect(result.current.tabs[0].sessionId).toBe("session-valid");
+      expect(result.current.activeTab?.id).toBe("tab-2");
+    });
+
+    it("creates new tab if all stored sessions are stale", async () => {
+      const storedTabs = [
+        {
+          id: "tab-1",
+          sessionId: "session-stale",
+          title: "bash",
+          isActive: true,
+          createdAt: Date.now(),
+        },
+      ];
+      localStorageMock.getItem.mockReturnValue(JSON.stringify(storedTabs));
+      
+      // No sessions exist on server
+      mockListTerminalSessions.mockResolvedValue([]);
+
+      const { result } = renderHook(() => useTerminalSessions());
+
+      await waitFor(() => {
+        expect(result.current.isReady).toBe(true);
+      });
+
+      await waitFor(() => {
+        expect(result.current.tabs.length).toBe(1);
+      });
+
+      // Should have created a new session
+      expect(mockCreateTerminalSession).toHaveBeenCalled();
+    });
+  });
+
+  describe("creating additional tabs", () => {
+    it("creates new tab with fresh session when createTab is called", async () => {
+      localStorageMock.getItem.mockReturnValue(null);
+      mockListTerminalSessions.mockResolvedValue([]);
+      
+      mockCreateTerminalSession
+        .mockResolvedValueOnce({
+          sessionId: "session-1",
+          shell: "/bin/bash",
+          cwd: "/project",
+        })
+        .mockResolvedValueOnce({
+          sessionId: "session-2",
+          shell: "/bin/bash",
+          cwd: "/project",
+        });
+
+      const { result } = renderHook(() => useTerminalSessions());
+
+      await waitFor(() => {
+        expect(result.current.isReady).toBe(true);
+      });
+
+      await waitFor(() => {
+        expect(result.current.tabs.length).toBe(1);
+      });
+
+      await act(async () => {
+        await result.current.createTab();
+      });
+
+      expect(result.current.tabs.length).toBe(2);
+      expect(result.current.activeTab?.sessionId).toBe("session-2");
+      
+      // First tab should be deactivated
+      expect(result.current.tabs[0].isActive).toBe(false);
+      expect(result.current.tabs[1].isActive).toBe(true);
+    });
+
+    it("names tabs with incrementing numbers", async () => {
+      localStorageMock.getItem.mockReturnValue(null);
+      mockListTerminalSessions.mockResolvedValue([]);
+      
+      mockCreateTerminalSession
+        .mockResolvedValueOnce({ sessionId: "session-1", shell: "/bin/bash", cwd: "/project" })
+        .mockResolvedValueOnce({ sessionId: "session-2", shell: "/bin/bash", cwd: "/project" })
+        .mockResolvedValueOnce({ sessionId: "session-3", shell: "/bin/bash", cwd: "/project" });
+
+      const { result } = renderHook(() => useTerminalSessions());
+
+      await waitFor(() => {
+        expect(result.current.tabs.length).toBe(1);
+        expect(result.current.tabs[0].title).toBe("Terminal 1");
+      });
+
+      await act(async () => {
+        await result.current.createTab();
+      });
+
+      expect(result.current.tabs[1].title).toBe("Terminal 2");
+
+      await act(async () => {
+        await result.current.createTab();
+      });
+
+      expect(result.current.tabs[2].title).toBe("Terminal 3");
+    });
+  });
+
+  describe("closing tabs", () => {
+    it("closes tab and kills server session", async () => {
+      localStorageMock.getItem.mockReturnValue(null);
+      mockListTerminalSessions.mockResolvedValue([]);
+      
+      mockCreateTerminalSession.mockResolvedValue({ sessionId: "session-1", shell: "/bin/bash", cwd: "/project" });
+
+      const { result } = renderHook(() => useTerminalSessions());
+
+      await waitFor(() => {
+        expect(result.current.tabs.length).toBe(1);
+      });
+
+      const tabId = result.current.tabs[0].id;
+      const sessionId = result.current.tabs[0].sessionId;
+
+      act(() => {
+        result.current.closeTab(tabId);
+      });
+
+      expect(mockKillPtyTerminalSession).toHaveBeenCalledWith(sessionId);
+      expect(result.current.tabs.length).toBe(0);
+    });
+
+    it("closing active tab switches to next tab", async () => {
+      const storedTabs = [
+        {
+          id: "tab-1",
+          sessionId: "session-1",
+          title: "Terminal 1",
+          isActive: true,
+          createdAt: Date.now(),
+        },
+        {
+          id: "tab-2",
+          sessionId: "session-2",
+          title: "Terminal 2",
+          isActive: false,
+          createdAt: Date.now(),
+        },
+      ];
+      localStorageMock.getItem.mockReturnValue(JSON.stringify(storedTabs));
+      mockListTerminalSessions.mockResolvedValue([
+        { id: "session-1", shell: "/bin/bash", cwd: "/project" },
+        { id: "session-2", shell: "/bin/bash", cwd: "/project" },
+      ]);
+
+      const { result } = renderHook(() => useTerminalSessions());
+
+      await waitFor(() => {
+        expect(result.current.isReady).toBe(true);
+      });
+
+      await waitFor(() => {
+        expect(result.current.tabs.length).toBe(2);
+      });
+
+      act(() => {
+        result.current.closeTab("tab-1");
+      });
+
+      expect(result.current.tabs.length).toBe(1);
+      expect(result.current.activeTab?.id).toBe("tab-2");
+    });
+
+    it("closing last tab triggers auto-creation of new tab", async () => {
+      const storedTabs = [
+        {
+          id: "tab-1",
+          sessionId: "session-1",
+          title: "Terminal 1",
+          isActive: true,
+          createdAt: Date.now(),
+        },
+      ];
+      localStorageMock.getItem.mockReturnValue(JSON.stringify(storedTabs));
+      mockListTerminalSessions.mockResolvedValue([{ id: "session-1", shell: "/bin/bash", cwd: "/project" }]);
+
+      const { result } = renderHook(() => useTerminalSessions());
+
+      await waitFor(() => {
+        expect(result.current.isReady).toBe(true);
+      });
+
+      await waitFor(() => {
+        expect(result.current.tabs.length).toBe(1);
+      });
+
+      // Tab was restored from localStorage (no createTerminalSession call yet)
+      expect(mockCreateTerminalSession).not.toHaveBeenCalled();
+
+      act(() => {
+        result.current.closeTab("tab-1");
+      });
+
+      // Tab count goes to 0 momentarily
+      expect(result.current.tabs.length).toBe(0);
+
+      // New tab should be auto-created
+      await waitFor(() => {
+        expect(result.current.tabs.length).toBe(1);
+      });
+
+      // createTerminalSession was called once during auto-create
+      expect(mockCreateTerminalSession).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("switching active tab", () => {
+    it("updates isActive when switching tabs", async () => {
+      const storedTabs = [
+        {
+          id: "tab-1",
+          sessionId: "session-1",
+          title: "Terminal 1",
+          isActive: true,
+          createdAt: Date.now(),
+        },
+        {
+          id: "tab-2",
+          sessionId: "session-2",
+          title: "Terminal 2",
+          isActive: false,
+          createdAt: Date.now(),
+        },
+      ];
+      localStorageMock.getItem.mockReturnValue(JSON.stringify(storedTabs));
+      mockListTerminalSessions.mockResolvedValue([
+        { id: "session-1", shell: "/bin/bash", cwd: "/project" },
+        { id: "session-2", shell: "/bin/bash", cwd: "/project" },
+      ]);
+
+      const { result } = renderHook(() => useTerminalSessions());
+
+      await waitFor(() => {
+        expect(result.current.isReady).toBe(true);
+      });
+
+      expect(result.current.activeTab?.id).toBe("tab-1");
+
+      act(() => {
+        result.current.setActiveTab("tab-2");
+      });
+
+      expect(result.current.activeTab?.id).toBe("tab-2");
+      expect(result.current.tabs.find((t) => t.id === "tab-1")?.isActive).toBe(false);
+      expect(result.current.tabs.find((t) => t.id === "tab-2")?.isActive).toBe(true);
+    });
+  });
+
+  describe("updating tab titles", () => {
+    it("updates tab title when updateTabTitle is called", async () => {
+      localStorageMock.getItem.mockReturnValue(null);
+      mockListTerminalSessions.mockResolvedValue([]);
+
+      const { result } = renderHook(() => useTerminalSessions());
+
+      await waitFor(() => {
+        expect(result.current.tabs.length).toBe(1);
+      });
+
+      act(() => {
+        result.current.updateTabTitle(result.current.tabs[0].id, "zsh");
+      });
+
+      expect(result.current.tabs[0].title).toBe("zsh");
+    });
+  });
+
+  describe("restarting active tab", () => {
+    it("creates new session for active tab", async () => {
+      localStorageMock.getItem.mockReturnValue(null);
+      mockListTerminalSessions.mockResolvedValue([]);
+      
+      mockCreateTerminalSession
+        .mockResolvedValueOnce({ sessionId: "session-1", shell: "/bin/bash", cwd: "/project" })
+        .mockResolvedValueOnce({ sessionId: "session-new", shell: "/bin/bash", cwd: "/project" });
+
+      const { result } = renderHook(() => useTerminalSessions());
+
+      await waitFor(() => {
+        expect(result.current.tabs.length).toBe(1);
+      });
+
+      await act(async () => {
+        await result.current.restartActiveTab();
+      });
+
+      // Old session should be killed
+      expect(mockKillPtyTerminalSession).toHaveBeenCalledWith("session-1");
+      
+      // Tab should have new session
+      expect(result.current.activeTab?.sessionId).toBe("session-new");
+    });
+  });
+
+  describe("localStorage persistence", () => {
+    it("persists tabs to localStorage", async () => {
+      localStorageMock.getItem.mockReturnValue(null);
+      mockListTerminalSessions.mockResolvedValue([]);
+      mockCreateTerminalSession.mockResolvedValue({ sessionId: "session-1", shell: "/bin/bash", cwd: "/project" });
+
+      renderHook(() => useTerminalSessions());
+
+      await waitFor(() => {
+        expect(localStorageMock.setItem).toHaveBeenCalled();
+      });
+
+      // Verify the stored data contains the tabs
+      const setItemCalls = localStorageMock.setItem.mock.calls;
+      expect(setItemCalls.length).toBeGreaterThan(0);
+      
+      const lastCall = setItemCalls[setItemCalls.length - 1];
+      const storedTabs = JSON.parse(lastCall[1]);
+      expect(storedTabs).toBeInstanceOf(Array);
+    });
+  });
+
+  describe("error handling", () => {
+    it("handles localStorage errors gracefully", async () => {
+      localStorageMock.getItem.mockImplementation(() => {
+        throw new Error("localStorage error");
+      });
+      mockListTerminalSessions.mockResolvedValue([]);
+
+      // Should not throw
+      const { result } = renderHook(() => useTerminalSessions());
+
+      await waitFor(() => {
+        expect(result.current.isReady).toBe(true);
+      });
+
+      // Should still create a tab
+      await waitFor(() => {
+        expect(result.current.tabs.length).toBe(1);
+      });
+    });
+
+    it("handles server listing failure gracefully", async () => {
+      localStorageMock.getItem.mockReturnValue(null);
+      mockListTerminalSessions.mockRejectedValue(new Error("Server error"));
+
+      const { result } = renderHook(() => useTerminalSessions());
+
+      await waitFor(() => {
+        expect(result.current.isReady).toBe(true);
+      });
+
+      // Should still create a tab
+      await waitFor(() => {
+        expect(result.current.tabs.length).toBe(1);
+      });
+    });
+
+    it("non-blocking session kill - tab removed even if kill fails", async () => {
+      localStorageMock.getItem.mockReturnValue(null);
+      mockListTerminalSessions.mockResolvedValue([]);
+      mockKillPtyTerminalSession.mockRejectedValue(new Error("Kill failed"));
+
+      const { result } = renderHook(() => useTerminalSessions());
+
+      await waitFor(() => {
+        expect(result.current.tabs.length).toBe(1);
+      });
+
+      const tabId = result.current.tabs[0].id;
+
+      act(() => {
+        result.current.closeTab(tabId);
+      });
+
+      // Tab should still be removed
+      expect(result.current.tabs.length).toBe(0);
+    });
+  });
+});

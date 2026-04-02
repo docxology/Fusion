@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { X, Trash2, Terminal as TerminalIcon, RefreshCw } from "lucide-react";
 import { useTerminal } from "../hooks/useTerminal";
-import { createTerminalSession, killPtyTerminalSession } from "../api";
+import { useTerminalSessions } from "../hooks/useTerminalSessions";
+import "@xterm/xterm/css/xterm.css";
+
 import type { Terminal as XTerm, ITerminalAddon } from "@xterm/xterm";
 import type { FitAddon } from "@xterm/addon-fit";
-
-import "@xterm/xterm/css/xterm.css";
 
 interface TerminalModalProps {
   isOpen: boolean;
@@ -19,6 +19,7 @@ interface TerminalModalProps {
  * Provides a fully functional PTY terminal where users can execute commands
  * in the project's working directory. Features include:
  * - Real-time bidirectional communication via WebSocket
+ * - Multiple terminal tabs with session persistence
  * - xterm.js for proper terminal emulation
  * - Copy/paste support
  * - Terminal zoom (Ctrl++/Ctrl+-/Ctrl+0)
@@ -28,10 +29,7 @@ interface TerminalModalProps {
  * The terminal spawns a real shell (bash/zsh/powershell based on platform).
  */
 export function TerminalModal({ isOpen, onClose, initialCommand }: TerminalModalProps) {
-  const [sessionId, setSessionId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isCreating, setIsCreating] = useState(false);
-  const [shellName, setShellName] = useState<string>("");
   const [exitCode, setExitCode] = useState<number | null>(null);
   const [xtermReady, setXtermReady] = useState(false);
   
@@ -39,14 +37,45 @@ export function TerminalModal({ isOpen, onClose, initialCommand }: TerminalModal
   const xtermRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<ITerminalAddon | null>(null);
   const hasInitialCommandRun = useRef(false);
+  const xtermInitializedRef = useRef(false);
 
-  const { connectionStatus, sendInput, resize, onData, onConnect, onExit, onScrollback, reconnect } = useTerminal(sessionId);
+  // Use the session management hook
+  const { 
+    tabs, 
+    activeTab, 
+    isReady,
+    createTab, 
+    closeTab, 
+    setActiveTab, 
+    updateTabTitle,
+    restartActiveTab 
+  } = useTerminalSessions();
 
-  // Initialize xterm.js
-  // Depends on `isCreating` so the effect re-runs once session creation
-  // completes and the terminal container div is visible in the DOM.
+  // Get the WebSocket connection for the active session
+  const { connectionStatus, sendInput, resize, onData, onConnect, onExit, onScrollback, reconnect } = 
+    useTerminal(activeTab?.sessionId ?? null);
+
+  // Initialize xterm.js when session is ready
+  // Depends on `isReady`, `activeTab`, and xtermReady to properly reinitialize on tab switch
   useEffect(() => {
-    if (!isOpen || isCreating || !terminalRef.current || xtermRef.current) return;
+    if (!isOpen || !isReady || !activeTab || !terminalRef.current) return;
+
+    // If session changed, we need to reinitialize xterm
+    const currentSessionId = activeTab.sessionId;
+    
+    // Clean up existing xterm if switching sessions
+    if (xtermRef.current && xtermInitializedRef.current !== currentSessionId) {
+      xtermRef.current.dispose();
+      xtermRef.current = null;
+      fitAddonRef.current = null;
+      xtermInitializedRef.current = false;
+      setXtermReady(false);
+    }
+
+    // If already initialized for this session, skip
+    if (xtermInitializedRef.current === currentSessionId && xtermRef.current) {
+      return;
+    }
 
     let mounted = true;
 
@@ -58,7 +87,7 @@ export function TerminalModal({ isOpen, onClose, initialCommand }: TerminalModal
         import("@xterm/addon-web-links"),
       ]);
 
-      if (!mounted || !terminalRef.current) return;
+      if (!mounted || !terminalRef.current || xtermRef.current) return;
 
       // Create terminal instance
       const terminal = new Terminal({
@@ -113,6 +142,7 @@ export function TerminalModal({ isOpen, onClose, initialCommand }: TerminalModal
 
       xtermRef.current = terminal;
       fitAddonRef.current = fitAddon;
+      xtermInitializedRef.current = currentSessionId;
 
       // Signal that xterm is ready so the subscription effect re-runs
       setXtermReady(true);
@@ -149,14 +179,27 @@ export function TerminalModal({ isOpen, onClose, initialCommand }: TerminalModal
       mounted = false;
       cleanupPromise.then((cleanup) => cleanup?.());
       
-      if (xtermRef.current) {
-        xtermRef.current.dispose();
-        xtermRef.current = null;
-      }
-      fitAddonRef.current = null;
-      setXtermReady(false);
+      // Don't dispose xterm here - it should persist across tab switches
+      // Only dispose when the modal is fully closed
     };
-  }, [isOpen, isCreating, sendInput, resize]);
+  }, [isOpen, isReady, activeTab?.sessionId, sendInput, resize]);
+
+  // Cleanup xterm when modal closes
+  useEffect(() => {
+    if (isOpen) return;
+
+    // Modal is closed - cleanup xterm
+    if (xtermRef.current) {
+      xtermRef.current.dispose();
+      xtermRef.current = null;
+    }
+    fitAddonRef.current = null;
+    xtermInitializedRef.current = false;
+    setXtermReady(false);
+    hasInitialCommandRun.current = false;
+    setError(null);
+    setExitCode(null);
+  }, [isOpen]);
 
   // Subscribe to terminal data.
   // Depends on `xtermReady` so subscriptions are established after the
@@ -173,7 +216,10 @@ export function TerminalModal({ isOpen, onClose, initialCommand }: TerminalModal
     });
 
     const unsubConnect = onConnect((info) => {
-      setShellName(info.shell.split("/").pop() || info.shell);
+      // Update tab title with shell name
+      if (activeTab) {
+        updateTabTitle(activeTab.id, info.shell.split("/").pop() || info.shell);
+      }
     });
 
     const unsubExit = onExit((code) => {
@@ -187,53 +233,18 @@ export function TerminalModal({ isOpen, onClose, initialCommand }: TerminalModal
       unsubConnect();
       unsubExit();
     };
-  }, [xtermReady, onData, onScrollback, onConnect, onExit]);
-
-  // Create session when modal opens
-  useEffect(() => {
-    if (!isOpen) {
-      // Cleanup session on close
-      if (sessionId) {
-        killPtyTerminalSession(sessionId).catch(() => {
-          // Ignore errors during cleanup
-        });
-        setSessionId(null);
-      }
-      hasInitialCommandRun.current = false;
-      setError(null);
-      setExitCode(null);
-      setShellName("");
-      return;
-    }
-
-    // Create new session
-    const createSession = async () => {
-      setIsCreating(true);
-      setError(null);
-      
-      try {
-        const session = await createTerminalSession();
-        setSessionId(session.sessionId);
-      } catch (err: any) {
-        setError(err.message || "Failed to create terminal session");
-      } finally {
-        setIsCreating(false);
-      }
-    };
-
-    createSession();
-  }, [isOpen]);
+  }, [xtermReady, activeTab?.id, onData, onScrollback, onConnect, onExit, updateTabTitle]);
 
   // Run initial command when connected
   useEffect(() => {
-    if (connectionStatus === "connected" && initialCommand && !hasInitialCommandRun.current && sessionId) {
+    if (connectionStatus === "connected" && initialCommand && !hasInitialCommandRun.current && activeTab) {
       hasInitialCommandRun.current = true;
       // Small delay to let shell initialize
       setTimeout(() => {
         sendInput(initialCommand + "\n");
       }, 500);
     }
-  }, [connectionStatus, initialCommand, sendInput, sessionId]);
+  }, [connectionStatus, initialCommand, sendInput, activeTab]);
 
   // Handle keyboard shortcuts (zoom)
   useEffect(() => {
@@ -314,33 +325,20 @@ export function TerminalModal({ isOpen, onClose, initialCommand }: TerminalModal
     xtermRef.current?.clear();
   }, []);
 
-  // Handle restart
+  // Handle restart - create new session in the current tab
   const handleRestart = useCallback(async () => {
-    // Kill current session
-    if (sessionId) {
-      await killPtyTerminalSession(sessionId).catch(() => {
-        // Ignore errors
-      });
-    }
-    
-    // Clear terminal
+    // Clear terminal display
     xtermRef.current?.clear();
     setExitCode(null);
     hasInitialCommandRun.current = false;
     
-    // Create new session
-    setIsCreating(true);
-    setError(null);
-    
+    // Restart the active tab's session
     try {
-      const session = await createTerminalSession();
-      setSessionId(session.sessionId);
+      await restartActiveTab();
     } catch (err: any) {
-      setError(err.message || "Failed to create terminal session");
-    } finally {
-      setIsCreating(false);
+      setError(err.message || "Failed to restart terminal session");
     }
-  }, [sessionId]);
+  }, [restartActiveTab]);
 
   if (!isOpen) return null;
 
@@ -358,6 +356,9 @@ export function TerminalModal({ isOpen, onClose, initialCommand }: TerminalModal
     }
   };
 
+  // Determine loading state
+  const isLoading = !isReady || !activeTab || !xtermReady;
+
   return (
     <div
       className="modal-overlay open"
@@ -367,16 +368,50 @@ export function TerminalModal({ isOpen, onClose, initialCommand }: TerminalModal
       <div className="modal terminal-modal" data-testid="terminal-modal">
         {/* Header */}
         <div className="terminal-header">
+          {/* Tab Bar */}
+          <div className="terminal-tabs" data-testid="terminal-tabs">
+            {tabs.map((tab) => (
+              <div
+                key={tab.id}
+                className={`terminal-tab ${tab.isActive ? "terminal-tab--active" : ""}`}
+                onClick={() => setActiveTab(tab.id)}
+                title={tab.title}
+                role="tab"
+                aria-selected={tab.isActive}
+              >
+                <span className="terminal-tab-label">{tab.title}</span>
+                {tabs.length > 1 && (
+                  <button
+                    className="terminal-tab-close"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      closeTab(tab.id);
+                    }}
+                    title="Close tab"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            ))}
+            <button
+              className="terminal-tab terminal-tab--new"
+              onClick={createTab}
+              title="New terminal"
+            >
+              +
+            </button>
+          </div>
+          
+          {/* Status indicator */}
           <div className="terminal-title" data-testid="terminal-title">
             <TerminalIcon size={16} />
-            <span>Terminal</span>
-            {shellName && (
-              <span className="terminal-shell-name">({shellName})</span>
-            )}
             {getStatusIndicator()}
           </div>
+          
+          {/* Actions */}
           <div className="terminal-actions">
-            {connectionStatus === "disconnected" && sessionId && (
+            {connectionStatus === "disconnected" && activeTab && (
               <button
                 className="terminal-reconnect-btn"
                 onClick={reconnect}
@@ -427,20 +462,18 @@ export function TerminalModal({ isOpen, onClose, initialCommand }: TerminalModal
 
         {/* Terminal container */}
         <div className="terminal-container" data-testid="terminal-container">
-          {isCreating && (
+          {isLoading && (
             <div className="terminal-loading" data-testid="terminal-loading">
               <div className="terminal-spinner" />
               <span>Starting terminal...</span>
             </div>
           )}
-          {/* Always render the xterm container so the ref is available for
-              initialization as soon as the session is ready. Hiding it with
-              display:none while loading prevents a flash of empty terminal. */}
+          {/* Use key to force remount on session change */}
           <div
             ref={terminalRef}
             className="terminal-xterm"
             data-testid="terminal-xterm"
-            style={isCreating ? { display: "none" } : undefined}
+            style={isLoading ? { display: "none" } : undefined}
           />
         </div>
 

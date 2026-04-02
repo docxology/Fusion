@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { TerminalModal } from "../TerminalModal";
 import * as useTerminalModule from "../../hooks/useTerminal";
+import * as useTerminalSessionsModule from "../../hooks/useTerminalSessions";
 import * as apiModule from "../../api";
 
 // Mock hooks and API
@@ -9,9 +10,14 @@ vi.mock("../../hooks/useTerminal", () => ({
   useTerminal: vi.fn(),
 }));
 
+vi.mock("../../hooks/useTerminalSessions", () => ({
+  useTerminalSessions: vi.fn(),
+}));
+
 vi.mock("../../api", () => ({
   createTerminalSession: vi.fn(),
   killPtyTerminalSession: vi.fn(),
+  listTerminalSessions: vi.fn().mockResolvedValue([]),
 }));
 
 // Mock xterm modules to prevent DOM errors in jsdom
@@ -53,8 +59,29 @@ vi.mock("@xterm/addon-webgl", () => {
 vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
 
 const mockUseTerminal = vi.mocked(useTerminalModule.useTerminal);
+const mockUseTerminalSessions = vi.mocked(useTerminalSessionsModule.useTerminalSessions);
 const mockCreateTerminalSession = vi.mocked(apiModule.createTerminalSession);
 const mockKillPtyTerminalSession = vi.mocked(apiModule.killPtyTerminalSession);
+
+// Default tab state
+const defaultTab = {
+  id: "tab-1",
+  sessionId: "test-session-123",
+  title: "bash",
+  isActive: true,
+  createdAt: Date.now(),
+};
+
+const defaultSessionState = {
+  tabs: [defaultTab],
+  activeTab: defaultTab,
+  isReady: true,
+  createTab: vi.fn(),
+  closeTab: vi.fn(),
+  setActiveTab: vi.fn(),
+  updateTabTitle: vi.fn(),
+  restartActiveTab: vi.fn(),
+};
 
 describe("TerminalModal", () => {
   const mockOnClose = vi.fn();
@@ -83,6 +110,7 @@ describe("TerminalModal", () => {
     });
     mockKillPtyTerminalSession.mockResolvedValue({ killed: true });
     mockUseTerminal.mockReturnValue(createMockTerminalState());
+    mockUseTerminalSessions.mockReturnValue(defaultSessionState);
   });
 
   afterEach(() => {
@@ -102,17 +130,12 @@ describe("TerminalModal", () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it("creates terminal session on open", async () => {
-    render(<TerminalModal isOpen={true} onClose={mockOnClose} />);
-
-    await waitFor(() => {
-      expect(mockCreateTerminalSession).toHaveBeenCalled();
+  it("shows loading state while sessions are not ready", async () => {
+    mockUseTerminalSessions.mockReturnValue({
+      ...defaultSessionState,
+      isReady: false,
     });
-  });
 
-  it("shows loading state while creating session", async () => {
-    mockCreateTerminalSession.mockImplementation(() => new Promise(() => {}));
-    
     render(<TerminalModal isOpen={true} onClose={mockOnClose} />);
 
     await waitFor(() => {
@@ -120,14 +143,122 @@ describe("TerminalModal", () => {
     });
   });
 
-  it("shows error when session creation fails", async () => {
-    mockCreateTerminalSession.mockRejectedValue(new Error("Failed to create session"));
+  it("shows tabs when multiple sessions exist", async () => {
+    mockUseTerminalSessions.mockReturnValue({
+      ...defaultSessionState,
+      tabs: [
+        defaultTab,
+        { id: "tab-2", sessionId: "test-session-456", title: "zsh", isActive: false, createdAt: Date.now() },
+      ],
+    });
 
     render(<TerminalModal isOpen={true} onClose={mockOnClose} />);
 
     await waitFor(() => {
-      expect(screen.getByTestId("terminal-error")).toBeTruthy();
+      expect(screen.getByText("bash")).toBeTruthy();
+      expect(screen.getByText("zsh")).toBeTruthy();
     });
+  });
+
+  it("shows active tab styling", async () => {
+    mockUseTerminalSessions.mockReturnValue({
+      ...defaultSessionState,
+      tabs: [
+        { ...defaultTab, isActive: true },
+        { id: "tab-2", sessionId: "test-session-456", title: "zsh", isActive: false, createdAt: Date.now() },
+      ],
+    });
+
+    render(<TerminalModal isOpen={true} onClose={mockOnClose} />);
+
+    await waitFor(() => {
+      const activeTab = screen.getByText("bash").closest(".terminal-tab");
+      expect(activeTab).toHaveClass("terminal-tab--active");
+    });
+  });
+
+  it("tab click switches active tab", async () => {
+    const mockSetActiveTab = vi.fn();
+    mockUseTerminalSessions.mockReturnValue({
+      ...defaultSessionState,
+      tabs: [
+        { ...defaultTab, isActive: true },
+        { id: "tab-2", sessionId: "test-session-456", title: "zsh", isActive: false, createdAt: Date.now() },
+      ],
+      setActiveTab: mockSetActiveTab,
+    });
+
+    render(<TerminalModal isOpen={true} onClose={mockOnClose} />);
+
+    await waitFor(() => {
+      const zshTab = screen.getByText("zsh");
+      fireEvent.click(zshTab);
+    });
+
+    expect(mockSetActiveTab).toHaveBeenCalledWith("tab-2");
+  });
+
+  it("tab close button closes tab", async () => {
+    const mockCloseTab = vi.fn();
+    mockUseTerminalSessions.mockReturnValue({
+      ...defaultSessionState,
+      tabs: [
+        { ...defaultTab, isActive: true },
+        { id: "tab-2", sessionId: "test-session-456", title: "zsh", isActive: false, createdAt: Date.now() },
+      ],
+      closeTab: mockCloseTab,
+    });
+
+    render(<TerminalModal isOpen={true} onClose={mockOnClose} />);
+
+    await waitFor(() => {
+      // Find the close button for the zsh tab (second tab)
+      const closeButtons = screen.getAllByTitle("Close tab");
+      const zshCloseBtn = closeButtons[1]; // Second close button (for zsh tab)
+      if (zshCloseBtn) {
+        fireEvent.click(zshCloseBtn);
+      }
+    });
+
+    expect(mockCloseTab).toHaveBeenCalledWith("tab-2");
+  });
+
+  it("new tab button creates new tab", async () => {
+    const mockCreateTab = vi.fn().mockResolvedValue({
+      id: "tab-new",
+      sessionId: "new-session",
+      title: "Terminal 2",
+      isActive: true,
+      createdAt: Date.now(),
+    });
+    mockUseTerminalSessions.mockReturnValue({
+      ...defaultSessionState,
+      createTab: mockCreateTab,
+    });
+
+    render(<TerminalModal isOpen={true} onClose={mockOnClose} />);
+
+    await waitFor(() => {
+      const newTabBtn = screen.getByTitle("New terminal");
+      fireEvent.click(newTabBtn);
+    });
+
+    expect(mockCreateTab).toHaveBeenCalled();
+  });
+
+  it("sessions are NOT killed when modal closes (session persistence)", async () => {
+    const { rerender } = render(<TerminalModal isOpen={true} onClose={mockOnClose} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("terminal-modal")).toBeTruthy();
+    });
+
+    await act(async () => {
+      rerender(<TerminalModal isOpen={false} onClose={mockOnClose} />);
+    });
+
+    // With multi-tab support, sessions should persist when modal closes
+    expect(mockKillPtyTerminalSession).not.toHaveBeenCalled();
   });
 
   it("closes modal on close button click", async () => {
@@ -162,22 +293,6 @@ describe("TerminalModal", () => {
     expect(mockOnClose).toHaveBeenCalled();
   });
 
-  it("kills session on modal close", async () => {
-    const { rerender } = render(<TerminalModal isOpen={true} onClose={mockOnClose} />);
-
-    await waitFor(() => {
-      expect(mockCreateTerminalSession).toHaveBeenCalled();
-    });
-
-    await act(async () => {
-      rerender(<TerminalModal isOpen={false} onClose={mockOnClose} />);
-    });
-
-    await waitFor(() => {
-      expect(mockKillPtyTerminalSession).toHaveBeenCalledWith("test-session-123");
-    });
-  });
-
   it("shows reconnect button when disconnected", async () => {
     mockUseTerminal.mockReturnValue(
       createMockTerminalState({ 
@@ -209,7 +324,7 @@ describe("TerminalModal", () => {
     expect(mockReconnect).toHaveBeenCalled();
   });
 
-  it("WebSocket connects on mount with sessionId", async () => {
+  it("WebSocket connects on mount with sessionId from active tab", async () => {
     render(<TerminalModal isOpen={true} onClose={mockOnClose} />);
 
     await waitFor(() => {
@@ -217,10 +332,10 @@ describe("TerminalModal", () => {
     });
   });
 
-  it("initializes xterm after session is created", async () => {
+  it("initializes xterm after session is ready", async () => {
     render(<TerminalModal isOpen={true} onClose={mockOnClose} />);
 
-    // Wait for session creation to complete and xterm to initialize
+    // Wait for session to be ready and xterm to initialize
     await waitFor(() => {
       expect(mockTerminalInstance.open).toHaveBeenCalled();
     });
@@ -230,18 +345,21 @@ describe("TerminalModal", () => {
     expect(mockTerminalInstance.open).toHaveBeenCalledWith(terminalDiv);
   });
 
-  it("xterm container is always in the DOM", async () => {
-    mockCreateTerminalSession.mockImplementation(() => new Promise(() => {}));
-    
+  it("xterm container is hidden while loading", async () => {
+    mockUseTerminalSessions.mockReturnValue({
+      ...defaultSessionState,
+      isReady: false,
+    });
+
     render(<TerminalModal isOpen={true} onClose={mockOnClose} />);
 
-    // Even while loading, the xterm container should exist (hidden)
-    const xtermDiv = screen.getByTestId("terminal-xterm");
-    expect(xtermDiv).toBeTruthy();
-    expect(xtermDiv.style.display).toBe("none");
+    await waitFor(() => {
+      const xtermDiv = screen.getByTestId("terminal-xterm");
+      expect(xtermDiv.style.display).toBe("none");
+    });
   });
 
-  it("xterm container becomes visible after session creation", async () => {
+  it("xterm container becomes visible when ready", async () => {
     render(<TerminalModal isOpen={true} onClose={mockOnClose} />);
 
     await waitFor(() => {
@@ -279,5 +397,59 @@ describe("TerminalModal", () => {
       expect(mockOnExit).toHaveBeenCalled();
       expect(mockOnScrollback).toHaveBeenCalled();
     });
+  });
+
+  it("calls restartActiveTab when New Session button clicked", async () => {
+    const mockRestartActiveTab = vi.fn();
+    let exitCallback: ((code: number) => void) | null = null;
+    
+    mockUseTerminalSessions.mockReturnValue({
+      ...defaultSessionState,
+      restartActiveTab: mockRestartActiveTab,
+    });
+    
+    // Create a custom mock that captures the exit callback
+    const customOnExit = vi.fn((cb: (code: number) => void) => {
+      exitCallback = cb;
+      return vi.fn();
+    });
+    
+    mockUseTerminal.mockReturnValue({
+      connectionStatus: "connected",
+      sendInput: mockSendInput,
+      resize: mockResize,
+      onData: vi.fn(() => vi.fn()),
+      onExit: customOnExit,
+      onConnect: vi.fn(() => vi.fn()),
+      onScrollback: vi.fn(() => vi.fn()),
+      reconnect: mockReconnect,
+    });
+
+    render(<TerminalModal isOpen={true} onClose={mockOnClose} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("terminal-modal")).toBeTruthy();
+    });
+
+    // Wait for xterm to initialize
+    await waitFor(() => {
+      expect(mockTerminalInstance.open).toHaveBeenCalled();
+    });
+
+    // Trigger the exit callback to simulate terminal exit
+    act(() => {
+      if (exitCallback) {
+        exitCallback(0);
+      }
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("terminal-restart-btn")).toBeTruthy();
+    });
+
+    const restartBtn = screen.getByTestId("terminal-restart-btn");
+    fireEvent.click(restartBtn);
+
+    expect(mockRestartActiveTab).toHaveBeenCalled();
   });
 });
