@@ -75,6 +75,7 @@ describe("kb pi extension", () => {
     it("registers all expected tools", () => {
       const expected = [
         "kb_task_create",
+        "kb_task_update",
         "kb_task_list",
         "kb_task_show",
         "kb_task_attach",
@@ -164,6 +165,96 @@ describe("kb pi extension", () => {
       expect(result.details.taskId).toBe("FN-002");
       expect(result.details.dependencies).toEqual(["FN-001"]);
       expect(result.content[0].text).toContain("Dependencies: FN-001");
+    });
+  });
+
+  describe("kb_task_update", () => {
+    it("updates task title", async () => {
+      const createTool = api.tools.get("kb_task_create")!;
+      await createTool.execute("c1", { description: "Original" }, undefined, undefined, makeCtx(tmpDir));
+
+      const updateTool = api.tools.get("kb_task_update")!;
+      const result = await updateTool.execute(
+        "u1",
+        { id: "FN-001", title: "New Title" },
+        undefined,
+        undefined,
+        makeCtx(tmpDir),
+      );
+
+      expect(result.content[0].text).toContain("Updated FN-001");
+      expect(result.content[0].text).toContain("title");
+      expect(result.details.updatedFields).toEqual(["title"]);
+
+      // Verify via show
+      const showTool = api.tools.get("kb_task_show")!;
+      const show = await showTool.execute("s1", { id: "FN-001" }, undefined, undefined, makeCtx(tmpDir));
+      expect(show.content[0].text).toContain("New Title");
+    });
+
+    it("updates task description", async () => {
+      const createTool = api.tools.get("kb_task_create")!;
+      await createTool.execute("c1", { description: "Original desc" }, undefined, undefined, makeCtx(tmpDir));
+
+      const updateTool = api.tools.get("kb_task_update")!;
+      const result = await updateTool.execute(
+        "u1",
+        { id: "FN-001", description: "Updated description" },
+        undefined,
+        undefined,
+        makeCtx(tmpDir),
+      );
+
+      expect(result.content[0].text).toContain("Updated FN-001");
+      expect(result.details.updatedFields).toEqual(["description"]);
+    });
+
+    it("updates task dependencies", async () => {
+      const createTool = api.tools.get("kb_task_create")!;
+      await createTool.execute("c1", { description: "First" }, undefined, undefined, makeCtx(tmpDir));
+      await createTool.execute("c2", { description: "Second" }, undefined, undefined, makeCtx(tmpDir));
+
+      const updateTool = api.tools.get("kb_task_update")!;
+      const result = await updateTool.execute(
+        "u1",
+        { id: "FN-002", depends: ["FN-001"] },
+        undefined,
+        undefined,
+        makeCtx(tmpDir),
+      );
+
+      expect(result.content[0].text).toContain("Updated FN-002");
+      expect(result.details.updatedFields).toEqual(["dependencies"]);
+    });
+
+    it("updates multiple fields at once", async () => {
+      const createTool = api.tools.get("kb_task_create")!;
+      await createTool.execute("c1", { description: "Original" }, undefined, undefined, makeCtx(tmpDir));
+
+      const updateTool = api.tools.get("kb_task_update")!;
+      const result = await updateTool.execute(
+        "u1",
+        { id: "FN-001", title: "New Title", description: "New desc", depends: [] },
+        undefined,
+        undefined,
+        makeCtx(tmpDir),
+      );
+
+      expect(result.details.updatedFields).toEqual(["title", "description", "dependencies"]);
+    });
+
+    it("returns error when task not found", async () => {
+      const updateTool = api.tools.get("kb_task_update")!;
+      const result = await updateTool.execute(
+        "u1",
+        { id: "FN-999", title: "Nope" },
+        undefined,
+        undefined,
+        makeCtx(tmpDir),
+      );
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("FN-999 not found");
     });
   });
 

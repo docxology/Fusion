@@ -107,6 +107,84 @@ export default function kbExtension(pi: ExtensionAPI) {
     },
   });
 
+  // ── kb_task_update ────────────────────────────────────────────────
+
+  pi.registerTool({
+    name: "kb_task_update",
+    label: "KB: Update Task",
+    description:
+      "Update fields on an existing task. Supports modifying the title, " +
+      "description, and dependencies after task creation.",
+    promptSnippet: "Update fields on an existing Fusion task",
+    promptGuidelines: [
+      "Use kb_task_update to modify task title, description, or dependencies after creation.",
+      "At least one field must be provided to update.",
+    ],
+    parameters: Type.Object({
+      id: Type.String({ description: "Task ID (e.g. KB-001)" }),
+      title: Type.Optional(Type.String({ description: "New task title" })),
+      description: Type.Optional(Type.String({ description: "New task description" })),
+      depends: Type.Optional(
+        Type.Array(Type.String(), {
+          description: "New dependency list — replaces existing dependencies (e.g. ['KB-001', 'KB-002'])",
+        }),
+      ),
+    }),
+
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const store = await getStore(ctx.cwd);
+
+      // Validate task exists
+      let task;
+      try {
+        task = await store.getTask(params.id);
+      } catch {
+        return {
+          content: [{ type: "text", text: `Task ${params.id} not found` }],
+          isError: true,
+          details: { error: "Task not found" },
+        };
+      }
+
+      // Build update payload
+      const updates: Record<string, unknown> = {};
+      const updatedFields: string[] = [];
+
+      if (params.title !== undefined) {
+        updates.title = params.title.trim();
+        updatedFields.push("title");
+      }
+      if (params.description !== undefined) {
+        updates.description = params.description.trim();
+        updatedFields.push("description");
+      }
+      if (params.depends !== undefined) {
+        updates.dependencies = params.depends;
+        updatedFields.push("dependencies");
+      }
+
+      if (updatedFields.length === 0) {
+        return {
+          content: [{ type: "text", text: "No fields to update. Provide at least one of: title, description, depends." }],
+          isError: true,
+          details: { error: "No fields provided" },
+        };
+      }
+
+      await store.updateTask(params.id, updates);
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Updated ${params.id}: ${updatedFields.join(", ")}`,
+          },
+        ],
+        details: { taskId: params.id, updatedFields },
+      };
+    },
+  });
+
   // ── kb_task_list ─────────────────────────────────────────────────
 
   pi.registerTool({
