@@ -1573,7 +1573,7 @@ describe("promptForPort", () => {
     vi.mocked(createInterface).mockReturnValue(mockRl as unknown as ReturnType<typeof createInterface>);
 
     // Simulate that the promise rejects when SIGINT is triggered
-    const removeListenerSpy = vi.spyOn(process, "removeListener").mockImplementation(() => process as unknown as void);
+    const removeListenerSpy = vi.spyOn(process, "removeListener" as any).mockImplementation(() => process);
 
     // Trigger SIGINT handler immediately to test rejection
     let sigintHandler: (() => void) | null = null;

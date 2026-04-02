@@ -2,8 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vite
 import { GitHubRateLimiter, GitHubPollingService, githubPoller, githubRateLimiter } from "../github-poll.js";
 import type { TaskStore } from "@fusion/core";
 
-// Mock the GitHubClient
-const mockGetBadgeStatusesBatch = vi.fn();
+// Mock the GitHubClient - use vi.hoisted to ensure proper hoisting with vi.mock
+const { mockGetBadgeStatusesBatch } = vi.hoisted(() => ({
+  mockGetBadgeStatusesBatch: vi.fn(),
+}));
 
 vi.mock("../github.js", () => ({
   GitHubClient: vi.fn().mockImplementation(() => ({
@@ -128,7 +130,6 @@ describe("GitHubPollingService", () => {
     service.stop();
     service.reset();
     vi.useRealTimers();
-    vi.restoreAllMocks();
   });
 
   describe("configure", () => {
