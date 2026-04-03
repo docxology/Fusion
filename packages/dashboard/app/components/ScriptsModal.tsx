@@ -167,7 +167,7 @@ export function ScriptsModal({ isOpen, onClose, addToast, projectId, onRunScript
   }));
 
   return (
-    <div className="modal-overlay" onClick={onClose} data-testid="scripts-modal">
+    <div className="modal-overlay open" onClick={onClose} data-testid="scripts-modal">
       <div
         className="modal scripts-modal"
         onClick={(e) => e.stopPropagation()}

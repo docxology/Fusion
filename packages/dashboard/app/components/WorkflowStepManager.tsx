@@ -278,7 +278,7 @@ export function WorkflowStepManager({ isOpen, onClose, addToast, projectId }: Wo
   const isEditing = isCreating || editingId !== null;
 
   return (
-    <div className="modal-overlay" onClick={onClose} data-testid="workflow-step-manager">
+    <div className="modal-overlay open" onClick={onClose} data-testid="workflow-step-manager">
       <div
         className="modal workflow-step-manager-modal"
         onClick={(e) => e.stopPropagation()}

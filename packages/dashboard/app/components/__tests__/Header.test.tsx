@@ -656,6 +656,30 @@ describe("Header", () => {
       fireEvent.click(screen.getByText("Manage Agents"));
       expect(onOpenAgents).toHaveBeenCalledOnce();
     });
+
+    it("missions overflow menu item calls onOpenMissions when clicked", () => {
+      const onOpenMissions = vi.fn();
+      render(<Header onOpenSettings={vi.fn()} onOpenMissions={onOpenMissions} />);
+      fireEvent.click(screen.getByTitle("More header actions"));
+      fireEvent.click(screen.getByText("Missions"));
+      expect(onOpenMissions).toHaveBeenCalledOnce();
+    });
+
+    it("workflow steps overflow menu item calls onOpenWorkflowSteps when clicked", () => {
+      const onOpenWorkflowSteps = vi.fn();
+      render(<Header onOpenSettings={vi.fn()} onOpenWorkflowSteps={onOpenWorkflowSteps} />);
+      fireEvent.click(screen.getByTitle("More header actions"));
+      fireEvent.click(screen.getByText("Workflow Steps"));
+      expect(onOpenWorkflowSteps).toHaveBeenCalledOnce();
+    });
+
+    it("scripts overflow menu item calls onOpenScripts when clicked", () => {
+      const onOpenScripts = vi.fn();
+      render(<Header onOpenSettings={vi.fn()} onOpenScripts={onOpenScripts} onRunScript={vi.fn()} />);
+      fireEvent.click(screen.getByTitle("More header actions"));
+      fireEvent.click(screen.getByText("Scripts"));
+      expect(onOpenScripts).toHaveBeenCalledOnce();
+    });
   });
 
   // ── Agents Button ────────────────────────────────────────────────
@@ -810,5 +834,27 @@ describe("Header", () => {
     );
 
     expect(screen.getByText("Project One")).toBeDefined();
+  });
+
+  // ── Modal Overlay Visibility ──────────────────────────────────
+
+  it("MissionManager renders with 'open' class on modal overlay when isOpen is true", async () => {
+    // Mock fetch for MissionManager's API calls
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve([]),
+    });
+    try {
+      const { MissionManager } = await import("../MissionManager");
+      const { container } = render(
+        <MissionManager isOpen={true} onClose={vi.fn()} addToast={vi.fn()} />
+      );
+      const overlay = container.querySelector(".modal-overlay");
+      expect(overlay).not.toBeNull();
+      expect(overlay!.className).toContain("open");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });

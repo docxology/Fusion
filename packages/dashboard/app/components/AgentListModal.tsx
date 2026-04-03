@@ -152,7 +152,7 @@ export function AgentListModal({ isOpen, onClose, addToast, projectId }: AgentLi
   if (!isOpen) return null;
 
   return (
-    <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
+    <div className="modal-overlay open" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal modal--wide">
         <div className="modal-header">
           <h2 className="modal-title">

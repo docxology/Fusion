@@ -600,7 +600,7 @@ export function MissionManager({ isOpen, onClose, addToast, projectId, onSelectT
   if (!isOpen) return null;
 
   return (
-    <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
+    <div className="modal-overlay open" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal-content mission-manager-modal">
         <div className="modal-header">
           <div className="modal-title-row">
