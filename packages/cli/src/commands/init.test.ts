@@ -2,11 +2,26 @@
  * Tests for the init command
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdtempSync, existsSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runInit } from "./init.js";
+
+const mockCentralInit = vi.fn();
+const mockCentralClose = vi.fn();
+const mockGetProjectByPath = vi.fn();
+const mockRegisterProject = vi.fn();
+
+vi.mock("@fusion/core", () => ({
+  CentralCore: vi.fn().mockImplementation(() => ({
+    init: mockCentralInit,
+    close: mockCentralClose,
+    getProjectByPath: mockGetProjectByPath,
+    registerProject: mockRegisterProject,
+  })),
+  resolveGlobalDir: vi.fn(),
+}));
 
 function tempDir(prefix: string): string {
   return mkdtempSync(join(tmpdir(), prefix));
@@ -17,6 +32,15 @@ describe("init command", () => {
 
   beforeEach(() => {
     tempProjectDir = tempDir("fn-init-test-");
+    mockCentralInit.mockResolvedValue(undefined);
+    mockCentralClose.mockResolvedValue(undefined);
+    mockGetProjectByPath.mockResolvedValue(undefined);
+    mockRegisterProject.mockResolvedValue({
+      id: "proj_test",
+      name: "test-project",
+      path: tempProjectDir,
+      isolationMode: "in-process",
+    });
   });
 
   afterEach(() => {
@@ -46,6 +70,12 @@ describe("init command", () => {
   it("should be idempotent - report already initialized", async () => {
     // First init
     await runInit({ path: tempProjectDir });
+    mockGetProjectByPath.mockResolvedValue({
+      id: "proj_test",
+      name: "registered-project",
+      path: tempProjectDir,
+      isolationMode: "in-process",
+    });
 
     // Capture console output for second run
     const originalLog = console.log;

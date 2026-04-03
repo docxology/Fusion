@@ -113,10 +113,10 @@ export class FirstRunDetector {
     const hasCentral = this.hasCentralDb();
 
     if (!hasCentral) {
-      // No central DB - check for local .kb/ in cwd
+      // No central DB - check for local project in cwd or parent directories
       const cwd = process.cwd();
-      const localKbExists = this.hasKbProject(cwd);
-      return localKbExists ? "needs-migration" : "fresh-install";
+      const detected = await this.detectExistingProjects(cwd);
+      return detected.length > 0 ? "needs-migration" : "fresh-install";
     }
 
     // Central DB exists - check if it has projects
@@ -129,7 +129,10 @@ export class FirstRunDetector {
         await central.init();
         shouldClose = true;
       } catch {
-        return "setup-wizard";
+        // Central DB exists but is unreadable — fall back to local detection
+        const cwd = process.cwd();
+        const detected = await this.detectExistingProjects(cwd);
+        return detected.length > 0 ? "needs-migration" : "fresh-install";
       }
     }
     
@@ -150,7 +153,7 @@ export class FirstRunDetector {
    * Check if the central database exists.
    */
   hasCentralDb(): boolean {
-    const centralDbPath = join(this.globalDir, "kb-central.db");
+    const centralDbPath = join(this.globalDir, "fusion-central.db");
     return existsSync(centralDbPath);
   }
 
@@ -158,7 +161,7 @@ export class FirstRunDetector {
    * Get the path to the central database.
    */
   getCentralDbPath(): string {
-    return join(this.globalDir, "kb-central.db");
+    return join(this.globalDir, "fusion-central.db");
   }
 
   /**
@@ -270,10 +273,16 @@ export class FirstRunDetector {
    * Check if a directory contains a valid kb project.
    */
   private hasKbProject(dir: string): boolean {
-    const kbDir = join(dir, ".kb");
-    const dbPath = join(kbDir, "kb.db");
+    // Check for current .fusion/fusion.db or legacy .kb/kb.db
+    return this.hasProjectDbFile(dir, ".fusion", "fusion.db") ||
+           this.hasProjectDbFile(dir, ".kb", "kb.db");
+  }
 
-    if (!existsSync(kbDir)) return false;
+  private hasProjectDbFile(dir: string, folderName: string, dbName: string): boolean {
+    const projectDir = join(dir, folderName);
+    const dbPath = join(projectDir, dbName);
+
+    if (!existsSync(projectDir)) return false;
     if (!existsSync(dbPath)) return false;
 
     try {
@@ -343,7 +352,19 @@ export class MigrationCoordinator {
           errors: [],
         };
 
-      case "setup-wizard":
+      case "setup-wizard": {
+        // Central DB exists but no projects — check for local project to auto-register
+        const localProjects = await detector.detectExistingProjects(process.cwd());
+        if (localProjects.length > 0) {
+          return this.registerSingleProject(localProjects[0].path);
+        }
+        return {
+          success: true,
+          projectsRegistered: [],
+          errors: [],
+        };
+      }
+
       case "normal-operation":
         // No migration needed
         return {
@@ -373,6 +394,13 @@ export class MigrationCoordinator {
       return result;
     }
 
+    // Validate it's an actual kb project
+    const detector = new FirstRunDetector(this.central.getGlobalDir());
+    if (!this.isValidKbProject(projectPath)) {
+      result.errors.push(`Path is not a valid kb project: ${projectPath}`);
+      return result;
+    }
+
     // Check if already registered
     try {
       const existing = await this.central.getProjectByPath(projectPath);
@@ -387,8 +415,22 @@ export class MigrationCoordinator {
       return result;
     }
 
+    // Check for overlapping registered projects (nested inside or parent of existing)
+    try {
+      const allProjects = await this.central.listProjects();
+      const normalizedPath = resolve(projectPath);
+      for (const p of allProjects) {
+        const normalizedExisting = resolve(p.path);
+        if (normalizedPath.startsWith(normalizedExisting + "/") || normalizedExisting.startsWith(normalizedPath + "/")) {
+          result.errors.push(`Path "${projectPath}" overlaps an existing registered project at "${p.path}"`);
+          return result;
+        }
+      }
+    } catch {
+      // Non-fatal — continue with registration
+    }
+
     // Generate unique name
-    const detector = new FirstRunDetector(this.central.getGlobalDir());
     const baseName = await detector.generateProjectName(projectPath);
     const uniqueName = await this.ensureUniqueName(baseName);
 
@@ -399,6 +441,9 @@ export class MigrationCoordinator {
         path: projectPath,
         isolationMode: "in-process",
       });
+
+      // Activate the project after successful registration
+      await this.central.updateProject(project.id, { status: "active" });
 
       result.success = true;
       result.projectsRegistered.push(project.id);
@@ -424,6 +469,13 @@ export class MigrationCoordinator {
 
     for (const input of projects) {
       try {
+        // Validate it's a valid kb project
+        if (!this.isValidKbProject(input.path)) {
+          result.success = false;
+          result.errors.push(`Path is not a valid kb project: ${input.path}`);
+          continue;
+        }
+
         // Check if already registered
         const existing = await this.central.getProjectByPath(input.path);
         if (existing) {
@@ -440,6 +492,9 @@ export class MigrationCoordinator {
           path: input.path,
           isolationMode: input.isolationMode ?? "in-process",
         });
+
+        // Activate after registration
+        await this.central.updateProject(project.id, { status: "active" });
 
         result.projectsRegistered.push(project.id);
       } catch (err) {
@@ -471,6 +526,27 @@ export class MigrationCoordinator {
     }
 
     return candidate;
+  }
+
+  /**
+   * Check if a directory is a valid kb project (has .fusion/fusion.db or .kb/kb.db).
+   */
+  private isValidKbProject(dir: string): boolean {
+    return this.hasProjectDbInDir(dir, ".fusion", "fusion.db") ||
+           this.hasProjectDbInDir(dir, ".kb", "kb.db");
+  }
+
+  private hasProjectDbInDir(dir: string, folderName: string, dbName: string): boolean {
+    const projectDir = join(dir, folderName);
+    const dbPath = join(projectDir, dbName);
+    if (!existsSync(projectDir)) return false;
+    if (!existsSync(dbPath)) return false;
+    try {
+      const stat = statSync(dbPath);
+      return stat.isFile() && stat.size > 0;
+    } catch {
+      return false;
+    }
   }
 }
 
@@ -541,23 +617,6 @@ export class BackwardCompat {
     const projects = await this.central.listProjects();
 
     if (projects.length === 0) {
-      // No projects registered - check if cwd has a current .fusion project or legacy .kb project
-      if (this.hasProjectData(cwd)) {
-        // Auto-migrate this project
-        const coordinator = new MigrationCoordinator(this.central);
-        const result = await coordinator.registerSingleProject(cwd);
-        if (result.success && result.projectsRegistered.length > 0) {
-          const newProject = await this.central.getProject(result.projectsRegistered[0]);
-          if (newProject) {
-            return {
-              projectId: newProject.id,
-              workingDirectory: newProject.path,
-              isLegacy: false,
-            };
-          }
-        }
-      }
-
       throw new ProjectRequiredError(
         "No projects registered. Run 'fn init' or 'fn project add' to set up a project.",
         []
@@ -620,7 +679,8 @@ export class BackwardCompat {
 
   private hasProjectDb(dir: string, folderName: ".fusion" | ".kb"): boolean {
     const projectDir = join(dir, folderName);
-    const dbPath = join(projectDir, "kb.db");
+    const dbName = folderName === ".fusion" ? "fusion.db" : "kb.db";
+    const dbPath = join(projectDir, dbName);
 
     if (!existsSync(projectDir)) return false;
     if (!existsSync(dbPath)) return false;

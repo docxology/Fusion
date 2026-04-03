@@ -3474,14 +3474,14 @@ describe("TaskExecutor usage limit detection", () => {
     expect(onError).toHaveBeenCalled();
   });
 
-  it("does NOT trigger global pause for non-usage-limit errors", async () => {
+  it("does NOT trigger global pause for transient non-usage-limit errors", async () => {
     const store = createMockStore();
     const pauser = new UsageLimitPauser(store);
     const onUsageLimitHitSpy = vi.spyOn(pauser, "onUsageLimitHit");
+    const onError = vi.fn();
 
     mockedCreateHaiAgent.mockRejectedValue(new Error("connection refused"));
 
-    const onError = vi.fn();
     const executor = new TaskExecutor(store, "/tmp/test", {
       onError,
       usageLimitPauser: pauser,
@@ -3501,8 +3501,13 @@ describe("TaskExecutor usage limit detection", () => {
     });
 
     expect(onUsageLimitHitSpy).not.toHaveBeenCalled();
-    // Task should still be marked as failed
-    expect(store.updateTask).toHaveBeenCalledWith("FN-001", { status: "failed", error: "connection refused" });
+    expect(store.logEntry).toHaveBeenCalledWith("FN-001", "Transient error (will retry): connection refused");
+    expect(store.moveTask).toHaveBeenCalledWith("FN-001", "todo");
+    expect(store.updateTask).not.toHaveBeenCalledWith(
+      "FN-001",
+      expect.objectContaining({ status: "failed" }),
+    );
+    expect(onError).not.toHaveBeenCalled();
   });
 
   it("works without usageLimitPauser (backward compatible)", async () => {

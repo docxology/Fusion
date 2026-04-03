@@ -52,12 +52,16 @@ describe("withRateLimitRetry", () => {
       onRetry,
     });
 
+    // Attach the rejection handler before advancing timers so the rejection
+    // is never unhandled when the final retry throws during timer advancement.
+    const assertion = expect(promise).rejects.toThrow("rate_limit exceeded");
+
     // Advance enough to cover all backoff delays
     for (let i = 0; i < 10; i++) {
       await vi.advanceTimersByTimeAsync(500);
     }
 
-    await expect(promise).rejects.toThrow("rate_limit exceeded");
+    await assertion;
     expect(fn).toHaveBeenCalledTimes(3); // initial + 2 retries
     expect(onRetry).toHaveBeenCalledTimes(2);
   });

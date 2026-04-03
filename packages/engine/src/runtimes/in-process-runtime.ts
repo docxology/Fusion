@@ -3,11 +3,13 @@ import type {
   TaskStore,
   Task,
   CentralCore,
+  AgentStore,
 } from "@fusion/core";
 import { Scheduler } from "../scheduler.js";
 import { TaskExecutor, type TaskExecutorOptions } from "../executor.js";
 import { WorktreePool } from "../worktree-pool.js";
 import { AgentSemaphore } from "../concurrency.js";
+import { HeartbeatMonitor } from "../agent-heartbeat.js";
 import type {
   ProjectRuntime,
   ProjectRuntimeConfig,
@@ -63,6 +65,10 @@ export class InProcessRuntime
   private globalSemaphore?: AgentSemaphore;
   private stuckTaskDetector?: StuckTaskDetector;
   private usageLimitPauser?: UsageLimitPauser;
+  private agentStore?: AgentStore;
+  private heartbeatMonitor?: HeartbeatMonitor;
+  /** Maps task IDs to agent IDs for lifecycle tracking */
+  private taskAgentMap = new Map<string, string>();
   private lastActivityAt: string = new Date().toISOString();
 
   /**
@@ -153,17 +159,41 @@ export class InProcessRuntime
         onStart: (task, worktreePath) => {
           this.recordActivity();
           runtimeLog.log(`Started executing task ${task.id} in ${worktreePath}`);
+          // Create agent in AgentStore for lifecycle tracking
+          if (this.agentStore) {
+            this.agentStore.createAgent({
+              name: `executor-${task.id}`,
+              role: "executor",
+            }).then(async (agent: { id: string }) => {
+              this.taskAgentMap.set(task.id, agent.id);
+              await this.agentStore!.assignTask(agent.id, task.id);
+              await this.agentStore!.updateAgentState(agent.id, "active");
+            }).catch((err: unknown) => {
+              runtimeLog.warn(`Failed to create agent for task ${task.id}:`, err);
+            });
+          }
         },
         onComplete: (task) => {
           this.recordActivity();
           runtimeLog.log(`Completed task ${task.id}`);
-          // Record task completion in CentralCore
           this.recordTaskCompletion(task.id, true);
+          // Update agent state to terminated (completed)
+          const agentId = this.taskAgentMap.get(task.id);
+          if (agentId && this.agentStore) {
+            void this.agentStore.updateAgentState(agentId, "terminated").catch(() => {});
+            this.taskAgentMap.delete(task.id);
+          }
         },
         onError: (task, error) => {
           this.recordActivity();
           runtimeLog.error(`Task ${task.id} failed:`, error.message);
           this.recordTaskCompletion(task.id, false);
+          // Update agent state to terminated (failed)
+          const agentId = this.taskAgentMap.get(task.id);
+          if (agentId && this.agentStore) {
+            void this.agentStore.updateAgentState(agentId, "terminated").catch(() => {});
+            this.taskAgentMap.delete(task.id);
+          }
         },
       };
 
@@ -173,13 +203,35 @@ export class InProcessRuntime
         executorOptions
       );
 
-      // 6. Set up event forwarding from TaskStore
+      // 6. Initialize AgentStore and HeartbeatMonitor
+      try {
+        const { AgentStore: AgentStoreClass } = await import("@fusion/core");
+        this.agentStore = new AgentStoreClass({ rootDir: this.taskStore.getRootDir() });
+        await this.agentStore.init();
+
+        this.heartbeatMonitor = new HeartbeatMonitor({
+          store: this.agentStore,
+          onMissed: (agentId) => {
+            runtimeLog.warn(`Agent ${agentId} missed heartbeat`);
+          },
+          onTerminated: (agentId) => {
+            runtimeLog.warn(`Agent ${agentId} terminated (unresponsive)`);
+          },
+        });
+        this.heartbeatMonitor.start();
+        runtimeLog.log(`AgentStore and HeartbeatMonitor initialized`);
+      } catch (agentErr) {
+        // Non-fatal — agent monitoring is optional
+        runtimeLog.warn(`AgentStore initialization failed (continuing without agent monitoring):`, agentErr);
+      }
+
+      // 7. Set up event forwarding from TaskStore
       this.setupEventForwarding();
 
-      // 7. Resume orphaned in-progress tasks
+      // 8. Resume orphaned in-progress tasks
       await this.executor.resumeOrphaned();
 
-      // 8. Start scheduler
+      // 9. Start scheduler
       this.scheduler.start();
 
       this.setStatus("active");
@@ -214,7 +266,13 @@ export class InProcessRuntime
     runtimeLog.log(`Stopping InProcessRuntime for project ${this.config.projectId}`);
 
     try {
-      // 1. Stop scheduler (prevents new task scheduling)
+      // 1. Stop heartbeat monitor
+      if (this.heartbeatMonitor) {
+        this.heartbeatMonitor.stop();
+        runtimeLog.log("HeartbeatMonitor stopped");
+      }
+
+      // 2. Stop scheduler (prevents new task scheduling)
       if (this.scheduler) {
         this.scheduler.stop();
         runtimeLog.log("Scheduler stopped");

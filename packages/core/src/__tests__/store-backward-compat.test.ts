@@ -125,7 +125,7 @@ describe("TaskStore Backward Compatibility", () => {
       createFakeFusionProject(projectDir);
       process.chdir(projectDir);
 
-      const centralDb = join(tempDir, "kb-central.db");
+      const centralDb = join(tempDir, "fusion-central.db");
       await centralCore.close();
       rmSync(centralDb, { force: true });
       centralCore = new CentralCore(tempDir);

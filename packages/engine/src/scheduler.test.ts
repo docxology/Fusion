@@ -147,10 +147,19 @@ describe("Scheduler", () => {
     });
 
     it("triggers scheduling immediately when task:created event fires", async () => {
-      const store = createMockStore({
-        listTasks: vi.fn().mockResolvedValue([
+      // Mock filesystem validation so schedule() can proceed
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readFile).mockResolvedValue("# Task\nDo something");
+
+      // First call (from start()) returns empty todo, second call (from event) returns the new task
+      const listTasksMock = vi.fn()
+        .mockResolvedValueOnce([]) // Initial schedule from start() sees no tasks
+        .mockResolvedValue([
           createMockTask({ id: "FN-001", column: "todo", dependencies: [] }),
-        ]),
+        ]);
+
+      const store = createMockStore({
+        listTasks: listTasksMock,
         getSettings: vi.fn().mockResolvedValue({ maxConcurrent: 2, maxWorktrees: 4 }),
         updateTask: vi.fn().mockResolvedValue(undefined),
         moveTask: vi.fn().mockResolvedValue(undefined),
@@ -159,17 +168,23 @@ describe("Scheduler", () => {
       const scheduler = new Scheduler(store);
       scheduler.start();
 
+      // Wait for initial schedule pass to complete
+      await new Promise((r) => setTimeout(r, 10));
+
       // Find and call the task:created handler
       const onCalls = (store.on as any).mock.calls;
       const createdHandler = onCalls.find((call: any) => call[0] === "task:created")?.[1];
       expect(createdHandler).toBeDefined();
 
-      // Simulate task:created event
-      const newTask = createMockTask({ id: "FN-002", column: "todo" });
+      // Simulate task:created event — triggers schedule() which now sees FN-001
+      const newTask = createMockTask({ id: "FN-001", column: "todo" });
       await createdHandler(newTask);
 
+      // Wait for async schedule to complete
+      await new Promise((r) => setTimeout(r, 10));
+
       // Verify schedule() was called (moveTask should be called since task can start)
-      expect(store.moveTask).toHaveBeenCalledWith("FN-002", "in-progress");
+      expect(store.moveTask).toHaveBeenCalledWith("FN-001", "in-progress");
     });
 
     it("registers task:moved event listener", () => {
@@ -180,11 +195,24 @@ describe("Scheduler", () => {
     });
 
     it("triggers scheduling immediately when task:moved to done event fires", async () => {
+      // Mock filesystem validation so schedule() can proceed
+      vi.mocked(existsSync).mockReturnValue(true);
+      vi.mocked(readFile).mockResolvedValue("# Task\nDo something");
+
+      // Initially return only FN-001 in-progress so start() doesn't schedule FN-002
+      const listTasksMock = vi.fn()
+        .mockResolvedValueOnce([
+          createMockTask({ id: "FN-001", column: "in-progress", dependencies: [] }),
+          createMockTask({ id: "FN-002", column: "todo", dependencies: ["FN-001"] }),
+        ])
+        // After event fires, FN-001 is done so FN-002's deps are satisfied
+        .mockResolvedValue([
+          createMockTask({ id: "FN-001", column: "done", dependencies: [] }),
+          createMockTask({ id: "FN-002", column: "todo", dependencies: ["FN-001"] }),
+        ]);
+
       const store = createMockStore({
-        listTasks: vi.fn().mockResolvedValue([
-          createMockTask({ id: "FN-001", column: "done", dependencies: [] }), // Completed dep
-          createMockTask({ id: "FN-002", column: "todo", dependencies: ["FN-001"] }), // Waiting on FN-001
-        ]),
+        listTasks: listTasksMock,
         getSettings: vi.fn().mockResolvedValue({ maxConcurrent: 2, maxWorktrees: 4 }),
         updateTask: vi.fn().mockResolvedValue(undefined),
         moveTask: vi.fn().mockResolvedValue(undefined),
@@ -193,14 +221,20 @@ describe("Scheduler", () => {
       const scheduler = new Scheduler(store);
       scheduler.start();
 
+      // Wait for initial schedule pass to complete
+      await new Promise((r) => setTimeout(r, 10));
+
       // Find and call the task:moved handler
       const onCalls = (store.on as any).mock.calls;
       const movedHandler = onCalls.find((call: any) => call[0] === "task:moved")?.[1];
       expect(movedHandler).toBeDefined();
 
       // Simulate task:moved to done event
-      const doneTask = createMockTask({ id: "FN-001", column: "todo" });
+      const doneTask = createMockTask({ id: "FN-001", column: "in-progress" });
       await movedHandler({ task: doneTask, from: "in-progress", to: "done" });
+
+      // Wait for async schedule to complete
+      await new Promise((r) => setTimeout(r, 10));
 
       // Verify schedule() was called - FN-002 should now be able to start
       expect(store.moveTask).toHaveBeenCalledWith("FN-002", "in-progress");

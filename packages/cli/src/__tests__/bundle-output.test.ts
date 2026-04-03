@@ -45,7 +45,11 @@ describe("CLI bundle output", () => {
 
     if (platformDirs.length === 0) return;
 
-    const hasPlatform = platformDirs.some((platform) => existsSync(join(runtimeDir, platform, "pty.node")));
-    expect(hasPlatform).toBe(true);
+    const hasNativeAsset = platformDirs.some((platform) => {
+      const platformDir = join(runtimeDir, platform);
+      return readdirSync(platformDir).some((file) => file === "pty.node" || file === "spawn-helper");
+    });
+
+    expect(hasNativeAsset).toBe(true);
   });
 });

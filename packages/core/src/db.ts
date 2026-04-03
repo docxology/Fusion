@@ -59,7 +59,7 @@ export function fromJson<T>(json: string | null | undefined): T | undefined {
 
 // ── Schema Definition ────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 
 function normalizeTaskComments(
   steeringComments: SteeringComment[] | undefined,
@@ -134,6 +134,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   blockedBy TEXT,
   paused INTEGER DEFAULT 0,
   baseBranch TEXT,
+  branch TEXT,
   baseCommitSha TEXT,
   modelPresetId TEXT,
   modelProvider TEXT,

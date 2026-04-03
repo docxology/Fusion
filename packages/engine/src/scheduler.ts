@@ -1,4 +1,4 @@
-import { resolveDependencyOrder, type TaskStore, type Task, type MissionStore, type FeatureStatus } from "@fusion/core";
+import { resolveDependencyOrder, type TaskStore, type Task, type MissionStore } from "@fusion/core";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -161,6 +161,11 @@ export class Scheduler {
       // Mission progress tracking: when task with sliceId moves to in-progress
       if (task.sliceId && this.options.missionStore && to === "in-progress") {
         void this.handleMissionTaskStart(task.id, task.sliceId);
+      }
+
+      // Mission progress tracking: when task with sliceId moves to done
+      if (task.sliceId && this.options.missionStore && to === "done") {
+        void this.handleMissionTaskCompletion(task.id, task.sliceId);
       }
 
       // Event-driven scheduling: when a dependency completes (task moves to "done"),
@@ -533,6 +538,13 @@ export class Scheduler {
         return;
       }
 
+      if (feature.sliceId !== sliceId) {
+        schedulerLog.warn(
+          `Task ${taskId} sliceId ${sliceId} does not match linked feature ${feature.id} sliceId ${feature.sliceId}; skipping mission start update`,
+        );
+        return;
+      }
+
       // Only update if feature is still in "triaged" status
       if (feature.status === "triaged") {
         await missionStore.updateFeatureStatus(feature.id, "in-progress");
@@ -540,6 +552,47 @@ export class Scheduler {
       }
     } catch (err) {
       schedulerLog.error(`Error handling mission task start for ${taskId}:`, err);
+    }
+  }
+
+  /**
+   * Handle mission task completion.
+   * When a task moves to "done", update the linked feature status to "done".
+   * updateFeatureStatus cascades via recomputeSliceStatus — if all features
+   * in the slice are done the slice status becomes "complete" automatically.
+   * We then call onSliceComplete to trigger auto-advance to the next slice.
+   */
+  private async handleMissionTaskCompletion(taskId: string, sliceId: string): Promise<void> {
+    if (!this.options.missionStore) return;
+
+    const missionStore = this.options.missionStore;
+
+    try {
+      const feature = missionStore.getFeatureByTaskId(taskId);
+      if (!feature) return;
+
+      if (feature.sliceId !== sliceId) {
+        schedulerLog.warn(
+          `Task ${taskId} sliceId ${sliceId} does not match linked feature ${feature.id} sliceId ${feature.sliceId}; skipping mission completion update`,
+        );
+        return;
+      }
+
+      const sliceIdBeforeUpdate = feature.sliceId;
+
+      if (feature.status !== "done") {
+        missionStore.updateFeatureStatus(feature.id, "done");
+        schedulerLog.log(`Feature ${feature.id} marked done (task ${taskId} completed)`);
+      }
+
+      // Check if the slice became complete after the feature update
+      const slice = missionStore.getSlice(sliceIdBeforeUpdate);
+      if (slice && slice.status === "complete") {
+        schedulerLog.log(`Slice ${slice.id} is complete — triggering auto-advance`);
+        await this.onSliceComplete(slice);
+      }
+    } catch (err) {
+      schedulerLog.error(`Error handling mission task completion for ${taskId}:`, err);
     }
   }
 
