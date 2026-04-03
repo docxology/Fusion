@@ -822,7 +822,7 @@ describe("QuickEntryBox", () => {
       expect(textarea.classList.contains("quick-entry-input--expanded")).toBe(false);
     });
 
-    it("resets all state after successful creation (preserves disclosure preference)", async () => {
+    it("resets all state after successful creation (disclosure resets to collapsed)", async () => {
       const { props } = renderQuickEntryBox({});
       expandQuickEntry();
       const textarea = screen.getByTestId("quick-entry-input");
@@ -837,11 +837,11 @@ describe("QuickEntryBox", () => {
 
       // After creation, input is cleared and focus is restored
       expect((textarea as HTMLTextAreaElement).value).toBe("");
-      
+
       // With autoExpand=true (default), textarea auto-expands on focus restore
-      // So the toggle should be expanded (controls visible)
-      expect(screen.getByTestId("quick-entry-toggle").getAttribute("aria-expanded")).toBe("true");
-      expect(document.getElementById("quick-entry-controls")?.hasAttribute("hidden")).toBe(false);
+      // but disclosure resets to collapsed — controls hidden until user toggles again
+      expect(screen.getByTestId("quick-entry-toggle").getAttribute("aria-expanded")).toBe("false");
+      expect(document.getElementById("quick-entry-controls")?.hasAttribute("hidden")).toBe(true);
     });
   });
 
@@ -927,17 +927,44 @@ describe("QuickEntryBox", () => {
       localStorage.clear();
     });
 
-    it("restores disclosure state from localStorage on mount", () => {
-      // Pre-populate localStorage with expanded state
+    it("ignores legacy kb-quick-entry-expanded localStorage on mount", () => {
+      // Pre-populate localStorage with expanded state from a previous version
       localStorage.setItem("kb-quick-entry-expanded", "true");
 
       renderQuickEntryBox();
       const toggleButton = screen.getByTestId("quick-entry-toggle");
 
-      // Should restore the saved disclosure state (expanded)
-      expect(toggleButton.getAttribute("aria-expanded")).toBe("true");
-      // Controls should be visible
-      expect(screen.getByTestId("quick-entry-deps-button")).toBeTruthy();
+      // Should NOT restore the saved disclosure state — always starts collapsed
+      expect(toggleButton.getAttribute("aria-expanded")).toBe("false");
+      // Controls should be hidden
+      expect(document.getElementById("quick-entry-controls")?.hasAttribute("hidden")).toBe(true);
+    });
+
+    it("saved draft description does not reveal controls panel", () => {
+      // Pre-populate localStorage with saved draft text
+      localStorage.setItem("kb-quick-entry-text", "Previously saved draft task");
+
+      renderQuickEntryBox();
+      const textarea = screen.getByTestId("quick-entry-input");
+      const controls = document.getElementById("quick-entry-controls");
+
+      // Description should be restored
+      expect((textarea as HTMLTextAreaElement).value).toBe("Previously saved draft task");
+      // But controls should remain hidden — draft text does not auto-expand disclosure
+      expect(controls?.hasAttribute("hidden")).toBe(true);
+      expect(screen.getByTestId("quick-entry-toggle").getAttribute("aria-expanded")).toBe("false");
+    });
+
+    it("cleans up legacy kb-quick-entry-expanded key on mount", async () => {
+      // Pre-populate localStorage with legacy key
+      localStorage.setItem("kb-quick-entry-expanded", "true");
+
+      renderQuickEntryBox();
+
+      // The legacy key should be removed by the cleanup useEffect
+      await waitFor(() => {
+        expect(localStorage.getItem("kb-quick-entry-expanded")).toBeNull();
+      });
     });
 
     it("defaults to collapsed when localStorage is empty", () => {
@@ -950,14 +977,9 @@ describe("QuickEntryBox", () => {
       expect(document.getElementById("quick-entry-controls")?.hasAttribute("hidden")).toBe(true);
     });
 
-    it("updates localStorage when toggling disclosure", async () => {
+    it("does not persist disclosure state to localStorage when toggling", async () => {
       renderQuickEntryBox({});
       const toggleButton = screen.getByTestId("quick-entry-toggle");
-
-      // Wait for initial state to be persisted (useEffect runs after mount)
-      await waitFor(() => {
-        expect(localStorage.getItem("kb-quick-entry-expanded")).toBe("false");
-      });
 
       // Initially collapsed
       expect(toggleButton.getAttribute("aria-expanded")).toBe("false");
@@ -967,20 +989,16 @@ describe("QuickEntryBox", () => {
 
       // Should be expanded
       expect(toggleButton.getAttribute("aria-expanded")).toBe("true");
-      // localStorage should be updated
-      await waitFor(() => {
-        expect(localStorage.getItem("kb-quick-entry-expanded")).toBe("true");
-      });
+      // localStorage should NOT be updated — disclosure is ephemeral
+      expect(localStorage.getItem("kb-quick-entry-expanded")).toBeNull();
 
       // Click to collapse
       fireEvent.click(toggleButton);
 
       // Should be collapsed
       expect(toggleButton.getAttribute("aria-expanded")).toBe("false");
-      // localStorage should be updated
-      await waitFor(() => {
-        expect(localStorage.getItem("kb-quick-entry-expanded")).toBe("false");
-      });
+      // localStorage still should not have the key
+      expect(localStorage.getItem("kb-quick-entry-expanded")).toBeNull();
     });
 
     it("aria-expanded attribute updates correctly when toggling", () => {

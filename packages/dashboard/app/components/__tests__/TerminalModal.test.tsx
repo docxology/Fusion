@@ -611,4 +611,58 @@ describe("TerminalModal — mobile layout contract", () => {
       expect(connectionStatus?.textContent).toBe("Disconnected");
     });
   });
+
+  it("delivers buffered terminal output to xterm when subscriptions are established after websocket messages", async () => {
+    // This test verifies that the useTerminal hook's early message buffering
+    // works correctly with TerminalModal's late-subscription pattern (xterm
+    // must initialize before onData/onScrollback/onConnect are wired up).
+    // The hook's buffer ensures scrollback and early shell output are not lost.
+
+    let capturedDataCallback: ((data: string) => void) | null = null;
+    let capturedScrollbackCallback: ((data: string) => void) | null = null;
+
+    const mockOnData = vi.fn((cb: (data: string) => void) => {
+      capturedDataCallback = cb;
+      return vi.fn();
+    });
+    const mockOnScrollback = vi.fn((cb: (data: string) => void) => {
+      capturedScrollbackCallback = cb;
+      return vi.fn();
+    });
+
+    mockUseTerminal.mockReturnValue(
+      createMockTerminalState({
+        connectionStatus: "connected",
+        onData: mockOnData,
+        onScrollback: mockOnScrollback,
+      })
+    );
+
+    render(<TerminalModal isOpen={true} onClose={mockOnClose} />);
+
+    // Wait for xterm to initialize and subscriptions to be established
+    await waitFor(() => {
+      expect(mockTerminalInstance.open).toHaveBeenCalled();
+    });
+
+    await waitFor(() => {
+      expect(mockOnData).toHaveBeenCalled();
+      expect(mockOnScrollback).toHaveBeenCalled();
+    });
+
+    // Now simulate late-arriving data (after subscriptions are wired)
+    // This verifies the write path from callback to xterm
+    act(() => {
+      if (capturedDataCallback) {
+        capturedDataCallback("prompt$ ");
+      }
+      if (capturedScrollbackCallback) {
+        capturedScrollbackCallback("previous output");
+      }
+    });
+
+    // xterm should receive the data via write()
+    expect(mockTerminalInstance.write).toHaveBeenCalledWith("prompt$ ");
+    expect(mockTerminalInstance.write).toHaveBeenCalledWith("previous output");
+  });
 });

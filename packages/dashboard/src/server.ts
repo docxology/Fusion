@@ -461,12 +461,10 @@ export function setupTerminalWebSocket(
       clearInterval(pingInterval);
       if (dataUnsub) dataUnsub();
       if (exitUnsub) exitUnsub();
-      // Kill the PTY session to prevent session leaks
-      try {
-        terminalService.killSession(sessionId);
-      } catch {
-        // Ignore errors during cleanup — session may already be dead
-      }
+      // Do NOT kill the PTY session on WebSocket close — the session should
+      // survive transient disconnects and modal close/reopen cycles.  Sessions
+      // are cleaned up through explicit kill paths (tab close, restart, shell
+      // exit) or stale-session eviction.
     });
 
     ws.on("error", () => {
@@ -474,13 +472,26 @@ export function setupTerminalWebSocket(
       clearInterval(pingInterval);
       if (dataUnsub) dataUnsub();
       if (exitUnsub) exitUnsub();
-      // Kill the PTY session to prevent session leaks
-      try {
-        terminalService.killSession(sessionId);
-      } catch {
-        // Ignore errors during cleanup — session may already be dead
-      }
+      // Do NOT kill the PTY session on WebSocket error — same rationale as
+      // close: the session should persist for reconnection attempts.
     });
+  });
+
+  // Periodic stale-session eviction (every 60 s) so that PTY sessions are
+  // eventually cleaned up when clients disconnect permanently without going
+  // through explicit kill paths.  The eviction threshold is defined by
+  // TerminalService (default 5 minutes of inactivity).
+  const staleEvictionInterval = setInterval(() => {
+    try {
+      terminalService.evictStaleSessions();
+    } catch {
+      // Ignore errors during periodic eviction
+    }
+  }, 60_000);
+
+  // Stop eviction timer when the server shuts down
+  server.once("close", () => {
+    clearInterval(staleEvictionInterval);
   });
 
   console.log("Terminal WebSocket server mounted at /api/terminal/ws");

@@ -4922,10 +4922,9 @@ describe("Terminal session routes", () => {
 });
 
 describe("Terminal WebSocket close handler", () => {
-  it("kills PTY session when WebSocket closes", async () => {
-    // This tests the server.ts close handler logic by verifying that
-    // setupTerminalWebSocket's close handler calls killSession.
-    // We import server.ts and mock the terminal service.
+  it("does NOT kill PTY session when WebSocket closes (session persists for reconnect)", async () => {
+    // After FN-762, closing a WebSocket must not destroy the PTY session.
+    // The session survives transient disconnects and modal close/reopen cycles.
     const killSessionMock = vi.fn().mockReturnValue(true);
     const getSessionMock = vi.fn().mockReturnValue({
       id: "term-ws-test",
@@ -4949,7 +4948,6 @@ describe("Terminal WebSocket close handler", () => {
 
     vi.spyOn(terminalServiceModule, "getTerminalService").mockReturnValue(mockService as any);
 
-    // Dynamically import to get fresh module with the mock
     const { setupTerminalWebSocket } = await import("./server.js");
 
     const app = express();
@@ -4973,12 +4971,13 @@ describe("Terminal WebSocket close handler", () => {
 
     ws.close();
 
-    expect(killSessionMock).toHaveBeenCalledWith("term-ws-test");
+    // The session must NOT be killed on WebSocket close
+    expect(killSessionMock).not.toHaveBeenCalled();
 
     vi.restoreAllMocks();
   });
 
-  it("kills PTY session when WebSocket encounters an error", async () => {
+  it("does NOT kill PTY session when WebSocket encounters an error (session persists for reconnect)", async () => {
     const killSessionMock = vi.fn().mockReturnValue(true);
     const getSessionMock = vi.fn().mockReturnValue({
       id: "term-ws-err",
@@ -5024,7 +5023,67 @@ describe("Terminal WebSocket close handler", () => {
 
     ws.emit("error", new Error("synthetic websocket failure"));
 
-    expect(killSessionMock).toHaveBeenCalledWith("term-ws-err");
+    // The session must NOT be killed on WebSocket error
+    expect(killSessionMock).not.toHaveBeenCalled();
+
+    vi.restoreAllMocks();
+  });
+
+  it("cleans up data/exit subscriptions on WebSocket close without killing session", async () => {
+    // Verify that WebSocket close properly unsubscribes from terminal service
+    // events without destroying the underlying PTY session.
+    const killSessionMock = vi.fn().mockReturnValue(true);
+    const dataUnsub = vi.fn();
+    const exitUnsub = vi.fn();
+    const getSessionMock = vi.fn().mockReturnValue({
+      id: "term-ws-unsub",
+      shell: "/bin/zsh",
+      cwd: "/test/project",
+    });
+    const getScrollbackAndClearPendingMock = vi.fn().mockReturnValue(null);
+    const onDataMock = vi.fn().mockReturnValue(dataUnsub);
+    const onExitMock = vi.fn().mockReturnValue(exitUnsub);
+
+    const mockService = {
+      getSession: getSessionMock,
+      getScrollbackAndClearPending: getScrollbackAndClearPendingMock,
+      killSession: killSessionMock,
+      write: vi.fn(),
+      resize: vi.fn(),
+      onData: onDataMock,
+      onExit: onExitMock,
+    };
+
+    vi.spyOn(terminalServiceModule, "getTerminalService").mockReturnValue(mockService as any);
+
+    const { setupTerminalWebSocket } = await import("./server.js");
+
+    const app = express();
+    const server = http.createServer(app);
+
+    setupTerminalWebSocket(app, server);
+    class FakeWebSocket extends EventEmitter {
+      send = vi.fn();
+      close = vi.fn(() => this.emit("close"));
+      terminate = vi.fn();
+    }
+
+    const ws = new FakeWebSocket();
+    const wss = (app as express.Express & { terminalWsServer?: EventEmitter }).terminalWsServer;
+    expect(wss).toBeTruthy();
+
+    wss!.emit("connection", ws, {
+      url: "/api/terminal/ws?sessionId=term-ws-unsub",
+      headers: { host: "127.0.0.1" },
+    });
+
+    ws.close();
+
+    // Subscriptions should be cleaned up
+    expect(dataUnsub).toHaveBeenCalled();
+    expect(exitUnsub).toHaveBeenCalled();
+    // But session should NOT be killed
+    expect(killSessionMock).not.toHaveBeenCalled();
 
     vi.restoreAllMocks();
   });

@@ -1381,28 +1381,34 @@ describe("ListView Quick Entry", () => {
     const mockOnQuickCreate = vi.fn().mockResolvedValue(undefined);
     renderListView({ onQuickCreate: mockOnQuickCreate });
 
-    const input = screen.getByTestId("quick-entry-input");
-    
-    // Focus the input to expand the QuickEntryBox
-    fireEvent.focus(input);
+    // Controls should start hidden (collapsed by default)
+    expect(document.getElementById("quick-entry-controls")?.hasAttribute("hidden")).toBe(true);
+
+    // Click the disclosure toggle to expand the QuickEntryBox controls
+    const toggleButton = screen.getByTestId("quick-entry-toggle");
+    fireEvent.click(toggleButton);
     
     // Model selector button should be visible
     const modelButton = await screen.findByTestId("quick-entry-models-button");
     expect(modelButton).toBeDefined();
+    expect(document.getElementById("quick-entry-controls")?.hasAttribute("hidden")).toBe(false);
   });
 
   it("shows dependency selector button when QuickEntryBox is expanded", async () => {
     const mockOnQuickCreate = vi.fn().mockResolvedValue(undefined);
     renderListView({ onQuickCreate: mockOnQuickCreate });
 
-    const input = screen.getByTestId("quick-entry-input");
-    
-    // Focus the input to expand the QuickEntryBox
-    fireEvent.focus(input);
+    // Controls should start hidden (collapsed by default)
+    expect(document.getElementById("quick-entry-controls")?.hasAttribute("hidden")).toBe(true);
+
+    // Click the disclosure toggle to expand the QuickEntryBox controls
+    const toggleButton = screen.getByTestId("quick-entry-toggle");
+    fireEvent.click(toggleButton);
     
     // Dependency selector button should be visible
     const depsButton = await screen.findByTestId("quick-entry-deps-button");
     expect(depsButton).toBeDefined();
+    expect(document.getElementById("quick-entry-controls")?.hasAttribute("hidden")).toBe(false);
   });
 
   it("calls onQuickCreate with description when Enter is pressed", async () => {

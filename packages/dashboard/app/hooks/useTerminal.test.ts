@@ -185,4 +185,148 @@ describe("useTerminal", () => {
 
     expect(result.current.connectionStatus).toBe("disconnected");
   });
+
+  describe("early message buffering", () => {
+    it("replays buffered scrollback to late subscribers", () => {
+      const { result } = renderHook(() => useTerminal("test-session-123"));
+
+      // Send scrollback BEFORE any subscriber is registered
+      act(() => {
+        MockWebSocket.instances[0].emitMessage({ type: "scrollback", data: "previous output" });
+      });
+
+      const onScrollback = vi.fn();
+      act(() => {
+        result.current.onScrollback(onScrollback);
+      });
+
+      // The late subscriber should receive the buffered scrollback
+      expect(onScrollback).toHaveBeenCalledWith("previous output");
+    });
+
+    it("replays buffered connected info to late subscribers", () => {
+      const { result } = renderHook(() => useTerminal("test-session-123"));
+
+      // Send connected info BEFORE any subscriber is registered
+      act(() => {
+        MockWebSocket.instances[0].emitMessage({ type: "connected", shell: "/bin/zsh", cwd: "/home/user" });
+      });
+
+      const onConnect = vi.fn();
+      act(() => {
+        result.current.onConnect(onConnect);
+      });
+
+      // The late subscriber should receive the buffered connected info
+      expect(onConnect).toHaveBeenCalledWith({ shell: "/bin/zsh", cwd: "/home/user" });
+    });
+
+    it("replays buffered data messages to late subscribers", () => {
+      const { result } = renderHook(() => useTerminal("test-session-123"));
+
+      // Send data messages BEFORE any subscriber is registered
+      act(() => {
+        MockWebSocket.instances[0].emitMessage({ type: "data", data: "prompt$ " });
+        MockWebSocket.instances[0].emitMessage({ type: "data", data: "more output" });
+      });
+
+      const onData = vi.fn();
+      act(() => {
+        result.current.onData(onData);
+      });
+
+      // The late subscriber should receive all buffered data messages in order
+      expect(onData).toHaveBeenCalledTimes(2);
+      expect(onData).toHaveBeenNthCalledWith(1, "prompt$ ");
+      expect(onData).toHaveBeenNthCalledWith(2, "more output");
+    });
+
+    it("does not double-deliver messages to early subscribers", () => {
+      const { result } = renderHook(() => useTerminal("test-session-123"));
+
+      const onScrollback = vi.fn();
+      const onConnect = vi.fn();
+      const onData = vi.fn();
+
+      // Register subscribers BEFORE messages arrive
+      act(() => {
+        result.current.onScrollback(onScrollback);
+        result.current.onConnect(onConnect);
+        result.current.onData(onData);
+      });
+
+      act(() => {
+        MockWebSocket.instances[0].emitMessage({ type: "scrollback", data: "scrollback data" });
+        MockWebSocket.instances[0].emitMessage({ type: "connected", shell: "/bin/bash", cwd: "/project" });
+        MockWebSocket.instances[0].emitMessage({ type: "data", data: "hello" });
+      });
+
+      // Each callback should be called exactly once (no replay double-count)
+      expect(onScrollback).toHaveBeenCalledTimes(1);
+      expect(onConnect).toHaveBeenCalledTimes(1);
+      expect(onData).toHaveBeenCalledTimes(1);
+    });
+
+    it("replays buffered messages only once per subscriber registration", () => {
+      const { result } = renderHook(() => useTerminal("test-session-123"));
+
+      act(() => {
+        MockWebSocket.instances[0].emitMessage({ type: "scrollback", data: "buf" });
+      });
+
+      const sub1 = vi.fn();
+      const sub2 = vi.fn();
+
+      act(() => {
+        result.current.onScrollback(sub1);
+      });
+
+      act(() => {
+        result.current.onScrollback(sub2);
+      });
+
+      // Both subscribers should get the buffered scrollback
+      expect(sub1).toHaveBeenCalledWith("buf");
+      expect(sub2).toHaveBeenCalledWith("buf");
+
+      // New live messages should go to both without re-delivering buffer
+      act(() => {
+        MockWebSocket.instances[0].emitMessage({ type: "scrollback", data: "live-update" });
+      });
+
+      expect(sub1).toHaveBeenCalledTimes(2); // buffer + live
+      expect(sub2).toHaveBeenCalledTimes(2); // buffer + live
+    });
+
+    it("clears buffer on reconnect so stale data is not replayed", () => {
+      const { result } = renderHook(() => useTerminal("test-session-123"));
+
+      // First connection receives messages
+      act(() => {
+        MockWebSocket.instances[0].emitMessage({ type: "scrollback", data: "old data" });
+        MockWebSocket.instances[0].emitMessage({ type: "connected", shell: "/bin/bash", cwd: "/old" });
+      });
+
+      // Reconnect — this creates a new WebSocket
+      act(() => {
+        result.current.reconnect();
+      });
+
+      // Second connection (new MockWebSocket instance at index 1)
+      // The reconnect closes the old ws and opens a new one
+      const newWs = MockWebSocket.instances[MockWebSocket.instances.length - 1];
+
+      const onScrollback = vi.fn();
+      const onConnect = vi.fn();
+
+      act(() => {
+        result.current.onScrollback(onScrollback);
+        result.current.onConnect(onConnect);
+      });
+
+      // Subscribers registered on the new connection should NOT get old buffer
+      expect(onScrollback).not.toHaveBeenCalled();
+      expect(onConnect).not.toHaveBeenCalled();
+    });
+  });
 });

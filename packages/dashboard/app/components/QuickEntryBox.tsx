@@ -9,7 +9,6 @@ import { CustomModelDropdown } from "./CustomModelDropdown";
 import { ModelSelectionModal } from "./ModelSelectionModal";
 
 const STORAGE_KEY = "kb-quick-entry-text";
-const DISCLOSURE_STORAGE_KEY = "kb-quick-entry-expanded";
 
 interface QuickEntryBoxProps {
   onCreate?: (input: TaskCreateInput) => Promise<void>;
@@ -63,14 +62,8 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
   // isExpanded controls textarea height styling (auto-resize)
   const [isExpanded, setIsExpanded] = useState(false);
   // isDisclosureExpanded controls visibility of the controls panel (Deps, Models, etc.)
-  const [isDisclosureExpanded, setIsDisclosureExpanded] = useState(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem(DISCLOSURE_STORAGE_KEY);
-      // Default to collapsed — only expand if user explicitly saved "true"
-      return saved === "true";
-    }
-    return false;
-  });
+  // Always starts collapsed — user must explicitly toggle each session
+  const [isDisclosureExpanded, setIsDisclosureExpanded] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const justResetRef = useRef(false);
 
@@ -156,12 +149,12 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
     }
   }, [description]);
 
-  // Persist disclosure state to localStorage whenever it changes
+  // Clean up legacy disclosure persistence key from previous versions
   useEffect(() => {
     if (typeof window !== "undefined") {
-      localStorage.setItem(DISCLOSURE_STORAGE_KEY, isDisclosureExpanded.toString());
+      localStorage.removeItem("kb-quick-entry-expanded");
     }
-  }, [isDisclosureExpanded]);
+  }, []);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -231,7 +224,7 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
     setIsRefineMenuOpen(false);
     setIsRefining(false);
     setIsExpanded(false); // Collapse textarea height on reset
-    // Note: isDisclosureExpanded is NOT reset - user preference persists
+    setIsDisclosureExpanded(false); // Always reset controls to collapsed after creation
     justResetRef.current = true;
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";

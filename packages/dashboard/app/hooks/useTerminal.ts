@@ -31,9 +31,21 @@ interface WebSocketMessage {
   rows?: number;
 }
 
+/** Buffered initial message types that must survive late subscriber registration */
+interface BufferedMessages {
+  scrollback: string | null;
+  connected: { shell: string; cwd: string } | null;
+  /** Accumulated data messages received before any subscriber registered */
+  data: string[];
+}
+
 const MAX_RECONNECT_ATTEMPTS = 5;
 const INITIAL_RECONNECT_DELAY = 1000;
 const HEARTBEAT_INTERVAL = 30000;
+
+function createEmptyBuffer(): BufferedMessages {
+  return { scrollback: null, connected: null, data: [] };
+}
 
 /**
  * React hook for managing terminal WebSocket connection.
@@ -44,6 +56,9 @@ const HEARTBEAT_INTERVAL = 30000;
  * - Resize support
  * - Heartbeat ping/pong
  * - Scrollback buffer replay on connect
+ * - Early message buffering: scrollback, connected, and initial data messages
+ *   are buffered and replayed to subscribers that register after the WebSocket
+ *   starts receiving events (e.g. while xterm is still initializing).
  * 
  * @example
  * ```tsx
@@ -72,9 +87,19 @@ export function useTerminal(sessionId: string | null): UseTerminalReturn {
   const onConnectCallbacksRef = useRef<Set<(info: { shell: string; cwd: string }) => void>>(new Set());
   const onScrollbackCallbacksRef = useRef<Set<(data: string) => void>>(new Set());
 
-  // Register callbacks
+  // Buffer for initial messages received before subscribers are registered.
+  // This ensures scrollback, connected info, and early shell output are
+  // delivered even if TerminalModal's xterm hasn't finished initializing.
+  const initialBufferRef = useRef<BufferedMessages>(createEmptyBuffer());
+
+  // Register callbacks — replay buffered data to late subscribers
   const onData = useCallback((callback: (data: string) => void) => {
     onDataCallbacksRef.current.add(callback);
+    // Replay buffered data messages
+    const buffer = initialBufferRef.current;
+    if (buffer.data.length > 0) {
+      buffer.data.forEach((d) => callback(d));
+    }
     return () => onDataCallbacksRef.current.delete(callback);
   }, []);
 
@@ -85,11 +110,21 @@ export function useTerminal(sessionId: string | null): UseTerminalReturn {
 
   const onConnect = useCallback((callback: (info: { shell: string; cwd: string }) => void) => {
     onConnectCallbacksRef.current.add(callback);
+    // Replay buffered connected info
+    const buffer = initialBufferRef.current;
+    if (buffer.connected) {
+      callback(buffer.connected);
+    }
     return () => onConnectCallbacksRef.current.delete(callback);
   }, []);
 
   const onScrollback = useCallback((callback: (data: string) => void) => {
     onScrollbackCallbacksRef.current.add(callback);
+    // Replay buffered scrollback
+    const buffer = initialBufferRef.current;
+    if (buffer.scrollback) {
+      callback(buffer.scrollback);
+    }
     return () => onScrollbackCallbacksRef.current.delete(callback);
   }, []);
 
@@ -126,6 +161,9 @@ export function useTerminal(sessionId: string | null): UseTerminalReturn {
       wsRef.current.close();
       wsRef.current = null;
     }
+
+    // Clear buffers on cleanup
+    initialBufferRef.current = createEmptyBuffer();
   }, []);
 
   // Connect function
@@ -147,6 +185,8 @@ export function useTerminal(sessionId: string | null): UseTerminalReturn {
     }
 
     isManualCloseRef.current = false;
+    // Reset buffer for new connection — previous session's data is stale
+    initialBufferRef.current = createEmptyBuffer();
     setConnectionStatus("connecting");
 
     // Build WebSocket URL
@@ -175,20 +215,29 @@ export function useTerminal(sessionId: string | null): UseTerminalReturn {
     ws.onmessage = (event) => {
       try {
         const msg: WebSocketMessage = JSON.parse(event.data);
+        const buffer = initialBufferRef.current;
 
         switch (msg.type) {
           case "data":
             if (msg.data) {
+              // Buffer data when no subscribers are registered yet
+              if (onDataCallbacksRef.current.size === 0) {
+                buffer.data.push(msg.data!);
+              }
               onDataCallbacksRef.current.forEach((cb) => cb(msg.data!));
             }
             break;
           case "scrollback":
             if (msg.data) {
+              // Buffer scrollback for late subscribers
+              buffer.scrollback = msg.data;
               onScrollbackCallbacksRef.current.forEach((cb) => cb(msg.data!));
             }
             break;
           case "connected":
             if (msg.shell && msg.cwd) {
+              // Buffer connected info for late subscribers
+              buffer.connected = { shell: msg.shell!, cwd: msg.cwd! };
               onConnectCallbacksRef.current.forEach((cb) => 
                 cb({ shell: msg.shell!, cwd: msg.cwd! })
               );
