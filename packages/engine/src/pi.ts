@@ -22,6 +22,17 @@ export interface AgentResult {
   session: AgentSession;
 }
 
+/**
+ * Extract a human-readable model description from an AgentSession.
+ * Returns `"<provider>/<modelId>"` (e.g. `"anthropic/claude-sonnet-4-5"`)
+ * or `"unknown model"` when the session has no model set.
+ */
+export function describeModel(session: AgentSession): string {
+  const model = session.model;
+  if (!model) return "unknown model";
+  return `${model.provider}/${model.id}`;
+}
+
 export interface AgentOptions {
   cwd: string;
   systemPrompt: string;

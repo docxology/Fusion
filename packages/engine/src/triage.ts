@@ -11,7 +11,7 @@ import type {
   ToolDefinition,
   AgentSession,
 } from "@mariozechner/pi-coding-agent";
-import { createKbAgent } from "./pi.js";
+import { createKbAgent, describeModel } from "./pi.js";
 import { reviewStep, type ReviewVerdict } from "./reviewer.js";
 import { PRIORITY_SPECIFY, type AgentSemaphore } from "./concurrency.js";
 import { AgentLogger } from "./agent-logger.js";
@@ -476,6 +476,9 @@ export class TriageProcessor {
             : settings.defaultModelId,
           defaultThinkingLevel: settings.defaultThinkingLevel,
         });
+
+        triageLog.log(`${task.id}: using model ${describeModel(session)}`);
+        await this.store.logEntry(task.id, `Triage using model: ${describeModel(session)}`);
 
         // Make session available to review_spec tool (for RETHINK rewind)
         sessionRef.current = session;

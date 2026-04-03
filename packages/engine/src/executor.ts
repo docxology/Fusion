@@ -5,7 +5,7 @@ import type { TaskStore, Task, TaskDetail, StepStatus, Settings, WorkflowStep, M
 import { findWorktreeUser } from "./merger.js";
 import { generateWorktreeName, slugify } from "./worktree-names.js";
 import { Type, type Static } from "@mariozechner/pi-ai";
-import { createKbAgent } from "./pi.js";
+import { createKbAgent, describeModel } from "./pi.js";
 import { reviewStep, type ReviewVerdict } from "./reviewer.js";
 import type { ToolDefinition, AgentSession, SessionManager } from "@mariozechner/pi-coding-agent";
 import { PRIORITY_EXECUTE, type AgentSemaphore } from "./concurrency.js";
@@ -592,6 +592,9 @@ export class TaskExecutor {
           defaultModelId: executorModelId,
           defaultThinkingLevel: settings.defaultThinkingLevel,
         });
+
+        executorLog.log(`${task.id}: using model ${describeModel(session)}`);
+        await this.store.logEntry(task.id, `Executor using model: ${describeModel(session)}`);
 
         // Make session available to custom tools (task_update checkpoint capture, review_step rewind)
         sessionRef.current = session;
@@ -1368,6 +1371,9 @@ If issues are found that need attention, describe them clearly.`;
         defaultModelId: settings.defaultModelId,
         defaultThinkingLevel: settings.defaultThinkingLevel,
       });
+
+      executorLog.log(`${task.id}: workflow step '${workflowStep.name}' using model ${describeModel(session)}`);
+      await this.store.logEntry(task.id, `Workflow step '${workflowStep.name}' using model: ${describeModel(session)}`);
 
       let output = "";
       session.subscribe((event) => {

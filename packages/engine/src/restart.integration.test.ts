@@ -16,6 +16,7 @@ import { AgentSemaphore } from "./concurrency.js";
 
 vi.mock("./pi.js", () => ({
   createKbAgent: vi.fn(),
+  describeModel: vi.fn().mockReturnValue("mock-provider/mock-model"),
 }));
 vi.mock("./reviewer.js", () => ({
   reviewStep: vi.fn(),

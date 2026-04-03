@@ -9,8 +9,9 @@
  */
 
 import type { TaskStore } from "@fusion/core";
-import { createKbAgent } from "./pi.js";
+import { createKbAgent, describeModel } from "./pi.js";
 import { AgentLogger } from "./agent-logger.js";
+import { reviewerLog } from "./logger.js";
 import { checkSessionError } from "./usage-limit-detector.js";
 
 const REVIEWER_SYSTEM_PROMPT = `You are an independent code and plan reviewer.
@@ -208,6 +209,11 @@ export async function reviewStep(
     defaultModelId: validatorModelId,
     defaultThinkingLevel: options.defaultThinkingLevel,
   });
+
+  reviewerLog.log(`${taskId}: reviewer using model ${describeModel(session)}`);
+  if (options.store && options.taskId) {
+    await options.store.logEntry(options.taskId, `Reviewer using model: ${describeModel(session)}`);
+  }
 
   let reviewText = "";
 

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("./pi.js", () => ({
   createKbAgent: vi.fn(),
+  describeModel: vi.fn().mockReturnValue("mock-provider/mock-model"),
 }));
 
 import { reviewStep } from "./reviewer.js";
