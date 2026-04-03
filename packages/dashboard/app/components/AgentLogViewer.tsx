@@ -3,6 +3,35 @@ import { ProviderIcon } from "./ProviderIcon";
 import { useRef, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import type { Components } from "react-markdown";
+
+const markdownComponents: Components = {
+  pre: ({ children, ...props }) => (
+    <pre
+      {...props}
+      style={{
+        overflowX: "auto",
+        maxWidth: "100%",
+        whiteSpace: "pre-wrap",
+        wordBreak: "break-word",
+      }}
+    >
+      {children}
+    </pre>
+  ),
+  table: ({ children, ...props }) => (
+    <table
+      {...props}
+      style={{
+        display: "block",
+        overflowX: "auto",
+        maxWidth: "100%",
+      }}
+    >
+      {children}
+    </table>
+  ),
+};
 
 interface ModelInfo {
   provider?: string;
@@ -78,12 +107,14 @@ export function AgentLogViewer({ entries, loading, executorModel, validatorModel
         fontSize: "13px",
         lineHeight: "1.5",
         overflowY: "auto",
+        overflowX: "hidden",
         maxHeight: "500px",
         padding: "12px",
         background: "var(--bg-secondary)",
         borderRadius: "6px",
         whiteSpace: "pre-wrap",
         wordBreak: "break-word",
+        overflowWrap: "break-word",
       }}
     >
       {/* Model info header */}
@@ -91,6 +122,7 @@ export function AgentLogViewer({ entries, loading, executorModel, validatorModel
         className="agent-log-model-header"
         style={{
           display: "flex",
+          flexWrap: "wrap",
           gap: "16px",
           padding: "8px 12px",
           marginBottom: "12px",
@@ -98,6 +130,8 @@ export function AgentLogViewer({ entries, loading, executorModel, validatorModel
           borderRadius: "4px",
           fontSize: "12px",
           color: "var(--text-muted, #888)",
+          overflow: "hidden",
+          minWidth: 0,
         }}
         data-testid="agent-log-model-header"
       >
@@ -193,7 +227,7 @@ export function AgentLogViewer({ entries, loading, executorModel, validatorModel
               }}
             >
               {agentBadge}
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
                 {entry.text}
               </ReactMarkdown>
             </span>
@@ -264,7 +298,7 @@ export function AgentLogViewer({ entries, loading, executorModel, validatorModel
         return (
           <span key={i} className="agent-log-text">
             {agentBadge}
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
               {entry.text}
             </ReactMarkdown>
           </span>

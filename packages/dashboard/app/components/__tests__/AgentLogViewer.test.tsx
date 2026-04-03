@@ -331,6 +331,40 @@ describe("AgentLogViewer", () => {
     });
   });
 
+  describe("horizontal overflow prevention", () => {
+    it("sets overflowX hidden on the viewer container", () => {
+      const longString = "A".repeat(300);
+      const entries = [makeEntry({ text: longString })];
+      const { container } = render(<AgentLogViewer entries={entries} loading={false} />);
+      const viewer = container.querySelector("[data-testid='agent-log-viewer']") as HTMLElement;
+      expect(viewer.style.overflowX).toBe("hidden");
+    });
+
+    it("sets overflow-wrap break-word on the viewer container", () => {
+      const entries = [makeEntry({ text: "x".repeat(250) })];
+      const { container } = render(<AgentLogViewer entries={entries} loading={false} />);
+      const viewer = container.querySelector("[data-testid='agent-log-viewer']") as HTMLElement;
+      expect(viewer.style.overflowWrap).toBe("break-word");
+    });
+
+    it("renders pre elements with overflow-x auto for internal scrolling", () => {
+      const longLine = "const x = " + "'a'.repeat(500)";
+      const entries = [makeEntry({ text: "```\n" + longLine + "\n```" })];
+      const { container } = render(<AgentLogViewer entries={entries} loading={false} />);
+      const pre = container.querySelector("pre") as HTMLElement;
+      expect(pre).toBeTruthy();
+      expect(pre.style.overflowX).toBe("auto");
+      expect(pre.style.maxWidth).toBe("100%");
+    });
+
+    it("wraps model header on narrow widths via flex-wrap", () => {
+      const entries = [makeEntry()];
+      const { container } = render(<AgentLogViewer entries={entries} loading={false} />);
+      const header = container.querySelector("[data-testid='agent-log-model-header']") as HTMLElement;
+      expect(header.style.flexWrap).toBe("wrap");
+    });
+  });
+
   describe("auto-scroll behavior", () => {
     it("scrolls to top when new entries arrive and user is near the top", () => {
       const { rerender, container } = render(<AgentLogViewer entries={[makeEntry({ text: "first" })]} loading={false} />);
