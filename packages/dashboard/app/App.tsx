@@ -487,6 +487,11 @@ function AppInner() {
   const handleOpenScripts = useCallback(() => setScriptsOpen(true), []);
   const handleCloseScripts = useCallback(() => setScriptsOpen(false), []);
   const handleRunScript = useCallback(async (name: string, _command: string) => {
+    // Close the scripts modal immediately so the terminal becomes the
+    // topmost surface once it opens (avoids the modal stacking on top
+    // of the script-run dialog during the async API call).
+    setScriptsOpen(false);
+
     try {
       const result = await runScriptApi(name, undefined, currentProject?.id);
       setScriptRunDialog({
@@ -495,8 +500,6 @@ function AppInner() {
         sessionId: result.sessionId,
         command: result.command,
       });
-      // Close the scripts modal/dropdown when running from them
-      setScriptsOpen(false);
     } catch (err: any) {
       addToast(err.message || `Failed to run script: ${name}`, "error");
     }

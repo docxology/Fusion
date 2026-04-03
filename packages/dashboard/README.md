@@ -112,9 +112,10 @@ Access a fully functional PTY (pseudo-terminal) shell directly from the dashboar
   - `Escape` - Close terminal modal
 
 ### Script Run Dialog
-When running a saved script from the dashboard (via QuickScripts dropdown in the header or the Run button in Scripts modal), a dedicated ScriptRunDialog opens with live output streaming. The exit status. The dialog uses the existing terminal PTY session infrastructure:
+When running a saved script from the dashboard (via QuickScripts dropdown in the header or the Run button in Scripts modal), the Scripts modal closes immediately and a dedicated ScriptRunDialog becomes the active foreground view with live output streaming. The dialog uses the existing terminal PTY session infrastructure:
  WebSocket connection for output, but is non-interactive (no user input).
- It **Features**:
+
+**Modal Handoff**: When a script is launched from the Scripts modal, the modal dismisses synchronously before the API call completes so that the ScriptRunDialog always appears as the topmost surface — the user never sees both overlays stacked at once.
   - **Live Output**: Streams stdout/stderr from the script in real-time via WebSocket
   - **Script Name & Command**: Shows the script name and resolved command
   - **Status Indicator**: Shows running/completed/error status

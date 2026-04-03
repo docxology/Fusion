@@ -36,8 +36,10 @@ vi.mock("../../api", async (importOriginal) => {
     fetchGitRemotes: vi.fn(() => Promise.resolve([])),
     fetchAgents: vi.fn(() => Promise.resolve([])),
     fetchTaskDetail: vi.fn((id: string) => Promise.resolve({ id, title: `Task ${id}` })),
+    fetchScripts: vi.fn(() => Promise.resolve({ build: "npm run build", test: "pnpm test" })),
     runScript: vi.fn(() => Promise.resolve({ sessionId: "sess-script-1", command: "echo hello" })),
     killPtyTerminalSession: vi.fn(() => Promise.resolve({ killed: true })),
+    fetchScripts: vi.fn(() => Promise.resolve({ build: "npm run build", test: "pnpm test" })),
   };
 });
 
@@ -102,7 +104,7 @@ vi.mock("../../hooks/useTerminal", () => ({
 }));
 
 import { App } from "../../App";
-import { fetchAuthStatus, fetchSettings, fetchTaskDetail, updateSettings, runScript } from "../../api";
+import { fetchAuthStatus, fetchSettings, fetchTaskDetail, updateSettings, runScript, fetchScripts } from "../../api";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -891,6 +893,167 @@ describe("Script run flow", () => {
     });
 
     expect(runScriptMock).toHaveBeenCalledWith("missing-script", undefined, "proj_123");
+  });
+});
+
+describe("Script-to-terminal modal handoff", () => {
+  it("closes ScriptsModal and opens ScriptRunDialog when Run is clicked", async () => {
+    render(<App />);
+
+    // Wait for the app to fully render
+    await waitFor(() => {
+      expect(screen.getByTitle("Settings")).toBeTruthy();
+    });
+
+    // Open the Scripts modal via the quick-scripts dropdown "Manage Scripts..." button
+    // First click the scripts trigger button to open the dropdown
+    const scriptsBtn = screen.getByTestId("scripts-btn");
+    await act(async () => {
+      fireEvent.click(scriptsBtn);
+    });
+
+    // Wait for the dropdown menu to appear and click "Manage Scripts..."
+    await waitFor(() => {
+      expect(screen.getByTestId("quick-scripts-manage")).toBeTruthy();
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("quick-scripts-manage"));
+    });
+
+    // Wait for the Scripts modal to open and load scripts
+    await waitFor(() => {
+      expect(screen.getByTestId("scripts-modal")).toBeTruthy();
+    });
+
+    // Scripts modal should be visible
+    expect(screen.getByTestId("scripts-modal")).toBeTruthy();
+
+    // Click the Run button on the "build" script
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("run-script-build"));
+    });
+
+    // The Scripts modal should now be closed
+    await waitFor(() => {
+      expect(screen.queryByTestId("scripts-modal")).toBeNull();
+    });
+
+    // The ScriptRunDialog should be open with correct script name
+    await waitFor(() => {
+      expect(screen.getByTestId("script-run-dialog-overlay")).toBeTruthy();
+    });
+
+    // Verify the dialog shows the correct script name and command
+    expect(screen.getByText("build")).toBeTruthy();
+    expect(screen.getByTestId("script-run-command")).toBeTruthy();
+  });
+
+  it("keeps ScriptsModal closed and shows error toast when runScript API fails", async () => {
+    const { runScript: runScriptMock } = await import("../../api");
+    (runScriptMock as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error("Script execution failed"));
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByTitle("Settings")).toBeTruthy();
+    });
+
+    // Open the Scripts modal
+    const scriptsBtn = screen.getByTestId("scripts-btn");
+    await act(async () => {
+      fireEvent.click(scriptsBtn);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("quick-scripts-manage")).toBeTruthy();
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("quick-scripts-manage"));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("scripts-modal")).toBeTruthy();
+    });
+
+    // Click Run on the "build" script
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("run-script-build"));
+    });
+
+    // Scripts modal should be closed immediately (before API call)
+    await waitFor(() => {
+      expect(screen.queryByTestId("scripts-modal")).toBeNull();
+    });
+
+    // ScriptRunDialog should NOT be open since API failed
+    expect(screen.queryByTestId("script-run-dialog-overlay")).toBeNull();
+
+    // Error toast should appear
+    await waitFor(() => {
+      expect(screen.getByText(/Script execution failed/)).toBeTruthy();
+    });
+  });
+
+  it("allows reopening ScriptsModal after closing ScriptRunDialog", async () => {
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByTitle("Settings")).toBeTruthy();
+    });
+
+    // Open the Scripts modal and run a script
+    const scriptsBtn = screen.getByTestId("scripts-btn");
+    await act(async () => {
+      fireEvent.click(scriptsBtn);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("quick-scripts-manage")).toBeTruthy();
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("quick-scripts-manage"));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("scripts-modal")).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("run-script-build"));
+    });
+
+    // Wait for ScriptRunDialog to open
+    await waitFor(() => {
+      expect(screen.getByTestId("script-run-dialog-overlay")).toBeTruthy();
+    });
+    expect(screen.queryByTestId("scripts-modal")).toBeNull();
+
+    // Close the ScriptRunDialog
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("script-run-dialog-close"));
+    });
+
+    // ScriptRunDialog should be closed
+    await waitFor(() => {
+      expect(screen.queryByTestId("script-run-dialog-overlay")).toBeNull();
+    });
+
+    // Reopen the Scripts modal
+    await act(async () => {
+      fireEvent.click(scriptsBtn);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("quick-scripts-manage")).toBeTruthy();
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("quick-scripts-manage"));
+    });
+
+    // Scripts modal should open again cleanly
+    await waitFor(() => {
+      expect(screen.getByTestId("scripts-modal")).toBeTruthy();
+    });
   });
 });
 
