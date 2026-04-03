@@ -365,6 +365,41 @@ describe("AgentLogViewer", () => {
     });
   });
 
+  describe("full-height layout", () => {
+    it("does not have a fixed maxHeight constraint", () => {
+      const entries = [makeEntry()];
+      const { container } = render(<AgentLogViewer entries={entries} loading={false} />);
+      const viewer = container.querySelector("[data-testid='agent-log-viewer']") as HTMLElement;
+      // The viewer should NOT have a maxHeight of 500px (the old fixed constraint)
+      expect(viewer.style.maxHeight).not.toBe("500px");
+      // maxHeight should be empty (unset) so the viewer can grow to fill available space
+      expect(viewer.style.maxHeight).toBe("");
+    });
+
+    it("maintains overflow-y auto for internal scrolling", () => {
+      const entries = [makeEntry()];
+      const { container } = render(<AgentLogViewer entries={entries} loading={false} />);
+      const viewer = container.querySelector("[data-testid='agent-log-viewer']") as HTMLElement;
+      // The viewer itself should remain the scroll container
+      expect(viewer.style.overflowY).toBe("auto");
+    });
+
+    it("uses agent-log-viewer--streaming class when entries are present", () => {
+      const entries = [makeEntry()];
+      const { container } = render(<AgentLogViewer entries={entries} loading={false} />);
+      const viewer = container.querySelector("[data-testid='agent-log-viewer']") as HTMLElement;
+      expect(viewer.classList.contains("agent-log-viewer")).toBe(true);
+      expect(viewer.classList.contains("agent-log-viewer--streaming")).toBe(true);
+    });
+
+    it("does not use streaming class on loading state", () => {
+      const { container } = render(<AgentLogViewer entries={[]} loading={true} />);
+      const viewer = container.querySelector("[data-testid='agent-log-viewer']") as HTMLElement;
+      expect(viewer.classList.contains("agent-log-viewer")).toBe(true);
+      expect(viewer.classList.contains("agent-log-viewer--streaming")).toBe(false);
+    });
+  });
+
   describe("auto-scroll behavior", () => {
     it("scrolls to top when new entries arrive and user is near the top", () => {
       const { rerender, container } = render(<AgentLogViewer entries={[makeEntry({ text: "first" })]} loading={false} />);

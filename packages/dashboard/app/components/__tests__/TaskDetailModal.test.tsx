@@ -900,6 +900,84 @@ describe("TaskDetailModal", () => {
     });
   });
 
+  describe("Agent Log full-height layout", () => {
+    it("applies detail-body--agent-log class when Agent Log tab is active", () => {
+      const { container } = render(
+        <TaskDetailModal
+          task={makeTask({ prompt: "# Hello\n\nContent" })}
+          onClose={noop}
+          onMoveTask={noopMove}
+          onDeleteTask={noopDelete}
+          onMergeTask={noopMerge}
+          onOpenDetail={noopOpenDetail}
+          addToast={noop}
+        />,
+      );
+
+      // Initially, detail-body should NOT have the agent-log modifier
+      expect(container.querySelector(".detail-body--agent-log")).toBeNull();
+
+      // Switch to Agent Log tab
+      fireEvent.click(screen.getByText("Agent Log"));
+
+      // detail-body should now have the agent-log modifier class
+      expect(container.querySelector(".detail-body--agent-log")).toBeTruthy();
+
+      // Switch back to Definition tab
+      fireEvent.click(screen.getByText("Definition"));
+
+      // modifier class should be removed
+      expect(container.querySelector(".detail-body--agent-log")).toBeNull();
+    });
+
+    it("wraps AgentLogViewer in detail-section--agent-log class", () => {
+      const { container } = render(
+        <TaskDetailModal
+          task={makeTask({ prompt: "# Hello\n\nContent" })}
+          onClose={noop}
+          onMoveTask={noopMove}
+          onDeleteTask={noopDelete}
+          onMergeTask={noopMerge}
+          onOpenDetail={noopOpenDetail}
+          addToast={noop}
+        />,
+      );
+
+      // Switch to Agent Log tab
+      fireEvent.click(screen.getByText("Agent Log"));
+
+      // The section wrapping AgentLogViewer should have the full-height class
+      const section = container.querySelector(".detail-section--agent-log");
+      expect(section).toBeTruthy();
+      expect(section!.querySelector("[data-testid='agent-log-viewer']")).toBeTruthy();
+    });
+
+    it("does not apply detail-body--agent-log when editing", () => {
+      const { container } = render(
+        <TaskDetailModal
+          task={makeTask({ column: "triage", prompt: "# Hello\n\nContent" })}
+          onClose={noop}
+          onMoveTask={noopMove}
+          onDeleteTask={noopDelete}
+          onMergeTask={noopMerge}
+          onOpenDetail={noopOpenDetail}
+          addToast={noop}
+        />,
+      );
+
+      // Switch to Agent Log tab first
+      fireEvent.click(screen.getByText("Agent Log"));
+      expect(container.querySelector(".detail-body--agent-log")).toBeTruthy();
+
+      // Now enter edit mode via the pencil button in the header
+      const editBtn = screen.getByLabelText("Edit task");
+      fireEvent.click(editBtn);
+
+      // The detail-body--agent-log class should be removed while editing
+      expect(container.querySelector(".detail-body--agent-log")).toBeNull();
+    });
+  });
+
   describe("Agent Log model resolution", () => {
     // AgentLogViewer only renders the model header when entries.length > 0,
     // so we mock useAgentLogs to return at least one entry.

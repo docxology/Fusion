@@ -100,7 +100,7 @@ export function AgentLogViewer({ entries, loading, executorModel, validatorModel
   return (
     <div
       ref={containerRef}
-      className="agent-log-viewer"
+      className="agent-log-viewer agent-log-viewer--streaming"
       data-testid="agent-log-viewer"
       style={{
         fontFamily: "monospace",
@@ -108,7 +108,6 @@ export function AgentLogViewer({ entries, loading, executorModel, validatorModel
         lineHeight: "1.5",
         overflowY: "auto",
         overflowX: "hidden",
-        maxHeight: "500px",
         padding: "12px",
         background: "var(--bg-secondary)",
         borderRadius: "6px",

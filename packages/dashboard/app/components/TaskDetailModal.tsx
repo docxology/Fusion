@@ -677,7 +677,7 @@ export function TaskDetailModal({
             </button>
           </div>
         </div>
-        <div className="detail-body">
+        <div className={`detail-body${activeTab === "agent-log" && !isEditing ? " detail-body--agent-log" : ""}`}>
           {isEditing ? (
             <div className="modal-edit-form">
               <TaskForm
@@ -799,7 +799,7 @@ export function TaskDetailModal({
               <ModelSelectorTab task={task} addToast={addToast} />
             </div>
           ) : activeTab === "agent-log" ? (
-            <div className="detail-section">
+            <div className="detail-section detail-section--agent-log">
               <AgentLogViewer
                 entries={agentLogEntries}
                 loading={agentLogLoading}

@@ -3060,6 +3060,15 @@ body {
   flex: 1;
 }
 
+/* When the Agent Log tab is active, switch to flex layout so the log section
+   can stretch to fill the remaining space above the action bar.
+   The detail-body itself should NOT scroll; the agent-log-viewer scrolls instead. */
+.detail-body--agent-log {
+  display: flex;
+  flex-direction: column;
+  overflow-y: hidden;
+}
+
 .detail-title {
   font-size: 18px;
   font-weight: 600;
@@ -3111,6 +3120,32 @@ body {
 
 .detail-section {
   margin-top: var(--space-lg);
+}
+
+/* Agent Log tab: stretch to fill the remaining modal body height
+   so the log viewer uses all available space above the action bar. */
+.detail-section--agent-log {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  margin-top: var(--space-lg);
+}
+
+.detail-section--agent-log .agent-log-viewer {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  font-family: monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 12px;
+  background: var(--bg-secondary);
+  border-radius: 6px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .detail-spec-edit-trigger {
