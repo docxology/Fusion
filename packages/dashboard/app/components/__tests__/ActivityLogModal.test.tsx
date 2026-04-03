@@ -7,10 +7,12 @@ import type { ActivityLogEntry } from "@fusion/core";
 // Mock the API module
 vi.mock("../../api", () => ({
   fetchActivityFeed: vi.fn(),
+  fetchActivityLog: vi.fn(),
   clearActivityLog: vi.fn(),
 }));
 
 const mockFetchActivityFeed = vi.mocked(apiModule.fetchActivityFeed);
+const mockFetchActivityLog = vi.mocked(apiModule.fetchActivityLog);
 const mockClearActivityLog = vi.mocked(apiModule.clearActivityLog);
 
 describe("ActivityLogModal", () => {
@@ -22,6 +24,7 @@ describe("ActivityLogModal", () => {
     { id: "FN-002", title: "Test Task 2", column: "in-progress" as const },
   ];
 
+  /** Create entries that match both ActivityLogEntry and the ActivityFeedEntry shape */
   const mockActivityEntries: ActivityLogEntry[] = [
     {
       id: "1",
@@ -29,7 +32,7 @@ describe("ActivityLogModal", () => {
       type: "task:created",
       taskId: "FN-001",
       taskTitle: "Test Task 1",
-      details: "Task KB-001 created",
+      details: "Task FN-001 created",
     },
     {
       id: "2",
@@ -37,7 +40,7 @@ describe("ActivityLogModal", () => {
       type: "task:moved",
       taskId: "FN-001",
       taskTitle: "Test Task 1",
-      details: "Task KB-001 moved: todo → in-progress",
+      details: "Task FN-001 moved: todo → in-progress",
       metadata: { from: "todo", to: "in-progress" },
     },
     {
@@ -46,14 +49,23 @@ describe("ActivityLogModal", () => {
       type: "task:failed",
       taskId: "FN-002",
       taskTitle: "Test Task 2",
-      details: "Task KB-002 failed: Something went wrong",
+      details: "Task FN-002 failed: Something went wrong",
       metadata: { error: "Something went wrong" },
     },
   ];
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockFetchActivityFeed.mockResolvedValue(mockActivityEntries);
+    // Default: per-project log returns entries (single-project mode)
+    mockFetchActivityLog.mockResolvedValue(mockActivityEntries);
+    // Unified feed also returns entries for multi-project mode tests
+    mockFetchActivityFeed.mockResolvedValue(
+      mockActivityEntries.map((e) => ({
+        ...e,
+        projectId: "proj_1",
+        projectName: "Test Project",
+      })),
+    );
     mockClearActivityLog.mockResolvedValue({ success: true });
   });
 
@@ -117,7 +129,7 @@ describe("ActivityLogModal", () => {
     expect(mockOnClose).toHaveBeenCalled();
   });
 
-  it("calls API on initial load", async () => {
+  it("calls per-project API on initial load in single-project mode", async () => {
     render(
       <ActivityLogModal
         isOpen={true}
@@ -128,6 +140,28 @@ describe("ActivityLogModal", () => {
     );
 
     await waitFor(() => {
+      // Single-project mode: uses fetchActivityLog (not fetchActivityFeed)
+      expect(mockFetchActivityLog).toHaveBeenCalled();
+    });
+  });
+
+  it("calls unified feed API when projects are provided (multi-project mode)", async () => {
+    const mockProjects = [
+      { id: "proj_1", name: "Project One", path: "/path/1", status: "active" as const, isolationMode: "in-process" as const, createdAt: "", updatedAt: "" },
+    ];
+
+    render(
+      <ActivityLogModal
+        isOpen={true}
+        onClose={mockOnClose}
+        tasks={mockTasks}
+        projects={mockProjects}
+        onOpenTaskDetail={mockOnOpenTaskDetail}
+      />
+    );
+
+    await waitFor(() => {
+      // Multi-project mode: uses fetchActivityFeed (not fetchActivityLog)
       expect(mockFetchActivityFeed).toHaveBeenCalled();
     });
   });
@@ -146,8 +180,8 @@ describe("ActivityLogModal", () => {
     fireEvent.change(filterSelect, { target: { value: "task:created" } });
 
     await waitFor(() => {
-      expect(mockFetchActivityFeed).toHaveBeenCalledWith(
-        expect.objectContaining({ type: "task:created" })
+      expect(mockFetchActivityLog).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "task:created" }),
       );
     });
   });
@@ -164,19 +198,19 @@ describe("ActivityLogModal", () => {
 
     // Wait for initial load
     await waitFor(() => {
-      expect(mockFetchActivityFeed).toHaveBeenCalledTimes(1);
+      expect(mockFetchActivityLog).toHaveBeenCalledTimes(1);
     });
 
     const refreshButton = screen.getByTestId("activity-refresh");
     fireEvent.click(refreshButton);
 
     await waitFor(() => {
-      expect(mockFetchActivityFeed).toHaveBeenCalledTimes(2);
+      expect(mockFetchActivityLog).toHaveBeenCalledTimes(2);
     });
   });
 
   it("shows empty state when no entries", async () => {
-    mockFetchActivityFeed.mockResolvedValue([]);
+    mockFetchActivityLog.mockResolvedValue([]);
 
     render(
       <ActivityLogModal
@@ -193,7 +227,7 @@ describe("ActivityLogModal", () => {
   });
 
   it("shows error state when API fails", async () => {
-    mockFetchActivityFeed.mockRejectedValue(new Error("API Error"));
+    mockFetchActivityLog.mockRejectedValue(new Error("API Error"));
 
     render(
       <ActivityLogModal
@@ -270,7 +304,7 @@ describe("ActivityLogModal", () => {
 
     const projectFilter = await screen.findByTestId("activity-project-filter");
     expect(projectFilter).toBeTruthy();
-    
+
     // Should have "All Projects" option
     expect(screen.getByText("All Projects")).toBeDefined();
     // Should have project options
@@ -318,6 +352,7 @@ describe("ActivityLogModal", () => {
   });
 
   it("shows empty state message mentioning filters when filter is active", async () => {
+    mockFetchActivityLog.mockResolvedValue([]);
     mockFetchActivityFeed.mockResolvedValue([]);
     const mockProjects = [
       { id: "proj_1", name: "Project One", path: "/path/1", status: "active" as const, isolationMode: "in-process" as const, createdAt: "", updatedAt: "" },

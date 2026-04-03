@@ -225,6 +225,10 @@ Browse and edit task worktree files directly from the task detail modal:
 ### Activity Log
 View a centralized timeline of all task lifecycle events. Click the history icon in the header to open the Activity Log modal.
 
+**Data Source**:
+- **Single-project mode** (default): Reads from the per-project activity log via `/api/activity`, which is always populated with task lifecycle events for the current project.
+- **Multi-project mode**: When projects are registered, the modal reads from the unified central feed via `/api/activity-feed`, which aggregates activity across all registered projects. A project filter dropdown allows narrowing results to a specific project.
+
 **Features**:
 - **Event Types**: Track task:created, task:moved, task:merged, task:failed, task:deleted, and settings:updated events
 - **Task Links**: Click any task ID in the log to open its detail modal

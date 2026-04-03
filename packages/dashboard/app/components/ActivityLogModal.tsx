@@ -55,7 +55,13 @@ function formatTimestamp(timestamp: string): string {
 
 /**
  * ActivityLogModal - Activity log with project attribution and filtering
- * 
+ *
+ * Data source selection:
+ * - Single-project mode (no projects list): reads from the per-project activity
+ *   log via /api/activity, which is always populated with task lifecycle events.
+ * - Multi-project mode (projects list provided): reads from the unified central
+ *   feed via /api/activity-feed, which aggregates activity across all projects.
+ *
  * Features:
  * - Project name badge for each activity entry
  * - Project filter dropdown (when projects list provided)
@@ -84,6 +90,11 @@ export function ActivityLogModal({
   const activityType = filteredType === "all" ? undefined : filteredType;
   const activeProjectId = filteredProjectId === "all" ? undefined : filteredProjectId;
   
+  // Determine data source: use unified central feed only when projects list
+  // is provided (multi-project context). In single-project mode the hook reads
+  // from the per-project activity log which is always populated.
+  const useCentralFeed = projects.length > 0;
+
   // Use the hook for data fetching
   const { 
     entries, 
@@ -96,6 +107,7 @@ export function ActivityLogModal({
     type: activityType, 
     limit: 100,
     autoRefresh: isOpen,
+    useCentralFeed,
   });
 
   // Convert entries to ActivityLogEntry format for compatibility

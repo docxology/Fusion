@@ -1,42 +1,53 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, waitFor, act } from "@testing-library/react";
 import { useActivityLog } from "./useActivityLog";
+import * as apiModule from "../api";
 import type { ActivityFeedEntry } from "../api";
 
-function mockFetchResponse(
-  ok: boolean,
-  body: unknown,
-  status = ok ? 200 : 500,
-  contentType = "application/json"
-) {
-  const bodyText = JSON.stringify(body);
-  return Promise.resolve({
-    ok,
-    status,
-    statusText: ok ? "OK" : "Error",
-    headers: {
-      get: (name: string) =>
-        name.toLowerCase() === "content-type" ? contentType : null,
-    },
-    json: () => Promise.resolve(body),
-    text: () => Promise.resolve(bodyText),
-  } as unknown as Response);
+// Mock the API module
+vi.mock("../api", () => ({
+  fetchActivityFeed: vi.fn(),
+  fetchActivityLog: vi.fn(),
+}));
+
+const mockFetchActivityFeed = vi.mocked(apiModule.fetchActivityFeed);
+const mockFetchActivityLog = vi.mocked(apiModule.fetchActivityLog);
+
+/** Create ActivityFeedEntry[] entries (unified feed format) */
+function createFeedEntries(
+  count: number,
+  projectId = "proj_123",
+  projectName = "Test Project",
+): ActivityFeedEntry[] {
+  return Array.from({ length: count }, (_, i) => ({
+    id: `feed_entry_${i}`,
+    timestamp: new Date(Date.now() - i * 60000).toISOString(),
+    type: "task:created" as const,
+    projectId,
+    projectName,
+    taskId: "FN-001",
+    taskTitle: "Test Task",
+    details: "Task created",
+  }));
 }
 
 describe("useActivityLog", () => {
-  const originalFetch = globalThis.fetch;
-
   beforeEach(() => {
+    vi.clearAllMocks();
     vi.useFakeTimers({ shouldAdvanceTime: true });
+    // Default: both mocks return empty arrays
+    mockFetchActivityFeed.mockResolvedValue([]);
+    mockFetchActivityLog.mockResolvedValue([]);
   });
 
   afterEach(() => {
-    globalThis.fetch = originalFetch;
     vi.useRealTimers();
   });
 
+  // ── Single-project mode (default) ─────────────────────────────────
+
   it("initializes with empty entries and loads on mount", async () => {
-    globalThis.fetch = vi.fn().mockReturnValue(mockFetchResponse(true, []));
+    mockFetchActivityLog.mockResolvedValue([]);
 
     const { result } = renderHook(() => useActivityLog());
 
@@ -48,21 +59,24 @@ describe("useActivityLog", () => {
     });
 
     expect(result.current.entries).toEqual([]);
+    // Should use per-project log, not unified feed
+    expect(mockFetchActivityLog).toHaveBeenCalled();
+    expect(mockFetchActivityFeed).not.toHaveBeenCalled();
   });
 
-  it("fetches and displays activity entries", async () => {
-    const mockEntries: ActivityFeedEntry[] = [
-      {
-        id: "entry_1",
-        timestamp: "2026-01-01T00:00:00.000Z",
-        type: "task:created",
-        projectId: "proj_123",
-        projectName: "Test Project",
-        taskId: "FN-001",
-        details: "Task created",
-      },
-    ];
-    globalThis.fetch = vi.fn().mockReturnValue(mockFetchResponse(true, mockEntries));
+  it("fetches entries from per-project log in single-project mode", async () => {
+    const mockEntries = createFeedEntries(1);
+    mockFetchActivityLog.mockResolvedValue(
+      mockEntries.map((e) => ({
+        id: e.id,
+        timestamp: e.timestamp,
+        type: e.type,
+        taskId: e.taskId,
+        taskTitle: e.taskTitle,
+        details: e.details,
+        metadata: e.metadata,
+      })),
+    );
 
     const { result } = renderHook(() => useActivityLog());
 
@@ -70,68 +84,54 @@ describe("useActivityLog", () => {
       expect(result.current.entries).toHaveLength(1);
     });
 
+    // Hook converts ActivityLogEntry to ActivityFeedEntry with empty project fields
     expect(result.current.entries[0].type).toBe("task:created");
-    expect(result.current.entries[0].projectName).toBe("Test Project");
+    expect(mockFetchActivityLog).toHaveBeenCalled();
+    expect(mockFetchActivityFeed).not.toHaveBeenCalled();
   });
 
-  it("filters by projectId", async () => {
-    globalThis.fetch = vi.fn().mockReturnValue(mockFetchResponse(true, []));
-
-    renderHook(() => useActivityLog({ projectId: "proj_123" }));
-
-    await waitFor(() => {
-      expect(globalThis.fetch).toHaveBeenCalledWith(
-        expect.stringContaining("projectId=proj_123"),
-        expect.any(Object)
-      );
-    });
-  });
-
-  it("filters by type", async () => {
-    globalThis.fetch = vi.fn().mockReturnValue(mockFetchResponse(true, []));
+  it("filters by type via per-project log", async () => {
+    mockFetchActivityLog.mockResolvedValue([]);
 
     renderHook(() => useActivityLog({ type: "task:created" }));
 
     await waitFor(() => {
-      expect(globalThis.fetch).toHaveBeenCalledWith(
-        expect.stringContaining("type=task%3Acreated"),
-        expect.any(Object)
+      expect(mockFetchActivityLog).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "task:created" }),
       );
     });
   });
 
-  it("respects custom limit", async () => {
-    globalThis.fetch = vi.fn().mockReturnValue(mockFetchResponse(true, []));
+  it("respects custom limit via per-project log", async () => {
+    mockFetchActivityLog.mockResolvedValue([]);
 
     renderHook(() => useActivityLog({ limit: 100 }));
 
     await waitFor(() => {
-      expect(globalThis.fetch).toHaveBeenCalledWith(
-        expect.stringContaining("limit=100"),
-        expect.any(Object)
+      expect(mockFetchActivityLog).toHaveBeenCalledWith(
+        expect.objectContaining({ limit: 100 }),
       );
     });
   });
 
   it("does not auto-refresh when disabled", async () => {
-    globalThis.fetch = vi.fn().mockReturnValue(mockFetchResponse(true, []));
+    mockFetchActivityLog.mockResolvedValue([]);
 
     renderHook(() => useActivityLog({ autoRefresh: false }));
 
     await waitFor(() => {
-      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+      expect(mockFetchActivityLog).toHaveBeenCalledTimes(1);
     });
 
-    // Fast forward time (but not using fake timers for this test)
+    // Advance time — should not trigger another fetch
     vi.useRealTimers();
     await new Promise((r) => setTimeout(r, 100));
 
-    // Should still be 1
-    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(mockFetchActivityLog).toHaveBeenCalledTimes(1);
   });
 
   it("refresh function manually refreshes data", async () => {
-    globalThis.fetch = vi.fn().mockReturnValue(mockFetchResponse(true, []));
+    mockFetchActivityLog.mockResolvedValue([]);
 
     const { result } = renderHook(() => useActivityLog({ autoRefresh: false }));
 
@@ -144,22 +144,22 @@ describe("useActivityLog", () => {
     });
 
     await waitFor(() => {
-      expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+      expect(mockFetchActivityLog).toHaveBeenCalledTimes(2);
     });
   });
 
   it("clear removes all entries", async () => {
-    const mockEntries: ActivityFeedEntry[] = [
-      {
-        id: "entry_1",
-        timestamp: "2026-01-01T00:00:00.000Z",
-        type: "task:created",
-        projectId: "proj_123",
-        projectName: "Test Project",
-        details: "Task created",
-      },
-    ];
-    globalThis.fetch = vi.fn().mockReturnValue(mockFetchResponse(true, mockEntries));
+    const mockEntries = createFeedEntries(1);
+    mockFetchActivityLog.mockResolvedValue(
+      mockEntries.map((e) => ({
+        id: e.id,
+        timestamp: e.timestamp,
+        type: e.type,
+        taskId: e.taskId,
+        taskTitle: e.taskTitle,
+        details: e.details,
+      })),
+    );
 
     const { result } = renderHook(() => useActivityLog());
 
@@ -176,7 +176,7 @@ describe("useActivityLog", () => {
   });
 
   it("handles errors gracefully", async () => {
-    globalThis.fetch = vi.fn().mockReturnValue(mockFetchResponse(false, { error: "Server error" }, 500));
+    mockFetchActivityLog.mockRejectedValue(new Error("Server error"));
 
     const { result } = renderHook(() => useActivityLog());
 
@@ -188,15 +188,17 @@ describe("useActivityLog", () => {
   });
 
   it("sets hasMore when entries equal limit", async () => {
-    const mockEntries: ActivityFeedEntry[] = Array.from({ length: 50 }, (_, i) => ({
-      id: `entry_${i}`,
-      timestamp: "2026-01-01T00:00:00.000Z",
-      type: "task:created" as const,
-      projectId: "proj_123",
-      projectName: "Test Project",
-      details: "Task created",
-    }));
-    globalThis.fetch = vi.fn().mockReturnValue(mockFetchResponse(true, mockEntries));
+    const mockEntries = createFeedEntries(50);
+    mockFetchActivityLog.mockResolvedValue(
+      mockEntries.map((e) => ({
+        id: e.id,
+        timestamp: e.timestamp,
+        type: e.type,
+        taskId: e.taskId,
+        taskTitle: e.taskTitle,
+        details: e.details,
+      })),
+    );
 
     const { result } = renderHook(() => useActivityLog({ limit: 50 }));
 
@@ -208,15 +210,17 @@ describe("useActivityLog", () => {
   });
 
   it("sets hasMore to false when fewer entries than limit", async () => {
-    const mockEntries: ActivityFeedEntry[] = Array.from({ length: 30 }, (_, i) => ({
-      id: `entry_${i}`,
-      timestamp: "2026-01-01T00:00:00.000Z",
-      type: "task:created" as const,
-      projectId: "proj_123",
-      projectName: "Test Project",
-      details: "Task created",
-    }));
-    globalThis.fetch = vi.fn().mockReturnValue(mockFetchResponse(true, mockEntries));
+    const mockEntries = createFeedEntries(30);
+    mockFetchActivityLog.mockResolvedValue(
+      mockEntries.map((e) => ({
+        id: e.id,
+        timestamp: e.timestamp,
+        type: e.type,
+        taskId: e.taskId,
+        taskTitle: e.taskTitle,
+        details: e.details,
+      })),
+    );
 
     const { result } = renderHook(() => useActivityLog({ limit: 50 }));
 
@@ -225,5 +229,52 @@ describe("useActivityLog", () => {
     });
 
     expect(result.current.hasMore).toBe(false);
+  });
+
+  // ── Multi-project mode (useCentralFeed) ───────────────────────────
+
+  it("fetches from unified feed when useCentralFeed is true", async () => {
+    const mockEntries = createFeedEntries(2, "proj_multi", "Multi Project");
+    mockFetchActivityFeed.mockResolvedValue(mockEntries);
+
+    const { result } = renderHook(() =>
+      useActivityLog({ useCentralFeed: true }),
+    );
+
+    await waitFor(() => {
+      expect(result.current.entries).toHaveLength(2);
+    });
+
+    expect(result.current.entries[0].projectName).toBe("Multi Project");
+    expect(mockFetchActivityFeed).toHaveBeenCalled();
+    expect(mockFetchActivityLog).not.toHaveBeenCalled();
+  });
+
+  it("passes projectId to unified feed when useCentralFeed is true", async () => {
+    mockFetchActivityFeed.mockResolvedValue([]);
+
+    renderHook(() =>
+      useActivityLog({ projectId: "proj_456", useCentralFeed: true }),
+    );
+
+    await waitFor(() => {
+      expect(mockFetchActivityFeed).toHaveBeenCalledWith(
+        expect.objectContaining({ projectId: "proj_456" }),
+      );
+    });
+  });
+
+  it("passes type filter to unified feed when useCentralFeed is true", async () => {
+    mockFetchActivityFeed.mockResolvedValue([]);
+
+    renderHook(() =>
+      useActivityLog({ type: "task:failed", useCentralFeed: true }),
+    );
+
+    await waitFor(() => {
+      expect(mockFetchActivityFeed).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "task:failed" }),
+      );
+    });
   });
 });

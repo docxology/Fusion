@@ -742,6 +742,8 @@ function AppInner() {
         isOpen={activityLogOpen}
         onClose={handleCloseActivityLog}
         tasks={tasks}
+        projectId={currentProject?.id}
+        projects={projects}
         onOpenTaskDetail={(taskId) => {
           const task = tasks.find((t) => t.id === taskId);
           if (task) {
