@@ -637,6 +637,36 @@ describe("Header", () => {
       expect(onViewAllProjects).toHaveBeenCalledOnce();
     });
 
+    it("uses distinct icons for project switch and browse files in overflow menu", () => {
+      const projects = [
+        { id: "proj_1", name: "Project One", path: "/path/1", status: "active" as const, isolationMode: "in-process" as const, createdAt: "", updatedAt: "" },
+        { id: "proj_2", name: "Project Two", path: "/path/2", status: "active" as const, isolationMode: "in-process" as const, createdAt: "", updatedAt: "" },
+      ];
+      render(
+        <Header
+          projects={projects}
+          currentProject={projects[0]}
+          onSelectProject={vi.fn()}
+          onViewAllProjects={vi.fn()}
+          onOpenSettings={vi.fn()}
+          onOpenFiles={vi.fn()}
+        />
+      );
+      fireEvent.click(screen.getByTitle("More header actions"));
+      const projectBtn = screen.getByTestId("overflow-project-selector-btn");
+      const filesBtn = screen.getByTestId("overflow-files-btn");
+      // The project-switch button should use Building2, not Folder
+      // Building2 SVG contains a <path> with "M3 21V3h9l1 1h8v17H3Z" or similar building shape
+      // Folder SVG contains a <path> with "M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" (folder shape)
+      // Both render SVGs; verify they use different SVG content (different icons)
+      const projectSvg = projectBtn.querySelector("svg");
+      const filesSvg = filesBtn.querySelector("svg");
+      expect(projectSvg).not.toBeNull();
+      expect(filesSvg).not.toBeNull();
+      // The two icons should render different SVG paths (not the same icon)
+      expect(projectSvg!.innerHTML).not.toBe(filesSvg!.innerHTML);
+    });
+
     it("does not show switch project in overflow menu with single project", () => {
       const projects = [
         { id: "proj_1", name: "Project One", path: "/path/1", status: "active" as const, isolationMode: "in-process" as const, createdAt: "", updatedAt: "" },
