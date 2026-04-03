@@ -87,6 +87,7 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
   const [modelsError, setModelsError] = useState<string | null>(null);
   const [loadedModels, setLoadedModels] = useState<ModelInfo[]>(availableModels ?? []);
   const [favoriteProviders, setFavoriteProviders] = useState<string[]>([]);
+  const [favoriteModels, setFavoriteModels] = useState<string[]>([]);
 
   // AI Refinement state
   const [isRefineMenuOpen, setIsRefineMenuOpen] = useState(false);
@@ -113,6 +114,7 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
         if (!cancelled) {
           setLoadedModels(response.models);
           setFavoriteProviders(response.favoriteProviders);
+          setFavoriteModels(response.favoriteModels);
         }
       })
       .catch((err: any) => {
@@ -388,12 +390,29 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
     setFavoriteProviders(newFavorites);
 
     try {
-      await updateGlobalSettings({ favoriteProviders: newFavorites });
+      await updateGlobalSettings({ favoriteProviders: newFavorites, favoriteModels });
     } catch {
       // Revert on error
       setFavoriteProviders(currentFavorites);
     }
-  }, [favoriteProviders]);
+  }, [favoriteProviders, favoriteModels]);
+
+  const handleToggleModelFavorite = useCallback(async (modelId: string) => {
+    const currentFavorites = favoriteModels;
+    const isFavorite = currentFavorites.includes(modelId);
+    const newFavorites = isFavorite
+      ? currentFavorites.filter((m) => m !== modelId)
+      : [modelId, ...currentFavorites];
+
+    setFavoriteModels(newFavorites);
+
+    try {
+      await updateGlobalSettings({ favoriteProviders, favoriteModels: newFavorites });
+    } catch {
+      // Revert on error
+      setFavoriteModels(currentFavorites);
+    }
+  }, [favoriteModels, favoriteProviders]);
 
   const handlePlanClick = useCallback(() => {
     const trimmed = description.trim();
@@ -462,6 +481,7 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
       const response = await fetchModels();
       setLoadedModels(response.models);
       setFavoriteProviders(response.favoriteProviders);
+      setFavoriteModels(response.favoriteModels);
     } catch (err: any) {
       setModelsError(err?.message || "Failed to load models");
     } finally {
@@ -702,6 +722,8 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
               onRetry={loadModels}
               favoriteProviders={favoriteProviders}
               onToggleFavorite={handleToggleFavorite}
+              favoriteModels={favoriteModels}
+              onToggleModelFavorite={handleToggleModelFavorite}
             />,
             document.body,
           )

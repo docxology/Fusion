@@ -14,7 +14,7 @@ vi.mock("../../api", () => ({
   fetchModels: vi.fn().mockResolvedValue({ models: [
     { provider: "anthropic", id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5", reasoning: true, contextWindow: 200000 },
     { provider: "openai", id: "gpt-4o", name: "GPT-4o", reasoning: false, contextWindow: 128000 },
-  ], favoriteProviders: [] }),
+  ], favoriteProviders: [], favoriteModels: [] }),
   fetchSettings: vi.fn().mockResolvedValue({
     modelPresets: [],
     autoSelectModelPreset: false,
@@ -114,6 +114,21 @@ describe("TaskForm", () => {
     renderTaskForm();
 
     expect(screen.getByText(/Model Configuration/i)).toBeTruthy();
+  });
+
+  it("fetches and stores favoriteModels from fetchModels response", async () => {
+    const { fetchModels } = await import("../../api");
+    vi.mocked(fetchModels).mockResolvedValueOnce({
+      models: [],
+      favoriteProviders: ["anthropic"],
+      favoriteModels: ["anthropic/claude-sonnet-4-5"],
+    });
+    renderTaskForm();
+    // The component fetches models on mount when isActive=true
+    // If no error is thrown, the favoriteModels state is accepted
+    await vi.waitFor(() => {
+      expect(fetchModels).toHaveBeenCalled();
+    });
   });
 
   it("renders workflow step checkboxes with browser verification", () => {

@@ -90,6 +90,7 @@ export function TaskForm({
   const [depSearch, setDepSearch] = useState("");
   const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
   const [favoriteProviders, setFavoriteProviders] = useState<string[]>([]);
+  const [favoriteModels, setFavoriteModels] = useState<string[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [workflowSteps, setWorkflowSteps] = useState<WorkflowStep[]>([]);
@@ -112,6 +113,7 @@ export function TaskForm({
       .then((response) => {
         setAvailableModels(response.models);
         setFavoriteProviders(response.favoriteProviders);
+        setFavoriteModels(response.favoriteModels);
       })
       .catch(() => {/* silently fail */})
       .finally(() => setModelsLoading(false));
@@ -269,11 +271,27 @@ export function TaskForm({
     setFavoriteProviders(newFavorites);
 
     try {
-      await updateGlobalSettings({ favoriteProviders: newFavorites });
+      await updateGlobalSettings({ favoriteProviders: newFavorites, favoriteModels });
     } catch {
       setFavoriteProviders(currentFavorites);
     }
-  }, [favoriteProviders]);
+  }, [favoriteProviders, favoriteModels]);
+
+  const handleToggleModelFavorite = useCallback(async (modelId: string) => {
+    const currentFavorites = favoriteModels;
+    const isFavorite = currentFavorites.includes(modelId);
+    const newFavorites = isFavorite
+      ? currentFavorites.filter((m) => m !== modelId)
+      : [modelId, ...currentFavorites];
+
+    setFavoriteModels(newFavorites);
+
+    try {
+      await updateGlobalSettings({ favoriteProviders, favoriteModels: newFavorites });
+    } catch {
+      setFavoriteModels(currentFavorites);
+    }
+  }, [favoriteModels, favoriteProviders]);
 
   const availableDeps = tasks
     .filter((t) => !dependencies.includes(t.id))
@@ -501,6 +519,8 @@ export function TaskForm({
                 disabled={disabled || presetMode === "preset"}
                 favoriteProviders={favoriteProviders}
                 onToggleFavorite={handleToggleFavorite}
+                favoriteModels={favoriteModels}
+                onToggleModelFavorite={handleToggleModelFavorite}
               />
             </div>
             <div className="model-select-row">
@@ -518,6 +538,8 @@ export function TaskForm({
                 disabled={disabled || presetMode === "preset"}
                 favoriteProviders={favoriteProviders}
                 onToggleFavorite={handleToggleFavorite}
+                favoriteModels={favoriteModels}
+                onToggleModelFavorite={handleToggleModelFavorite}
               />
             </div>
           </>

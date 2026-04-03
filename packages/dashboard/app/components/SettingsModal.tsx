@@ -91,6 +91,8 @@ export function SettingsModal({
   // Model state
   const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
+  const [favoriteProviders, setFavoriteProviders] = useState<string[]>([]);
+  const [favoriteModels, setFavoriteModels] = useState<string[]>([]);
 
   // Test notification state
   const [testNotificationLoading, setTestNotificationLoading] = useState(false);
@@ -137,7 +139,11 @@ export function SettingsModal({
     if (activeSection === "models") {
       setModelsLoading(true);
       fetchModels()
-        .then((response) => setAvailableModels(response.models))
+        .then((response) => {
+          setAvailableModels(response.models);
+          setFavoriteProviders(response.favoriteProviders);
+          setFavoriteModels(response.favoriteModels);
+        })
         .catch(() => setAvailableModels([]))
         .finally(() => setModelsLoading(false));
     }
@@ -326,6 +332,38 @@ export function SettingsModal({
       setImportLoading(false);
     }
   }, [addToast, importPreview, importScope, importMerge, projectId]);
+
+  const handleToggleFavorite = useCallback(async (provider: string) => {
+    const currentFavorites = favoriteProviders;
+    const isFavorite = currentFavorites.includes(provider);
+    const newFavorites = isFavorite
+      ? currentFavorites.filter((p) => p !== provider)
+      : [provider, ...currentFavorites];
+
+    setFavoriteProviders(newFavorites);
+
+    try {
+      await updateGlobalSettings({ favoriteProviders: newFavorites, favoriteModels });
+    } catch {
+      setFavoriteProviders(currentFavorites);
+    }
+  }, [favoriteProviders, favoriteModels]);
+
+  const handleToggleModelFavorite = useCallback(async (modelId: string) => {
+    const currentFavorites = favoriteModels;
+    const isFavorite = currentFavorites.includes(modelId);
+    const newFavorites = isFavorite
+      ? currentFavorites.filter((m) => m !== modelId)
+      : [modelId, ...currentFavorites];
+
+    setFavoriteModels(newFavorites);
+
+    try {
+      await updateGlobalSettings({ favoriteProviders, favoriteModels: newFavorites });
+    } catch {
+      setFavoriteModels(currentFavorites);
+    }
+  }, [favoriteModels, favoriteProviders]);
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
@@ -536,6 +574,10 @@ export function SettingsModal({
                     }
                   }}
                   placeholder="Use default"
+                  favoriteProviders={favoriteProviders}
+                  onToggleFavorite={handleToggleFavorite}
+                  favoriteModels={favoriteModels}
+                  onToggleModelFavorite={handleToggleModelFavorite}
                 />
                 <small>Default AI model used for task execution when no per-task override is set. &quot;Use default&quot; lets the engine choose automatically.</small>
               </div>
@@ -598,6 +640,10 @@ export function SettingsModal({
                       }
                     }}
                     placeholder="Use default"
+                    favoriteProviders={favoriteProviders}
+                    onToggleFavorite={handleToggleFavorite}
+                    favoriteModels={favoriteModels}
+                    onToggleModelFavorite={handleToggleModelFavorite}
                   />
                   <small>AI model used for task planning and specification (triage). Falls back to Default Model when not set.</small>
                 </div>
@@ -621,6 +667,10 @@ export function SettingsModal({
                       }
                     }}
                     placeholder="Use default"
+                    favoriteProviders={favoriteProviders}
+                    onToggleFavorite={handleToggleFavorite}
+                    favoriteModels={favoriteModels}
+                    onToggleModelFavorite={handleToggleModelFavorite}
                   />
                   <small>AI model used for code and specification review. Falls back to Default Model when not set.</small>
                 </div>
@@ -760,6 +810,10 @@ export function SettingsModal({
                           } : current);
                         }}
                         placeholder="Use default"
+                        favoriteProviders={favoriteProviders}
+                        onToggleFavorite={handleToggleFavorite}
+                        favoriteModels={favoriteModels}
+                        onToggleModelFavorite={handleToggleModelFavorite}
                       />
                     </div>
                     <div className="form-group">
@@ -782,6 +836,10 @@ export function SettingsModal({
                           } : current);
                         }}
                         placeholder="Use default"
+                        favoriteProviders={favoriteProviders}
+                        onToggleFavorite={handleToggleFavorite}
+                        favoriteModels={favoriteModels}
+                        onToggleModelFavorite={handleToggleModelFavorite}
                       />
                     </div>
                   </>
@@ -889,6 +947,10 @@ export function SettingsModal({
                         }));
                       }}
                       placeholder="Use fallback model"
+                      favoriteProviders={favoriteProviders}
+                      onToggleFavorite={handleToggleFavorite}
+                      favoriteModels={favoriteModels}
+                      onToggleModelFavorite={handleToggleModelFavorite}
                     />
                   )}
                   <small>

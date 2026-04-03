@@ -35,6 +35,8 @@ vi.mock("../ModelSelectionModal", () => ({
     modelsLoading,
     modelsError,
     onRetry,
+    favoriteModels,
+    onToggleModelFavorite,
   }: {
     isOpen: boolean;
     onClose: () => void;
@@ -46,6 +48,8 @@ vi.mock("../ModelSelectionModal", () => ({
     modelsLoading: boolean;
     modelsError: string | null;
     onRetry: () => void;
+    favoriteModels?: string[];
+    onToggleModelFavorite?: (modelId: string) => void;
   }) => {
     if (!isOpen) return null;
     return (
@@ -54,6 +58,8 @@ vi.mock("../ModelSelectionModal", () => ({
         <div data-testid="modal-props-validator-value">{validatorValue}</div>
         <div data-testid="modal-props-loading">{modelsLoading ? "loading" : "not-loading"}</div>
         <div data-testid="modal-props-error">{modelsError || "no-error"}</div>
+        <div data-testid="modal-props-favorite-models">{JSON.stringify(favoriteModels ?? [])}</div>
+        <div data-testid="modal-props-has-toggle-model-favorite">{onToggleModelFavorite ? "yes" : "no"}</div>
         <button data-testid="modal-close" onClick={onClose}>Close</button>
         <button data-testid="modal-select-executor" onClick={() => onExecutorChange("anthropic/claude-sonnet-4-5")}>Select Executor</button>
         <button data-testid="modal-select-validator" onClick={() => onValidatorChange("openai/gpt-4o")}>Select Validator</button>
@@ -243,6 +249,14 @@ describe("InlineCreateCard model selector", () => {
 
     openModelModal();
     expect(screen.getByTestId("model-selection-modal")).toBeTruthy();
+  });
+
+  it("passes favoriteModels and onToggleModelFavorite to ModelSelectionModal", () => {
+    renderCard();
+    openModelModal();
+
+    expect(screen.getByTestId("modal-props-favorite-models").textContent).toBe("[]");
+    expect(screen.getByTestId("modal-props-has-toggle-model-favorite").textContent).toBe("yes");
   });
 
   it("closes the model modal via the close button", () => {

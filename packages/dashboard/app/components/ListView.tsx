@@ -35,6 +35,10 @@ interface ListViewProps {
   onNewTask?: () => void;
   onQuickCreate?: (input: TaskCreateInput) => Promise<void>;
   availableModels?: ModelInfo[];
+  favoriteProviders?: string[];
+  favoriteModels?: string[];
+  onToggleFavorite?: (provider: string) => void;
+  onToggleModelFavorite?: (modelId: string) => void;
   /**
    * Called when the user clicks the "Plan" button in the quick entry box.
    */
@@ -75,6 +79,10 @@ export function ListView({
   onNewTask,
   onQuickCreate,
   availableModels,
+  favoriteProviders = [],
+  favoriteModels = [],
+  onToggleFavorite,
+  onToggleModelFavorite,
   onPlanningMode,
   onSubtaskBreakdown,
   onTasksUpdated,
@@ -668,6 +676,10 @@ export function ListView({
                 onChange={(value) => setExecutorModel(value === "" ? "__no_change__" : value)}
                 label="Executor Model"
                 placeholder="No change"
+                favoriteProviders={favoriteProviders}
+                onToggleFavorite={onToggleFavorite}
+                favoriteModels={favoriteModels}
+                onToggleModelFavorite={onToggleModelFavorite}
               />
             </div>
             <div className="bulk-edit-dropdown">
@@ -677,6 +689,10 @@ export function ListView({
                 onChange={(value) => setValidatorModel(value === "" ? "__no_change__" : value)}
                 label="Validator Model"
                 placeholder="No change"
+                favoriteProviders={favoriteProviders}
+                onToggleFavorite={onToggleFavorite}
+                favoriteModels={favoriteModels}
+                onToggleModelFavorite={onToggleModelFavorite}
               />
             </div>
             <button

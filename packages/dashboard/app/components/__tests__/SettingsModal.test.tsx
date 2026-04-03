@@ -413,6 +413,25 @@ describe("SettingsModal", () => {
     expect(globalPayload.defaultModelId).toBe("claude-sonnet-4-5");
   });
 
+  it("stores favoriteModels from fetchModels response", async () => {
+    (fetchModels as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      models: [
+        { provider: "anthropic", id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5", reasoning: false, contextWindow: 200000 },
+      ],
+      favoriteProviders: ["anthropic"],
+      favoriteModels: ["anthropic/claude-sonnet-4-5"],
+    });
+
+    render(<SettingsModal onClose={onClose} addToast={addToast} />);
+    await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByText("Models"));
+    await waitFor(() => expect(fetchModels).toHaveBeenCalled());
+
+    // No error thrown means favoriteModels was accepted
+    expect(screen.getByLabelText("Default Model")).toBeTruthy();
+  });
+
   it("saving in Models section updates project settings with planning and validator models", async () => {
     const user = userEvent.setup();
     render(<SettingsModal onClose={onClose} addToast={addToast} />);

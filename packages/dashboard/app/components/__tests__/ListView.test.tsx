@@ -5,7 +5,7 @@ import type { Task, TaskDetail } from "@fusion/core";
 
 // Mock the API
 vi.mock("../../api", () => ({
-  fetchModels: vi.fn().mockResolvedValue({ models: [], favoriteProviders: [] }),
+  fetchModels: vi.fn().mockResolvedValue({ models: [], favoriteProviders: [], favoriteModels: [] }),
   fetchTaskDetail: vi.fn(),
   batchUpdateTaskModels: vi.fn(),
 }));
@@ -1836,6 +1836,35 @@ describe("ListView - Bulk Selection", () => {
     fireEvent.click(selectAllCheckbox);
 
     expect(screen.getByText("2 selected")).toBeDefined();
+  });
+
+  it("accepts favoriteProviders and favoriteModels props", () => {
+    const availableModels = [
+      { provider: "openai", id: "gpt-4o", name: "GPT-4o", reasoning: false, contextWindow: 128000 },
+    ];
+    const tasks = [createMockTask({ id: "FN-001" })];
+    const onToggleFavorite = vi.fn();
+    const onToggleModelFavorite = vi.fn();
+
+    render(
+      <ListView
+        tasks={tasks}
+        onMoveTask={vi.fn()}
+        onOpenDetail={vi.fn()}
+        addToast={mockAddToast}
+        availableModels={availableModels}
+        favoriteProviders={["openai"]}
+        favoriteModels={["openai/gpt-4o"]}
+        onToggleFavorite={onToggleFavorite}
+        onToggleModelFavorite={onToggleModelFavorite}
+      />
+    );
+
+    // Select a task to show bulk edit toolbar with dropdowns
+    const checkbox = screen.getByLabelText("Select FN-001");
+    fireEvent.click(checkbox);
+
+    expect(screen.getByText("Bulk Edit Models:")).toBeDefined();
   });
 
   it("shows bulk edit toolbar when tasks are selected", () => {

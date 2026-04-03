@@ -64,7 +64,7 @@ vi.mock("../../api", () => ({
       reasoning: true,
       contextWindow: 128_000,
     },
-  ], favoriteProviders: [] }),
+  ], favoriteProviders: [], favoriteModels: [] }),
   refineText: vi.fn(),
   getRefineErrorMessage: vi.fn((err) => err?.message || "Failed to refine text. Please try again."),
 }));
@@ -95,6 +95,8 @@ vi.mock("../ModelSelectionModal", () => ({
     modelsLoading,
     modelsError,
     onRetry,
+    favoriteModels,
+    onToggleModelFavorite,
   }: {
     isOpen: boolean;
     onClose: () => void;
@@ -106,6 +108,8 @@ vi.mock("../ModelSelectionModal", () => ({
     modelsLoading: boolean;
     modelsError: string | null;
     onRetry: () => void;
+    favoriteModels?: string[];
+    onToggleModelFavorite?: (modelId: string) => void;
   }) => {
     if (!isOpen) return null;
     return (
@@ -115,6 +119,8 @@ vi.mock("../ModelSelectionModal", () => ({
         <div data-testid="modal-props-validator-value">{validatorValue}</div>
         <div data-testid="modal-props-loading">{modelsLoading ? "loading" : "not-loading"}</div>
         <div data-testid="modal-props-error">{modelsError || "no-error"}</div>
+        <div data-testid="modal-props-favorite-models">{JSON.stringify(favoriteModels ?? [])}</div>
+        <div data-testid="modal-props-has-toggle-model-favorite">{onToggleModelFavorite ? "yes" : "no"}</div>
         <button data-testid="modal-close" onClick={onClose}>
           Close
         </button>
@@ -592,6 +598,18 @@ describe("QuickEntryBox", () => {
       expect(screen.getByTestId("modal-props-validator-value").textContent).toBe("");
       expect(screen.getByTestId("modal-props-loading").textContent).toBe("not-loading");
       expect(screen.getByTestId("modal-props-error").textContent).toBe("no-error");
+    });
+
+    it("passes favoriteModels and onToggleModelFavorite to ModelSelectionModal", () => {
+      renderQuickEntryBox({});
+      expandQuickEntry();
+      const textarea = screen.getByTestId("quick-entry-input");
+
+      fireEvent.change(textarea, { target: { value: "Task with models" } });
+      fireEvent.click(screen.getByTestId("quick-entry-models-button"));
+
+      expect(screen.getByTestId("modal-props-favorite-models").textContent).toBe("[]");
+      expect(screen.getByTestId("modal-props-has-toggle-model-favorite").textContent).toBe("yes");
     });
 
     it("selects dependencies and includes them in submit payload", async () => {
