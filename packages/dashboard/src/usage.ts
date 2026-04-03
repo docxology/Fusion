@@ -252,6 +252,67 @@ const CLAUDE_MAX_RETRIES = 3;
 const CLAUDE_INITIAL_RETRY_MS = 1000;
 
 /**
+ * In-memory cache for refreshed OAuth access tokens.
+ * Never written back to disk/keychain — only lives for the process lifetime.
+ */
+let refreshedAccessToken: string | null = null;
+
+/**
+ * Anthropic OAuth token refresh endpoint.
+ * Used when the access token has expired but a refresh token is available.
+ */
+const ANTHROPIC_TOKEN_ENDPOINT = "https://console.anthropic.com/v1/oauth/token";
+
+/**
+ * Check whether an OAuth access token is expired using the `expiresAt` timestamp
+ * from the credential store. Returns true if expired or expiring within 60 seconds.
+ */
+function isTokenExpired(expiresAt: number | undefined): boolean {
+  if (expiresAt === undefined) return false; // No expiry info — assume valid
+  const bufferMs = 60_000; // Treat tokens expiring within 60s as expired
+  return Date.now() >= expiresAt - bufferMs;
+}
+
+/**
+ * Attempt to refresh the OAuth access token using the refresh token.
+ * Returns the new access token on success, or null on failure.
+ * The refreshed token is cached in memory only (not written to disk/keychain).
+ */
+async function refreshClaudeAccessToken(refreshToken: string): Promise<string | null> {
+  try {
+    const res = await httpsRequest(ANTHROPIC_TOKEN_ENDPOINT, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        grant_type: "refresh_token",
+        refresh_token: refreshToken,
+      }),
+      timeout: 10_000, // 10s timeout for refresh
+    });
+
+    if (res.status !== 200) {
+      return null;
+    }
+
+    const data = JSON.parse(res.body);
+    const newToken = data.access_token || data.accessToken;
+    if (newToken) {
+      // Cache in memory only — never written back to disk/keychain
+      refreshedAccessToken = newToken;
+      return newToken;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/** Clear the in-memory refreshed token cache (for testing) */
+export function _clearRefreshedToken(): void {
+  refreshedAccessToken = null;
+}
+
+/**
  * Sleep for the given duration. Exported for test mocking.
  */
 export const _sleep = (ms: number): Promise<void> =>
@@ -661,6 +722,32 @@ async function fetchClaudeUsage(): Promise<ProviderUsage> {
     else usage.plan = oauthCreds.rateLimitTier;
   }
 
+  // ── Resolve the best available access token ─────────────────────────
+  // If we have a previously refreshed token in memory, prefer it.
+  // Otherwise check if the stored token is expired and attempt refresh.
+  let activeToken: string = refreshedAccessToken || oauthCreds.accessToken;
+
+  const tokenExpired = isTokenExpired(oauthCreds.expiresAt);
+  if (tokenExpired && !refreshedAccessToken) {
+    // Token is expired — attempt refresh before calling the usage API
+    if (oauthCreds.refreshToken) {
+      const newToken = await refreshClaudeAccessToken(oauthCreds.refreshToken);
+      if (newToken) {
+        activeToken = newToken;
+      } else {
+        // Refresh failed — return actionable error immediately
+        usage.status = "error";
+        usage.error = "Claude token expired — run `claude` to re-login";
+        return usage;
+      }
+    } else {
+      // No refresh token available
+      usage.status = "error";
+      usage.error = "Claude token expired — run `claude` to re-login";
+      return usage;
+    }
+  }
+
   // ── Fetch usage via direct API call with retry for 429 ─────────────
   try {
     let res: { status: number; headers: Record<string, string>; body: string } | undefined;
@@ -670,16 +757,24 @@ async function fetchClaudeUsage(): Promise<ProviderUsage> {
       res = await httpsRequest("https://api.anthropic.com/api/oauth/usage", {
         method: "GET",
         headers: {
-          authorization: `Bearer ${oauthCreds.accessToken}`,
+          authorization: `Bearer ${activeToken}`,
         },
       });
 
       lastStatus = res.status;
 
-      // Auth errors are not transient — fail immediately
+      // Auth errors — attempt token refresh once before giving up
       if (res.status === 401 || res.status === 403) {
+        if (oauthCreds.refreshToken && activeToken !== refreshedAccessToken) {
+          // Try refreshing the token as a recovery path
+          const newToken = await refreshClaudeAccessToken(oauthCreds.refreshToken);
+          if (newToken) {
+            activeToken = newToken;
+            continue; // Retry with refreshed token
+          }
+        }
         usage.status = "error";
-        usage.error = "Auth expired — run 'claude' to re-login";
+        usage.error = "Claude token expired — run `claude` to re-login";
         return usage;
       }
 

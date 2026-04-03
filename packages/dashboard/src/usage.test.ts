@@ -12,6 +12,7 @@ import {
   _parseClaudeResetText,
   withTimeout,
   CLAUDE_FETCH_TIMEOUT_MS,
+  _clearRefreshedToken,
 } from "./usage.js";
 
 // Mock the https module
@@ -40,6 +41,7 @@ vi.mock("node-pty", () => {
 describe("usage", () => {
   beforeEach(() => {
     clearUsageCache();
+    _clearRefreshedToken();
     mockRequest.mockClear();
     mockReadFileSync.mockClear();
     mockExecFileSync.mockClear();
@@ -400,7 +402,7 @@ describe("usage", () => {
       const claude = providers.find((p) => p.name === "Claude")!;
 
       expect(claude.status).toBe("error");
-      expect(claude.error).toContain("Auth expired");
+      expect(claude!.error).toContain("Claude token expired");
     });
 
     it("handles 403 auth error", async () => {
@@ -429,7 +431,7 @@ describe("usage", () => {
       const claude = providers.find((p) => p.name === "Claude")!;
 
       expect(claude.status).toBe("error");
-      expect(claude.error).toContain("Auth expired");
+      expect(claude!.error).toContain("Claude token expired");
     });
 
     it("does not send anthropic-beta header in requests", async () => {
@@ -812,7 +814,7 @@ describe("usage", () => {
       const claude = providers.find((p) => p.name === "Claude")!;
 
       expect(claude.status).toBe("error");
-      expect(claude.error).toContain("Auth expired");
+      expect(claude!.error).toContain("Claude token expired");
       // No retries should happen for auth errors
       expect(noopSleep).not.toHaveBeenCalled();
 
@@ -882,11 +884,270 @@ describe("usage", () => {
       const claude = providers.find((p) => p.name === "Claude")!;
 
       expect(claude.status).toBe("error");
-      expect(claude.error).toContain("Auth expired");
+      expect(claude!.error).toContain("Claude token expired");
       // No retries should happen for auth errors
       expect(noopSleep).not.toHaveBeenCalled();
 
       _resetSleepFn();
+    });
+
+    describe("token refresh", () => {
+      it("refreshes expired token before calling usage API", async () => {
+        const expiredAt = Date.now() - 60_000; // expired 1 minute ago
+        setupClaudeMocks({
+          credFileContent: {
+            claudeAiOauth: {
+              accessToken: "expired-token",
+              expiresAt: expiredAt,
+              refreshToken: "refresh-token-123",
+              scopes: ["user:profile"],
+              subscriptionType: "max",
+            },
+          },
+        });
+
+        // Track which requests are made
+        const requestUrls: string[] = [];
+        const mockReq = { on: vi.fn(), write: vi.fn(), end: vi.fn() };
+        mockRequest.mockImplementation((options: any, callback: any) => {
+          const url = `https://${options.hostname}${options.path}`;
+          requestUrls.push(url);
+
+          if (url.includes("oauth/token")) {
+            // Token refresh succeeds
+            const mockRes = {
+              statusCode: 200,
+              headers: {},
+              on: vi.fn((event: string, handler: any) => {
+                if (event === "data") handler(Buffer.from(JSON.stringify({ access_token: "new-fresh-token" })));
+                if (event === "end") handler();
+              }),
+            };
+            callback(mockRes);
+          } else {
+            // Usage API succeeds
+            const mockRes = {
+              statusCode: 200,
+              headers: {},
+              on: vi.fn((event: string, handler: any) => {
+                if (event === "data") handler(Buffer.from(JSON.stringify({
+                  five_hour: { utilization: 50.0, resets_at: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString() },
+                })));
+                if (event === "end") handler();
+              }),
+            };
+            callback(mockRes);
+          }
+          return mockReq;
+        });
+
+        const providers = await fetchAllProviderUsage();
+        const claude = providers.find((p) => p.name === "Claude")!;
+
+        expect(claude.status).toBe("ok");
+        expect(claude.windows).toHaveLength(1);
+        expect(claude.windows[0].percentUsed).toBe(50);
+        // Should have called token refresh first, then usage API
+        expect(requestUrls).toHaveLength(2);
+        expect(requestUrls[0]).toContain("oauth/token");
+        expect(requestUrls[1]).toContain("oauth/usage");
+      });
+
+      it("returns actionable error when refresh fails for expired token", async () => {
+        const expiredAt = Date.now() - 60_000;
+        setupClaudeMocks({
+          credFileContent: {
+            claudeAiOauth: {
+              accessToken: "expired-token",
+              expiresAt: expiredAt,
+              refreshToken: "bad-refresh-token",
+              scopes: ["user:profile"],
+            },
+          },
+        });
+
+        const mockReq = { on: vi.fn(), write: vi.fn(), end: vi.fn() };
+        mockRequest.mockImplementation((_options: any, callback: any) => {
+          const mockRes = {
+            statusCode: 400,
+            headers: {},
+            on: vi.fn((event: string, handler: any) => {
+              if (event === "data") handler(Buffer.from('{"error":"invalid_grant"}'));
+              if (event === "end") handler();
+            }),
+          };
+          callback(mockRes);
+          return mockReq;
+        });
+
+        const providers = await fetchAllProviderUsage();
+        const claude = providers.find((p) => p.name === "Claude")!;
+
+        expect(claude.status).toBe("error");
+        expect(claude.error).toContain("Claude token expired");
+        expect(claude.error).toContain("re-login");
+      });
+
+      it("returns actionable error when no refresh token and token is expired", async () => {
+        const expiredAt = Date.now() - 60_000;
+        setupClaudeMocks({
+          credFileContent: {
+            claudeAiOauth: {
+              accessToken: "expired-token",
+              expiresAt: expiredAt,
+              // No refreshToken
+              scopes: ["user:profile"],
+            },
+          },
+        });
+
+        const providers = await fetchAllProviderUsage();
+        const claude = providers.find((p) => p.name === "Claude")!;
+
+        expect(claude.status).toBe("error");
+        expect(claude.error).toContain("Claude token expired");
+      });
+
+      it("does not refresh when token is not expired", async () => {
+        const expiresAt = Date.now() + 3600_000; // expires in 1 hour
+        setupClaudeMocks({
+          credFileContent: {
+            claudeAiOauth: {
+              accessToken: "valid-token",
+              expiresAt,
+              refreshToken: "refresh-token",
+              scopes: ["user:profile"],
+            },
+          },
+        });
+
+        setupClaudeApiResponse({
+          five_hour: { utilization: 10.0 },
+        });
+
+        const providers = await fetchAllProviderUsage();
+        const claude = providers.find((p) => p.name === "Claude")!;
+
+        expect(claude.status).toBe("ok");
+        // Only the usage API call should have been made, no refresh
+        expect(mockRequest).toHaveBeenCalledTimes(1);
+      });
+
+      it("attempts refresh on 401 response as recovery", async () => {
+        setupClaudeMocks({
+          credFileContent: {
+            claudeAiOauth: {
+              accessToken: "stale-token",
+              // No expiresAt — so won't pre-refresh
+              refreshToken: "refresh-token-456",
+              scopes: ["user:profile"],
+            },
+          },
+        });
+
+        let callCount = 0;
+        const mockReq = { on: vi.fn(), write: vi.fn(), end: vi.fn() };
+        mockRequest.mockImplementation((options: any, callback: any) => {
+          callCount++;
+          const url = `https://${options.hostname}${options.path}`;
+
+          if (url.includes("oauth/token")) {
+            // Refresh succeeds
+            const mockRes = {
+              statusCode: 200,
+              headers: {},
+              on: vi.fn((event: string, handler: any) => {
+                if (event === "data") handler(Buffer.from(JSON.stringify({ access_token: "refreshed-token" })));
+                if (event === "end") handler();
+              }),
+            };
+            callback(mockRes);
+          } else if (callCount === 1) {
+            // First usage call returns 401
+            const mockRes = {
+              statusCode: 401,
+              headers: {},
+              on: vi.fn((event: string, handler: any) => {
+                if (event === "data") handler(Buffer.from('{"error":"unauthorized"}'));
+                if (event === "end") handler();
+              }),
+            };
+            callback(mockRes);
+          } else {
+            // Second usage call with refreshed token succeeds
+            const mockRes = {
+              statusCode: 200,
+              headers: {},
+              on: vi.fn((event: string, handler: any) => {
+                if (event === "data") handler(Buffer.from(JSON.stringify({
+                  five_hour: { utilization: 30.0 },
+                })));
+                if (event === "end") handler();
+              }),
+            };
+            callback(mockRes);
+          }
+          return mockReq;
+        });
+
+        const providers = await fetchAllProviderUsage();
+        const claude = providers.find((p) => p.name === "Claude")!;
+
+        expect(claude.status).toBe("ok");
+        expect(claude.windows).toHaveLength(1);
+        expect(claude.windows[0].percentUsed).toBe(30);
+      });
+
+      it("treats token as expired when within 60s buffer of expiresAt", async () => {
+        const expiresAt = Date.now() + 30_000; // expires in 30s (within buffer)
+        setupClaudeMocks({
+          credFileContent: {
+            claudeAiOauth: {
+              accessToken: "almost-expired-token",
+              expiresAt,
+              refreshToken: "refresh-token",
+              scopes: ["user:profile"],
+            },
+          },
+        });
+
+        const requestUrls: string[] = [];
+        const mockReq = { on: vi.fn(), write: vi.fn(), end: vi.fn() };
+        mockRequest.mockImplementation((options: any, callback: any) => {
+          const url = `https://${options.hostname}${options.path}`;
+          requestUrls.push(url);
+
+          if (url.includes("oauth/token")) {
+            const mockRes = {
+              statusCode: 200,
+              headers: {},
+              on: vi.fn((event: string, handler: any) => {
+                if (event === "data") handler(Buffer.from(JSON.stringify({ access_token: "fresh-token" })));
+                if (event === "end") handler();
+              }),
+            };
+            callback(mockRes);
+          } else {
+            const mockRes = {
+              statusCode: 200,
+              headers: {},
+              on: vi.fn((event: string, handler: any) => {
+                if (event === "data") handler(Buffer.from(JSON.stringify({ five_hour: { utilization: 5.0 } })));
+                if (event === "end") handler();
+              }),
+            };
+            callback(mockRes);
+          }
+          return mockReq;
+        });
+
+        const providers = await fetchAllProviderUsage();
+        const claude = providers.find((p) => p.name === "Claude")!;
+
+        expect(claude.status).toBe("ok");
+        // Token should have been refreshed (within 60s buffer)
+        expect(requestUrls[0]).toContain("oauth/token");
+      });
     });
   });
 
