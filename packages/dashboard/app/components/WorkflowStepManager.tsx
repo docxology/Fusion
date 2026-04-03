@@ -32,6 +32,7 @@ interface WorkflowStepManagerProps {
   isOpen: boolean;
   onClose: () => void;
   addToast: (message: string, type?: ToastType) => void;
+  projectId?: string;
 }
 
 interface StepFormData {
@@ -80,7 +81,7 @@ function getCategoryColors(category: string): { bg: string; text: string } {
   }
 }
 
-export function WorkflowStepManager({ isOpen, onClose, addToast }: WorkflowStepManagerProps) {
+export function WorkflowStepManager({ isOpen, onClose, addToast, projectId }: WorkflowStepManagerProps) {
   const [steps, setSteps] = useState<WorkflowStep[]>([]);
   const [templates, setTemplates] = useState<WorkflowStepTemplate[]>([]);
   const [loading, setLoading] = useState(true);
@@ -97,14 +98,14 @@ export function WorkflowStepManager({ isOpen, onClose, addToast }: WorkflowStepM
   const loadSteps = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await fetchWorkflowSteps();
+      const data = await fetchWorkflowSteps(projectId);
       setSteps(data);
     } catch (err: any) {
       addToast(err.message || "Failed to load workflow steps", "error");
     } finally {
       setLoading(false);
     }
-  }, [addToast]);
+  }, [addToast, projectId]);
 
   const loadTemplates = useCallback(async () => {
     try {
@@ -163,7 +164,7 @@ export function WorkflowStepManager({ isOpen, onClose, addToast }: WorkflowStepM
           prompt: form.prompt.trim() || undefined,
           enabled: form.enabled,
         };
-        await createWorkflowStep(input);
+        await createWorkflowStep(input, projectId);
         addToast("Workflow step created", "success");
       } else if (editingId) {
         await updateWorkflowStep(editingId, {
@@ -171,7 +172,7 @@ export function WorkflowStepManager({ isOpen, onClose, addToast }: WorkflowStepM
           description: form.description.trim(),
           prompt: form.prompt,
           enabled: form.enabled,
-        });
+        }, projectId);
         addToast("Workflow step updated", "success");
       }
 
@@ -188,7 +189,7 @@ export function WorkflowStepManager({ isOpen, onClose, addToast }: WorkflowStepM
 
   const handleDelete = useCallback(async (id: string) => {
     try {
-      await deleteWorkflowStep(id);
+      await deleteWorkflowStep(id, projectId);
       addToast("Workflow step deleted", "success");
       setDeleteConfirmId(null);
       if (editingId === id) {
@@ -219,13 +220,13 @@ export function WorkflowStepManager({ isOpen, onClose, addToast }: WorkflowStepM
           prompt: form.prompt.trim() || undefined,
           enabled: form.enabled,
         };
-        const created = await createWorkflowStep(input);
+        const created = await createWorkflowStep(input, projectId);
         setIsCreating(false);
         setEditingId(created.id);
 
         // Now refine
         setRefining(true);
-        const result = await refineWorkflowStepPrompt(created.id);
+        const result = await refineWorkflowStepPrompt(created.id, projectId);
         setForm((prev) => ({ ...prev, prompt: result.prompt }));
         addToast("Prompt refined with AI", "success");
         await loadSteps();
@@ -242,7 +243,7 @@ export function WorkflowStepManager({ isOpen, onClose, addToast }: WorkflowStepM
 
     setRefining(true);
     try {
-      const result = await refineWorkflowStepPrompt(editingId);
+      const result = await refineWorkflowStepPrompt(editingId, projectId);
       setForm((prev) => ({ ...prev, prompt: result.prompt }));
       addToast("Prompt refined with AI", "success");
       await loadSteps();
@@ -256,7 +257,7 @@ export function WorkflowStepManager({ isOpen, onClose, addToast }: WorkflowStepM
   const handleAddTemplate = useCallback(async (template: WorkflowStepTemplate) => {
     setAddingTemplateId(template.id);
     try {
-      await createWorkflowStepFromTemplate(template.id);
+      await createWorkflowStepFromTemplate(template.id, projectId);
       addToast(`Added ${template.name} workflow step`, "success");
       await loadSteps();
       // Switch to "My Workflow Steps" tab to show the newly added step

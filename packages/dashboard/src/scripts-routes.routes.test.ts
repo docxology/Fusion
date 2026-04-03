@@ -78,30 +78,12 @@ async function REQUEST(
   return { status: res.status, body: res.body };
 }
 
-// Script store mock - module-level
-const mockScriptStore = {
-  getScripts: vi.fn(() => ({})),
-  setScript: vi.fn(),
-  removeScript: vi.fn(),
-  save: vi.fn().mockResolvedValue(undefined),
-  hasScript: vi.fn(() => false),
-};
-
-vi.mock("./script-store.js", () => ({
-  loadScriptStore: vi.fn(() => Promise.resolve(mockScriptStore)),
-  resetScriptStore: vi.fn(),
-}));
-
 describe("Scripts routes", () => {
   let store: TaskStore;
 
   beforeEach(() => {
     store = createMockStore();
     vi.clearAllMocks();
-    mockScriptStore.getScripts.mockReturnValue({});
-    mockScriptStore.hasScript.mockReturnValue(false);
-    mockScriptStore.setScript.mockImplementation(() => {});
-    mockScriptStore.removeScript.mockImplementation(() => {});
   });
 
   function buildApp() {
@@ -112,7 +94,9 @@ describe("Scripts routes", () => {
   }
 
   it("GET /api/scripts returns all scripts from script store", async () => {
-    mockScriptStore.getScripts.mockReturnValueOnce({ build: "pnpm build", test: "pnpm test" });
+    vi.mocked(store.getSettings).mockResolvedValueOnce({
+      scripts: { build: "pnpm build", test: "pnpm test" },
+    } as any);
 
     const res = await GET(buildApp(), "/api/scripts");
 
@@ -121,7 +105,7 @@ describe("Scripts routes", () => {
   });
 
   it("GET /api/scripts returns empty object when no scripts", async () => {
-    mockScriptStore.getScripts.mockReturnValueOnce({});
+    vi.mocked(store.getSettings).mockResolvedValueOnce({ scripts: {} } as any);
 
     const res = await GET(buildApp(), "/api/scripts");
 
@@ -130,8 +114,8 @@ describe("Scripts routes", () => {
   });
 
   it("POST /api/scripts creates a new script and returns updated scripts", async () => {
-    mockScriptStore.hasScript.mockReturnValueOnce(false);
-    mockScriptStore.getScripts.mockReturnValueOnce({ test: "pnpm test" });
+    vi.mocked(store.getSettings).mockResolvedValueOnce({ scripts: { test: "pnpm test" } } as any);
+    vi.mocked(store.updateSettings).mockResolvedValueOnce({} as any);
 
     const res = await REQUEST(
       buildApp(),
@@ -142,8 +126,10 @@ describe("Scripts routes", () => {
     );
 
     expect(res.status).toBe(200);
-    expect(mockScriptStore.setScript).toHaveBeenCalledWith("build", "pnpm build");
-    expect(mockScriptStore.save).toHaveBeenCalled();
+    expect(store.updateSettings).toHaveBeenCalledWith({
+      scripts: { test: "pnpm test", build: "pnpm build" },
+    });
+    expect(res.body).toEqual({ test: "pnpm test", build: "pnpm build" });
   });
 
   it("POST /api/scripts returns 400 for missing name", async () => {
@@ -173,8 +159,8 @@ describe("Scripts routes", () => {
   });
 
   it("POST /api/scripts creates script with any name", async () => {
-    mockScriptStore.hasScript.mockReturnValueOnce(false);
-    mockScriptStore.getScripts.mockReturnValueOnce({});
+    vi.mocked(store.getSettings).mockResolvedValueOnce({ scripts: {} } as any);
+    vi.mocked(store.updateSettings).mockResolvedValueOnce({} as any);
 
     // The actual implementation accepts any name
     const res = await REQUEST(
@@ -186,28 +172,34 @@ describe("Scripts routes", () => {
     );
 
     expect(res.status).toBe(200);
-    expect(mockScriptStore.setScript).toHaveBeenCalledWith("my-script", "echo hi");
+    expect(store.updateSettings).toHaveBeenCalledWith({
+      scripts: { "my-script": "echo hi" },
+    });
   });
 
   it("DELETE /api/scripts/:name removes script and returns updated scripts", async () => {
-    mockScriptStore.hasScript.mockReturnValueOnce(true);
-    mockScriptStore.getScripts.mockReturnValueOnce({ test: "pnpm test" });
+    vi.mocked(store.getSettings).mockResolvedValueOnce({
+      scripts: { build: "pnpm build", test: "pnpm test" },
+    } as any);
+    vi.mocked(store.updateSettings).mockResolvedValueOnce({} as any);
 
     const res = await REQUEST(buildApp(), "DELETE", "/api/scripts/build");
 
     expect(res.status).toBe(200);
-    expect(mockScriptStore.removeScript).toHaveBeenCalledWith("build");
-    expect(mockScriptStore.save).toHaveBeenCalled();
+    expect(store.updateSettings).toHaveBeenCalledWith({
+      scripts: { test: "pnpm test" },
+    });
+    expect(res.body).toEqual({ test: "pnpm test" });
   });
 
   it("DELETE /api/scripts/:name removes script regardless of name format", async () => {
-    mockScriptStore.hasScript.mockReturnValueOnce(true);
-    mockScriptStore.getScripts.mockReturnValueOnce({});
+    vi.mocked(store.getSettings).mockResolvedValueOnce({ scripts: { build: "pnpm build" } } as any);
+    vi.mocked(store.updateSettings).mockResolvedValueOnce({} as any);
 
     // The actual implementation doesn't validate names, it just removes
     const res = await REQUEST(buildApp(), "DELETE", "/api/scripts/build");
 
     expect(res.status).toBe(200);
-    expect(mockScriptStore.removeScript).toHaveBeenCalledWith("build");
+    expect(store.updateSettings).toHaveBeenCalledWith({ scripts: {} });
   });
 });

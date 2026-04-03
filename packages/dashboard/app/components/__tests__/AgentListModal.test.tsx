@@ -296,10 +296,13 @@ describe("AgentListModal", () => {
       fireEvent.click(createButton);
 
       await waitFor(() => {
-        expect(mockCreateAgent).toHaveBeenCalledWith({
-          name: "My New Agent",
-          role: "executor",
-        });
+        expect(mockCreateAgent).toHaveBeenCalledWith(
+          {
+            name: "My New Agent",
+            role: "executor",
+          },
+          undefined
+        );
       });
 
       expect(mockAddToast).toHaveBeenCalledWith(
@@ -393,7 +396,7 @@ describe("AgentListModal", () => {
       fireEvent.click(startButton);
 
       await waitFor(() => {
-        expect(mockUpdateAgentState).toHaveBeenCalledWith("agent-001", "active");
+        expect(mockUpdateAgentState).toHaveBeenCalledWith("agent-001", "active", undefined);
       });
 
       expect(mockAddToast).toHaveBeenCalledWith(
@@ -463,7 +466,7 @@ describe("AgentListModal", () => {
       fireEvent.click(pauseButton);
 
       await waitFor(() => {
-        expect(mockUpdateAgentState).toHaveBeenCalledWith("agent-002", "paused");
+        expect(mockUpdateAgentState).toHaveBeenCalledWith("agent-002", "paused", undefined);
       });
     });
 
@@ -496,7 +499,7 @@ describe("AgentListModal", () => {
       fireEvent.click(stopButton);
 
       await waitFor(() => {
-        expect(mockUpdateAgentState).toHaveBeenCalledWith("agent-002", "terminated");
+        expect(mockUpdateAgentState).toHaveBeenCalledWith("agent-002", "terminated", undefined);
       });
     });
 
@@ -530,7 +533,7 @@ describe("AgentListModal", () => {
       fireEvent.click(screen.getByTitle("Resume"));
 
       await waitFor(() => {
-        expect(mockUpdateAgentState).toHaveBeenCalledWith("agent-003", "active");
+        expect(mockUpdateAgentState).toHaveBeenCalledWith("agent-003", "active", undefined);
       });
     });
 
@@ -618,7 +621,7 @@ describe("AgentListModal", () => {
       fireEvent.click(screen.getByTitle("Delete"));
 
       await waitFor(() => {
-        expect(mockDeleteAgent).toHaveBeenCalledWith("agent-004");
+        expect(mockDeleteAgent).toHaveBeenCalledWith("agent-004", undefined);
       });
 
       expect(mockAddToast).toHaveBeenCalledWith(
@@ -672,7 +675,7 @@ describe("AgentListModal", () => {
       fireEvent.change(filterSelect, { target: { value: "active" } });
 
       await waitFor(() => {
-        expect(mockFetchAgents).toHaveBeenCalledWith({ state: "active" });
+        expect(mockFetchAgents).toHaveBeenCalledWith({ state: "active" }, undefined);
       });
     });
 
@@ -693,13 +696,13 @@ describe("AgentListModal", () => {
       fireEvent.change(filterSelect, { target: { value: "idle" } });
 
       await waitFor(() => {
-        expect(mockFetchAgents).toHaveBeenLastCalledWith({ state: "idle" });
+        expect(mockFetchAgents).toHaveBeenLastCalledWith({ state: "idle" }, undefined);
       });
 
       fireEvent.change(filterSelect, { target: { value: "all" } });
 
       await waitFor(() => {
-        expect(mockFetchAgents).toHaveBeenLastCalledWith(undefined);
+        expect(mockFetchAgents).toHaveBeenLastCalledWith(undefined, undefined);
       });
     });
   });

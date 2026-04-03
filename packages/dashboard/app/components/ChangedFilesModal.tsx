@@ -8,6 +8,7 @@ interface ChangedFilesModalProps {
   taskId: string;
   worktree: string | undefined;
   column: string;
+  projectId?: string;
   isOpen: boolean;
   onClose: () => void;
 }
@@ -44,8 +45,8 @@ function getDiffStat(diff: string): string {
   return statLines.join("\n").trim();
 }
 
-export function ChangedFilesModal({ taskId, worktree, column, isOpen, onClose }: ChangedFilesModalProps) {
-  const { files, loading, error, selectedFile, setSelectedFile } = useChangedFiles(taskId, worktree, column);
+export function ChangedFilesModal({ taskId, worktree, column, projectId, isOpen, onClose }: ChangedFilesModalProps) {
+  const { files, loading, error, selectedFile, setSelectedFile } = useChangedFiles(taskId, worktree, column, projectId);
 
   useEffect(() => {
     if (!isOpen) return;

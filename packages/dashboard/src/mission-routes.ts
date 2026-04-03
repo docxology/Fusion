@@ -13,7 +13,8 @@
  */
 
 import { Router, type Request, type Response, type NextFunction } from "express";
-import type { TaskStore } from "@fusion/core";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { TaskStore } from "@fusion/core";
 import type {
   Mission,
   Milestone,
@@ -103,6 +104,13 @@ function validateStringArray(arr: unknown, fieldName: string): string[] {
   return arr;
 }
 
+function validateBoolean(value: unknown, fieldName: string): boolean {
+  if (typeof value !== "boolean") {
+    throw new Error(`${fieldName} must be a boolean`);
+  }
+  return value;
+}
+
 function validateOrderedIds(body: unknown): string[] {
   if (!body || typeof body !== "object") {
     throw new Error("Request body must contain orderedIds array");
@@ -131,7 +139,43 @@ function asyncHandler(fn: (req: TypedRequest, res: Response, next: NextFunction)
 
 export function createMissionRouter(store: TaskStore): Router {
   const router = Router();
-  const missionStore = store.getMissionStore();
+  const requestContext = new AsyncLocalStorage<ReturnType<TaskStore["getMissionStore"]>>();
+
+  function getProjectIdFromRequest(req: Request): string | undefined {
+    if (typeof req.query.projectId === "string" && req.query.projectId.trim()) {
+      return req.query.projectId;
+    }
+    if (req.body && typeof req.body === "object" && typeof req.body.projectId === "string" && req.body.projectId.trim()) {
+      return req.body.projectId;
+    }
+    return undefined;
+  }
+
+  function getScopedMissionStore() {
+    const missionStore = requestContext.getStore();
+    if (!missionStore) {
+      return store.getMissionStore();
+    }
+    return missionStore;
+  }
+
+  const missionStore = new Proxy({} as ReturnType<TaskStore["getMissionStore"]>, {
+    get(_target, property) {
+      const target = getScopedMissionStore();
+      const value = (target as unknown as Record<PropertyKey, unknown>)[property];
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+
+  router.use(async (req, _res, next) => {
+    try {
+      const projectId = getProjectIdFromRequest(req);
+      const scopedStore = projectId ? await TaskStore.getOrCreateForProject(projectId) : store;
+      requestContext.run(scopedStore.getMissionStore(), next);
+    } catch (error) {
+      next(error);
+    }
+  });
 
   // ── Mission Endpoints ─────────────────────────────────────────────────────
 
@@ -156,7 +200,7 @@ export function createMissionRouter(store: TaskStore): Router {
   router.post(
     "/",
     asyncHandler(async (req, res) => {
-      const { title, description } = req.body;
+      const { title, description, autoAdvance } = req.body;
 
       const validatedTitle = validateTitle(title);
       const validatedDescription = validateDescription(description);
@@ -167,6 +211,15 @@ export function createMissionRouter(store: TaskStore): Router {
       };
 
       const mission = missionStore.createMission(input);
+
+      if (autoAdvance !== undefined) {
+        const updatedMission = missionStore.updateMission(mission.id, {
+          autoAdvance: validateBoolean(autoAdvance, "autoAdvance"),
+        });
+        res.status(201).json(updatedMission);
+        return;
+      }
+
       res.status(201).json(mission);
     })
   );
@@ -203,7 +256,7 @@ export function createMissionRouter(store: TaskStore): Router {
     "/:missionId",
     asyncHandler(async (req, res) => {
       const { missionId } = req.params;
-      const { title, description, status } = req.body;
+      const { title, description, status, autoAdvance } = req.body;
 
       if (!validateMissionId(missionId)) {
         res.status(400).json({ error: "Invalid mission ID format" });
@@ -220,6 +273,9 @@ export function createMissionRouter(store: TaskStore): Router {
       }
       if (status !== undefined) {
         updates.status = validateStatus(status, MISSION_STATUSES) as MissionStatus;
+      }
+      if (autoAdvance !== undefined) {
+        updates.autoAdvance = validateBoolean(autoAdvance, "autoAdvance");
       }
 
       if (Object.keys(updates).length === 0) {

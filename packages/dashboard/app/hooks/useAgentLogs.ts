@@ -21,7 +21,7 @@ function capLogEntries(entries: AgentLogEntry[]): AgentLogEntry[] {
  * When `enabled` becomes false or the component unmounts, the EventSource
  * is closed to avoid unnecessary SSE connections.
  */
-export function useAgentLogs(taskId: string | null, enabled: boolean) {
+export function useAgentLogs(taskId: string | null, enabled: boolean, projectId?: string) {
   const [entries, setEntries] = useState<AgentLogEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const eventSourceRef = useRef<EventSource | null>(null);
@@ -45,7 +45,7 @@ export function useAgentLogs(taskId: string | null, enabled: boolean) {
 
       setLoading(true);
       try {
-        const historical = await fetchAgentLogs(currentTaskId);
+        const historical = await fetchAgentLogs(currentTaskId, projectId);
         if (cancelled) return;
         setEntries(capLogEntries(historical));
       } catch {
@@ -56,7 +56,8 @@ export function useAgentLogs(taskId: string | null, enabled: boolean) {
       }
 
       // Open SSE connection for live updates
-      const es = new EventSource(`/api/tasks/${currentTaskId}/logs/stream`);
+      const query = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
+      const es = new EventSource(`/api/tasks/${currentTaskId}/logs/stream${query}`);
       eventSourceRef.current = es;
 
       es.addEventListener("agent:log", (e) => {
@@ -79,7 +80,7 @@ export function useAgentLogs(taskId: string | null, enabled: boolean) {
         eventSourceRef.current = null;
       }
     };
-  }, [taskId, enabled]);
+  }, [taskId, enabled, projectId]);
 
   const clear = useCallback(() => setEntries([]), []);
 

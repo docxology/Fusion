@@ -676,7 +676,7 @@ describe("useTasks", () => {
       expect(mockUpdateTask).toHaveBeenCalledWith("FN-001", {
         title: "New Title",
         description: "New Description",
-      });
+      }, undefined);
       expect(returnedTask).toEqual(updatedTask);
       expect(result.current.tasks[0].title).toBe("New Title");
       expect(result.current.tasks[0].description).toBe("New Description");

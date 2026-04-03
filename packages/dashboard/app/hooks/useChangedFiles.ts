@@ -11,7 +11,7 @@ interface UseChangedFilesResult {
   setSelectedFile: (file: TaskFileDiff) => void;
 }
 
-export function useChangedFiles(taskId: string, worktree: string | undefined, column: string): UseChangedFilesResult {
+export function useChangedFiles(taskId: string, worktree: string | undefined, column: string, projectId?: string): UseChangedFilesResult {
   const [files, setFiles] = useState<TaskFileDiff[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -32,7 +32,7 @@ export function useChangedFiles(taskId: string, worktree: string | undefined, co
       setLoading(true);
       setError(null);
       try {
-        const result = await fetchTaskFileDiffs(taskId);
+        const result = await fetchTaskFileDiffs(taskId, projectId);
         if (cancelled) return;
         setFiles(result);
         setSelectedFile((current) => {
@@ -60,7 +60,7 @@ export function useChangedFiles(taskId: string, worktree: string | undefined, co
     return () => {
       cancelled = true;
     };
-  }, [taskId, worktree, column]);
+  }, [taskId, worktree, column, projectId]);
 
   return { files, loading, error, selectedFile, setSelectedFile };
 }

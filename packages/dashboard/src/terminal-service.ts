@@ -509,7 +509,16 @@ export class TerminalService extends EventEmitter {
 
     // Flush buffered output to clients (throttled)
     const flushOutput = () => {
-      if (session.outputBuffer.length === 0) return;
+      // Guard against firing after session was killed
+      if (!this.sessions.has(id)) {
+        session.flushTimeout = null;
+        return;
+      }
+
+      if (session.outputBuffer.length === 0) {
+        session.flushTimeout = null;
+        return;
+      }
 
       let dataToSend = session.outputBuffer;
       if (dataToSend.length > OUTPUT_BATCH_SIZE) {
@@ -527,14 +536,16 @@ export class TerminalService extends EventEmitter {
 
     // Forward data events with throttling
     ptyProcess.onData((data: string) => {
-      if (session.resizeInProgress) {
-        return;
-      }
-
-      // Append to scrollback buffer
+      // Always append to scrollback buffer so no output is lost
       session.scrollbackBuffer += data;
       if (session.scrollbackBuffer.length > MAX_SCROLLBACK_SIZE) {
         session.scrollbackBuffer = session.scrollbackBuffer.slice(-MAX_SCROLLBACK_SIZE);
+      }
+
+      // During resize, buffer to scrollback only — suppress delivery to avoid
+      // rendering artifacts, but don't drop the data entirely
+      if (session.resizeInProgress) {
+        return;
       }
 
       // Buffer output for throttled delivery
@@ -548,6 +559,15 @@ export class TerminalService extends EventEmitter {
     // Handle exit
     ptyProcess.onExit(({ exitCode }: { exitCode: number; signal?: number }) => {
       console.info(`Session exited with code ${exitCode ?? 0} (${id})`);
+      // Clean up timers before removing session
+      if (session.flushTimeout) {
+        clearTimeout(session.flushTimeout);
+        session.flushTimeout = null;
+      }
+      if (session.resizeDebounceTimeout) {
+        clearTimeout(session.resizeDebounceTimeout);
+        session.resizeDebounceTimeout = null;
+      }
       this.sessions.delete(id);
       this.exitCallbacks.forEach((cb) => cb(id, exitCode ?? 0));
       this.emit("exit", id, exitCode ?? 0);
@@ -661,6 +681,15 @@ export class TerminalService extends EventEmitter {
       setTimeout(() => {
         if (this.sessions.has(sessionId)) {
           console.info(`Session ${sessionId} still alive after SIGTERM, sending SIGKILL`);
+          // Clean up timers before removing session
+          if (session.flushTimeout) {
+            clearTimeout(session.flushTimeout);
+            session.flushTimeout = null;
+          }
+          if (session.resizeDebounceTimeout) {
+            clearTimeout(session.resizeDebounceTimeout);
+            session.resizeDebounceTimeout = null;
+          }
           try {
             this.killPtyProcess(session.pty, "SIGKILL");
           } catch {
@@ -756,6 +785,11 @@ export class TerminalService extends EventEmitter {
       try {
         if (session.flushTimeout) {
           clearTimeout(session.flushTimeout);
+          session.flushTimeout = null;
+        }
+        if (session.resizeDebounceTimeout) {
+          clearTimeout(session.resizeDebounceTimeout);
+          session.resizeDebounceTimeout = null;
         }
         this.killPtyProcess(session.pty);
       } catch {
@@ -774,6 +808,10 @@ export function getTerminalService(projectRoot?: string, maxSessions?: number): 
   if (!terminalService || (projectRoot && projectRoot !== initializedRoot)) {
     if (!projectRoot) {
       throw new Error("TerminalService requires projectRoot for initialization");
+    }
+    // Clean up old instance to avoid leaking PTY processes
+    if (terminalService) {
+      terminalService.cleanup();
     }
     terminalService = new TerminalService(projectRoot, maxSessions);
     initializedRoot = projectRoot;

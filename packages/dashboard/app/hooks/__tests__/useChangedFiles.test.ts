@@ -31,7 +31,7 @@ describe("useChangedFiles", () => {
     expect(result.current.error).toBeNull();
     expect(result.current.files).toHaveLength(2);
     expect(result.current.selectedFile?.path).toBe("src/a.ts");
-    expect(mockFetchTaskFileDiffs).toHaveBeenCalledWith("KB-651");
+    expect(mockFetchTaskFileDiffs).toHaveBeenCalledWith("KB-651", undefined);
   });
 
   it("does not fetch for tasks without worktrees or inactive columns", async () => {

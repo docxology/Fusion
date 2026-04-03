@@ -72,7 +72,7 @@ describe("useAgentLogs", () => {
       expect(result.current.entries).toEqual(historicalLogs);
     });
 
-    expect(mockFetchAgentLogs).toHaveBeenCalledWith("FN-001");
+    expect(mockFetchAgentLogs).toHaveBeenCalledWith("FN-001", undefined);
     expect(MockEventSource.instances).toHaveLength(1);
     expect(MockEventSource.instances[0].url).toBe("/api/tasks/FN-001/logs/stream");
   });

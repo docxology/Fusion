@@ -133,7 +133,7 @@ describe("TaskCard", () => {
     });
 
     await waitFor(() => {
-      expect(mockUpload).toHaveBeenCalledWith("FN-001", file);
+      expect(mockUpload).toHaveBeenCalledWith("FN-001", file, undefined);
       expect(addToast).toHaveBeenCalledWith(
         expect.stringContaining("Attached test.png"),
         "success",

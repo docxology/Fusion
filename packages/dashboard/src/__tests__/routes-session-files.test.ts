@@ -1,10 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { EventEmitter, once } from "node:events";
-import http from "node:http";
+import { EventEmitter } from "node:events";
 import type { Task } from "@fusion/core";
-import { createServer } from "../server.js";
-import * as childProcess from "node:child_process";
-import * as fs from "node:fs";
 
 vi.mock("node:child_process", async () => {
   const actual = await vi.importActual<typeof import("node:child_process")>("node:child_process");
@@ -22,6 +18,8 @@ vi.mock("node:fs", async () => {
   };
 });
 
+const childProcess = await import("node:child_process");
+const fs = await import("node:fs");
 const mockExecSync = vi.mocked(childProcess.execSync);
 const mockExistsSync = vi.mocked(fs.existsSync);
 
@@ -44,6 +42,14 @@ class MockStore extends EventEmitter {
   addTask(task: Task): void {
     this.tasks.set(task.id, task);
   }
+
+  getMissionStore() {
+    return new EventEmitter();
+  }
+
+  async listTasks(): Promise<Task[]> {
+    return [];
+  }
 }
 
 function createTask(overrides: Partial<Task> = {}): Task {
@@ -64,31 +70,59 @@ function createTask(overrides: Partial<Task> = {}): Task {
   };
 }
 
-async function requestSessionFiles(port: number, taskId = "FN-675"): Promise<{ status: number; body: any }> {
-  return await new Promise((resolve, reject) => {
-    const req = http.request(
-      {
-        hostname: "127.0.0.1",
-        port,
-        path: `/api/tasks/${taskId}/session-files`,
-        method: "GET",
-      },
-      (res) => {
-        let data = "";
-        res.on("data", (chunk) => (data += chunk));
-        res.on("end", () => resolve({ status: res.statusCode!, body: JSON.parse(data) }));
-      },
-    );
-    req.on("error", reject);
-    req.end();
-  });
+async function getSessionFilesHandler(store: MockStore) {
+  vi.resetModules();
+  const { createApiRoutes } = await import("../routes.js");
+  const router = createApiRoutes(store as any);
+  const layer = (router as any).stack.find(
+    (candidate: any) =>
+      candidate.route?.path === "/tasks/:id/session-files" &&
+      candidate.route?.methods?.get,
+  );
+
+  if (!layer) {
+    throw new Error("GET /tasks/:id/session-files route not found");
+  }
+
+  return layer.route.stack[layer.route.stack.length - 1].handle as (req: any, res: any) => Promise<void>;
+}
+
+function createMockResponse() {
+  return {
+    statusCode: 200,
+    body: undefined as any,
+    status(code: number) {
+      this.statusCode = code;
+      return this;
+    },
+    json(payload: any) {
+      this.body = payload;
+      return this;
+    },
+  };
+}
+
+async function requestSessionFiles(store: MockStore, taskId = "FN-675"): Promise<{ status: number; body: any }> {
+  const handler = await getSessionFilesHandler(store);
+  return requestSessionFilesWithHandler(handler, taskId);
+}
+
+async function requestSessionFilesWithHandler(
+  handler: (req: any, res: any) => Promise<void>,
+  taskId = "FN-675",
+): Promise<{ status: number; body: any }> {
+  const req = { params: { id: taskId } };
+  const res = createMockResponse();
+  await handler(req, res);
+  return { status: res.statusCode, body: res.body };
 }
 
 describe("GET /api/tasks/:id/session-files", () => {
   beforeEach(() => {
+    vi.resetModules();
     vi.clearAllMocks();
     mockExistsSync.mockReturnValue(true);
-    vi.useFakeTimers();
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
     vi.setSystemTime(new Date("2026-04-01T12:00:00.000Z"));
   });
 
@@ -99,7 +133,7 @@ describe("GET /api/tasks/:id/session-files", () => {
 
   it("uses baseCommitSha with double-dot syntax when available", async () => {
     const store = new MockStore();
-    store.addTask(createTask({ baseCommitSha: "abc123" }));
+    store.addTask(createTask({ id: "FN-675-base", baseCommitSha: "abc123" }));
     mockExecSync.mockImplementation((command) => {
       if (String(command) === "git diff --name-only abc123..HEAD") {
         return "src/a.ts\nsrc/b.ts\n" as any;
@@ -107,25 +141,17 @@ describe("GET /api/tasks/:id/session-files", () => {
       throw new Error(`Unexpected command: ${String(command)}`);
     });
 
-    const app = createServer(store as any);
-    const server = app.listen(0);
-    await once(server, "listening");
-    const port = (server.address() as { port: number }).port;
-
-    const response = await requestSessionFiles(port);
+    const response = await requestSessionFiles(store, "FN-675-base");
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual(["src/a.ts", "src/b.ts"]);
     expect(mockExecSync).toHaveBeenCalledWith("git diff --name-only abc123..HEAD", expect.objectContaining({ cwd: "/tmp/fn-675" }));
     expect(mockExecSync).not.toHaveBeenCalledWith(expect.stringContaining("...HEAD"), expect.anything());
-
-    server.close();
-    await once(server, "close");
   });
 
   it("computes fallback base ref with merge-base and returns matching file list", async () => {
     const store = new MockStore();
-    store.addTask(createTask({ baseCommitSha: undefined }));
+    store.addTask(createTask({ id: "FN-675-merge-base", baseCommitSha: undefined }));
     mockExecSync.mockImplementation((command) => {
       if (String(command) === "git merge-base HEAD origin/main 2>/dev/null || git merge-base HEAD main") {
         return "mergebase123\n" as any;
@@ -136,12 +162,7 @@ describe("GET /api/tasks/:id/session-files", () => {
       throw new Error(`Unexpected command: ${String(command)}`);
     });
 
-    const app = createServer(store as any);
-    const server = app.listen(0);
-    await once(server, "listening");
-    const port = (server.address() as { port: number }).port;
-
-    const response = await requestSessionFiles(port);
+    const response = await requestSessionFiles(store, "FN-675-merge-base");
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual([
@@ -158,14 +179,11 @@ describe("GET /api/tasks/:id/session-files", () => {
       "git diff --name-only mergebase123..HEAD",
       expect.objectContaining({ cwd: "/tmp/fn-675" }),
     );
-
-    server.close();
-    await once(server, "close");
   });
 
   it("falls back to HEAD~1 when merge-base fails", async () => {
     const store = new MockStore();
-    store.addTask(createTask({ baseCommitSha: undefined }));
+    store.addTask(createTask({ id: "FN-675-head-parent", baseCommitSha: undefined }));
     mockExecSync.mockImplementation((command) => {
       if (String(command) === "git merge-base HEAD origin/main 2>/dev/null || git merge-base HEAD main") {
         throw new Error("merge-base failed");
@@ -179,63 +197,40 @@ describe("GET /api/tasks/:id/session-files", () => {
       throw new Error(`Unexpected command: ${String(command)}`);
     });
 
-    const app = createServer(store as any);
-    const server = app.listen(0);
-    await once(server, "listening");
-    const port = (server.address() as { port: number }).port;
-
-    const response = await requestSessionFiles(port);
+    const response = await requestSessionFiles(store, "FN-675-head-parent");
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual(["src/only.ts"]);
-
-    server.close();
-    await once(server, "close");
   });
 
   it("returns empty array when worktree is missing", async () => {
     const store = new MockStore();
-    store.addTask(createTask({ worktree: undefined }));
+    store.addTask(createTask({ id: "FN-675-missing", worktree: undefined }));
 
-    const app = createServer(store as any);
-    const server = app.listen(0);
-    await once(server, "listening");
-    const port = (server.address() as { port: number }).port;
-
-    const response = await requestSessionFiles(port);
+    const response = await requestSessionFiles(store, "FN-675-missing");
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual([]);
     expect(mockExecSync).not.toHaveBeenCalled();
-
-    server.close();
-    await once(server, "close");
   });
 
   it("uses the 10-second cache before recomputing", async () => {
     const store = new MockStore();
-    store.addTask(createTask({ baseCommitSha: "cachebase" }));
+    store.addTask(createTask({ id: "FN-675-cache", baseCommitSha: "cachebase" }));
     mockExecSync.mockReturnValue("cached/file.ts\n" as any);
+    const handler = await getSessionFilesHandler(store);
 
-    const app = createServer(store as any);
-    const server = app.listen(0);
-    await once(server, "listening");
-    const port = (server.address() as { port: number }).port;
-
-    const first = await requestSessionFiles(port);
-    const second = await requestSessionFiles(port);
+    const first = await requestSessionFilesWithHandler(handler, "FN-675-cache");
+    const second = await requestSessionFilesWithHandler(handler, "FN-675-cache");
 
     expect(first.body).toEqual(["cached/file.ts"]);
     expect(second.body).toEqual(["cached/file.ts"]);
     expect(mockExecSync).toHaveBeenCalledTimes(1);
 
     vi.advanceTimersByTime(10001);
-    const third = await requestSessionFiles(port);
+    const third = await requestSessionFilesWithHandler(handler, "FN-675-cache");
 
     expect(third.body).toEqual(["cached/file.ts"]);
     expect(mockExecSync).toHaveBeenCalledTimes(2);
-
-    server.close();
-    await once(server, "close");
   });
 });

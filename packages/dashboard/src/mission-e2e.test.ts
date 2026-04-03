@@ -45,6 +45,7 @@ function createMockMissionStore() {
         description: input.description,
         status: "planning",
         interviewState: "not_started",
+        autoAdvance: false,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
@@ -228,6 +229,40 @@ function buildApp() {
 }
 
 describe("Mission API", () => {
+  describe("POST /api/missions", () => {
+    it("should create a mission with the default auto-advance state", async () => {
+      const { app } = buildApp();
+
+      const res = await request(
+        app,
+        "POST",
+        "/api/missions",
+        JSON.stringify({ title: "New Mission", description: "Ship it" }),
+        { "content-type": "application/json" }
+      );
+
+      expect(res.status).toBe(201);
+      expect(res.body.title).toBe("New Mission");
+      expect(res.body.autoAdvance).toBe(false);
+    });
+
+    it("should persist auto-advance when provided during creation", async () => {
+      const { app, missionStore } = buildApp();
+
+      const res = await request(
+        app,
+        "POST",
+        "/api/missions",
+        JSON.stringify({ title: "Mission", autoAdvance: true }),
+        { "content-type": "application/json" }
+      );
+
+      expect(res.status).toBe(201);
+      expect(res.body.autoAdvance).toBe(true);
+      expect(missionStore.updateMission).toHaveBeenCalledWith(res.body.id, { autoAdvance: true });
+    });
+  });
+
   describe("GET /api/missions", () => {
     it("should list all missions", async () => {
       const { app, missionStore } = buildApp();
@@ -265,6 +300,50 @@ describe("Mission API", () => {
       const { app } = buildApp();
       const res = await get(app, "/api/missions/M-999");
       expect(res.status).toBe(404);
+    });
+  });
+
+  describe("PATCH /api/missions/:missionId", () => {
+    it("should update mission status and auto-advance", async () => {
+      const { app, missionStore } = buildApp();
+      const mission = missionStore.createMission({ title: "Test Mission" });
+
+      const res = await request(
+        app,
+        "PATCH",
+        `/api/missions/${mission.id}`,
+        JSON.stringify({ status: "active", autoAdvance: true }),
+        { "content-type": "application/json" }
+      );
+
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe("active");
+      expect(res.body.autoAdvance).toBe(true);
+      expect(missionStore.updateMission).toHaveBeenCalledWith(mission.id, {
+        status: "active",
+        autoAdvance: true,
+      });
+    });
+
+    it("should reject non-boolean auto-advance values", async () => {
+      const { app, missionStore } = buildApp();
+      const mission = missionStore.createMission({ title: "Test Mission" });
+
+      app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+        res.status(500).json({ error: err.message });
+      });
+
+      const res = await request(
+        app,
+        "PATCH",
+        `/api/missions/${mission.id}`,
+        JSON.stringify({ autoAdvance: "yes" }),
+        { "content-type": "application/json" }
+      );
+
+      expect(res.status).toBe(500);
+      expect(res.body.error).toContain("autoAdvance must be a boolean");
+      expect(missionStore.updateMission).not.toHaveBeenCalled();
     });
   });
 

@@ -10,6 +10,7 @@ interface TaskCommentsProps {
   onTaskUpdated?: (task: Task) => void;
   addToast: (message: string, type?: ToastType) => void;
   currentAuthor?: string;
+  projectId?: string;
 }
 
 type CommentType = "comment" | "guidance";
@@ -24,7 +25,7 @@ function isAIGuidanceComment(author: string): boolean {
   return author === "agent" || author === "system";
 }
 
-export function TaskComments({ task, onTaskUpdated, addToast, currentAuthor = "user" }: TaskCommentsProps) {
+export function TaskComments({ task, onTaskUpdated, addToast, currentAuthor = "user", projectId }: TaskCommentsProps) {
   const [draft, setDraft] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState("");
@@ -47,12 +48,12 @@ export function TaskComments({ task, onTaskUpdated, addToast, currentAuthor = "u
     setSubmitting(true);
     try {
       if (commentType === "guidance") {
-        const updated = await addSteeringComment(task.id, text);
+        const updated = await addSteeringComment(task.id, text, projectId);
         setDraft("");
         onTaskUpdated?.(updated);
         addToast("AI Guidance added", "success");
       } else {
-        const updated = await addTaskComment(task.id, text, currentAuthor);
+        const updated = await addTaskComment(task.id, text, currentAuthor, projectId);
         setDraft("");
         onTaskUpdated?.(updated);
         addToast("Comment added", "success");
@@ -69,7 +70,7 @@ export function TaskComments({ task, onTaskUpdated, addToast, currentAuthor = "u
     if (!text) return;
     setSubmitting(true);
     try {
-      const updated = await updateTaskComment(task.id, commentId, text);
+      const updated = await updateTaskComment(task.id, commentId, text, projectId);
       setEditingId(null);
       setEditingText("");
       onTaskUpdated?.(updated);
@@ -84,7 +85,7 @@ export function TaskComments({ task, onTaskUpdated, addToast, currentAuthor = "u
   async function handleDelete(commentId: string) {
     setDeletingId(commentId);
     try {
-      const updated = await deleteTaskComment(task.id, commentId);
+      const updated = await deleteTaskComment(task.id, commentId, projectId);
       onTaskUpdated?.(updated);
       addToast("Comment deleted", "success");
     } catch (error: any) {

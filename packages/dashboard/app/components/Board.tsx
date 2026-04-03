@@ -8,6 +8,7 @@ import type { ModelInfo } from "../api";
 
 interface BoardProps {
   tasks: Task[];
+  projectId?: string;
   maxConcurrent: number;
   onMoveTask: (id: string, column: ColumnType) => Promise<Task>;
   onOpenDetail: (task: TaskDetail) => void;
@@ -53,9 +54,9 @@ function areTaskArraysEqual(previous: Task[], next: Task[]): boolean {
   return previous.every((task, index) => task === next[index]);
 }
 
-export function Board({ tasks, maxConcurrent, onMoveTask, onOpenDetail, addToast, onQuickCreate, onNewTask, autoMerge, onToggleAutoMerge, globalPaused, onUpdateTask, onArchiveTask, onUnarchiveTask, onArchiveAllDone, searchQuery = "", availableModels, onPlanningMode, onSubtaskBreakdown, onOpenFilesForTask }: BoardProps) {
+export function Board({ tasks, projectId, maxConcurrent, onMoveTask, onOpenDetail, addToast, onQuickCreate, onNewTask, autoMerge, onToggleAutoMerge, globalPaused, onUpdateTask, onArchiveTask, onUnarchiveTask, onArchiveAllDone, searchQuery = "", availableModels, onPlanningMode, onSubtaskBreakdown, onOpenFilesForTask }: BoardProps) {
   const [archivedCollapsed, setArchivedCollapsed] = useState(true);
-  const { fetchBatch } = useBatchBadgeFetch();
+  const { fetchBatch } = useBatchBadgeFetch(projectId);
   const debounceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tasksByColumnCacheRef = useRef<Record<ColumnType, Task[]>>({
     triage: [],
@@ -151,6 +152,7 @@ export function Board({ tasks, maxConcurrent, onMoveTask, onOpenDetail, addToast
             key={col}
             column={col}
             tasks={tasksByColumn[col]}
+            projectId={projectId}
             maxConcurrent={maxConcurrent}
             onMoveTask={onMoveTask}
             onOpenDetail={onOpenDetail}

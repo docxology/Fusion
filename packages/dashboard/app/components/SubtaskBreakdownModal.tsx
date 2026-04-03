@@ -15,6 +15,7 @@ interface SubtaskBreakdownModalProps {
   initialDescription: string;
   onTasksCreated: (tasks: Task[]) => void;
   parentTaskId?: string;
+  projectId?: string;
 }
 
 type ViewState =
@@ -53,7 +54,7 @@ function hasDependencyCycle(subtasks: SubtaskItem[]): boolean {
   return subtasks.some((item) => visit(item.id));
 }
 
-export function SubtaskBreakdownModal({ isOpen, onClose, initialDescription, onTasksCreated, parentTaskId }: SubtaskBreakdownModalProps) {
+export function SubtaskBreakdownModal({ isOpen, onClose, initialDescription, onTasksCreated, parentTaskId, projectId }: SubtaskBreakdownModalProps) {
   const [view, setView] = useState<ViewState>({ type: "initial" });
   const [subtasks, setSubtasks] = useState<SubtaskItem[]>([]);
   const [thinkingOutput, setThinkingOutput] = useState("");
@@ -98,14 +99,14 @@ export function SubtaskBreakdownModal({ isOpen, onClose, initialDescription, onT
     }
     if (sessionId) {
       try {
-        await cancelSubtaskBreakdown(sessionId);
+        await cancelSubtaskBreakdown(sessionId, projectId);
       } catch {
         // ignore cancel errors
       }
     }
     resetState();
     onClose();
-  }, [dirty, onClose, resetState, sessionId, view.type]);
+  }, [dirty, onClose, resetState, sessionId, view.type, projectId]);
 
   const beginBreakdown = useCallback(async () => {
     if (!initialDescription.trim()) return;
@@ -113,10 +114,10 @@ export function SubtaskBreakdownModal({ isOpen, onClose, initialDescription, onT
     setThinkingOutput("");
 
     try {
-      const { sessionId } = await startSubtaskBreakdown(initialDescription.trim());
+      const { sessionId } = await startSubtaskBreakdown(initialDescription.trim(), projectId);
       setView({ type: "generating", sessionId });
       streamRef.current?.close();
-      streamRef.current = connectSubtaskStream(sessionId, {
+      streamRef.current = connectSubtaskStream(sessionId, projectId, {
         onThinking: (data) => setThinkingOutput((prev) => prev + data),
         onSubtasks: (items) => {
           setSubtasks(items);
@@ -274,7 +275,7 @@ export function SubtaskBreakdownModal({ isOpen, onClose, initialDescription, onT
     setError(null);
     setView({ type: "creating", sessionId });
     try {
-      const result = await createTasksFromBreakdown(sessionId, subtasks, parentTaskId);
+      const result = await createTasksFromBreakdown(sessionId, subtasks, parentTaskId, projectId);
       onTasksCreated(result.tasks);
       resetState();
       onClose();

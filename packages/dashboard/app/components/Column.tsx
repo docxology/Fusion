@@ -17,6 +17,7 @@ const VISIBLE_TASKS_INCREMENT = 25;
 interface ColumnProps {
   column: ColumnType;
   tasks: Task[];
+  projectId?: string;
   maxConcurrent: number;
   onMoveTask: (id: string, column: ColumnType) => Promise<Task>;
   onOpenDetail: (task: TaskDetail) => void;
@@ -48,7 +49,7 @@ interface ColumnProps {
   onOpenFilesForTask?: (taskId: string, worktree: string | undefined, column: string) => void;
 }
 
-function ColumnComponent({ column, tasks, maxConcurrent, onMoveTask, onOpenDetail, addToast, onQuickCreate, onNewTask, autoMerge, onToggleAutoMerge, globalPaused, onUpdateTask, onArchiveTask, onUnarchiveTask, onArchiveAllDone, collapsed, onToggleCollapse, allTasks, availableModels, onPlanningMode, onSubtaskBreakdown, onOpenFilesForTask }: ColumnProps) {
+function ColumnComponent({ column, tasks, projectId, maxConcurrent, onMoveTask, onOpenDetail, addToast, onQuickCreate, onNewTask, autoMerge, onToggleAutoMerge, globalPaused, onUpdateTask, onArchiveTask, onUnarchiveTask, onArchiveAllDone, collapsed, onToggleCollapse, allTasks, availableModels, onPlanningMode, onSubtaskBreakdown, onOpenFilesForTask }: ColumnProps) {
   const [dragOver, setDragOver] = useState(false);
   const [visibleTaskCount, setVisibleTaskCount] = useState(VISIBLE_TASKS_INITIAL);
   const countFlashing = useFlashOnIncrease(tasks.length);
@@ -207,6 +208,7 @@ function ColumnComponent({ column, tasks, maxConcurrent, onMoveTask, onOpenDetai
                   label={group.label}
                   activeTasks={group.activeTasks}
                   queuedTasks={group.queuedTasks}
+                  projectId={projectId}
                   onOpenDetail={onOpenDetail}
                   addToast={addToast}
                   globalPaused={globalPaused}
@@ -223,6 +225,7 @@ function ColumnComponent({ column, tasks, maxConcurrent, onMoveTask, onOpenDetai
                 <TaskCard
                   key={task.id}
                   task={task}
+                  projectId={projectId}
                   onOpenDetail={onOpenDetail}
                   addToast={addToast}
                   globalPaused={globalPaused}

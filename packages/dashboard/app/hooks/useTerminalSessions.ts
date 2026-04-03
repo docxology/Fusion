@@ -50,6 +50,12 @@ function generateTabId(): string {
   return `tab-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 }
 
+function isRelativeUrlFetchError(error: unknown): boolean {
+  const message =
+    error instanceof Error ? error.message : typeof error === "string" ? error : "";
+  return message.includes("Failed to parse URL") || message.includes("Invalid URL");
+}
+
 /**
  * Hook for managing multiple terminal sessions with localStorage persistence.
  * 
@@ -82,6 +88,7 @@ export function useTerminalSessions(): UseTerminalSessionsReturn {
 
   // Track whether validation has completed
   const [isReady, setIsReady] = useState(false);
+  const [serverAvailable, setServerAvailable] = useState(true);
 
   // Persist tabs to localStorage whenever they change
   useEffect(() => {
@@ -105,6 +112,7 @@ export function useTerminalSessions(): UseTerminalSessionsReturn {
         if (cancelled) return;
         
         const validSessionIds = new Set(serverSessions.map((s) => s.id));
+        setServerAvailable(true);
 
         setTabs((currentTabs) => {
           if (cancelled) return currentTabs;
@@ -143,7 +151,11 @@ export function useTerminalSessions(): UseTerminalSessionsReturn {
       } catch (err) {
         // Server listing failed - keep local tabs but mark as unverified
         // The WebSocket will fail to connect, which is acceptable
-        console.warn("Failed to validate terminal sessions with server:", err);
+        const relativeUrlError = isRelativeUrlFetchError(err);
+        if (!relativeUrlError) {
+          console.warn("Failed to validate terminal sessions with server:", err);
+        }
+        setServerAvailable(!relativeUrlError);
         // Still mark as ready so the UI can proceed
         setIsReady(true);
       }
@@ -158,14 +170,18 @@ export function useTerminalSessions(): UseTerminalSessionsReturn {
 
   // Auto-create first tab if no tabs exist after validation
   useEffect(() => {
-    if (tabs.length === 0 && isReady) {
+    if (tabs.length === 0 && isReady && serverAvailable) {
       // Small delay to avoid race condition with the validation effect
       const timeout = setTimeout(() => {
-        createTabInternal().catch(console.error);
+        createTabInternal().catch((err) => {
+          if (!isRelativeUrlFetchError(err)) {
+            console.error(err);
+          }
+        });
       }, 0);
       return () => clearTimeout(timeout);
     }
-  }, [isReady, tabs.length]); // Run when ready or when tabs become empty
+  }, [isReady, serverAvailable, tabs.length]); // Run when ready or when tabs become empty
 
   /**
    * Internal create tab function (used for auto-creation and user-initiated creation)

@@ -6,6 +6,7 @@ import { highlightDiff } from "../utils/highlightDiff";
 interface TaskChangesTabProps {
   taskId: string;
   worktree?: string;
+  projectId?: string;
 }
 
 function getFileStatus(file: string, patch: string): "added" | "modified" | "deleted" | "unknown" {
@@ -36,7 +37,7 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function TaskChangesTab({ taskId, worktree }: TaskChangesTabProps) {
+export function TaskChangesTab({ taskId, worktree, projectId }: TaskChangesTabProps) {
   const [diffData, setDiffData] = useState<TaskDiff | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -51,7 +52,7 @@ export function TaskChangesTab({ taskId, worktree }: TaskChangesTabProps) {
     try {
       setLoading(true);
       setError(null);
-      const data = await fetchTaskDiff(taskId);
+      const data = await fetchTaskDiff(taskId, undefined, projectId);
       setDiffData(data);
       // Auto-expand first file if there are files
       if (data.files.length > 0) {
@@ -62,7 +63,7 @@ export function TaskChangesTab({ taskId, worktree }: TaskChangesTabProps) {
     } finally {
       setLoading(false);
     }
-  }, [taskId, worktree]);
+  }, [taskId, worktree, projectId]);
 
   useEffect(() => {
     loadDiff();

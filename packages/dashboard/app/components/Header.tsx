@@ -49,6 +49,7 @@ export interface HeaderProps {
   currentProject?: ProjectInfo | null;
   onSelectProject?: (project: ProjectInfo) => void;
   onViewAllProjects?: () => void;
+  projectId?: string;
 }
 
 function useIsMobile() {
@@ -96,6 +97,7 @@ export function Header({
   currentProject,
   onSelectProject,
   onViewAllProjects,
+  projectId,
 }: HeaderProps) {
   const isMobile = useIsMobile();
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
@@ -416,6 +418,7 @@ export function Header({
           <QuickScriptsDropdown
             onOpenScripts={onOpenScripts}
             onRunScript={onRunScript}
+            projectId={projectId}
           />
         )}
 

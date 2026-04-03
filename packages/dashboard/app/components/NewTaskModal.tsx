@@ -17,6 +17,7 @@ interface PendingImage {
 interface NewTaskModalProps {
   isOpen: boolean;
   onClose: () => void;
+  projectId?: string;
   tasks: Task[]; // for dependency selection
   onCreateTask: (input: TaskCreateInput) => Promise<Task>;
   addToast: (message: string, type?: ToastType) => void;
@@ -24,7 +25,7 @@ interface NewTaskModalProps {
   onSubtaskBreakdown?: (description: string) => void;
 }
 
-export function NewTaskModal({ isOpen, onClose, tasks, onCreateTask, addToast, onPlanningMode, onSubtaskBreakdown }: NewTaskModalProps) {
+export function NewTaskModal({ isOpen, onClose, projectId, tasks, onCreateTask, addToast, onPlanningMode, onSubtaskBreakdown }: NewTaskModalProps) {
   const [description, setDescription] = useState("");
   const [dependencies, setDependencies] = useState<string[]>([]);
   const [showDepDropdown, setShowDepDropdown] = useState(false);
@@ -63,14 +64,14 @@ export function NewTaskModal({ isOpen, onClose, tasks, onCreateTask, addToast, o
         })
         .catch(() => {/* silently fail - models just won't be available */})
         .finally(() => setModelsLoading(false));
-      fetchSettings()
+      fetchSettings(projectId)
         .then((nextSettings) => setSettings(nextSettings))
         .catch(() => setSettings(null));
-      fetchWorkflowSteps()
+      fetchWorkflowSteps(projectId)
         .then((steps) => setWorkflowSteps(steps.filter((s) => s.enabled)))
         .catch(() => setWorkflowSteps([]));
     }
-  }, [isOpen]);
+  }, [isOpen, projectId]);
 
   // Track dirty state
   useEffect(() => {
@@ -237,7 +238,7 @@ export function NewTaskModal({ isOpen, onClose, tasks, onCreateTask, addToast, o
         const failures: string[] = [];
         for (const img of pendingImages) {
           try {
-            await uploadAttachment(task.id, img.file);
+            await uploadAttachment(task.id, img.file, projectId);
           } catch {
             failures.push(img.file.name);
           }

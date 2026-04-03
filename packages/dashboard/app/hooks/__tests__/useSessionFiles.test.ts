@@ -26,7 +26,7 @@ describe("useSessionFiles", () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
 
     expect(result.current.files).toEqual(["src/a.ts", "src/b.ts"]);
-    expect(mockFetchSessionFiles).toHaveBeenCalledWith("FN-123");
+    expect(mockFetchSessionFiles).toHaveBeenCalledWith("FN-123", undefined);
   });
 
   it("does not fetch for tasks without worktrees or inactive columns", async () => {

@@ -275,7 +275,6 @@ export function ModelSelectorTab({ task, addToast }: ModelSelectorTabProps) {
                 .catch((err) => setModelsError(err.message))
                 .finally(() => setModelsLoading(false));
             }}
-            className="btn btn-sm"
             style={{ marginLeft: "8px" }}
           >
             Retry

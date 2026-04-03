@@ -153,13 +153,13 @@ function AppInner() {
 
   // Initial data fetch
   useEffect(() => {
-    fetchConfig()
+    fetchConfig(currentProject?.id)
       .then((cfg) => {
         setMaxConcurrent(cfg.maxConcurrent);
         setRootDir(cfg.rootDir);
       })
       .catch(() => {/* keep default */});
-    fetchSettings()
+    fetchSettings(currentProject?.id)
       .then((s) => {
         setAutoMerge(!!s.autoMerge);
         setGlobalPaused(!!s.globalPause);
@@ -175,7 +175,7 @@ function AppInner() {
         }
       })
       .catch(() => {/* fail silently */});
-  }, []);
+  }, [currentProject?.id]);
 
   // Fetch available models
   useEffect(() => {
@@ -207,7 +207,8 @@ function AppInner() {
     }
 
     // After project context is resolved (or if no project param), fetch the task
-    fetchTaskDetail(taskId)
+    const taskProjectId = projectParam ?? currentProject?.id;
+    fetchTaskDetail(taskId, taskProjectId)
       .then((detail) => {
         setDetailTask(detail);
       })
@@ -346,31 +347,31 @@ function AppInner() {
     const next = !autoMerge;
     setAutoMerge(next);
     try {
-      await updateSettings({ autoMerge: next });
+      await updateSettings({ autoMerge: next }, currentProject?.id);
     } catch {
       setAutoMerge(!next); // revert on failure
     }
-  }, [autoMerge]);
+  }, [autoMerge, currentProject?.id]);
 
   const handleToggleGlobalPause = useCallback(async () => {
     const next = !globalPaused;
     setGlobalPaused(next);
     try {
-      await updateSettings({ globalPause: next });
+      await updateSettings({ globalPause: next }, currentProject?.id);
     } catch {
       setGlobalPaused(!next); // revert on failure
     }
-  }, [globalPaused]);
+  }, [globalPaused, currentProject?.id]);
 
   const handleToggleEnginePause = useCallback(async () => {
     const next = !enginePaused;
     setEnginePaused(next);
     try {
-      await updateSettings({ enginePaused: next });
+      await updateSettings({ enginePaused: next }, currentProject?.id);
     } catch {
       setEnginePaused(!next); // revert on failure
     }
-  }, [enginePaused]);
+  }, [enginePaused, currentProject?.id]);
 
   const handleDetailOpen = useCallback((task: TaskDetail) => {
     setDetailTask(task);
@@ -447,13 +448,14 @@ function AppInner() {
 
     // Project view
     if (taskView === "agents") {
-      return <AgentsView addToast={addToast} />;
+      return <AgentsView addToast={addToast} projectId={currentProject?.id} />;
     }
 
     if (taskView === "board") {
       return (
         <Board
           tasks={tasks}
+          projectId={currentProject?.id}
           maxConcurrent={maxConcurrent}
           onMoveTask={moveTask}
           onOpenDetail={handleDetailOpen}
@@ -480,6 +482,7 @@ function AppInner() {
     return (
       <ListView
         tasks={tasks}
+        projectId={currentProject?.id}
         onMoveTask={moveTask}
         onOpenDetail={handleDetailOpen}
         addToast={addToast}
@@ -504,8 +507,8 @@ function AppInner() {
         onOpenSchedules={handleOpenSchedules}
         onOpenGitManager={handleOpenGitManager}
         onOpenWorkflowSteps={() => setWorkflowStepsOpen(true)}
-        onOpenMissions={() => setMissionsOpen(true)}
-        onOpenAgents={handleOpenAgents}
+        onOpenMissions={viewMode === "project" && currentProject ? () => setMissionsOpen(true) : undefined}
+        onOpenAgents={viewMode === "project" && currentProject ? handleOpenAgents : undefined}
         onOpenScripts={handleOpenScripts}
         onRunScript={handleRunScript}
         onToggleTerminal={handleToggleTerminal}
@@ -516,13 +519,14 @@ function AppInner() {
         onToggleGlobalPause={handleToggleGlobalPause}
         onToggleEnginePause={handleToggleEnginePause}
         view={taskView}
-        onChangeView={handleChangeTaskView}
+        onChangeView={viewMode === "project" && currentProject ? handleChangeTaskView : undefined}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         projects={projects}
         currentProject={currentProject}
         onSelectProject={handleSelectProject}
         onViewAllProjects={handleViewAllProjects}
+        projectId={currentProject?.id}
       />
       {renderMainContent()}
       {viewMode === "project" && currentProject && (
@@ -531,6 +535,7 @@ function AppInner() {
       {detailTask && (
         <TaskDetailModal
           task={detailTask}
+          projectId={currentProject?.id}
           tasks={tasks}
           onClose={handleDetailClose}
           onOpenDetail={handleDetailOpen}
@@ -551,6 +556,7 @@ function AppInner() {
           }}
           addToast={addToast}
           initialSection={settingsInitialSection}
+          projectId={currentProject?.id}
           themeMode={themeMode}
           colorTheme={colorTheme}
           onThemeModeChange={setThemeMode}
@@ -569,12 +575,14 @@ function AppInner() {
         onTaskCreated={handlePlanningTaskCreated}
         tasks={tasks}
         initialPlan={planningInitialPlan ?? undefined}
+        projectId={currentProject?.id}
       />
       <SubtaskBreakdownModal
         isOpen={isSubtaskOpen}
         onClose={handleSubtaskClose}
         initialDescription={subtaskInitialDescription ?? ""}
         onTasksCreated={handleSubtaskTasksCreated}
+        projectId={currentProject?.id}
       />
       <TerminalModal
         isOpen={terminalOpen}
@@ -586,6 +594,7 @@ function AppInner() {
         onClose={handleCloseScripts}
         addToast={addToast}
         onRunScript={handleRunScript}
+        projectId={currentProject?.id}
       />
       {filesOpen && (
         <FileBrowserModal
@@ -600,6 +609,7 @@ function AppInner() {
           taskId={changedFilesState.taskId}
           worktree={changedFilesState.worktree}
           column={changedFilesState.column}
+          projectId={currentProject?.id}
           isOpen={true}
           onClose={handleCloseChangedFiles}
         />
@@ -620,6 +630,7 @@ function AppInner() {
         tasks={tasks}
         onCreateTask={handleModalCreate}
         addToast={addToast}
+        projectId={currentProject?.id}
         onPlanningMode={handleNewTaskPlanningMode}
         onSubtaskBreakdown={handleSubtaskBreakdown}
       />
@@ -644,11 +655,13 @@ function AppInner() {
         isOpen={workflowStepsOpen}
         onClose={() => setWorkflowStepsOpen(false)}
         addToast={addToast}
+        projectId={currentProject?.id}
       />
       <MissionManager
         isOpen={missionsOpen}
         onClose={() => setMissionsOpen(false)}
         addToast={addToast}
+        projectId={currentProject?.id}
         availableTasks={tasks.map((t) => ({ id: t.id, title: t.title }))}
         onSelectTask={(taskId) => {
           const task = tasks.find((t) => t.id === taskId);
@@ -661,6 +674,7 @@ function AppInner() {
         isOpen={agentsOpen}
         onClose={handleCloseAgents}
         addToast={addToast}
+        projectId={currentProject?.id}
       />
       {setupWizardOpen && (
         <SetupWizardModal

@@ -14,6 +14,7 @@ interface ScriptsModalProps {
   isOpen: boolean;
   onClose: () => void;
   addToast: (message: string, type?: ToastType) => void;
+  projectId?: string;
   /** Callback when user wants to run a script - opens terminal modal */
   onRunScript?: (name: string, command: string) => void;
 }
@@ -39,7 +40,7 @@ function truncateCommand(command: string, maxLength: number = 60): string {
   return command.slice(0, maxLength - 3) + "...";
 }
 
-export function ScriptsModal({ isOpen, onClose, addToast, onRunScript }: ScriptsModalProps) {
+export function ScriptsModal({ isOpen, onClose, addToast, projectId, onRunScript }: ScriptsModalProps) {
   const [scripts, setScripts] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
@@ -52,14 +53,14 @@ export function ScriptsModal({ isOpen, onClose, addToast, onRunScript }: Scripts
   const loadScripts = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await fetchScripts();
+      const data = await fetchScripts(projectId);
       setScripts(data);
     } catch (err: any) {
       addToast(err.message || "Failed to load scripts", "error");
     } finally {
       setLoading(false);
     }
-  }, [addToast]);
+  }, [addToast, projectId]);
 
   useEffect(() => {
     if (isOpen) {
@@ -118,7 +119,7 @@ export function ScriptsModal({ isOpen, onClose, addToast, onRunScript }: Scripts
 
     setSaving(true);
     try {
-      await addScript(trimmedName, trimmedCommand);
+      await addScript(trimmedName, trimmedCommand, projectId);
       addToast(isEditing ? "Script updated" : "Script created", "success");
       setIsEditing(null);
       setIsCreating(false);
@@ -134,11 +135,11 @@ export function ScriptsModal({ isOpen, onClose, addToast, onRunScript }: Scripts
     } finally {
       setSaving(false);
     }
-  }, [form, isEditing, addToast, loadScripts]);
+  }, [form, isEditing, addToast, loadScripts, projectId]);
 
   const handleDelete = useCallback(async (name: string) => {
     try {
-      await removeScript(name);
+      await removeScript(name, projectId);
       addToast("Script deleted", "success");
       setDeleteConfirmName(null);
       if (isEditing === name) {
@@ -149,7 +150,7 @@ export function ScriptsModal({ isOpen, onClose, addToast, onRunScript }: Scripts
     } catch (err: any) {
       addToast(err.message || "Failed to delete script", "error");
     }
-  }, [isEditing, addToast, loadScripts]);
+  }, [isEditing, addToast, loadScripts, projectId]);
 
   const handleRun = useCallback((name: string, command: string) => {
     if (onRunScript) {

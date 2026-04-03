@@ -49,9 +49,7 @@ export function useTasks(options?: UseTasksOptions) {
     const requestVersion = ++fetchVersionRef.current;
 
     try {
-      const fetchedTasks = projectId
-        ? await api.fetchProjectTasks(projectId)
-        : await api.fetchTasks();
+      const fetchedTasks = await api.fetchTasks(undefined, undefined, projectId);
       if (fetchVersionRef.current !== requestVersion) {
         return;
       }
@@ -93,20 +91,6 @@ export function useTasks(options?: UseTasksOptions) {
     };
   }, [refreshTasks]);
 
-  // Fetch initial tasks and recover when the tab becomes visible again.
-  useEffect(() => {
-    void refreshTasks();
-
-    const handleVisibilityChange = () => {
-      void refreshTasks();
-    };
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
-  }, [refreshTasks]);
-
   // SSE live updates
   // Note: In multi-project mode, SSE receives all task events.
   // Tasks are filtered by ID match, so cross-project updates won't affect
@@ -117,7 +101,8 @@ export function useTasks(options?: UseTasksOptions) {
     if (connectionNonce > 0) {
       void refreshTasks();
     }
-    const es = new EventSource("/api/events");
+    const query = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
+    const es = new EventSource(`/api/events${query}`);
 
     const handleCreated = (e: MessageEvent) => {
       const task = normalizeTask(JSON.parse(e.data) as Task);
@@ -220,31 +205,31 @@ export function useTasks(options?: UseTasksOptions) {
       closedByCleanup = true;
       cleanup();
     };
-  }, [connectionNonce, refreshTasks]);
+  }, [connectionNonce, projectId, refreshTasks]);
 
   const createTask = useCallback(async (input: TaskCreateInput): Promise<Task> => {
-    return normalizeTask(await api.createTask(input));
-  }, []);
+    return normalizeTask(await api.createTask(input, projectId));
+  }, [projectId]);
 
   const moveTask = useCallback(async (id: string, column: Column): Promise<Task> => {
-    return normalizeTask(await api.moveTask(id, column));
-  }, []);
+    return normalizeTask(await api.moveTask(id, column, projectId));
+  }, [projectId]);
 
   const deleteTask = useCallback(async (id: string): Promise<Task> => {
-    return normalizeTask(await api.deleteTask(id));
-  }, []);
+    return normalizeTask(await api.deleteTask(id, projectId));
+  }, [projectId]);
 
   const mergeTask = useCallback(async (id: string): Promise<MergeResult> => {
-    return api.mergeTask(id);
-  }, []);
+    return api.mergeTask(id, projectId);
+  }, [projectId]);
 
   const retryTask = useCallback(async (id: string): Promise<Task> => {
-    return normalizeTask(await api.retryTask(id));
-  }, []);
+    return normalizeTask(await api.retryTask(id, projectId));
+  }, [projectId]);
 
   const duplicateTask = useCallback(async (id: string): Promise<Task> => {
-    return normalizeTask(await api.duplicateTask(id));
-  }, []);
+    return normalizeTask(await api.duplicateTask(id, projectId));
+  }, [projectId]);
 
   const updateTask = useCallback(async (
     id: string,
@@ -262,7 +247,7 @@ export function useTasks(options?: UseTasksOptions) {
     }
 
     try {
-      const updatedTask = normalizeTask(await api.updateTask(id, updates));
+      const updatedTask = normalizeTask(await api.updateTask(id, updates, projectId));
       setTasks((prev) =>
         prev.map((t) => (t.id === id ? updatedTask : t))
       );
@@ -275,26 +260,26 @@ export function useTasks(options?: UseTasksOptions) {
       }
       throw err;
     }
-  }, []);
+  }, [projectId]);
 
   const archiveTask = useCallback(async (id: string): Promise<Task> => {
-    const task = normalizeTask(await api.archiveTask(id));
+    const task = normalizeTask(await api.archiveTask(id, projectId));
     setTasks((prev) =>
       prev.map((t) => (t.id === id ? task : t))
     );
     return task;
-  }, []);
+  }, [projectId]);
 
   const unarchiveTask = useCallback(async (id: string): Promise<Task> => {
-    const task = normalizeTask(await api.unarchiveTask(id));
+    const task = normalizeTask(await api.unarchiveTask(id, projectId));
     setTasks((prev) =>
       prev.map((t) => (t.id === id ? task : t))
     );
     return task;
-  }, []);
+  }, [projectId]);
 
   const archiveAllDone = useCallback(async (): Promise<Task[]> => {
-    const archived = await api.archiveAllDone();
+    const archived = await api.archiveAllDone(projectId);
     const normalized = archived.map(normalizeTask);
     setTasks((prev) =>
       prev.map((t) => {
@@ -303,7 +288,7 @@ export function useTasks(options?: UseTasksOptions) {
       })
     );
     return normalized;
-  }, []);
+  }, [projectId]);
 
   return { tasks, createTask, moveTask, deleteTask, mergeTask, retryTask, duplicateTask, updateTask, archiveTask, unarchiveTask, archiveAllDone };
 }

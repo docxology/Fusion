@@ -6,6 +6,7 @@ import type { ToastType } from "../hooks/useToast";
 
 interface PrSectionProps {
   taskId: string;
+  projectId?: string;
   prInfo?: PrInfo;
   automationStatus?: string | null;
   hasGitHubToken: boolean;
@@ -22,6 +23,7 @@ const STATUS_COLORS = {
 
 export function PrSection({
   taskId,
+  projectId,
   prInfo,
   automationStatus,
   hasGitHubToken,
@@ -44,7 +46,7 @@ export function PrSection({
       const newPr = await createPr(taskId, {
         title: prTitle.trim(),
         body: prBody.trim() || undefined,
-      });
+      }, projectId);
       onPrCreated(newPr);
       setShowCreateForm(false);
       setPrTitle("");
@@ -55,14 +57,14 @@ export function PrSection({
     } finally {
       setIsCreating(false);
     }
-  }, [taskId, prTitle, prBody, onPrCreated, addToast]);
+  }, [taskId, prTitle, prBody, projectId, onPrCreated, addToast]);
 
   const handleRefresh = useCallback(async () => {
     if (!prInfo) return;
 
     setIsRefreshing(true);
     try {
-      const updated = await refreshPrStatus(taskId);
+      const updated = await refreshPrStatus(taskId, projectId);
       setRefreshState(updated);
       onPrUpdated(updated.prInfo);
       addToast("PR status refreshed", "success");
@@ -71,7 +73,7 @@ export function PrSection({
     } finally {
       setIsRefreshing(false);
     }
-  }, [taskId, prInfo, onPrUpdated, addToast]);
+  }, [taskId, prInfo, projectId, onPrUpdated, addToast]);
 
   // No PR yet - show create button or automation state
   if (!prInfo) {

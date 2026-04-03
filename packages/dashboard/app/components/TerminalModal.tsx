@@ -37,7 +37,7 @@ export function TerminalModal({ isOpen, onClose, initialCommand }: TerminalModal
   const xtermRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<ITerminalAddon | null>(null);
   const hasInitialCommandRun = useRef(false);
-  const xtermInitializedRef = useRef(false);
+  const xtermInitializedRef = useRef<string | false>(false);
 
   // Use the session management hook
   const { 

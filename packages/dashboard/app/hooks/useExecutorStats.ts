@@ -140,7 +140,7 @@ export function useExecutorStats(projectId?: string): UseExecutorStatsResult {
     try {
       setLoading(true);
       setError(null);
-      const data = await fetchExecutorStats();
+      const data = await fetchExecutorStats(projectId);
       setApiData(data);
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") {
@@ -151,7 +151,7 @@ export function useExecutorStats(projectId?: string): UseExecutorStatsResult {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [projectId]);
 
   // Initial fetch
   useEffect(() => {

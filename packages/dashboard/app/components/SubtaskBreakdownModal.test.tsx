@@ -34,7 +34,7 @@ describe("SubtaskBreakdownModal", () => {
     vi.clearAllMocks();
     streamHandlers = undefined;
     mockStartSubtaskBreakdown.mockResolvedValue({ sessionId: "session-123" });
-    mockConnectSubtaskStream.mockImplementation((_sessionId, handlers) => {
+    mockConnectSubtaskStream.mockImplementation((_sessionId, _projectId, handlers) => {
       streamHandlers = handlers;
       return { close: vi.fn(), isConnected: () => true };
     });
@@ -60,7 +60,7 @@ describe("SubtaskBreakdownModal", () => {
 
   it("shows generating state after auto-start", async () => {
     renderModal();
-    await waitFor(() => expect(mockStartSubtaskBreakdown).toHaveBeenCalledWith("Build a complex feature"));
+    await waitFor(() => expect(mockStartSubtaskBreakdown).toHaveBeenCalledWith("Build a complex feature", undefined));
     expect(await screen.findByText("AI is generating subtasks...")).toBeInTheDocument();
   });
 

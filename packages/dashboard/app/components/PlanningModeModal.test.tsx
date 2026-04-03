@@ -103,7 +103,7 @@ describe("PlanningModeModal", () => {
     mockStartPlanningStreaming.mockResolvedValue({ sessionId: "session-123" });
     
     // Default: simulate receiving a question after a brief delay
-    mockConnectPlanningStream.mockImplementation((sessionId: string, handlers: any) => {
+    mockConnectPlanningStream.mockImplementation((_sessionId: string, _projectId: string | undefined, handlers: any) => {
       setTimeout(() => {
         handlers.onQuestion?.(mockQuestion);
       }, 10);
@@ -191,7 +191,7 @@ describe("PlanningModeModal", () => {
 
       // Wait for startPlanningStreaming to be called (allow time for setTimeout in useEffect)
       await waitFor(() => {
-        expect(mockStartPlanningStreaming).toHaveBeenCalledWith("Build a login system from new task dialog");
+        expect(mockStartPlanningStreaming).toHaveBeenCalledWith("Build a login system from new task dialog", undefined);
       }, { timeout: 2000 });
 
       // Should transition to question view
@@ -213,7 +213,7 @@ describe("PlanningModeModal", () => {
 
       // The auto-start should happen with the initial plan (allow time for setTimeout in useEffect)
       await waitFor(() => {
-        expect(mockStartPlanningStreaming).toHaveBeenCalledWith("Pre-filled plan from new task");
+        expect(mockStartPlanningStreaming).toHaveBeenCalledWith("Pre-filled plan from new task", undefined);
       }, { timeout: 2000 });
     });
   });
@@ -236,7 +236,7 @@ describe("PlanningModeModal", () => {
 
       // Wait for streaming to be called
       await waitFor(() => {
-        expect(mockStartPlanningStreaming).toHaveBeenCalledWith("Build auth system");
+        expect(mockStartPlanningStreaming).toHaveBeenCalledWith("Build auth system", undefined);
       });
 
       // Should transition to question view via streaming
@@ -247,7 +247,7 @@ describe("PlanningModeModal", () => {
 
     it("shows error message when planning fails", async () => {
       // Override the default mock to simulate an error
-      mockConnectPlanningStream.mockImplementationOnce((sessionId: string, handlers: any) => {
+      mockConnectPlanningStream.mockImplementationOnce((_sessionId: string, _projectId: string | undefined, handlers: any) => {
         setTimeout(() => {
           handlers.onError?.("Rate limit exceeded");
         }, 10);
@@ -315,7 +315,7 @@ describe("PlanningModeModal", () => {
       let streamConnectionCount = 0;
       let streamHandlers: any = null;
 
-      mockConnectPlanningStream.mockImplementation((sessionId: string, handlers: any) => {
+      mockConnectPlanningStream.mockImplementation((_sessionId: string, _projectId: string | undefined, handlers: any) => {
         streamConnectionCount++;
         streamHandlers = handlers;
         
@@ -379,7 +379,7 @@ describe("PlanningModeModal", () => {
   describe("Summary view", () => {
     it("shows summary when planning is complete", async () => {
       // Override mock to return summary instead of question
-      mockConnectPlanningStream.mockImplementationOnce((sessionId: string, handlers: any) => {
+      mockConnectPlanningStream.mockImplementationOnce((_sessionId: string, _projectId: string | undefined, handlers: any) => {
         setTimeout(() => {
           handlers.onSummary?.(mockSummary);
         }, 10);
@@ -427,7 +427,7 @@ describe("PlanningModeModal", () => {
       };
 
       // Override mock to return summary
-      mockConnectPlanningStream.mockImplementationOnce((sessionId: string, handlers: any) => {
+      mockConnectPlanningStream.mockImplementationOnce((_sessionId: string, _projectId: string | undefined, handlers: any) => {
         setTimeout(() => {
           handlers.onSummary?.(mockSummary);
         }, 10);
@@ -460,7 +460,7 @@ describe("PlanningModeModal", () => {
       fireEvent.click(screen.getByText("Create Task"));
 
       await waitFor(() => {
-        expect(mockCreateTaskFromPlanning).toHaveBeenCalledWith("session-123");
+        expect(mockCreateTaskFromPlanning).toHaveBeenCalledWith("session-123", undefined);
         expect(mockOnTaskCreated).toHaveBeenCalledWith(createdTask);
       });
     });
@@ -495,7 +495,7 @@ describe("PlanningModeModal", () => {
   describe("Loading state", () => {
     it("shows 'Generating next question...' text when loading without streaming content", async () => {
       // Mock to delay the question response so we stay in loading state
-      mockConnectPlanningStream.mockImplementationOnce((sessionId: string, handlers: any) => {
+      mockConnectPlanningStream.mockImplementationOnce((_sessionId: string, _projectId: string | undefined, handlers: any) => {
         // Don't call any handlers - stay in loading state
         return {
           close: vi.fn(),
@@ -528,7 +528,7 @@ describe("PlanningModeModal", () => {
 
     it("shows thinking container even when streaming output is initially empty", async () => {
       // Mock to delay the question response so we stay in loading state
-      mockConnectPlanningStream.mockImplementationOnce((sessionId: string, handlers: any) => {
+      mockConnectPlanningStream.mockImplementationOnce((_sessionId: string, _projectId: string | undefined, handlers: any) => {
         // Don't call any handlers - stay in loading state
         return {
           close: vi.fn(),
@@ -563,7 +563,7 @@ describe("PlanningModeModal", () => {
     it("shows 'AI is thinking...' text and renders streaming content when it arrives", async () => {
       let streamHandlers: any = null;
 
-      mockConnectPlanningStream.mockImplementationOnce((sessionId: string, handlers: any) => {
+      mockConnectPlanningStream.mockImplementationOnce((_sessionId: string, _projectId: string | undefined, handlers: any) => {
         streamHandlers = handlers;
         return {
           close: vi.fn(),
@@ -624,7 +624,7 @@ describe("PlanningModeModal", () => {
 
       let streamHandlers: any = null;
 
-      mockConnectPlanningStream.mockImplementation((sessionId: string, handlers: any) => {
+      mockConnectPlanningStream.mockImplementation((_sessionId: string, _projectId: string | undefined, handlers: any) => {
         streamHandlers = handlers;
         
         setTimeout(() => {
@@ -815,7 +815,7 @@ describe("PlanningModeModal", () => {
 
     it("shows confirmation in summary view", async () => {
       // Override mock to return summary
-      mockConnectPlanningStream.mockImplementationOnce((sessionId: string, handlers: any) => {
+      mockConnectPlanningStream.mockImplementationOnce((_sessionId: string, _projectId: string | undefined, handlers: any) => {
         setTimeout(() => {
           handlers.onSummary?.(mockSummary);
         }, 10);

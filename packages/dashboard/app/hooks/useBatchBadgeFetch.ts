@@ -12,13 +12,17 @@ const batchBadgeStore = {
 /** Maximum age of cached batch data in milliseconds (5 seconds) */
 const CACHE_MAX_AGE_MS = 5000;
 
+function getScopedTaskKey(taskId: string, projectId?: string): string {
+  return projectId ? `${projectId}::${taskId}` : taskId;
+}
+
 /**
  * Check if fresh batch data exists for a task ID.
  * @param taskId - The task ID to check
  * @returns The cached data if fresh, undefined otherwise
  */
-export function getFreshBatchData(taskId: string): { result: BatchStatusResult[string]; timestamp: number } | undefined {
-  const cached = batchBadgeStore.data.get(taskId);
+export function getFreshBatchData(taskId: string, projectId?: string): { result: BatchStatusResult[string]; timestamp: number } | undefined {
+  const cached = batchBadgeStore.data.get(getScopedTaskKey(taskId, projectId));
   if (!cached) return undefined;
 
   const now = Date.now();
@@ -49,7 +53,7 @@ interface UseBatchBadgeFetchResult {
  * - Exponential backoff retry: handles 429 rate limit errors with up to 3 retries
  * - Shared store: data is available across all hook instances
  */
-export function useBatchBadgeFetch(): UseBatchBadgeFetchResult {
+export function useBatchBadgeFetch(projectId?: string): UseBatchBadgeFetchResult {
   const [isLoading, setIsLoading] = useState(false);
   const fetchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -62,7 +66,7 @@ export function useBatchBadgeFetch(): UseBatchBadgeFetchResult {
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
-        const results = await fetchBatchStatus(taskIds);
+        const results = await fetchBatchStatus(taskIds, projectId);
         return results;
       } catch (err: any) {
         lastError = err instanceof Error ? err : new Error(String(err));
@@ -85,7 +89,7 @@ export function useBatchBadgeFetch(): UseBatchBadgeFetchResult {
     }
 
     return {};
-  }, []);
+  }, [projectId]);
 
   /**
    * Fetch batch badge statuses for the given task IDs.
@@ -98,7 +102,7 @@ export function useBatchBadgeFetch(): UseBatchBadgeFetchResult {
     const now = Date.now();
     const fiveSecondsAgo = now - 5000;
     const hasFreshCache = taskIds.every((id) => {
-      const cached = batchBadgeStore.data.get(id);
+      const cached = batchBadgeStore.data.get(getScopedTaskKey(id, projectId));
       return cached && cached.timestamp > fiveSecondsAgo;
     });
 
@@ -136,7 +140,7 @@ export function useBatchBadgeFetch(): UseBatchBadgeFetchResult {
       // Update the store with new data
       const timestamp = Date.now();
       for (const [taskId, result] of Object.entries(results)) {
-        batchBadgeStore.data.set(taskId, { result, timestamp });
+        batchBadgeStore.data.set(getScopedTaskKey(taskId, projectId), { result, timestamp });
       }
       batchBadgeStore.lastFetchTime = timestamp;
     } catch (err) {
@@ -146,14 +150,14 @@ export function useBatchBadgeFetch(): UseBatchBadgeFetchResult {
       batchBadgeStore.pendingPromise = null;
       setIsLoading(false);
     }
-  }, [fetchWithRetry]);
+  }, [fetchWithRetry, projectId]);
 
   /**
    * Get cached batch data for a specific task ID.
    */
   const getBatchData = useCallback((taskId: string) => {
-    return batchBadgeStore.data.get(taskId);
-  }, []);
+    return batchBadgeStore.data.get(getScopedTaskKey(taskId, projectId));
+  }, [projectId]);
 
   return {
     fetchBatch,

@@ -167,7 +167,7 @@ describe("ListView", () => {
     fireEvent.click(row!);
 
     await waitFor(() => {
-      expect(fetchTaskDetail).toHaveBeenCalledWith("FN-001");
+      expect(fetchTaskDetail).toHaveBeenCalledWith("FN-001", undefined);
     });
 
     expect(mockOnOpenDetail).toHaveBeenCalledWith(mockDetail);

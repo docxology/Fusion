@@ -42,7 +42,7 @@ describe("TaskComments", () => {
     fireEvent.change(screen.getByPlaceholderText(/Add a comment/), { target: { value: "Hello" } });
     fireEvent.click(screen.getByText("Add Comment"));
 
-    await waitFor(() => expect(addTaskComment).toHaveBeenCalledWith("FN-001", "Hello", "user"));
+    await waitFor(() => expect(addTaskComment).toHaveBeenCalledWith("FN-001", "Hello", "user", undefined));
     expect(onTaskUpdated).toHaveBeenCalled();
   });
 
@@ -55,7 +55,7 @@ describe("TaskComments", () => {
     fireEvent.change(screen.getByDisplayValue("Original"), { target: { value: "Updated" } });
     fireEvent.click(screen.getByText("Save"));
 
-    await waitFor(() => expect(updateTaskComment).toHaveBeenCalledWith("FN-001", "c1", "Updated"));
+    await waitFor(() => expect(updateTaskComment).toHaveBeenCalledWith("FN-001", "c1", "Updated", undefined));
     expect(onTaskUpdated).toHaveBeenCalled();
   });
 
@@ -66,7 +66,7 @@ describe("TaskComments", () => {
     render(<TaskComments task={makeTask({ comments: [{ id: "c1", text: "Original", author: "user", createdAt: "2026-01-01T00:00:00.000Z" }] })} addToast={vi.fn()} onTaskUpdated={onTaskUpdated} />);
     fireEvent.click(screen.getByText("Delete"));
 
-    await waitFor(() => expect(deleteTaskComment).toHaveBeenCalledWith("FN-001", "c1"));
+    await waitFor(() => expect(deleteTaskComment).toHaveBeenCalledWith("FN-001", "c1", undefined));
     expect(onTaskUpdated).toHaveBeenCalled();
   });
 
@@ -170,7 +170,7 @@ describe("TaskComments", () => {
       fireEvent.click(screen.getByText("Add Guidance"));
 
       await waitFor(() => {
-        expect(addSteeringComment).toHaveBeenCalledWith("FN-001", "Guidance text");
+        expect(addSteeringComment).toHaveBeenCalledWith("FN-001", "Guidance text", undefined);
         expect(addTaskComment).not.toHaveBeenCalled();
       });
     });
@@ -187,7 +187,7 @@ describe("TaskComments", () => {
       fireEvent.click(screen.getByText("Add Comment"));
 
       await waitFor(() => {
-        expect(addTaskComment).toHaveBeenCalledWith("FN-001", "User text", "user");
+        expect(addTaskComment).toHaveBeenCalledWith("FN-001", "User text", "user", undefined);
         expect(addSteeringComment).not.toHaveBeenCalled();
       });
     });
@@ -252,7 +252,7 @@ describe("TaskComments", () => {
       fireEvent.keyDown(textarea, { key: "Enter", ctrlKey: true });
 
       await waitFor(() => {
-        expect(addTaskComment).toHaveBeenCalledWith("FN-001", "Keyboard", "user");
+        expect(addTaskComment).toHaveBeenCalledWith("FN-001", "Keyboard", "user", undefined);
       });
     });
 
@@ -268,7 +268,7 @@ describe("TaskComments", () => {
       fireEvent.keyDown(textarea, { key: "Enter", metaKey: true });
 
       await waitFor(() => {
-        expect(addTaskComment).toHaveBeenCalledWith("FN-001", "Mac", "user");
+        expect(addTaskComment).toHaveBeenCalledWith("FN-001", "Mac", "user", undefined);
       });
     });
   });

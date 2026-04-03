@@ -140,7 +140,7 @@ describe("App deep link handling", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(fetchTaskDetail).toHaveBeenCalledWith("FN-123");
+      expect(fetchTaskDetail).toHaveBeenCalledWith("FN-123", "proj_123");
     });
 
     await waitFor(() => {
@@ -160,7 +160,7 @@ describe("App deep link handling", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(fetchTaskDetail).toHaveBeenCalledWith("FN-404");
+      expect(fetchTaskDetail).toHaveBeenCalledWith("FN-404", "proj_123");
     });
 
     await waitFor(() => {
@@ -197,7 +197,7 @@ describe("App deep link handling", () => {
     });
 
     await waitFor(() => {
-      expect(fetchTaskDetail).toHaveBeenCalledWith("FN-789");
+      expect(fetchTaskDetail).toHaveBeenCalledWith("FN-789", "proj_456");
     });
 
     await waitFor(() => {
@@ -242,7 +242,7 @@ describe("App deep link handling", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(fetchTaskDetail).toHaveBeenCalledWith("FN-123");
+      expect(fetchTaskDetail).toHaveBeenCalledWith("FN-123", "proj_123");
     });
 
     // setCurrentProject should NOT be called since we're already on this project
@@ -262,7 +262,7 @@ describe("App deep link handling", () => {
     render(<App />);
 
     await waitFor(() => {
-      expect(fetchTaskDetail).toHaveBeenCalledWith("FN-123");
+      expect(fetchTaskDetail).toHaveBeenCalledWith("FN-123", "proj_123");
     });
 
     await waitFor(() => {
@@ -271,6 +271,44 @@ describe("App deep link handling", () => {
 
     // setCurrentProject should NOT be called when no project param
     expect(mockCurrentProjectState.setCurrentProject).not.toHaveBeenCalled();
+  });
+});
+
+describe("App mission wiring", () => {
+  afterEach(() => {
+    localStorage.removeItem("kb-dashboard-view-mode");
+  });
+
+  it("hides mission controls when no project is selected", async () => {
+    mockCurrentProjectState.currentProject = null;
+    mockProjectsState.projects = [];
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(fetchSettings).toHaveBeenCalled();
+    });
+
+    expect(screen.queryByTestId("missions-btn")).toBeNull();
+  });
+
+  it("shows mission controls in project view when a project is selected", async () => {
+    localStorage.setItem("kb-dashboard-view-mode", "project");
+    mockCurrentProjectState.currentProject = {
+      id: "proj_123",
+      name: "Test Project",
+      path: "/test",
+      status: "active",
+      isolationMode: "in-process",
+      createdAt: "",
+      updatedAt: "",
+    };
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("missions-btn")).toBeTruthy();
+    });
   });
 });
 
@@ -410,7 +448,7 @@ describe("App global pause (hard stop)", () => {
     });
 
     // Should call updateSettings with globalPause: true
-    expect(updateSettings).toHaveBeenCalledWith({ globalPause: true });
+    expect(updateSettings).toHaveBeenCalledWith({ globalPause: true }, "proj_123");
   });
 
   it("reverts global pause state on updateSettings failure", async () => {
@@ -485,7 +523,7 @@ describe("App engine pause (soft pause)", () => {
     });
 
     // Should call updateSettings with enginePaused: true
-    expect(updateSettings).toHaveBeenCalledWith({ enginePaused: true });
+    expect(updateSettings).toHaveBeenCalledWith({ enginePaused: true }, "proj_123");
   });
 });
 
@@ -636,6 +674,19 @@ describe("App view switching", () => {
       expect(screen.getByTitle("List view")).toBeTruthy();
       expect(screen.getByTitle("Agents view")).toBeTruthy();
     });
+  });
+
+  it("hides agent view controls when no project is active", async () => {
+    mockCurrentProjectState.currentProject = null;
+    localStorage.setItem("kb-dashboard-view-mode", "overview");
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.queryByTitle("Agents view")).toBeNull();
+    });
+
+    localStorage.removeItem("kb-dashboard-view-mode");
   });
 
   it("renders AgentsView when agents view is selected", async () => {

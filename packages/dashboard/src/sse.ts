@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import type { TaskStore } from "@fusion/core";
+import type { TaskStore, MissionStore } from "@fusion/core";
 
 let activeConnections = 0;
 
@@ -8,7 +8,7 @@ export function getActiveSSEConnections(): number {
   return activeConnections;
 }
 
-export function createSSE(store: TaskStore) {
+export function createSSE(store: TaskStore, missionStore?: MissionStore) {
   return (_req: Request, res: Response) => {
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
@@ -43,6 +43,67 @@ export function createSSE(store: TaskStore) {
     store.on("task:deleted", onDeleted);
     store.on("task:merged", onMerged);
 
+    // Mission store event listeners (only wired up when missionStore is provided)
+    const onMissionCreated = (data: any) => {
+      res.write(`event: mission:created\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+    const onMissionUpdated = (data: any) => {
+      res.write(`event: mission:updated\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+    const onMissionDeleted = (data: any) => {
+      res.write(`event: mission:deleted\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+    const onMilestoneCreated = (data: any) => {
+      res.write(`event: milestone:created\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+    const onMilestoneUpdated = (data: any) => {
+      res.write(`event: milestone:updated\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+    const onMilestoneDeleted = (data: any) => {
+      res.write(`event: milestone:deleted\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+    const onSliceCreated = (data: any) => {
+      res.write(`event: slice:created\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+    const onSliceUpdated = (data: any) => {
+      res.write(`event: slice:updated\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+    const onSliceDeleted = (data: any) => {
+      res.write(`event: slice:deleted\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+    const onSliceActivated = (data: any) => {
+      res.write(`event: slice:activated\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+    const onFeatureCreated = (data: any) => {
+      res.write(`event: feature:created\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+    const onFeatureUpdated = (data: any) => {
+      res.write(`event: feature:updated\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+    const onFeatureDeleted = (data: any) => {
+      res.write(`event: feature:deleted\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+    const onFeatureLinked = (data: any) => {
+      res.write(`event: feature:linked\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+
+    if (missionStore) {
+      missionStore.on("mission:created", onMissionCreated);
+      missionStore.on("mission:updated", onMissionUpdated);
+      missionStore.on("mission:deleted", onMissionDeleted);
+      missionStore.on("milestone:created", onMilestoneCreated);
+      missionStore.on("milestone:updated", onMilestoneUpdated);
+      missionStore.on("milestone:deleted", onMilestoneDeleted);
+      missionStore.on("slice:created", onSliceCreated);
+      missionStore.on("slice:updated", onSliceUpdated);
+      missionStore.on("slice:deleted", onSliceDeleted);
+      missionStore.on("slice:activated", onSliceActivated);
+      missionStore.on("feature:created", onFeatureCreated);
+      missionStore.on("feature:updated", onFeatureUpdated);
+      missionStore.on("feature:deleted", onFeatureDeleted);
+      missionStore.on("feature:linked", onFeatureLinked);
+    }
+
     // Heartbeat every 30s to keep connection alive
     const heartbeat = setInterval(() => {
       res.write(": heartbeat\n\n");
@@ -56,6 +117,22 @@ export function createSSE(store: TaskStore) {
       store.off("task:updated", onUpdated);
       store.off("task:deleted", onDeleted);
       store.off("task:merged", onMerged);
+      if (missionStore) {
+        missionStore.off("mission:created", onMissionCreated);
+        missionStore.off("mission:updated", onMissionUpdated);
+        missionStore.off("mission:deleted", onMissionDeleted);
+        missionStore.off("milestone:created", onMilestoneCreated);
+        missionStore.off("milestone:updated", onMilestoneUpdated);
+        missionStore.off("milestone:deleted", onMilestoneDeleted);
+        missionStore.off("slice:created", onSliceCreated);
+        missionStore.off("slice:updated", onSliceUpdated);
+        missionStore.off("slice:deleted", onSliceDeleted);
+        missionStore.off("slice:activated", onSliceActivated);
+        missionStore.off("feature:created", onFeatureCreated);
+        missionStore.off("feature:updated", onFeatureUpdated);
+        missionStore.off("feature:deleted", onFeatureDeleted);
+        missionStore.off("feature:linked", onFeatureLinked);
+      }
     });
   };
 }

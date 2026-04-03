@@ -621,7 +621,7 @@ describe("TaskCard clickable dependencies", () => {
     fireEvent.click(depBadge);
 
     await waitFor(() => {
-      expect(mockFetch).toHaveBeenCalledWith("FN-001");
+      expect(mockFetch).toHaveBeenCalledWith("FN-001", undefined);
       expect(onOpenDetail).toHaveBeenCalledWith(mockDetail);
     });
   });
@@ -2384,7 +2384,7 @@ describe("TaskCard detail opening", () => {
     fireEvent.click(cardTitle);
 
     await waitFor(() => {
-      expect(mockFetch).toHaveBeenCalledWith("FN-099");
+      expect(mockFetch).toHaveBeenCalledWith("FN-099", undefined);
       expect(onOpenDetail).toHaveBeenCalledWith(mockDetail);
     });
   });
@@ -2419,7 +2419,7 @@ describe("TaskCard detail opening", () => {
     fireEvent.click(screen.getByText("Test task"));
 
     await waitFor(() => {
-      expect(mockFetch).toHaveBeenCalledWith("FN-099");
+      expect(mockFetch).toHaveBeenCalledWith("FN-099", undefined);
       expect(onOpenDetail).toHaveBeenCalledWith(mockDetail);
       expect(onOpenDetail).toHaveBeenCalledTimes(1);
     });

@@ -89,6 +89,21 @@ describe("AgentDetailView", () => {
     });
   });
 
+  it("fetches the agent using the active project context", async () => {
+    render(
+      <AgentDetailView
+        agentId="agent-001"
+        projectId="proj_123"
+        onClose={vi.fn()}
+        addToast={vi.fn()}
+      />
+    );
+
+    await waitFor(() => {
+      expect(mockFetchAgent).toHaveBeenCalledWith("agent-001", "proj_123");
+    });
+  });
+
   it("displays role badge", async () => {
     render(
       <AgentDetailView
@@ -219,7 +234,7 @@ describe("AgentDetailView", () => {
     );
 
     await waitFor(() => {
-      expect(mockFetchAgent).toHaveBeenCalledWith("agent-001");
+      expect(mockFetchAgent).toHaveBeenCalledWith("agent-001", undefined);
     });
   });
 

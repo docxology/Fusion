@@ -135,7 +135,7 @@ describe("WorkflowStepManager", () => {
         description: "New description",
         prompt: undefined,
         enabled: true,
-      });
+      }, undefined);
       expect(addToast).toHaveBeenCalledWith("Workflow step created", "success");
     });
   });
@@ -167,7 +167,7 @@ describe("WorkflowStepManager", () => {
     await waitFor(() => {
       expect(updateWorkflowStep).toHaveBeenCalledWith("WS-001", expect.objectContaining({
         name: "Updated Name",
-      }));
+      }), undefined);
       expect(addToast).toHaveBeenCalledWith("Workflow step updated", "success");
     });
   });
@@ -192,7 +192,7 @@ describe("WorkflowStepManager", () => {
     fireEvent.click(confirmBtn);
 
     await waitFor(() => {
-      expect(deleteWorkflowStep).toHaveBeenCalledWith("WS-001");
+      expect(deleteWorkflowStep).toHaveBeenCalledWith("WS-001", undefined);
       expect(addToast).toHaveBeenCalledWith("Workflow step deleted", "success");
     });
   });
@@ -216,7 +216,7 @@ describe("WorkflowStepManager", () => {
     fireEvent.click(refineBtn);
 
     await waitFor(() => {
-      expect(refineWorkflowStepPrompt).toHaveBeenCalledWith("WS-001");
+      expect(refineWorkflowStepPrompt).toHaveBeenCalledWith("WS-001", undefined);
       expect(addToast).toHaveBeenCalledWith("Prompt refined with AI", "success");
     });
   });

@@ -17,6 +17,7 @@ interface PlanningModeModalProps {
   onTaskCreated: (task: Task) => void;
   tasks: Task[];
   initialPlan?: string;
+  projectId?: string;
 }
 
 interface QuestionResponse {
@@ -36,7 +37,7 @@ const EXAMPLE_PLANS = [
   "Refactor the task card component for better performance",
 ];
 
-export function PlanningModeModal({ isOpen, onClose, onTaskCreated, tasks, initialPlan: initialPlanProp }: PlanningModeModalProps) {
+export function PlanningModeModal({ isOpen, onClose, onTaskCreated, tasks, initialPlan: initialPlanProp, projectId }: PlanningModeModalProps) {
   const [initialPlan, setInitialPlan] = useState("");
   const [view, setView] = useState<ViewState>({ type: "initial" });
   const [error, setError] = useState<string | null>(null);
@@ -64,11 +65,11 @@ export function PlanningModeModal({ isOpen, onClose, onTaskCreated, tasks, initi
 
     try {
       // Use streaming mode for real-time AI thinking display
-      const { sessionId } = await startPlanningStreaming(plan.trim());
+      const { sessionId } = await startPlanningStreaming(plan.trim(), projectId);
       currentSessionIdRef.current = sessionId;
 
       // Connect to SSE stream
-      const connection = connectPlanningStream(sessionId, {
+      const connection = connectPlanningStream(sessionId, projectId, {
         onThinking: (data) => {
           setStreamingOutput((prev) => prev + data);
         },
@@ -108,7 +109,7 @@ export function PlanningModeModal({ isOpen, onClose, onTaskCreated, tasks, initi
       setView({ type: "initial" });
       currentSessionIdRef.current = null;
     }
-  }, [initialPlan]);
+  }, [initialPlan, projectId]);
 
   // Focus textarea when opening
   useEffect(() => {
@@ -177,7 +178,7 @@ export function PlanningModeModal({ isOpen, onClose, onTaskCreated, tasks, initi
 
     if (view.type === "question" || view.type === "summary") {
       try {
-        await cancelPlanning(view.session.sessionId);
+        await cancelPlanning(view.session.sessionId, projectId);
       } catch {
         // Ignore errors on cancel
       }
@@ -232,7 +233,7 @@ export function PlanningModeModal({ isOpen, onClose, onTaskCreated, tasks, initi
 
       try {
         // Submit response - AI will broadcast events via the already-connected stream
-        await respondToPlanning(sessionId, responses);
+        await respondToPlanning(sessionId, responses, projectId);
         setResponseHistory((prev) => [...prev, responses]);
         setHasProgress(true);
         // Events (question/summary) will arrive via the existing SSE stream
@@ -251,7 +252,7 @@ export function PlanningModeModal({ isOpen, onClose, onTaskCreated, tasks, initi
     setView({ type: "loading" });
 
     try {
-      const task = await createTaskFromPlanning(view.session.sessionId);
+      const task = await createTaskFromPlanning(view.session.sessionId, projectId);
       onTaskCreated(task);
       handleCancel();
     } catch (err: any) {

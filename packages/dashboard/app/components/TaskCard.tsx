@@ -33,6 +33,7 @@ const ACTIVE_STATUSES = new Set(["planning", "researching", "executing", "finali
 
 interface TaskCardProps {
   task: Task;
+  projectId?: string;
   queued?: boolean;
   onOpenDetail: (task: TaskDetail) => void;
   addToast: (message: string, type?: ToastType) => void;
@@ -79,6 +80,7 @@ function areTaskCardPropsEqual(previous: TaskCardProps, next: TaskCardProps): bo
 
   return (
     previous.queued === next.queued &&
+    previous.projectId === next.projectId &&
     previous.globalPaused === next.globalPaused &&
     previous.onOpenDetail === next.onOpenDetail &&
     previous.addToast === next.addToast &&
@@ -119,6 +121,7 @@ function areTaskCardPropsEqual(previous: TaskCardProps, next: TaskCardProps): bo
 
 function TaskCardComponent({
   task,
+  projectId,
   queued,
   onOpenDetail,
   addToast,
@@ -227,7 +230,7 @@ function TaskCardComponent({
     const files = Array.from(e.dataTransfer.files);
     for (const file of files) {
       try {
-        await uploadAttachment(task.id, file);
+        await uploadAttachment(task.id, file, projectId);
         addToast(`Attached ${file.name} to ${task.id}`, "success");
       } catch (err: any) {
         addToast(`Failed to attach ${file.name}: ${err.message}`, "error");
@@ -238,7 +241,7 @@ function TaskCardComponent({
   const handleClick = useCallback(async () => {
     if (isEditing) return; // Don't open detail when editing
     try {
-      const detail = await fetchTaskDetail(task.id);
+      const detail = await fetchTaskDetail(task.id, projectId);
       onOpenDetail(detail);
     } catch {
       addToast("Failed to load task details", "error");
@@ -301,7 +304,7 @@ function TaskCardComponent({
   const handleDepClick = useCallback(async (e: React.MouseEvent, depId: string) => {
     e.stopPropagation(); // Prevent card click
     try {
-      const detail = await fetchTaskDetail(depId);
+      const detail = await fetchTaskDetail(depId, projectId);
       onOpenDetail(detail);
     } catch (err: any) {
       addToast(`Failed to load dependency ${depId}`, "error");
@@ -331,10 +334,10 @@ function TaskCardComponent({
   }, [hasGitHubBadge, isInViewport, subscribeToBadge, task.id, unsubscribeFromBadge]);
 
   const liveBadgeData = badgeUpdates.get(task.id);
-  const { files: sessionFiles, loading: sessionFilesLoading } = useSessionFiles(task.id, task.worktree, task.column);
+  const { files: sessionFiles, loading: sessionFilesLoading } = useSessionFiles(task.id, task.worktree, task.column, projectId);
 
   // Get fresh batch data if available
-  const batchData = useMemo(() => getFreshBatchData(task.id), [task.id]);
+  const batchData = useMemo(() => getFreshBatchData(task.id, projectId), [task.id, projectId]);
 
   // Pick the freshest data among WebSocket, batch, and task data
   const livePrInfo = useMemo(() => {

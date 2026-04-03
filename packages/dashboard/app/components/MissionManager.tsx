@@ -55,6 +55,7 @@ interface MissionManagerProps {
   isOpen: boolean;
   onClose: () => void;
   addToast: (message: string, type?: ToastType) => void;
+  projectId?: string;
   onSelectTask?: (taskId: string) => void;
   availableTasks?: Array<{ id: string; title?: string }>;
 }
@@ -120,7 +121,7 @@ const EMPTY_MISSION_FORM: MissionFormData = {
   title: "",
   description: "",
   status: "planning",
-  autoAdvance: true,
+  autoAdvance: false,
 };
 
 const EMPTY_MILESTONE_FORM: MilestoneFormData = {
@@ -143,7 +144,7 @@ const EMPTY_FEATURE_FORM: FeatureFormData = {
   status: "defined",
 };
 
-export function MissionManager({ isOpen, onClose, addToast, onSelectTask, availableTasks = [] }: MissionManagerProps) {
+export function MissionManager({ isOpen, onClose, addToast, projectId, onSelectTask, availableTasks = [] }: MissionManagerProps) {
   const [missions, setMissions] = useState<Mission[]>([]);
   const [selectedMission, setSelectedMission] = useState<MissionWithHierarchy | null>(null);
   const [loading, setLoading] = useState(true);
@@ -183,19 +184,19 @@ export function MissionManager({ isOpen, onClose, addToast, onSelectTask, availa
   const loadMissions = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await fetchMissions();
+      const data = await fetchMissions(projectId);
       setMissions(data);
     } catch (err: any) {
       addToast(err.message || "Failed to load missions", "error");
     } finally {
       setLoading(false);
     }
-  }, [addToast]);
+  }, [addToast, projectId]);
 
   const loadMissionDetail = useCallback(async (missionId: string) => {
     try {
       setDetailLoading(true);
-      const data = await fetchMission(missionId);
+      const data = await fetchMission(missionId, projectId);
       setSelectedMission(data);
       // Auto-expand first milestone and slice
       if (data.milestones.length > 0) {
@@ -209,7 +210,7 @@ export function MissionManager({ isOpen, onClose, addToast, onSelectTask, availa
     } finally {
       setDetailLoading(false);
     }
-  }, [addToast]);
+  }, [addToast, projectId]);
 
   useEffect(() => {
     if (isOpen) {
@@ -232,7 +233,7 @@ export function MissionManager({ isOpen, onClose, addToast, onSelectTask, availa
       title: mission.title,
       description: mission.description || "",
       status: mission.status,
-      autoAdvance: mission.autoAdvance ?? true,
+      autoAdvance: mission.autoAdvance ?? false,
     });
   }, []);
 
@@ -254,7 +255,7 @@ export function MissionManager({ isOpen, onClose, addToast, onSelectTask, availa
         await createMission({
           title: missionForm.title.trim(),
           description: missionForm.description.trim() || undefined,
-        });
+        }, projectId);
         addToast("Mission created", "success");
       } else if (editingMissionId) {
         await updateMission(editingMissionId, {
@@ -262,7 +263,7 @@ export function MissionManager({ isOpen, onClose, addToast, onSelectTask, availa
           description: missionForm.description.trim() || undefined,
           status: missionForm.status,
           autoAdvance: missionForm.autoAdvance,
-        });
+        }, projectId);
         addToast("Mission updated", "success");
         // Refresh detail view if viewing this mission
         if (selectedMission?.id === editingMissionId) {
@@ -276,11 +277,11 @@ export function MissionManager({ isOpen, onClose, addToast, onSelectTask, availa
     } finally {
       setSaving(false);
     }
-  }, [missionForm, isCreatingMission, editingMissionId, addToast, loadMissions, loadMissionDetail, selectedMission, handleCancelMission]);
+  }, [missionForm, isCreatingMission, editingMissionId, addToast, loadMissions, loadMissionDetail, selectedMission, handleCancelMission, projectId]);
 
   const handleDeleteMission = useCallback(async (missionId: string) => {
     try {
-      await deleteMission(missionId);
+      await deleteMission(missionId, projectId);
       addToast("Mission deleted", "success");
       if (selectedMission?.id === missionId) {
         setSelectedMission(null);
@@ -290,7 +291,7 @@ export function MissionManager({ isOpen, onClose, addToast, onSelectTask, availa
     } catch (err: any) {
       addToast(err.message || "Failed to delete mission", "error");
     }
-  }, [addToast, loadMissions, selectedMission]);
+  }, [addToast, loadMissions, selectedMission, projectId]);
 
   // Milestone handlers
   const handleCreateMilestone = useCallback(() => {
@@ -329,7 +330,7 @@ export function MissionManager({ isOpen, onClose, addToast, onSelectTask, availa
           title: milestoneForm.title.trim(),
           description: milestoneForm.description.trim() || undefined,
           dependencies: milestoneForm.dependencies,
-        });
+        }, projectId);
         addToast("Milestone created", "success");
       } else if (editingMilestoneId) {
         await updateMilestone(editingMilestoneId, {
@@ -337,7 +338,7 @@ export function MissionManager({ isOpen, onClose, addToast, onSelectTask, availa
           description: milestoneForm.description.trim() || undefined,
           status: milestoneForm.status,
           dependencies: milestoneForm.dependencies,
-        });
+        }, projectId);
         addToast("Milestone updated", "success");
       }
       await loadMissionDetail(selectedMission!.id);
@@ -347,18 +348,18 @@ export function MissionManager({ isOpen, onClose, addToast, onSelectTask, availa
     } finally {
       setSaving(false);
     }
-  }, [milestoneForm, isCreatingMilestone, editingMilestoneId, selectedMission, addToast, loadMissionDetail, handleCancelMilestone, missionForm.title]);
+  }, [milestoneForm, isCreatingMilestone, editingMilestoneId, selectedMission, addToast, loadMissionDetail, handleCancelMilestone, missionForm.title, projectId]);
 
   const handleDeleteMilestone = useCallback(async (milestoneId: string) => {
     try {
-      await deleteMilestone(milestoneId);
+      await deleteMilestone(milestoneId, projectId);
       addToast("Milestone deleted", "success");
       await loadMissionDetail(selectedMission!.id);
       setDeleteConfirmId(null);
     } catch (err: any) {
       addToast(err.message || "Failed to delete milestone", "error");
     }
-  }, [addToast, loadMissionDetail, selectedMission]);
+  }, [addToast, loadMissionDetail, selectedMission, projectId]);
 
   const toggleMilestoneExpanded = useCallback((milestoneId: string) => {
     setExpandedMilestones((prev) => {
@@ -409,14 +410,14 @@ export function MissionManager({ isOpen, onClose, addToast, onSelectTask, availa
         await createSlice(selectedMilestoneIdForNewSlice, {
           title: sliceForm.title.trim(),
           description: sliceForm.description.trim() || undefined,
-        });
+        }, projectId);
         addToast("Slice created", "success");
       } else if (editingSliceId) {
         await updateSlice(editingSliceId, {
           title: sliceForm.title.trim(),
           description: sliceForm.description.trim() || undefined,
           status: sliceForm.status,
-        });
+        }, projectId);
         addToast("Slice updated", "success");
       }
       await loadMissionDetail(selectedMission!.id);
@@ -426,28 +427,28 @@ export function MissionManager({ isOpen, onClose, addToast, onSelectTask, availa
     } finally {
       setSaving(false);
     }
-  }, [sliceForm, isCreatingSlice, editingSliceId, selectedMilestoneIdForNewSlice, selectedMission, addToast, loadMissionDetail, handleCancelSlice]);
+  }, [sliceForm, isCreatingSlice, editingSliceId, selectedMilestoneIdForNewSlice, selectedMission, addToast, loadMissionDetail, handleCancelSlice, projectId]);
 
   const handleDeleteSlice = useCallback(async (sliceId: string) => {
     try {
-      await deleteSlice(sliceId);
+      await deleteSlice(sliceId, projectId);
       addToast("Slice deleted", "success");
       await loadMissionDetail(selectedMission!.id);
       setDeleteConfirmId(null);
     } catch (err: any) {
       addToast(err.message || "Failed to delete slice", "error");
     }
-  }, [addToast, loadMissionDetail, selectedMission]);
+  }, [addToast, loadMissionDetail, selectedMission, projectId]);
 
   const handleActivateSlice = useCallback(async (sliceId: string) => {
     try {
-      await activateSlice(sliceId);
+      await activateSlice(sliceId, projectId);
       addToast("Slice activated", "success");
       await loadMissionDetail(selectedMission!.id);
     } catch (err: any) {
       addToast(err.message || "Failed to activate slice", "error");
     }
-  }, [addToast, loadMissionDetail, selectedMission]);
+  }, [addToast, loadMissionDetail, selectedMission, projectId]);
 
   const toggleSliceExpanded = useCallback((sliceId: string) => {
     setExpandedSlices((prev) => {
@@ -500,7 +501,7 @@ export function MissionManager({ isOpen, onClose, addToast, onSelectTask, availa
           title: featureForm.title.trim(),
           description: featureForm.description.trim() || undefined,
           acceptanceCriteria: featureForm.acceptanceCriteria.trim() || undefined,
-        });
+        }, projectId);
         addToast("Feature created", "success");
       } else if (editingFeatureId) {
         await updateFeature(editingFeatureId, {
@@ -508,7 +509,7 @@ export function MissionManager({ isOpen, onClose, addToast, onSelectTask, availa
           description: featureForm.description.trim() || undefined,
           acceptanceCriteria: featureForm.acceptanceCriteria.trim() || undefined,
           status: featureForm.status,
-        });
+        }, projectId);
         addToast("Feature updated", "success");
       }
       await loadMissionDetail(selectedMission!.id);
@@ -518,18 +519,18 @@ export function MissionManager({ isOpen, onClose, addToast, onSelectTask, availa
     } finally {
       setSaving(false);
     }
-  }, [featureForm, isCreatingFeature, editingFeatureId, selectedSliceIdForNewFeature, selectedMission, addToast, loadMissionDetail, handleCancelFeature]);
+  }, [featureForm, isCreatingFeature, editingFeatureId, selectedSliceIdForNewFeature, selectedMission, addToast, loadMissionDetail, handleCancelFeature, projectId]);
 
   const handleDeleteFeature = useCallback(async (featureId: string) => {
     try {
-      await deleteFeature(featureId);
+      await deleteFeature(featureId, projectId);
       addToast("Feature deleted", "success");
       await loadMissionDetail(selectedMission!.id);
       setDeleteConfirmId(null);
     } catch (err: any) {
       addToast(err.message || "Failed to delete feature", "error");
     }
-  }, [addToast, loadMissionDetail, selectedMission]);
+  }, [addToast, loadMissionDetail, selectedMission, projectId]);
 
   const handleLinkTask = useCallback(async () => {
     if (!linkTaskFeatureId || !selectedTaskId.trim()) {
@@ -538,7 +539,7 @@ export function MissionManager({ isOpen, onClose, addToast, onSelectTask, availa
     }
 
     try {
-      await linkFeatureToTask(linkTaskFeatureId, selectedTaskId.trim());
+      await linkFeatureToTask(linkTaskFeatureId, selectedTaskId.trim(), projectId);
       addToast("Feature linked to task", "success");
       await loadMissionDetail(selectedMission!.id);
       setLinkTaskFeatureId(null);
@@ -546,17 +547,17 @@ export function MissionManager({ isOpen, onClose, addToast, onSelectTask, availa
     } catch (err: any) {
       addToast(err.message || "Failed to link feature to task", "error");
     }
-  }, [linkTaskFeatureId, selectedTaskId, addToast, loadMissionDetail, selectedMission]);
+  }, [linkTaskFeatureId, selectedTaskId, addToast, loadMissionDetail, selectedMission, projectId]);
 
   const handleUnlinkTask = useCallback(async (featureId: string) => {
     try {
-      await unlinkFeatureFromTask(featureId);
+      await unlinkFeatureFromTask(featureId, projectId);
       addToast("Feature unlinked from task", "success");
       await loadMissionDetail(selectedMission!.id);
     } catch (err: any) {
       addToast(err.message || "Failed to unlink feature", "error");
     }
-  }, [addToast, loadMissionDetail, selectedMission]);
+  }, [addToast, loadMissionDetail, selectedMission, projectId]);
 
   const handleSelectMission = useCallback((mission: Mission) => {
     loadMissionDetail(mission.id);

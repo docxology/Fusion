@@ -74,18 +74,20 @@ async function api<T = unknown>(path: string, opts: RequestInit = {}): Promise<T
   return data as T;
 }
 
-export function fetchTasks(limit?: number, offset?: number): Promise<Task[]> {
+export function fetchTasks(limit?: number, offset?: number, projectId?: string): Promise<Task[]> {
   const search = new URLSearchParams();
   if (limit !== undefined) search.set("limit", String(limit));
   if (offset !== undefined) search.set("offset", String(offset));
+  if (projectId) search.set("projectId", projectId);
   const suffix = search.size > 0 ? `?${search.toString()}` : "";
   return api<Task[]>(`/tasks${suffix}`);
 }
 
-export async function fetchTaskDetail(id: string): Promise<TaskDetail> {
+export async function fetchTaskDetail(id: string, projectId?: string): Promise<TaskDetail> {
   const maxAttempts = 2; // 1 initial + 1 retry
+  const url = buildApiUrl(withProjectId(`/tasks/${id}`, projectId));
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    const res = await fetch(`/api/tasks/${id}`, {
+    const res = await fetch(url, {
       headers: { "Content-Type": "application/json" },
     });
     const data = await res.json();
@@ -98,7 +100,7 @@ export async function fetchTaskDetail(id: string): Promise<TaskDetail> {
   throw new Error("Request failed");
 }
 
-export function createTask(input: TaskCreateInput): Promise<Task> {
+export function createTask(input: TaskCreateInput, projectId?: string): Promise<Task> {
   const {
     title,
     description,
@@ -113,7 +115,7 @@ export function createTask(input: TaskCreateInput): Promise<Task> {
     validatorModelId,
   } = input;
 
-  return api<Task>("/tasks", {
+  return api<Task>(withProjectId("/tasks", projectId), {
     method: "POST",
     body: JSON.stringify({
       title,
@@ -131,8 +133,8 @@ export function createTask(input: TaskCreateInput): Promise<Task> {
   });
 }
 
-export function updateTask(id: string, updates: { title?: string; description?: string; prompt?: string; dependencies?: string[]; modelProvider?: string | null; modelId?: string | null; validatorModelProvider?: string | null; validatorModelId?: string | null }): Promise<Task> {
-  return api<Task>(`/tasks/${id}`, {
+export function updateTask(id: string, updates: { title?: string; description?: string; prompt?: string; dependencies?: string[]; modelProvider?: string | null; modelId?: string | null; validatorModelProvider?: string | null; validatorModelId?: string | null }, projectId?: string): Promise<Task> {
+  return api<Task>(withProjectId(`/tasks/${id}`, projectId), {
     method: "PATCH",
     body: JSON.stringify(updates),
   });
@@ -153,8 +155,9 @@ export function batchUpdateTaskModels(
   modelId?: string | null,
   validatorModelProvider?: string | null,
   validatorModelId?: string | null,
+  projectId?: string,
 ): Promise<{ updated: Task[]; count: number }> {
-  return api<{ updated: Task[]; count: number }>("/tasks/batch-update-models", {
+  return api<{ updated: Task[]; count: number }>(withProjectId("/tasks/batch-update-models", projectId), {
     method: "POST",
     body: JSON.stringify({
       taskIds,
@@ -166,69 +169,69 @@ export function batchUpdateTaskModels(
   });
 }
 
-export function moveTask(id: string, column: Column): Promise<Task> {
-  return api<Task>(`/tasks/${id}/move`, {
+export function moveTask(id: string, column: Column, projectId?: string): Promise<Task> {
+  return api<Task>(withProjectId(`/tasks/${id}/move`, projectId), {
     method: "POST",
     body: JSON.stringify({ column }),
   });
 }
 
-export function deleteTask(id: string): Promise<Task> {
-  return api<Task>(`/tasks/${id}`, { method: "DELETE" });
+export function deleteTask(id: string, projectId?: string): Promise<Task> {
+  return api<Task>(withProjectId(`/tasks/${id}`, projectId), { method: "DELETE" });
 }
 
-export function mergeTask(id: string): Promise<MergeResult> {
-  return api<MergeResult>(`/tasks/${id}/merge`, { method: "POST" });
+export function mergeTask(id: string, projectId?: string): Promise<MergeResult> {
+  return api<MergeResult>(withProjectId(`/tasks/${id}/merge`, projectId), { method: "POST" });
 }
 
-export function retryTask(id: string): Promise<Task> {
-  return api<Task>(`/tasks/${id}/retry`, { method: "POST" });
+export function retryTask(id: string, projectId?: string): Promise<Task> {
+  return api<Task>(withProjectId(`/tasks/${id}/retry`, projectId), { method: "POST" });
 }
 
-export function duplicateTask(id: string): Promise<Task> {
-  return api<Task>(`/tasks/${id}/duplicate`, { method: "POST" });
+export function duplicateTask(id: string, projectId?: string): Promise<Task> {
+  return api<Task>(withProjectId(`/tasks/${id}/duplicate`, projectId), { method: "POST" });
 }
 
-export function pauseTask(id: string): Promise<Task> {
-  return api<Task>(`/tasks/${id}/pause`, { method: "POST" });
+export function pauseTask(id: string, projectId?: string): Promise<Task> {
+  return api<Task>(withProjectId(`/tasks/${id}/pause`, projectId), { method: "POST" });
 }
 
-export function unpauseTask(id: string): Promise<Task> {
-  return api<Task>(`/tasks/${id}/unpause`, { method: "POST" });
+export function unpauseTask(id: string, projectId?: string): Promise<Task> {
+  return api<Task>(withProjectId(`/tasks/${id}/unpause`, projectId), { method: "POST" });
 }
 
-export function archiveTask(id: string): Promise<Task> {
-  return api<Task>(`/tasks/${id}/archive`, { method: "POST" });
+export function archiveTask(id: string, projectId?: string): Promise<Task> {
+  return api<Task>(withProjectId(`/tasks/${id}/archive`, projectId), { method: "POST" });
 }
 
-export function unarchiveTask(id: string): Promise<Task> {
-  return api<Task>(`/tasks/${id}/unarchive`, { method: "POST" });
+export function unarchiveTask(id: string, projectId?: string): Promise<Task> {
+  return api<Task>(withProjectId(`/tasks/${id}/unarchive`, projectId), { method: "POST" });
 }
 
-export function archiveAllDone(): Promise<Task[]> {
-  return api<{ archived: Task[] }>("/tasks/archive-all-done", { method: "POST" }).then(
+export function archiveAllDone(projectId?: string): Promise<Task[]> {
+  return api<{ archived: Task[] }>(withProjectId("/tasks/archive-all-done", projectId), { method: "POST" }).then(
     (response) => response.archived
   );
 }
 
-export function approvePlan(id: string): Promise<Task> {
-  return api<Task>(`/tasks/${id}/approve-plan`, { method: "POST" });
+export function approvePlan(id: string, projectId?: string): Promise<Task> {
+  return api<Task>(withProjectId(`/tasks/${id}/approve-plan`, projectId), { method: "POST" });
 }
 
-export function rejectPlan(id: string): Promise<Task> {
-  return api<Task>(`/tasks/${id}/reject-plan`, { method: "POST" });
+export function rejectPlan(id: string, projectId?: string): Promise<Task> {
+  return api<Task>(withProjectId(`/tasks/${id}/reject-plan`, projectId), { method: "POST" });
 }
 
-export function fetchConfig(): Promise<{ maxConcurrent: number; rootDir: string }> {
-  return api<{ maxConcurrent: number; rootDir: string }>("/config");
+export function fetchConfig(projectId?: string): Promise<{ maxConcurrent: number; rootDir: string }> {
+  return api<{ maxConcurrent: number; rootDir: string }>(withProjectId("/config", projectId));
 }
 
-export function fetchSettings(): Promise<Settings> {
-  return api<Settings>("/settings");
+export function fetchSettings(projectId?: string): Promise<Settings> {
+  return api<Settings>(withProjectId("/settings", projectId));
 }
 
-export function updateSettings(settings: Partial<Settings>): Promise<Settings> {
-  return api<Settings>("/settings", {
+export function updateSettings(settings: Partial<Settings>, projectId?: string): Promise<Settings> {
+  return api<Settings>(withProjectId("/settings", projectId), {
     method: "PUT",
     body: JSON.stringify(settings),
   });
@@ -248,21 +251,21 @@ export function updateGlobalSettings(settings: Partial<GlobalSettings>): Promise
 }
 
 /** Fetch settings separated by scope: { global, project } */
-export function fetchSettingsByScope(): Promise<{ global: GlobalSettings; project: Partial<ProjectSettings> }> {
-  return api<{ global: GlobalSettings; project: Partial<ProjectSettings> }>("/settings/scopes");
+export function fetchSettingsByScope(projectId?: string): Promise<{ global: GlobalSettings; project: Partial<ProjectSettings> }> {
+  return api<{ global: GlobalSettings; project: Partial<ProjectSettings> }>(withProjectId("/settings/scopes", projectId));
 }
 
-export function testNtfyNotification(config?: { ntfyEnabled?: boolean; ntfyTopic?: string }): Promise<{ success: boolean }> {
-  return api<{ success: boolean }>("/settings/test-ntfy", {
+export function testNtfyNotification(config?: { ntfyEnabled?: boolean; ntfyTopic?: string }, projectId?: string): Promise<{ success: boolean }> {
+  return api<{ success: boolean }>(withProjectId("/settings/test-ntfy", projectId), {
     method: "POST",
     body: config ? JSON.stringify(config) : undefined,
   });
 }
 
-export async function uploadAttachment(id: string, file: File): Promise<TaskAttachment> {
+export async function uploadAttachment(id: string, file: File, projectId?: string): Promise<TaskAttachment> {
   const formData = new FormData();
   formData.append("file", file);
-  const res = await fetch(`/api/tasks/${id}/attachments`, {
+  const res = await fetch(buildApiUrl(withProjectId(`/tasks/${id}/attachments`, projectId)), {
     method: "POST",
     body: formData,
   });
@@ -271,58 +274,58 @@ export async function uploadAttachment(id: string, file: File): Promise<TaskAtta
   return data as TaskAttachment;
 }
 
-export async function deleteAttachment(id: string, filename: string): Promise<Task> {
-  return api<Task>(`/tasks/${id}/attachments/${filename}`, { method: "DELETE" });
+export async function deleteAttachment(id: string, filename: string, projectId?: string): Promise<Task> {
+  return api<Task>(withProjectId(`/tasks/${id}/attachments/${filename}`, projectId), { method: "DELETE" });
 }
 
-export function fetchAgentLogs(taskId: string): Promise<AgentLogEntry[]> {
-  return api<AgentLogEntry[]>(`/tasks/${taskId}/logs`);
+export function fetchAgentLogs(taskId: string, projectId?: string): Promise<AgentLogEntry[]> {
+  return api<AgentLogEntry[]>(withProjectId(`/tasks/${taskId}/logs`, projectId));
 }
 
-export function fetchSessionFiles(taskId: string): Promise<string[]> {
-  return api<string[]>(`/tasks/${taskId}/session-files`);
+export function fetchSessionFiles(taskId: string, projectId?: string): Promise<string[]> {
+  return api<string[]>(withProjectId(`/tasks/${taskId}/session-files`, projectId));
 }
 
-export function fetchTaskComments(id: string): Promise<TaskComment[]> {
-  return api<TaskComment[]>(`/tasks/${id}/comments`);
+export function fetchTaskComments(id: string, projectId?: string): Promise<TaskComment[]> {
+  return api<TaskComment[]>(withProjectId(`/tasks/${id}/comments`, projectId));
 }
 
-export function addTaskComment(id: string, text: string, author?: string): Promise<Task> {
-  return api<Task>(`/tasks/${id}/comments`, {
+export function addTaskComment(id: string, text: string, author?: string, projectId?: string): Promise<Task> {
+  return api<Task>(withProjectId(`/tasks/${id}/comments`, projectId), {
     method: "POST",
     body: JSON.stringify({ text, author }),
   });
 }
 
-export function updateTaskComment(id: string, commentId: string, text: string): Promise<Task> {
-  return api<Task>(`/tasks/${id}/comments/${commentId}`, {
+export function updateTaskComment(id: string, commentId: string, text: string, projectId?: string): Promise<Task> {
+  return api<Task>(withProjectId(`/tasks/${id}/comments/${commentId}`, projectId), {
     method: "PATCH",
     body: JSON.stringify({ text }),
   });
 }
 
-export function deleteTaskComment(id: string, commentId: string): Promise<Task> {
-  return api<Task>(`/tasks/${id}/comments/${commentId}`, {
+export function deleteTaskComment(id: string, commentId: string, projectId?: string): Promise<Task> {
+  return api<Task>(withProjectId(`/tasks/${id}/comments/${commentId}`, projectId), {
     method: "DELETE",
   });
 }
 
-export function addSteeringComment(id: string, text: string): Promise<Task> {
-  return api<Task>(`/tasks/${id}/steer`, {
+export function addSteeringComment(id: string, text: string, projectId?: string): Promise<Task> {
+  return api<Task>(withProjectId(`/tasks/${id}/steer`, projectId), {
     method: "POST",
     body: JSON.stringify({ text }),
   });
 }
 
-export function requestSpecRevision(id: string, feedback: string): Promise<Task> {
-  return api<Task>(`/tasks/${id}/spec/revise`, {
+export function requestSpecRevision(id: string, feedback: string, projectId?: string): Promise<Task> {
+  return api<Task>(withProjectId(`/tasks/${id}/spec/revise`, projectId), {
     method: "POST",
     body: JSON.stringify({ feedback }),
   });
 }
 
-export function refineTask(id: string, feedback: string): Promise<Task> {
-  return api<Task>(`/tasks/${id}/refine`, {
+export function refineTask(id: string, feedback: string, projectId?: string): Promise<Task> {
+  return api<Task>(withProjectId(`/tasks/${id}/refine`, projectId), {
     method: "POST",
     body: JSON.stringify({ feedback }),
   });
@@ -601,22 +604,23 @@ export interface PrRefreshResponse {
 /** Create a GitHub PR for a task */
 export function createPr(
   id: string,
-  params: { title: string; body?: string; base?: string }
+  params: { title: string; body?: string; base?: string },
+  projectId?: string,
 ): Promise<PrInfo> {
-  return api<PrInfo>(`/tasks/${id}/pr/create`, {
+  return api<PrInfo>(withProjectId(`/tasks/${id}/pr/create`, projectId), {
     method: "POST",
     body: JSON.stringify(params),
   });
 }
 
 /** Fetch cached PR status for a task */
-export function fetchPrStatus(id: string): Promise<PrStatusResponse> {
-  return api<PrStatusResponse>(`/tasks/${id}/pr/status`);
+export function fetchPrStatus(id: string, projectId?: string): Promise<PrStatusResponse> {
+  return api<PrStatusResponse>(withProjectId(`/tasks/${id}/pr/status`, projectId));
 }
 
 /** Force refresh PR status from GitHub */
-export function refreshPrStatus(id: string): Promise<PrRefreshResponse> {
-  return api<PrRefreshResponse>(`/tasks/${id}/pr/refresh`, {
+export function refreshPrStatus(id: string, projectId?: string): Promise<PrRefreshResponse> {
+  return api<PrRefreshResponse>(withProjectId(`/tasks/${id}/pr/refresh`, projectId), {
     method: "POST",
   });
 }
@@ -627,20 +631,20 @@ export function refreshPrStatus(id: string): Promise<PrRefreshResponse> {
 export type { IssueInfo, BatchStatusResult, BatchStatusEntry } from "@fusion/core";
 
 /** Fetch cached issue status for a task */
-export function fetchIssueStatus(id: string): Promise<{ issueInfo: import("@fusion/core").IssueInfo; stale: boolean }> {
-  return api<{ issueInfo: import("@fusion/core").IssueInfo; stale: boolean }>(`/tasks/${id}/issue/status`);
+export function fetchIssueStatus(id: string, projectId?: string): Promise<{ issueInfo: import("@fusion/core").IssueInfo; stale: boolean }> {
+  return api<{ issueInfo: import("@fusion/core").IssueInfo; stale: boolean }>(withProjectId(`/tasks/${id}/issue/status`, projectId));
 }
 
 /** Force refresh issue status from GitHub */
-export function refreshIssueStatus(id: string): Promise<import("@fusion/core").IssueInfo> {
-  return api<import("@fusion/core").IssueInfo>(`/tasks/${id}/issue/refresh`, {
+export function refreshIssueStatus(id: string, projectId?: string): Promise<import("@fusion/core").IssueInfo> {
+  return api<import("@fusion/core").IssueInfo>(withProjectId(`/tasks/${id}/issue/refresh`, projectId), {
     method: "POST",
   });
 }
 
 /** Batch-refresh cached GitHub badge status for multiple tasks. */
-export async function fetchBatchStatus(taskIds: string[]): Promise<BatchStatusResult> {
-  const response = await api<BatchStatusResponse>("/github/batch/status", {
+export async function fetchBatchStatus(taskIds: string[], projectId?: string): Promise<BatchStatusResult> {
+  const response = await api<BatchStatusResponse>(withProjectId("/github/batch/status", projectId), {
     method: "POST",
     body: JSON.stringify({ taskIds }),
   });
@@ -1075,16 +1079,16 @@ export type PlanningStreamEvent =
   | { type: "complete"; data: Record<string, never> };
 
 /** Start a new planning session with an initial plan */
-export function startPlanning(initialPlan: string): Promise<PlanningSession> {
-  return api<PlanningSession>("/planning/start", {
+export function startPlanning(initialPlan: string, projectId?: string): Promise<PlanningSession> {
+  return api<PlanningSession>(withProjectId("/planning/start", projectId), {
     method: "POST",
     body: JSON.stringify({ initialPlan }),
   });
 }
 
 /** Start a new planning session with AI streaming support */
-export function startPlanningStreaming(initialPlan: string): Promise<{ sessionId: string }> {
-  return api<{ sessionId: string }>("/planning/start-streaming", {
+export function startPlanningStreaming(initialPlan: string, projectId?: string): Promise<{ sessionId: string }> {
+  return api<{ sessionId: string }>(withProjectId("/planning/start-streaming", projectId), {
     method: "POST",
     body: JSON.stringify({ initialPlan }),
   });
@@ -1093,33 +1097,34 @@ export function startPlanningStreaming(initialPlan: string): Promise<{ sessionId
 /** Submit a response to the current planning question */
 export function respondToPlanning(
   sessionId: string,
-  responses: Record<string, unknown>
+  responses: Record<string, unknown>,
+  projectId?: string
 ): Promise<PlanningSession> {
-  return api<PlanningSession>("/planning/respond", {
+  return api<PlanningSession>(withProjectId("/planning/respond", projectId), {
     method: "POST",
     body: JSON.stringify({ sessionId, responses }),
   });
 }
 
 /** Cancel an active planning session */
-export function cancelPlanning(sessionId: string): Promise<void> {
-  return api<void>("/planning/cancel", {
+export function cancelPlanning(sessionId: string, projectId?: string): Promise<void> {
+  return api<void>(withProjectId("/planning/cancel", projectId), {
     method: "POST",
     body: JSON.stringify({ sessionId }),
   });
 }
 
 /** Create a task from a completed planning session */
-export function createTaskFromPlanning(sessionId: string): Promise<Task> {
-  return api<Task>("/planning/create-task", {
+export function createTaskFromPlanning(sessionId: string, projectId?: string): Promise<Task> {
+  return api<Task>(withProjectId("/planning/create-task", projectId), {
     method: "POST",
     body: JSON.stringify({ sessionId }),
   });
 }
 
 /** Get the SSE stream URL for a planning session */
-export function getPlanningStreamUrl(sessionId: string): string {
-  return `/api/planning/${encodeURIComponent(sessionId)}/stream`;
+export function getPlanningStreamUrl(sessionId: string, projectId?: string): string {
+  return buildApiUrl(withProjectId(`/planning/${encodeURIComponent(sessionId)}/stream`, projectId));
 }
 
 /** Connect to planning session SSE stream and handle events
@@ -1130,6 +1135,7 @@ export function getPlanningStreamUrl(sessionId: string): string {
  */
 export function connectPlanningStream(
   sessionId: string,
+  projectId: string | undefined,
   handlers: {
     onThinking?: (data: string) => void;
     onQuestion?: (data: PlanningQuestion) => void;
@@ -1138,7 +1144,7 @@ export function connectPlanningStream(
     onComplete?: () => void;
   }
 ): { close: () => void; isConnected: () => boolean } {
-  const url = getPlanningStreamUrl(sessionId);
+  const url = getPlanningStreamUrl(sessionId, projectId);
   const eventSource = new EventSource(url);
   let isClosed = false;
 
@@ -1301,41 +1307,41 @@ export function clearActivityLog(): Promise<{ success: boolean }> {
 // ── Workflow Steps ─────────────────────────────────────────────────────
 
 /** Fetch all workflow step definitions */
-export function fetchWorkflowSteps(): Promise<WorkflowStep[]> {
-  return api<WorkflowStep[]>("/workflow-steps");
+export function fetchWorkflowSteps(projectId?: string): Promise<WorkflowStep[]> {
+  return api<WorkflowStep[]>(withProjectId("/workflow-steps", projectId));
 }
 
 /** Create a new workflow step */
-export function createWorkflowStep(input: WorkflowStepInput): Promise<WorkflowStep> {
-  return api<WorkflowStep>("/workflow-steps", {
+export function createWorkflowStep(input: WorkflowStepInput, projectId?: string): Promise<WorkflowStep> {
+  return api<WorkflowStep>(withProjectId("/workflow-steps", projectId), {
     method: "POST",
     body: JSON.stringify(input),
   });
 }
 
 /** Update a workflow step */
-export function updateWorkflowStep(id: string, updates: Partial<WorkflowStepInput>): Promise<WorkflowStep> {
-  return api<WorkflowStep>(`/workflow-steps/${id}`, {
+export function updateWorkflowStep(id: string, updates: Partial<WorkflowStepInput>, projectId?: string): Promise<WorkflowStep> {
+  return api<WorkflowStep>(withProjectId(`/workflow-steps/${id}`, projectId), {
     method: "PATCH",
     body: JSON.stringify(updates),
   });
 }
 
 /** Delete a workflow step */
-export function deleteWorkflowStep(id: string): Promise<void> {
-  return api<void>(`/workflow-steps/${id}`, { method: "DELETE" });
+export function deleteWorkflowStep(id: string, projectId?: string): Promise<void> {
+  return api<void>(withProjectId(`/workflow-steps/${id}`, projectId), { method: "DELETE" });
 }
 
 /** Refine a workflow step's prompt using AI */
-export function refineWorkflowStepPrompt(id: string): Promise<{ prompt: string; workflowStep: WorkflowStep }> {
-  return api<{ prompt: string; workflowStep: WorkflowStep }>(`/workflow-steps/${id}/refine`, {
+export function refineWorkflowStepPrompt(id: string, projectId?: string): Promise<{ prompt: string; workflowStep: WorkflowStep }> {
+  return api<{ prompt: string; workflowStep: WorkflowStep }>(withProjectId(`/workflow-steps/${id}/refine`, projectId), {
     method: "POST",
   });
 }
 
 /** Fetch workflow step results for a task */
-export function fetchWorkflowResults(taskId: string): Promise<WorkflowStepResult[]> {
-  return api<WorkflowStepResult[]>(`/tasks/${encodeURIComponent(taskId)}/workflow-results`);
+export function fetchWorkflowResults(taskId: string, projectId?: string): Promise<WorkflowStepResult[]> {
+  return api<WorkflowStepResult[]>(withProjectId(`/tasks/${encodeURIComponent(taskId)}/workflow-results`, projectId));
 }
 
 // ── Workflow Step Templates ──────────────────────────────────────────────
@@ -1349,8 +1355,8 @@ export function fetchWorkflowStepTemplates(): Promise<{ templates: import("@fusi
 }
 
 /** Create a workflow step from a built-in template */
-export function createWorkflowStepFromTemplate(templateId: string): Promise<WorkflowStep> {
-  return api<WorkflowStep>(`/workflow-step-templates/${encodeURIComponent(templateId)}/create`, {
+export function createWorkflowStepFromTemplate(templateId: string, projectId?: string): Promise<WorkflowStep> {
+  return api<WorkflowStep>(withProjectId(`/workflow-step-templates/${encodeURIComponent(templateId)}/create`, projectId), {
     method: "POST",
   });
 }
@@ -1370,26 +1376,26 @@ export interface ScriptRunResult {
 }
 
 /** Fetch all saved scripts from project settings */
-export function fetchScripts(): Promise<Record<string, string>> {
-  return api<Record<string, string>>("/scripts");
+export function fetchScripts(projectId?: string): Promise<Record<string, string>> {
+  return api<Record<string, string>>(withProjectId("/scripts", projectId));
 }
 
 /** Add or update a script */
-export function addScript(name: string, command: string): Promise<ScriptEntry> {
-  return api<ScriptEntry>("/scripts", {
+export function addScript(name: string, command: string, projectId?: string): Promise<ScriptEntry> {
+  return api<ScriptEntry>(withProjectId("/scripts", projectId), {
     method: "POST",
     body: JSON.stringify({ name, command }),
   });
 }
 
 /** Remove a script by name */
-export function removeScript(name: string): Promise<void> {
-  return api<void>(`/scripts/${encodeURIComponent(name)}`, { method: "DELETE" });
+export function removeScript(name: string, projectId?: string): Promise<void> {
+  return api<void>(withProjectId(`/scripts/${encodeURIComponent(name)}`, projectId), { method: "DELETE" });
 }
 
 /** Run a saved script by name */
-export function runScript(name: string, args?: string[]): Promise<ScriptRunResult> {
-  return api<ScriptRunResult>(`/scripts/${encodeURIComponent(name)}/run`, {
+export function runScript(name: string, args?: string[], projectId?: string): Promise<ScriptRunResult> {
+  return api<ScriptRunResult>(withProjectId(`/scripts/${encodeURIComponent(name)}/run`, projectId), {
     method: "POST",
     body: JSON.stringify({ args }),
   });
@@ -1468,19 +1474,20 @@ export function getRefineErrorMessage(error: unknown): string {
 }
 
 
-export function startSubtaskBreakdown(description: string): Promise<{ sessionId: string }> {
-  return api<{ sessionId: string }>("/subtasks/start-streaming", {
+export function startSubtaskBreakdown(description: string, projectId?: string): Promise<{ sessionId: string }> {
+  return api<{ sessionId: string }>(withProjectId("/subtasks/start-streaming", projectId), {
     method: "POST",
     body: JSON.stringify({ description }),
   });
 }
 
-export function getSubtaskStreamUrl(sessionId: string): string {
-  return `/api/subtasks/${encodeURIComponent(sessionId)}/stream`;
+export function getSubtaskStreamUrl(sessionId: string, projectId?: string): string {
+  return buildApiUrl(withProjectId(`/subtasks/${encodeURIComponent(sessionId)}/stream`, projectId));
 }
 
 export function connectSubtaskStream(
   sessionId: string,
+  projectId: string | undefined,
   handlers: {
     onThinking?: (data: string) => void;
     onSubtasks?: (data: SubtaskItem[]) => void;
@@ -1488,7 +1495,7 @@ export function connectSubtaskStream(
     onComplete?: () => void;
   }
 ): { close: () => void; isConnected: () => boolean } {
-  const eventSource = new EventSource(getSubtaskStreamUrl(sessionId));
+  const eventSource = new EventSource(getSubtaskStreamUrl(sessionId, projectId));
   let isClosed = false;
 
   eventSource.onopen = () => {
@@ -1551,8 +1558,9 @@ export function createTasksFromBreakdown(
   sessionId: string,
   subtasks: SubtaskItem[],
   parentTaskId?: string,
+  projectId?: string,
 ): Promise<{ tasks: Task[]; parentTaskClosed?: boolean }> {
-  return api<{ tasks: Task[]; parentTaskClosed?: boolean }>("/subtasks/create-tasks", {
+  return api<{ tasks: Task[]; parentTaskClosed?: boolean }>(withProjectId("/subtasks/create-tasks", projectId), {
     method: "POST",
     body: JSON.stringify({
       sessionId,
@@ -1568,8 +1576,8 @@ export function createTasksFromBreakdown(
   });
 }
 
-export function cancelSubtaskBreakdown(sessionId: string): Promise<void> {
-  return api<void>("/subtasks/cancel", {
+export function cancelSubtaskBreakdown(sessionId: string, projectId?: string): Promise<void> {
+  return api<void>(withProjectId("/subtasks/cancel", projectId), {
     method: "POST",
     body: JSON.stringify({ sessionId }),
   });
@@ -1580,62 +1588,79 @@ export function cancelSubtaskBreakdown(sessionId: string): Promise<void> {
 import type { Agent, AgentDetail, AgentCapability, AgentState, AgentHeartbeatEvent, AgentHeartbeatRun, AgentCreateInput, AgentUpdateInput } from "@fusion/core";
 export type { Agent, AgentDetail, AgentCapability, AgentState, AgentHeartbeatEvent, AgentHeartbeatRun, AgentCreateInput, AgentUpdateInput };
 
+function withProjectId(path: string, projectId?: string): string {
+  if (!projectId) return path;
+  const separator = path.includes("?") ? "&" : "?";
+  return `${path}${separator}projectId=${encodeURIComponent(projectId)}`;
+}
+
 /** Fetch all agents, optionally filtered by state or role */
-export function fetchAgents(filter?: { state?: AgentState; role?: AgentCapability }): Promise<Agent[]> {
+export function fetchAgents(
+  filter?: { state?: AgentState; role?: AgentCapability },
+  projectId?: string,
+): Promise<Agent[]> {
   const params = new URLSearchParams();
   if (filter?.state) params.set("state", filter.state);
   if (filter?.role) params.set("role", filter.role);
+  if (projectId) params.set("projectId", projectId);
   const query = params.size > 0 ? `?${params.toString()}` : "";
   return api<Agent[]>(`/agents${query}`);
 }
 
 /** Fetch a single agent with heartbeat history */
-export function fetchAgent(agentId: string): Promise<AgentDetail> {
-  return api<AgentDetail>(`/agents/${encodeURIComponent(agentId)}`);
+export function fetchAgent(agentId: string, projectId?: string): Promise<AgentDetail> {
+  return api<AgentDetail>(withProjectId(`/agents/${encodeURIComponent(agentId)}`, projectId));
 }
 
 /** Create a new agent */
-export function createAgent(input: AgentCreateInput): Promise<Agent> {
-  return api<Agent>("/agents", {
+export function createAgent(input: AgentCreateInput, projectId?: string): Promise<Agent> {
+  return api<Agent>(withProjectId("/agents", projectId), {
     method: "POST",
     body: JSON.stringify(input),
   });
 }
 
 /** Update an agent */
-export function updateAgent(agentId: string, updates: AgentUpdateInput): Promise<Agent> {
-  return api<Agent>(`/agents/${encodeURIComponent(agentId)}`, {
+export function updateAgent(agentId: string, updates: AgentUpdateInput, projectId?: string): Promise<Agent> {
+  return api<Agent>(withProjectId(`/agents/${encodeURIComponent(agentId)}`, projectId), {
     method: "PATCH",
     body: JSON.stringify(updates),
   });
 }
 
 /** Update an agent's state */
-export function updateAgentState(agentId: string, state: AgentState): Promise<Agent> {
-  return api<Agent>(`/agents/${encodeURIComponent(agentId)}/state`, {
+export function updateAgentState(agentId: string, state: AgentState, projectId?: string): Promise<Agent> {
+  return api<Agent>(withProjectId(`/agents/${encodeURIComponent(agentId)}/state`, projectId), {
     method: "POST",
     body: JSON.stringify({ state }),
   });
 }
 
 /** Delete an agent */
-export function deleteAgent(agentId: string): Promise<void> {
-  return api<void>(`/agents/${encodeURIComponent(agentId)}`, {
+export function deleteAgent(agentId: string, projectId?: string): Promise<void> {
+  return api<void>(withProjectId(`/agents/${encodeURIComponent(agentId)}`, projectId), {
     method: "DELETE",
   });
 }
 
 /** Record a heartbeat for an agent */
-export function recordAgentHeartbeat(agentId: string, status: "ok" | "missed" | "recovered" = "ok"): Promise<AgentHeartbeatEvent> {
-  return api<AgentHeartbeatEvent>(`/agents/${encodeURIComponent(agentId)}/heartbeat`, {
+export function recordAgentHeartbeat(
+  agentId: string,
+  status: "ok" | "missed" | "recovered" = "ok",
+  projectId?: string,
+): Promise<AgentHeartbeatEvent> {
+  return api<AgentHeartbeatEvent>(withProjectId(`/agents/${encodeURIComponent(agentId)}/heartbeat`, projectId), {
     method: "POST",
     body: JSON.stringify({ status }),
   });
 }
 
 /** Fetch heartbeat history for an agent */
-export function fetchAgentHeartbeats(agentId: string, limit?: number): Promise<AgentHeartbeatEvent[]> {
-  const query = limit !== undefined ? `?limit=${limit}` : "";
+export function fetchAgentHeartbeats(agentId: string, limit?: number, projectId?: string): Promise<AgentHeartbeatEvent[]> {
+  const params = new URLSearchParams();
+  if (limit !== undefined) params.set("limit", String(limit));
+  if (projectId) params.set("projectId", projectId);
+  const query = params.size > 0 ? `?${params.toString()}` : "";
   return api<AgentHeartbeatEvent[]>(`/agents/${encodeURIComponent(agentId)}/heartbeats${query}`);
 }
 
@@ -1666,13 +1691,13 @@ export interface BackupCreateResponse {
 }
 
 /** Fetch all database backups */
-export function fetchBackups(): Promise<BackupListResponse> {
-  return api<BackupListResponse>("/backups");
+export function fetchBackups(projectId?: string): Promise<BackupListResponse> {
+  return api<BackupListResponse>(withProjectId("/backups", projectId));
 }
 
 /** Create a new database backup immediately */
-export function createBackup(): Promise<BackupCreateResponse> {
-  return api<BackupCreateResponse>("/backups", { method: "POST" });
+export function createBackup(projectId?: string): Promise<BackupCreateResponse> {
+  return api<BackupCreateResponse>(withProjectId("/backups", projectId), { method: "POST" });
 }
 
 // --- Settings Export/Import API ---
@@ -1695,17 +1720,19 @@ export interface SettingsImportResponse {
 }
 
 /** Export settings as JSON */
-export function exportSettings(scope?: 'global' | 'project' | 'both'): Promise<SettingsExportData> {
-  const query = scope ? `?scope=${scope}` : "";
-  return api<SettingsExportData>(`/settings/export${query}`);
+export function exportSettings(scope?: 'global' | 'project' | 'both', projectId?: string): Promise<SettingsExportData> {
+  const path = withProjectId("/settings/export", projectId);
+  const scopedPath = scope ? `${path}${path.includes("?") ? "&" : "?"}scope=${encodeURIComponent(scope)}` : path;
+  return api<SettingsExportData>(scopedPath);
 }
 
 /** Import settings from JSON data */
 export function importSettings(
   data: SettingsExportData,
-  options?: { scope?: 'global' | 'project' | 'both'; merge?: boolean }
+  options?: { scope?: 'global' | 'project' | 'both'; merge?: boolean },
+  projectId?: string
 ): Promise<SettingsImportResponse> {
-  return api<SettingsImportResponse>("/settings/import", {
+  return api<SettingsImportResponse>(withProjectId("/settings/import", projectId), {
     method: "POST",
     body: JSON.stringify({
       data,
@@ -1956,7 +1983,7 @@ export function fetchProjectHealth(id: string): Promise<ProjectHealth> {
  * Returns settings-based values and lastActivityAt.
  * Counts are derived client-side from the tasks array.
  */
-export function fetchExecutorStats(): Promise<{
+export function fetchExecutorStats(projectId?: string): Promise<{
   globalPause: boolean;
   enginePaused: boolean;
   maxConcurrent: number;
@@ -1967,7 +1994,7 @@ export function fetchExecutorStats(): Promise<{
     enginePaused: boolean;
     maxConcurrent: number;
     lastActivityAt?: string;
-  }>("/executor/stats");
+  }>(withProjectId("/executor/stats", projectId));
 }
 
 /** Fetch unified activity feed */
@@ -2080,9 +2107,10 @@ export interface TaskDiff {
 }
 
 /** Fetch diff for a task's changes */
-export function fetchTaskDiff(taskId: string, worktree?: string): Promise<TaskDiff> {
+export function fetchTaskDiff(taskId: string, worktree?: string, projectId?: string): Promise<TaskDiff> {
   const params = new URLSearchParams();
   if (worktree) params.set("worktree", worktree);
+  if (projectId) params.set("projectId", projectId);
   const query = params.size > 0 ? `?${params.toString()}` : "";
   return api<TaskDiff>(`/tasks/${encodeURIComponent(taskId)}/diff${query}`);
 }
@@ -2096,8 +2124,8 @@ export interface TaskFileDiff {
 }
 
 /** Fetch file diffs for a task */
-export function fetchTaskFileDiffs(taskId: string): Promise<TaskFileDiff[]> {
-  return api<TaskFileDiff[]>(`/tasks/${encodeURIComponent(taskId)}/file-diffs`);
+export function fetchTaskFileDiffs(taskId: string, projectId?: string): Promise<TaskFileDiff[]> {
+  return api<TaskFileDiff[]>(withProjectId(`/tasks/${encodeURIComponent(taskId)}/file-diffs`, projectId));
 }
 
 // ── Mission API ───────────────────────────────────────────────────────────
@@ -2182,72 +2210,73 @@ export interface MissionWithHierarchy extends Mission {
 }
 
 /** Fetch all missions */
-export function fetchMissions(): Promise<Mission[]> {
-  return api<Mission[]>("/missions");
+export function fetchMissions(projectId?: string): Promise<Mission[]> {
+  return api<Mission[]>(withProjectId("/missions", projectId));
 }
 
 /** Create a new mission */
-export function createMission(input: { title: string; description?: string }): Promise<Mission> {
-  return api<Mission>("/missions", {
+export function createMission(input: { title: string; description?: string }, projectId?: string): Promise<Mission> {
+  return api<Mission>(withProjectId("/missions", projectId), {
     method: "POST",
     body: JSON.stringify(input),
   });
 }
 
 /** Get mission with full hierarchy */
-export function fetchMission(missionId: string): Promise<MissionWithHierarchy> {
-  return api<MissionWithHierarchy>(`/missions/${encodeURIComponent(missionId)}`);
+export function fetchMission(missionId: string, projectId?: string): Promise<MissionWithHierarchy> {
+  return api<MissionWithHierarchy>(withProjectId(`/missions/${encodeURIComponent(missionId)}`, projectId));
 }
 
 /** Update mission */
-export function updateMission(missionId: string, updates: Partial<Mission>): Promise<Mission> {
-  return api<Mission>(`/missions/${encodeURIComponent(missionId)}`, {
+export function updateMission(missionId: string, updates: Partial<Mission>, projectId?: string): Promise<Mission> {
+  return api<Mission>(withProjectId(`/missions/${encodeURIComponent(missionId)}`, projectId), {
     method: "PATCH",
     body: JSON.stringify(updates),
   });
 }
 
 /** Delete mission */
-export function deleteMission(missionId: string): Promise<void> {
-  return api<void>(`/missions/${encodeURIComponent(missionId)}`, {
+export function deleteMission(missionId: string, projectId?: string): Promise<void> {
+  return api<void>(withProjectId(`/missions/${encodeURIComponent(missionId)}`, projectId), {
     method: "DELETE",
   });
 }
 
 /** Get mission computed status */
-export function fetchMissionStatus(missionId: string): Promise<{ status: string }> {
-  return api<{ status: string }>(`/missions/${encodeURIComponent(missionId)}/status`);
+export function fetchMissionStatus(missionId: string, projectId?: string): Promise<{ status: string }> {
+  return api<{ status: string }>(withProjectId(`/missions/${encodeURIComponent(missionId)}/status`, projectId));
 }
 
 /** Add milestone to mission */
 export function createMilestone(
   missionId: string,
-  input: { title: string; description?: string; dependencies?: string[] }
+  input: { title: string; description?: string; dependencies?: string[] },
+  projectId?: string
 ): Promise<Milestone> {
-  return api<Milestone>(`/missions/${encodeURIComponent(missionId)}/milestones`, {
+  return api<Milestone>(withProjectId(`/missions/${encodeURIComponent(missionId)}/milestones`, projectId), {
     method: "POST",
     body: JSON.stringify(input),
   });
 }
 
 /** Update milestone */
-export function updateMilestone(milestoneId: string, updates: Partial<Milestone>): Promise<Milestone> {
-  return api<Milestone>(`/missions/milestones/${encodeURIComponent(milestoneId)}`, {
+export function updateMilestone(milestoneId: string, updates: Partial<Milestone>, projectId?: string): Promise<Milestone> {
+  return api<Milestone>(withProjectId(`/missions/milestones/${encodeURIComponent(milestoneId)}`, projectId), {
     method: "PATCH",
     body: JSON.stringify(updates),
   });
 }
 
 /** Delete milestone */
-export function deleteMilestone(milestoneId: string): Promise<void> {
-  return api<void>(`/missions/milestones/${encodeURIComponent(milestoneId)}`, {
+export function deleteMilestone(milestoneId: string, projectId?: string): Promise<void> {
+  return api<void>(withProjectId(`/missions/milestones/${encodeURIComponent(milestoneId)}`, projectId), {
     method: "DELETE",
   });
 }
 
 /** Reorder milestones */
-export function reorderMilestones(missionId: string, orderedIds: string[]): Promise<void> {
-  return api<void>(`/missions/${encodeURIComponent(missionId)}/milestones/reorder`, {
+export function reorderMilestones(missionId: string, orderedIds: string[], projectId?: string): Promise<void> {
+  return api<void>(withProjectId(`/missions/${encodeURIComponent(missionId)}/milestones/reorder`, projectId), {
     method: "POST",
     body: JSON.stringify({ orderedIds }),
   });
@@ -2256,39 +2285,40 @@ export function reorderMilestones(missionId: string, orderedIds: string[]): Prom
 /** Add slice to milestone */
 export function createSlice(
   milestoneId: string,
-  input: { title: string; description?: string }
+  input: { title: string; description?: string },
+  projectId?: string
 ): Promise<Slice> {
-  return api<Slice>(`/missions/milestones/${encodeURIComponent(milestoneId)}/slices`, {
+  return api<Slice>(withProjectId(`/missions/milestones/${encodeURIComponent(milestoneId)}/slices`, projectId), {
     method: "POST",
     body: JSON.stringify(input),
   });
 }
 
 /** Update slice */
-export function updateSlice(sliceId: string, updates: Partial<Slice>): Promise<Slice> {
-  return api<Slice>(`/missions/slices/${encodeURIComponent(sliceId)}`, {
+export function updateSlice(sliceId: string, updates: Partial<Slice>, projectId?: string): Promise<Slice> {
+  return api<Slice>(withProjectId(`/missions/slices/${encodeURIComponent(sliceId)}`, projectId), {
     method: "PATCH",
     body: JSON.stringify(updates),
   });
 }
 
 /** Delete slice */
-export function deleteSlice(sliceId: string): Promise<void> {
-  return api<void>(`/missions/slices/${encodeURIComponent(sliceId)}`, {
+export function deleteSlice(sliceId: string, projectId?: string): Promise<void> {
+  return api<void>(withProjectId(`/missions/slices/${encodeURIComponent(sliceId)}`, projectId), {
     method: "DELETE",
   });
 }
 
 /** Activate slice */
-export function activateSlice(sliceId: string): Promise<Slice> {
-  return api<Slice>(`/missions/slices/${encodeURIComponent(sliceId)}/activate`, {
+export function activateSlice(sliceId: string, projectId?: string): Promise<Slice> {
+  return api<Slice>(withProjectId(`/missions/slices/${encodeURIComponent(sliceId)}/activate`, projectId), {
     method: "POST",
   });
 }
 
 /** Reorder slices */
-export function reorderSlices(milestoneId: string, orderedIds: string[]): Promise<void> {
-  return api<void>(`/missions/milestones/${encodeURIComponent(milestoneId)}/slices/reorder`, {
+export function reorderSlices(milestoneId: string, orderedIds: string[], projectId?: string): Promise<void> {
+  return api<void>(withProjectId(`/missions/milestones/${encodeURIComponent(milestoneId)}/slices/reorder`, projectId), {
     method: "POST",
     body: JSON.stringify({ orderedIds }),
   });
@@ -2297,43 +2327,41 @@ export function reorderSlices(milestoneId: string, orderedIds: string[]): Promis
 /** Add feature to slice */
 export function createFeature(
   sliceId: string,
-  input: { title: string; description?: string; acceptanceCriteria?: string }
+  input: { title: string; description?: string; acceptanceCriteria?: string },
+  projectId?: string
 ): Promise<MissionFeature> {
-  return api<MissionFeature>(`/missions/slices/${encodeURIComponent(sliceId)}/features`, {
+  return api<MissionFeature>(withProjectId(`/missions/slices/${encodeURIComponent(sliceId)}/features`, projectId), {
     method: "POST",
     body: JSON.stringify(input),
   });
 }
 
 /** Update feature */
-export function updateFeature(featureId: string, updates: Partial<MissionFeature>): Promise<MissionFeature> {
-  return api<MissionFeature>(`/missions/features/${encodeURIComponent(featureId)}`, {
+export function updateFeature(featureId: string, updates: Partial<MissionFeature>, projectId?: string): Promise<MissionFeature> {
+  return api<MissionFeature>(withProjectId(`/missions/features/${encodeURIComponent(featureId)}`, projectId), {
     method: "PATCH",
     body: JSON.stringify(updates),
   });
 }
 
 /** Delete feature */
-export function deleteFeature(featureId: string): Promise<void> {
-  return api<void>(`/missions/features/${encodeURIComponent(featureId)}`, {
+export function deleteFeature(featureId: string, projectId?: string): Promise<void> {
+  return api<void>(withProjectId(`/missions/features/${encodeURIComponent(featureId)}`, projectId), {
     method: "DELETE",
   });
 }
 
 /** Link feature to task */
-export function linkFeatureToTask(featureId: string, taskId: string): Promise<MissionFeature> {
-  return api<MissionFeature>(`/missions/features/${encodeURIComponent(featureId)}/link-task`, {
+export function linkFeatureToTask(featureId: string, taskId: string, projectId?: string): Promise<MissionFeature> {
+  return api<MissionFeature>(withProjectId(`/missions/features/${encodeURIComponent(featureId)}/link-task`, projectId), {
     method: "POST",
     body: JSON.stringify({ taskId }),
   });
 }
 
 /** Unlink feature from task */
-export function unlinkFeatureFromTask(featureId: string): Promise<MissionFeature> {
-  return api<MissionFeature>(`/missions/features/${encodeURIComponent(featureId)}/unlink-task`, {
+export function unlinkFeatureFromTask(featureId: string, projectId?: string): Promise<MissionFeature> {
+  return api<MissionFeature>(withProjectId(`/missions/features/${encodeURIComponent(featureId)}/unlink-task`, projectId), {
     method: "POST",
   });
 }
-
-
-

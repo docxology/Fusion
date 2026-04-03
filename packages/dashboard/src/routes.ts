@@ -2,6 +2,8 @@ import { Router, type Request, type Response, type NextFunction } from "express"
 import multer from "multer";
 import { createReadStream, existsSync } from "node:fs";
 import { execSync } from "node:child_process";
+import * as nodeFs from "node:fs";
+import * as nodeChildProcess from "node:child_process";
 import type { TaskStore, Column, MergeResult, ScheduleType, ActivityEventType, ModelPreset, AutomationStep } from "@fusion/core";
 import { COLUMNS, VALID_TRANSITIONS, GLOBAL_SETTINGS_KEYS, type BatchStatusEntry, type BatchStatusResponse, type BatchStatusResult, type IssueInfo, type PrInfo, type Task, isGhAuthenticated, AUTOMATION_PRESETS, AutomationStore, validateBackupSchedule, validateBackupRetention, validateBackupDir, syncBackupAutomation, exportSettings, importSettings, validateImportData } from "@fusion/core";
 import type { ServerOptions } from "./server.js";
@@ -1050,6 +1052,24 @@ function discardGitChanges(files: string[], cwd?: string): string[] {
 export function createApiRoutes(store: TaskStore, options?: ServerOptions): Router {
   const router = Router();
 
+  function getProjectIdFromRequest(req: Request): string | undefined {
+    if (req.query && typeof req.query.projectId === "string" && req.query.projectId.length > 0) {
+      return req.query.projectId;
+    }
+    if (req.body && typeof req.body.projectId === "string" && req.body.projectId.length > 0) {
+      return req.body.projectId;
+    }
+    return undefined;
+  }
+
+  async function getScopedStore(req: Request): Promise<TaskStore> {
+    const projectId = getProjectIdFromRequest(req);
+    if (!projectId) return store;
+
+    const { TaskStore: TaskStoreClass } = await import("@fusion/core");
+    return TaskStoreClass.getOrCreateForProject(projectId);
+  }
+
   if (process.env.FUSION_DEBUG_PLANNING_ROUTES === "1") {
     const planningRoutes = [
       "POST /planning/start",
@@ -1074,23 +1094,26 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
   const githubToken = options?.githubToken ?? process.env.GITHUB_TOKEN;
 
   // Scheduler config (includes persisted settings)
-  router.get("/config", async (_req, res) => {
+  router.get("/config", async (req, res) => {
     try {
-      const settings = await store.getSettings();
+      const scopedStore = await getScopedStore(req);
+      const settings = await scopedStore.getSettings();
       res.json({
         maxConcurrent: settings.maxConcurrent ?? options?.maxConcurrent ?? 2,
         maxWorktrees: settings.maxWorktrees ?? 4,
-        rootDir: store.getRootDir(),
+        rootDir: scopedStore.getRootDir(),
       });
     } catch {
-      res.json({ maxConcurrent: options?.maxConcurrent ?? 2, maxWorktrees: 4, rootDir: store.getRootDir() });
+      const scopedStore = await getScopedStore(req);
+      res.json({ maxConcurrent: options?.maxConcurrent ?? 2, maxWorktrees: 4, rootDir: scopedStore.getRootDir() });
     }
   });
 
   // Settings CRUD
-  router.get("/settings", async (_req, res) => {
+  router.get("/settings", async (req, res) => {
     try {
-      const settings = await store.getSettings();
+      const scopedStore = await getScopedStore(req);
+      const settings = await scopedStore.getSettings();
       // Inject server-side configuration flags
       res.json({
         ...settings,
@@ -1103,6 +1126,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
 
   router.put("/settings", async (req, res) => {
     try {
+      const scopedStore = await getScopedStore(req);
       // Strip server-owned fields that should never be persisted to config.json.
       // These are computed server-side and injected only on GET /settings.
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -1136,7 +1160,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         return;
       }
 
-      const settings = await store.updateSettings(clientSettings);
+      const settings = await scopedStore.updateSettings(clientSettings);
       
       // Sync backup automation schedule when backup settings change
       if (options?.automationStore) {
@@ -1193,9 +1217,10 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    * Returns settings separated by scope: { global, project }.
    * Useful for the UI to show which scope each setting comes from.
    */
-  router.get("/settings/scopes", async (_req, res) => {
+  router.get("/settings/scopes", async (req, res) => {
     try {
-      const scopes = await store.getSettingsByScope();
+      const scopedStore = await getScopedStore(req);
+      const scopes = await scopedStore.getSettingsByScope();
       res.json(scopes);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -1207,9 +1232,10 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    * Send a test notification to verify ntfy configuration.
    * Returns: { success: true } on success, { error: string } on failure.
    */
-  router.post("/settings/test-ntfy", async (_req, res) => {
+  router.post("/settings/test-ntfy", async (req, res) => {
     try {
-      const settings = await store.getSettings();
+      const scopedStore = await getScopedStore(req);
+      const settings = await scopedStore.getSettings();
 
       // Validate ntfy is enabled
       if (!settings.ntfyEnabled) {
@@ -1259,12 +1285,13 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    */
   router.get("/settings/export", async (req, res) => {
     try {
+      const scopedStore = await getScopedStore(req);
       const scopeParam = req.query.scope as string | undefined;
       const scope = scopeParam === "global" || scopeParam === "project" || scopeParam === "both"
         ? scopeParam
         : "both";
 
-      const exportData = await exportSettings(store, { scope });
+      const exportData = await exportSettings(scopedStore, { scope });
       res.json(exportData);
     } catch (err: any) {
       res.status(500).json({ error: err.message ?? "Failed to export settings" });
@@ -1279,6 +1306,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    */
   router.post("/settings/import", async (req, res) => {
     try {
+      const scopedStore = await getScopedStore(req);
       const { data, scope = "both", merge = true } = req.body;
 
       // Validate the import data
@@ -1292,7 +1320,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
       }
 
       // Perform the import
-      const result = await importSettings(store, data, { scope, merge });
+      const result = await importSettings(scopedStore, data, { scope, merge });
 
       if (!result.success) {
         res.status(500).json({
@@ -1324,14 +1352,15 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    * from the tasks array. This endpoint returns settings-based values and
    * lastActivityAt from the activity log.
    */
-  router.get("/executor/stats", async (_req, res) => {
+  router.get("/executor/stats", async (req, res) => {
     try {
-      const settings = await store.getSettings();
+      const scopedStore = await getScopedStore(req);
+      const settings = await scopedStore.getSettings();
       
       // Get the most recent activity timestamp from the activity log
       let lastActivityAt: string | undefined;
       try {
-        const activityLog = await store.getActivityLog({ limit: 1 });
+        const activityLog = await scopedStore.getActivityLog({ limit: 1 });
         if (activityLog.length > 0) {
           lastActivityAt = activityLog[0].timestamp;
         }
@@ -1356,11 +1385,12 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    * GET /api/backups
    * List all database backups with metadata.
    */
-  router.get("/backups", async (_req, res) => {
+  router.get("/backups", async (req, res) => {
     try {
+      const scopedStore = await getScopedStore(req);
       const { createBackupManager } = await import("@fusion/core");
-      const settings = await store.getSettings();
-      const manager = createBackupManager(store["kbDir"], settings);
+      const settings = await scopedStore.getSettings();
+      const manager = createBackupManager(scopedStore["kbDir"], settings);
       const backups = await manager.listBackups();
       
       // Calculate total size
@@ -1380,11 +1410,12 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    * POST /api/backups
    * Create a new database backup immediately.
    */
-  router.post("/backups", async (_req, res) => {
+  router.post("/backups", async (req, res) => {
     try {
+      const scopedStore = await getScopedStore(req);
       const { runBackupCommand } = await import("@fusion/core");
-      const settings = await store.getSettings();
-      const result = await runBackupCommand(store["kbDir"], settings);
+      const settings = await scopedStore.getSettings();
+      const result = await runBackupCommand(scopedStore["kbDir"], settings);
       
       if (result.success) {
         res.json({
@@ -1410,6 +1441,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
   // List all tasks
   router.get("/tasks", async (req, res) => {
     try {
+      const scopedStore = await getScopedStore(req);
       const limit = typeof req.query.limit === "string" ? Number.parseInt(req.query.limit, 10) : undefined;
       const offset = typeof req.query.offset === "string" ? Number.parseInt(req.query.offset, 10) : undefined;
 
@@ -1423,7 +1455,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         return;
       }
 
-      const tasks = await store.listTasks({ limit, offset });
+      const tasks = await scopedStore.listTasks({ limit, offset });
       res.json(tasks);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -1433,6 +1465,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
   // Create task
   router.post("/tasks", async (req, res) => {
     try {
+      const scopedStore = await getScopedStore(req);
       const {
         title,
         description,
@@ -1475,7 +1508,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
       const summarize = req.body.summarize === true;
 
       // Get settings for auto-summarization
-      const settings = await store.getSettings();
+      const settings = await scopedStore.getSettings();
 
       // Create onSummarize callback if summarization is enabled
       const onSummarize = (summarize || settings.autoSummarizeTitles)
@@ -1494,7 +1527,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
                 (settings.planningProvider && settings.planningModelId ? settings.planningModelId : undefined) ||
                 (settings.defaultProvider && settings.defaultModelId ? settings.defaultModelId : undefined);
 
-              return await summarizeTitle(desc, store.getRootDir(), resolvedProvider, resolvedModelId);
+              return await summarizeTitle(desc, scopedStore.getRootDir(), resolvedProvider, resolvedModelId);
             } catch {
               // Return null on error so task creation continues without title
               return null;
@@ -1502,7 +1535,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
           }
         : undefined;
 
-      const task = await store.createTask(
+      const task = await scopedStore.createTask(
         {
           title,
           description,
@@ -1529,6 +1562,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
   // Move task to column
   router.post("/tasks/:id/move", async (req, res) => {
     try {
+      const scopedStore = await getScopedStore(req);
       const { column } = req.body;
       if (!column || !COLUMNS.includes(column as Column)) {
         res.status(400).json({
@@ -1536,7 +1570,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         });
         return;
       }
-      const task = await store.moveTask(req.params.id, column as Column);
+      const task = await scopedStore.moveTask(req.params.id, column as Column);
       res.json(task);
     } catch (err: any) {
       const status = err.message.includes("Invalid transition") ? 400 : 500;
@@ -1548,7 +1582,8 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
   // Uses AI merge handler if provided, falls back to store.mergeTask
   router.post("/tasks/:id/merge", async (req, res) => {
     try {
-      const merge = options?.onMerge ?? ((id: string) => store.mergeTask(id));
+      const scopedStore = await getScopedStore(req);
+      const merge = options?.onMerge ?? ((id: string) => scopedStore.mergeTask(id));
       const result = await merge(req.params.id);
       res.json(result);
     } catch (err: any) {
@@ -1562,14 +1597,15 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
   // Retry failed task
   router.post("/tasks/:id/retry", async (req, res) => {
     try {
-      const task = await store.getTask(req.params.id);
+      const scopedStore = await getScopedStore(req);
+      const task = await scopedStore.getTask(req.params.id);
       if (task.status !== "failed") {
         res.status(400).json({ error: "Task is not in a failed state" });
         return;
       }
-      await store.updateTask(req.params.id, { status: undefined, error: undefined });
-      await store.logEntry(req.params.id, "Retry requested from dashboard");
-      const updated = await store.moveTask(req.params.id, "todo");
+      await scopedStore.updateTask(req.params.id, { status: undefined, error: undefined });
+      await scopedStore.logEntry(req.params.id, "Retry requested from dashboard");
+      const updated = await scopedStore.moveTask(req.params.id, "todo");
       res.json(updated);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -1579,7 +1615,8 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
   // Duplicate task
   router.post("/tasks/:id/duplicate", async (req, res) => {
     try {
-      const newTask = await store.duplicateTask(req.params.id);
+      const scopedStore = await getScopedStore(req);
+      const newTask = await scopedStore.duplicateTask(req.params.id);
       res.status(201).json(newTask);
     } catch (err: any) {
       const status = err.code === "ENOENT" ? 404 : 500;
@@ -1590,6 +1627,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
   // Create refinement task from a completed or in-review task
   router.post("/tasks/:id/refine", async (req, res) => {
     try {
+      const scopedStore = await getScopedStore(req);
       const { feedback } = req.body;
       if (!feedback || typeof feedback !== "string") {
         res.status(400).json({ error: "feedback is required and must be a string" });
@@ -1602,8 +1640,8 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         return;
       }
 
-      const refinedTask = await store.refineTask(req.params.id, trimmedFeedback);
-      await store.logEntry(req.params.id, "Refinement requested", trimmedFeedback);
+      const refinedTask = await scopedStore.refineTask(req.params.id, trimmedFeedback);
+      await scopedStore.logEntry(req.params.id, "Refinement requested", trimmedFeedback);
       res.status(201).json(refinedTask);
     } catch (err: any) {
       const status = err.code === "ENOENT" ? 404
@@ -1617,7 +1655,8 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
   // Archive task (done → archived)
   router.post("/tasks/:id/archive", async (req, res) => {
     try {
-      const task = await store.archiveTask(req.params.id);
+      const scopedStore = await getScopedStore(req);
+      const task = await scopedStore.archiveTask(req.params.id);
       res.json(task);
     } catch (err: any) {
       const status = err.message?.includes("must be in") ? 400 : 500;
@@ -1628,7 +1667,8 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
   // Unarchive task (archived → done)
   router.post("/tasks/:id/unarchive", async (req, res) => {
     try {
-      const task = await store.unarchiveTask(req.params.id);
+      const scopedStore = await getScopedStore(req);
+      const task = await scopedStore.unarchiveTask(req.params.id);
       res.json(task);
     } catch (err: any) {
       const status = err.message?.includes("must be in") ? 400 : 500;
@@ -1639,7 +1679,8 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
   // Archive all done tasks
   router.post("/tasks/archive-all-done", async (req, res) => {
     try {
-      const archived = await store.archiveAllDone();
+      const scopedStore = await getScopedStore(req);
+      const archived = await scopedStore.archiveAllDone();
       res.json({ archived });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -1654,6 +1695,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    */
   router.post("/tasks/batch-update-models", async (req, res) => {
     try {
+      const scopedStore = await getScopedStore(req);
       const { taskIds, modelProvider, modelId, validatorModelProvider, validatorModelId } = req.body;
 
       // Validate taskIds
@@ -1710,7 +1752,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
       const tasksById = new Map<string, Awaited<ReturnType<TaskStore["getTask"]>>>();
       for (const taskId of taskIds) {
         try {
-          const task = await store.getTask(taskId);
+          const task = await scopedStore.getTask(taskId);
           tasksById.set(taskId, task);
         } catch (err: any) {
           if (err?.code === "ENOENT" || err?.message?.includes("not found")) {
@@ -1739,7 +1781,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
       // Update all tasks in parallel
       const updatePromises = taskIds.map(async (taskId) => {
         try {
-          const updated = await store.updateTask(taskId, updates);
+          const updated = await scopedStore.updateTask(taskId, updates);
           return { success: true, task: updated };
         } catch (err: any) {
           console.error(`Failed to update task ${taskId}:`, err);
@@ -1775,11 +1817,12 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
   // Upload attachment
   router.post("/tasks/:id/attachments", upload.single("file"), async (req, res) => {
     try {
+      const scopedStore = await getScopedStore(req);
       if (!req.file) {
         res.status(400).json({ error: "No file provided" });
         return;
       }
-      const attachment = await store.addAttachment(
+      const attachment = await scopedStore.addAttachment(
         req.params.id as string,
         req.file.originalname,
         req.file.buffer,
@@ -1795,7 +1838,8 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
   // Download attachment
   router.get("/tasks/:id/attachments/:filename", async (req, res) => {
     try {
-      const { path, mimeType } = await store.getAttachment(req.params.id, req.params.filename);
+      const scopedStore = await getScopedStore(req);
+      const { path, mimeType } = await scopedStore.getAttachment(req.params.id, req.params.filename);
       res.setHeader("Content-Type", mimeType);
       createReadStream(path).pipe(res);
     } catch (err: any) {
@@ -1810,7 +1854,8 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
   // Delete attachment
   router.delete("/tasks/:id/attachments/:filename", async (req, res) => {
     try {
-      const task = await store.deleteAttachment(req.params.id, req.params.filename);
+      const scopedStore = await getScopedStore(req);
+      const task = await scopedStore.deleteAttachment(req.params.id, req.params.filename);
       res.json(task);
     } catch (err: any) {
       if (err.code === "ENOENT") {
@@ -1824,7 +1869,8 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
   // Get historical agent logs for a task
   router.get("/tasks/:id/logs", async (req, res) => {
     try {
-      const logs = await store.getAgentLogs(req.params.id);
+      const scopedStore = await getScopedStore(req);
+      const logs = await scopedStore.getAgentLogs(req.params.id);
       res.json(logs);
     } catch (err: any) {
       if (err.code === "ENOENT") {
@@ -1837,8 +1883,9 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
 
   router.get("/tasks/:id/session-files", async (req, res) => {
     try {
-      const task = await store.getTask(req.params.id);
-      if (!task.worktree || !existsSync(task.worktree)) {
+      const scopedStore = await getScopedStore(req);
+      const task = await scopedStore.getTask(req.params.id);
+      if (!task.worktree || !nodeFs.existsSync(task.worktree)) {
         res.json([]);
         return;
       }
@@ -1856,14 +1903,14 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
 
         if (!baseRef) {
           try {
-            baseRef = execSync("git merge-base HEAD origin/main 2>/dev/null || git merge-base HEAD main", {
+            baseRef = nodeChildProcess.execSync("git merge-base HEAD origin/main 2>/dev/null || git merge-base HEAD main", {
               cwd: task.worktree,
               encoding: "utf-8",
               timeout: 5000,
             }).trim();
           } catch {
             try {
-              baseRef = execSync("git rev-parse HEAD~1", {
+              baseRef = nodeChildProcess.execSync("git rev-parse HEAD~1", {
                 cwd: task.worktree,
                 encoding: "utf-8",
                 timeout: 5000,
@@ -1875,7 +1922,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         }
 
         if (baseRef) {
-          const output = execSync(`git diff --name-only ${baseRef}..HEAD`, {
+          const output = nodeChildProcess.execSync(`git diff --name-only ${baseRef}..HEAD`, {
             cwd: task.worktree,
             encoding: "utf-8",
             timeout: 5000,
@@ -1909,7 +1956,8 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    */
   router.get("/tasks/:id/workflow-results", async (req, res) => {
     try {
-      const task = await store.getTask(req.params.id);
+      const scopedStore = await getScopedStore(req);
+      const task = await scopedStore.getTask(req.params.id);
       res.json(task.workflowStepResults || []);
     } catch (err: any) {
       if (err.code === "ENOENT") {
@@ -1923,7 +1971,8 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
   // Get single task with prompt content
   router.get("/tasks/:id", async (req, res) => {
     try {
-      const task = await store.getTask(req.params.id);
+      const scopedStore = await getScopedStore(req);
+      const task = await scopedStore.getTask(req.params.id);
       res.json(task);
     } catch (err: any) {
       // ENOENT means the task directory/file genuinely doesn't exist → 404.
@@ -1940,7 +1989,8 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
   // Pause task
   router.post("/tasks/:id/pause", async (req, res) => {
     try {
-      const task = await store.pauseTask(req.params.id, true);
+      const scopedStore = await getScopedStore(req);
+      const task = await scopedStore.pauseTask(req.params.id, true);
       res.json(task);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -1950,7 +2000,8 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
   // Unpause task
   router.post("/tasks/:id/unpause", async (req, res) => {
     try {
-      const task = await store.pauseTask(req.params.id, false);
+      const scopedStore = await getScopedStore(req);
+      const task = await scopedStore.pauseTask(req.params.id, false);
       res.json(task);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -1960,7 +2011,8 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
   // Approve plan for a task in awaiting-approval status
   router.post("/tasks/:id/approve-plan", async (req, res) => {
     try {
-      const task = await store.getTask(req.params.id);
+      const scopedStore = await getScopedStore(req);
+      const task = await scopedStore.getTask(req.params.id);
 
       // Verify task is in triage column with awaiting-approval status
       if (task.column !== "triage") {
@@ -1973,11 +2025,11 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
       }
 
       // Log the approval
-      await store.logEntry(task.id, "Plan approved by user");
+      await scopedStore.logEntry(task.id, "Plan approved by user");
 
       // Move to todo and clear status
-      const updated = await store.moveTask(task.id, "todo");
-      await store.updateTask(task.id, { status: undefined });
+      const updated = await scopedStore.moveTask(task.id, "todo");
+      await scopedStore.updateTask(task.id, { status: undefined });
 
       res.json({ ...updated, status: undefined });
     } catch (err: any) {
@@ -1989,7 +2041,8 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
   // Reject plan for a task in awaiting-approval status
   router.post("/tasks/:id/reject-plan", async (req, res) => {
     try {
-      const task = await store.getTask(req.params.id);
+      const scopedStore = await getScopedStore(req);
+      const task = await scopedStore.getTask(req.params.id);
 
       // Verify task is in triage column with awaiting-approval status
       if (task.column !== "triage") {
@@ -2002,18 +2055,18 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
       }
 
       // Log the rejection
-      await store.logEntry(task.id, "Plan rejected by user", "Specification will be regenerated");
+      await scopedStore.logEntry(task.id, "Plan rejected by user", "Specification will be regenerated");
 
       // Clear status to return to normal triage state
-      await store.updateTask(task.id, { status: undefined });
+      await scopedStore.updateTask(task.id, { status: undefined });
 
       // Remove PROMPT.md to force regeneration
       const { rm } = await import("node:fs/promises");
       const { join } = await import("node:path");
-      const promptPath = join(store.getRootDir(), ".fusion", "tasks", task.id, "PROMPT.md");
+      const promptPath = join(scopedStore.getRootDir(), ".fusion", "tasks", task.id, "PROMPT.md");
       await rm(promptPath, { force: true });
 
-      const updated = await store.getTask(task.id);
+      const updated = await scopedStore.getTask(task.id);
       res.json(updated);
     } catch (err: any) {
       const status = err.code === "ENOENT" ? 404 : 500;
@@ -2023,7 +2076,8 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
 
   router.get("/tasks/:id/comments", async (req, res) => {
     try {
-      const task = await store.getTask(req.params.id);
+      const scopedStore = await getScopedStore(req);
+      const task = await scopedStore.getTask(req.params.id);
       res.json(task.comments || []);
     } catch (err: any) {
       const status = err.code === "ENOENT" ? 404 : 500;
@@ -2033,6 +2087,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
 
   router.post("/tasks/:id/comments", async (req, res) => {
     try {
+      const scopedStore = await getScopedStore(req);
       const { text, author } = req.body;
       if (!text || typeof text !== "string") {
         res.status(400).json({ error: "text is required and must be a string" });
@@ -2046,7 +2101,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         res.status(400).json({ error: "author must be a string" });
         return;
       }
-      const task = await store.addTaskComment(req.params.id, text, author?.trim() || "user");
+      const task = await scopedStore.addTaskComment(req.params.id, text, author?.trim() || "user");
       res.json(task);
     } catch (err: any) {
       const status = err.code === "ENOENT" ? 404 : 500;
@@ -2056,6 +2111,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
 
   router.patch("/tasks/:id/comments/:commentId", async (req, res) => {
     try {
+      const scopedStore = await getScopedStore(req);
       const { text } = req.body;
       if (!text || typeof text !== "string") {
         res.status(400).json({ error: "text is required and must be a string" });
@@ -2065,7 +2121,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         res.status(400).json({ error: "text must be between 1 and 2000 characters" });
         return;
       }
-      const task = await store.updateTaskComment(req.params.id, req.params.commentId, text);
+      const task = await scopedStore.updateTaskComment(req.params.id, req.params.commentId, text);
       res.json(task);
     } catch (err: any) {
       const status = err.code === "ENOENT" ? 404
@@ -2077,7 +2133,8 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
 
   router.delete("/tasks/:id/comments/:commentId", async (req, res) => {
     try {
-      const task = await store.deleteTaskComment(req.params.id, req.params.commentId);
+      const scopedStore = await getScopedStore(req);
+      const task = await scopedStore.deleteTaskComment(req.params.id, req.params.commentId);
       res.json(task);
     } catch (err: any) {
       const status = err.code === "ENOENT" ? 404
@@ -2090,6 +2147,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
   // Add steering comment to task
   router.post("/tasks/:id/steer", async (req, res) => {
     try {
+      const scopedStore = await getScopedStore(req);
       const { text } = req.body;
       if (!text || typeof text !== "string") {
         res.status(400).json({ error: "text is required and must be a string" });
@@ -2099,7 +2157,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         res.status(400).json({ error: "text must be between 1 and 2000 characters" });
         return;
       }
-      const task = await store.addSteeringComment(req.params.id, text, "user");
+      const task = await scopedStore.addSteeringComment(req.params.id, text, "user");
       res.json(task);
     } catch (err: any) {
       const status = err.code === "ENOENT" ? 404 : 500;
@@ -2110,6 +2168,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
   // Request AI revision of task spec
   router.post("/tasks/:id/spec/revise", async (req, res) => {
     try {
+      const scopedStore = await getScopedStore(req);
       const { feedback } = req.body;
       if (!feedback || typeof feedback !== "string") {
         res.status(400).json({ error: "feedback is required and must be a string" });
@@ -2121,7 +2180,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
       }
 
       // Get current task state
-      const task = await store.getTask(req.params.id);
+      const task = await scopedStore.getTask(req.params.id);
 
       // Check if task can transition to triage
       const canTransition = VALID_TRANSITIONS[task.column]?.includes("triage");
@@ -2134,13 +2193,13 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
       }
 
       // Log the revision request
-      await store.logEntry(task.id, "AI spec revision requested", feedback);
+      await scopedStore.logEntry(task.id, "AI spec revision requested", feedback);
 
       // Move to triage for re-specification (only valid for todo/in-progress)
-      const updated = await store.moveTask(task.id, "triage");
+      const updated = await scopedStore.moveTask(task.id, "triage");
 
       // Update status to indicate needs re-specification
-      await store.updateTask(task.id, { status: "needs-respecify" });
+      await scopedStore.updateTask(task.id, { status: "needs-respecify" });
 
       res.json(updated);
     } catch (err: any) {
@@ -2154,6 +2213,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
   // Update task
   router.patch("/tasks/:id", async (req, res) => {
     try {
+      const scopedStore = await getScopedStore(req);
       const { title, description, prompt, dependencies, modelProvider, modelId, validatorModelProvider, validatorModelId } = req.body;
 
       // Validate model fields are strings or undefined/null
@@ -2170,7 +2230,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
       const validatedValidatorModelProvider = validateModelField(validatorModelProvider, "validatorModelProvider");
       const validatedValidatorModelId = validateModelField(validatorModelId, "validatorModelId");
 
-      const task = await store.updateTask(req.params.id, {
+      const task = await scopedStore.updateTask(req.params.id, {
         title,
         description,
         prompt,
@@ -2190,7 +2250,8 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
   // Delete task
   router.delete("/tasks/:id", async (req, res) => {
     try {
-      const task = await store.deleteTask(req.params.id);
+      const scopedStore = await getScopedStore(req);
+      const task = await scopedStore.deleteTask(req.params.id);
       res.json(task);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -3357,6 +3418,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    */
   router.post("/tasks/:id/pr/create", async (req, res) => {
     try {
+      const scopedStore = await getScopedStore(req);
       const { title, body, base } = req.body;
 
       if (!title || typeof title !== "string") {
@@ -3365,7 +3427,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
       }
 
       // Get task and validate
-      const task = await store.getTask(req.params.id);
+      const task = await scopedStore.getTask(req.params.id);
       if (task.column !== "in-review") {
         res.status(400).json({ error: "Task must be in 'in-review' column to create a PR" });
         return;
@@ -3389,7 +3451,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         owner = o;
         repo = r;
       } else {
-        const gitRepo = getCurrentGitHubRepo(store.getRootDir());
+        const gitRepo = getCurrentGitHubRepo(scopedStore.getRootDir());
         if (!gitRepo) {
           res.status(400).json({ error: "Could not determine GitHub repository. Set GITHUB_REPOSITORY env var or configure git remote." });
           return;
@@ -3422,8 +3484,8 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
       });
 
       // Store PR info
-      await store.updatePrInfo(task.id, prInfo);
-      await store.logEntry(task.id, "Created PR", `PR #${prInfo.number}: ${prInfo.url}`);
+      await scopedStore.updatePrInfo(task.id, prInfo);
+      await scopedStore.logEntry(task.id, "Created PR", `PR #${prInfo.number}: ${prInfo.url}`);
 
       res.status(201).json(prInfo);
     } catch (err: any) {
@@ -3613,7 +3675,8 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    */
   router.get("/tasks/:id/pr/status", async (req, res) => {
     try {
-      const task = await store.getTask(req.params.id);
+      const scopedStore = await getScopedStore(req);
+      const task = await scopedStore.getTask(req.params.id);
 
       if (!task.prInfo) {
         res.status(404).json({ error: "Task has no associated PR" });
@@ -3635,7 +3698,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
 
       // Trigger background refresh if stale (don't await, let it run)
       if (isStale) {
-        refreshPrInBackground(store, task.id, task.prInfo, githubToken);
+        refreshPrInBackground(scopedStore, task.id, task.prInfo, githubToken);
       }
     } catch (err: any) {
       if (err.code === "ENOENT") {
@@ -3653,7 +3716,8 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    */
   router.post("/tasks/:id/pr/refresh", async (req, res) => {
     try {
-      const task = await store.getTask(req.params.id);
+      const scopedStore = await getScopedStore(req);
+      const task = await scopedStore.getTask(req.params.id);
 
       if (!task.prInfo) {
         res.status(404).json({ error: "Task has no associated PR" });
@@ -3675,7 +3739,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
           owner = o;
           repo = r;
         } else {
-          const gitRepo = getCurrentGitHubRepo(store.getRootDir());
+          const gitRepo = getCurrentGitHubRepo(scopedStore.getRootDir());
           if (!gitRepo) {
             res.status(400).json({ error: "Could not determine GitHub repository" });
             return;
@@ -3706,7 +3770,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
       };
 
       // Update stored PR info
-      await store.updatePrInfo(task.id, prInfo);
+      await scopedStore.updatePrInfo(task.id, prInfo);
 
       res.json({
         prInfo,
@@ -3734,7 +3798,8 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    */
   router.get("/tasks/:id/issue/status", async (req, res) => {
     try {
-      const task = await store.getTask(req.params.id);
+      const scopedStore = await getScopedStore(req);
+      const task = await scopedStore.getTask(req.params.id);
 
       if (!task.issueInfo) {
         res.status(404).json({ error: "Task has no associated issue" });
@@ -3752,7 +3817,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
       });
 
       if (isStale) {
-        refreshIssueInBackground(store, task.id, task.issueInfo, githubToken);
+        refreshIssueInBackground(scopedStore, task.id, task.issueInfo, githubToken);
       }
     } catch (err: any) {
       if (err.code === "ENOENT") {
@@ -3770,7 +3835,8 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    */
   router.post("/tasks/:id/issue/refresh", async (req, res) => {
     try {
-      const task = await store.getTask(req.params.id);
+      const scopedStore = await getScopedStore(req);
+      const task = await scopedStore.getTask(req.params.id);
 
       if (!task.issueInfo) {
         res.status(404).json({ error: "Task has no associated issue" });
@@ -3792,7 +3858,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
           owner = o;
           repo = r;
         } else {
-          const gitRepo = getCurrentGitHubRepo(store.getRootDir());
+          const gitRepo = getCurrentGitHubRepo(scopedStore.getRootDir());
           if (!gitRepo) {
             res.status(400).json({ error: "Could not determine GitHub repository" });
             return;
@@ -3825,7 +3891,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         lastCheckedAt: new Date().toISOString(),
       };
 
-      await store.updateIssueInfo(task.id, updatedIssueInfo);
+      await scopedStore.updateIssueInfo(task.id, updatedIssueInfo);
       res.json(updatedIssueInfo);
     } catch (err: any) {
       if (err.code === "ENOENT") {
@@ -3845,6 +3911,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    */
   router.post("/github/batch/status", async (req, res) => {
     try {
+      const scopedStore = await getScopedStore(req);
       const { taskIds } = (req.body ?? {}) as import("@fusion/core").BatchStatusRequest;
       if (!Array.isArray(taskIds)) {
         res.status(400).json({ error: "taskIds must be an array" });
@@ -3863,7 +3930,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         return;
       }
 
-      const fallbackRepo = getDefaultGitHubRepo(store);
+      const fallbackRepo = getDefaultGitHubRepo(scopedStore);
       const results: BatchStatusResult = {};
       const issueGroups = new Map<string, { owner: string; repo: string; numbers: Set<number>; taskIds: Set<string> }>();
       const prGroups = new Map<string, { owner: string; repo: string; numbers: Set<number>; taskIds: Set<string> }>();
@@ -3871,7 +3938,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
 
       for (const taskId of taskIds) {
         try {
-          const task = await store.getTask(taskId);
+          const task = await scopedStore.getTask(taskId);
           tasksById.set(taskId, task);
 
           const entry = ensureBatchStatusEntry(results, taskId);
@@ -3960,7 +4027,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
               ...issueInfo,
               lastCheckedAt: refreshedAt,
             };
-            await store.updateIssueInfo(taskId, updatedIssueInfo);
+            await scopedStore.updateIssueInfo(taskId, updatedIssueInfo);
             const entry = ensureBatchStatusEntry(results, taskId);
             entry.issueInfo = updatedIssueInfo;
             entry.stale = entry.prInfo ? isBatchStatusStale(entry.prInfo, task.updatedAt) : false;
@@ -4002,7 +4069,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
               ...prInfo,
               lastCheckedAt: refreshedAt,
             };
-            await store.updatePrInfo(taskId, updatedPrInfo);
+            await scopedStore.updatePrInfo(taskId, updatedPrInfo);
             const entry = ensureBatchStatusEntry(results, taskId);
             entry.prInfo = updatedPrInfo;
             entry.stale = entry.issueInfo ? isBatchStatusStale(entry.issueInfo, task.updatedAt) : false;
@@ -4296,8 +4363,9 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    */
   router.get("/tasks/:id/files", async (req, res) => {
     try {
+      const scopedStore = await getScopedStore(req);
       const { path: subPath } = req.query;
-      const result = await listFiles(store, req.params.id, typeof subPath === "string" ? subPath : undefined);
+      const result = await listFiles(scopedStore, req.params.id, typeof subPath === "string" ? subPath : undefined);
       res.json(result);
     } catch (err: any) {
       if (err instanceof FileServiceError) {
@@ -4319,8 +4387,9 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    */
   router.get("/tasks/:id/files/{*filepath}", async (req, res) => {
     try {
+      const scopedStore = await getScopedStore(req);
       const filePath = Array.isArray(req.params.filepath) ? req.params.filepath[0] : req.params.filepath ?? "";
-      const result = await readFile(store, req.params.id, filePath);
+      const result = await readFile(scopedStore, req.params.id, filePath);
       res.json(result);
     } catch (err: any) {
       if (err instanceof FileServiceError) {
@@ -4345,6 +4414,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    */
   router.post("/tasks/:id/files/{*filepath}", async (req, res) => {
     try {
+      const scopedStore = await getScopedStore(req);
       const filePath = Array.isArray(req.params.filepath) ? req.params.filepath[0] : req.params.filepath ?? "";
       const { content } = req.body;
       
@@ -4353,7 +4423,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         return;
       }
 
-      const result = await writeFile(store, req.params.id, filePath, content);
+      const result = await writeFile(scopedStore, req.params.id, filePath, content);
       res.json(result);
     } catch (err: any) {
       if (err instanceof FileServiceError) {
@@ -5427,9 +5497,10 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    * List all workflow step definitions.
    * Returns: WorkflowStep[]
    */
-  router.get("/workflow-steps", async (_req, res) => {
+  router.get("/workflow-steps", async (req, res) => {
     try {
-      const steps = await store.listWorkflowSteps();
+      const scopedStore = await getScopedStore(req);
+      const steps = await scopedStore.listWorkflowSteps();
       res.json(steps);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -5444,6 +5515,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    */
   router.post("/workflow-steps", async (req, res) => {
     try {
+      const scopedStore = await getScopedStore(req);
       const { name, description, prompt, enabled } = req.body;
 
       if (!name || typeof name !== "string" || !name.trim()) {
@@ -5464,13 +5536,13 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
       }
 
       // Check for name conflicts
-      const existing = await store.listWorkflowSteps();
+      const existing = await scopedStore.listWorkflowSteps();
       if (existing.some((ws) => ws.name.toLowerCase() === name.trim().toLowerCase())) {
         res.status(409).json({ error: `A workflow step named '${name.trim()}' already exists` });
         return;
       }
 
-      const step = await store.createWorkflowStep({
+      const step = await scopedStore.createWorkflowStep({
         name: name.trim(),
         description: description.trim(),
         prompt: prompt?.trim(),
@@ -5490,6 +5562,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    */
   router.patch("/workflow-steps/:id", async (req, res) => {
     try {
+      const scopedStore = await getScopedStore(req);
       const { name, description, prompt, enabled } = req.body;
 
       const updates: Record<string, unknown> = {};
@@ -5522,7 +5595,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         updates.enabled = enabled;
       }
 
-      const step = await store.updateWorkflowStep(req.params.id, updates);
+      const step = await scopedStore.updateWorkflowStep(req.params.id, updates);
       res.json(step);
     } catch (err: any) {
       if (err.message?.includes("not found")) {
@@ -5540,7 +5613,8 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    */
   router.delete("/workflow-steps/:id", async (req, res) => {
     try {
-      await store.deleteWorkflowStep(req.params.id);
+      const scopedStore = await getScopedStore(req);
+      await scopedStore.deleteWorkflowStep(req.params.id);
       res.status(204).send();
     } catch (err: any) {
       if (err.message?.includes("not found")) {
@@ -5558,7 +5632,8 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    */
   router.post("/workflow-steps/:id/refine", async (req, res) => {
     try {
-      const step = await store.getWorkflowStep(req.params.id);
+      const scopedStore = await getScopedStore(req);
+      const step = await scopedStore.getWorkflowStep(req.params.id);
       if (!step) {
         res.status(404).json({ error: `Workflow step '${req.params.id}' not found` });
         return;
@@ -5575,7 +5650,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         // Dynamic import to avoid resolution issues in tests
         const engineModule = "@fusion/engine";
         const { createKbAgent } = await import(/* @vite-ignore */ engineModule);
-        const settings = await store.getSettings();
+        const settings = await scopedStore.getSettings();
 
         const systemPrompt = `You are an expert at creating detailed agent prompts for workflow steps.
 
@@ -5593,7 +5668,7 @@ The prompt should:
 Output ONLY the prompt text (no markdown, no explanations).`;
 
         const { session } = await createKbAgent({
-          cwd: store.getRootDir(),
+          cwd: scopedStore.getRootDir(),
           systemPrompt,
           tools: "none",
           defaultProvider: settings.planningProvider || settings.defaultProvider,
@@ -5618,7 +5693,7 @@ Output ONLY the prompt text (no markdown, no explanations).`;
       }
 
       // Update the workflow step with the refined prompt
-      const updated = await store.updateWorkflowStep(step.id, { prompt: refinedPrompt });
+      const updated = await scopedStore.updateWorkflowStep(step.id, { prompt: refinedPrompt });
       res.json({ prompt: refinedPrompt, workflowStep: updated });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -5648,6 +5723,7 @@ Output ONLY the prompt text (no markdown, no explanations).`;
    */
   router.post("/workflow-step-templates/:id/create", async (req, res) => {
     try {
+      const scopedStore = await getScopedStore(req);
       const { WORKFLOW_STEP_TEMPLATES } = await import("@fusion/core");
       const template = WORKFLOW_STEP_TEMPLATES.find((t) => t.id === req.params.id);
 
@@ -5657,13 +5733,13 @@ Output ONLY the prompt text (no markdown, no explanations).`;
       }
 
       // Check for name conflicts with existing workflow steps
-      const existing = await store.listWorkflowSteps();
+      const existing = await scopedStore.listWorkflowSteps();
       if (existing.some((ws) => ws.name.toLowerCase() === template.name.toLowerCase())) {
         res.status(409).json({ error: `A workflow step named '${template.name}' already exists` });
         return;
       }
 
-      const step = await store.createWorkflowStep({
+      const step = await scopedStore.createWorkflowStep({
         name: template.name,
         description: template.description,
         prompt: template.prompt,
@@ -5678,116 +5754,6 @@ Output ONLY the prompt text (no markdown, no explanations).`;
 
   // ── Scripts Routes ──────────────────────────────────────────────────────────
 
-  /** Reserved script names that conflict with system commands or existing features */
-  const RESERVED_SCRIPT_NAMES = new Set(["run", "exec", "shell", "bash", "sh"]);
-
-  /**
-   * GET /api/scripts
-   * List all saved scripts from project settings.
-   * Returns: Record<string, string> (name -> command)
-   */
-  router.get("/scripts", async (_req, res) => {
-    try {
-      const settings = await store.getSettings();
-      res.json(settings.scripts ?? {});
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  /**
-   * POST /api/scripts
-   * Add or update a script.
-   * Body: { name: string, command: string }
-   * Returns: { name: string, command: string }
-   */
-  router.post("/scripts", async (req, res) => {
-    try {
-      const { name, command } = req.body;
-
-      // Validate name
-      if (!name || typeof name !== "string" || !name.trim()) {
-        res.status(400).json({ error: "Script name is required" });
-        return;
-      }
-      if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
-        res.status(400).json({ error: "Script name must contain only alphanumeric characters, hyphens, and underscores (no spaces)" });
-        return;
-      }
-      if (RESERVED_SCRIPT_NAMES.has(name.toLowerCase())) {
-        res.status(400).json({ error: `Script name '${name}' is reserved` });
-        return;
-      }
-
-      // Validate command
-      if (!command || typeof command !== "string" || !command.trim()) {
-        res.status(400).json({ error: "Script command is required" });
-        return;
-      }
-
-      const scriptName = name.trim();
-      const scriptCommand = command.trim();
-
-      // Get current settings
-      const settings = await store.getSettings();
-      const currentScripts = settings.scripts ?? {};
-
-      // Check for duplicate names (409 Conflict)
-      if (currentScripts[scriptName] !== undefined && currentScripts[scriptName] !== scriptCommand) {
-        res.status(409).json({ error: `Script named '${scriptName}' already exists. Use PUT to update or DELETE to remove first.` });
-        return;
-      }
-
-      // Update settings with the new/updated script
-      const updatedScripts = { ...currentScripts, [scriptName]: scriptCommand };
-      await store.updateSettings({ scripts: updatedScripts });
-
-      res.status(201).json({ name: scriptName, command: scriptCommand });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  /**
-   * DELETE /api/scripts/:name
-   * Remove a script by name.
-   * Returns: Record<string, string> (remaining scripts)
-   */
-  router.delete("/scripts/:name", async (req, res) => {
-    try {
-      const scriptName = Array.isArray(req.params.name) ? req.params.name[0] : req.params.name;
-
-      if (!scriptName) {
-        res.status(400).json({ error: "Script name is required" });
-        return;
-      }
-
-      if (!/^[a-zA-Z0-9_-]+$/.test(scriptName)) {
-        res.status(400).json({ error: "Script name must contain only alphanumeric characters, hyphens, and underscores (no spaces)" });
-        return;
-      }
-
-      // Get current settings
-      const settings = await store.getSettings();
-      const currentScripts = settings.scripts ?? {};
-
-      // Check if script exists
-      if (currentScripts[scriptName] === undefined) {
-        res.status(404).json({ error: `Script '${scriptName}' not found` });
-        return;
-      }
-
-      // Remove the script
-      const updatedScripts = { ...currentScripts };
-      delete updatedScripts[scriptName];
-      await store.updateSettings({ scripts: updatedScripts });
-
-      res.status(200).json(updatedScripts);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
   /**
    * POST /api/scripts/:name/run
    * Execute a saved script by name using terminal service.
@@ -5796,6 +5762,7 @@ Output ONLY the prompt text (no markdown, no explanations).`;
    */
   router.post("/scripts/:name/run", async (req, res) => {
     try {
+      const scopedStore = await getScopedStore(req);
       const scriptName = Array.isArray(req.params.name) ? req.params.name[0] : req.params.name;
 
       if (!scriptName) {
@@ -5809,7 +5776,7 @@ Output ONLY the prompt text (no markdown, no explanations).`;
       }
 
       // Get the script from settings
-      const settings = await store.getSettings();
+      const settings = await scopedStore.getSettings();
       const currentScripts = settings.scripts ?? {};
 
       if (currentScripts[scriptName] === undefined) {
@@ -5849,9 +5816,9 @@ Output ONLY the prompt text (no markdown, no explanations).`;
       }
 
       // Execute via terminal service
-      const terminalService = getTerminalService(store.getRootDir());
+      const terminalService = getTerminalService(scopedStore.getRootDir());
       const result = await terminalService.createSession({
-        cwd: store.getRootDir(),
+        cwd: scopedStore.getRootDir(),
       });
 
       if (!result.success) {
@@ -5897,8 +5864,9 @@ Output ONLY the prompt text (no markdown, no explanations).`;
         filter.role = req.query.role;
       }
 
+      const scopedStore = await getScopedStore(req);
       const { AgentStore } = await import("@fusion/core");
-      const agentStore = new AgentStore({ rootDir: store.getRootDir() });
+      const agentStore = new AgentStore({ rootDir: scopedStore.getRootDir() });
       await agentStore.init();
 
       const agents = await agentStore.listAgents(filter as { state?: "idle" | "active" | "paused" | "terminated"; role?: import("@fusion/core").AgentCapability });
@@ -5925,8 +5893,9 @@ Output ONLY the prompt text (no markdown, no explanations).`;
         return;
       }
 
+      const scopedStore = await getScopedStore(req);
       const { AgentStore } = await import("@fusion/core");
-      const agentStore = new AgentStore({ rootDir: store.getRootDir() });
+      const agentStore = new AgentStore({ rootDir: scopedStore.getRootDir() });
       await agentStore.init();
 
       const agent = await agentStore.createAgent({ name, role: role as import("@fusion/core").AgentCapability, metadata });
@@ -5942,8 +5911,9 @@ Output ONLY the prompt text (no markdown, no explanations).`;
    */
   router.get("/agents/:id", async (req, res) => {
     try {
+      const scopedStore = await getScopedStore(req);
       const { AgentStore } = await import("@fusion/core");
-      const agentStore = new AgentStore({ rootDir: store.getRootDir() });
+      const agentStore = new AgentStore({ rootDir: scopedStore.getRootDir() });
       await agentStore.init();
 
       const agent = await agentStore.getAgentDetail(req.params.id, 50);
@@ -5965,8 +5935,9 @@ Output ONLY the prompt text (no markdown, no explanations).`;
     try {
       const { name, role, metadata } = req.body;
 
+      const scopedStore = await getScopedStore(req);
       const { AgentStore } = await import("@fusion/core");
-      const agentStore = new AgentStore({ rootDir: store.getRootDir() });
+      const agentStore = new AgentStore({ rootDir: scopedStore.getRootDir() });
       await agentStore.init();
 
       const agent = await agentStore.updateAgent(req.params.id, { name, role, metadata });
@@ -5993,8 +5964,9 @@ Output ONLY the prompt text (no markdown, no explanations).`;
         return;
       }
 
+      const scopedStore = await getScopedStore(req);
       const { AgentStore } = await import("@fusion/core");
-      const agentStore = new AgentStore({ rootDir: store.getRootDir() });
+      const agentStore = new AgentStore({ rootDir: scopedStore.getRootDir() });
       await agentStore.init();
 
       const agent = await agentStore.updateAgentState(req.params.id, state as import("@fusion/core").AgentState);
@@ -6016,8 +5988,9 @@ Output ONLY the prompt text (no markdown, no explanations).`;
    */
   router.delete("/agents/:id", async (req, res) => {
     try {
+      const scopedStore = await getScopedStore(req);
       const { AgentStore } = await import("@fusion/core");
-      const agentStore = new AgentStore({ rootDir: store.getRootDir() });
+      const agentStore = new AgentStore({ rootDir: scopedStore.getRootDir() });
       await agentStore.init();
 
       await agentStore.deleteAgent(req.params.id);
@@ -6039,8 +6012,9 @@ Output ONLY the prompt text (no markdown, no explanations).`;
     try {
       const { status = "ok" } = req.body;
 
+      const scopedStore = await getScopedStore(req);
       const { AgentStore } = await import("@fusion/core");
-      const agentStore = new AgentStore({ rootDir: store.getRootDir() });
+      const agentStore = new AgentStore({ rootDir: scopedStore.getRootDir() });
       await agentStore.init();
 
       const event = await agentStore.recordHeartbeat(req.params.id, status as "ok" | "missed" | "recovered");
@@ -6063,8 +6037,9 @@ Output ONLY the prompt text (no markdown, no explanations).`;
     try {
       const limit = typeof req.query.limit === "string" ? parseInt(req.query.limit, 10) : 50;
 
+      const scopedStore = await getScopedStore(req);
       const { AgentStore } = await import("@fusion/core");
-      const agentStore = new AgentStore({ rootDir: store.getRootDir() });
+      const agentStore = new AgentStore({ rootDir: scopedStore.getRootDir() });
       await agentStore.init();
 
       const history = await agentStore.getHeartbeatHistory(req.params.id, limit);
@@ -6640,14 +6615,15 @@ Output ONLY the prompt text (no markdown, no explanations).`;
    */
   router.get("/tasks/:id/diff", async (req, res) => {
     try {
-      const task = await store.getTask(req.params.id);
+      const scopedStore = await getScopedStore(req);
+      const task = await scopedStore.getTask(req.params.id);
       if (!task) {
         res.status(404).json({ error: "Task not found" });
         return;
       }
 
       const worktree = typeof req.query.worktree === "string" ? req.query.worktree : undefined;
-      const cwd = worktree || store.getRootDir();
+      const cwd = worktree || scopedStore.getRootDir();
 
       // Get the base branch for merge-base comparison
       const baseBranch = task.baseBranch ?? "main";
@@ -6732,7 +6708,8 @@ Output ONLY the prompt text (no markdown, no explanations).`;
    */
   router.get("/tasks/:id/file-diffs", async (req, res) => {
     try {
-      const task = await store.getTask(req.params.id);
+      const scopedStore = await getScopedStore(req);
+      const task = await scopedStore.getTask(req.params.id);
       if (!task.worktree || !existsSync(task.worktree)) {
         res.json([]);
         return;
@@ -6819,11 +6796,11 @@ Output ONLY the prompt text (no markdown, no explanations).`;
    * Fetch all saved scripts.
    * Returns: Record<string, string> (name -> command)
    */
-  router.get("/scripts", async (_req, res) => {
+  router.get("/scripts", async (req, res) => {
     try {
-      const { loadScriptStore } = await import("./script-store.js");
-      const store = await loadScriptStore();
-      res.json(store.getScripts());
+      const scopedStore = await getScopedStore(req);
+      const settings = await scopedStore.getSettings();
+      res.json(settings.scripts ?? {});
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -6837,6 +6814,7 @@ Output ONLY the prompt text (no markdown, no explanations).`;
    */
   router.post("/scripts", async (req, res) => {
     try {
+      const scopedStore = await getScopedStore(req);
       const { name, command } = req.body;
       
       if (!name || typeof name !== "string" || !name.trim()) {
@@ -6848,12 +6826,13 @@ Output ONLY the prompt text (no markdown, no explanations).`;
         return;
       }
       
-      const { loadScriptStore } = await import("./script-store.js");
-      const store = await loadScriptStore();
-      store.setScript(name.trim(), command.trim());
-      await store.save();
-      
-      res.json(store.getScripts());
+      const settings = await scopedStore.getSettings();
+      const scripts = {
+        ...(settings.scripts ?? {}),
+        [name.trim()]: command.trim(),
+      };
+      await scopedStore.updateSettings({ scripts });
+      res.json(scripts);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -6866,14 +6845,13 @@ Output ONLY the prompt text (no markdown, no explanations).`;
    */
   router.delete("/scripts/:name", async (req, res) => {
     try {
+      const scopedStore = await getScopedStore(req);
       const { name } = req.params;
-      
-      const { loadScriptStore } = await import("./script-store.js");
-      const store = await loadScriptStore();
-      store.removeScript(name);
-      await store.save();
-      
-      res.json(store.getScripts());
+      const settings = await scopedStore.getSettings();
+      const scripts = { ...(settings.scripts ?? {}) };
+      delete scripts[name];
+      await scopedStore.updateSettings({ scripts });
+      res.json(scripts);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

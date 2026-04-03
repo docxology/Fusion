@@ -302,7 +302,7 @@ describe("TaskDetailModal", () => {
       });
 
       await waitFor(() => {
-        expect(mockUpload).toHaveBeenCalledWith("FN-099", imageFile);
+        expect(mockUpload).toHaveBeenCalledWith("FN-099", imageFile, undefined);
         expect(addToast).toHaveBeenCalledWith("Screenshot attached", "success");
       });
     });
@@ -432,7 +432,7 @@ describe("TaskDetailModal", () => {
       });
 
       await waitFor(() => {
-        expect(mockUpload).toHaveBeenCalledWith("FN-099", imageFile);
+        expect(mockUpload).toHaveBeenCalledWith("FN-099", imageFile, undefined);
         expect(addToast).toHaveBeenCalledWith("Screenshot attached", "success");
       });
     });
@@ -502,7 +502,7 @@ describe("TaskDetailModal", () => {
     fireEvent.click(screen.getByText("FN-001"));
 
     await waitFor(() => {
-      expect(updateTask).toHaveBeenCalledWith("FN-099", { dependencies: ["FN-001"] });
+      expect(updateTask).toHaveBeenCalledWith("FN-099", { dependencies: ["FN-001"] }, undefined);
     });
   });
 
@@ -525,7 +525,7 @@ describe("TaskDetailModal", () => {
     fireEvent.click(removeButtons[0]); // Remove KB-001
 
     await waitFor(() => {
-      expect(updateTask).toHaveBeenCalledWith("FN-099", { dependencies: ["FN-002"] });
+      expect(updateTask).toHaveBeenCalledWith("FN-099", { dependencies: ["FN-002"] }, undefined);
     });
   });
 
@@ -1438,7 +1438,7 @@ describe("TaskDetailModal", () => {
       fireEvent.click(depLink);
 
       await waitFor(() => {
-        expect(mockFetch).toHaveBeenCalledWith("FN-001");
+        expect(mockFetch).toHaveBeenCalledWith("FN-001", undefined);
         expect(onOpenDetail).toHaveBeenCalledWith(mockDetail);
       });
     });
@@ -1497,7 +1497,7 @@ describe("TaskDetailModal", () => {
       expect(onOpenDetail).not.toHaveBeenCalled();
       // updateTask should be called to remove the dependency
       await waitFor(() => {
-        expect(updateTask).toHaveBeenCalledWith("FN-099", { dependencies: [] });
+        expect(updateTask).toHaveBeenCalledWith("FN-099", { dependencies: [] }, undefined);
       });
     });
   });
@@ -1593,7 +1593,7 @@ describe("TaskDetailModal", () => {
       fireEvent.click(screen.getByText("Save"));
 
       await waitFor(() => {
-        expect(mockUpdate).toHaveBeenCalledWith("FN-099", { prompt: "# Updated" });
+        expect(mockUpdate).toHaveBeenCalledWith("FN-099", { prompt: "# Updated" }, undefined);
       });
 
       // Should return to view mode
@@ -1646,7 +1646,7 @@ describe("TaskDetailModal", () => {
       fireEvent.click(screen.getByText("Request AI Revision"));
 
       await waitFor(() => {
-        expect(requestSpecRevision).toHaveBeenCalledWith("FN-099", "Please add more error handling details");
+        expect(requestSpecRevision).toHaveBeenCalledWith("FN-099", "Please add more error handling details", undefined);
         expect(addToast).toHaveBeenCalledWith("AI revision requested. Task moved to triage.", "success");
         expect(onClose).toHaveBeenCalled();
       });
@@ -1804,7 +1804,7 @@ describe("TaskDetailModal", () => {
       fireEvent.click(screen.getByText("Approve Plan"));
 
       await waitFor(() => {
-        expect(mockApprovePlan).toHaveBeenCalledWith("FN-001");
+        expect(mockApprovePlan).toHaveBeenCalledWith("FN-001", undefined);
       });
       expect(addToast).toHaveBeenCalledWith("Plan approved — FN-001 moved to Todo", "success");
       expect(onClose).toHaveBeenCalled();
@@ -1844,7 +1844,7 @@ describe("TaskDetailModal", () => {
       );
 
       await waitFor(() => {
-        expect(mockRejectPlan).toHaveBeenCalledWith("FN-001");
+        expect(mockRejectPlan).toHaveBeenCalledWith("FN-001", undefined);
       });
       expect(addToast).toHaveBeenCalledWith(
         "Plan rejected — FN-001 returned to Triage for re-specification",
@@ -2393,7 +2393,7 @@ describe("TaskDetailModal", () => {
       fireEvent.click(screen.getByText("Create Refinement Task"));
 
       await waitFor(() => {
-        expect(refineTask).toHaveBeenCalledWith("FN-001", "Need to add more tests");
+        expect(refineTask).toHaveBeenCalledWith("FN-001", "Need to add more tests", undefined);
         expect(addToast).toHaveBeenCalledWith("Refinement task created: FN-002", "success");
         expect(onClose).toHaveBeenCalled();
       });
@@ -2597,7 +2597,7 @@ describe("TaskDetailModal", () => {
         expect(mockUpdate).toHaveBeenCalledWith("FN-001", {
           title: "New title",
           description: "New description",
-        });
+        }, undefined);
       });
     });
 

@@ -41,6 +41,7 @@ function relativeTime(iso: string): string {
 
 interface AgentDetailViewProps {
   agentId: string;
+  projectId?: string;
   onClose: () => void;
   addToast: (message: string, type?: "success" | "error") => void;
 }
@@ -68,7 +69,7 @@ const RUN_STATUS_ICONS: Record<string, { icon: typeof CheckCircle; color: string
   terminated: { icon: Square, color: "text-gray-500" },
 };
 
-export function AgentDetailView({ agentId, onClose, addToast }: AgentDetailViewProps) {
+export function AgentDetailView({ agentId, projectId, onClose, addToast }: AgentDetailViewProps) {
   const [agent, setAgent] = useState<AgentDetail | null>(null);
   const [logs, setLogs] = useState<AgentLogEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -79,7 +80,7 @@ export function AgentDetailView({ agentId, onClose, addToast }: AgentDetailViewP
   const loadAgent = useCallback(async () => {
     setIsLoading(true);
     try {
-      const data = await fetchAgent(agentId);
+      const data = await fetchAgent(agentId, projectId);
       setAgent(data);
     } catch (err: any) {
       addToast(`Failed to load agent: ${err.message}`, "error");
@@ -87,7 +88,7 @@ export function AgentDetailView({ agentId, onClose, addToast }: AgentDetailViewP
     } finally {
       setIsLoading(false);
     }
-  }, [agentId, addToast, onClose]);
+  }, [agentId, addToast, onClose, projectId]);
 
   const loadLogs = useCallback(async () => {
     // Agent logs are tied to tasks, not agents directly.
@@ -96,13 +97,13 @@ export function AgentDetailView({ agentId, onClose, addToast }: AgentDetailViewP
     // If the agent is working on a task, we could show task logs.
     if (agent?.taskId) {
       try {
-        const data = await fetchAgentLogs(agent.taskId);
+        const data = await fetchAgentLogs(agent.taskId, projectId);
         setLogs(data);
       } catch (err: any) {
         console.error("Failed to load task logs:", err);
       }
     }
-  }, [agent?.taskId]);
+  }, [agent?.taskId, projectId]);
 
   useEffect(() => {
     void loadAgent();
@@ -121,9 +122,10 @@ export function AgentDetailView({ agentId, onClose, addToast }: AgentDetailViewP
       return;
     }
 
-    const es = new EventSource(`/api/tasks/${encodeURIComponent(agent.taskId)}/logs/stream`);
+    const query = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
+    const es = new EventSource(`/api/tasks/${encodeURIComponent(agent.taskId)}/logs/stream${query}`);
 
-    es.onmessage = (e) => {
+    const handleAgentLog = (e: MessageEvent) => {
       try {
         const entry: AgentLogEntry = JSON.parse(e.data);
         setLogs(prev => [entry, ...prev]);
@@ -138,6 +140,8 @@ export function AgentDetailView({ agentId, onClose, addToast }: AgentDetailViewP
       }
     };
 
+    es.addEventListener("agent:log", handleAgentLog as EventListener);
+
     es.onerror = () => {
       setIsStreaming(false);
     };
@@ -147,14 +151,15 @@ export function AgentDetailView({ agentId, onClose, addToast }: AgentDetailViewP
     };
 
     return () => {
+      es.removeEventListener("agent:log", handleAgentLog as EventListener);
       es.close();
       setIsStreaming(false);
     };
-  }, [agent?.taskId, activeTab]);
+  }, [agent?.taskId, activeTab, projectId]);
 
   const handleStateChange = async (newState: AgentState) => {
     try {
-      await updateAgentState(agentId, newState);
+      await updateAgentState(agentId, newState, projectId);
       addToast(`Agent state updated to ${newState}`, "success");
       void loadAgent();
     } catch (err: any) {
@@ -165,7 +170,7 @@ export function AgentDetailView({ agentId, onClose, addToast }: AgentDetailViewP
   const handleDelete = async () => {
     if (!agent || !confirm(`Delete agent "${agent.name}"? This cannot be undone.`)) return;
     try {
-      await deleteAgent(agentId);
+      await deleteAgent(agentId, projectId);
       addToast(`Agent "${agent.name}" deleted`, "success");
       onClose();
     } catch (err: any) {

@@ -106,7 +106,7 @@ describe("ScriptsModal", () => {
     fireEvent.click(screen.getByTestId("script-save-btn"));
 
     await waitFor(() => {
-      expect(addScript).toHaveBeenCalledWith("new-script", "echo hello");
+      expect(addScript).toHaveBeenCalledWith("new-script", "echo hello", undefined);
       expect(addToast).toHaveBeenCalledWith("Script created", "success");
     });
   });
@@ -158,7 +158,7 @@ describe("ScriptsModal", () => {
     fireEvent.click(screen.getByTestId("script-save-btn"));
 
     await waitFor(() => {
-      expect(addScript).toHaveBeenCalledWith("my-script_v2", "echo test");
+      expect(addScript).toHaveBeenCalledWith("my-script_v2", "echo test", undefined);
     });
   });
 
@@ -222,7 +222,7 @@ describe("ScriptsModal", () => {
     fireEvent.click(screen.getByTestId("confirm-delete-script-build"));
 
     await waitFor(() => {
-      expect(removeScript).toHaveBeenCalledWith("build");
+      expect(removeScript).toHaveBeenCalledWith("build", undefined);
       expect(addToast).toHaveBeenCalledWith("Script deleted", "success");
     });
   });
@@ -317,7 +317,7 @@ describe("ScriptsModal", () => {
     fireEvent.click(screen.getByTestId("script-save-btn"));
 
     await waitFor(() => {
-      expect(addScript).toHaveBeenCalledWith("build", "npm run build:prod");
+      expect(addScript).toHaveBeenCalledWith("build", "npm run build:prod", undefined);
       expect(addToast).toHaveBeenCalledWith("Script updated", "success");
     });
   });

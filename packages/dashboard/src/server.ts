@@ -106,11 +106,26 @@ export function createServer(store: TaskStore, options?: ServerOptions): ReturnT
   app.use(express.static(clientDir));
 
   // Rate limiting — stricter limit on SSE connections
-  app.get("/api/events", rateLimit(RATE_LIMITS.sse), createSSE(store));
+  app.get("/api/events", rateLimit(RATE_LIMITS.sse), async (req, res) => {
+    const projectId = typeof req.query.projectId === "string" ? req.query.projectId : undefined;
+    if (!projectId) {
+      createSSE(store, store.getMissionStore())(req, res);
+      return;
+    }
+
+    try {
+      const { TaskStore: TaskStoreClass } = await import("@fusion/core");
+      const scopedStore = await TaskStoreClass.getOrCreateForProject(projectId);
+      createSSE(scopedStore, scopedStore.getMissionStore())(req, res);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message ?? "Failed to open project event stream" });
+    }
+  });
 
   // Per-task SSE endpoint for live agent log streaming
   app.get("/api/tasks/:id/logs/stream", (req, res) => {
     const taskId = req.params.id;
+    const projectId = typeof req.query.projectId === "string" ? req.query.projectId : undefined;
 
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
@@ -120,12 +135,28 @@ export function createServer(store: TaskStore, options?: ServerOptions): ReturnT
 
     res.write(": connected\n\n");
 
-    const onAgentLog = (entry: { taskId: string; text: string; type: string; timestamp: string }) => {
-      if (entry.taskId !== taskId) return;
-      res.write(`event: agent:log\ndata: ${JSON.stringify(entry)}\n\n`);
-    };
+    let activeStore = store;
+    let detachListener: (() => void) | null = null;
 
-    store.on("agent:log", onAgentLog);
+    void (async () => {
+      if (projectId) {
+        const { TaskStore: TaskStoreClass } = await import("@fusion/core");
+        activeStore = await TaskStoreClass.getOrCreateForProject(projectId);
+      }
+
+      const onAgentLog = (entry: { taskId: string; text: string; type: string; timestamp: string }) => {
+        if (entry.taskId !== taskId) return;
+        res.write(`event: agent:log\ndata: ${JSON.stringify(entry)}\n\n`);
+      };
+
+      activeStore.on("agent:log", onAgentLog);
+      detachListener = () => {
+        activeStore.off("agent:log", onAgentLog);
+      };
+    })().catch(() => {
+      res.write("event: error\ndata: \"Failed to attach log stream\"\n\n");
+      res.end();
+    });
 
     const heartbeat = setInterval(() => {
       res.write(": heartbeat\n\n");
@@ -133,7 +164,7 @@ export function createServer(store: TaskStore, options?: ServerOptions): ReturnT
 
     req.on("close", () => {
       clearInterval(heartbeat);
-      store.off("agent:log", onAgentLog);
+      detachListener?.();
     });
   });
 

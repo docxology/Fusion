@@ -74,6 +74,7 @@ function formatBytes(bytes: number): string {
 
 interface TaskDetailModalProps {
   task: TaskDetail;
+  projectId?: string;
   tasks?: Task[];
   onClose: () => void;
   onOpenDetail: (task: TaskDetail) => void; // For clicking dependencies
@@ -94,6 +95,7 @@ const EDITABLE_COLUMNS: Set<Column> = new Set(["triage", "todo"]);
 
 export function TaskDetailModal({
   task,
+  projectId,
   tasks = [],
   onClose,
   onOpenDetail,
@@ -184,7 +186,7 @@ export function TaskDetailModal({
       await updateTask(task.id, {
         title: editTitle.trim() || undefined,
         description: editDescription.trim() || undefined,
-      });
+      }, projectId);
       addToast(`Updated ${task.id}`, "success");
       setIsEditing(false);
     } catch (err: any) {
@@ -229,6 +231,7 @@ export function TaskDetailModal({
   const { entries: agentLogEntries, loading: agentLogLoading } = useAgentLogs(
     task.id,
     activeTab === "agent-log",
+    projectId,
   );
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
@@ -311,10 +314,10 @@ export function TaskDetailModal({
   const handleTogglePause = useCallback(async () => {
     try {
       if (task.paused) {
-        await unpauseTask(task.id);
+        await unpauseTask(task.id, projectId);
         addToast(`Unpaused ${task.id}`, "success");
       } else {
-        await pauseTask(task.id);
+        await pauseTask(task.id, projectId);
         addToast(`Paused ${task.id}`, "success");
       }
       onClose();
@@ -325,7 +328,7 @@ export function TaskDetailModal({
 
   const handleApprovePlan = useCallback(async () => {
     try {
-      await approvePlan(task.id);
+      await approvePlan(task.id, projectId);
       addToast(`Plan approved — ${task.id} moved to Todo`, "success");
       onClose();
     } catch (err: any) {
@@ -336,7 +339,7 @@ export function TaskDetailModal({
   const handleRejectPlan = useCallback(async () => {
     if (!confirm("Reject this plan? The specification will be discarded and regenerated.")) return;
     try {
-      await rejectPlan(task.id);
+      await rejectPlan(task.id, projectId);
       addToast(`Plan rejected — ${task.id} returned to Triage for re-specification`, "info");
       onClose();
     } catch (err: any) {
@@ -366,7 +369,7 @@ export function TaskDetailModal({
     }
     setIsRefining(true);
     try {
-      const newTask = await refineTask(task.id, refineFeedback.trim());
+      const newTask = await refineTask(task.id, refineFeedback.trim(), projectId);
       addToast(`Refinement task created: ${newTask.id}`, "success");
       onClose();
     } catch (err: any) {
@@ -379,7 +382,7 @@ export function TaskDetailModal({
   const uploadFile = useCallback(async (file: File) => {
     setUploading(true);
     try {
-      const attachment = await uploadAttachment(task.id, file);
+      const attachment = await uploadAttachment(task.id, file, projectId);
       setAttachments((prev) => [...prev, attachment]);
       addToast("Screenshot attached", "success");
     } catch (err: any) {
@@ -434,7 +437,7 @@ export function TaskDetailModal({
 
   const handleDeleteAttachment = useCallback(async (filename: string) => {
     try {
-      await deleteAttachment(task.id, filename);
+      await deleteAttachment(task.id, filename, projectId);
       setAttachments((prev) => prev.filter((a) => a.filename !== filename));
       addToast("Attachment deleted", "info");
     } catch (err: any) {
@@ -446,7 +449,7 @@ export function TaskDetailModal({
     const newDeps = [...dependencies, depId];
     setDependencies(newDeps);
     try {
-      await updateTask(task.id, { dependencies: newDeps });
+      await updateTask(task.id, { dependencies: newDeps }, projectId);
     } catch (err: any) {
       setDependencies(dependencies);
       addToast(err.message, "error");
@@ -458,7 +461,7 @@ export function TaskDetailModal({
     const newDeps = dependencies.filter((d) => d !== depId);
     setDependencies(newDeps);
     try {
-      await updateTask(task.id, { dependencies: newDeps });
+      await updateTask(task.id, { dependencies: newDeps }, projectId);
     } catch (err: any) {
       setDependencies(dependencies);
       addToast(err.message, "error");
@@ -467,7 +470,7 @@ export function TaskDetailModal({
 
   const handleDepClick = useCallback(async (depId: string) => {
     try {
-      const detail = await fetchTaskDetail(depId);
+      const detail = await fetchTaskDetail(depId, projectId);
       onOpenDetail(detail);
     } catch (err: any) {
       addToast(`Failed to load dependency ${depId}`, "error");
@@ -478,7 +481,7 @@ export function TaskDetailModal({
   const handleSaveSpec = useCallback(async (newContent: string) => {
     setIsSavingSpec(true);
     try {
-      await updateTask(task.id, { prompt: newContent });
+      await updateTask(task.id, { prompt: newContent }, projectId);
       addToast("Spec updated", "success");
       // Update local task data
       task.prompt = newContent;
@@ -493,7 +496,7 @@ export function TaskDetailModal({
   const handleRequestSpecRevision = useCallback(async (feedback: string) => {
     setIsRequestingRevision(true);
     try {
-      await requestSpecRevision(task.id, feedback);
+      await requestSpecRevision(task.id, feedback, projectId);
       addToast("AI revision requested. Task moved to triage.", "success");
       // Task has been moved to triage, close modal
       onClose();
@@ -706,9 +709,9 @@ export function TaskDetailModal({
               />
             </div>
           ) : activeTab === "changes" ? (
-            <TaskChangesTab taskId={task.id} worktree={task.worktree} />
+            <TaskChangesTab taskId={task.id} worktree={task.worktree} projectId={projectId} />
           ) : activeTab === "comments" ? (
-            <TaskComments task={task} addToast={addToast} />
+            <TaskComments task={task} addToast={addToast} projectId={projectId} />
           ) : activeTab === "activity" ? (
             <div className="detail-section detail-activity">
               <h4>Activity</h4>
@@ -984,6 +987,7 @@ export function TaskDetailModal({
           {task.column === "in-review" && (
             <PrSection
               taskId={task.id}
+              projectId={projectId}
               prInfo={task.prInfo}
               automationStatus={task.status ?? null}
               hasGitHubToken={githubTokenConfigured ?? false}

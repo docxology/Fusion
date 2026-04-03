@@ -474,6 +474,7 @@ export function ListView({
         payload.modelId,
         payload.validatorModelProvider,
         payload.validatorModelId,
+        projectId,
       );
 
       // Optimistically update parent with returned tasks
@@ -492,18 +493,18 @@ export function ListView({
     } finally {
       setIsApplying(false);
     }
-  }, [selectedTaskIds, tasks, executorModel, validatorModel, addToast, clearSelection, onTasksUpdated]);
+  }, [selectedTaskIds, tasks, executorModel, validatorModel, projectId, addToast, clearSelection, onTasksUpdated]);
 
   const handleRowClick = useCallback(
     async (task: Task) => {
       try {
-        const detail = await fetchTaskDetail(task.id);
+        const detail = await fetchTaskDetail(task.id, projectId);
         onOpenDetail(detail);
       } catch (err: any) {
         addToast("Failed to load task details", "error");
       }
     },
-    [onOpenDetail, addToast]
+    [onOpenDetail, addToast, projectId]
   );
 
   const handleDragStart = useCallback(

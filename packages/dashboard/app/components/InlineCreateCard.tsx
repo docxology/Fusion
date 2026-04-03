@@ -20,6 +20,7 @@ interface InlineCreateCardProps {
   onSubmit: (input: TaskCreateInput) => Promise<Task>;
   onCancel: () => void;
   addToast: (msg: string, type?: ToastType) => void;
+  projectId?: string;
   /**
    * Optional model list from a parent surface. When omitted, InlineCreateCard
    * fetches models itself so it can stay reusable in both list and board flows
@@ -61,6 +62,7 @@ export function InlineCreateCard({
   onSubmit,
   onCancel,
   addToast,
+  projectId,
   availableModels,
   onPlanningMode,
   onSubtaskBreakdown,
@@ -160,7 +162,7 @@ export function InlineCreateCard({
         }
       });
 
-    fetchSettings()
+    fetchSettings(projectId)
       .then((nextSettings) => {
         if (!cancelled) {
           setSettings(nextSettings);
@@ -175,7 +177,7 @@ export function InlineCreateCard({
     return () => {
       cancelled = true;
     };
-  }, [availableModels]);
+  }, [availableModels, projectId]);
 
   const executorSelectionValue = getModelSelectionValue(executorProvider, executorModelId);
   const validatorSelectionValue = getModelSelectionValue(validatorProvider, validatorModelId);
@@ -293,7 +295,7 @@ export function InlineCreateCard({
         const failures: string[] = [];
         for (const img of pendingImages) {
           try {
-            await uploadAttachment(task.id, img.file);
+            await uploadAttachment(task.id, img.file, projectId);
           } catch {
             failures.push(img.file.name);
           }

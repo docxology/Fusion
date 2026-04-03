@@ -7,6 +7,7 @@ import { AgentDetailView } from "./AgentDetailView";
 
 export interface AgentsViewProps {
   addToast: (message: string, type?: "success" | "error") => void;
+  projectId?: string;
 }
 
 const AGENT_ROLES: { value: AgentCapability; label: string; icon: string }[] = [
@@ -25,7 +26,7 @@ const STATE_COLORS: Record<AgentState, { bg: string; text: string; border: strin
   terminated: { bg: "var(--state-error-bg)", text: "var(--state-error-text)", border: "var(--state-error-border)" },
 };
 
-export function AgentsView({ addToast }: AgentsViewProps) {
+export function AgentsView({ addToast, projectId }: AgentsViewProps) {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
@@ -51,14 +52,14 @@ export function AgentsView({ addToast }: AgentsViewProps) {
     setIsLoading(true);
     try {
       const filter = filterState !== "all" ? { state: filterState } : undefined;
-      const data = await fetchAgents(filter);
+      const data = await fetchAgents(filter, projectId);
       setAgents(data);
     } catch (err: any) {
       addToast(`Failed to load agents: ${err.message}`, "error");
     } finally {
       setIsLoading(false);
     }
-  }, [filterState, addToast]);
+  }, [filterState, addToast, projectId]);
 
   useEffect(() => {
     void loadAgents();
@@ -67,7 +68,7 @@ export function AgentsView({ addToast }: AgentsViewProps) {
   const handleCreate = async () => {
     if (!newAgentName.trim()) return;
     try {
-      await createAgent({ name: newAgentName.trim(), role: newAgentRole });
+      await createAgent({ name: newAgentName.trim(), role: newAgentRole }, projectId);
       addToast(`Agent "${newAgentName}" created`, "success");
       setNewAgentName("");
       setIsCreating(false);
@@ -79,7 +80,7 @@ export function AgentsView({ addToast }: AgentsViewProps) {
 
   const handleStateChange = async (agentId: string, newState: AgentState) => {
     try {
-      await updateAgentState(agentId, newState);
+      await updateAgentState(agentId, newState, projectId);
       addToast(`Agent state updated to ${newState}`, "success");
       void loadAgents();
     } catch (err: any) {
@@ -90,7 +91,7 @@ export function AgentsView({ addToast }: AgentsViewProps) {
   const handleDelete = async (agentId: string, agentName: string) => {
     if (!confirm(`Delete agent "${agentName}"? This cannot be undone.`)) return;
     try {
-      await deleteAgent(agentId);
+      await deleteAgent(agentId, projectId);
       addToast(`Agent "${agentName}" deleted`, "success");
       void loadAgents();
     } catch (err: any) {
@@ -109,7 +110,7 @@ export function AgentsView({ addToast }: AgentsViewProps) {
     }
 
     try {
-      await updateAgent(agentId, { role: newRole });
+      await updateAgent(agentId, { role: newRole }, projectId);
       addToast(`Agent role updated to ${AGENT_ROLES.find(r => r.value === newRole)?.label ?? newRole}`, "success");
       setEditingRoleForAgent(null);
       void loadAgents();
@@ -499,6 +500,7 @@ export function AgentsView({ addToast }: AgentsViewProps) {
       {selectedAgentId && (
         <AgentDetailView
           agentId={selectedAgentId}
+          projectId={projectId}
           onClose={() => setSelectedAgentId(null)}
           addToast={addToast}
         />

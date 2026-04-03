@@ -41,7 +41,7 @@ describe("useBatchBadgeFetch", () => {
       await result.current.fetchBatch(["FN-001"]);
     });
 
-    expect(mockFetchBatchStatus).toHaveBeenCalledWith(["FN-001"]);
+    expect(mockFetchBatchStatus).toHaveBeenCalledWith(["FN-001"], undefined);
     expect(mockFetchBatchStatus).toHaveBeenCalledTimes(1);
   });
 

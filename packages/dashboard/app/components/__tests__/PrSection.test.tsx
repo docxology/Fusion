@@ -119,7 +119,7 @@ describe("PrSection", () => {
         expect(createPr).toHaveBeenCalledWith("FN-001", {
           title: "My PR Title",
           body: undefined,
-        });
+        }, undefined);
       });
 
       expect(mockOnPrCreated).toHaveBeenCalledWith(mockPrInfo);
@@ -243,7 +243,7 @@ describe("PrSection", () => {
       fireEvent.click(refreshButton);
 
       await waitFor(() => {
-        expect(refreshPrStatus).toHaveBeenCalledWith("FN-001");
+        expect(refreshPrStatus).toHaveBeenCalledWith("FN-001", undefined);
       });
 
       expect(mockOnPrUpdated).toHaveBeenCalledWith(updatedPr);

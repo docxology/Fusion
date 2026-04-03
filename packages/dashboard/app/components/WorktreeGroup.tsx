@@ -8,6 +8,7 @@ interface WorktreeGroupProps {
   label: string;
   activeTasks: Task[];
   queuedTasks: Task[];
+  projectId?: string;
   onOpenDetail: (task: TaskDetail) => void;
   addToast: (message: string, type?: ToastType) => void;
   globalPaused?: boolean;
@@ -22,6 +23,7 @@ function WorktreeGroupComponent({
   label,
   activeTasks,
   queuedTasks,
+  projectId,
   onOpenDetail,
   addToast,
   globalPaused,
@@ -37,12 +39,13 @@ function WorktreeGroupComponent({
         <span className="worktree-label">{label}</span>
       </div>
       {activeTasks.map((task) => (
-        <TaskCard key={task.id} task={task} onOpenDetail={onOpenDetail} addToast={addToast} globalPaused={globalPaused} onUpdateTask={onUpdateTask} onOpenFilesForTask={onOpenFilesForTask} />
+        <TaskCard key={task.id} task={task} projectId={projectId} onOpenDetail={onOpenDetail} addToast={addToast} globalPaused={globalPaused} onUpdateTask={onUpdateTask} onOpenFilesForTask={onOpenFilesForTask} />
       ))}
       {queuedTasks.map((task) => (
         <TaskCard
           key={task.id}
           task={task}
+          projectId={projectId}
           queued
           onOpenDetail={onOpenDetail}
           addToast={addToast}

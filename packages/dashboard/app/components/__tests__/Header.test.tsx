@@ -55,6 +55,17 @@ describe("Header", () => {
     expect(btn).toBeDefined();
   });
 
+  it("renders the missions button when mission management is available", () => {
+    const onOpen = vi.fn();
+    render(<Header onOpenMissions={onOpen} />);
+    expect(screen.getByTestId("missions-btn")).toBeDefined();
+  });
+
+  it("does not render the missions button when mission management is unavailable", () => {
+    render(<Header />);
+    expect(screen.queryByTestId("missions-btn")).toBeNull();
+  });
+
   it("calls onOpenGitHubImport when import button is clicked", () => {
     const onOpen = vi.fn();
     render(<Header onOpenGitHubImport={onOpen} />);

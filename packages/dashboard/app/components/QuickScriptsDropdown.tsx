@@ -5,6 +5,7 @@ import { fetchScripts } from "../api";
 export interface QuickScriptsDropdownProps {
   onOpenScripts: () => void;
   onRunScript: (name: string, command: string) => void;
+  projectId?: string;
 }
 
 /**
@@ -23,6 +24,7 @@ export interface QuickScriptsDropdownProps {
 export function QuickScriptsDropdown({
   onOpenScripts,
   onRunScript,
+  projectId,
 }: QuickScriptsDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [scripts, setScripts] = useState<Record<string, string>>({});
@@ -49,7 +51,7 @@ export function QuickScriptsDropdown({
     let cancelled = false;
     setLoading(true);
 
-    fetchScripts()
+    fetchScripts(projectId)
       .then((data) => {
         if (!cancelled) {
           setScripts(data);
@@ -69,7 +71,7 @@ export function QuickScriptsDropdown({
     return () => {
       cancelled = true;
     };
-  }, [isOpen]);
+  }, [isOpen, projectId]);
 
   // Close dropdown on outside click
   useEffect(() => {

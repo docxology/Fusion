@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { THINKING_LEVELS, GLOBAL_SETTINGS_KEYS, PROJECT_SETTINGS_KEYS } from "@fusion/core";
-import type { Settings, GlobalSettings, ThemeMode, ColorTheme, ModelPreset } from "@fusion/core";
+import type { Settings, GlobalSettings, ThemeMode, ColorTheme, ModelPreset, NtfyNotificationEvent } from "@fusion/core";
 import { fetchSettings, updateSettings, updateGlobalSettings, fetchAuthStatus, loginProvider, logoutProvider, fetchModels, testNtfyNotification, fetchBackups, createBackup, exportSettings, importSettings } from "../api";
 import type { AuthProvider, ModelInfo, BackupListResponse, SettingsExportData } from "../api";
 import type { ToastType } from "../hooks/useToast";
@@ -56,6 +56,7 @@ export type SectionId = (typeof SETTINGS_SECTIONS)[number]["id"];
 interface SettingsModalProps {
   onClose: () => void;
   addToast: (message: string, type?: ToastType) => void;
+  projectId?: string;
   /** Optional section to show when the modal first opens. Defaults to "general". */
   initialSection?: SectionId;
   /** Current theme mode */
@@ -71,6 +72,7 @@ interface SettingsModalProps {
 export function SettingsModal({
   onClose,
   addToast,
+  projectId,
   initialSection,
   themeMode = "dark",
   colorTheme = "default",
@@ -115,7 +117,7 @@ export function SettingsModal({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    fetchSettings()
+    fetchSettings(projectId)
       .then((s) => {
         setForm(s);
         setLoading(false);
@@ -124,7 +126,7 @@ export function SettingsModal({
         addToast(err.message, "error");
         setLoading(false);
       });
-  }, [addToast]);
+  }, [addToast, projectId]);
 
   // Load auth status when the authentication section is active
   const loadAuthStatus = useCallback(async () => {
@@ -149,12 +151,12 @@ export function SettingsModal({
   useEffect(() => {
     if (activeSection === "backups") {
       setBackupLoading(true);
-      fetchBackups()
+      fetchBackups(projectId)
         .then((info) => setBackupInfo(info))
         .catch(() => setBackupInfo(null))
         .finally(() => setBackupLoading(false));
     }
-  }, [activeSection]);
+  }, [activeSection, projectId]);
 
   useEffect(() => {
     if (activeSection === "authentication") {
@@ -224,7 +226,7 @@ export function SettingsModal({
       const result = await testNtfyNotification({
         ntfyEnabled: form.ntfyEnabled,
         ntfyTopic: form.ntfyTopic,
-      });
+      }, projectId);
       if (result.success) {
         addToast("Test notification sent — check your ntfy app!", "success");
       } else {
@@ -235,16 +237,16 @@ export function SettingsModal({
     } finally {
       setTestNotificationLoading(false);
     }
-  }, [addToast, form.ntfyEnabled, form.ntfyTopic]);
+  }, [addToast, form.ntfyEnabled, form.ntfyTopic, projectId]);
 
   const handleBackupNow = useCallback(async () => {
     setBackupLoading(true);
     try {
-      const result = await createBackup();
+      const result = await createBackup(projectId);
       if (result.success) {
         addToast("Backup created successfully", "success");
         // Refresh backup list
-        const info = await fetchBackups();
+        const info = await fetchBackups(projectId);
         setBackupInfo(info);
       } else {
         addToast(result.error || "Failed to create backup", "error");
@@ -254,7 +256,7 @@ export function SettingsModal({
     } finally {
       setBackupLoading(false);
     }
-  }, [addToast]);
+  }, [addToast, projectId]);
 
   // Export/Import handlers
   const handleExport = useCallback(async () => {
@@ -262,7 +264,7 @@ export function SettingsModal({
       // Default scope based on active section
       const scope = activeSectionScope === "global" ? "global" : 
                     activeSectionScope === "project" ? "project" : "both";
-      const data = await exportSettings(scope);
+      const data = await exportSettings(scope, projectId);
       
       // Create and download the JSON file
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
@@ -281,7 +283,7 @@ export function SettingsModal({
     } catch (err: any) {
       addToast(err.message || "Failed to export settings", "error");
     }
-  }, [addToast, activeSectionScope]);
+  }, [addToast, activeSectionScope, projectId]);
 
   const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -308,9 +310,9 @@ export function SettingsModal({
     
     setImportLoading(true);
     try {
-      const result = await importSettings(importPreview, { scope: importScope, merge: importMerge });
+      const result = await importSettings(importPreview, { scope: importScope, merge: importMerge }, projectId);
       if (result.success) {
-        const parts = [];
+        const parts: string[] = [];
         if (result.globalCount > 0) parts.push(`${result.globalCount} global`);
         if (result.projectCount > 0) parts.push(`${result.projectCount} project`);
         addToast(`Imported ${parts.join(", ")} setting(s)`, "success");
@@ -318,7 +320,7 @@ export function SettingsModal({
         setImportPreview(null);
         setImportFile(null);
         // Refresh settings to show imported values
-        const refreshed = await fetchSettings();
+        const refreshed = await fetchSettings(projectId);
         setForm(refreshed);
       } else {
         addToast(result.error || "Import failed", "error");
@@ -328,7 +330,7 @@ export function SettingsModal({
     } finally {
       setImportLoading(false);
     }
-  }, [addToast, importPreview, importScope, importMerge]);
+  }, [addToast, importPreview, importScope, importMerge, projectId]);
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
@@ -379,7 +381,7 @@ export function SettingsModal({
       // Save both scopes in parallel if they have changes
       await Promise.all([
         Object.keys(globalPatch).length > 0 ? updateGlobalSettings(globalPatch) : Promise.resolve(),
-        Object.keys(projectPatch).length > 0 ? updateSettings(projectPatch) : Promise.resolve(),
+        Object.keys(projectPatch).length > 0 ? updateSettings(projectPatch, projectId) : Promise.resolve(),
       ]);
 
       addToast("Settings saved", "success");
@@ -387,7 +389,7 @@ export function SettingsModal({
     } catch (err: any) {
       addToast(err.message, "error");
     }
-  }, [form, prefixError, presetDraft, onClose, addToast]);
+  }, [form, prefixError, presetDraft, onClose, addToast, projectId]);
 
   const savePresetDraft = () => {
     if (!presetDraft) return;
@@ -1408,10 +1410,10 @@ export function SettingsModal({
                       type="checkbox"
                       checked={form.ntfyEvents?.includes("in-review") ?? true}
                       onChange={(e) => {
-                        const current = form.ntfyEvents ?? ["in-review", "merged", "failed"];
+                        const current = form.ntfyEvents ?? (["in-review", "merged", "failed"] as NtfyNotificationEvent[]);
                         const newEvents = e.target.checked
-                          ? [...new Set([...current, "in-review"])]
-                          : current.filter((ev) => ev !== "in-review");
+                          ? (current.includes("in-review") ? current : [...current, "in-review" as NtfyNotificationEvent])
+                          : current.filter((ev): ev is NtfyNotificationEvent => ev !== "in-review");
                         setForm((f) => ({ ...f, ntfyEvents: newEvents.length > 0 ? newEvents : undefined }));
                       }}
                     />
@@ -1424,10 +1426,10 @@ export function SettingsModal({
                       type="checkbox"
                       checked={form.ntfyEvents?.includes("merged") ?? true}
                       onChange={(e) => {
-                        const current = form.ntfyEvents ?? ["in-review", "merged", "failed"];
+                        const current = form.ntfyEvents ?? (["in-review", "merged", "failed"] as NtfyNotificationEvent[]);
                         const newEvents = e.target.checked
-                          ? [...new Set([...current, "merged"])]
-                          : current.filter((ev) => ev !== "merged");
+                          ? (current.includes("merged") ? current : [...current, "merged" as NtfyNotificationEvent])
+                          : current.filter((ev): ev is NtfyNotificationEvent => ev !== "merged");
                         setForm((f) => ({ ...f, ntfyEvents: newEvents.length > 0 ? newEvents : undefined }));
                       }}
                     />
@@ -1440,10 +1442,10 @@ export function SettingsModal({
                       type="checkbox"
                       checked={form.ntfyEvents?.includes("failed") ?? true}
                       onChange={(e) => {
-                        const current = form.ntfyEvents ?? ["in-review", "merged", "failed"];
+                        const current = form.ntfyEvents ?? (["in-review", "merged", "failed"] as NtfyNotificationEvent[]);
                         const newEvents = e.target.checked
-                          ? [...new Set([...current, "failed"])]
-                          : current.filter((ev) => ev !== "failed");
+                          ? (current.includes("failed") ? current : [...current, "failed" as NtfyNotificationEvent])
+                          : current.filter((ev): ev is NtfyNotificationEvent => ev !== "failed");
                         setForm((f) => ({ ...f, ntfyEvents: newEvents.length > 0 ? newEvents : undefined }));
                       }}
                     />

@@ -8,7 +8,7 @@ interface UseSessionFilesResult {
   loading: boolean;
 }
 
-export function useSessionFiles(taskId: string, worktree: string | undefined, column: string): UseSessionFilesResult {
+export function useSessionFiles(taskId: string, worktree: string | undefined, column: string, projectId?: string): UseSessionFilesResult {
   const [files, setFiles] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -24,7 +24,7 @@ export function useSessionFiles(taskId: string, worktree: string | undefined, co
     async function load() {
       setLoading(true);
       try {
-        const result = await fetchSessionFiles(taskId);
+        const result = await fetchSessionFiles(taskId, projectId);
         if (!cancelled) {
           setFiles(result);
         }
@@ -40,7 +40,7 @@ export function useSessionFiles(taskId: string, worktree: string | undefined, co
     }
 
     void load();
-  }, [taskId, worktree, column]);
+  }, [taskId, worktree, column, projectId]);
 
   return { files, loading };
 }
