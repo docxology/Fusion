@@ -510,7 +510,7 @@ export function AgentsView({ addToast, projectId }: AgentsViewProps) {
         .agents-view {
           display: flex;
           flex-direction: column;
-          height: 100%;
+          height: calc(100% - var(--executor-footer-height, 0px));
           overflow: hidden;
 
           /* Agent state CSS variables - define fallback values */

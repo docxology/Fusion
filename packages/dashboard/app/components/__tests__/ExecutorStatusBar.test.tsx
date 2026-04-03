@@ -397,4 +397,47 @@ describe("ExecutorStatusBar", () => {
       expect(stuckCount).toHaveClass("executor-status-bar__count--error");
     });
   });
+
+  describe("layout integration", () => {
+    it("exposes stable executor-status-bar class for external layout hooks", () => {
+      render(<ExecutorStatusBar tasks={emptyTasks} />);
+
+      // The parent layout relies on the executor-status-bar class to detect
+      // the footer's presence and set the --executor-footer-height CSS token.
+      const statusBar = screen.getByRole("status");
+      expect(statusBar).toHaveClass("executor-status-bar");
+    });
+
+    it("uses role=status for accessibility and layout targeting", () => {
+      render(<ExecutorStatusBar tasks={emptyTasks} />);
+
+      // The status role serves dual purpose: a11y landmark and a stable
+      // selector for the project-content wrapper to detect footer presence.
+      const statusBar = screen.getByRole("status");
+      expect(statusBar).toHaveAttribute("aria-label", "Executor status");
+    });
+
+    it("always renders a root element with executor-status-bar class regardless of state", () => {
+      // Test loading state
+      vi.mocked(mockUseExecutorStats).mockReturnValue({
+        stats: defaultStats,
+        loading: true,
+        error: null,
+        refresh: vi.fn(),
+      });
+      const { unmount } = render(<ExecutorStatusBar tasks={emptyTasks} />);
+      expect(screen.getByRole("status")).toHaveClass("executor-status-bar");
+      unmount();
+
+      // Test error state
+      vi.mocked(mockUseExecutorStats).mockReturnValue({
+        stats: defaultStats,
+        loading: false,
+        error: "Connection failed",
+        refresh: vi.fn(),
+      });
+      render(<ExecutorStatusBar tasks={emptyTasks} />);
+      expect(screen.getByRole("status")).toHaveClass("executor-status-bar");
+    });
+  });
 });

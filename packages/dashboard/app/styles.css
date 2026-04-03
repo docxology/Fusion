@@ -50,6 +50,11 @@
   --column-gap: var(--space-md);
   --board-padding: var(--space-lg) var(--space-xl);
 
+  /* Layout tokens for fixed footer (ExecutorStatusBar) */
+  --header-height: 57px;
+  --executor-footer-height: 0px;
+  --executor-footer-height-mobile: 0px;
+
   /* Shadow tokens */
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.1);
   --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.1);
@@ -710,7 +715,7 @@ body {
   grid-template-columns: repeat(6, minmax(260px, 1fr));
   gap: var(--column-gap);
   padding: var(--board-padding);
-  height: calc(100vh - 57px);
+  height: calc(100vh - var(--header-height, 57px) - var(--executor-footer-height, 0px));
   overflow-x: auto;
   overflow-y: hidden;
   scroll-snap-type: x proximity;
@@ -5775,7 +5780,7 @@ body {
 .list-view {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 57px);
+  height: calc(100vh - var(--header-height, 57px) - var(--executor-footer-height, 0px));
   overflow: hidden;
   background: var(--bg);
 }
@@ -13851,6 +13856,30 @@ html .column.drag-over * {
   background: var(--card-hover);
 }
 
+/* === Project Content Wrapper (footer-safe layout) === */
+
+/**
+ * Wrapper for project-view content (board, list, agents) that reserves space
+ * for the fixed ExecutorStatusBar footer. When the footer is present, this
+ * wrapper sets the --executor-footer-height CSS token so that child components
+ * (board, list-view, agents-view) can subtract it from their height calculations.
+ *
+ * The wrapper itself fills the remaining viewport space after the header using
+ * flex: 1 in the #root flex column. Children that use viewport-relative heights
+ * (board, list-view) will read the --executor-footer-height token set on this
+ * wrapper via CSS custom property cascade. Children using height: 100% (agents-view)
+ * also subtract the token value to avoid overlap with the fixed footer.
+ */
+.project-content {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.project-content--with-footer {
+  --executor-footer-height: 36px;
+}
+
 /* === Executor Status Bar === */
 
 /**
@@ -14032,6 +14061,11 @@ html .column.drag-over * {
 
 /* Responsive: collapse on small screens */
 @media (max-width: 768px) {
+  /* Update the footer height token for mobile - must be on the wrapper, not on :root */
+  .project-content--with-footer {
+    --executor-footer-height: 32px;
+  }
+
   .executor-status-bar {
     padding: var(--space-xs) var(--space-md);
     gap: var(--space-xs);

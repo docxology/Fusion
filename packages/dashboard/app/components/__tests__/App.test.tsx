@@ -893,3 +893,92 @@ describe("Script run flow", () => {
     expect(runScriptMock).toHaveBeenCalledWith("missing-script", undefined, "proj_123");
   });
 });
+
+describe("App footer-safe project layout", () => {
+  afterEach(() => {
+    localStorage.removeItem("kb-dashboard-view-mode");
+    localStorage.removeItem("kb-dashboard-task-view");
+  });
+
+  it("wraps project content in project-content div with footer class when project is selected", async () => {
+    localStorage.setItem("kb-dashboard-view-mode", "project");
+
+    render(<App />);
+
+    await waitFor(() => {
+      const wrapper = document.querySelector(".project-content--with-footer");
+      expect(wrapper).toBeTruthy();
+      expect(wrapper?.classList.contains("project-content")).toBe(true);
+    });
+
+    // The board should be inside the footer-safe wrapper
+    const wrapper = document.querySelector(".project-content--with-footer");
+    expect(wrapper?.querySelector(".board")).toBeTruthy();
+  });
+
+  it("uses project-content wrapper without footer class in overview mode", async () => {
+    mockCurrentProjectState.currentProject = null;
+    mockProjectsState.projects = [];
+    localStorage.setItem("kb-dashboard-view-mode", "overview");
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(fetchSettings).toHaveBeenCalled();
+    });
+
+    // Wrapper should have project-content but NOT project-content--with-footer
+    const wrapper = document.querySelector(".project-content");
+    expect(wrapper).toBeTruthy();
+    expect(wrapper?.classList.contains("project-content--with-footer")).toBe(false);
+  });
+
+  it("adds and removes footer class when switching between project and overview", async () => {
+    // Start in project mode
+    localStorage.setItem("kb-dashboard-view-mode", "project");
+
+    const { rerender } = render(<App />);
+
+    await waitFor(() => {
+      expect(document.querySelector(".project-content--with-footer")).toBeTruthy();
+    });
+
+    // Switch to overview by clearing project
+    mockCurrentProjectState.currentProject = null;
+    mockProjectsState.projects = [];
+
+    rerender(<App />);
+
+    await waitFor(() => {
+      const wrapper = document.querySelector(".project-content");
+      expect(wrapper).toBeTruthy();
+      expect(wrapper?.classList.contains("project-content--with-footer")).toBe(false);
+    });
+  });
+
+  it("renders agents view inside the footer-safe wrapper", async () => {
+    localStorage.setItem("kb-dashboard-view-mode", "project");
+    localStorage.setItem("kb-dashboard-task-view", "agents");
+
+    render(<App />);
+
+    await waitFor(() => {
+      const wrapper = document.querySelector(".project-content--with-footer");
+      expect(wrapper).toBeTruthy();
+      expect(wrapper?.querySelector(".agents-view")).toBeTruthy();
+    });
+  });
+
+  it("renders list view inside the footer-safe wrapper", async () => {
+    localStorage.setItem("kb-dashboard-view-mode", "project");
+    localStorage.setItem("kb-dashboard-task-view", "list");
+
+    render(<App />);
+
+    await waitFor(() => {
+      const wrapper = document.querySelector(".project-content--with-footer");
+      expect(wrapper).toBeTruthy();
+      expect(wrapper?.querySelector(".list-view")).toBeTruthy();
+    });
+  });
+});

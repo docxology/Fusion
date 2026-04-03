@@ -81,8 +81,9 @@ A persistent footer status bar at the bottom of the dashboard displays real-time
 
 **Features**:
 - **Shared task list**: Task counts are derived from the same task list used by the board and list views, so the footer always matches the board state exactly
+- **Footer-safe layout**: Project-view content (board, list view, agents view) automatically reserves space for the fixed footer using a CSS custom property (`--executor-footer-height`). The `project-content--with-footer` wrapper class sets this token to 36px on desktop and 32px on mobile, ensuring all content remains fully visible and scrollable above the status bar
 - Real-time updates via 5-second polling for executor state (globalPause, enginePaused, maxConcurrent)
-- Responsive design: collapses labels on mobile screens (<768px)
+- Responsive design: collapses labels on mobile screens (<768px); footer height reduces from 36px to 32px
 - Dark/light theme support via CSS variables
 - Error state shows connection issues
 - Only visible in project view, not in overview/project selector

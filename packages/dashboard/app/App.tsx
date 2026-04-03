@@ -618,7 +618,11 @@ function AppInner() {
         onViewAllProjects={handleViewAllProjects}
         projectId={currentProject?.id}
       />
-      {renderMainContent()}
+      <div
+        className={`project-content${viewMode === "project" && currentProject ? " project-content--with-footer" : ""}`}
+      >
+        {renderMainContent()}
+      </div>
       {viewMode === "project" && currentProject && (
         <ExecutorStatusBar tasks={tasks} projectId={currentProject.id} />
       )}
