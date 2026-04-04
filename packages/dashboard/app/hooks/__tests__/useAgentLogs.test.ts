@@ -191,4 +191,56 @@ describe("useAgentLogs", () => {
     expect(mockFetchAgentLogs).not.toHaveBeenCalled();
     expect(MockEventSource.instances).toHaveLength(0);
   });
+
+  it("preserves long text and detail in historical log entries without truncation", async () => {
+    const longText = "A".repeat(5000);
+    const longDetail = "B".repeat(5000);
+    mockFetchAgentLogs.mockResolvedValueOnce([
+      { timestamp: "2026-01-01T00:00:00Z", taskId: "FN-001", text: longText, type: "text" as const },
+      { timestamp: "2026-01-01T00:00:01Z", taskId: "FN-001", text: "Read", type: "tool" as const, detail: longDetail },
+    ]);
+
+    const { result } = renderHook(() => useAgentLogs("FN-001", true));
+
+    await waitFor(() => {
+      expect(result.current.entries).toHaveLength(2);
+    });
+
+    expect(result.current.entries[0].text).toBe(longText);
+    expect(result.current.entries[0].text.length).toBe(5000);
+    expect(result.current.entries[1].detail).toBe(longDetail);
+    expect(result.current.entries[1].detail!.length).toBe(5000);
+  });
+
+  it("preserves long text and detail in live SSE entries without truncation", async () => {
+    mockFetchAgentLogs.mockResolvedValueOnce([]);
+
+    const { result } = renderHook(() => useAgentLogs("FN-001", true));
+
+    await waitFor(() => {
+      expect(MockEventSource.instances).toHaveLength(1);
+    });
+
+    const longText = "X".repeat(5000);
+    const longDetail = "Y".repeat(5000);
+    const es = MockEventSource.instances[0];
+    act(() => {
+      es._emit("agent:log", {
+        timestamp: "2026-01-01T00:01:00Z",
+        taskId: "FN-001",
+        text: longText,
+        type: "text",
+        detail: longDetail,
+      });
+    });
+
+    await waitFor(() => {
+      expect(result.current.entries).toHaveLength(1);
+    });
+
+    expect(result.current.entries[0].text).toBe(longText);
+    expect(result.current.entries[0].text.length).toBe(5000);
+    expect(result.current.entries[0].detail).toBe(longDetail);
+    expect(result.current.entries[0].detail!.length).toBe(5000);
+  });
 });

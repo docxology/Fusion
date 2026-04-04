@@ -1660,6 +1660,68 @@ Task with acceptance criteria
       expect(logs[2].detail).toBe("file not found");
       expect(logs[2].agent).toBe("reviewer");
     });
+
+    it("preserves long multiline text without truncation", async () => {
+      const task = await createTestTask();
+      const longText = [
+        "## Analysis",
+        "",
+        "After reviewing the codebase, I found several issues:",
+        "",
+        "1. The first issue is that the function `processData` does not handle",
+        "   edge cases where the input array is empty. This can cause unexpected",
+        "   behavior downstream when consumers expect at least one element.",
+        "",
+        "2. The second issue relates to the caching layer. The TTL is set to",
+        "   a very low value (60 seconds) which causes excessive cache misses.",
+        "",
+        "```typescript",
+        "function processData(data: unknown[]): Result {",
+        "  // This is a very long code block that should not be truncated",
+        "  if (!data || data.length === 0) {",
+        "    throw new Error('Data array must not be empty');",
+        "  }",
+        "  return data.map(item => transform(item)).filter(Boolean);",
+        "}",
+        "```",
+        "",
+        "Line " + "A".repeat(500) + " end of long line",
+      ].join("\n");
+      // Total length should be well over 1000 characters
+      expect(longText.length).toBeGreaterThan(1000);
+
+      await store.appendAgentLog(task.id, longText, "text");
+      const logs = await store.getAgentLogs(task.id);
+      expect(logs).toHaveLength(1);
+      expect(logs[0].text).toBe(longText);
+    });
+
+    it("preserves long detail strings without truncation", async () => {
+      const task = await createTestTask();
+      const longDetail = "path/to/a/very/deeply/nested/directory/structure/that/contains/many/segments/".repeat(20)
+        + "src/components/features/dashboard/panels/AgentLogViewer.tsx";
+      // Total length should be well over 500 characters
+      expect(longDetail.length).toBeGreaterThan(500);
+
+      await store.appendAgentLog(task.id, "Read", "tool", longDetail);
+      const logs = await store.getAgentLogs(task.id);
+      expect(logs).toHaveLength(1);
+      expect(logs[0].detail).toBe(longDetail);
+    });
+
+    it("preserves both long text and long detail simultaneously", async () => {
+      const task = await createTestTask();
+      const longText = "X".repeat(2000);
+      const longDetail = "Y".repeat(2000);
+
+      await store.appendAgentLog(task.id, longText, "tool", longDetail, "executor");
+      const logs = await store.getAgentLogs(task.id);
+      expect(logs).toHaveLength(1);
+      expect(logs[0].text).toBe(longText);
+      expect(logs[0].text.length).toBe(2000);
+      expect(logs[0].detail).toBe(longDetail);
+      expect(logs[0].detail!.length).toBe(2000);
+    });
   });
 
   describe("task comments", () => {

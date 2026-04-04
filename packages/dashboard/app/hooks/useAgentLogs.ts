@@ -4,6 +4,14 @@ import { fetchAgentLogs } from "../api";
 
 export const MAX_LOG_ENTRIES = 500;
 
+/**
+ * Cap the total number of log entries to `MAX_LOG_ENTRIES`.
+ *
+ * This is a **whole-list cap** — it limits how many entries are kept
+ * in memory, not the content of any individual entry.  Per-entry `text`
+ * and `detail` fields are never truncated anywhere in the pipeline
+ * (persistence → API → SSE → hook → rendering).
+ */
 function capLogEntries(entries: AgentLogEntry[]): AgentLogEntry[] {
   return entries.length > MAX_LOG_ENTRIES
     ? entries.slice(-MAX_LOG_ENTRIES)

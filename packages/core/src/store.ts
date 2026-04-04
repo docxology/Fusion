@@ -2296,6 +2296,10 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
    * Read all historical agent log entries for a task from its agent log file.
    * Returns entries in chronological order (oldest first).
    *
+   * Each entry's `text` and `detail` fields are returned in full — there is
+   * no per-entry truncation at the persistence layer.  The 500-entry cap
+   * (`MAX_LOG_ENTRIES`) in the dashboard hooks is a whole-list limit only.
+   *
    * @param taskId - The task ID (e.g. "KB-001")
    * @returns Array of agent log entries, empty if no log file exists
    */

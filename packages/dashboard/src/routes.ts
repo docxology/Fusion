@@ -2042,7 +2042,9 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
     }
   });
 
-  // Get historical agent logs for a task
+  // Get historical agent logs for a task.
+  // Per-entry text and detail fields are returned in full — no truncation.
+  // The 500-entry cap (MAX_LOG_ENTRIES) is a client-side whole-list limit.
   router.get("/tasks/:id/logs", async (req, res) => {
     try {
       const scopedStore = await getScopedStore(req);

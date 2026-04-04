@@ -1603,6 +1603,25 @@ describe("Attachment routes", () => {
     expect(res.status).toBe(500);
     expect(res.body.error).toBe("disk error");
   });
+
+  it("GET /tasks/:id/logs — preserves long text and detail without truncation", async () => {
+    const longText = "A".repeat(5000);
+    const longDetail = "B".repeat(5000);
+    const fakeLogs = [
+      { timestamp: "2026-01-01T00:00:00Z", taskId: "KB-001", text: longText, type: "text" },
+      { timestamp: "2026-01-01T00:00:01Z", taskId: "KB-001", text: "Read", type: "tool", detail: longDetail },
+    ];
+    (store.getAgentLogs as ReturnType<typeof vi.fn>).mockResolvedValue(fakeLogs);
+
+    const res = await GET(buildApp(), "/api/tasks/KB-001/logs");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(2);
+    expect(res.body[0].text).toBe(longText);
+    expect(res.body[0].text.length).toBe(5000);
+    expect(res.body[1].detail).toBe(longDetail);
+    expect(res.body[1].detail.length).toBe(5000);
+  });
 });
 
 // --- Models route tests ---

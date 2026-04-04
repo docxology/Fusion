@@ -460,4 +460,58 @@ describe("useMultiAgentLogs", () => {
     expect(result.current["FN-001"].entries[1].text).toBe("task1-new");
     expect(result.current["FN-002"].entries[1].text).toBe("task2-new");
   });
+
+  it("preserves long text and detail in historical log entries without truncation", async () => {
+    const longText = "A".repeat(5000);
+    const longDetail = "B".repeat(5000);
+    mockFetchAgentLogs.mockResolvedValue([
+      { timestamp: "2026-01-01T00:00:00Z", taskId: "FN-001", text: longText, type: "text" as const },
+      { timestamp: "2026-01-01T00:00:01Z", taskId: "FN-001", text: "Read", type: "tool" as const, detail: longDetail },
+    ]);
+
+    const { result } = renderHook(() => useMultiAgentLogs(["FN-001"]));
+
+    await waitFor(() => {
+      expect(result.current["FN-001"].entries).toHaveLength(2);
+    });
+
+    expect(result.current["FN-001"].entries[0].text).toBe(longText);
+    expect(result.current["FN-001"].entries[0].text.length).toBe(5000);
+    expect(result.current["FN-001"].entries[1].detail).toBe(longDetail);
+    expect(result.current["FN-001"].entries[1].detail!.length).toBe(5000);
+  });
+
+  it("preserves long text and detail in live SSE entries without truncation", async () => {
+    mockFetchAgentLogs.mockResolvedValue([]);
+
+    const { result } = renderHook(() => useMultiAgentLogs(["FN-001"]));
+
+    await waitFor(() => {
+      expect(MockEventSource.instances.length).toBeGreaterThanOrEqual(1);
+    });
+
+    const es = getConnection("FN-001");
+    expect(es).toBeDefined();
+
+    const longText = "X".repeat(5000);
+    const longDetail = "Y".repeat(5000);
+    act(() => {
+      es!._emit("agent:log", {
+        timestamp: "2026-01-01T00:01:00Z",
+        taskId: "FN-001",
+        text: longText,
+        type: "text",
+        detail: longDetail,
+      });
+    });
+
+    await waitFor(() => {
+      expect(result.current["FN-001"].entries).toHaveLength(1);
+    });
+
+    expect(result.current["FN-001"].entries[0].text).toBe(longText);
+    expect(result.current["FN-001"].entries[0].text.length).toBe(5000);
+    expect(result.current["FN-001"].entries[0].detail).toBe(longDetail);
+    expect(result.current["FN-001"].entries[0].detail!.length).toBe(5000);
+  });
 });

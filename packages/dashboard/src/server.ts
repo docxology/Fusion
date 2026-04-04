@@ -146,6 +146,10 @@ export function createServer(store: TaskStore, options?: ServerOptions): ReturnT
     // directly. Using getOrCreateProjectStore here would attach the listener
     // to a different EventEmitter instance that the executor never writes to,
     // breaking real-time log streaming.
+    //
+    // Per-entry text and detail fields are serialized in full — there is no
+    // SSE-level truncation.  The 500-entry cap is applied client-side in the
+    // React hooks (useAgentLogs / useMultiAgentLogs).
     const onAgentLog = (entry: { taskId: string; text: string; type: string; timestamp: string }) => {
       if (entry.taskId !== taskId) return;
       res.write(`event: agent:log\ndata: ${JSON.stringify(entry)}\n\n`);

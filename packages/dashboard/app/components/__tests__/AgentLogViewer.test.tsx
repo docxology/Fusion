@@ -430,6 +430,71 @@ describe("AgentLogViewer", () => {
     });
   });
 
+  describe("long content preservation", () => {
+    it("renders very long text entries without truncation", () => {
+      const longText = "A".repeat(5000);
+      const entries = [makeEntry({ text: longText })];
+      const { container } = render(<AgentLogViewer entries={entries} loading={false} />);
+      const textSpans = container.querySelectorAll(".agent-log-text");
+      expect(textSpans).toHaveLength(1);
+      expect(textSpans[0].textContent).toBe(longText);
+      expect(textSpans[0].textContent!.length).toBe(5000);
+    });
+
+    it("renders very long detail text without truncation", () => {
+      const longDetail = "B".repeat(5000);
+      const entries = [makeEntry({ text: "Read", type: "tool", detail: longDetail })];
+      const { container } = render(<AgentLogViewer entries={entries} loading={false} />);
+      const detail = container.querySelector(".agent-log-tool-detail");
+      expect(detail).toBeTruthy();
+      expect(detail!.textContent).toContain(longDetail);
+      expect(detail!.textContent!.length).toBeGreaterThan(5000); // " — " prefix adds a few chars
+    });
+
+    it("renders multiline text content without truncation", () => {
+      const multilineText = [
+        "## Analysis",
+        "",
+        "After reviewing the codebase:",
+        "",
+        "1. First issue found",
+        "2. Second issue found",
+        "",
+        "```typescript",
+        "const x = 1;",
+        "```",
+        "",
+        "Line " + "C".repeat(2000) + " end",
+      ].join("\n");
+      const entries = [makeEntry({ text: multilineText })];
+      const { container } = render(<AgentLogViewer entries={entries} loading={false} />);
+      const textSpans = container.querySelectorAll(".agent-log-text");
+      expect(textSpans).toHaveLength(1);
+      // The markdown-rendered content should still contain the essential parts
+      expect(textSpans[0].textContent).toContain("Analysis");
+      expect(textSpans[0].textContent).toContain("First issue found");
+      expect(textSpans[0].textContent).toContain("const x = 1");
+    });
+
+    it("renders long tool_result detail without truncation", () => {
+      const longDetail = "D".repeat(5000);
+      const entries = [makeEntry({ text: "Bash", type: "tool_result", detail: longDetail })];
+      const { container } = render(<AgentLogViewer entries={entries} loading={false} />);
+      const detail = container.querySelector(".agent-log-tool-detail");
+      expect(detail).toBeTruthy();
+      expect(detail!.textContent).toContain(longDetail);
+    });
+
+    it("renders long tool_error detail without truncation", () => {
+      const longDetail = "E".repeat(5000);
+      const entries = [makeEntry({ text: "Write", type: "tool_error", detail: longDetail })];
+      const { container } = render(<AgentLogViewer entries={entries} loading={false} />);
+      const detail = container.querySelector(".agent-log-tool-detail");
+      expect(detail).toBeTruthy();
+      expect(detail!.textContent).toContain(longDetail);
+    });
+  });
+
   describe("markdown rendering", () => {
     it("renders plain text without markdown correctly", () => {
       const entries = [
