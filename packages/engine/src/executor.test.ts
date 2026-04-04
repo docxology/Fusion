@@ -933,6 +933,273 @@ describe("TaskExecutor worktree recovery", () => {
     );
   });
 
+  it("runs git worktree prune before branch deletion for stale references", async () => {
+    const store = createMockStore();
+    let callCount = 0;
+
+    mockedExecSync.mockImplementation((cmd: string | string[]) => {
+      const command = typeof cmd === "string" ? cmd : cmd[0];
+      if (command.includes("git worktree add")) {
+        if (callCount++ === 0) {
+          const error: any = new Error("fatal: invalid reference: 'fusion/fn-050'");
+          error.stderr = Buffer.from("fatal: invalid reference: 'fusion/fn-050'");
+          throw error;
+        }
+      }
+      return Buffer.from("");
+    });
+
+    const executor = new TaskExecutor(store, "/tmp/test");
+    await executor.execute(makeTask());
+
+    // Should have called git worktree prune as the first recovery step
+    expect(mockedExecSync).toHaveBeenCalledWith(
+      "git worktree prune",
+      expect.any(Object),
+    );
+    // Should log the prune
+    expect(store.logEntry).toHaveBeenCalledWith(
+      "FN-050",
+      expect.stringContaining("Pruned stale worktree metadata"),
+      "kb/fn-050",
+    );
+    // Should also call branch -D after prune
+    expect(mockedExecSync).toHaveBeenCalledWith(
+      expect.stringContaining("git branch -D"),
+      expect.any(Object),
+    );
+    // Task should eventually succeed
+    expect(store.updateTask).toHaveBeenCalledWith(
+      "FN-050",
+      expect.objectContaining({ worktree: expect.any(String) }),
+    );
+  });
+
+  it("falls back to git update-ref -d when git branch -D fails on stale reference", async () => {
+    const store = createMockStore();
+    let worktreeAddCallCount = 0;
+
+    mockedExecSync.mockImplementation((cmd: string | string[]) => {
+      const command = typeof cmd === "string" ? cmd : cmd[0];
+      if (command.includes("git worktree add")) {
+        if (worktreeAddCallCount++ === 0) {
+          const error: any = new Error("fatal: invalid reference: 'fusion/fn-050'");
+          error.stderr = Buffer.from("fatal: invalid reference: 'fusion/fn-050'");
+          throw error;
+        }
+        return Buffer.from("");
+      }
+      // Prune succeeds
+      if (command.includes("git worktree prune")) {
+        return Buffer.from("");
+      }
+      // branch -D fails (corrupted reference)
+      if (command.includes("git branch -D")) {
+        const error: any = new Error("error: unable to delete ref 'refs/heads/fusion/fn-050'");
+        throw error;
+      }
+      // update-ref -d succeeds
+      if (command.includes("git update-ref -d")) {
+        return Buffer.from("");
+      }
+      return Buffer.from("");
+    });
+
+    const executor = new TaskExecutor(store, "/tmp/test");
+    await executor.execute(makeTask());
+
+    // Should have tried branch -D first
+    expect(mockedExecSync).toHaveBeenCalledWith(
+      expect.stringContaining("git branch -D"),
+      expect.any(Object),
+    );
+    // Should have fallen back to update-ref -d
+    expect(mockedExecSync).toHaveBeenCalledWith(
+      expect.stringContaining("git update-ref -d"),
+      expect.any(Object),
+    );
+    // Should log the fallback
+    expect(store.logEntry).toHaveBeenCalledWith(
+      "FN-050",
+      expect.stringContaining("git branch -D failed for stale branch, trying update-ref"),
+      expect.any(String),
+    );
+    expect(store.logEntry).toHaveBeenCalledWith(
+      "FN-050",
+      expect.stringContaining("Force-removed stale branch reference via update-ref"),
+      expect.any(String),
+    );
+    // Task should eventually succeed after cleanup + retry
+    expect(store.updateTask).toHaveBeenCalledWith(
+      "FN-050",
+      expect.objectContaining({ worktree: expect.any(String) }),
+    );
+  });
+
+  it("fails task when all stale reference cleanup steps fail", async () => {
+    const store = createMockStore();
+
+    mockedExecSync.mockImplementation((cmd: string | string[]) => {
+      const command = typeof cmd === "string" ? cmd : cmd[0];
+      if (command.includes("git worktree add")) {
+        const error: any = new Error("fatal: invalid reference: 'fusion/fn-050'");
+        error.stderr = Buffer.from("fatal: invalid reference: 'fusion/fn-050'");
+        throw error;
+      }
+      // Prune fails
+      if (command.includes("git worktree prune")) {
+        throw new Error("prune failed");
+      }
+      // branch -D fails
+      if (command.includes("git branch -D")) {
+        throw new Error("branch delete failed");
+      }
+      // update-ref -d also fails
+      if (command.includes("git update-ref -d")) {
+        throw new Error("update-ref failed");
+      }
+      return Buffer.from("");
+    });
+
+    const onError = vi.fn();
+    const executor = new TaskExecutor(store, "/tmp/test", { onError });
+    await executor.execute(makeTask());
+
+    // Should have logged terminal failure for the stale reference
+    expect(store.logEntry).toHaveBeenCalledWith(
+      "FN-050",
+      expect.stringContaining("Failed to remove stale branch reference"),
+      expect.any(String),
+    );
+    // Task should be marked as failed
+    expect(store.updateTask).toHaveBeenCalledWith(
+      "FN-050",
+      expect.objectContaining({ status: "failed" }),
+    );
+    expect(onError).toHaveBeenCalled();
+  });
+
+  it("recovers from stale reference in createFromExistingBranch fallback path", async () => {
+    const store = createMockStore();
+    let worktreeAddCallCount = 0;
+
+    mockedExecSync.mockImplementation((cmd: string | string[]) => {
+      const command = typeof cmd === "string" ? cmd : cmd[0];
+      if (command.includes("git worktree add")) {
+        worktreeAddCallCount++;
+        if (command.includes("-b")) {
+          // createWithBranch: fails with "already exists" (not invalid-reference)
+          const error: any = new Error("fatal: A branch named 'fusion/fn-050' already exists.");
+          error.stderr = Buffer.from("fatal: A branch named 'fusion/fn-050' already exists.");
+          throw error;
+        } else {
+          // createFromExistingBranch: fails with invalid reference
+          if (worktreeAddCallCount <= 2) {
+            const error: any = new Error("fatal: invalid reference: 'fusion/fn-050'");
+            error.stderr = Buffer.from("fatal: invalid reference: 'fusion/fn-050'");
+            throw error;
+          }
+        }
+      }
+      // All cleanup commands succeed
+      return Buffer.from("");
+    });
+
+    const executor = new TaskExecutor(store, "/tmp/test");
+    await executor.execute(makeTask());
+
+    // Should have logged cleanup in fallback path
+    expect(store.logEntry).toHaveBeenCalledWith(
+      "FN-050",
+      expect.stringContaining("Cleaned up stale reference in fallback, retrying"),
+    );
+    // Task should eventually succeed
+    expect(store.updateTask).toHaveBeenCalledWith(
+      "FN-050",
+      expect.objectContaining({ worktree: expect.any(String) }),
+    );
+  });
+
+  it("recognizes 'unable to resolve reference' as invalid-reference pattern", async () => {
+    const store = createMockStore();
+    let callCount = 0;
+
+    mockedExecSync.mockImplementation((cmd: string | string[]) => {
+      const command = typeof cmd === "string" ? cmd : cmd[0];
+      if (command.includes("git worktree add")) {
+        if (callCount++ === 0) {
+          const error: any = new Error("fatal: unable to resolve reference 'fusion/fn-050'");
+          error.stderr = Buffer.from("fatal: unable to resolve reference 'fusion/fn-050'");
+          throw error;
+        }
+      }
+      return Buffer.from("");
+    });
+
+    const executor = new TaskExecutor(store, "/tmp/test");
+    await executor.execute(makeTask());
+
+    // Should have triggered cleanup (stale branch recovery)
+    expect(mockedExecSync).toHaveBeenCalledWith(
+      expect.stringContaining("git worktree prune"),
+      expect.any(Object),
+    );
+    expect(store.logEntry).toHaveBeenCalledWith(
+      "FN-050",
+      expect.stringContaining("Removed stale branch reference, retrying"),
+    );
+  });
+
+  it("recognizes 'stale file handle' as invalid-reference pattern", async () => {
+    const store = createMockStore();
+    let callCount = 0;
+
+    mockedExecSync.mockImplementation((cmd: string | string[]) => {
+      const command = typeof cmd === "string" ? cmd : cmd[0];
+      if (command.includes("git worktree add")) {
+        if (callCount++ === 0) {
+          const error: any = new Error("fatal: stale file handle");
+          error.stderr = Buffer.from("fatal: stale file handle");
+          throw error;
+        }
+      }
+      return Buffer.from("");
+    });
+
+    const executor = new TaskExecutor(store, "/tmp/test");
+    await executor.execute(makeTask());
+
+    expect(store.logEntry).toHaveBeenCalledWith(
+      "FN-050",
+      expect.stringContaining("Removed stale branch reference, retrying"),
+    );
+  });
+
+  it("recognizes 'not a valid ref' as invalid-reference pattern", async () => {
+    const store = createMockStore();
+    let callCount = 0;
+
+    mockedExecSync.mockImplementation((cmd: string | string[]) => {
+      const command = typeof cmd === "string" ? cmd : cmd[0];
+      if (command.includes("git worktree add")) {
+        if (callCount++ === 0) {
+          const error: any = new Error("fatal: not a valid ref: 'refs/heads/fusion/fn-050'");
+          error.stderr = Buffer.from("fatal: not a valid ref: 'refs/heads/fusion/fn-050'");
+          throw error;
+        }
+      }
+      return Buffer.from("");
+    });
+
+    const executor = new TaskExecutor(store, "/tmp/test");
+    await executor.execute(makeTask());
+
+    expect(store.logEntry).toHaveBeenCalledWith(
+      "FN-050",
+      expect.stringContaining("Removed stale branch reference, retrying"),
+    );
+  });
+
   it("removes existing directory that is not a registered worktree", async () => {
     const store = createMockStore();
 
