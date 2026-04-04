@@ -34,10 +34,11 @@ function createMockMissionStore() {
 
   // Generate IDs matching the real MissionStore format:
   // prefix + base36(timestamp) + "-" + random alphanumeric suffix
-  const generateMissionId = () => `M-${missionCounter++}`;
-  const generateMilestoneId = () => `MS-${milestoneCounter++}`;
-  const generateSliceId = () => `SL-${sliceCounter++}`;
-  const generateFeatureId = () => `F-${featureCounter++}`;
+  // e.g., M-MNJVKT2G-ME5Q, MS-M3N8QR-C9F1, SL-P4T2WX-D5E8, F-J6K9AB-G7H3
+  const generateMissionId = () => `M-MOCK${missionCounter++.toString(36).toUpperCase()}-TST`;
+  const generateMilestoneId = () => `MS-MOCK${milestoneCounter++.toString(36).toUpperCase()}-TST`;
+  const generateSliceId = () => `SL-MOCK${sliceCounter++.toString(36).toUpperCase()}-TST`;
+  const generateFeatureId = () => `F-MOCK${featureCounter++.toString(36).toUpperCase()}-TST`;
 
   return {
     createMission: vi.fn((input: { title: string; description?: string }) => {
@@ -321,10 +322,35 @@ describe("Mission API", () => {
       expect(res.status).toBe(200);
       expect(res.body.status).toBe("active");
       expect(res.body.autoAdvance).toBe(true);
+      expect(res.body.id).toBe(mission.id);
+      // Verify the update was actually persisted in the store (FN-825 regression)
+      const updated = missionStore.getMission(mission.id);
+      expect(updated?.status).toBe("active");
+      expect(updated?.autoAdvance).toBe(true);
       expect(missionStore.updateMission).toHaveBeenCalledWith(mission.id, {
         status: "active",
         autoAdvance: true,
       });
+    });
+
+    it("should update mission title with generated-format ID", async () => {
+      const { app, missionStore } = buildApp();
+      const mission = missionStore.createMission({ title: "Original Title" });
+
+      const res = await request(
+        app,
+        "PATCH",
+        `/api/missions/${mission.id}`,
+        JSON.stringify({ title: "Updated Title" }),
+        { "content-type": "application/json" }
+      );
+
+      expect(res.status).toBe(200);
+      expect(res.body.title).toBe("Updated Title");
+      expect(res.body.id).toBe(mission.id);
+      // Verify persistence
+      const updated = missionStore.getMission(mission.id);
+      expect(updated?.title).toBe("Updated Title");
     });
 
     it("should reject non-boolean auto-advance values", async () => {
@@ -350,13 +376,27 @@ describe("Mission API", () => {
   });
 
   describe("DELETE /api/missions/:missionId", () => {
-    it("should delete mission", async () => {
+    it("should delete mission and confirm removal from store", async () => {
       const { app, missionStore } = buildApp();
       const mission = missionStore.createMission({ title: "To Delete" });
 
       const res = await request(app, "DELETE", `/api/missions/${mission.id}`);
 
       expect(res.status).toBe(204);
+      // Verify the mission is actually removed from the mock store (FN-825 regression)
+      expect(missionStore.getMission(mission.id)).toBeUndefined();
+    });
+
+    it("should delete mission with generated-format ID and confirm removal", async () => {
+      const { app, missionStore } = buildApp();
+      const mission = missionStore.createMission({ title: "To Delete" });
+      // Generated-format IDs from mock look like M-MOCK1-TST
+      expect(mission.id).toMatch(/^M-[A-Z0-9]+/);
+
+      const res = await request(app, "DELETE", `/api/missions/${mission.id}`);
+
+      expect(res.status).toBe(204);
+      expect(missionStore.getMission(mission.id)).toBeUndefined();
     });
 
     it("should return 404 for non-existent mission", async () => {
@@ -365,14 +405,25 @@ describe("Mission API", () => {
       expect(res.status).toBe(404);
     });
 
-    it("should cascade delete all children", async () => {
+    it("should reject invalid mission ID format on DELETE", async () => {
+      const { app } = buildApp();
+      const res = await request(app, "DELETE", `/api/missions/invalid-id`);
+      expect(res.status).toBe(400);
+    });
+
+    it("should cascade delete all children and verify removal", async () => {
       const { app, missionStore } = buildApp();
       const mission = missionStore.createMission({ title: "To Delete" });
-      missionStore.addMilestone(mission.id, { title: "Milestone 1" });
+      const milestone = missionStore.addMilestone(mission.id, { title: "Milestone 1" });
 
-      await request(app, "DELETE", `/api/missions/${mission.id}`);
+      const res = await request(app, "DELETE", `/api/missions/${mission.id}`);
 
+      expect(res.status).toBe(204);
       expect(missionStore.getMission(mission.id)).toBeUndefined();
+      // Note: The mock store's deleteMission only removes from the mission Map.
+      // In the real store, FK cascades would remove milestones too.
+      // We verify the route returned success — cascade behavior is tested at the store level.
+      expect(missionStore.deleteMission).toHaveBeenCalledWith(mission.id);
     });
   });
 

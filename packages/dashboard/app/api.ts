@@ -38,6 +38,16 @@ async function api<T = unknown>(path: string, opts: RequestInit = {}): Promise<T
     ...opts,
   });
 
+  // Handle successful 204 No Content responses (e.g., DELETE, reorder)
+  // These return no body and no JSON content-type — return undefined for void endpoints
+  if (res.status === 204) {
+    if (!res.ok) {
+      // 204 is always ok by definition, but guard anyway
+      throw new Error(`Request failed for ${url}: ${res.status} ${res.statusText}`);
+    }
+    return undefined as T;
+  }
+
   const contentType = res.headers.get("content-type") ?? "";
   const bodyText = await res.text();
   const isJson = contentType.includes("application/json");

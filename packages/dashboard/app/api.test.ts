@@ -2372,3 +2372,129 @@ describe("ExecutorState type", () => {
     expect(states).toContain("paused");
   });
 });
+
+// ── Regression: Mission mutation 204 response handling ─────────────────────
+//
+// Mission DELETE and reorder endpoints return 204 No Content. The api()
+// function must handle these responses correctly instead of throwing
+// a misleading content-type error.
+describe("Mission mutation coverage with 204 responses", () => {
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it("returns undefined for void responses (204 No Content)", async () => {
+    globalThis.fetch = vi.fn().mockReturnValue({
+      ok: true,
+      status: 204,
+      headers: new Headers(),
+      text: () => Promise.resolve(""),
+    });
+
+    const { deleteMission } = await import("./api");
+    const result = await deleteMission("M-LZ7DN0-A2B5");
+    expect(result).toBeUndefined();
+  });
+
+  it("returns undefined for milestone delete (204 No Content)", async () => {
+    globalThis.fetch = vi.fn().mockReturnValue({
+      ok: true,
+      status: 204,
+      headers: new Headers(),
+      text: () => Promise.resolve(""),
+    });
+
+    const { deleteMilestone } = await import("./api");
+    const result = await deleteMilestone("MS-M3N8QR-C9F1");
+    expect(result).toBeUndefined();
+  });
+
+  it("returns undefined for slice delete (204 No Content)", async () => {
+    globalThis.fetch = vi.fn().mockReturnValue({
+      ok: true,
+      status: 204,
+      headers: new Headers(),
+      text: () => Promise.resolve(""),
+    });
+
+    const { deleteSlice } = await import("./api");
+    const result = await deleteSlice("SL-P4T2WX-D5E8");
+    expect(result).toBeUndefined();
+  });
+
+  it("returns undefined for feature delete (204 No Content)", async () => {
+    globalThis.fetch = vi.fn().mockReturnValue({
+      ok: true,
+      status: 204,
+      headers: new Headers(),
+      text: () => Promise.resolve(""),
+    });
+
+    const { deleteFeature } = await import("./api");
+    const result = await deleteFeature("F-J6K9AB-G7H3");
+    expect(result).toBeUndefined();
+  });
+
+  it("returns undefined for milestone reorder (204 No Content)", async () => {
+    globalThis.fetch = vi.fn().mockReturnValue({
+      ok: true,
+      status: 204,
+      headers: new Headers(),
+      text: () => Promise.resolve(""),
+    });
+
+    const { reorderMilestones } = await import("./api");
+    const result = await reorderMilestones("M-LZ7DN0-A2B5", ["MS-1", "MS-2"]);
+    expect(result).toBeUndefined();
+  });
+
+  it("returns undefined for slice reorder (204 No Content)", async () => {
+    globalThis.fetch = vi.fn().mockReturnValue({
+      ok: true,
+      status: 204,
+      headers: new Headers(),
+      text: () => Promise.resolve(""),
+    });
+
+    const { reorderSlices } = await import("./api");
+    const result = await reorderSlices("MS-M3N8QR-C9F1", ["SL-1", "SL-2"]);
+    expect(result).toBeUndefined();
+  });
+
+  it("handles 204 with projectId query param", async () => {
+    globalThis.fetch = vi.fn().mockReturnValue({
+      ok: true,
+      status: 204,
+      headers: new Headers(),
+      text: () => Promise.resolve(""),
+    });
+
+    const { deleteMission } = await import("./api");
+    const result = await deleteMission("M-LZ7DN0-A2B5", "my-project");
+    expect(result).toBeUndefined();
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      expect.stringContaining("/api/missions/M-LZ7DN0-A2B5?projectId=my-project"),
+      expect.objectContaining({ method: "DELETE" }),
+    );
+  });
+
+  it("still throws on JSON error responses (non-204)", async () => {
+    globalThis.fetch = vi.fn().mockReturnValue(
+      mockFetchResponse(false, { error: "Mission not found" }, 404)
+    );
+
+    const { deleteMission } = await import("./api");
+    await expect(deleteMission("M-999")).rejects.toThrow("Mission not found");
+  });
+
+  it("still throws on invalid ID format (400)", async () => {
+    globalThis.fetch = vi.fn().mockReturnValue(
+      mockFetchResponse(false, { error: "Invalid mission ID format" }, 400)
+    );
+
+    const { deleteMission } = await import("./api");
+    await expect(deleteMission("bad-id")).rejects.toThrow("Invalid mission ID format");
+  });
+});
