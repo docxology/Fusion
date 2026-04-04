@@ -229,6 +229,9 @@ function AppInner() {
   // Uses a ref to prevent duplicate fetches when setCurrentProject triggers
   // a re-run of this effect during project switching.
   const deepLinkFetchedRef = useRef(false);
+  // Tracks the task ID currently open from a deep link so that dismissing
+  // the modal can clean the URL (one-time open behaviour).
+  const deepLinkTaskIdRef = useRef<string | null>(null);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const projectParam = params.get("project");
@@ -266,6 +269,8 @@ function AppInner() {
     fetchTaskDetail(taskId, taskProjectId)
       .then((detail) => {
         setDetailTask(detail);
+        // Mark this as a deep-linked open so dismissal can clean the URL
+        deepLinkTaskIdRef.current = taskId;
       })
       .catch(() => {
         addToast(`Task ${taskId} not found`, "error");
@@ -432,7 +437,23 @@ function AppInner() {
     setDetailTask(task);
   }, []);
 
-  const handleDetailClose = useCallback(() => setDetailTask(null), []);
+  const handleDetailClose = useCallback(() => {
+    // If the modal was opened from a deep link (?task=...), remove the task
+    // param from the URL so refreshing does not reopen it. Preserve any other
+    // query parameters (e.g. ?project=...).
+    if (deepLinkTaskIdRef.current) {
+      const params = new URLSearchParams(window.location.search);
+      params.delete("task");
+      const qs = params.toString();
+      window.history.replaceState(
+        null,
+        "",
+        qs ? `${window.location.pathname}?${qs}` : window.location.pathname,
+      );
+      deepLinkTaskIdRef.current = null;
+    }
+    setDetailTask(null);
+  }, []);
 
   const handleGitHubImport = useCallback((task: Task) => {
     addToast(`Imported ${task.id} from GitHub`, "success");

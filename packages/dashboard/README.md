@@ -51,6 +51,7 @@ AI-guided interactive planning for creating well-specified tasks from high-level
 - **Changed Files Viewer**: Click a task card's "files changed" button to open a dedicated diff viewer showing only files changed in that task worktree, with per-file statuses and sidebar navigation. On mobile (≤768px), the viewer switches to a single-pane flow: the file list and diff are shown one at a time with a back button for navigation between them. The board card file count and the changed-files viewer always agree — both use the same merge-base diff strategy, so the card never advertises files that the viewer cannot inspect
 - **GitHub Import**: Import issues directly from GitHub repositories
 - **PR Management**: Create, monitor, and merge pull requests for in-review tasks
+- **Deep Links**: Dashboard task links using `?task=FN-123` (or `?project=proj_456&task=FN-123` for cross-project) open the task detail modal as a one-time launch. Dismissing the modal removes the `task` parameter from the URL so that refreshing the page does not reopen it. Other query parameters (e.g., `?project=...`) are preserved. Task detail modals opened normally from the board, list, or activity log are not affected.
 
 ### Responsive Header
 The dashboard header adapts across three responsive tiers to remain usable without wrapping or dropping controls:
