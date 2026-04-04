@@ -223,6 +223,15 @@ export function TaskDetailModal({
   const [editSelectedWorkflowSteps, setEditSelectedWorkflowSteps] = useState<string[]>(task.enabledWorkflowSteps || []);
   const [editPendingImages, setEditPendingImages] = useState<PendingImage[]>([]);
   const [isSaving, setIsSaving] = useState(false);
+  const mountedRef = useRef(false);
+
+  // Track mount state to avoid setting state on unmounted component
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   // Merged project settings for effective model resolution in Agent Log header
   const [settings, setSettings] = useState<Settings | undefined>(undefined);
@@ -361,7 +370,9 @@ export function TaskDetailModal({
     } catch (err: any) {
       addToast(`Failed to update ${task.id}: ${err.message}`, "error");
     } finally {
-      setIsSaving(false);
+      if (mountedRef.current) {
+        setIsSaving(false);
+      }
     }
   }, [task.id, editTitle, editDescription, editDependencies, editExecutorModel, editValidatorModel, editSelectedWorkflowSteps, editPendingImages, addToast, projectId]);
 
