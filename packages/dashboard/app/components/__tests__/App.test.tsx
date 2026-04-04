@@ -1313,4 +1313,28 @@ describe("App footer-safe project layout", () => {
       expect(wrapper?.querySelector(".list-view")).toBeTruthy();
     });
   });
+
+  /**
+   * FN-824: The board must be a child of the footer-safe wrapper so that
+   * its height is constrained by the wrapper's available space (which
+   * already reserves room for the fixed ExecutorStatusBar via padding-bottom).
+   * On mobile, the board previously used calc(100dvh - 57px) which bypassed
+   * the wrapper and extended under the footer bar.
+   */
+  it("renders board inside the footer-safe wrapper (FN-824 mobile regression)", async () => {
+    localStorage.setItem("kb-dashboard-view-mode", "project");
+    localStorage.setItem("kb-dashboard-task-view", "board");
+
+    render(<App />);
+
+    await waitFor(() => {
+      const wrapper = document.querySelector(".project-content--with-footer");
+      expect(wrapper).toBeTruthy();
+      // Board is a direct child of the footer-safe wrapper
+      const board = wrapper?.querySelector(".board");
+      expect(board).toBeTruthy();
+      // Verify the board is a descendant of the wrapper (not a sibling)
+      expect(wrapper?.contains(board!)).toBe(true);
+    });
+  });
 });

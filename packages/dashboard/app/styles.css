@@ -4941,7 +4941,7 @@ body {
     scroll-padding-inline: calc(50% - 140px);
     padding: var(--space-md);
     gap: var(--space-md);
-    height: calc(100dvh - 57px);
+    height: 100%;
   }
 
   .board > .column {

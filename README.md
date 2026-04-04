@@ -227,6 +227,7 @@ Real-time kanban board at `localhost:4040`:
 - Create tasks from the web UI
 - Click cards for detail view with move/delete actions
 - Server-Sent Events for live updates across tabs
+- Fixed executor status bar at the bottom of the viewport stays clear of scrollable board, list, and agents content on both desktop and mobile
 
 ### AI Engine
 
