@@ -5,6 +5,8 @@ interface UseBackgroundSessionsResult {
   sessions: AiSessionSummary[];
   generating: number;
   needsInput: number;
+  /** Active sessions filtered to type === "planning" only */
+  planningSessions: AiSessionSummary[];
   dismissSession: (id: string) => void;
   refresh: () => void;
 }
@@ -74,10 +76,13 @@ export function useBackgroundSessions(projectId?: string): UseBackgroundSessions
     (s) => s.status === "generating" || s.status === "awaiting_input"
   );
 
+  const planningSessions = active.filter((s) => s.type === "planning");
+
   return {
     sessions: active,
     generating: active.filter((s) => s.status === "generating").length,
     needsInput: active.filter((s) => s.status === "awaiting_input").length,
+    planningSessions,
     dismissSession,
     refresh,
   };

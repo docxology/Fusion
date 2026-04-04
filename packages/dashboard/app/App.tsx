@@ -55,7 +55,7 @@ function AppInner() {
   const { themeMode, colorTheme, setThemeMode, setColorTheme } = useTheme();
 
   // Background AI sessions
-  const { sessions: bgSessions, generating: bgGenerating, needsInput: bgNeedsInput, dismissSession: bgDismiss } = useBackgroundSessions(currentProject?.id);
+  const { sessions: bgSessions, generating: bgGenerating, needsInput: bgNeedsInput, planningSessions: bgPlanningSessions, dismissSession: bgDismiss } = useBackgroundSessions(currentProject?.id);
 
   // View state
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
@@ -397,6 +397,13 @@ function AppInner() {
 
   // Planning mode handlers
   const handlePlanningOpen = useCallback(() => setIsPlanningOpen(true), []);
+  const handleResumePlanning = useCallback(() => {
+    const session = bgPlanningSessions[0];
+    if (session) {
+      setPlanningResumeSessionId(session.id);
+      setIsPlanningOpen(true);
+    }
+  }, [bgPlanningSessions]);
   const handlePlanningClose = useCallback(() => {
     setIsPlanningOpen(false);
     setPlanningInitialPlan(null);
@@ -638,6 +645,8 @@ function AppInner() {
         onOpenSettings={() => setSettingsOpen(true)}
         onOpenGitHubImport={() => setGitHubImportOpen(true)}
         onOpenPlanning={handlePlanningOpen}
+        onResumePlanning={handleResumePlanning}
+        activePlanningSessionCount={bgPlanningSessions.length}
         onOpenUsage={handleOpenUsage}
         onOpenActivityLog={handleOpenActivityLog}
         onOpenSchedules={handleOpenSchedules}

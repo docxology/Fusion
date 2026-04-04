@@ -24,6 +24,10 @@ export interface HeaderProps {
   onOpenSettings?: () => void;
   onOpenGitHubImport?: () => void;
   onOpenPlanning?: () => void;
+  /** Resume an in-flight planning session. Takes priority over onOpenPlanning when activePlanningSessionCount > 0 */
+  onResumePlanning?: () => void;
+  /** Number of active planning sessions. When > 0, shows a badge on the Planning button. */
+  activePlanningSessionCount?: number;
   onOpenUsage?: () => void;
   onOpenActivityLog?: () => void;
   onOpenSchedules?: () => void;
@@ -95,6 +99,8 @@ export function Header({
   onOpenSettings,
   onOpenGitHubImport,
   onOpenPlanning,
+  onResumePlanning,
+  activePlanningSessionCount = 0,
   onOpenUsage,
   onOpenActivityLog,
   onOpenSchedules,
@@ -405,12 +411,22 @@ export function Header({
 
         {!isCompact && (
           <button
-            className="btn-icon"
-            onClick={onOpenPlanning}
-            title="Create a task with AI planning"
+            className={`btn-icon${activePlanningSessionCount > 0 ? " btn-icon--has-indicator" : ""}`}
+            onClick={activePlanningSessionCount > 0 && onResumePlanning ? onResumePlanning : onOpenPlanning}
+            title={activePlanningSessionCount > 0 ? "Resume planning session" : "Create a task with AI planning"}
             data-testid="planning-btn"
+            style={{ position: "relative" }}
           >
             <Lightbulb size={16} />
+            {activePlanningSessionCount > 0 && (
+              <span
+                className="header-badge header-badge--pulse"
+                data-testid="planning-badge"
+                aria-label={`${activePlanningSessionCount} active planning session${activePlanningSessionCount !== 1 ? "s" : ""}`}
+              >
+                {activePlanningSessionCount}
+              </span>
+            )}
           </button>
         )}
 
@@ -569,13 +585,18 @@ export function Header({
               </button>
             )}
             <button
-              className="mobile-overflow-item"
-              onClick={() => handleOverflowAction(onOpenPlanning)}
+              className={`mobile-overflow-item${activePlanningSessionCount > 0 ? " mobile-overflow-item--has-indicator" : ""}`}
+              onClick={() => handleOverflowAction(activePlanningSessionCount > 0 && onResumePlanning ? onResumePlanning : onOpenPlanning)}
               role="menuitem"
               data-testid="overflow-planning-btn"
             >
               <Lightbulb size={16} />
-              <span>Create a task with AI planning</span>
+              <span>{activePlanningSessionCount > 0 ? `Resume planning session (${activePlanningSessionCount})` : "Create a task with AI planning"}</span>
+              {activePlanningSessionCount > 0 && (
+                <span className="header-badge header-badge--pulse" data-testid="overflow-planning-badge">
+                  {activePlanningSessionCount}
+                </span>
+              )}
             </button>
             {/* Git Manager - in overflow on mobile */}
             {onOpenGitManager && (

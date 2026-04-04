@@ -381,6 +381,42 @@ body {
   color: var(--color-error);
 }
 
+/* Header badge for active sessions */
+.btn-icon--has-indicator {
+  position: relative;
+}
+
+.header-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--triage);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  pointer-events: none;
+  box-sizing: border-box;
+}
+
+.header-badge--pulse {
+  animation: header-badge-pulse 2s ease-in-out infinite;
+}
+
+@keyframes header-badge-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.mobile-overflow-item--has-indicator {
+  position: relative;
+}
+
 /* View Toggle */
 .view-toggle {
   display: flex;

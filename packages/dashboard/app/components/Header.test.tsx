@@ -344,6 +344,75 @@ describe("Header", () => {
       renderHeader({ onOpenPlanning: vi.fn() }, "desktop");
       expect(screen.getByTestId("planning-btn")).toBeDefined();
     });
+
+    describe("active session badge", () => {
+      it("does not render badge when activePlanningSessionCount is 0", () => {
+        renderHeader({ onOpenPlanning: vi.fn(), activePlanningSessionCount: 0 }, "desktop");
+        expect(screen.queryByTestId("planning-badge")).toBeNull();
+      });
+
+      it("does not render badge when activePlanningSessionCount is undefined", () => {
+        renderHeader({ onOpenPlanning: vi.fn() }, "desktop");
+        expect(screen.queryByTestId("planning-badge")).toBeNull();
+      });
+
+      it("renders badge when activePlanningSessionCount > 0", () => {
+        renderHeader({ onOpenPlanning: vi.fn(), activePlanningSessionCount: 1 }, "desktop");
+        expect(screen.getByTestId("planning-badge")).toBeDefined();
+      });
+
+      it("badge shows correct count", () => {
+        renderHeader({ onOpenPlanning: vi.fn(), activePlanningSessionCount: 3 }, "desktop");
+        expect(screen.getByTestId("planning-badge").textContent).toBe("3");
+      });
+
+      it("updates title to 'Resume planning session' when count > 0", () => {
+        renderHeader({ onOpenPlanning: vi.fn(), activePlanningSessionCount: 1 }, "desktop");
+        expect(screen.getByTitle("Resume planning session")).toBeDefined();
+        expect(screen.queryByTitle("Create a task with AI planning")).toBeNull();
+      });
+
+      it("keeps original title when count is 0", () => {
+        renderHeader({ onOpenPlanning: vi.fn(), activePlanningSessionCount: 0 }, "desktop");
+        expect(screen.getByTitle("Create a task with AI planning")).toBeDefined();
+      });
+
+      it("calls onResumePlanning when clicked with active sessions", () => {
+        const onResumePlanning = vi.fn();
+        const onOpenPlanning = vi.fn();
+        renderHeader({ onOpenPlanning, onResumePlanning, activePlanningSessionCount: 2 }, "desktop");
+        fireEvent.click(screen.getByTitle("Resume planning session"));
+        expect(onResumePlanning).toHaveBeenCalled();
+        expect(onOpenPlanning).not.toHaveBeenCalled();
+      });
+
+      it("calls onOpenPlanning when clicked with no active sessions", () => {
+        const onResumePlanning = vi.fn();
+        const onOpenPlanning = vi.fn();
+        renderHeader({ onOpenPlanning, onResumePlanning, activePlanningSessionCount: 0 }, "desktop");
+        fireEvent.click(screen.getByTitle("Create a task with AI planning"));
+        expect(onOpenPlanning).toHaveBeenCalled();
+        expect(onResumePlanning).not.toHaveBeenCalled();
+      });
+
+      it("calls onOpenPlanning when clicked with active sessions but no onResumePlanning", () => {
+        const onOpenPlanning = vi.fn();
+        renderHeader({ onOpenPlanning, activePlanningSessionCount: 1 }, "desktop");
+        // Without onResumePlanning, falls back to onOpenPlanning even with active sessions
+        fireEvent.click(screen.getByTitle("Resume planning session"));
+        expect(onOpenPlanning).toHaveBeenCalled();
+      });
+
+      it("badge has correct aria-label", () => {
+        renderHeader({ onOpenPlanning: vi.fn(), activePlanningSessionCount: 2 }, "desktop");
+        expect(screen.getByTestId("planning-badge").getAttribute("aria-label")).toBe("2 active planning sessions");
+      });
+
+      it("badge aria-label uses singular for count of 1", () => {
+        renderHeader({ onOpenPlanning: vi.fn(), activePlanningSessionCount: 1 }, "desktop");
+        expect(screen.getByTestId("planning-badge").getAttribute("aria-label")).toBe("1 active planning session");
+      });
+    });
   });
 
   describe("mobile overflow menu", () => {
@@ -537,6 +606,35 @@ describe("Header", () => {
       renderHeader({ onOpenPlanning: noop }, "mobile");
       fireEvent.click(screen.getByTitle("More header actions"));
       expect(screen.getByTestId("overflow-planning-btn")).toBeDefined();
+    });
+
+    it("shows planning badge in overflow menu when activePlanningSessionCount > 0", () => {
+      renderHeader({ onOpenPlanning: noop, activePlanningSessionCount: 1 }, "mobile");
+      fireEvent.click(screen.getByTitle("More header actions"));
+      expect(screen.getByTestId("overflow-planning-badge")).toBeDefined();
+      expect(screen.getByTestId("overflow-planning-badge").textContent).toBe("1");
+    });
+
+    it("does not show planning badge in overflow menu when count is 0", () => {
+      renderHeader({ onOpenPlanning: noop, activePlanningSessionCount: 0 }, "mobile");
+      fireEvent.click(screen.getByTitle("More header actions"));
+      expect(screen.queryByTestId("overflow-planning-badge")).toBeNull();
+    });
+
+    it("calls onResumePlanning from overflow menu when active sessions exist", () => {
+      const onResumePlanning = vi.fn();
+      const onOpenPlanning = vi.fn();
+      renderHeader({ onOpenPlanning, onResumePlanning, activePlanningSessionCount: 2 }, "mobile");
+      fireEvent.click(screen.getByTitle("More header actions"));
+      fireEvent.click(screen.getByTestId("overflow-planning-btn"));
+      expect(onResumePlanning).toHaveBeenCalled();
+      expect(onOpenPlanning).not.toHaveBeenCalled();
+    });
+
+    it("shows resume text in overflow menu when active sessions exist", () => {
+      renderHeader({ onOpenPlanning: noop, activePlanningSessionCount: 1 }, "mobile");
+      fireEvent.click(screen.getByTitle("More header actions"));
+      expect(screen.getByText("Resume planning session (1)")).toBeDefined();
     });
 
     it("shows settings in overflow menu on mobile", () => {
