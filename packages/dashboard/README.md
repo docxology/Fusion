@@ -203,6 +203,7 @@ The Git Manager provides comprehensive repository visualization and management d
 - View operation results and error states
 - **Commits to Push**: See which local commits are ahead of the upstream tracking branch (pending push) with short hash, message, author, and relative date. The list stays synchronized with the ahead count — it refreshes automatically after fetch, pull, push, and manual refresh operations, and clears when the ahead count drops to zero (e.g., after a successful push).
 - **Remote Commit Inspection**: Click any remote to view its recent commit history — useful for checking what's on a remote without switching to the terminal
+- **Inline Commit Diffs**: Click any commit in the "Commits to Push" or "Recent commits on {remote}" lists to expand an inline diff viewer showing file changes (stat + patch). Click the same commit again to collapse. Only one diff is expanded per list at a time.
 - Auto-selects the first remote and loads its recent commits on mount
 
 ### File Browser

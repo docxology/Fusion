@@ -1510,6 +1510,14 @@ function RemotesPanel({
   const [loadingRemoteCommits, setLoadingRemoteCommits] = useState(false);
   const [remoteCommitsError, setRemoteCommitsError] = useState<string | null>(null);
 
+  // Inline commit diff expansion (one per list context)
+  const [expandedAheadCommit, setExpandedAheadCommit] = useState<string | null>(null);
+  const [aheadCommitDiff, setAheadCommitDiff] = useState<{ stat: string; patch: string } | null>(null);
+  const [loadingAheadCommitDiff, setLoadingAheadCommitDiff] = useState(false);
+  const [expandedRemoteCommit, setExpandedRemoteCommit] = useState<string | null>(null);
+  const [remoteCommitDiff, setRemoteCommitDiff] = useState<{ stat: string; patch: string } | null>(null);
+  const [loadingRemoteCommitDiff, setLoadingRemoteCommitDiff] = useState(false);
+
   // Fetch remotes when panel mounts
   useEffect(() => {
     loadRemotes();
@@ -1658,6 +1666,47 @@ function RemotesPanel({
     }
   };
 
+  const handleCompactCommitClick = useCallback(async (
+    hash: string,
+    listType: "ahead" | "remote",
+  ) => {
+    if (listType === "ahead") {
+      if (expandedAheadCommit === hash) {
+        setExpandedAheadCommit(null);
+        setAheadCommitDiff(null);
+        return;
+      }
+      setExpandedAheadCommit(hash);
+      setAheadCommitDiff(null);
+      setLoadingAheadCommitDiff(true);
+      try {
+        const diff = await fetchCommitDiff(hash);
+        setAheadCommitDiff(diff);
+      } catch {
+        setAheadCommitDiff(null);
+      } finally {
+        setLoadingAheadCommitDiff(false);
+      }
+    } else {
+      if (expandedRemoteCommit === hash) {
+        setExpandedRemoteCommit(null);
+        setRemoteCommitDiff(null);
+        return;
+      }
+      setExpandedRemoteCommit(hash);
+      setRemoteCommitDiff(null);
+      setLoadingRemoteCommitDiff(true);
+      try {
+        const diff = await fetchCommitDiff(hash);
+        setRemoteCommitDiff(diff);
+      } catch {
+        setRemoteCommitDiff(null);
+      } finally {
+        setLoadingRemoteCommitDiff(false);
+      }
+    }
+  }, [expandedAheadCommit, expandedRemoteCommit]);
+
   const startEditingUrl = (remote: GitRemoteDetailed) => {
     setEditingRemote(`url-${remote.name}`);
     setEditUrlValue(remote.pushUrl || remote.fetchUrl);
@@ -1737,20 +1786,48 @@ function RemotesPanel({
             ) : aheadCommits.length > 0 ? (
               <div className="gm-ahead-commits-list" data-testid="ahead-commits-list">
                 {aheadCommits.map((commit) => (
-                  <div key={commit.hash} className="gm-commit-item-compact">
-                    <div className="gm-commit-compact-hash">
-                      <code className="gm-hash">{commit.shortHash}</code>
-                    </div>
-                    <div className="gm-commit-compact-info">
-                      <span className="gm-commit-message" title={commit.message}>
-                        {commit.message}
+                  <div key={commit.hash} className="gm-commit-item-compact-wrapper">
+                    <div
+                      className="gm-commit-item-compact gm-commit-clickable"
+                      onClick={() => handleCompactCommitClick(commit.hash, "ahead")}
+                      role="button"
+                      tabIndex={0}
+                      title="Click to view diff"
+                    >
+                      <div className="gm-commit-compact-hash">
+                        <code className="gm-hash">{commit.shortHash}</code>
+                      </div>
+                      <div className="gm-commit-compact-info">
+                        <span className="gm-commit-message" title={commit.message}>
+                          {commit.message}
+                        </span>
+                        <span className="gm-commit-meta">
+                          <span>{commit.author}</span>
+                          <span>•</span>
+                          <span>{relativeDate(commit.date)}</span>
+                        </span>
+                      </div>
+                      <span className="gm-commit-expand-icon">
+                        {expandedAheadCommit === commit.hash ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                       </span>
-                      <span className="gm-commit-meta">
-                        <span>{commit.author}</span>
-                        <span>•</span>
-                        <span>{relativeDate(commit.date)}</span>
-                      </span>
                     </div>
+                    {expandedAheadCommit === commit.hash && (
+                      <div className="gm-commit-diff gm-commit-diff-compact">
+                        {loadingAheadCommitDiff ? (
+                          <div className="gm-diff-loading">
+                            <Loader2 size={16} className="spin" />
+                            Loading diff...
+                          </div>
+                        ) : aheadCommitDiff ? (
+                          <>
+                            {aheadCommitDiff.stat && <pre className="gm-diff-stat">{aheadCommitDiff.stat}</pre>}
+                            <pre className="gm-diff-patch">{aheadCommitDiff.patch}</pre>
+                          </>
+                        ) : (
+                          <div className="gm-diff-error">Failed to load diff</div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -1984,20 +2061,48 @@ function RemotesPanel({
           ) : (
             <div className="gm-remote-commits-list" data-testid="remote-commits-list">
               {remoteCommits.map((commit) => (
-                <div key={commit.hash} className="gm-commit-item-compact">
-                  <div className="gm-commit-compact-hash">
-                    <code className="gm-hash">{commit.shortHash}</code>
-                  </div>
-                  <div className="gm-commit-compact-info">
-                    <span className="gm-commit-message" title={commit.message}>
-                      {commit.message}
+                <div key={commit.hash} className="gm-commit-item-compact-wrapper">
+                  <div
+                    className="gm-commit-item-compact gm-commit-clickable"
+                    onClick={() => handleCompactCommitClick(commit.hash, "remote")}
+                    role="button"
+                    tabIndex={0}
+                    title="Click to view diff"
+                  >
+                    <div className="gm-commit-compact-hash">
+                      <code className="gm-hash">{commit.shortHash}</code>
+                    </div>
+                    <div className="gm-commit-compact-info">
+                      <span className="gm-commit-message" title={commit.message}>
+                        {commit.message}
+                      </span>
+                      <span className="gm-commit-meta">
+                        <span>{commit.author}</span>
+                        <span>•</span>
+                        <span>{relativeDate(commit.date)}</span>
+                      </span>
+                    </div>
+                    <span className="gm-commit-expand-icon">
+                      {expandedRemoteCommit === commit.hash ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                     </span>
-                    <span className="gm-commit-meta">
-                      <span>{commit.author}</span>
-                      <span>•</span>
-                      <span>{relativeDate(commit.date)}</span>
-                    </span>
                   </div>
+                  {expandedRemoteCommit === commit.hash && (
+                    <div className="gm-commit-diff gm-commit-diff-compact">
+                      {loadingRemoteCommitDiff ? (
+                        <div className="gm-diff-loading">
+                          <Loader2 size={16} className="spin" />
+                          Loading diff...
+                        </div>
+                      ) : remoteCommitDiff ? (
+                        <>
+                          {remoteCommitDiff.stat && <pre className="gm-diff-stat">{remoteCommitDiff.stat}</pre>}
+                          <pre className="gm-diff-patch">{remoteCommitDiff.patch}</pre>
+                        </>
+                      ) : (
+                        <div className="gm-diff-error">Failed to load diff</div>
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

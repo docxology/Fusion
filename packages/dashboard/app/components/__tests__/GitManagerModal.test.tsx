@@ -1376,4 +1376,266 @@ describe("GitManagerModal", () => {
       expect(fetchGitStatus).toHaveBeenCalledTimes(2);
     });
   });
+
+  // ── Remotes Tab: Click-to-Diff for Commits to Push ────────────
+
+  it("expands diff when clicking a commit in Commits to Push", async () => {
+    (fetchGitStatus as any).mockResolvedValue({
+      branch: "main",
+      commit: "abc1234",
+      isDirty: false,
+      ahead: 2,
+      behind: 0,
+    });
+    (fetchAheadCommits as any).mockResolvedValue([
+      { hash: "aaa1111", shortHash: "aaa1", message: "First ahead commit", author: "Dev", date: "2026-01-01T00:00:00Z", parents: [] },
+      { hash: "bbb2222", shortHash: "bbb2", message: "Second ahead commit", author: "Dev", date: "2026-01-02T00:00:00Z", parents: [] },
+    ]);
+    (fetchCommitDiff as any).mockResolvedValue({
+      stat: " file.ts | 3 ++-",
+      patch: "diff --git a/file.ts b/file.ts\n-old\n+new",
+    });
+
+    const user = userEvent.setup();
+    render(
+      <GitManagerModal isOpen={true} onClose={vi.fn()} tasks={mockTasks} addToast={mockAddToast} />
+    );
+    fireEvent.click(screen.getByRole("tab", { name: /remotes/i }));
+
+    // Wait for ahead commits to appear
+    await waitFor(() => {
+      expect(screen.getByTestId("commits-to-push")).toBeInTheDocument();
+      expect(screen.getByText("First ahead commit")).toBeInTheDocument();
+    });
+
+    // Click on the commit to expand diff
+    await user.click(screen.getByText("First ahead commit"));
+
+    await waitFor(() => {
+      expect(fetchCommitDiff).toHaveBeenCalledWith("aaa1111");
+    });
+
+    // Diff content should be rendered
+    await waitFor(() => {
+      expect(screen.getByText(/file\.ts \| 3/)).toBeInTheDocument();
+      expect(screen.getByText(/-old/)).toBeInTheDocument();
+      expect(screen.getByText(/\+new/)).toBeInTheDocument();
+    });
+  });
+
+  it("collapses diff when clicking same ahead commit again", async () => {
+    (fetchGitStatus as any).mockResolvedValue({
+      branch: "main",
+      commit: "abc1234",
+      isDirty: false,
+      ahead: 1,
+      behind: 0,
+    });
+    (fetchAheadCommits as any).mockResolvedValue([
+      { hash: "aaa1111", shortHash: "aaa1", message: "Toggle commit", author: "Dev", date: "2026-01-01T00:00:00Z", parents: [] },
+    ]);
+    (fetchCommitDiff as any).mockResolvedValue({
+      stat: " file.ts | 1 +",
+      patch: "diff --git a/file.ts\n+line",
+    });
+
+    const user = userEvent.setup();
+    render(
+      <GitManagerModal isOpen={true} onClose={vi.fn()} tasks={mockTasks} addToast={mockAddToast} />
+    );
+    fireEvent.click(screen.getByRole("tab", { name: /remotes/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Toggle commit")).toBeInTheDocument();
+    });
+
+    // Click to expand
+    await user.click(screen.getByText("Toggle commit"));
+    await waitFor(() => {
+      expect(fetchCommitDiff).toHaveBeenCalledWith("aaa1111");
+    });
+
+    // Diff should be visible
+    await waitFor(() => {
+      expect(screen.getByText(/file\.ts \| 1/)).toBeInTheDocument();
+    });
+
+    // Click again to collapse
+    await user.click(screen.getByText("Toggle commit"));
+
+    // Diff content should be gone
+    await waitFor(() => {
+      expect(screen.queryByText(/file\.ts \| 1/)).not.toBeInTheDocument();
+    });
+  });
+
+  it("shows error state when diff fetch fails for ahead commit", async () => {
+    (fetchGitStatus as any).mockResolvedValue({
+      branch: "main",
+      commit: "abc1234",
+      isDirty: false,
+      ahead: 1,
+      behind: 0,
+    });
+    (fetchAheadCommits as any).mockResolvedValue([
+      { hash: "aaa1111", shortHash: "aaa1", message: "Error commit", author: "Dev", date: "2026-01-01T00:00:00Z", parents: [] },
+    ]);
+    (fetchCommitDiff as any).mockRejectedValue(new Error("Diff load failed"));
+
+    const user = userEvent.setup();
+    render(
+      <GitManagerModal isOpen={true} onClose={vi.fn()} tasks={mockTasks} addToast={mockAddToast} />
+    );
+    fireEvent.click(screen.getByRole("tab", { name: /remotes/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Error commit")).toBeInTheDocument();
+    });
+
+    // Click to expand
+    await user.click(screen.getByText("Error commit"));
+
+    // Should show error fallback
+    await waitFor(() => {
+      expect(screen.getByText("Failed to load diff")).toBeInTheDocument();
+    });
+  });
+
+  // ── Remotes Tab: Click-to-Diff for Remote Commits ─────────────
+
+  it("expands diff when clicking a commit in remote commits section", async () => {
+    (fetchRemoteCommits as any).mockResolvedValue([
+      { hash: "rc1hash1", shortHash: "rc1", message: "Remote commit 1", author: "Dev", date: "2026-01-01T00:00:00Z", parents: [] },
+      { hash: "rc2hash2", shortHash: "rc2", message: "Remote commit 2", author: "Dev", date: "2026-01-02T00:00:00Z", parents: [] },
+    ]);
+    (fetchCommitDiff as any).mockResolvedValue({
+      stat: " src/app.ts | 5 ++---",
+      patch: "diff --git a/src/app.ts\n-old line\n+new line",
+    });
+
+    const user = userEvent.setup();
+    render(
+      <GitManagerModal isOpen={true} onClose={vi.fn()} tasks={mockTasks} addToast={mockAddToast} />
+    );
+    fireEvent.click(screen.getByRole("tab", { name: /remotes/i }));
+
+    // Wait for remote commits to appear
+    await waitFor(() => {
+      expect(screen.getByTestId("remote-commits-section")).toBeInTheDocument();
+      expect(screen.getByText("Remote commit 1")).toBeInTheDocument();
+    });
+
+    // Click on the remote commit to expand diff
+    await user.click(screen.getByText("Remote commit 1"));
+
+    await waitFor(() => {
+      expect(fetchCommitDiff).toHaveBeenCalledWith("rc1hash1");
+    });
+
+    // Diff content should be rendered
+    await waitFor(() => {
+      expect(screen.getByText(/src\/app\.ts \| 5/)).toBeInTheDocument();
+    });
+  });
+
+  it("collapses diff when clicking same remote commit again", async () => {
+    (fetchRemoteCommits as any).mockResolvedValue([
+      { hash: "rc1hash1", shortHash: "rc1", message: "Remote toggle commit", author: "Dev", date: "2026-01-01T00:00:00Z", parents: [] },
+    ]);
+    (fetchCommitDiff as any).mockResolvedValue({
+      stat: " file.ts | 2 +",
+      patch: "diff --git a/file.ts\n+line",
+    });
+
+    const user = userEvent.setup();
+    render(
+      <GitManagerModal isOpen={true} onClose={vi.fn()} tasks={mockTasks} addToast={mockAddToast} />
+    );
+    fireEvent.click(screen.getByRole("tab", { name: /remotes/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Remote toggle commit")).toBeInTheDocument();
+    });
+
+    // Click to expand
+    await user.click(screen.getByText("Remote toggle commit"));
+    await waitFor(() => {
+      expect(fetchCommitDiff).toHaveBeenCalledWith("rc1hash1");
+    });
+
+    // Diff should be visible
+    await waitFor(() => {
+      expect(screen.getByText(/file\.ts \| 2/)).toBeInTheDocument();
+    });
+
+    // Click again to collapse
+    await user.click(screen.getByText("Remote toggle commit"));
+
+    // Diff content should be gone
+    await waitFor(() => {
+      expect(screen.queryByText(/file\.ts \| 2/)).not.toBeInTheDocument();
+    });
+  });
+
+  it("shows error state when diff fetch fails for remote commit", async () => {
+    (fetchRemoteCommits as any).mockResolvedValue([
+      { hash: "rc1hash1", shortHash: "rc1", message: "Error remote commit", author: "Dev", date: "2026-01-01T00:00:00Z", parents: [] },
+    ]);
+    (fetchCommitDiff as any).mockRejectedValue(new Error("Diff load failed"));
+
+    const user = userEvent.setup();
+    render(
+      <GitManagerModal isOpen={true} onClose={vi.fn()} tasks={mockTasks} addToast={mockAddToast} />
+    );
+    fireEvent.click(screen.getByRole("tab", { name: /remotes/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Error remote commit")).toBeInTheDocument();
+    });
+
+    // Click to expand
+    await user.click(screen.getByText("Error remote commit"));
+
+    // Should show error fallback
+    await waitFor(() => {
+      expect(screen.getByText("Failed to load diff")).toBeInTheDocument();
+    });
+  });
+
+  it("only expands one diff at a time in remote commits list", async () => {
+    (fetchRemoteCommits as any).mockResolvedValue([
+      { hash: "rc1hash1", shortHash: "rc1", message: "First remote", author: "Dev", date: "2026-01-01T00:00:00Z", parents: [] },
+      { hash: "rc2hash2", shortHash: "rc2", message: "Second remote", author: "Dev", date: "2026-01-02T00:00:00Z", parents: [] },
+    ]);
+    (fetchCommitDiff as any).mockResolvedValue({
+      stat: " file.ts | 1 +",
+      patch: "diff --git a/file.ts\n+line",
+    });
+
+    const user = userEvent.setup();
+    render(
+      <GitManagerModal isOpen={true} onClose={vi.fn()} tasks={mockTasks} addToast={mockAddToast} />
+    );
+    fireEvent.click(screen.getByRole("tab", { name: /remotes/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("First remote")).toBeInTheDocument();
+      expect(screen.getByText("Second remote")).toBeInTheDocument();
+    });
+
+    // Click first commit
+    await user.click(screen.getByText("First remote"));
+    await waitFor(() => {
+      expect(fetchCommitDiff).toHaveBeenCalledWith("rc1hash1");
+    });
+
+    // Click second commit — should collapse first, expand second
+    await user.click(screen.getByText("Second remote"));
+    await waitFor(() => {
+      expect(fetchCommitDiff).toHaveBeenCalledWith("rc2hash2");
+    });
+
+    // fetchCommitDiff should have been called for both commits
+    expect(fetchCommitDiff).toHaveBeenCalledTimes(2);
+  });
 });

@@ -14164,6 +14164,41 @@ html .column.drag-over * {
   flex-direction: column;
 }
 
+/* ── Remotes Tab: Clickable Commit Diff ── */
+
+.gm-commit-item-compact-wrapper {
+  display: flex;
+  flex-direction: column;
+}
+
+.gm-commit-clickable {
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.gm-commit-clickable:hover {
+  background: var(--card-hover);
+}
+
+.gm-commit-expand-icon {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  padding-top: 1px;
+}
+
+.gm-commit-diff-compact {
+  margin: var(--space-xs) var(--space-sm) var(--space-sm) var(--space-sm);
+}
+
+.gm-ahead-commits-list {
+  max-height: 280px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
 /* ── Responsive ── */
 
 @media (max-width: 640px) {
