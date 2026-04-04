@@ -313,4 +313,106 @@ describe("NewTaskModal", () => {
       });
     });
   });
+
+  // Preset selection tests (FN-819)
+  describe("model preset selection payload", () => {
+    it("omits modelPresetId from payload when in default mode", async () => {
+      const { props } = renderNewTaskModal();
+
+      const descTextarea = screen.getByLabelText(/Description/i);
+      fireEvent.change(descTextarea, { target: { value: "Default mode task" } });
+
+      fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
+
+      await waitFor(() => {
+        expect(props.onCreateTask).toHaveBeenCalledWith(
+          expect.objectContaining({
+            modelPresetId: undefined,
+          }),
+        );
+      });
+    });
+
+    it("includes modelPresetId and model overrides in payload when preset is selected", async () => {
+      const { fetchSettings } = await import("../../api");
+      vi.mocked(fetchSettings).mockResolvedValue({
+        modelPresets: [
+          { id: "fast", name: "Fast", executorProvider: "anthropic", executorModelId: "claude-sonnet-4-5", validatorProvider: "openai", validatorModelId: "gpt-4o" },
+        ],
+        autoSelectModelPreset: false,
+        defaultPresetBySize: {},
+      });
+
+      const { props } = renderNewTaskModal();
+
+      // Wait for settings to load and preset dropdown to populate
+      await waitFor(() => {
+        const select = document.getElementById("model-preset") as HTMLSelectElement;
+        expect(select).toBeTruthy();
+        expect(Array.from(select.options).some((o) => o.value === "fast")).toBe(true);
+      });
+
+      // Type a description
+      fireEvent.change(screen.getByLabelText(/Description/i), { target: { value: "Preset task" } });
+
+      // Select the preset
+      const select = document.getElementById("model-preset") as HTMLSelectElement;
+      fireEvent.change(select, { target: { value: "fast" } });
+
+      // Submit
+      fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
+
+      await waitFor(() => {
+        expect(props.onCreateTask).toHaveBeenCalledWith(
+          expect.objectContaining({
+            modelPresetId: "fast",
+            modelProvider: "anthropic",
+            modelId: "claude-sonnet-4-5",
+            validatorModelProvider: "openai",
+            validatorModelId: "gpt-4o",
+          }),
+        );
+      });
+    });
+
+    it("omits modelPresetId from payload when switching from preset to custom", async () => {
+      const { fetchSettings } = await import("../../api");
+      vi.mocked(fetchSettings).mockResolvedValue({
+        modelPresets: [
+          { id: "fast", name: "Fast", executorProvider: "anthropic", executorModelId: "claude-sonnet-4-5" },
+        ],
+        autoSelectModelPreset: false,
+        defaultPresetBySize: {},
+      });
+
+      const { props } = renderNewTaskModal();
+
+      // Wait for settings to load
+      await waitFor(() => {
+        const select = document.getElementById("model-preset") as HTMLSelectElement;
+        expect(Array.from(select.options).some((o) => o.value === "fast")).toBe(true);
+      });
+
+      // Type a description
+      fireEvent.change(screen.getByLabelText(/Description/i), { target: { value: "Custom task" } });
+
+      // Select a preset first
+      const select = document.getElementById("model-preset") as HTMLSelectElement;
+      fireEvent.change(select, { target: { value: "fast" } });
+
+      // Now switch to custom
+      fireEvent.change(select, { target: { value: "custom" } });
+
+      // Submit
+      fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
+
+      await waitFor(() => {
+        expect(props.onCreateTask).toHaveBeenCalledWith(
+          expect.objectContaining({
+            modelPresetId: undefined,
+          }),
+        );
+      });
+    });
+  });
 });

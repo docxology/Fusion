@@ -321,3 +321,215 @@ describe("TaskForm description-adjacent actions layout (FN-781)", () => {
     expect(actionsContainer.contains(screen.getByTestId("refine-button"))).toBe(false);
   });
 });
+
+describe("TaskForm preset selection (FN-819)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("renders preset dropdown with saved presets from settings", async () => {
+    const { fetchSettings } = await import("../../api");
+    vi.mocked(fetchSettings).mockResolvedValueOnce({
+      modelPresets: [
+        { id: "fast", name: "Fast", executorProvider: "anthropic", executorModelId: "claude-sonnet-4-5", validatorProvider: "openai", validatorModelId: "gpt-4o" },
+      ],
+      autoSelectModelPreset: false,
+      defaultPresetBySize: {},
+    });
+
+    renderTaskForm();
+
+    await waitFor(() => {
+      expect(fetchSettings).toHaveBeenCalled();
+    });
+
+    const presetSelect = document.getElementById("model-preset") as HTMLSelectElement;
+    expect(presetSelect).toBeTruthy();
+    const options = Array.from(presetSelect.options);
+    expect(options.find((o) => o.value === "default")).toBeTruthy();
+    expect(options.find((o) => o.value === "fast")).toBeTruthy();
+    expect(options.find((o) => o.textContent === "Fast")).toBeTruthy();
+    expect(options.find((o) => o.value === "custom")).toBeTruthy();
+  });
+
+  it("selecting a preset applies preset mode and model overrides", async () => {
+    const { fetchSettings } = await import("../../api");
+    vi.mocked(fetchSettings).mockResolvedValueOnce({
+      modelPresets: [
+        { id: "fast", name: "Fast", executorProvider: "anthropic", executorModelId: "claude-sonnet-4-5", validatorProvider: "openai", validatorModelId: "gpt-4o" },
+      ],
+      autoSelectModelPreset: false,
+      defaultPresetBySize: {},
+    });
+
+    const onPresetModeChange = vi.fn();
+    const onSelectedPresetIdChange = vi.fn();
+    const onExecutorModelChange = vi.fn();
+    const onValidatorModelChange = vi.fn();
+
+    renderTaskForm({
+      onPresetModeChange,
+      onSelectedPresetIdChange,
+      onExecutorModelChange,
+      onValidatorModelChange,
+    });
+
+    await waitFor(() => {
+      expect(fetchSettings).toHaveBeenCalled();
+    });
+
+    const presetSelect = document.getElementById("model-preset") as HTMLSelectElement;
+    fireEvent.change(presetSelect, { target: { value: "fast" } });
+
+    expect(onPresetModeChange).toHaveBeenCalledWith("preset");
+    expect(onSelectedPresetIdChange).toHaveBeenCalledWith("fast");
+    expect(onExecutorModelChange).toHaveBeenCalledWith("anthropic/claude-sonnet-4-5");
+    expect(onValidatorModelChange).toHaveBeenCalledWith("openai/gpt-4o");
+  });
+
+  it("switching to default clears preset and model overrides", async () => {
+    const { fetchSettings } = await import("../../api");
+    vi.mocked(fetchSettings).mockResolvedValueOnce({
+      modelPresets: [
+        { id: "fast", name: "Fast", executorProvider: "anthropic", executorModelId: "claude-sonnet-4-5" },
+      ],
+      autoSelectModelPreset: false,
+      defaultPresetBySize: {},
+    });
+
+    const onPresetModeChange = vi.fn();
+    const onSelectedPresetIdChange = vi.fn();
+    const onExecutorModelChange = vi.fn();
+    const onValidatorModelChange = vi.fn();
+
+    renderTaskForm({
+      presetMode: "preset",
+      selectedPresetId: "fast",
+      executorModel: "anthropic/claude-sonnet-4-5",
+      onPresetModeChange,
+      onSelectedPresetIdChange,
+      onExecutorModelChange,
+      onValidatorModelChange,
+    });
+
+    await waitFor(() => {
+      expect(fetchSettings).toHaveBeenCalled();
+    });
+
+    const presetSelect = document.getElementById("model-preset") as HTMLSelectElement;
+    fireEvent.change(presetSelect, { target: { value: "default" } });
+
+    expect(onPresetModeChange).toHaveBeenCalledWith("default");
+    expect(onSelectedPresetIdChange).toHaveBeenCalledWith("");
+    expect(onExecutorModelChange).toHaveBeenCalledWith("");
+    expect(onValidatorModelChange).toHaveBeenCalledWith("");
+  });
+
+  it("switching to custom clears preset ID", async () => {
+    const { fetchSettings } = await import("../../api");
+    vi.mocked(fetchSettings).mockResolvedValueOnce({
+      modelPresets: [
+        { id: "fast", name: "Fast", executorProvider: "anthropic", executorModelId: "claude-sonnet-4-5" },
+      ],
+      autoSelectModelPreset: false,
+      defaultPresetBySize: {},
+    });
+
+    const onPresetModeChange = vi.fn();
+    const onSelectedPresetIdChange = vi.fn();
+
+    renderTaskForm({
+      presetMode: "preset",
+      selectedPresetId: "fast",
+      executorModel: "anthropic/claude-sonnet-4-5",
+      onPresetModeChange,
+      onSelectedPresetIdChange,
+    });
+
+    await waitFor(() => {
+      expect(fetchSettings).toHaveBeenCalled();
+    });
+
+    const presetSelect = document.getElementById("model-preset") as HTMLSelectElement;
+    fireEvent.change(presetSelect, { target: { value: "custom" } });
+
+    expect(onPresetModeChange).toHaveBeenCalledWith("custom");
+    expect(onSelectedPresetIdChange).toHaveBeenCalledWith("");
+  });
+
+  it("Override button exits preset mode", async () => {
+    const { fetchSettings } = await import("../../api");
+    vi.mocked(fetchSettings).mockResolvedValueOnce({
+      modelPresets: [
+        { id: "fast", name: "Fast", executorProvider: "anthropic", executorModelId: "claude-sonnet-4-5" },
+      ],
+      autoSelectModelPreset: false,
+      defaultPresetBySize: {},
+    });
+
+    const onPresetModeChange = vi.fn();
+
+    renderTaskForm({
+      presetMode: "preset",
+      selectedPresetId: "fast",
+      executorModel: "anthropic/claude-sonnet-4-5",
+      onPresetModeChange,
+    });
+
+    await waitFor(() => {
+      expect(fetchSettings).toHaveBeenCalled();
+    });
+
+    const overrideButton = screen.getByRole("button", { name: "Override" });
+    fireEvent.click(overrideButton);
+
+    expect(onPresetModeChange).toHaveBeenCalledWith("custom");
+  });
+
+  it("disables executor and validator selects when preset mode is active", async () => {
+    const { fetchSettings } = await import("../../api");
+    vi.mocked(fetchSettings).mockResolvedValueOnce({
+      modelPresets: [
+        { id: "fast", name: "Fast", executorProvider: "anthropic", executorModelId: "claude-sonnet-4-5" },
+      ],
+      autoSelectModelPreset: false,
+      defaultPresetBySize: {},
+    });
+
+    renderTaskForm({
+      presetMode: "preset",
+      selectedPresetId: "fast",
+      executorModel: "anthropic/claude-sonnet-4-5",
+    });
+
+    await waitFor(() => {
+      expect(fetchSettings).toHaveBeenCalled();
+    });
+
+    const executorSelect = document.getElementById("executor-model") as HTMLSelectElement;
+    const validatorSelect = document.getElementById("validator-model") as HTMLSelectElement;
+    expect(executorSelect?.disabled).toBe(true);
+    expect(validatorSelect?.disabled).toBe(true);
+  });
+
+  it("shows preset name as small text when a preset is selected", async () => {
+    const { fetchSettings } = await import("../../api");
+    vi.mocked(fetchSettings).mockResolvedValueOnce({
+      modelPresets: [
+        { id: "fast", name: "Fast", executorProvider: "anthropic", executorModelId: "claude-sonnet-4-5" },
+      ],
+      autoSelectModelPreset: false,
+      defaultPresetBySize: {},
+    });
+
+    renderTaskForm({
+      presetMode: "preset",
+      selectedPresetId: "fast",
+      executorModel: "anthropic/claude-sonnet-4-5",
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Using preset: Fast")).toBeTruthy();
+    });
+  });
+});
