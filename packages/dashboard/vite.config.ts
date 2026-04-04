@@ -10,6 +10,14 @@ export default defineConfig({
       "@fusion/core": resolve(__dirname, "../core/src/types.ts"),
     },
   },
+  optimizeDeps: {
+    include: [
+      "@xterm/xterm",
+      "@xterm/addon-fit",
+      "@xterm/addon-web-links",
+      "@xterm/addon-webgl",
+    ],
+  },
   build: {
     outDir: "../dist/client",
     emptyOutDir: true,
