@@ -327,6 +327,22 @@ describe("AgentDetailView", () => {
     });
   });
 
+  it("shows Delete button for idle agent", async () => {
+    mockFetchAgent.mockResolvedValue(createMockAgent({ state: "idle" }));
+
+    render(
+      <AgentDetailView
+        agentId="agent-001"
+        onClose={vi.fn()}
+        addToast={vi.fn()}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Delete")).toBeInTheDocument();
+    });
+  });
+
   it("shows statistics section on dashboard", async () => {
     render(
       <AgentDetailView

@@ -500,11 +500,32 @@ describe("AgentsView", () => {
   });
 
   describe("delete agent", () => {
-    it("shows Delete button only for terminated agents", async () => {
+    it("shows Delete button for idle and terminated agents", async () => {
       render(<AgentsView addToast={mockAddToast} />);
 
       await waitFor(() => {
-        expect(screen.getByTitle("Delete")).toBeTruthy();
+        // There should be multiple Delete buttons: one for idle (agent-001) and one for terminated (agent-004)
+        const deleteButtons = screen.getAllByTitle("Delete");
+        expect(deleteButtons.length).toBeGreaterThanOrEqual(2);
+      });
+    });
+
+    it("does not show Delete button for active or paused agents", async () => {
+      render(<AgentsView addToast={mockAddToast} />);
+
+      await waitFor(() => {
+        // Find the active agent card (agent-002)
+        const agentCards = document.querySelectorAll(".agent-card");
+        let activeCard: Element | null = null;
+        let pausedCard: Element | null = null;
+        agentCards.forEach(card => {
+          if (card.textContent?.includes("agent-002")) activeCard = card;
+          if (card.textContent?.includes("agent-003")) pausedCard = card;
+        });
+
+        // Active and paused agents should not have delete buttons
+        expect(activeCard?.querySelector('[title="Delete"]')).toBeFalsy();
+        expect(pausedCard?.querySelector('[title="Delete"]')).toBeFalsy();
       });
     });
 
@@ -514,10 +535,18 @@ describe("AgentsView", () => {
       render(<AgentsView addToast={mockAddToast} />);
 
       await waitFor(() => {
-        expect(screen.getByTitle("Delete")).toBeTruthy();
+        // Click the delete button for the terminated agent (agent-004)
+        const deleteButtons = screen.getAllByTitle("Delete");
+        // Find the delete button in the terminated agent card
+        const agentCards = document.querySelectorAll(".agent-card");
+        let terminatedCard: Element | null = null;
+        agentCards.forEach(card => {
+          if (card.textContent?.includes("agent-004")) terminatedCard = card;
+        });
+        const terminatedDeleteBtn = terminatedCard?.querySelector('[title="Delete"]') as HTMLElement;
+        expect(terminatedDeleteBtn).toBeTruthy();
+        fireEvent.click(terminatedDeleteBtn);
       });
-
-      fireEvent.click(screen.getByTitle("Delete"));
 
       expect(confirmSpy).toHaveBeenCalledWith(
         expect.stringContaining("Test Agent 4")
@@ -533,13 +562,48 @@ describe("AgentsView", () => {
       render(<AgentsView addToast={mockAddToast} />);
 
       await waitFor(() => {
-        expect(screen.getByTitle("Delete")).toBeTruthy();
+        expect(screen.getAllByTitle("Delete").length).toBeGreaterThanOrEqual(2);
       });
 
-      fireEvent.click(screen.getByTitle("Delete"));
+      // Find the delete button for terminated agent (agent-004)
+      const agentCards = document.querySelectorAll(".agent-card");
+      let terminatedCard: Element | null = null;
+      agentCards.forEach(card => {
+        if (card.textContent?.includes("agent-004")) terminatedCard = card;
+      });
+      const terminatedDeleteBtn = terminatedCard?.querySelector('[title="Delete"]') as HTMLElement;
+      fireEvent.click(terminatedDeleteBtn);
 
       await waitFor(() => {
         expect(mockDeleteAgent).toHaveBeenCalledWith("agent-004", undefined);
+      });
+
+      expect(mockAddToast).toHaveBeenCalledWith(
+        expect.stringContaining("deleted"),
+        "success"
+      );
+    });
+
+    it("deletes idle agent after confirmation", async () => {
+      vi.spyOn(window, "confirm").mockReturnValue(true);
+
+      render(<AgentsView addToast={mockAddToast} />);
+
+      await waitFor(() => {
+        expect(screen.getAllByTitle("Delete").length).toBeGreaterThanOrEqual(2);
+      });
+
+      // Find the delete button for idle agent (agent-001)
+      const agentCards = document.querySelectorAll(".agent-card");
+      let idleCard: Element | null = null;
+      agentCards.forEach(card => {
+        if (card.textContent?.includes("agent-001")) idleCard = card;
+      });
+      const idleDeleteBtn = idleCard?.querySelector('[title="Delete"]') as HTMLElement;
+      fireEvent.click(idleDeleteBtn);
+
+      await waitFor(() => {
+        expect(mockDeleteAgent).toHaveBeenCalledWith("agent-001", undefined);
       });
 
       expect(mockAddToast).toHaveBeenCalledWith(

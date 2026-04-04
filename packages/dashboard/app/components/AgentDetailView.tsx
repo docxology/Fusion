@@ -257,10 +257,16 @@ export function AgentDetailView({ agentId, projectId, onClose, addToast }: Agent
           <div className="agent-detail-actions">
             {/* State-dependent action buttons */}
             {agent.state === "idle" && (
-              <button className="btn btn--primary" onClick={() => void handleStateChange("active")}>
-                <Play size={16} />
-                Start
-              </button>
+              <>
+                <button className="btn btn--primary" onClick={() => void handleStateChange("active")}>
+                  <Play size={16} />
+                  Start
+                </button>
+                <button className="btn btn--danger" onClick={handleDelete}>
+                  <Trash2 size={16} />
+                  Delete
+                </button>
+              </>
             )}
             {agent.state === "active" && (
               <>

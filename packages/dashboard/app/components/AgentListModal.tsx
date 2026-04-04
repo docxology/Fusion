@@ -288,13 +288,22 @@ export function AgentListModal({ isOpen, onClose, addToast, projectId }: AgentLi
                     <div className="agent-board-id">{agent.id}</div>
                     <div className="agent-board-actions">
                       {agent.state === "idle" && (
-                        <button
-                          className="btn btn--sm"
-                          onClick={() => void handleStateChange(agent.id, "active")}
-                          title="Activate"
-                        >
-                          <Play size={14} />
-                        </button>
+                        <>
+                          <button
+                            className="btn btn--sm"
+                            onClick={() => void handleStateChange(agent.id, "active")}
+                            title="Activate"
+                          >
+                            <Play size={14} />
+                          </button>
+                          <button
+                            className="btn btn--sm btn--danger"
+                            onClick={() => void handleDelete(agent.id, agent.name)}
+                            title="Delete"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </>
                       )}
                       {agent.state === "active" && (
                         <>
@@ -428,13 +437,22 @@ export function AgentListModal({ isOpen, onClose, addToast, projectId }: AgentLi
 
                     <div className="agent-card-actions">
                       {agent.state === "idle" && (
-                        <button
-                          className="btn btn--sm"
-                          onClick={() => void handleStateChange(agent.id, "active")}
-                          title="Activate"
-                        >
-                          <Play size={14} /> Start
-                        </button>
+                        <>
+                          <button
+                            className="btn btn--sm"
+                            onClick={() => void handleStateChange(agent.id, "active")}
+                            title="Activate"
+                          >
+                            <Play size={14} /> Start
+                          </button>
+                          <button
+                            className="btn btn--sm btn--danger"
+                            onClick={() => void handleDelete(agent.id, agent.name)}
+                            title="Delete"
+                          >
+                            <Trash2 size={14} /> Delete
+                          </button>
+                        </>
                       )}
                       {agent.state === "active" && (
                         <>
