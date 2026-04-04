@@ -1241,6 +1241,205 @@ describe("TaskDetailModal", () => {
       // Validator uses settings-specific validator
       expect(header.textContent).toContain("openai/gpt-4o");
     });
+
+    // Planning/Triage model resolution tests
+    describe("Planning/Triage model resolution", () => {
+      it("shows planning model from runtime triage log marker", async () => {
+        const { fetchSettings } = await import("../../api");
+        const { useAgentLogs } = await import("../../hooks/useAgentLogs");
+
+        vi.mocked(fetchSettings).mockResolvedValueOnce({
+          modelPresets: [],
+          autoSelectModelPreset: false,
+          defaultPresetBySize: {},
+          defaultProvider: "anthropic",
+          defaultModelId: "claude-sonnet-4-5",
+        } as any);
+
+        vi.mocked(useAgentLogs).mockReturnValue({
+          entries: [
+            { timestamp: "2026-01-01T00:00:00Z", taskId: "FN-099", text: "hello", type: "text" as const },
+            { timestamp: "2026-01-01T00:00:01Z", taskId: "FN-099", text: "Triage using model: google/gemini-pro", type: "text" as const, agent: "triage" },
+          ],
+          loading: false,
+          clear: vi.fn(),
+        });
+
+        const { container } = render(
+          <TaskDetailModal
+            task={makeTask({ prompt: "# Hello\n\nContent" })}
+            onClose={noop}
+            onMoveTask={noopMove}
+            onDeleteTask={noopDelete}
+            onMergeTask={noopMerge}
+            onOpenDetail={noopOpenDetail}
+            addToast={noop}
+          />,
+        );
+
+        // Navigate to Agent Log subview
+        fireEvent.click(screen.getByText("Logs"));
+        fireEvent.click(screen.getByText("Agent Log"));
+
+        await waitFor(() => {
+          const header = container.querySelector("[data-testid='agent-log-model-header']");
+          expect(header).toBeTruthy();
+          // Planning should show the runtime triage marker, not settings default
+          expect(header!.textContent).toContain("Planning/Triage:");
+          expect(header!.textContent).toContain("google/gemini-pro");
+        });
+
+        const header = container.querySelector("[data-testid='agent-log-model-header']")!;
+        // Executor/Validator should still show settings default
+        expect(header.textContent).toContain("anthropic/claude-sonnet-4-5");
+      });
+
+      it("shows planning model from settings planningProvider when no runtime marker", async () => {
+        const { fetchSettings } = await import("../../api");
+        const { useAgentLogs } = await import("../../hooks/useAgentLogs");
+
+        vi.mocked(fetchSettings).mockResolvedValueOnce({
+          modelPresets: [],
+          autoSelectModelPreset: false,
+          defaultPresetBySize: {},
+          defaultProvider: "anthropic",
+          defaultModelId: "claude-sonnet-4-5",
+          planningProvider: "openai",
+          planningModelId: "gpt-4o",
+        } as any);
+
+        vi.mocked(useAgentLogs).mockReturnValue({
+          entries: [mockLogEntry],
+          loading: false,
+          clear: vi.fn(),
+        });
+
+        const { container } = render(
+          <TaskDetailModal
+            task={makeTask({ prompt: "# Hello\n\nContent" })}
+            onClose={noop}
+            onMoveTask={noopMove}
+            onDeleteTask={noopDelete}
+            onMergeTask={noopMerge}
+            onOpenDetail={noopOpenDetail}
+            addToast={noop}
+          />,
+        );
+
+        // Navigate to Agent Log subview
+        fireEvent.click(screen.getByText("Logs"));
+        fireEvent.click(screen.getByText("Agent Log"));
+
+        await waitFor(() => {
+          const header = container.querySelector("[data-testid='agent-log-model-header']");
+          expect(header).toBeTruthy();
+          // Planning should use planningProvider/planningModelId from settings
+          expect(header!.textContent).toContain("Planning/Triage:");
+          expect(header!.textContent).toContain("openai/gpt-4o");
+        });
+
+        const header = container.querySelector("[data-testid='agent-log-model-header']")!;
+        // Executor/Validator should show default
+        expect(header.textContent).toContain("anthropic/claude-sonnet-4-5");
+        // Planning should NOT show the default
+        expect(header.textContent).toContain("openai/gpt-4o");
+      });
+
+      it("falls back to default settings for planning when no planning-specific setting exists", async () => {
+        const { container } = await setupModelTest({
+          defaultProvider: "anthropic",
+          defaultModelId: "claude-sonnet-4-5",
+        });
+
+        // Navigate to Agent Log subview
+        fireEvent.click(screen.getByText("Logs"));
+        fireEvent.click(screen.getByText("Agent Log"));
+
+        await waitFor(() => {
+          const header = container.querySelector("[data-testid='agent-log-model-header']");
+          expect(header).toBeTruthy();
+          expect(header!.textContent).toContain("Planning/Triage:");
+          expect(header!.textContent).toContain("anthropic/claude-sonnet-4-5");
+        });
+
+        // Planning falls back to default - same as executor/validator
+        const header = container.querySelector("[data-testid='agent-log-model-header']")!;
+        const matches = header.textContent!.match(/anthropic\/claude-sonnet-4-5/g);
+        expect(matches).toHaveLength(3); // executor, validator, planning
+      });
+
+      it("shows 'Using default' for planning when no models can be resolved", async () => {
+        const { container } = await setupModelTest({
+          // No defaultProvider/defaultModelId
+        });
+
+        // Navigate to Agent Log subview
+        fireEvent.click(screen.getByText("Logs"));
+        fireEvent.click(screen.getByText("Agent Log"));
+
+        await waitFor(() => {
+          const header = container.querySelector("[data-testid='agent-log-model-header']");
+          expect(header).toBeTruthy();
+        });
+
+        const header = container.querySelector("[data-testid='agent-log-model-header']")!;
+        expect(header.textContent).toContain("Planning/Triage:");
+        const defaultBadges = header.querySelectorAll(".model-badge-default");
+        // 3 default badges: executor, validator, planning
+        expect(defaultBadges).toHaveLength(3);
+      });
+
+      it("runtime triage marker takes precedence over planningProvider settings", async () => {
+        const { fetchSettings } = await import("../../api");
+        const { useAgentLogs } = await import("../../hooks/useAgentLogs");
+
+        vi.mocked(fetchSettings).mockResolvedValueOnce({
+          modelPresets: [],
+          autoSelectModelPreset: false,
+          defaultPresetBySize: {},
+          defaultProvider: "anthropic",
+          defaultModelId: "claude-sonnet-4-5",
+          planningProvider: "openai",
+          planningModelId: "gpt-4o",
+        } as any);
+
+        vi.mocked(useAgentLogs).mockReturnValue({
+          entries: [
+            { timestamp: "2026-01-01T00:00:00Z", taskId: "FN-099", text: "hello", type: "text" as const },
+            { timestamp: "2026-01-01T00:00:01Z", taskId: "FN-099", text: "Triage using model: google/gemini-pro", type: "text" as const, agent: "triage" },
+          ],
+          loading: false,
+          clear: vi.fn(),
+        });
+
+        const { container } = render(
+          <TaskDetailModal
+            task={makeTask({ prompt: "# Hello\n\nContent" })}
+            onClose={noop}
+            onMoveTask={noopMove}
+            onDeleteTask={noopDelete}
+            onMergeTask={noopMerge}
+            onOpenDetail={noopOpenDetail}
+            addToast={noop}
+          />,
+        );
+
+        // Navigate to Agent Log subview
+        fireEvent.click(screen.getByText("Logs"));
+        fireEvent.click(screen.getByText("Agent Log"));
+
+        await waitFor(() => {
+          const header = container.querySelector("[data-testid='agent-log-model-header']");
+          expect(header).toBeTruthy();
+          // Runtime marker should win over planning settings
+          expect(header!.textContent).toContain("google/gemini-pro");
+        });
+
+        const header = container.querySelector("[data-testid='agent-log-model-header']")!;
+        // Should NOT show the planning settings model
+        expect(header.textContent).not.toContain("openai/gpt-4o");
+      });
+    });
   });
 
   describe("step progress", () => {

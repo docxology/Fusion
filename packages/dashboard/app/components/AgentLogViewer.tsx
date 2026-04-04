@@ -43,6 +43,7 @@ interface AgentLogViewerProps {
   loading: boolean;
   executorModel?: ModelInfo | null;
   validatorModel?: ModelInfo | null;
+  planningModel?: ModelInfo | null;
 }
 
 /**
@@ -51,7 +52,7 @@ interface AgentLogViewerProps {
  * Auto-scrolls to keep latest entries visible when streaming.
  * Supports toggling between markdown-formatted and plain-text rendering.
  */
-export function AgentLogViewer({ entries, loading, executorModel, validatorModel }: AgentLogViewerProps) {
+export function AgentLogViewer({ entries, loading, executorModel, validatorModel, planningModel }: AgentLogViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const previousEntryCountRef = useRef<number>(0);
   const [renderMarkdown, setRenderMarkdown] = useState(true);
@@ -98,6 +99,7 @@ export function AgentLogViewer({ entries, loading, executorModel, validatorModel
 
   const hasExecutorOverride = executorModel?.provider && executorModel?.modelId;
   const hasValidatorOverride = validatorModel?.provider && validatorModel?.modelId;
+  const hasPlanningOverride = planningModel?.provider && planningModel?.modelId;
 
   return (
     <div
@@ -157,6 +159,19 @@ export function AgentLogViewer({ entries, loading, executorModel, validatorModel
               <ProviderIcon provider={validatorModel.provider!} size="sm" />
               <span style={{ color: "var(--text-secondary, #aaa)" }}>
                 {validatorModel.provider}/{validatorModel.modelId}
+              </span>
+            </span>
+          ) : (
+            <span className="model-badge-default">Using default</span>
+          )}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+          <span style={{ fontWeight: 600 }}>Planning/Triage:</span>
+          {hasPlanningOverride ? (
+            <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+              <ProviderIcon provider={planningModel.provider!} size="sm" />
+              <span style={{ color: "var(--text-secondary, #aaa)" }}>
+                {planningModel.provider}/{planningModel.modelId}
               </span>
             </span>
           ) : (

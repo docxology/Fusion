@@ -297,6 +297,16 @@ Set overrides in the dashboard via **task detail → Model tab**, or choose **Cu
 
 Project settings override global settings. Configure in the dashboard under **Settings > Model**.
 
+### Agent Log Model Display
+
+The dashboard Agent Log tab shows which AI models were used for each task, including:
+
+- **Executor** — the model used to implement the task
+- **Validator** — the model used to review code and plans
+- **Planning/Triage** — the model used for task specification
+
+The Planning/Triage model is resolved with the following precedence: runtime triage log marker (written by the engine during triage) → `planningProvider`/`planningModelId` settings → `defaultProvider`/`defaultModelId` settings. When no model can be resolved, the header shows "Using default".
+
 ## Task Planning & Creation
 
 Fusion offers multiple ways to create tasks, from quick entry to AI-assisted planning.

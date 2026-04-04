@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pencil } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { Task, TaskDetail, TaskAttachment, Column, MergeResult, PrInfo, Settings } from "@fusion/core";
+import type { Task, TaskDetail, TaskAttachment, Column, MergeResult, PrInfo, Settings, AgentLogEntry } from "@fusion/core";
 import { COLUMN_LABELS, VALID_TRANSITIONS } from "@fusion/core";
 import { uploadAttachment, deleteAttachment, updateTask, pauseTask, unpauseTask, fetchTaskDetail, fetchSettings, requestSpecRevision, approvePlan, rejectPlan, refineTask, fetchWorkflowResults } from "../api";
 import type { WorkflowStepResult } from "@fusion/core";
@@ -74,6 +74,48 @@ function resolveEffectiveValidator(
   }
   if (settings?.validatorProvider && settings.validatorModelId) {
     return { provider: settings.validatorProvider, modelId: settings.validatorModelId };
+  }
+  if (settings?.defaultProvider && settings.defaultModelId) {
+    return { provider: settings.defaultProvider, modelId: settings.defaultModelId };
+  }
+  return {};
+}
+
+/**
+ * Extract planning/triage model from agent log entries.
+ * Looks for text entries with agent role "triage" matching the pattern:
+ *   "Triage using model: <provider>/<modelId>"
+ * Returns the latest match, or null if none found.
+ */
+function extractPlanningModelFromLog(entries: AgentLogEntry[]): { provider: string; modelId: string } | null {
+  // Iterate in chronological order; last match wins
+  let result: { provider: string; modelId: string } | null = null;
+  for (const entry of entries) {
+    if (entry.agent !== "triage" || entry.type !== "text") continue;
+    const match = entry.text.match(/^Triage using model: (.+?)\/(.+)$/);
+    if (match) {
+      result = { provider: match[1], modelId: match[2] };
+    }
+  }
+  return result;
+}
+
+/**
+ * Resolve the effective planning/triage model following the resolution order:
+ * 1. Runtime triage model from agent log marker (if present)
+ * 2. Project settings planningProvider/planningModelId
+ * 3. Global settings defaultProvider/defaultModelId
+ */
+function resolveEffectivePlanning(
+  logEntries: AgentLogEntry[],
+  settings?: Settings,
+): ModelSelection {
+  const fromLog = extractPlanningModelFromLog(logEntries);
+  if (fromLog) {
+    return fromLog;
+  }
+  if (settings?.planningProvider && settings.planningModelId) {
+    return { provider: settings.planningProvider, modelId: settings.planningModelId };
   }
   if (settings?.defaultProvider && settings.defaultModelId) {
     return { provider: settings.defaultProvider, modelId: settings.defaultModelId };
@@ -837,6 +879,7 @@ export function TaskDetailModal({
                   loading={agentLogLoading}
                   executorModel={resolveEffectiveExecutor(task, settings)}
                   validatorModel={resolveEffectiveValidator(task, settings)}
+                  planningModel={resolveEffectivePlanning(agentLogEntries, settings)}
                 />
               ) : (
                 <div className="detail-activity">
