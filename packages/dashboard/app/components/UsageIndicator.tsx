@@ -98,6 +98,28 @@ function UsageWindowRow({ window, viewMode, providerName }: UsageWindowRowProps)
   const headerText = isRemainingMode ? `${Math.round(window.percentLeft)}% remaining` : `${Math.round(window.percentUsed)}% used`;
   const footerText = isRemainingMode ? `${Math.round(window.percentUsed)}% used` : `${Math.round(window.percentLeft)}% left`;
 
+  // If resetText is null but resetAt exists (and this is a Claude weekly window),
+  // generate relative text from resetAt as a fallback
+  let displayResetText = window.resetText;
+  if (!displayResetText && window.resetAt && isClaudeWeeklyWindow(providerName, window.label)) {
+    const msLeft = new Date(window.resetAt).getTime() - Date.now();
+    if (msLeft > 0) {
+      const hours = Math.floor(msLeft / (60 * 60 * 1000));
+      const days = Math.floor(hours / 24);
+      const remHours = hours % 24;
+      if (days > 0 && remHours > 0) {
+        displayResetText = `resets in ${days}d ${remHours}h`;
+      } else if (days > 0) {
+        displayResetText = `resets in ${days}d`;
+      } else if (hours > 0) {
+        displayResetText = `resets in ${hours}h`;
+      } else {
+        const mins = Math.floor(msLeft / (60 * 1000));
+        displayResetText = `resets in ${mins}m`;
+      }
+    }
+  }
+
   // Use pace from backend if available (for weekly windows)
   const pace = window.pace;
   const shouldShowPace = pace !== undefined;
@@ -148,8 +170,8 @@ function UsageWindowRow({ window, viewMode, providerName }: UsageWindowRowProps)
             where the reset timestamp is known. Other providers will only show
             the relative text unless they also provide resetAt. */}
         <span className="usage-window-reset-group">
-          {window.resetText && (
-            <span className="usage-window-reset">{window.resetText}</span>
+          {displayResetText && (
+            <span className="usage-window-reset">{displayResetText}</span>
           )}
           {/* Absolute reset timestamp: shown for session windows and non-Claude providers.
               Claude weekly windows intentionally suppress this — the relative "resets in Xd"

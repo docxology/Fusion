@@ -438,8 +438,10 @@ export function _parseClaudeResetText(text: string): string | null {
   }
 
   // "Resets Feb 19 at 3pm" or "Resets Jan 15, 3:30pm"
+  // Note: \s+at\s* (not \s+at\s+) to handle CLI output where "at" may be
+  // immediately followed by the time with no space (e.g. "at3pm" from TUI cursor-forward).
   const dateMatch = text.match(
-    /(?:resets?\s*)?(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})(?:\s+at\s+|\s*,?\s*)(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i
+    /(?:resets?\s*)?(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})(?:\s+at\s*|\s*,?\s*)(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i
   );
   if (dateMatch) {
     const months: Record<string, number> = {

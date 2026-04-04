@@ -1548,4 +1548,192 @@ describe("UsageIndicator", () => {
     // Non-Claude weekly windows are unaffected — should still show absolute time
     expect(document.querySelector(".usage-window-reset-at")).toBeInTheDocument();
   });
+
+  // Claude weekly reset fallback tests
+  it("Claude weekly window generates fallback relative text when resetText is null but resetAt exists", () => {
+    const resetAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000 + 5 * 60 * 60 * 1000); // 3d 5h
+    mockUseUsageData.mockReturnValue({
+      providers: [
+        {
+          name: "Claude",
+          icon: "🟠",
+          status: "ok",
+          windows: [
+            {
+              label: "Weekly",
+              percentUsed: 30,
+              percentLeft: 70,
+              resetText: null, // No resetText from backend
+              resetMs: 3 * 24 * 60 * 60 * 1000 + 5 * 60 * 60 * 1000,
+              resetAt: resetAt.toISOString(),
+            },
+          ],
+        },
+      ],
+      loading: false,
+      error: null,
+      lastUpdated: new Date(),
+      refresh: mockRefresh,
+    });
+
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+
+    // Should show fallback "resets in Xd Xh" text
+    expect(screen.getByText(/resets in \d+d \d+h/)).toBeInTheDocument();
+  });
+
+  it("Claude weekly window fallback shows only days when no remainder hours", () => {
+    const resetAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000); // exactly 3d
+    mockUseUsageData.mockReturnValue({
+      providers: [
+        {
+          name: "Claude",
+          icon: "🟠",
+          status: "ok",
+          windows: [
+            {
+              label: "Weekly",
+              percentUsed: 30,
+              percentLeft: 70,
+              resetText: null,
+              resetMs: 3 * 24 * 60 * 60 * 1000,
+              resetAt: resetAt.toISOString(),
+            },
+          ],
+        },
+      ],
+      loading: false,
+      error: null,
+      lastUpdated: new Date(),
+      refresh: mockRefresh,
+    });
+
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+
+    expect(screen.getByText(/resets in \d+d/)).toBeInTheDocument();
+  });
+
+  it("Claude weekly window fallback shows hours when less than 1 day remaining", () => {
+    const resetAt = new Date(Date.now() + 5 * 60 * 60 * 1000); // 5h
+    mockUseUsageData.mockReturnValue({
+      providers: [
+        {
+          name: "Claude",
+          icon: "🟠",
+          status: "ok",
+          windows: [
+            {
+              label: "Weekly",
+              percentUsed: 80,
+              percentLeft: 20,
+              resetText: null,
+              resetMs: 5 * 60 * 60 * 1000,
+              resetAt: resetAt.toISOString(),
+            },
+          ],
+        },
+      ],
+      loading: false,
+      error: null,
+      lastUpdated: new Date(),
+      refresh: mockRefresh,
+    });
+
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+
+    expect(screen.getByText(/resets in \d+h/)).toBeInTheDocument();
+  });
+
+  it("Claude weekly window fallback shows minutes when less than 1 hour remaining", () => {
+    const resetAt = new Date(Date.now() + 45 * 60 * 1000); // 45m
+    mockUseUsageData.mockReturnValue({
+      providers: [
+        {
+          name: "Claude",
+          icon: "🟠",
+          status: "ok",
+          windows: [
+            {
+              label: "Weekly",
+              percentUsed: 95,
+              percentLeft: 5,
+              resetText: null,
+              resetMs: 45 * 60 * 1000,
+              resetAt: resetAt.toISOString(),
+            },
+          ],
+        },
+      ],
+      loading: false,
+      error: null,
+      lastUpdated: new Date(),
+      refresh: mockRefresh,
+    });
+
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+
+    expect(screen.getByText(/resets in \d+m/)).toBeInTheDocument();
+  });
+
+  it("Claude weekly window does not show fallback when both resetText and resetAt are null", () => {
+    mockUseUsageData.mockReturnValue({
+      providers: [
+        {
+          name: "Claude",
+          icon: "🟠",
+          status: "ok",
+          windows: [
+            {
+              label: "Weekly",
+              percentUsed: 50,
+              percentLeft: 50,
+              resetText: null,
+              // No resetAt either
+            },
+          ],
+        },
+      ],
+      loading: false,
+      error: null,
+      lastUpdated: new Date(),
+      refresh: mockRefresh,
+    });
+
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+
+    // No reset text should be shown
+    expect(document.querySelector(".usage-window-reset")).not.toBeInTheDocument();
+  });
+
+  it("Claude session window does not generate fallback text (only weekly)", () => {
+    const resetAt = new Date(Date.now() + 3 * 60 * 60 * 1000);
+    mockUseUsageData.mockReturnValue({
+      providers: [
+        {
+          name: "Claude",
+          icon: "🟠",
+          status: "ok",
+          windows: [
+            {
+              label: "Session (5h)",
+              percentUsed: 60,
+              percentLeft: 40,
+              resetText: null, // No resetText
+              resetMs: 3 * 60 * 60 * 1000,
+              resetAt: resetAt.toISOString(),
+            },
+          ],
+        },
+      ],
+      loading: false,
+      error: null,
+      lastUpdated: new Date(),
+      refresh: mockRefresh,
+    });
+
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+
+    // Session window should NOT get the weekly fallback treatment
+    expect(document.querySelector(".usage-window-reset")).not.toBeInTheDocument();
+  });
 });

@@ -2549,6 +2549,26 @@ describe("usage", () => {
         expect(d.getHours()).toBe(15);
       });
 
+      it("parses date format with 'at' immediately before time (no space after 'at')", () => {
+        // CLI output with cursor-forward sequences can produce "at3pm" instead of "at 3pm"
+        const result = _parseClaudeResetText("Resets Feb 19 at3pm");
+        expect(result).toBeTruthy();
+        const d = new Date(result!);
+        expect(d.getMonth()).toBe(1); // Feb
+        expect(d.getDate()).toBe(19);
+        expect(d.getHours()).toBe(15);
+      });
+
+      it("parses date format with 'at' and minutes (no space after 'at')", () => {
+        const result = _parseClaudeResetText("Resets Feb 19 at3:30pm");
+        expect(result).toBeTruthy();
+        const d = new Date(result!);
+        expect(d.getMonth()).toBe(1); // Feb
+        expect(d.getDate()).toBe(19);
+        expect(d.getHours()).toBe(15);
+        expect(d.getMinutes()).toBe(30);
+      });
+
       it("parses date format with comma", () => {
         const result = _parseClaudeResetText("Resets Jan 15, 3:30pm");
         expect(result).toBeTruthy();
