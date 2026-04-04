@@ -1195,20 +1195,22 @@ export function TaskDetailModal({
                   maxLength={2000}
                   autoFocus
                 />
-                <div className="detail-refine-char-count">
-                  {refineFeedback.length}/2000 characters
+                <div className="detail-refine-input-group">
+                  <div className="detail-refine-char-count">
+                    {refineFeedback.length}/2000 characters
+                  </div>
+                  <button
+                    className="btn btn-primary btn-sm"
+                    onClick={handleSubmitRefine}
+                    disabled={!refineFeedback.trim() || isRefining}
+                  >
+                    {isRefining ? "Creating..." : "Create Refinement Task"}
+                  </button>
                 </div>
               </div>
               <div className="modal-actions">
                 <button className="btn btn-sm" onClick={handleCloseRefineModal} disabled={isRefining}>
                   Cancel
-                </button>
-                <button
-                  className="btn btn-primary btn-sm"
-                  onClick={handleSubmitRefine}
-                  disabled={!refineFeedback.trim() || isRefining}
-                >
-                  {isRefining ? "Creating..." : "Create Refinement Task"}
                 </button>
               </div>
             </div>

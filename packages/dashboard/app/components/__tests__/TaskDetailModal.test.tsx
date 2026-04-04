@@ -2787,6 +2787,82 @@ describe("TaskDetailModal", () => {
         expect(addToast).toHaveBeenCalledWith("Task must be in 'done' or 'in-review' column", "error");
       });
     });
+
+    it("renders submit button inside the input group adjacent to textarea", () => {
+      const { container } = render(
+        <TaskDetailModal
+          task={makeTask({ id: "FN-001", column: "done" })}
+          onClose={noop}
+          onMoveTask={noopMove}
+          onDeleteTask={noopDelete}
+          onMergeTask={noopMerge}
+          onOpenDetail={noopOpenDetail}
+          addToast={noop}
+        />,
+      );
+
+      fireEvent.click(screen.getByText("Refine"));
+
+      // The submit button should be inside .detail-refine-input-group (the input area)
+      const inputGroup = container.querySelector(".detail-refine-input-group");
+      expect(inputGroup).toBeTruthy();
+      const submitButton = inputGroup!.querySelector("button.btn-primary");
+      expect(submitButton).toBeTruthy();
+      expect(submitButton!.textContent).toBe("Create Refinement Task");
+
+      // The submit button should NOT be in the footer .modal-actions
+      const modalActions = container.querySelector(".detail-refine-modal .modal-actions");
+      expect(modalActions).toBeTruthy();
+      expect(modalActions!.querySelector("button.btn-primary")).toBeNull();
+    });
+
+    it("submit button in input group follows the same disabled/enabled rules", async () => {
+      render(
+        <TaskDetailModal
+          task={makeTask({ id: "FN-001", column: "done" })}
+          onClose={noop}
+          onMoveTask={noopMove}
+          onDeleteTask={noopDelete}
+          onMergeTask={noopMerge}
+          onOpenDetail={noopOpenDetail}
+          addToast={noop}
+        />,
+      );
+
+      fireEvent.click(screen.getByText("Refine"));
+
+      // Submit button starts disabled (no feedback)
+      const submitButton = screen.getByText("Create Refinement Task");
+      expect(submitButton.hasAttribute("disabled")).toBe(true);
+
+      // Enter feedback to enable it
+      const textarea = screen.getByPlaceholderText("Enter your feedback here...");
+      await act(async () => {
+        fireEvent.change(textarea, { target: { value: "Some feedback" } });
+      });
+
+      expect(submitButton.hasAttribute("disabled")).toBe(false);
+    });
+
+    it("character count and submit button are siblings in the input group", () => {
+      const { container } = render(
+        <TaskDetailModal
+          task={makeTask({ id: "FN-001", column: "done" })}
+          onClose={noop}
+          onMoveTask={noopMove}
+          onDeleteTask={noopDelete}
+          onMergeTask={noopMerge}
+          onOpenDetail={noopOpenDetail}
+          addToast={noop}
+        />,
+      );
+
+      fireEvent.click(screen.getByText("Refine"));
+
+      const inputGroup = container.querySelector(".detail-refine-input-group")!;
+      expect(inputGroup.querySelector(".detail-refine-char-count")).toBeTruthy();
+      expect(inputGroup.querySelector("button.btn-primary")).toBeTruthy();
+    });
   });
 
   describe("inline editing", () => {

@@ -3335,9 +3335,15 @@ body {
   resize: vertical;
 }
 
-.detail-refine-char-count {
+.detail-refine-input-group {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   margin-top: var(--space-sm);
-  text-align: right;
+  gap: var(--space-sm);
+}
+
+.detail-refine-char-count {
   font-size: 12px;
   opacity: 0.6;
 }
