@@ -59,4 +59,20 @@ describe("scroll-snap CSS", () => {
       expect(afterMedia).toContain("scroll-snap-align: center");
     });
   });
+
+  describe("card touch-action", () => {
+    it("allows horizontal panning so board swipes work when starting on a card", () => {
+      const cardBlockMatch = css.match(/\.card\s*\{[^}]*\}/s);
+      expect(cardBlockMatch).not.toBeNull();
+      expect(cardBlockMatch![0]).toContain("touch-action: pan-x pan-y");
+    });
+
+    it("does not use touch-action: pan-y alone (which blocks horizontal swipes)", () => {
+      // The card should NOT have just pan-y; it needs pan-x too
+      const cardBlockMatch = css.match(/\.card\s*\{[^}]*\}/s);
+      expect(cardBlockMatch).not.toBeNull();
+      const cardBlock = cardBlockMatch![0];
+      expect(cardBlock).not.toMatch(/touch-action:\s*pan-y\s*;/);
+    });
+  });
 });

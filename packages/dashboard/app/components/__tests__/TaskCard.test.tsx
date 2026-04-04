@@ -2515,11 +2515,11 @@ describe("TaskCard detail opening", () => {
     });
   });
 
-  it("does not render a separate expand button", () => {
+  it("renders an expand button for opening task details", () => {
     const task = makeTask();
 
     render(<TaskCard task={task} onOpenDetail={vi.fn()} addToast={noopToast} />);
-    expect(screen.queryByRole("button", { name: /Open task details/i })).toBeNull();
+    expect(screen.getByRole("button", { name: /Open task details/i })).toBeDefined();
   });
 
   it("opens modal only once per card click", async () => {
@@ -2649,7 +2649,7 @@ describe("TaskCard detail opening", () => {
     expect(onOpenDetail).not.toHaveBeenCalled();
   });
 
-  it("does not render an expand button in any column", () => {
+  it("renders an expand button in every column", () => {
     const columns: Column[] = ["triage", "todo", "in-progress", "in-review", "done", "archived"];
 
     for (const column of columns) {
@@ -2663,10 +2663,85 @@ describe("TaskCard detail opening", () => {
         />
       );
 
-      expect(screen.queryByRole("button", { name: /Open task details/i })).toBeNull();
+      expect(screen.getByRole("button", { name: /Open task details/i })).toBeDefined();
 
       unmount();
     }
+  });
+
+  it("expand button opens task detail modal", async () => {
+    const { fetchTaskDetail } = await import("../../api");
+    const mockFetch = vi.mocked(fetchTaskDetail);
+    const mockDetail: TaskDetail = {
+      ...makeTask({ id: "FN-099" }),
+      prompt: "",
+      attachments: [],
+    };
+    mockFetch.mockResolvedValueOnce(mockDetail);
+    const onOpenDetail = vi.fn();
+
+    render(
+      <TaskCard
+        task={makeTask()}
+        onOpenDetail={onOpenDetail}
+        addToast={noopToast}
+      />
+    );
+
+    const expandBtn = screen.getByRole("button", { name: /Open task details/i });
+    fireEvent.click(expandBtn);
+
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenCalledWith("FN-099", undefined);
+      expect(onOpenDetail).toHaveBeenCalledWith(mockDetail);
+    });
+  });
+
+  it("expand button click does not trigger card body click", async () => {
+    const { fetchTaskDetail } = await import("../../api");
+    const mockFetch = vi.mocked(fetchTaskDetail);
+    const mockDetail: TaskDetail = {
+      ...makeTask({ id: "FN-099" }),
+      prompt: "",
+      attachments: [],
+    };
+    mockFetch.mockResolvedValueOnce(mockDetail);
+    const onOpenDetail = vi.fn();
+
+    const { container } = render(
+      <TaskCard
+        task={makeTask()}
+        onOpenDetail={onOpenDetail}
+        addToast={noopToast}
+      />
+    );
+
+    const expandBtn = screen.getByRole("button", { name: /Open task details/i });
+
+    // Use a real click event to test stopPropagation
+    const clickEvent = new MouseEvent("click", { bubbles: true });
+    const stopSpy = vi.spyOn(clickEvent, "stopPropagation");
+
+    fireEvent(expandBtn, clickEvent);
+
+    expect(stopSpy).toHaveBeenCalled();
+    // The handler should still call fetchTaskDetail via handleClick
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenCalledWith("FN-099", undefined);
+    });
+  });
+
+  it("expand button has correct styling class", () => {
+    render(
+      <TaskCard
+        task={makeTask()}
+        onOpenDetail={vi.fn()}
+        addToast={noopToast}
+      />
+    );
+
+    const expandBtn = screen.getByRole("button", { name: /Open task details/i });
+    expect(expandBtn.classList.contains("card-expand-btn")).toBe(true);
   });
 });
 

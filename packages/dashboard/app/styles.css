@@ -809,7 +809,7 @@ body {
     transform var(--transition-fast),
     opacity var(--transition-normal);
   user-select: none;
-  touch-action: pan-y;
+  touch-action: pan-x pan-y;
 }
 .card:hover {
   background: var(--card-hover);
@@ -5087,6 +5087,22 @@ body {
   }
 
   .card-edit-btn svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  /* Card expand button: always visible on mobile (no hover) */
+  .card-expand-btn {
+    opacity: 1;
+    width: 44px;
+    height: 44px;
+    margin-right: -8px;
+    margin-top: -8px;
+    margin-bottom: -8px;
+    border-radius: var(--radius-md);
+  }
+
+  .card-expand-btn svg {
     width: 16px;
     height: 16px;
   }
