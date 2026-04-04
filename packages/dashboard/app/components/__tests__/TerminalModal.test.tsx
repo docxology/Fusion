@@ -345,7 +345,7 @@ describe("TerminalModal", () => {
     expect(mockTerminalInstance.open).toHaveBeenCalledWith(terminalDiv);
   });
 
-  it("xterm container is hidden while loading", async () => {
+  it("xterm container is rendered (visible under loading overlay) while loading", async () => {
     mockUseTerminalSessions.mockReturnValue({
       ...defaultSessionState,
       isReady: false,
@@ -354,12 +354,15 @@ describe("TerminalModal", () => {
     render(<TerminalModal isOpen={true} onClose={mockOnClose} />);
 
     await waitFor(() => {
+      // The xterm container is always rendered (no display:none) so that
+      // terminal.open() can measure dimensions even during a tab switch.
+      // The loading overlay visually covers it.
       const xtermDiv = screen.getByTestId("terminal-xterm");
-      expect(xtermDiv.style.display).toBe("none");
+      expect(xtermDiv.style.display).toBe("");
     });
   });
 
-  it("xterm container becomes visible when ready", async () => {
+  it("xterm container remains rendered when ready", async () => {
     render(<TerminalModal isOpen={true} onClose={mockOnClose} />);
 
     await waitFor(() => {
@@ -818,6 +821,320 @@ describe("TerminalModal — mobile layout contract", () => {
     expect(mockTerminalInstance.write).toHaveBeenCalledWith("user@host:~$ ");
     expect(mockTerminalInstance.write).toHaveBeenCalledWith("ls\r\n");
   });
+});
+
+// --- New-tab regression tests ---
+describe("TerminalModal — new tab while modal open", () => {
+  const mockOnClose = vi.fn();
+  const mockSendInput = vi.fn();
+  const mockResize = vi.fn();
+  const mockReconnect = vi.fn();
+
+  const createMockTerminalState = (overrides = {}) => ({
+    connectionStatus: "disconnected" as const,
+    sendInput: mockSendInput,
+    resize: mockResize,
+    onData: vi.fn(() => vi.fn()),
+    onExit: vi.fn(() => vi.fn()),
+    onConnect: vi.fn(() => vi.fn()),
+    onScrollback: vi.fn(() => vi.fn()),
+    reconnect: mockReconnect,
+    ...overrides,
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockCreateTerminalSession.mockResolvedValue({
+      sessionId: "test-session-123",
+      shell: "/bin/bash",
+      cwd: "/project",
+    });
+    mockKillPtyTerminalSession.mockResolvedValue({ killed: true });
+    mockUseTerminal.mockReturnValue(createMockTerminalState());
+    mockUseTerminalSessions.mockReturnValue({
+      ...defaultSessionState,
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /**
+   * Regression: creating a new tab while the modal is open must initialize
+   * xterm for the new session immediately — no close/reopen required.
+   */
+  it("initializes xterm for the new tab without closing and reopening the modal", async () => {
+    // Start with one tab
+    const firstTab = {
+      id: "tab-1",
+      sessionId: "session-1",
+      title: "Terminal 1",
+      isActive: true,
+      createdAt: Date.now(),
+    };
+
+    const { result, rerender } = renderWithTabs([firstTab], firstTab);
+
+    // Wait for initial xterm to be created
+    await waitFor(() => {
+      expect(mockTerminalInstance.open).toHaveBeenCalledTimes(1);
+    });
+
+    // Now simulate creating a new tab — the sessions hook updates state
+    const newTab = {
+      id: "tab-2",
+      sessionId: "session-2",
+      title: "Terminal 2",
+      isActive: true,
+      createdAt: Date.now(),
+    };
+    const deactivatedFirstTab = { ...firstTab, isActive: false };
+
+    // Update the mock to return the new tab state
+    mockUseTerminalSessions.mockReturnValue({
+      ...defaultSessionState,
+      tabs: [deactivatedFirstTab, newTab],
+      activeTab: newTab,
+    });
+
+    // The useTerminal hook is called with the new sessionId
+    mockUseTerminal.mockReturnValue(
+      createMockTerminalState({ connectionStatus: "connected" })
+    );
+
+    // Re-render to pick up the new tab
+    rerender(
+      <TerminalModal isOpen={true} onClose={mockOnClose} />
+    );
+
+    // xterm should be reinitialized for the new session
+    await waitFor(() => {
+      expect(mockTerminalInstance.open).toHaveBeenCalledTimes(2);
+    });
+
+    // Loading state should clear — no loading overlay present
+    await waitFor(() => {
+      expect(screen.queryByTestId("terminal-loading")).toBeNull();
+    });
+  });
+
+  /**
+   * Regression: output from the new tab's session must be delivered to xterm
+   * via write(), not silently dropped.
+   */
+  it("delivers output from new tab session to xterm write()", async () => {
+    let capturedDataCallback: ((data: string) => void) | null = null;
+    let capturedScrollbackCallback: ((data: string) => void) | null = null;
+
+    const mockOnData = vi.fn((cb: (data: string) => void) => {
+      capturedDataCallback = cb;
+      return vi.fn();
+    });
+    const mockOnScrollback = vi.fn((cb: (data: string) => void) => {
+      capturedScrollbackCallback = cb;
+      return vi.fn();
+    });
+
+    const newTab = {
+      id: "tab-2",
+      sessionId: "session-2",
+      title: "Terminal 2",
+      isActive: true,
+      createdAt: Date.now(),
+    };
+
+    mockUseTerminalSessions.mockReturnValue({
+      ...defaultSessionState,
+      tabs: [
+        { id: "tab-1", sessionId: "session-1", title: "Terminal 1", isActive: false, createdAt: Date.now() },
+        newTab,
+      ],
+      activeTab: newTab,
+    });
+
+    mockUseTerminal.mockReturnValue(
+      createMockTerminalState({
+        connectionStatus: "connected",
+        onData: mockOnData,
+        onScrollback: mockOnScrollback,
+      })
+    );
+
+    render(<TerminalModal isOpen={true} onClose={mockOnClose} />);
+
+    // Wait for xterm to initialize and subscriptions to be established
+    await waitFor(() => {
+      expect(mockTerminalInstance.open).toHaveBeenCalled();
+    });
+
+    await waitFor(() => {
+      expect(mockOnData).toHaveBeenCalled();
+      expect(mockOnScrollback).toHaveBeenCalled();
+    });
+
+    // Clear any previous write calls from buffered replay
+    mockTerminalInstance.write.mockClear();
+
+    // Simulate output arriving for the new tab's session
+    act(() => {
+      if (capturedScrollbackCallback) {
+        capturedScrollbackCallback("user@host:~$ ");
+      }
+      if (capturedDataCallback) {
+        capturedDataCallback("ls\r\n");
+      }
+    });
+
+    // xterm must receive the output via write()
+    expect(mockTerminalInstance.write).toHaveBeenCalledWith("user@host:~$ ");
+    expect(mockTerminalInstance.write).toHaveBeenCalledWith("ls\r\n");
+  });
+
+  /**
+   * Regression: subscriptions must be established for the new session,
+   * not stuck on the prior tab's session. When the active session changes,
+   * the subscription effect must re-run with the new sessionId.
+   */
+  it("establishes subscriptions for the new session after tab creation", async () => {
+    const mockOnData1 = vi.fn(() => vi.fn());
+    const mockOnScrollback1 = vi.fn(() => vi.fn());
+    const mockOnConnect1 = vi.fn(() => vi.fn());
+    const mockOnExit1 = vi.fn(() => vi.fn());
+
+    // First tab's terminal state
+    const firstTabState = createMockTerminalState({
+      connectionStatus: "connected",
+      onData: mockOnData1,
+      onScrollback: mockOnScrollback1,
+      onConnect: mockOnConnect1,
+      onExit: mockOnExit1,
+    });
+
+    const firstTab = {
+      id: "tab-1",
+      sessionId: "session-1",
+      title: "Terminal 1",
+      isActive: true,
+      createdAt: Date.now(),
+    };
+
+    mockUseTerminalSessions.mockReturnValue({
+      ...defaultSessionState,
+      tabs: [firstTab],
+      activeTab: firstTab,
+    });
+    mockUseTerminal.mockReturnValue(firstTabState);
+
+    const { rerender } = render(
+      <TerminalModal isOpen={true} onClose={mockOnClose} />
+    );
+
+    // Wait for initial subscriptions to be established for session-1
+    await waitFor(() => {
+      expect(mockOnData1).toHaveBeenCalled();
+      expect(mockOnScrollback1).toHaveBeenCalled();
+    });
+
+    // Now create a new tab — new session
+    const mockOnData2 = vi.fn(() => vi.fn());
+    const mockOnScrollback2 = vi.fn(() => vi.fn());
+    const mockOnConnect2 = vi.fn(() => vi.fn());
+    const mockOnExit2 = vi.fn(() => vi.fn());
+
+    const secondTabState = createMockTerminalState({
+      connectionStatus: "connected",
+      onData: mockOnData2,
+      onScrollback: mockOnScrollback2,
+      onConnect: mockOnConnect2,
+      onExit: mockOnExit2,
+    });
+
+    const newTab = {
+      id: "tab-2",
+      sessionId: "session-2",
+      title: "Terminal 2",
+      isActive: true,
+      createdAt: Date.now(),
+    };
+
+    mockUseTerminalSessions.mockReturnValue({
+      ...defaultSessionState,
+      tabs: [{ ...firstTab, isActive: false }, newTab],
+      activeTab: newTab,
+    });
+    mockUseTerminal.mockReturnValue(secondTabState);
+
+    rerender(
+      <TerminalModal isOpen={true} onClose={mockOnClose} />
+    );
+
+    // Subscriptions should be re-established for session-2
+    await waitFor(() => {
+      expect(mockOnData2).toHaveBeenCalled();
+      expect(mockOnScrollback2).toHaveBeenCalled();
+      expect(mockOnConnect2).toHaveBeenCalled();
+      expect(mockOnExit2).toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * Regression: the xterm container must not have display:none when switching
+   * tabs, so that terminal.open() can always measure container dimensions.
+   */
+  it("xterm container has no display:none during tab switch re-initialization", async () => {
+    const firstTab = {
+      id: "tab-1",
+      sessionId: "session-1",
+      title: "Terminal 1",
+      isActive: true,
+      createdAt: Date.now(),
+    };
+
+    const { rerender } = renderWithTabs([firstTab], firstTab);
+
+    // Wait for initial xterm
+    await waitFor(() => {
+      expect(mockTerminalInstance.open).toHaveBeenCalled();
+    });
+
+    // Switch to new tab
+    const newTab = {
+      id: "tab-2",
+      sessionId: "session-2",
+      title: "Terminal 2",
+      isActive: true,
+      createdAt: Date.now(),
+    };
+
+    mockUseTerminalSessions.mockReturnValue({
+      ...defaultSessionState,
+      tabs: [{ ...firstTab, isActive: false }, newTab],
+      activeTab: newTab,
+    });
+
+    rerender(
+      <TerminalModal isOpen={true} onClose={mockOnClose} />
+    );
+
+    // The xterm container should never have display:none
+    await waitFor(() => {
+      const xtermDiv = screen.getByTestId("terminal-xterm");
+      expect(xtermDiv.style.display).not.toBe("none");
+    });
+  });
+
+  // Helper to render with specific tabs
+  function renderWithTabs(tabs: typeof defaultTab[], activeTab: typeof defaultTab) {
+    mockUseTerminalSessions.mockReturnValue({
+      ...defaultSessionState,
+      tabs,
+      activeTab,
+    });
+    mockUseTerminal.mockReturnValue(createMockTerminalState());
+
+    return render(<TerminalModal isOpen={true} onClose={mockOnClose} />);
+  }
 });
 
 // --- Virtual keyboard overlap handling ---

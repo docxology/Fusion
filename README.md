@@ -373,6 +373,7 @@ A fully interactive PTY-based terminal is available in the dashboard for executi
 - Auto-resizing with zoom support (Ctrl++/-)
 - Copy/paste via keyboard shortcuts
 - Mobile virtual-keyboard-aware positioning - the terminal automatically adjusts its layout when a mobile virtual keyboard opens, keeping the command entry area visible
+- Multiple terminal tabs with session persistence - newly created tabs render output immediately in the current modal session without needing to close and reopen
 
 ### Git Manager
 

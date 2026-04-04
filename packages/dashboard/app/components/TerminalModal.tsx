@@ -257,8 +257,12 @@ export function TerminalModal({ isOpen, onClose, initialCommand }: TerminalModal
   // Subscribe to terminal data.
   // Depends on `xtermReady` so subscriptions are established after the
   // async xterm initialization completes and xtermRef.current is set.
+  // Depends on `activeTab?.sessionId` (not just `activeTab?.id`) so that
+  // creating a new tab triggers rebinding to the new session's WebSocket
+  // callbacks. Without sessionId, the effect would miss session switches
+  // that happen within the same modal session.
   useEffect(() => {
-    if (!xtermReady || !xtermRef.current) return;
+    if (!xtermReady || !xtermRef.current || !activeTab) return;
 
     const unsubData = onData((data) => {
       xtermRef.current?.write(data);
@@ -270,9 +274,7 @@ export function TerminalModal({ isOpen, onClose, initialCommand }: TerminalModal
 
     const unsubConnect = onConnect((info) => {
       // Update tab title with shell name
-      if (activeTab) {
-        updateTabTitle(activeTab.id, info.shell.split("/").pop() || info.shell);
-      }
+      updateTabTitle(activeTab.id, info.shell.split("/").pop() || info.shell);
     });
 
     const unsubExit = onExit((code) => {
@@ -286,7 +288,7 @@ export function TerminalModal({ isOpen, onClose, initialCommand }: TerminalModal
       unsubConnect();
       unsubExit();
     };
-  }, [xtermReady, activeTab?.id, onData, onScrollback, onConnect, onExit, updateTabTitle]);
+  }, [xtermReady, activeTab?.sessionId, activeTab?.id, onData, onScrollback, onConnect, onExit, updateTabTitle]);
 
   // Run initial command when connected.
   // Tracks the last command that was sent so that a new command provided
@@ -534,12 +536,19 @@ export function TerminalModal({ isOpen, onClose, initialCommand }: TerminalModal
               <span>Starting terminal...</span>
             </div>
           )}
-          {/* Use key to force remount on session change */}
+          {/*
+            Always render the xterm container (no display:none) so that
+            terminal.open() can measure its dimensions even during a tab switch.
+            The loading overlay (position: absolute) visually covers it until
+            xterm is ready. Use key={sessionId} to force a clean DOM remount
+            when switching tabs — this prevents stale xterm state from the
+            previous session.
+          */}
           <div
+            key={activeTab?.sessionId}
             ref={terminalRef}
             className="terminal-xterm"
             data-testid="terminal-xterm"
-            style={isLoading ? { display: "none" } : undefined}
           />
         </div>
 
