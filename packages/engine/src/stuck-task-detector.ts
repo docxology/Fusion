@@ -47,6 +47,8 @@ export interface StuckTaskEvent {
   inactivityMs: number;
   /** Number of activity heartbeats since the last progress event. */
   activitySinceProgress: number;
+  /** Whether the task should be re-queued (budget not exhausted). */
+  shouldRequeue: boolean;
 }
 
 /** Minimum activity-since-progress count to classify as a loop.
@@ -257,13 +259,29 @@ export class StuckTaskDetector {
       stuckLog.error(`Failed to log stuck event for ${taskId}:`, err);
     }
 
-    // Build the event payload
+    // Check stuck kill budget BEFORE disposing the session so the result
+    // is available to the executor's cleanup path via the event payload.
+    let shouldRequeue = true;
+    if (this.beforeRequeue) {
+      try {
+        shouldRequeue = await this.beforeRequeue(taskId);
+        if (!shouldRequeue) {
+          stuckLog.log(`${taskId} exceeded stuck kill budget — not re-queuing`);
+        }
+      } catch (err) {
+        stuckLog.error(`beforeRequeue check failed for ${taskId}:`, err);
+        // Fall through with shouldRequeue=true — safer than dropping the task
+      }
+    }
+
+    // Build the event payload (includes requeue decision for executor)
     const event: StuckTaskEvent = {
       taskId,
       reason,
       noProgressMs,
       inactivityMs,
       activitySinceProgress,
+      shouldRequeue,
     };
 
     // Notify listeners before disposing the session so executor cleanup can
@@ -277,36 +295,11 @@ export class StuckTaskDetector {
       stuckLog.error(`Failed to dispose session for ${taskId}:`, err);
     }
 
-    // Remove from tracking
+    // Remove from tracking.
+    // The actual moveTask("todo") is handled by the executor's catch/finally
+    // block after it cleans up this.executing. This prevents a race where the
+    // scheduler re-dispatches the task while the old execution is still active.
     this.tracked.delete(taskId);
-
-    // Check stuck kill budget before re-queuing (SelfHealingManager integration).
-    // If beforeRequeue returns false, the task has been marked failed — skip re-queue.
-    if (this.beforeRequeue) {
-      try {
-        const shouldRequeue = await this.beforeRequeue(taskId);
-        if (!shouldRequeue) {
-          stuckLog.log(`${taskId} exceeded stuck kill budget — not re-queuing`);
-          return;
-        }
-      } catch (err) {
-        stuckLog.error(`beforeRequeue check failed for ${taskId}:`, err);
-        // Fall through to re-queue on error — safer than dropping the task
-      }
-    }
-
-    // Set transient "stuck-killed" status, then move to "todo" for retry.
-    // moveTask from "in-progress" to "todo" automatically clears status,
-    // so no explicit status clear is needed after the move.
-    // currentStep and step statuses are preserved so execution resumes where it left off.
-    try {
-      await this.store.updateTask(taskId, { status: "stuck-killed" });
-      await this.store.moveTask(taskId, "todo");
-      stuckLog.log(`${taskId} moved to todo for retry`);
-    } catch (err) {
-      stuckLog.error(`Failed to move ${taskId} to todo:`, err);
-    }
-
   }
 
   /**

@@ -391,7 +391,7 @@ describe("StuckTaskDetector", () => {
       vi.useRealTimers();
     });
 
-    it("updates task status and moves to todo", async () => {
+    it("does not move task to todo directly (deferred to executor)", async () => {
       const session = createMockSession();
       detector.trackTask("FN-001", session);
 
@@ -400,13 +400,15 @@ describe("StuckTaskDetector", () => {
 
       await detector.killAndRetry("FN-001", 60000);
 
-      expect(store.updateTask).toHaveBeenCalledWith("FN-001", { status: "stuck-killed" });
-      expect(store.moveTask).toHaveBeenCalledWith("FN-001", "todo");
+      // The detector no longer moves the task — the executor handles this
+      // in its finally block after clearing the execution guard.
+      expect(store.updateTask).not.toHaveBeenCalledWith("FN-001", { status: "stuck-killed" });
+      expect(store.moveTask).not.toHaveBeenCalled();
 
       vi.useRealTimers();
     });
 
-    it("calls onStuck callback with structured event payload", async () => {
+    it("calls onStuck callback with structured event payload including shouldRequeue", async () => {
       const onStuck = vi.fn();
       const customDetector = new StuckTaskDetector(store, { onStuck });
       const session = createMockSession();
@@ -425,6 +427,7 @@ describe("StuckTaskDetector", () => {
           noProgressMs: expect.any(Number),
           inactivityMs: expect.any(Number),
           activitySinceProgress: 0,
+          shouldRequeue: true,
         }),
       );
 
@@ -485,10 +488,10 @@ describe("StuckTaskDetector", () => {
     it("does nothing for untracked task", async () => {
       await detector.killAndRetry("FN-001", 60000);
       // Should not throw
-      expect(store.moveTask).not.toHaveBeenCalled();
+      expect(store.logEntry).not.toHaveBeenCalled();
     });
 
-    it("calls beforeRequeue and skips re-queue when it returns false", async () => {
+    it("calls beforeRequeue and passes shouldRequeue=false to onStuck when budget exhausted", async () => {
       const beforeRequeue = vi.fn().mockResolvedValue(false);
       const onStuck = vi.fn();
       const customDetector = new StuckTaskDetector(store, { beforeRequeue, onStuck });
@@ -503,18 +506,20 @@ describe("StuckTaskDetector", () => {
 
       expect(beforeRequeue).toHaveBeenCalledWith("FN-001");
       expect(session.dispose).toHaveBeenCalled();
-      // onStuck should still be called (so executor can mark stuck-aborted)
-      expect(onStuck).toHaveBeenCalled();
-      // But task should NOT be moved to todo
+      // onStuck should still be called with shouldRequeue=false
+      expect(onStuck).toHaveBeenCalledWith(
+        expect.objectContaining({ taskId: "FN-001", shouldRequeue: false }),
+      );
+      // Detector no longer moves tasks — executor handles it
       expect(store.moveTask).not.toHaveBeenCalled();
-      expect(store.updateTask).not.toHaveBeenCalledWith("FN-001", { status: "stuck-killed" });
 
       vi.useRealTimers();
     });
 
-    it("calls beforeRequeue and proceeds with re-queue when it returns true", async () => {
+    it("calls beforeRequeue and passes shouldRequeue=true to onStuck when budget allows", async () => {
       const beforeRequeue = vi.fn().mockResolvedValue(true);
-      const customDetector = new StuckTaskDetector(store, { beforeRequeue });
+      const onStuck = vi.fn();
+      const customDetector = new StuckTaskDetector(store, { beforeRequeue, onStuck });
       const session = createMockSession();
 
       customDetector.trackTask("FN-001", session);
@@ -525,15 +530,19 @@ describe("StuckTaskDetector", () => {
       await customDetector.killAndRetry("FN-001", 60000);
 
       expect(beforeRequeue).toHaveBeenCalledWith("FN-001");
-      expect(store.updateTask).toHaveBeenCalledWith("FN-001", { status: "stuck-killed" });
-      expect(store.moveTask).toHaveBeenCalledWith("FN-001", "todo");
+      expect(onStuck).toHaveBeenCalledWith(
+        expect.objectContaining({ taskId: "FN-001", shouldRequeue: true }),
+      );
+      // Detector no longer moves tasks — executor handles it
+      expect(store.moveTask).not.toHaveBeenCalled();
 
       vi.useRealTimers();
     });
 
-    it("falls through to re-queue when beforeRequeue throws", async () => {
+    it("falls through with shouldRequeue=true when beforeRequeue throws", async () => {
       const beforeRequeue = vi.fn().mockRejectedValue(new Error("check failed"));
-      const customDetector = new StuckTaskDetector(store, { beforeRequeue });
+      const onStuck = vi.fn();
+      const customDetector = new StuckTaskDetector(store, { beforeRequeue, onStuck });
       const session = createMockSession();
 
       customDetector.trackTask("FN-001", session);
@@ -543,19 +552,23 @@ describe("StuckTaskDetector", () => {
 
       await customDetector.killAndRetry("FN-001", 60000);
 
-      // Should still re-queue on error (safe fallback)
-      expect(store.moveTask).toHaveBeenCalledWith("FN-001", "todo");
+      // Should pass shouldRequeue=true on error (safe fallback)
+      expect(onStuck).toHaveBeenCalledWith(
+        expect.objectContaining({ taskId: "FN-001", shouldRequeue: true }),
+      );
+      expect(store.moveTask).not.toHaveBeenCalled();
 
       vi.useRealTimers();
     });
   });
 
   describe("checkNow", () => {
-    it("checks stuck tasks immediately", async () => {
+    it("checks stuck tasks immediately and disposes session", async () => {
       store = createMockStore({
         getSettings: vi.fn().mockResolvedValue({ taskStuckTimeoutMs: 60000 }),
       });
-      const customDetector = new StuckTaskDetector(store);
+      const onStuck = vi.fn();
+      const customDetector = new StuckTaskDetector(store, { onStuck });
       const session = createMockSession();
 
       customDetector.trackTask("FN-001", session);
@@ -565,7 +578,12 @@ describe("StuckTaskDetector", () => {
 
       await customDetector.checkNow();
 
-      expect(store.moveTask).toHaveBeenCalledWith("FN-001", "todo");
+      expect(session.dispose).toHaveBeenCalled();
+      expect(onStuck).toHaveBeenCalledWith(
+        expect.objectContaining({ taskId: "FN-001", shouldRequeue: true }),
+      );
+      // Detector no longer moves tasks — executor handles it
+      expect(store.moveTask).not.toHaveBeenCalled();
 
       vi.useRealTimers();
     });
@@ -670,9 +688,10 @@ describe("StuckTaskDetector", () => {
           taskId: "FN-001",
           reason: "inactivity",
           activitySinceProgress: 0,
+          shouldRequeue: true,
         }),
       );
-      expect(store.moveTask).toHaveBeenCalledWith("FN-001", "todo");
+      expect(session.dispose).toHaveBeenCalled();
 
       vi.useRealTimers();
     });

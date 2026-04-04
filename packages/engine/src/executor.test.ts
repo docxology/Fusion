@@ -4635,7 +4635,7 @@ describe("TaskExecutor bounded recovery retries", () => {
     const executor = new TaskExecutor(store, "/tmp/test", {});
 
     mockedCreateHaiAgent.mockRejectedValue(new Error("Aborted"));
-    (executor as any).stuckAborted.add("FN-001");
+    (executor as any).stuckAborted.set("FN-001", true);
 
     await executor.execute({
       id: "FN-001",
@@ -4657,14 +4657,14 @@ describe("TaskExecutor bounded recovery retries", () => {
     }));
   });
 
-  it("exits cleanly when a stuck-killed session resolves without throwing", async () => {
+  it("requeues to todo when a stuck-killed session resolves without throwing", async () => {
     const store = createMockStore();
     const executor = new TaskExecutor(store, "/tmp/test", {});
 
     mockedCreateHaiAgent.mockImplementation(async () => ({
       session: {
         prompt: vi.fn(async () => {
-          executor.markStuckAborted("FN-001");
+          executor.markStuckAborted("FN-001", true);
         }),
         dispose: vi.fn(),
         state: {},
@@ -4690,6 +4690,46 @@ describe("TaskExecutor bounded recovery retries", () => {
       expect.objectContaining({ status: "failed" }),
     );
     expect(store.moveTask).not.toHaveBeenCalledWith("FN-001", "in-review");
+    // Executor now handles the requeue in its finally block
+    expect(store.updateTask).toHaveBeenCalledWith("FN-001", { status: "stuck-killed" });
+    expect(store.moveTask).toHaveBeenCalledWith("FN-001", "todo");
+  });
+
+  it("does not requeue when stuck-kill budget is exhausted", async () => {
+    const store = createMockStore();
+    const executor = new TaskExecutor(store, "/tmp/test", {});
+
+    mockedCreateHaiAgent.mockImplementation(async () => ({
+      session: {
+        prompt: vi.fn(async () => {
+          // Budget exhausted — shouldRequeue=false
+          executor.markStuckAborted("FN-001", false);
+        }),
+        dispose: vi.fn(),
+        state: {},
+      },
+    }) as any);
+
+    await executor.execute({
+      id: "FN-001",
+      title: "Test",
+      description: "Test",
+      column: "in-progress",
+      dependencies: [],
+      steps: [],
+      currentStep: 0,
+      log: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+
+    // Should NOT requeue or mark as failed (budget handler already did that)
+    expect(store.moveTask).not.toHaveBeenCalledWith("FN-001", "todo");
+    expect(store.updateTask).not.toHaveBeenCalledWith("FN-001", { status: "stuck-killed" });
+    expect(store.updateTask).not.toHaveBeenCalledWith(
+      "FN-001",
+      expect.objectContaining({ status: "failed" }),
+    );
   });
 
   it("clears recovery metadata after successful run completes", async () => {

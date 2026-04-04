@@ -184,8 +184,8 @@ export class TaskExecutor {
   private pausedAborted = new Set<string>();
   /** Tasks that had a dependency added mid-execution (abort + discard worktree). */
   private depAborted = new Set<string>();
-  /** Tasks that were killed by stuck task detector (to avoid marking them as "failed"). */
-  private stuckAborted = new Set<string>();
+  /** Tasks killed by stuck task detector. Value = shouldRequeue (budget not exhausted). */
+  private stuckAborted = new Map<string, boolean>();
 
   /**
    * @param store — Task store instance (also used to listen for events)
@@ -416,6 +416,11 @@ export class TaskExecutor {
       }
       worktreePath = join(this.rootDir, ".worktrees", worktreeName);
     }
+
+    // Set by stuck-abort handlers; the actual moveTask("todo") is deferred to
+    // the finally block so this.executing is cleared first (prevents re-dispatch race).
+    // true = requeue to todo, false = budget exhausted (already marked failed).
+    let stuckRequeue: boolean | null = null;
 
     try {
       // Check dependencies
@@ -700,8 +705,11 @@ export class TaskExecutor {
           }
 
           // If the stuck task detector disposed the session and the agent exited
-          // cleanly, stop here. The detector already handled recovery/re-queueing.
+          // cleanly, stop here. The requeue is deferred to the finally block
+          // (after this.executing is cleared) to prevent a race where the
+          // scheduler re-dispatches while the old execution guard is still set.
           if (this.stuckAborted.has(task.id)) {
+            stuckRequeue = this.stuckAborted.get(task.id) ?? true;
             this.stuckAborted.delete(task.id);
             executorLog.log(`${task.id} terminated by stuck task detector (graceful session exit)`);
             return;
@@ -860,10 +868,11 @@ export class TaskExecutor {
         await this.store.logEntry(task.id, "Execution paused — agent terminated, moved to todo");
         await this.store.moveTask(task.id, "todo");
       } else if (this.stuckAborted.has(task.id)) {
-        // Task was killed by stuck task detector — already moved to todo by killAndRetry.
-        // Don't mark as failed; the scheduler will retry it naturally.
-        executorLog.log(`${task.id} terminated by stuck task detector — will retry`);
+        // Task was killed by stuck task detector — defer requeue to finally block
+        // (after this.executing is cleared) to prevent re-dispatch race.
+        stuckRequeue = this.stuckAborted.get(task.id) ?? true;
         this.stuckAborted.delete(task.id);
+        executorLog.log(`${task.id} terminated by stuck task detector — will ${stuckRequeue ? "retry" : "not retry (budget exhausted)"}`);
       } else {
         // Check if the error is a usage-limit error and trigger global pause
         if (this.options.usageLimitPauser && isUsageLimitError(err.message)) {
@@ -907,6 +916,21 @@ export class TaskExecutor {
       }
     } finally {
       this.executing.delete(task.id);
+
+      // Requeue stuck-killed task AFTER this.executing is cleared.
+      // This prevents the race where the scheduler re-dispatches the task
+      // (via task:moved → execute()) while the old execution guard is still set,
+      // which caused the new execute() call to silently no-op, stranding the
+      // task in "in-progress" with no active session or worktree.
+      if (stuckRequeue === true) {
+        try {
+          await this.store.updateTask(task.id, { status: "stuck-killed" });
+          await this.store.moveTask(task.id, "todo");
+          executorLog.log(`${task.id} moved to todo for retry after stuck kill`);
+        } catch (err: any) {
+          executorLog.error(`Failed to requeue stuck task ${task.id}: ${err.message}`);
+        }
+      }
     }
   }
 
@@ -2108,9 +2132,12 @@ If issues are found that need attention, describe them clearly.`;
    * Mark a task as stuck-aborted so the executor's error handling
    * knows not to treat the disposed session as a genuine failure.
    * Called by the stuck task detector's onStuck callback.
+   *
+   * @param shouldRequeue — true to move the task back to "todo" for retry,
+   *   false if the stuck kill budget is exhausted (task already marked failed).
    */
-  markStuckAborted(taskId: string): void {
-    this.stuckAborted.add(taskId);
+  markStuckAborted(taskId: string, shouldRequeue: boolean = true): void {
+    this.stuckAborted.set(taskId, shouldRequeue);
   }
 
   getWorktreePath(taskId: string): string | undefined {
