@@ -97,14 +97,14 @@ A persistent footer status bar at the bottom of the dashboard displays real-time
 - `GET /api/executor/stats` - Returns `globalPause`, `enginePaused`, `maxConcurrent`, and `lastActivityAt` for state derivation. Column-based counts (running, blocked, stuck, queued, in-review) are derived client-side from the shared task list.
 
 ### Agents View
-Manage AI agents with a dedicated control surface accessible from the main dashboard navigation.
+Manage AI agents with a dedicated control surface accessible from the main dashboard navigation. All agent surfaces (AgentsView, AgentListModal, AgentDetailView) share consistent token-based styling using dashboard design tokens (`--surface`, `--card`, `--border`, `--text`, `--color-success`, `--color-error`, etc.) and locally defined state color tokens (`--state-idle-*`, `--state-active-*`, `--state-paused-*`, `--state-error-*`) for theme-aware rendering.
 
 **Features**:
-- **State Filter**: Styled dropdown to filter agents by state (All States, Idle, Active, Paused, Terminated) with icon and consistent dashboard styling using design tokens
+- **State Filter**: Styled dropdown to filter agents by state (All States, Idle, Active, Paused, Terminated) with Filter icon, aria-label, and consistent dashboard styling using design tokens (`--radius-sm`, `--border`, `--bg`, `--focus-ring`)
 - **View Modes**: Board (compact grid) and list (detailed card) layouts, persisted to localStorage
-- **Agent CRUD**: Create agents with name and role (create form uses dashboard radius tokens for consistent styling), change state, update roles inline, delete terminated agents
-- **Health Monitoring**: Heartbeat-based health status (Healthy, Unresponsive, Starting, Paused, Terminated)
-- **Agent Detail**: Click any agent card to open a detail modal with full agent information. The **Settings** tab now includes **editable advanced settings** (heartbeat interval, max retries, task timeout, log level) persisted through `agent.metadata`. Empty fields revert to system defaults, invalid values block save with inline error messages
+- **Agent CRUD**: Create agents with name and role (create form uses `var(--radius-sm)` and `var(--bg-secondary)` tokens for consistent theme-aware styling), change state, update roles inline, delete terminated agents
+- **Health Monitoring**: Heartbeat-based health status (Healthy, Unresponsive, Starting, Paused, Terminated) using CSS variable references for theme consistency
+- **Agent Detail**: Click any agent card to open a detail modal with full agent information. The modal uses component-local token aliases (`--bg-primary`, `--accent`, `--text-primary`, `--bg-hover`) mapped to global tokens (`--surface`, `--todo`, `--text`, `--card-hover`) for theme consistency. The **Settings** tab now includes **editable advanced settings** (heartbeat interval, max retries, task timeout, log level) persisted through `agent.metadata`. Empty fields revert to system defaults, invalid values block save with inline error messages
 
 ### Interactive Terminal
 Access a fully functional PTY (pseudo-terminal) shell directly from the dashboard. Click the terminal icon in the header to open the interactive terminal modal.

@@ -76,6 +76,134 @@ describe("AgentDetailView", () => {
     expect(screen.getByText(/Loading agent/i)).toBeInTheDocument();
   });
 
+  it("defines CSS variables for agent state tokens in the style block", async () => {
+    render(
+      <AgentDetailView
+        agentId="agent-001"
+        onClose={vi.fn()}
+        addToast={vi.fn()}
+      />
+    );
+
+    await waitFor(() => {
+      const headings = screen.getAllByRole("heading", { level: 2 });
+      expect(headings.some(h => h.textContent === "Test Agent")).toBe(true);
+    });
+
+    // Verify state CSS variables are defined in the component's style block
+    const styleElements = document.querySelectorAll("style");
+    const allCss = Array.from(styleElements).map(el => el.textContent ?? "").join("");
+    expect(allCss).toContain("--state-idle-bg");
+    expect(allCss).toContain("--state-active-bg");
+    expect(allCss).toContain("--state-paused-bg");
+    expect(allCss).toContain("--state-error-bg");
+    expect(allCss).toContain("--state-idle-text");
+    expect(allCss).toContain("--state-active-text");
+  });
+
+  it("uses token-based state colors for badges instead of hardcoded hex", async () => {
+    render(
+      <AgentDetailView
+        agentId="agent-001"
+        onClose={vi.fn()}
+        addToast={vi.fn()}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByText("active").length).toBeGreaterThan(0);
+    });
+
+    // Verify badge styles use CSS variable references for background, not hex values
+    const badges = document.querySelectorAll(".badge, .inline-badge");
+    badges.forEach(badge => {
+      const htmlEl = badge as HTMLElement;
+      const style = htmlEl.getAttribute("style") ?? "";
+      // Background should use var(--state-*) references, not raw rgba() or hex
+      if (style.includes("background")) {
+        expect(style).toContain("var(--state-");
+        // Should not use raw rgba() for state backgrounds
+        expect(style).not.toMatch(/background:\s*rgba\(/);
+      }
+    });
+  });
+
+  it("uses token-based colors for health status instead of hardcoded hex", async () => {
+    render(
+      <AgentDetailView
+        agentId="agent-001"
+        onClose={vi.fn()}
+        addToast={vi.fn()}
+      />
+    );
+
+    await waitFor(() => {
+      // The mock agent is active with a heartbeat from 2024, so it should show "Unresponsive"
+      const hasHealthStatus = screen.queryAllByText(/Healthy|Unresponsive|Idle/).length > 0;
+      expect(hasHealthStatus).toBe(true);
+    });
+
+    // Health badges in header should use var(--state-*) references, not raw hex
+    const headerBadges = document.querySelectorAll(".agent-detail-badges .badge");
+    headerBadges.forEach(badge => {
+      const htmlEl = badge as HTMLElement;
+      const style = htmlEl.getAttribute("style") ?? "";
+      if (style.includes("color:") && !style.includes("var(--state-")) {
+        // If the color is not a state variable, it should still be a CSS variable
+        expect(style).toMatch(/color:\s*var\(/);
+      }
+    });
+  });
+
+  it("uses token-based color references in CSS instead of undefined vars", async () => {
+    render(
+      <AgentDetailView
+        agentId="agent-001"
+        onClose={vi.fn()}
+        addToast={vi.fn()}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByText("active").length).toBeGreaterThan(0);
+    });
+
+    // Navigate to Runs tab to trigger rendering of run-related style blocks
+    fireEvent.click(screen.getByText("Runs"));
+
+    // Verify style blocks use --color-success and --color-error with fallbacks
+    // (not bare --success or --error which are undefined in the root CSS)
+    await waitFor(() => {
+      const styleElements = document.querySelectorAll("style");
+      const allCss = Array.from(styleElements).map(el => el.textContent ?? "").join("");
+      expect(allCss).toMatch(/var\(--color-success/);
+      expect(allCss).toMatch(/var\(--color-error/);
+    });
+  });
+
+  it("defines component-local aliases for undefined CSS tokens", async () => {
+    render(
+      <AgentDetailView
+        agentId="agent-001"
+        onClose={vi.fn()}
+        addToast={vi.fn()}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByText("active").length).toBeGreaterThan(0);
+    });
+
+    // Verify that component-local aliases are defined for tokens used in the style block
+    // These map to real global tokens so they don't fall back to browser defaults
+    const styleElements = document.querySelectorAll("style");
+    const allCss = Array.from(styleElements).map(el => el.textContent ?? "").join("");
+    expect(allCss).toContain("--bg-primary: var(--surface");
+    expect(allCss).toContain("--accent: var(--todo");
+    expect(allCss).toContain("--text-primary: var(--text");
+    expect(allCss).toContain("--bg-hover: var(--card-hover");
+  });
+
   it("displays agent name in header after loading", async () => {
     render(
       <AgentDetailView

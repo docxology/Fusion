@@ -56,17 +56,17 @@ const TABS: { id: TabId; label: string; icon: typeof Activity }[] = [
 ];
 
 const STATE_COLORS: Record<AgentState, { bg: string; text: string; border: string }> = {
-  idle: { bg: "rgba(139, 148, 158, 0.15)", text: "#8b949e", border: "#8b949e" },
-  active: { bg: "rgba(46, 160, 67, 0.15)", text: "#3fb950", border: "#3fb950" },
-  paused: { bg: "rgba(227, 179, 65, 0.15)", text: "#e3b541", border: "#e3b541" },
-  terminated: { bg: "rgba(248, 81, 73, 0.15)", text: "#f85149", border: "#f85149" },
+  idle: { bg: "var(--state-idle-bg)", text: "var(--state-idle-text)", border: "var(--state-idle-border)" },
+  active: { bg: "var(--state-active-bg)", text: "var(--state-active-text)", border: "var(--state-active-border)" },
+  paused: { bg: "var(--state-paused-bg)", text: "var(--state-paused-text)", border: "var(--state-paused-border)" },
+  terminated: { bg: "var(--state-error-bg)", text: "var(--state-error-text)", border: "var(--state-error-border)" },
 };
 
 const RUN_STATUS_ICONS: Record<string, { icon: typeof CheckCircle; color: string }> = {
-  completed: { icon: CheckCircle, color: "text-green-500" },
-  failed: { icon: XCircle, color: "text-red-500" },
-  active: { icon: Loader2, color: "text-cyan-500 animate-spin" },
-  terminated: { icon: Square, color: "text-gray-500" },
+  completed: { icon: CheckCircle, color: "var(--color-success, #3fb950)" },
+  failed: { icon: XCircle, color: "var(--color-error, #f85149)" },
+  active: { icon: Loader2, color: "var(--in-progress, #bc8cff)" },
+  terminated: { icon: Square, color: "var(--text-muted, #8b949e)" },
 };
 
 export function AgentDetailView({ agentId, projectId, onClose, addToast }: AgentDetailViewProps) {
@@ -179,23 +179,23 @@ export function AgentDetailView({ agentId, projectId, onClose, addToast }: Agent
   };
 
   const getHealthStatus = () => {
-    if (!agent) return { label: "Unknown", color: "#888" };
+    if (!agent) return { label: "Unknown", color: "var(--text-muted, #8b949e)" };
     if (agent.state === "terminated") {
-      return { label: "Terminated", color: "#f85149" };
+      return { label: "Terminated", color: "var(--state-error-text, #f85149)" };
     }
     if (agent.state === "paused") {
-      return { label: "Paused", color: "#e3b541" };
+      return { label: "Paused", color: "var(--state-paused-text, #e3b541)" };
     }
     if (!agent.lastHeartbeatAt) {
-      return { label: agent.state === "active" ? "Starting..." : "Idle", color: "#8b949e" };
+      return { label: agent.state === "active" ? "Starting..." : "Idle", color: "var(--state-idle-text, #8b949e)" };
     }
     const lastHeartbeat = new Date(agent.lastHeartbeatAt).getTime();
     const elapsed = Date.now() - lastHeartbeat;
     const timeoutMs = 60000;
     if (elapsed > timeoutMs) {
-      return { label: "Unresponsive", color: "#f85149" };
+      return { label: "Unresponsive", color: "var(--state-error-text, #f85149)" };
     }
-    return { label: "Healthy", color: "#3fb950" };
+    return { label: "Healthy", color: "var(--state-active-text, #3fb950)" };
   };
 
   const copyAgentId = () => {
@@ -372,6 +372,27 @@ export function AgentDetailView({ agentId, projectId, onClose, addToast }: Agent
 
       <style>{`
         .agent-detail-overlay {
+          /* Agent state CSS variables - define fallback values */
+          --state-idle-bg: rgba(139, 148, 158, 0.15);
+          --state-idle-text: #8b949e;
+          --state-idle-border: #8b949e;
+          --state-active-bg: rgba(46, 160, 67, 0.15);
+          --state-active-text: #3fb950;
+          --state-active-border: #3fb950;
+          --state-paused-bg: rgba(227, 179, 65, 0.15);
+          --state-paused-text: #e3b541;
+          --state-paused-border: #e3b541;
+          --state-error-bg: rgba(248, 81, 73, 0.15);
+          --state-error-text: #f85149;
+          --state-error-border: #f85149;
+          --text-secondary: var(--text-muted, #8b949e);
+
+          /* Component-local aliases for dashboard tokens */
+          --bg-primary: var(--surface, #161b22);
+          --accent: var(--todo, #58a6ff);
+          --text-primary: var(--text, #e6edf3);
+          --bg-hover: var(--card-hover, #282e36);
+
           position: fixed;
           inset: 0;
           background: rgba(0, 0, 0, 0.6);
@@ -385,7 +406,7 @@ export function AgentDetailView({ agentId, projectId, onClose, addToast }: Agent
         .agent-detail-modal {
           background: var(--bg-primary);
           border: 1px solid var(--border);
-          border-radius: 12px;
+          border-radius: var(--radius-lg);
           width: 100%;
           max-width: 900px;
           max-height: 85vh;
@@ -423,7 +444,7 @@ export function AgentDetailView({ agentId, projectId, onClose, addToast }: Agent
         .agent-detail-icon {
           width: 48px;
           height: 48px;
-          border-radius: 12px;
+          border-radius: var(--radius-lg, 12px);
           background: var(--accent);
           display: flex;
           align-items: center;
@@ -860,13 +881,13 @@ function LogsTab({
           align-items: center;
           gap: 6px;
           font-size: 12px;
-          color: var(--success);
+          color: var(--color-success, #3fb950);
         }
 
         .streaming-dot {
           width: 8px;
           height: 8px;
-          background: var(--success);
+          background: var(--color-success, #3fb950);
           border-radius: 50%;
           animation: pulse 1.5s infinite;
         }
@@ -914,14 +935,14 @@ function LogEntry({ entry }: { entry: AgentLogEntry }) {
         };
       case "tool_result":
         return {
-          color: "var(--success)",
-          borderLeft: "3px solid var(--success)",
+          color: "var(--color-success, #3fb950)",
+          borderLeft: "3px solid var(--color-success, #3fb950)",
           background: "rgba(76, 175, 80, 0.06)",
         };
       case "tool_error":
         return {
-          color: "var(--error)",
-          borderLeft: "3px solid var(--error)",
+          color: "var(--color-error, #f85149)",
+          borderLeft: "3px solid var(--color-error, #f85149)",
           background: "rgba(229, 57, 53, 0.06)",
         };
       case "thinking":
@@ -1142,11 +1163,11 @@ function RunsTab({
         }
 
         .run-status.completed {
-          color: var(--success);
+          color: var(--color-success, #3fb950);
         }
 
         .run-status.failed {
-          color: var(--error);
+          color: var(--color-error, #f85149);
         }
 
         .run-status.terminated {
@@ -1520,11 +1541,11 @@ function ConfigTab({
 
         .config-error {
           font-size: 11px;
-          color: var(--error, #f85149);
+          color: var(--color-error, #f85149);
         }
 
         .input--error {
-          border-color: var(--error, #f85149) !important;
+          border-color: var(--color-error, #f85149) !important;
         }
 
         .config-actions {
@@ -1541,7 +1562,7 @@ function ConfigTab({
           align-items: center;
           gap: 6px;
           font-size: 13px;
-          color: var(--success, #3fb950);
+          color: var(--color-success, #3fb950);
         }
       `}</style>
     </div>

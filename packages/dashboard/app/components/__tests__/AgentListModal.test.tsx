@@ -671,7 +671,7 @@ describe("AgentListModal", () => {
         expect(screen.getByText("All States")).toBeTruthy();
       });
 
-      const filterSelect = screen.getByDisplayValue("All States");
+      const filterSelect = screen.getByLabelText("Filter agents by state");
       fireEvent.change(filterSelect, { target: { value: "active" } });
 
       await waitFor(() => {
@@ -692,7 +692,7 @@ describe("AgentListModal", () => {
         expect(screen.getByText("All States")).toBeTruthy();
       });
 
-      const filterSelect = screen.getByDisplayValue("All States");
+      const filterSelect = screen.getByLabelText("Filter agents by state");
       fireEvent.change(filterSelect, { target: { value: "idle" } });
 
       await waitFor(() => {
@@ -752,6 +752,93 @@ describe("AgentListModal", () => {
       expect(styleTag?.textContent).toContain("--state-active-bg");
       expect(styleTag?.textContent).toContain("--state-paused-bg");
       expect(styleTag?.textContent).toContain("--state-error-bg");
+    });
+  });
+
+  describe("create form styling parity", () => {
+    it("renders create form with dashboard token-based styling", async () => {
+      render(
+        <AgentListModal
+          isOpen={true}
+          onClose={mockOnClose}
+          addToast={mockAddToast}
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText("New Agent")).toBeTruthy();
+      });
+
+      fireEvent.click(screen.getByText("New Agent"));
+
+      // The create form container is rendered
+      const createForm = document.querySelector(".agent-create-form");
+      expect(createForm).toBeTruthy();
+
+      // The inline style block should use var(--radius-sm) instead of hardcoded 8px
+      const styleElements = document.querySelectorAll("style");
+      let foundCreateFormRule = false;
+      styleElements.forEach(styleEl => {
+        const css = styleEl.textContent ?? "";
+        if (css.includes(".agent-create-form")) {
+          foundCreateFormRule = true;
+          // Must not contain hardcoded border-radius: 8px
+          expect(css).not.toMatch(/\.agent-create-form\s*\{[^}]*border-radius:\s*8px/);
+        }
+      });
+      expect(foundCreateFormRule).toBe(true);
+    });
+
+    it("renders filter with styled container matching AgentsView", async () => {
+      render(
+        <AgentListModal
+          isOpen={true}
+          onClose={mockOnClose}
+          addToast={mockAddToast}
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText("All States")).toBeTruthy();
+      });
+
+      // Styled filter container exists
+      const filterContainer = document.querySelector(".agent-state-filter");
+      expect(filterContainer).toBeTruthy();
+
+      // Select has correct aria-label
+      const filterSelect = screen.getByLabelText("Filter agents by state");
+      expect(filterSelect).toBeTruthy();
+      expect(filterSelect).toHaveValue("all");
+    });
+
+    it("filter CSS uses dashboard tokens for border-radius", async () => {
+      render(
+        <AgentListModal
+          isOpen={true}
+          onClose={mockOnClose}
+          addToast={mockAddToast}
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText("Agents")).toBeTruthy();
+      });
+
+      const styleElements = document.querySelectorAll("style");
+      let foundFilterRule = false;
+      styleElements.forEach(styleEl => {
+        const css = styleEl.textContent ?? "";
+        if (css.includes(".agent-state-filter {")) {
+          foundFilterRule = true;
+          // Should use var(--radius-sm) token
+          expect(css).toContain("border-radius: var(--radius-sm)");
+          // Should have hover and focus-within states
+          expect(css).toContain(".agent-state-filter:hover");
+          expect(css).toContain(".agent-state-filter:focus-within");
+        }
+      });
+      expect(foundFilterRule).toBe(true);
     });
   });
 
