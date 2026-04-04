@@ -381,6 +381,13 @@ function AppInner() {
     setPlanningInitialPlan(null);
   }, [addToast]);
 
+  const handlePlanningTasksCreated = useCallback((createdTasks: Task[]) => {
+    const ids = createdTasks.map((task) => task.id).join(", ");
+    addToast(`Created ${ids} from planning mode`, "success");
+    setIsPlanningOpen(false);
+    setPlanningInitialPlan(null);
+  }, [addToast]);
+
   // Handle planning mode from new task dialog
   const handleNewTaskPlanningMode = useCallback((initialPlan: string) => {
     setPlanningInitialPlan(initialPlan);
@@ -699,6 +706,7 @@ function AppInner() {
         isOpen={isPlanningOpen}
         onClose={handlePlanningClose}
         onTaskCreated={handlePlanningTaskCreated}
+        onTasksCreated={handlePlanningTasksCreated}
         tasks={tasks}
         initialPlan={planningInitialPlan ?? undefined}
         projectId={currentProject?.id}

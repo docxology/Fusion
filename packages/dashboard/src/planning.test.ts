@@ -14,6 +14,7 @@ import {
   SessionNotFoundError,
   InvalidSessionStateError,
   parseAgentResponse,
+  generateSubtasksFromPlanning,
 } from "./planning.js";
 import type { PlanningQuestion, PlanningSummary } from "@fusion/core";
 
@@ -370,6 +371,159 @@ describe("planning module", () => {
 
       const result = parseAgentResponse(input);
       expect(result.type).toBe("complete");
+    });
+  });
+
+  describe("generateSubtasksFromPlanning", () => {
+    /** Helper: create a session and complete it to get a summary */
+    async function createCompletedSession(
+      ip: string,
+      plan: string,
+      overrides?: Partial<PlanningSummary>
+    ): Promise<string> {
+      const { sessionId } = await createSession(ip, plan);
+      // Complete the session by submitting 3 responses
+      await submitResponse(sessionId, { scope: "medium" });
+      await submitResponse(sessionId, { requirements: "Test requirements" });
+      await submitResponse(sessionId, { confirm: true });
+      return sessionId;
+    }
+
+    it("returns empty array if session not found", () => {
+      const result = generateSubtasksFromPlanning("non-existent-session-id");
+      expect(result).toEqual([]);
+    });
+
+    it("returns empty array if session has no summary (not complete)", async () => {
+      const mockIp = getUniqueIp();
+      const { sessionId } = await createSession(mockIp, "Incomplete session");
+
+      const result = generateSubtasksFromPlanning(sessionId);
+      expect(result).toEqual([]);
+    });
+
+    it("generates subtasks from keyDeliverables", async () => {
+      const mockIp = getUniqueIp();
+      const sessionId = await createCompletedSession(mockIp, "Build auth system");
+
+      const result = generateSubtasksFromPlanning(sessionId);
+
+      // The stubbed session generates 3 key deliverables:
+      // "Implementation", "Tests", "Documentation"
+      expect(result.length).toBe(3);
+
+      // First subtask has no dependencies
+      expect(result[0]).toEqual({
+        id: "subtask-1",
+        title: "Implementation",
+        description: expect.any(String),
+        suggestedSize: "S",
+        dependsOn: [],
+      });
+
+      // Second subtask depends on first
+      expect(result[1]).toEqual({
+        id: "subtask-2",
+        title: "Tests",
+        description: expect.any(String),
+        suggestedSize: "M",
+        dependsOn: ["subtask-1"],
+      });
+
+      // Third subtask depends on second
+      expect(result[2]).toEqual({
+        id: "subtask-3",
+        title: "Documentation",
+        description: expect.any(String),
+        suggestedSize: "S",
+        dependsOn: ["subtask-2"],
+      });
+    });
+
+    it("generates fallback subtasks when keyDeliverables is empty", async () => {
+      const mockIp = getUniqueIp();
+      const { sessionId } = await createSession(mockIp, "Fallback test");
+
+      // Complete the session normally, then manually clear keyDeliverables
+      await submitResponse(sessionId, { scope: "small" });
+      await submitResponse(sessionId, { requirements: "test" });
+      await submitResponse(sessionId, { confirm: true });
+
+      // Get the session and manually clear keyDeliverables to test fallback
+      const session = getSession(sessionId);
+      expect(session).toBeDefined();
+      if (session?.summary) {
+        session.summary.keyDeliverables = [];
+      }
+
+      const result = generateSubtasksFromPlanning(sessionId);
+
+      expect(result.length).toBe(3);
+      expect(result[0]).toEqual({
+        id: "subtask-1",
+        title: "Define implementation approach",
+        description: expect.any(String),
+        suggestedSize: "S",
+        dependsOn: [],
+      });
+      expect(result[1]).toEqual({
+        id: "subtask-2",
+        title: "Implement core changes",
+        description: expect.any(String),
+        suggestedSize: "M",
+        dependsOn: ["subtask-1"],
+      });
+      expect(result[2]).toEqual({
+        id: "subtask-3",
+        title: "Verify and polish",
+        description: expect.any(String),
+        suggestedSize: "S",
+        dependsOn: ["subtask-2"],
+      });
+    });
+
+    it("assigns correct sizes based on deliverable position", async () => {
+      const mockIp = getUniqueIp();
+      const { sessionId } = await createSession(mockIp, "Multi-deliverable test");
+
+      // Complete the session
+      await submitResponse(sessionId, { scope: "large" });
+      await submitResponse(sessionId, { requirements: "many things" });
+      await submitResponse(sessionId, { confirm: true });
+
+      // Modify to have 5 deliverables for size variety
+      const session = getSession(sessionId);
+      if (session?.summary) {
+        session.summary.keyDeliverables = [
+          "Setup project structure",
+          "Build feature A",
+          "Build feature B",
+          "Build feature C",
+          "Integration tests",
+        ];
+      }
+
+      const result = generateSubtasksFromPlanning(sessionId);
+      expect(result.length).toBe(5);
+
+      // First: S, Middle: M, Last: S
+      expect(result[0]?.suggestedSize).toBe("S");
+      expect(result[1]?.suggestedSize).toBe("M");
+      expect(result[2]?.suggestedSize).toBe("M");
+      expect(result[3]?.suggestedSize).toBe("M");
+      expect(result[4]?.suggestedSize).toBe("S");
+    });
+
+    it("uses sequential dependencies between subtasks", async () => {
+      const mockIp = getUniqueIp();
+      const sessionId = await createCompletedSession(mockIp, "Dependency test");
+
+      const result = generateSubtasksFromPlanning(sessionId);
+
+      // Each subtask depends on the previous one
+      for (let i = 1; i < result.length; i++) {
+        expect(result[i]?.dependsOn).toEqual([`subtask-${i}`]);
+      }
     });
   });
 });

@@ -1257,6 +1257,8 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
       "POST /planning/respond",
       "POST /planning/cancel",
       "POST /planning/create-task",
+      "POST /planning/start-breakdown",
+      "POST /planning/create-tasks",
       "GET /planning/:sessionId/stream",
     ];
     console.debug("[planning:routes:registered]", planningRoutes);
@@ -5272,6 +5274,147 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
       res.status(201).json(task);
     } catch (err: any) {
       res.status(500).json({ error: err.message || "Failed to create task" });
+    }
+  });
+
+  /**
+   * POST /api/planning/start-breakdown
+   * Start subtask breakdown from a completed planning session.
+   * Body: { sessionId: string }
+   * Returns: { sessionId: string } — ID of the generated subtask breakdown
+   */
+  router.post("/planning/start-breakdown", async (req, res) => {
+    try {
+      const { sessionId } = req.body;
+
+      if (!sessionId || typeof sessionId !== "string") {
+        res.status(400).json({ error: "sessionId is required" });
+        return;
+      }
+
+      const { getSession, generateSubtasksFromPlanning } = await import("./planning.js");
+
+      const session = getSession(sessionId);
+      if (!session) {
+        res.status(404).json({ error: `Planning session ${sessionId} not found or expired` });
+        return;
+      }
+
+      if (!session.summary) {
+        res.status(400).json({ error: "Planning session is not complete" });
+        return;
+      }
+
+      const subtasks = generateSubtasksFromPlanning(sessionId);
+      if (subtasks.length === 0) {
+        res.status(400).json({ error: "Could not generate subtasks from planning session" });
+        return;
+      }
+
+      // Return a synthetic session ID (based on the planning session) and the generated subtasks
+      // We use the planning session ID directly as the breakdown session ID
+      res.json({ sessionId, subtasks });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Failed to start planning breakdown" });
+    }
+  });
+
+  /**
+   * POST /api/planning/create-tasks
+   * Create multiple tasks from a completed planning session (after optional editing).
+   * Body: { planningSessionId: string, subtasks: Array<{id, title, description, suggestedSize, dependsOn}> }
+   * Returns: { tasks: Task[] }
+   */
+  router.post("/planning/create-tasks", async (req, res) => {
+    try {
+      const { planningSessionId, subtasks } = req.body as {
+        planningSessionId?: string;
+        subtasks?: Array<{
+          id: string;
+          title: string;
+          description: string;
+          suggestedSize: "S" | "M" | "L";
+          dependsOn: string[];
+        }>;
+      };
+
+      if (!planningSessionId || typeof planningSessionId !== "string") {
+        res.status(400).json({ error: "planningSessionId is required" });
+        return;
+      }
+
+      if (!Array.isArray(subtasks) || subtasks.length === 0) {
+        res.status(400).json({ error: "subtasks must be a non-empty array" });
+        return;
+      }
+
+      const { getSession, cleanupSession } = await import("./planning.js");
+
+      const session = getSession(planningSessionId);
+      if (!session) {
+        res.status(404).json({ error: `Planning session ${planningSessionId} not found or expired` });
+        return;
+      }
+
+      if (!session.summary) {
+        res.status(400).json({ error: "Planning session is not complete" });
+        return;
+      }
+
+      // Validate each subtask
+      for (const item of subtasks) {
+        if (!item || typeof item.id !== "string" || typeof item.title !== "string" || !item.title.trim()) {
+          res.status(400).json({ error: "Each subtask must include id and title" });
+          return;
+        }
+      }
+
+      const createdTasks = [] as Awaited<ReturnType<typeof store.createTask>>[];
+      const tempIdToTaskId = new Map<string, string>();
+
+      // Create tasks
+      for (const item of subtasks) {
+        const task = await store.createTask({
+          title: item.title.trim(),
+          description: typeof item.description === "string" ? item.description.trim() : item.title.trim(),
+          column: "triage",
+          dependencies: undefined,
+        });
+
+        tempIdToTaskId.set(item.id, task.id);
+        createdTasks.push(task);
+
+        if (item.suggestedSize === "S" || item.suggestedSize === "M" || item.suggestedSize === "L") {
+          await store.updateTask(task.id, { size: item.suggestedSize });
+        }
+      }
+
+      // Resolve dependencies
+      for (let index = 0; index < subtasks.length; index++) {
+        const item = subtasks[index]!;
+        const created = createdTasks[index]!;
+        const resolvedDependencies = Array.isArray(item.dependsOn)
+          ? item.dependsOn.map((dep) => tempIdToTaskId.get(dep)).filter((dep): dep is string => Boolean(dep))
+          : [];
+
+        if (resolvedDependencies.length > 0) {
+          const updated = await store.updateTask(created.id, { dependencies: resolvedDependencies });
+          createdTasks[index] = updated;
+        }
+
+        await store.logEntry(
+          created.id,
+          "Created via Planning Mode (multi-task)",
+          `Source: ${session.initialPlan.slice(0, 200)}`
+        );
+      }
+
+      // Cleanup the planning session
+      cleanupSession(planningSessionId);
+
+      res.status(201).json({ tasks: createdTasks });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Failed to create tasks from planning" });
     }
   });
 

@@ -10522,6 +10522,12 @@ html .column.drag-over * {
   justify-content: space-between;
 }
 
+.planning-summary-actions-right {
+  display: flex;
+  gap: var(--space-sm);
+  align-items: center;
+}
+
 /* Loading State */
 .planning-loading {
   display: flex;

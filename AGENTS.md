@@ -610,6 +610,62 @@ The subtask breakdown dialog (accessed via the Subtask button) allows users to b
 - `.subtask-item-drop-before` / `.subtask-item-drop-after` — Shows insertion line indicator
 - `.subtask-drag-handle` — The grip icon container with grab/grabbing cursor states
 
+### Planning Mode Multi-Task Creation
+
+The Planning Mode modal now offers two creation options after the AI-assisted planning conversation completes:
+
+- **Create Task** — Creates a single task from the planning summary (existing behavior)
+- **Break into Tasks** — Generates multiple tasks from the planning summary's key deliverables, with automatic dependencies
+
+**How it works:**
+1. User completes the AI planning conversation and sees the summary view
+2. Summary view shows two buttons: "Create Task" (single) and "Break into Tasks" (multi)
+3. Clicking "Break into Tasks" calls `POST /planning/start-breakdown` which generates subtasks from the planning summary's `keyDeliverables`
+4. Each key deliverable becomes a separate subtask with sequential dependencies
+5. If no key deliverables exist, 3 fallback subtasks are generated: "Define implementation approach", "Implement core changes", "Verify and polish"
+6. User can edit subtasks (titles, descriptions, sizes, dependencies) using the same drag-and-drop UI as the Subtask Breakdown Dialog
+7. Clicking "Create Tasks" calls `POST /planning/create-tasks` which creates all tasks with resolved dependencies
+8. Each created task is logged with "Created via Planning Mode (multi-task)"
+
+**API Endpoints:**
+- `POST /planning/start-breakdown` — Generate subtasks from a completed planning session (returns `{ sessionId, subtasks }`)
+- `POST /planning/create-tasks` — Create multiple tasks with resolved dependencies from edited subtasks (returns `{ tasks }`)
+
+**Frontend Functions:**
+- `startPlanningBreakdown(sessionId, projectId)` — Start subtask breakdown from planning
+- `createTasksFromPlanning(planningSessionId, subtasks, projectId)` — Create tasks from edited subtasks
+
+**Component Props:**
+- `PlanningModeModal` now accepts `onTasksCreated: (tasks: Task[]) => void` callback for multi-task creation notifications
+
+### Planning Mode Multi-Task Creation
+
+The Planning Mode modal now offers two creation options after the AI-assisted planning conversation completes:
+
+- **Create Task** — Creates a single task from the planning summary (existing behavior)
+- **Break into Tasks** — Generates multiple tasks from the planning summary's key deliverables, with automatic dependencies
+
+**How it works:**
+1. User completes the AI planning conversation and sees the summary view
+2. Summary view shows two buttons: "Create Task" (single) and "Break into Tasks" (multi)
+3. Clicking "Break into Tasks" calls `POST /planning/start-breakdown` which generates subtasks from the planning summary's `keyDeliverables`
+4. Each key deliverable becomes a separate subtask with sequential dependencies
+5. If no key deliverables exist, 3 fallback subtasks are generated: "Define implementation approach", "Implement core changes", "Verify and polish"
+6. User can edit subtasks (titles, descriptions, sizes, dependencies) using the same drag-and-drop UI as the Subtask Breakdown Dialog
+7. Clicking "Create Tasks" calls `POST /planning/create-tasks` which creates all tasks with resolved dependencies
+8. Each created task is logged with "Created via Planning Mode (multi-task)"
+
+**API Endpoints:**
+- `POST /planning/start-breakdown` — Generate subtasks from a completed planning session (returns `{ sessionId, subtasks }`)
+- `POST /planning/create-tasks` — Create multiple tasks with resolved dependencies from edited subtasks (returns `{ tasks }`)
+
+**Frontend Functions:**
+- `startPlanningBreakdown(sessionId, projectId)` — Start subtask breakdown from planning
+- `createTasksFromPlanning(planningSessionId, subtasks, projectId)` — Create tasks from edited subtasks
+
+**Component Props:**
+- `PlanningModeModal` now accepts `onTasksCreated: (tasks: Task[]) => void` callback for multi-task creation notifications
+
 ## Dashboard badge WebSockets
 
 GitHub PR and issue badges in the dashboard now have a dedicated real-time WebSocket channel at `/api/ws`.

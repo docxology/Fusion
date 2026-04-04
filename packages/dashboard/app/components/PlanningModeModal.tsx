@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import type { Task, PlanningQuestion, PlanningSummary } from "@fusion/core";
 import {
   startPlanning,
@@ -8,14 +8,18 @@ import {
   createTaskFromPlanning,
   connectPlanningStream,
   fetchAiSession,
+  startPlanningBreakdown,
+  createTasksFromPlanning,
   type PlanningSession,
+  type SubtaskItem,
 } from "../api";
-import { Lightbulb, X, Loader2, CheckCircle, ArrowLeft, ArrowRight, Sparkles } from "lucide-react";
+import { Lightbulb, X, Loader2, CheckCircle, ArrowLeft, ArrowRight, Sparkles, ListTree, GripVertical, ArrowUp, ArrowDown, Plus, Trash2 } from "lucide-react";
 
 interface PlanningModeModalProps {
   isOpen: boolean;
   onClose: () => void;
   onTaskCreated: (task: Task) => void;
+  onTasksCreated: (tasks: Task[]) => void;
   tasks: Task[];
   initialPlan?: string;
   projectId?: string;
@@ -31,7 +35,9 @@ type ViewState =
   | { type: "initial" }
   | { type: "question"; session: PlanningSession }
   | { type: "summary"; session: PlanningSession; summary: PlanningSummary }
-  | { type: "loading" };
+  | { type: "breakdown"; sessionId: string; subtasks: SubtaskItem[]; dirty: boolean }
+  | { type: "loading" }
+  | { type: "creating" };
 
 const EXAMPLE_PLANS = [
   "Build a user authentication system with login and signup",
@@ -40,7 +46,7 @@ const EXAMPLE_PLANS = [
   "Refactor the task card component for better performance",
 ];
 
-export function PlanningModeModal({ isOpen, onClose, onTaskCreated, tasks, initialPlan: initialPlanProp, projectId, resumeSessionId }: PlanningModeModalProps) {
+export function PlanningModeModal({ isOpen, onClose, onTaskCreated, onTasksCreated, tasks, initialPlan: initialPlanProp, projectId, resumeSessionId }: PlanningModeModalProps) {
   const [initialPlan, setInitialPlan] = useState("");
   const [view, setView] = useState<ViewState>({ type: "initial" });
   const [error, setError] = useState<string | null>(null);
@@ -317,6 +323,51 @@ export function PlanningModeModal({ isOpen, onClose, onTaskCreated, tasks, initi
     }
   }, [view, onTaskCreated, handleCancel]);
 
+  const handleStartBreakdown = useCallback(async () => {
+    if (view.type !== "summary") return;
+
+    setError(null);
+    setView({ type: "loading" });
+
+    try {
+      const result = await startPlanningBreakdown(view.session.sessionId, projectId);
+      setView({
+        type: "breakdown",
+        sessionId: result.sessionId,
+        subtasks: result.subtasks,
+        dirty: false,
+      });
+    } catch (err: any) {
+      setError(err.message || "Failed to start breakdown");
+      setView({ type: "summary", session: view.session, summary: view.summary });
+    }
+  }, [view, projectId]);
+
+  const handleCreateTasksFromBreakdown = useCallback(async () => {
+    if (view.type !== "breakdown") return;
+
+    setError(null);
+    setView({ type: "creating" });
+
+    try {
+      const result = await createTasksFromPlanning(view.sessionId, view.subtasks, projectId);
+      onTasksCreated(result.tasks);
+      // Reset and close
+      setInitialPlan("");
+      setView({ type: "initial" });
+      setError(null);
+      setResponseHistory([]);
+      setEditedSummary(null);
+      setStreamingOutput("");
+      setHasProgress(false);
+      currentSessionIdRef.current = null;
+      onClose();
+    } catch (err: any) {
+      setError(err.message || "Failed to create tasks");
+      setView({ type: "breakdown", sessionId: view.sessionId, subtasks: view.subtasks, dirty: view.dirty });
+    }
+  }, [view, onTasksCreated, onClose, projectId]);
+
   const handleBack = useCallback(() => {
     if (view.type === "question" && responseHistory.length > 0) {
       // Remove last response and go back
@@ -434,6 +485,13 @@ export function PlanningModeModal({ isOpen, onClose, onTaskCreated, tasks, initi
             </div>
           )}
 
+          {view.type === "creating" && (
+            <div className="planning-loading">
+              <Loader2 size={40} className="spin" style={{ color: "var(--todo)" }} />
+              <p>Creating tasks...</p>
+            </div>
+          )}
+
           {view.type === "question" && view.session.currentQuestion && (
             <div className="planning-question">
               <QuestionForm
@@ -451,11 +509,36 @@ export function PlanningModeModal({ isOpen, onClose, onTaskCreated, tasks, initi
               onSummaryChange={setEditedSummary}
               tasks={tasks}
               onCreateTask={handleCreateTask}
+              onBreakIntoTasks={handleStartBreakdown}
               onRefine={() => {
                 // Reset to question mode for more refinement
                 setView({ type: "question", session: view.session });
               }}
               isLoading={false}
+            />
+          )}
+
+          {view.type === "breakdown" && (
+            <BreakdownView
+              subtasks={view.subtasks}
+              dirty={view.dirty}
+              isLoading={false}
+              onUpdateSubtasks={(newSubtasks) =>
+                setView({ ...view, subtasks: newSubtasks, dirty: true })
+              }
+              onCreateTasks={handleCreateTasksFromBreakdown}
+              onBack={() => {
+                // Return to summary view — re-fetch the session
+                const sessionId = view.sessionId;
+                const session: PlanningSession = {
+                  sessionId,
+                  currentQuestion: null,
+                  summary: editedSummary ?? null,
+                };
+                if (editedSummary) {
+                  setView({ type: "summary", session, summary: editedSummary });
+                }
+              }}
             />
           )}
         </div>
@@ -644,6 +727,7 @@ interface SummaryViewProps {
   onSummaryChange: (summary: PlanningSummary) => void;
   tasks: Task[];
   onCreateTask: () => void;
+  onBreakIntoTasks: () => void;
   onRefine: () => void;
   isLoading: boolean;
 }
@@ -653,6 +737,7 @@ function SummaryView({
   onSummaryChange,
   tasks,
   onCreateTask,
+  onBreakIntoTasks,
   onRefine,
   isLoading,
 }: SummaryViewProps) {
@@ -761,21 +846,400 @@ function SummaryView({
           <ArrowLeft size={16} style={{ marginRight: "4px" }} />
           Refine Further
         </button>
+        <div className="planning-summary-actions-right">
+          <button
+            className="btn"
+            onClick={onBreakIntoTasks}
+            disabled={isLoading}
+            title="Break the plan into multiple tasks with dependencies"
+          >
+            {isLoading ? (
+              <>
+                <Loader2 size={16} className="spin" style={{ marginRight: "8px" }} />
+                Breaking down...
+              </>
+            ) : (
+              <>
+                <ListTree size={16} style={{ marginRight: "8px" }} />
+                Break into Tasks
+              </>
+            )}
+          </button>
+          <button
+            className="btn btn-primary"
+            onClick={onCreateTask}
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <>
+                <Loader2 size={16} className="spin" style={{ marginRight: "8px" }} />
+                Creating...
+              </>
+            ) : (
+              <>
+                <CheckCircle size={16} style={{ marginRight: "8px" }} />
+                Create Task
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── BreakdownView (subtask editing in planning modal) ──────────────────────
+
+function hasDependencyCycle(subtasks: SubtaskItem[]): boolean {
+  const graph = new Map(subtasks.map((item) => [item.id, item.dependsOn]));
+  const visiting = new Set<string>();
+  const visited = new Set<string>();
+
+  const visit = (id: string): boolean => {
+    if (visiting.has(id)) return true;
+    if (visited.has(id)) return false;
+    visiting.add(id);
+    for (const dep of graph.get(id) ?? []) {
+      if (graph.has(dep) && visit(dep)) return true;
+    }
+    visiting.delete(id);
+    visited.add(id);
+    return false;
+  };
+
+  return subtasks.some((item) => visit(item.id));
+}
+
+function createEmptySubtask(index: number): SubtaskItem {
+  return {
+    id: `subtask-${index}`,
+    title: "",
+    description: "",
+    suggestedSize: "M",
+    dependsOn: [],
+  };
+}
+
+interface BreakdownViewProps {
+  subtasks: SubtaskItem[];
+  dirty: boolean;
+  isLoading: boolean;
+  onUpdateSubtasks: (subtasks: SubtaskItem[]) => void;
+  onCreateTasks: () => void;
+  onBack: () => void;
+}
+
+function BreakdownView({
+  subtasks,
+  dirty: _dirty,
+  isLoading,
+  onUpdateSubtasks,
+  onCreateTasks,
+  onBack,
+}: BreakdownViewProps) {
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [dragOverPosition, setDragOverPosition] = useState<"before" | "after" | null>(null);
+  const titleRefs = useRef<Array<HTMLInputElement | null>>([]);
+
+  const isInvalid = useMemo(() => {
+    if (subtasks.length === 0) return true;
+    if (subtasks.some((s) => !s.title.trim())) return true;
+    return hasDependencyCycle(subtasks);
+  }, [subtasks]);
+
+  const updateSubtask = useCallback(
+    (id: string, patch: Partial<SubtaskItem>) => {
+      onUpdateSubtasks(subtasks.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+    },
+    [subtasks, onUpdateSubtasks],
+  );
+
+  const addSubtask = useCallback(() => {
+    onUpdateSubtasks([...subtasks, createEmptySubtask(subtasks.length + 1)]);
+  }, [subtasks, onUpdateSubtasks]);
+
+  const removeSubtask = useCallback(
+    (id: string) => {
+      onUpdateSubtasks(
+        subtasks
+          .filter((item) => item.id !== id)
+          .map((item) => ({ ...item, dependsOn: item.dependsOn.filter((dep) => dep !== id) })),
+      );
+    },
+    [subtasks, onUpdateSubtasks],
+  );
+
+  const moveSubtask = useCallback(
+    (fromIndex: number, toIndex: number) => {
+      if (toIndex < 0 || toIndex >= subtasks.length) return;
+      const newSubtasks = [...subtasks];
+      const [moved] = newSubtasks.splice(fromIndex, 1);
+      newSubtasks.splice(toIndex, 0, moved);
+      onUpdateSubtasks(newSubtasks);
+    },
+    [subtasks, onUpdateSubtasks],
+  );
+
+  // Drag-and-drop handlers
+  const handleDragStart = useCallback((subtaskId: string) => (e: React.DragEvent) => {
+    setDraggingId(subtaskId);
+    e.dataTransfer.setData("text/plain", subtaskId);
+    e.dataTransfer.effectAllowed = "move";
+  }, []);
+
+  const handleDragEnd = useCallback(() => {
+    setDraggingId(null);
+    setDragOverId(null);
+    setDragOverPosition(null);
+  }, []);
+
+  const handleDragOver = useCallback((targetId: string) => (e: React.DragEvent) => {
+    e.preventDefault();
+    if (targetId === draggingId) return;
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const midY = rect.top + rect.height / 2;
+    const position: "before" | "after" = e.clientY < midY ? "before" : "after";
+    setDragOverId(targetId);
+    setDragOverPosition(position);
+  }, [draggingId]);
+
+  const handleDrop = useCallback((targetId: string) => (e: React.DragEvent) => {
+    e.preventDefault();
+    const draggedId = e.dataTransfer.getData("text/plain");
+    if (!draggedId || draggedId === targetId) {
+      handleDragEnd();
+      return;
+    }
+    const fromIndex = subtasks.findIndex((s) => s.id === draggedId);
+    const toIndex = subtasks.findIndex((s) => s.id === targetId);
+    if (fromIndex === -1 || toIndex === -1) {
+      handleDragEnd();
+      return;
+    }
+    const newSubtasks = [...subtasks];
+    const [moved] = newSubtasks.splice(fromIndex, 1);
+    let insertIndex = toIndex;
+    if (dragOverPosition === "after" && fromIndex < toIndex) insertIndex--;
+    if (dragOverPosition === "after") insertIndex++;
+    newSubtasks.splice(insertIndex, 0, moved);
+    onUpdateSubtasks(newSubtasks);
+    handleDragEnd();
+  }, [subtasks, dragOverPosition, onUpdateSubtasks, handleDragEnd]);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const x = e.clientX;
+    const y = e.clientY;
+    if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
+      setDragOverId(null);
+      setDragOverPosition(null);
+    }
+  }, []);
+
+  return (
+    <div className="planning-summary">
+      <div className="planning-view-scroll planning-summary-scroll">
+        <div className="planning-summary-header">
+          <ListTree size={24} style={{ color: "var(--triage)" }} />
+          <h4>Break into Tasks</h4>
+          <p className="text-muted">
+            Review and edit the subtasks generated from your plan. Adjust titles,
+            descriptions, sizes, and dependencies before creating.
+          </p>
+        </div>
+
+        <div className="planning-summary-form">
+          {subtasks.map((subtask, index) => {
+            const isDragging = draggingId === subtask.id;
+            const isDragOver = dragOverId === subtask.id;
+            const dragClasses = [
+              "task-detail-section",
+              "subtask-item",
+              isDragging ? "subtask-item-dragging" : "",
+              isDragOver ? "subtask-item-drop-target" : "",
+              isDragOver && dragOverPosition === "before" ? "subtask-item-drop-before" : "",
+              isDragOver && dragOverPosition === "after" ? "subtask-item-drop-after" : "",
+            ]
+              .filter(Boolean)
+              .join(" ");
+
+            return (
+              <div
+                key={subtask.id}
+                className={dragClasses}
+                data-testid={`subtask-item-${index}`}
+                draggable={!isLoading}
+                onDragStart={handleDragStart(subtask.id)}
+                onDragEnd={handleDragEnd}
+                onDragOver={handleDragOver(subtask.id)}
+                onDrop={handleDrop(subtask.id)}
+                onDragLeave={handleDragLeave}
+              >
+                <div
+                  className="detail-title-row subtask-item-header"
+                  style={{ justifyContent: "space-between" }}
+                >
+                  <div className="subtask-drag-handle" title="Drag to reorder">
+                    <GripVertical size={16} />
+                    <strong>{subtask.id}</strong>
+                  </div>
+                  <div className="subtask-item-actions">
+                    <button
+                      type="button"
+                      className="btn btn-icon btn-sm"
+                      onClick={() => moveSubtask(index, index - 1)}
+                      disabled={isLoading || index === 0}
+                      title="Move up"
+                      aria-label="Move subtask up"
+                    >
+                      <ArrowUp size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-icon btn-sm"
+                      onClick={() => moveSubtask(index, index + 1)}
+                      disabled={isLoading || index === subtasks.length - 1}
+                      title="Move down"
+                      aria-label="Move subtask down"
+                    >
+                      <ArrowDown size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      onClick={() => removeSubtask(subtask.id)}
+                      disabled={isLoading}
+                    >
+                      <Trash2 size={14} /> Remove
+                    </button>
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label>Title</label>
+                  <input
+                    ref={(element) => {
+                      titleRefs.current[index] = element;
+                    }}
+                    value={subtask.title}
+                    onChange={(event) => updateSubtask(subtask.id, { title: event.target.value })}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        if (index < subtasks.length - 1) {
+                          titleRefs.current[index + 1]?.focus();
+                        }
+                      }
+                    }}
+                    disabled={isLoading}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Description</label>
+                  <textarea
+                    rows={3}
+                    value={subtask.description}
+                    onChange={(event) =>
+                      updateSubtask(subtask.id, { description: event.target.value })
+                    }
+                    disabled={isLoading}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Size</label>
+                  <div className="planning-size-selector">
+                    {(["S", "M", "L"] as const).map((size) => (
+                      <button
+                        key={size}
+                        type="button"
+                        className={`planning-size-btn ${subtask.suggestedSize === size ? "selected" : ""}`}
+                        onClick={() => updateSubtask(subtask.id, { suggestedSize: size })}
+                        disabled={isLoading}
+                      >
+                        {size}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label>Dependencies</label>
+                  <div className="planning-deps-list">
+                    {subtasks
+                      .slice(0, index)
+                      .filter((item) => item.id !== subtask.id)
+                      .map((candidate) => {
+                        const selected = subtask.dependsOn.includes(candidate.id);
+                        return (
+                          <label
+                            key={candidate.id}
+                            className={`planning-dep-chip ${selected ? "selected" : ""}`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selected}
+                              onChange={() => {
+                                const nextDeps = selected
+                                  ? subtask.dependsOn.filter((dep) => dep !== candidate.id)
+                                  : [...subtask.dependsOn, candidate.id];
+                                updateSubtask(subtask.id, { dependsOn: nextDeps });
+                              }}
+                              disabled={isLoading}
+                            />
+                            <span className="planning-dep-id">{candidate.id}</span>
+                            <span className="planning-dep-title">
+                              {candidate.title || "Untitled"}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    {index === 0 && (
+                      <div className="text-muted">First subtask cannot have dependencies.</div>
+                    )}
+                    {index > 0 &&
+                      subtasks
+                        .slice(0, index)
+                        .filter((item) => item.id !== subtask.id).length === 0 && (
+                        <div className="text-muted">No previous subtasks available.</div>
+                      )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+
+          <button type="button" className="btn" onClick={addSubtask} disabled={isLoading}>
+            <Plus size={16} style={{ marginRight: 6 }} /> Add subtask
+          </button>
+
+          {hasDependencyCycle(subtasks) && (
+            <div className="form-error planning-error">
+              Dependencies contain a cycle. Remove circular references before creating tasks.
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="planning-actions planning-summary-actions">
+        <button className="btn" onClick={onBack} disabled={isLoading}>
+          <ArrowLeft size={16} style={{ marginRight: "4px" }} />
+          Back to Summary
+        </button>
         <button
           className="btn btn-primary"
-          onClick={onCreateTask}
-          disabled={isLoading}
+          onClick={onCreateTasks}
+          disabled={isLoading || isInvalid}
         >
           {isLoading ? (
             <>
-              <Loader2 size={16} className="spin" style={{ marginRight: "8px" }} />
+              <Loader2 size={16} className="spin" style={{ marginRight: 8 }} />
               Creating...
             </>
           ) : (
-            <>
-              <CheckCircle size={16} style={{ marginRight: "8px" }} />
-              Create Task
-            </>
+            <>Create Tasks</>
           )}
         </button>
       </div>

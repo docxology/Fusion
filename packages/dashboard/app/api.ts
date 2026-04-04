@@ -1165,6 +1165,39 @@ export function createTaskFromPlanning(sessionId: string, projectId?: string): P
   });
 }
 
+/** Start subtask breakdown from a completed planning session */
+export function startPlanningBreakdown(
+  sessionId: string,
+  projectId?: string,
+): Promise<{ sessionId: string; subtasks: SubtaskItem[] }> {
+  return api<{ sessionId: string; subtasks: SubtaskItem[] }>(
+    withProjectId("/planning/start-breakdown", projectId),
+    {
+      method: "POST",
+      body: JSON.stringify({ sessionId }),
+    },
+  );
+}
+
+/** Create multiple tasks from a completed planning session */
+export function createTasksFromPlanning(
+  planningSessionId: string,
+  subtasks: Array<{
+    id: string;
+    title: string;
+    description: string;
+    suggestedSize: "S" | "M" | "L";
+    dependsOn: string[];
+  }>,
+  projectId?: string,
+): Promise<{ tasks: Task[] }> {
+  return api<{ tasks: Task[] }>(withProjectId("/planning/create-tasks", projectId), {
+    method: "POST",
+    body: JSON.stringify({ planningSessionId, subtasks }),
+  });
+}
+
+
 /** Get the SSE stream URL for a planning session */
 export function getPlanningStreamUrl(sessionId: string, projectId?: string): string {
   return buildApiUrl(withProjectId(`/planning/${encodeURIComponent(sessionId)}/stream`, projectId));

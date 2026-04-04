@@ -19,6 +19,7 @@ import type {
   PlanningResponse,
   TaskStore,
 } from "@fusion/core";
+import type { SubtaskItem } from "./subtask-breakdown.js";
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import type { AiSessionStore, AiSessionRow } from "./ai-session-store.js";
@@ -1162,6 +1163,61 @@ export function getCurrentQuestion(sessionId: string): PlanningQuestion | undefi
  */
 export function getSummary(sessionId: string): PlanningSummary | undefined {
   return sessions.get(sessionId)?.summary;
+}
+
+/**
+ * Generate subtasks from a completed planning summary.
+ * Uses the planning session's summary to create a SubtaskItem[] for multi-task creation.
+ *
+ * @param sessionId - The planning session ID
+ * @returns Array of SubtaskItem with titles derived from keyDeliverables, or fallback
+ */
+export function generateSubtasksFromPlanning(sessionId: string): SubtaskItem[] {
+  const session = sessions.get(sessionId);
+  if (!session) return [];
+  if (!session.summary) return [];
+
+  const { summary } = session;
+
+  // If key deliverables exist, create one subtask per deliverable
+  if (summary.keyDeliverables.length > 0) {
+    return summary.keyDeliverables.map((deliverable, index) => {
+      const id = `subtask-${index + 1}`;
+      const dependsOn = index > 0 ? [`subtask-${index}`] : [] as string[];
+      return {
+        id,
+        title: deliverable,
+        description: summary.description,
+        suggestedSize: index === 0 ? "S" as const : index === summary.keyDeliverables.length - 1 ? "S" as const : "M" as const,
+        dependsOn,
+      };
+    });
+  }
+
+  // Fallback: 3 subtasks
+  return [
+    {
+      id: "subtask-1",
+      title: "Define implementation approach",
+      description: summary.description,
+      suggestedSize: "S" as const,
+      dependsOn: [],
+    },
+    {
+      id: "subtask-2",
+      title: "Implement core changes",
+      description: summary.description,
+      suggestedSize: "M" as const,
+      dependsOn: ["subtask-1"],
+    },
+    {
+      id: "subtask-3",
+      title: "Verify and polish",
+      description: summary.description,
+      suggestedSize: "S" as const,
+      dependsOn: ["subtask-2"],
+    },
+  ];
 }
 
 /**
