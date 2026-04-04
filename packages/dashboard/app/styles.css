@@ -11002,8 +11002,11 @@ html .column.drag-over * {
 
 .usage-window-reset-at {
   font-size: 11px;
-  color: var(--text-dim);
+  color: var(--text-muted);
   white-space: nowrap;
+  background: var(--bg-tertiary);
+  padding: 1px 5px;
+  border-radius: 3px;
 }
 
 /* Pace marker and text */

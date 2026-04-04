@@ -446,6 +446,16 @@ Built-in file browser for viewing and editing project files directly from the da
 - Quick toggle in header, full selector in Settings > Appearance
 - Preferences persist to localStorage
 
+### Usage Dialog
+
+The Usage dialog (Activity icon in the header) shows real-time AI provider subscription usage:
+
+- Per-provider usage windows (session, weekly) with progress bars
+- **Claude Session (5h)** shows both a relative countdown ("resets in 2h") and an absolute reset time (e.g., "2:30 PM") so you can immediately tell when the session quota resets
+- Weekly windows include pace indicators showing whether usage is ahead, behind, or on track
+- Toggle between "Used" and "Remaining" views
+- Auto-refreshes when open; manual refresh available
+
 ## Archive
 
 Completed tasks can be archived to keep the board focused on recent work while preserving historical tasks.

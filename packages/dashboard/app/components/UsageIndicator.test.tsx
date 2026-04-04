@@ -1281,4 +1281,159 @@ describe("UsageIndicator", () => {
     expect(screen.getByText("resets in 3d")).toBeInTheDocument();
     expect(document.querySelector(".usage-window-reset-at")).toBeInTheDocument();
   });
+
+  it("Claude 5h session row shows both relative reset text and absolute reset time", () => {
+    // Simulate a realistic Claude usage payload with Session (5h) + Weekly windows
+    const sessionResetAt = new Date(Date.now() + 2 * 60 * 60 * 1000); // 2h from now
+    const weeklyResetAt = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000); // 5d from now
+    mockUseUsageData.mockReturnValue({
+      providers: [
+        {
+          name: "Claude",
+          icon: "🟠",
+          status: "ok",
+          plan: "Pro",
+          windows: [
+            {
+              label: "Session (5h)",
+              percentUsed: 45,
+              percentLeft: 55,
+              resetText: "resets in 2h",
+              resetMs: 7200000,
+              resetAt: sessionResetAt.toISOString(),
+            },
+            {
+              label: "Weekly",
+              percentUsed: 30,
+              percentLeft: 70,
+              resetText: "resets in 5d",
+              resetMs: 432000000,
+              resetAt: weeklyResetAt.toISOString(),
+            },
+          ],
+        },
+      ],
+      loading: false,
+      error: null,
+      lastUpdated: new Date(),
+      refresh: mockRefresh,
+    });
+
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+
+    // Session (5h) row should exist
+    expect(screen.getByText("Session (5h)")).toBeInTheDocument();
+
+    // Both relative reset texts should be present
+    expect(screen.getByText("resets in 2h")).toBeInTheDocument();
+    expect(screen.getByText("resets in 5d")).toBeInTheDocument();
+
+    // Both absolute reset times should be rendered
+    const resetAtElements = document.querySelectorAll(".usage-window-reset-at");
+    expect(resetAtElements.length).toBe(2);
+
+    // Session row should show the absolute time formatted for today (just time like "2:30 PM")
+    // Since the resetAt is today, formatResetAt should return just the time string
+    const sessionResetAtEl = resetAtElements[0];
+    expect(sessionResetAtEl.textContent).toBeTruthy();
+    // It should be a time-only format (e.g., "12:30 PM") since the reset is today
+    expect(sessionResetAtEl.textContent).toMatch(/\d{1,2}:\d{2}\s*(AM|PM)/i);
+
+    // Verify provider card shows plan
+    expect(screen.getByText("Pro")).toBeInTheDocument();
+  });
+
+  it("Claude 5h session row without resetAt only shows relative reset text", () => {
+    mockUseUsageData.mockReturnValue({
+      providers: [
+        {
+          name: "Claude",
+          icon: "🟠",
+          status: "ok",
+          windows: [
+            {
+              label: "Session (5h)",
+              percentUsed: 60,
+              percentLeft: 40,
+              resetText: "resets in 1h 30m",
+              resetMs: 5400000,
+              // No resetAt — backend couldn't infer the exact timestamp
+            },
+          ],
+        },
+      ],
+      loading: false,
+      error: null,
+      lastUpdated: new Date(),
+      refresh: mockRefresh,
+    });
+
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+
+    // Session (5h) should still be visible
+    expect(screen.getByText("Session (5h)")).toBeInTheDocument();
+
+    // Relative reset text should be present
+    expect(screen.getByText("resets in 1h 30m")).toBeInTheDocument();
+
+    // No absolute reset time element
+    expect(document.querySelector(".usage-window-reset-at")).not.toBeInTheDocument();
+  });
+
+  it("non-Claude providers are unaffected by resetAt display feature", () => {
+    const resetAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
+    mockUseUsageData.mockReturnValue({
+      providers: [
+        {
+          name: "Codex",
+          icon: "🟢",
+          status: "ok",
+          windows: [
+            {
+              label: "Session (5h)",
+              percentUsed: 20,
+              percentLeft: 80,
+              resetText: "resets in 4h",
+              resetMs: 14400000,
+              // Codex also supports resetAt from its API
+              resetAt: resetAt.toISOString(),
+            },
+          ],
+        },
+        {
+          name: "Gemini",
+          icon: "🔵",
+          status: "ok",
+          windows: [
+            {
+              label: "Flash models",
+              percentUsed: 10,
+              percentLeft: 90,
+              resetText: "resets in 6h",
+              resetMs: 21600000,
+              // No resetAt for Gemini
+            },
+          ],
+        },
+      ],
+      loading: false,
+      error: null,
+      lastUpdated: new Date(),
+      refresh: mockRefresh,
+    });
+
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+
+    // Both providers should render normally
+    expect(screen.getByText("Codex")).toBeInTheDocument();
+    expect(screen.getByText("Gemini")).toBeInTheDocument();
+    expect(screen.getByText("Flash models")).toBeInTheDocument();
+
+    // Codex should show absolute reset time (since it provides resetAt)
+    expect(document.querySelectorAll(".usage-window-reset-at").length).toBe(1);
+
+    // Both providers should show their relative reset text
+    expect(screen.getByText("resets in 4h")).toBeInTheDocument();
+    expect(screen.getByText("resets in 6h")).toBeInTheDocument();
+  });
 });
