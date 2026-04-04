@@ -1957,4 +1957,91 @@ describe("QuickEntryBox", () => {
       expect(menu.style.position).toBe("fixed");
     });
   });
+
+  describe("Model menu mobile viewport width", () => {
+    it("uses wider width on mobile viewports (≤640px)", () => {
+      // Simulate a narrow mobile viewport
+      vi.spyOn(window, "innerWidth", "get").mockReturnValue(375);
+
+      renderQuickEntryBox({});
+      expandQuickEntry();
+
+      fireEvent.click(screen.getByTestId("quick-entry-models-button"));
+      const menu = screen.getByTestId("model-nested-menu");
+
+      // On mobile, width should be viewport width minus padding (375 - 32 = 343)
+      const menuWidth = parseFloat(menu.style.width);
+      expect(menuWidth).toBe(375 - 32);
+    });
+
+    it("left position is clamped to horizontal padding on mobile", () => {
+      vi.spyOn(window, "innerWidth", "get").mockReturnValue(375);
+
+      renderQuickEntryBox({});
+      expandQuickEntry();
+
+      fireEvent.click(screen.getByTestId("quick-entry-models-button"));
+      const menu = screen.getByTestId("model-nested-menu");
+
+      // Left should be clamped to at least 16px (horizontal padding)
+      const menuLeft = parseFloat(menu.style.left);
+      expect(menuLeft).toBeGreaterThanOrEqual(16);
+    });
+
+    it("menu stays fully within viewport on mobile", () => {
+      const viewportWidth = 375;
+      vi.spyOn(window, "innerWidth", "get").mockReturnValue(viewportWidth);
+
+      renderQuickEntryBox({});
+      expandQuickEntry();
+
+      fireEvent.click(screen.getByTestId("quick-entry-models-button"));
+      const menu = screen.getByTestId("model-nested-menu");
+
+      const menuLeft = parseFloat(menu.style.left);
+      const menuWidth = parseFloat(menu.style.width);
+
+      // Right edge should not exceed viewport minus horizontal padding
+      expect(menuLeft + menuWidth).toBeLessThanOrEqual(viewportWidth - 16);
+    });
+
+    it("uses desktop width (trigger-based) on non-mobile viewports", () => {
+      // Default test environment has a wider viewport
+      vi.spyOn(window, "innerWidth", "get").mockReturnValue(1024);
+
+      renderQuickEntryBox({});
+      expandQuickEntry();
+
+      fireEvent.click(screen.getByTestId("quick-entry-models-button"));
+      const menu = screen.getByTestId("model-nested-menu");
+
+      const menuWidth = parseFloat(menu.style.width);
+      // On desktop, width should be at least 240 (minimum) and at most 360 (max-width)
+      expect(menuWidth).toBeGreaterThanOrEqual(240);
+      expect(menuWidth).toBeLessThanOrEqual(360);
+    });
+
+    it("repositions with mobile width on resize from desktop to mobile", () => {
+      const innerWidthSpy = vi.spyOn(window, "innerWidth", "get").mockReturnValue(1024);
+
+      renderQuickEntryBox({});
+      expandQuickEntry();
+
+      fireEvent.click(screen.getByTestId("quick-entry-models-button"));
+      const menu = screen.getByTestId("model-nested-menu");
+
+      // Desktop width
+      const desktopWidth = parseFloat(menu.style.width);
+      expect(desktopWidth).toBeGreaterThanOrEqual(240);
+
+      // Simulate resize to mobile
+      innerWidthSpy.mockReturnValue(375);
+      fireEvent.resize(window);
+
+      // Width should now be the mobile-optimized width
+      const mobileWidth = parseFloat(menu.style.width);
+      expect(mobileWidth).toBe(375 - 32);
+      expect(mobileWidth).toBeGreaterThan(desktopWidth);
+    });
+  });
 });

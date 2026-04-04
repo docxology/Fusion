@@ -457,11 +457,25 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
     if (!trigger) return;
 
     const rect = trigger.getBoundingClientRect();
-    setModelMenuPosition({
-      top: rect.bottom + 4,
-      left: rect.left,
-      width: Math.max(rect.width, 240),
-    });
+    const viewportWidth = window.innerWidth;
+    const isMobile = viewportWidth <= 640;
+
+    if (isMobile) {
+      // On mobile: use a wider menu that fills most of the viewport (32px side margins)
+      const mobileWidth = Math.min(viewportWidth - 32, 360);
+      const left = Math.max((viewportWidth - mobileWidth) / 2, 16);
+      setModelMenuPosition({
+        top: rect.bottom + 4,
+        left,
+        width: mobileWidth,
+      });
+    } else {
+      setModelMenuPosition({
+        top: rect.bottom + 4,
+        left: rect.left,
+        width: Math.max(rect.width, 240),
+      });
+    }
   }, []);
 
   const toggleModelMenu = useCallback(() => {

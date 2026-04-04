@@ -11685,6 +11685,8 @@ html .column.drag-over * {
   max-width: 360px;
 }
 
+/* Mobile: portaled model menu uses wider viewport-clamped width set via inline styles */
+
 .model-menu-items {
   display: flex;
   flex-direction: column;
@@ -11782,6 +11784,11 @@ html .column.drag-over * {
     min-width: unset;
     max-width: unset;
     width: calc(100vw - 32px);
+  }
+
+  /* Portaled variant on mobile: remove max-width constraint so JS-driven width takes full effect */
+  .model-nested-menu--portal {
+    max-width: none;
   }
 }
 
