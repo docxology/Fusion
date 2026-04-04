@@ -372,6 +372,7 @@ A fully interactive PTY-based terminal is available in the dashboard for executi
 - WebSocket bidirectional communication for instant input/output
 - Auto-resizing with zoom support (Ctrl++/-)
 - Copy/paste via keyboard shortcuts
+- Mobile virtual-keyboard-aware positioning — the terminal automatically adjusts its layout when a mobile virtual keyboard opens, keeping the command entry area visible
 
 ### Git Manager
 

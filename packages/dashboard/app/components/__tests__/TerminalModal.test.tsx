@@ -819,3 +819,298 @@ describe("TerminalModal — mobile layout contract", () => {
     expect(mockTerminalInstance.write).toHaveBeenCalledWith("ls\r\n");
   });
 });
+
+// --- Virtual keyboard overlap handling ---
+describe("TerminalModal — virtual keyboard overlap handling", () => {
+  const mockOnClose = vi.fn();
+  const mockSendInput = vi.fn();
+  const mockResize = vi.fn();
+  const mockReconnect = vi.fn();
+
+  const createMockTerminalState = (overrides = {}) => ({
+    connectionStatus: "disconnected" as const,
+    sendInput: mockSendInput,
+    resize: mockResize,
+    onData: vi.fn(() => vi.fn()),
+    onExit: vi.fn(() => vi.fn()),
+    onConnect: vi.fn(() => vi.fn()),
+    onScrollback: vi.fn(() => vi.fn()),
+    reconnect: mockReconnect,
+    ...overrides,
+  });
+
+  const defaultTab = {
+    id: "tab-1",
+    sessionId: "test-session-123",
+    title: "bash",
+    isActive: true,
+    createdAt: Date.now(),
+  };
+
+  const defaultSessionState = {
+    tabs: [defaultTab],
+    activeTab: defaultTab,
+    isReady: true,
+    createTab: vi.fn(),
+    closeTab: vi.fn(),
+    setActiveTab: vi.fn(),
+    updateTabTitle: vi.fn(),
+    restartActiveTab: vi.fn(),
+  };
+
+  let savedVisualViewport: typeof window.visualViewport;
+  let savedInnerWidth: typeof window.innerWidth;
+  let savedOntouchstart: typeof window.ontouchstart;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUseTerminal.mockReturnValue(createMockTerminalState());
+    mockUseTerminalSessions.mockReturnValue(defaultSessionState);
+
+    // Stash originals
+    savedVisualViewport = window.visualViewport;
+    savedInnerWidth = window.innerWidth;
+    savedOntouchstart = window.ontouchstart;
+  });
+
+  afterEach(() => {
+    // Restore originals
+    Object.defineProperty(window, "visualViewport", {
+      value: savedVisualViewport,
+      writable: true,
+      configurable: true,
+    });
+    Object.defineProperty(window, "innerWidth", {
+      value: savedInnerWidth,
+      writable: true,
+      configurable: true,
+    });
+    Object.defineProperty(window, "ontouchstart", {
+      value: savedOntouchstart,
+      writable: true,
+      configurable: true,
+    });
+    vi.restoreAllMocks();
+  });
+
+  /**
+   * Helper: simulate a mobile device with a visualViewport.
+   * The resize/scroll callbacks are captured so tests can fire them.
+   */
+  function simulateMobileDevice(overlapPx: number) {
+    // Touch device
+    (window as any).ontouchstart = null; // truthy — "ontouchstart" in window → true
+
+    // Narrow viewport
+    Object.defineProperty(window, "innerWidth", {
+      value: 375,
+      writable: true,
+      configurable: true,
+    });
+
+    // visualViewport mock
+    const listeners: Record<string, Array<() => void>> = {
+      resize: [],
+      scroll: [],
+    };
+
+    const vvHeight = 300; // viewport shrunk by keyboard
+    const vvOffsetTop = overlapPx > 0 ? 0 : 0; // typically 0 on modern mobile
+
+    const mockVV = {
+      width: 375,
+      height: vvHeight,
+      offsetTop: vvOffsetTop,
+      offsetLeft: 0,
+      addEventListener: vi.fn((event: string, cb: () => void) => {
+        if (listeners[event]) listeners[event].push(cb);
+      }),
+      removeEventListener: vi.fn(),
+    };
+
+    Object.defineProperty(window, "visualViewport", {
+      value: mockVV,
+      writable: true,
+      configurable: true,
+    });
+
+    // Override innerHeight to simulate keyboard overlap
+    // keyboardOverlap = window.innerHeight - vv.offsetTop - vv.height
+    // For overlapPx > 0: window.innerHeight = vv.offsetTop + vv.height + overlapPx
+    Object.defineProperty(window, "innerHeight", {
+      value: vvOffsetTop + vvHeight + overlapPx,
+      writable: true,
+      configurable: true,
+    });
+
+    return { listeners, mockVV };
+  }
+
+  it("does not apply --keyboard-overlap when not on a mobile device", async () => {
+    // Desktop: no touch, wide viewport
+    delete (window as any).ontouchstart;
+    Object.defineProperty(window, "innerWidth", {
+      value: 1440,
+      writable: true,
+      configurable: true,
+    });
+
+    render(<TerminalModal isOpen={true} onClose={mockOnClose} />);
+
+    await waitFor(() => {
+      const modal = screen.getByTestId("terminal-modal");
+      // No --keyboard-overlap should be set (style should be undefined/empty)
+      expect(modal.style.getPropertyValue("--keyboard-overlap")).toBe("");
+    });
+  });
+
+  it("applies --keyboard-overlap CSS variable when virtual keyboard is open on mobile", async () => {
+    const { listeners } = simulateMobileDevice(250); // 250px keyboard overlap
+
+    render(<TerminalModal isOpen={true} onClose={mockOnClose} />);
+
+    await waitFor(() => {
+      const modal = screen.getByTestId("terminal-modal");
+      const overlap = modal.style.getPropertyValue("--keyboard-overlap");
+      expect(overlap).toBe("250px");
+    });
+  });
+
+  it("updates --keyboard-overlap when keyboard height changes", async () => {
+    const { listeners } = simulateMobileDevice(250);
+
+    render(<TerminalModal isOpen={true} onClose={mockOnClose} />);
+
+    await waitFor(() => {
+      const modal = screen.getByTestId("terminal-modal");
+      expect(modal.style.getPropertyValue("--keyboard-overlap")).toBe("250px");
+    });
+
+    // Simulate keyboard shrinking (user swiped down partially)
+    Object.defineProperty(window, "innerHeight", {
+      value: 300 + 0 + 100, // keyboardOverlap becomes 100
+      writable: true,
+      configurable: true,
+    });
+
+    act(() => {
+      for (const cb of listeners.resize) cb();
+    });
+
+    await waitFor(() => {
+      const modal = screen.getByTestId("terminal-modal");
+      expect(modal.style.getPropertyValue("--keyboard-overlap")).toBe("100px");
+    });
+  });
+
+  it("removes --keyboard-overlap when keyboard closes", async () => {
+    const { listeners } = simulateMobileDevice(250);
+
+    const { rerender } = render(
+      <TerminalModal isOpen={true} onClose={mockOnClose} />,
+    );
+
+    await waitFor(() => {
+      const modal = screen.getByTestId("terminal-modal");
+      expect(modal.style.getPropertyValue("--keyboard-overlap")).toBe("250px");
+    });
+
+    // Keyboard closes → overlap becomes 0
+    Object.defineProperty(window, "innerHeight", {
+      value: 300 + 0 + 0,
+      writable: true,
+      configurable: true,
+    });
+
+    act(() => {
+      for (const cb of listeners.resize) cb();
+    });
+
+    await waitFor(() => {
+      const modal = screen.getByTestId("terminal-modal");
+      // When overlap is 0, the style prop should be undefined (no CSS variable set)
+      expect(modal.style.getPropertyValue("--keyboard-overlap")).toBe("");
+    });
+  });
+
+  it("clears overlap when modal closes", async () => {
+    const { listeners } = simulateMobileDevice(250);
+
+    const { rerender } = render(
+      <TerminalModal isOpen={true} onClose={mockOnClose} />,
+    );
+
+    await waitFor(() => {
+      const modal = screen.getByTestId("terminal-modal");
+      expect(modal.style.getPropertyValue("--keyboard-overlap")).toBe("250px");
+    });
+
+    // Close the modal
+    act(() => {
+      rerender(<TerminalModal isOpen={false} onClose={mockOnClose} />);
+    });
+
+    // Modal is no longer rendered
+    expect(screen.queryByTestId("terminal-modal")).toBeNull();
+  });
+
+  it("falls back gracefully when visualViewport is unavailable", async () => {
+    // Mobile device but no visualViewport API (older browser)
+    (window as any).ontouchstart = null;
+    Object.defineProperty(window, "innerWidth", {
+      value: 375,
+      writable: true,
+      configurable: true,
+    });
+    Object.defineProperty(window, "visualViewport", {
+      value: undefined,
+      writable: true,
+      configurable: true,
+    });
+
+    render(<TerminalModal isOpen={true} onClose={mockOnClose} />);
+
+    await waitFor(() => {
+      const modal = screen.getByTestId("terminal-modal");
+      // No keyboard overlap applied since visualViewport is unavailable
+      expect(modal.style.getPropertyValue("--keyboard-overlap")).toBe("");
+    });
+  });
+
+  it("registers and cleans up visualViewport listeners on mobile", async () => {
+    const { mockVV } = simulateMobileDevice(250);
+
+    const { unmount } = render(
+      <TerminalModal isOpen={true} onClose={mockOnClose} />,
+    );
+
+    await waitFor(() => {
+      expect(mockVV.addEventListener).toHaveBeenCalledWith("resize", expect.any(Function));
+      expect(mockVV.addEventListener).toHaveBeenCalledWith("scroll", expect.any(Function));
+    });
+
+    const resizeCalls = mockVV.addEventListener.mock.calls.filter(
+      (c: any[]) => c[0] === "resize",
+    );
+    const scrollCalls = mockVV.addEventListener.mock.calls.filter(
+      (c: any[]) => c[0] === "scroll",
+    );
+
+    unmount();
+
+    // Cleanup should remove both listeners
+    expect(mockVV.removeEventListener).toHaveBeenCalledWith("resize", resizeCalls[0][1]);
+    expect(mockVV.removeEventListener).toHaveBeenCalledWith("scroll", scrollCalls[0][1]);
+  });
+
+  it("zero overlap on mobile with no keyboard does not set CSS variable", async () => {
+    simulateMobileDevice(0); // no keyboard
+
+    render(<TerminalModal isOpen={true} onClose={mockOnClose} />);
+
+    await waitFor(() => {
+      const modal = screen.getByTestId("terminal-modal");
+      expect(modal.style.getPropertyValue("--keyboard-overlap")).toBe("");
+    });
+  });
+});

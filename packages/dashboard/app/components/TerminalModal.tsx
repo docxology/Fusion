@@ -7,6 +7,28 @@ import "@xterm/xterm/css/xterm.css";
 import type { Terminal as XTerm, ITerminalAddon } from "@xterm/xterm";
 import type { FitAddon } from "@xterm/addon-fit";
 
+/** Whether the current device is likely mobile (touch-primary, small viewport). */
+function isMobileDevice(): boolean {
+  if (typeof window === "undefined") return false;
+  const hasTouchScreen =
+    "ontouchstart" in window || (navigator as any).maxTouchPoints > 0;
+  const isNarrow = window.innerWidth <= 768;
+  return hasTouchScreen && isNarrow;
+}
+
+/**
+ * Compute how many CSS pixels the virtual keyboard covers from the bottom
+ * of the layout viewport. Returns 0 on desktop or when visualViewport is
+ * unavailable.
+ */
+function getKeyboardOverlap(): number {
+  if (typeof window === "undefined" || !window.visualViewport) return 0;
+  const vv = window.visualViewport;
+  // The keyboard pushes the visual viewport up so that its bottom edge
+  // no longer aligns with the layout viewport bottom.
+  return Math.max(0, window.innerHeight - vv.offsetTop - vv.height);
+}
+
 interface TerminalModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -33,6 +55,7 @@ export function TerminalModal({ isOpen, onClose, initialCommand }: TerminalModal
   const [exitCode, setExitCode] = useState<number | null>(null);
   const [xtermReady, setXtermReady] = useState(false);
   const [openGeneration, setOpenGeneration] = useState(0);
+  const [keyboardOverlap, setKeyboardOverlap] = useState(0);
   
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTerm | null>(null);
@@ -46,6 +69,27 @@ export function TerminalModal({ isOpen, onClose, initialCommand }: TerminalModal
     if (isOpen) {
       setOpenGeneration((g) => g + 1);
     }
+  }, [isOpen]);
+
+  // Track virtual keyboard overlap on mobile so the terminal entry area
+  // stays visible above the keyboard. On desktop this is a no-op.
+  useEffect(() => {
+    if (!isOpen || !isMobileDevice()) return;
+
+    const vv = window.visualViewport;
+    if (!vv) return;
+
+    const update = () => setKeyboardOverlap(getKeyboardOverlap());
+
+    update(); // initial measurement
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+
+    return () => {
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+      setKeyboardOverlap(0);
+    };
   }, [isOpen]);
 
   // Use the session management hook
@@ -378,7 +422,15 @@ export function TerminalModal({ isOpen, onClose, initialCommand }: TerminalModal
       onClick={handleOverlayClick}
       data-testid="terminal-modal-overlay"
     >
-      <div className="modal terminal-modal" data-testid="terminal-modal">
+      <div
+        className="modal terminal-modal"
+        data-testid="terminal-modal"
+        style={
+          keyboardOverlap > 0
+            ? { "--keyboard-overlap": `${keyboardOverlap}px` } as React.CSSProperties
+            : undefined
+        }
+      >
         {/* Header — on mobile (≤768px) flex-wrap stacks tabs and actions on separate rows;
             .terminal-title is hidden; action button labels are hidden (icons only) */}
         <div className="terminal-header">
