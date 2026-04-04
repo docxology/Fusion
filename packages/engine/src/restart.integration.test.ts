@@ -38,6 +38,18 @@ vi.mock("node:fs", () => ({
 vi.mock("node:fs/promises", () => ({
   readFile: vi.fn().mockResolvedValue("# Task prompt content"),
 }));
+vi.mock("@mariozechner/pi-ai", () => ({
+  Type: {
+    Object: (props: Record<string, unknown>) => ({ type: "object", properties: props }),
+    String: (opts?: unknown) => ({ type: "string", ...((opts as object) ?? {}) }),
+    Number: (opts?: unknown) => ({ type: "number", ...((opts as object) ?? {}) }),
+    Boolean: (opts?: unknown) => ({ type: "boolean", ...((opts as object) ?? {}) }),
+    Optional: (schema: unknown) => schema,
+    Array: (schema: unknown, opts?: unknown) => ({ type: "array", items: schema, ...((opts as object) ?? {}) }),
+    Union: (schemas: unknown[], opts?: unknown) => ({ anyOf: schemas, ...((opts as object) ?? {}) }),
+    Literal: (value: unknown) => ({ const: value }),
+  },
+}));
 vi.mock("@mariozechner/pi-coding-agent", () => {
   const mockSessionManager = {};
   return {
@@ -182,8 +194,8 @@ describe("In-progress task resume after restart", () => {
     // Wait for async execute calls to complete
     await new Promise((r) => setTimeout(r, 50));
 
-    // createKbAgent should have been called once per in-progress task
-    expect(mockedCreateHaiAgent).toHaveBeenCalledTimes(2);
+    // createKbAgent called twice per task (initial + retry when agent finishes without task_done)
+    expect(mockedCreateHaiAgent).toHaveBeenCalledTimes(4);
   });
 
   it("resumed task reuses existing worktree — no git worktree add called", async () => {
@@ -633,8 +645,8 @@ describe("Crash scenario edge cases", () => {
     await executor.resumeOrphaned();
     await new Promise((r) => setTimeout(r, 50));
 
-    // Agent should have been created again for the re-resume
-    expect(mockedCreateHaiAgent).toHaveBeenCalledTimes(1);
+    // Agent should have been created again for the re-resume (twice: initial + retry without task_done)
+    expect(mockedCreateHaiAgent).toHaveBeenCalledTimes(2);
   });
 
   it("engine killed during merge — git reset --merge cleanup, task stays in-review", async () => {

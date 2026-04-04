@@ -2118,7 +2118,8 @@ describe("buildExecutionPrompt", () => {
       updatedAt: new Date().toISOString(),
     });
 
-    expect(mockPrompt).toHaveBeenCalledOnce();
+    // Called twice: initial execution + retry when agent finishes without task_done
+    expect(mockPrompt).toHaveBeenCalledTimes(2);
     const agentPrompt = mockPrompt.mock.calls[0][0];
     expect(agentPrompt).toContain("## Project Commands");
     expect(agentPrompt).toContain("- **Test:** `npm test`");
@@ -2395,8 +2396,8 @@ describe("TaskExecutor pause behavior", () => {
     // Wait for async execution to start
     await new Promise((r) => setTimeout(r, 30));
 
-    // Agent should have been created to resume the task
-    expect(mockedCreateHaiAgent).toHaveBeenCalledTimes(1);
+    // Agent created twice: initial resume + retry when agent finishes without task_done
+    expect(mockedCreateHaiAgent).toHaveBeenCalledTimes(2);
     expect(store.logEntry).toHaveBeenCalledWith("FN-001", "Resuming execution after unpause");
   });
 
@@ -2434,8 +2435,8 @@ describe("TaskExecutor pause behavior", () => {
       updatedAt: new Date().toISOString(),
     });
 
-    // Only one agent should have been created (no duplicate from the unpause event)
-    expect(mockedCreateHaiAgent).toHaveBeenCalledTimes(1);
+    // Two agent creations (initial + retry without task_done), but no duplicate from the unpause event
+    expect(mockedCreateHaiAgent).toHaveBeenCalledTimes(2);
   });
 
   it("does not resume unpaused task that is not in-progress", async () => {
@@ -2503,8 +2504,8 @@ describe("TaskExecutor pause behavior", () => {
 
     await executePromise;
 
-    // Only one agent session created — the unpause during active session was a no-op
-    expect(mockedCreateHaiAgent).toHaveBeenCalledTimes(1);
+    // Two agent sessions (initial + retry without task_done) — the unpause during active session was a no-op
+    expect(mockedCreateHaiAgent).toHaveBeenCalledTimes(2);
   });
 
   it("uses SessionManager.create for fresh execution and persists sessionFile", async () => {
@@ -2836,9 +2837,9 @@ describe("TaskExecutor enginePaused soft pause (no agent termination)", () => {
       createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
     });
 
-    // dispose should only be called once in the finally block (normal cleanup),
+    // dispose called twice: initial session + retry session (both cleaned up normally),
     // NOT by an engine pause listener
-    expect(disposeFn).toHaveBeenCalledTimes(1);
+    expect(disposeFn).toHaveBeenCalledTimes(2);
     // Task should complete normally and move to in-review, not todo
     expect(store.moveTask).toHaveBeenCalledWith("FN-001", "in-review");
     expect(store.moveTask).not.toHaveBeenCalledWith("FN-001", "todo");

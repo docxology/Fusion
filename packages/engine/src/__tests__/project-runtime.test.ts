@@ -1,4 +1,18 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+
+vi.mock("@mariozechner/pi-ai", () => ({
+  Type: {
+    Object: (props: Record<string, unknown>) => ({ type: "object", properties: props }),
+    String: (opts?: unknown) => ({ type: "string", ...((opts as object) ?? {}) }),
+    Number: (opts?: unknown) => ({ type: "number", ...((opts as object) ?? {}) }),
+    Boolean: (opts?: unknown) => ({ type: "boolean", ...((opts as object) ?? {}) }),
+    Optional: (schema: unknown) => schema,
+    Array: (schema: unknown, opts?: unknown) => ({ type: "array", items: schema, ...((opts as object) ?? {}) }),
+    Union: (schemas: unknown[], opts?: unknown) => ({ anyOf: schemas, ...((opts as object) ?? {}) }),
+    Literal: (value: unknown) => ({ const: value }),
+  },
+}));
+
 import { EventEmitter } from "node:events";
 import type { Task, TaskStore, CentralCore } from "@fusion/core";
 import type { Scheduler } from "../scheduler.js";
