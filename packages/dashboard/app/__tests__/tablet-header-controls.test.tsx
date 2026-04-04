@@ -1,6 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { Header } from "../components/Header";
+
+// Mock fetchScripts for overflow submenu
+const mockFetchScripts = vi.fn();
+
+vi.mock("../api", () => ({
+  fetchScripts: (...args: unknown[]) => mockFetchScripts(...args),
+}));
 
 /**
  * Tablet header controls test suite.
@@ -66,6 +73,10 @@ function renderDesktopHeader(props = {}) {
 }
 
 describe("tablet header controls", () => {
+  beforeEach(() => {
+    mockFetchScripts.mockResolvedValue({});
+  });
+
   afterEach(() => {
     vi.restoreAllMocks();
   });
@@ -175,15 +186,17 @@ describe("tablet header controls", () => {
   it("overflow menu contains terminal group on tablet", () => {
     renderTabletHeader({ onToggleTerminal: noop });
     fireEvent.click(screen.getByTitle("More header actions"));
-    expect(screen.getByTestId("overflow-terminal-group-trigger")).toBeDefined();
+    expect(screen.getByTestId("overflow-terminal-primary-btn")).toBeDefined();
+    expect(screen.getByTestId("overflow-terminal-submenu-toggle")).toBeDefined();
   });
 
-  it("overflow menu contains terminal submenu items when expanded on tablet", () => {
+  it("overflow menu contains terminal submenu scripts when expanded on tablet", async () => {
     renderTabletHeader({ onToggleTerminal: noop, onOpenScripts: noop });
     fireEvent.click(screen.getByTitle("More header actions"));
-    fireEvent.click(screen.getByTestId("overflow-terminal-group-trigger"));
-    expect(screen.getByTestId("overflow-terminal-btn")).toBeDefined();
-    expect(screen.getByTestId("overflow-scripts-btn")).toBeDefined();
+    fireEvent.click(screen.getByTestId("overflow-terminal-submenu-toggle"));
+    await waitFor(() => {
+      expect(screen.getByTestId("overflow-scripts-manage")).toBeDefined();
+    });
   });
 
   it("overflow menu contains scheduled tasks on tablet", () => {
@@ -238,12 +251,11 @@ describe("tablet header controls", () => {
     expect(onOpenSettings).toHaveBeenCalled();
   });
 
-  it("calls onToggleTerminal from terminal submenu on tablet", () => {
+  it("calls onToggleTerminal from terminal primary button on tablet", () => {
     const onToggleTerminal = vi.fn();
     renderTabletHeader({ onToggleTerminal });
     fireEvent.click(screen.getByTitle("More header actions"));
-    fireEvent.click(screen.getByTestId("overflow-terminal-group-trigger"));
-    fireEvent.click(screen.getByTestId("overflow-terminal-btn"));
+    fireEvent.click(screen.getByTestId("overflow-terminal-primary-btn"));
     expect(onToggleTerminal).toHaveBeenCalled();
   });
 
@@ -287,14 +299,16 @@ describe("tablet header controls", () => {
     expect(screen.queryByRole("menu")).toBeNull();
   });
 
-  it("closes terminal submenu on Escape without closing overflow menu on tablet", () => {
-    renderTabletHeader({ onToggleTerminal: noop });
+  it("closes terminal submenu on Escape without closing overflow menu on tablet", async () => {
+    renderTabletHeader({ onToggleTerminal: noop, onOpenScripts: noop });
     fireEvent.click(screen.getByTitle("More header actions"));
-    fireEvent.click(screen.getByTestId("overflow-terminal-group-trigger"));
-    expect(screen.getByTestId("overflow-terminal-btn")).toBeDefined();
+    fireEvent.click(screen.getByTestId("overflow-terminal-submenu-toggle"));
+    await waitFor(() => {
+      expect(screen.getByTestId("overflow-scripts-manage")).toBeDefined();
+    });
     fireEvent.keyDown(document, { key: "Escape" });
     // Submenu closes but overflow menu stays open
-    expect(screen.queryByTestId("overflow-terminal-btn")).toBeNull();
+    expect(screen.queryByTestId("overflow-scripts-manage")).toBeNull();
     expect(screen.getByRole("menu")).toBeDefined();
   });
 
@@ -388,6 +402,57 @@ describe("tablet header controls", () => {
         onViewAllProjects: noop,
       });
       expect(screen.getByTestId("project-selector-trigger")).toBeDefined();
+    });
+  });
+
+  // ── Split-action Terminal button regression tests ─────────────
+
+  describe("split-action terminal button on tablet", () => {
+    it("primary terminal button opens terminal directly on tablet", () => {
+      const onToggleTerminal = vi.fn();
+      renderTabletHeader({ onToggleTerminal });
+      fireEvent.click(screen.getByTitle("More header actions"));
+      fireEvent.click(screen.getByTestId("overflow-terminal-primary-btn"));
+      expect(onToggleTerminal).toHaveBeenCalled();
+      // Menu should close after action
+      expect(screen.queryByTestId("overflow-terminal-primary-btn")).toBeNull();
+    });
+
+    it("chevron toggle opens submenu without calling onToggleTerminal on tablet", () => {
+      const onToggleTerminal = vi.fn();
+      renderTabletHeader({ onToggleTerminal, onOpenScripts: noop });
+      fireEvent.click(screen.getByTitle("More header actions"));
+      fireEvent.click(screen.getByTestId("overflow-terminal-submenu-toggle"));
+      expect(onToggleTerminal).not.toHaveBeenCalled();
+      // Menu should still be open
+      expect(screen.getByTestId("overflow-terminal-primary-btn")).toBeDefined();
+    });
+
+    it("renders script entries in submenu when scripts are fetched", async () => {
+      mockFetchScripts.mockResolvedValue({ lint: "pnpm lint", build: "pnpm build" });
+      const onRunScript = vi.fn();
+      renderTabletHeader({ onToggleTerminal: noop, onRunScript, onOpenScripts: noop, projectId: "test-project" });
+      fireEvent.click(screen.getByTitle("More header actions"));
+      fireEvent.click(screen.getByTestId("overflow-terminal-submenu-toggle"));
+      await waitFor(() => {
+        expect(screen.getByTestId("overflow-script-item-lint")).toBeDefined();
+        expect(screen.getByTestId("overflow-script-item-build")).toBeDefined();
+      });
+    });
+
+    it("clicking a script entry calls onRunScript and closes overflow on tablet", async () => {
+      mockFetchScripts.mockResolvedValue({ build: "pnpm build" });
+      const onRunScript = vi.fn();
+      renderTabletHeader({ onToggleTerminal: noop, onRunScript, onOpenScripts: noop, projectId: "test-project" });
+      fireEvent.click(screen.getByTitle("More header actions"));
+      fireEvent.click(screen.getByTestId("overflow-terminal-submenu-toggle"));
+      await waitFor(() => {
+        expect(screen.getByTestId("overflow-script-item-build")).toBeDefined();
+      });
+      fireEvent.click(screen.getByTestId("overflow-script-item-build"));
+      expect(onRunScript).toHaveBeenCalledWith("build", "pnpm build");
+      // Menu should close
+      expect(screen.queryByTestId("overflow-terminal-primary-btn")).toBeNull();
     });
   });
 

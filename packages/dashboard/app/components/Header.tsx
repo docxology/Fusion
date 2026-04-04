@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef, useCallback } from "react";
-import { Settings, Pause, Play, Square, LayoutGrid, List, Terminal, Lightbulb, Search, X, Activity, MoreHorizontal, Clock, Folder, History, GitBranch, Workflow, Bot, ChevronLeft, Target, Building2, ChevronRight, FileCode } from "lucide-react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { Settings, Pause, Play, Square, LayoutGrid, List, Terminal, Lightbulb, Search, X, Activity, MoreHorizontal, Clock, Folder, History, GitBranch, Workflow, Bot, ChevronLeft, Target, Building2, ChevronRight, FileCode, Loader2 } from "lucide-react";
 import type { ProjectInfo } from "../api";
+import { fetchScripts } from "../api";
 import { ProjectSelector } from "./ProjectSelector";
 import { QuickScriptsDropdown } from "./QuickScriptsDropdown";
 
@@ -126,16 +127,52 @@ export function Header({
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
   const [isOverflowMenuOpen, setIsOverflowMenuOpen] = useState(false);
   const [isTerminalSubmenuOpen, setIsTerminalSubmenuOpen] = useState(false);
+  const [overflowScripts, setOverflowScripts] = useState<Record<string, string>>({});
+  const [overflowScriptsLoading, setOverflowScriptsLoading] = useState(false);
   const overflowButtonRef = useRef<HTMLButtonElement>(null);
   const overflowMenuRef = useRef<HTMLDivElement>(null);
   const mobileSearchRef = useRef<HTMLDivElement>(null);
   const mobileSearchInputRef = useRef<HTMLInputElement>(null);
   const terminalSubmenuOpenRef = useRef(false);
 
+  // Script entries sorted alphabetically for overflow submenu
+  const overflowScriptEntries = useMemo(() => {
+    return Object.entries(overflowScripts).sort(([a], [b]) => a.localeCompare(b));
+  }, [overflowScripts]);
+
   // Keep ref in sync with state
   useEffect(() => {
     terminalSubmenuOpenRef.current = isTerminalSubmenuOpen;
   }, [isTerminalSubmenuOpen]);
+
+  // Fetch scripts when terminal submenu opens in compact mode
+  useEffect(() => {
+    if (!isTerminalSubmenuOpen || !isCompact) return;
+
+    let cancelled = false;
+    setOverflowScriptsLoading(true);
+
+    fetchScripts(projectId)
+      .then((data) => {
+        if (!cancelled) {
+          setOverflowScripts(data);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setOverflowScripts({});
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setOverflowScriptsLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isTerminalSubmenuOpen, isCompact, projectId]);
 
   // Keep mobile search open if there's an active search query
   const shouldShowMobileSearch = isMobileSearchOpen || searchQuery.length > 0;
@@ -551,42 +588,80 @@ export function Header({
               className="mobile-overflow-group"
               data-testid="overflow-terminal-group"
             >
-              <button
-                className="mobile-overflow-item mobile-overflow-group-trigger"
-                onClick={() => setIsTerminalSubmenuOpen((prev) => !prev)}
-                role="menuitem"
-                aria-expanded={isTerminalSubmenuOpen}
-                aria-haspopup="menu"
-                data-testid="overflow-terminal-group-trigger"
-              >
-                <Terminal size={16} />
-                <span>Terminal</span>
-                <ChevronRight
-                  size={14}
-                  className={`mobile-overflow-chevron${isTerminalSubmenuOpen ? " mobile-overflow-chevron--open" : ""}`}
-                />
-              </button>
+              <div className="mobile-overflow-split-row">
+                <button
+                  className="mobile-overflow-item mobile-overflow-split-primary"
+                  onClick={() => handleOverflowAction(onToggleTerminal)}
+                  role="menuitem"
+                  data-testid="overflow-terminal-primary-btn"
+                >
+                  <Terminal size={16} />
+                  <span>Terminal</span>
+                </button>
+                <button
+                  className="mobile-overflow-split-toggle"
+                  onClick={() => setIsTerminalSubmenuOpen((prev) => !prev)}
+                  role="menuitem"
+                  aria-expanded={isTerminalSubmenuOpen}
+                  aria-haspopup="menu"
+                  aria-label="Show scripts"
+                  data-testid="overflow-terminal-submenu-toggle"
+                >
+                  <ChevronRight
+                    size={14}
+                    className={`mobile-overflow-chevron${isTerminalSubmenuOpen ? " mobile-overflow-chevron--open" : ""}`}
+                  />
+                </button>
+              </div>
               {isTerminalSubmenuOpen && (
-                <div className="mobile-overflow-submenu" role="menu" aria-label="Terminal submenu">
-                  <button
-                    className="mobile-overflow-item mobile-overflow-subitem"
-                    onClick={() => handleOverflowAction(onToggleTerminal)}
-                    role="menuitem"
-                    data-testid="overflow-terminal-btn"
-                  >
-                    <Terminal size={16} />
-                    <span>Open Terminal</span>
-                  </button>
-                  {onOpenScripts && (
-                    <button
-                      className="mobile-overflow-item mobile-overflow-subitem"
-                      onClick={() => handleOverflowAction(onOpenScripts)}
-                      role="menuitem"
-                      data-testid="overflow-scripts-btn"
-                    >
-                      <FileCode size={16} />
-                      <span>Scripts</span>
-                    </button>
+                <div className="mobile-overflow-submenu" role="menu" aria-label="Scripts submenu">
+                  {overflowScriptsLoading ? (
+                    <div className="mobile-overflow-submenu-loading" data-testid="overflow-scripts-loading">
+                      <Loader2 size={14} className="animate-spin" />
+                      <span>Loading scripts…</span>
+                    </div>
+                  ) : overflowScriptEntries.length > 0 ? (
+                    <>
+                      {overflowScriptEntries.map(([name, command]) => (
+                        <button
+                          key={name}
+                          className="mobile-overflow-item mobile-overflow-subitem"
+                          onClick={() => {
+                            if (onRunScript) onRunScript(name, command);
+                            setIsOverflowMenuOpen(false);
+                            setIsTerminalSubmenuOpen(false);
+                          }}
+                          role="menuitem"
+                          data-testid={`overflow-script-item-${name}`}
+                        >
+                          <Play size={14} />
+                          <span>{name}</span>
+                        </button>
+                      ))}
+                      {onOpenScripts && (
+                        <button
+                          className="mobile-overflow-item mobile-overflow-subitem mobile-overflow-subitem--manage"
+                          onClick={() => handleOverflowAction(onOpenScripts)}
+                          role="menuitem"
+                          data-testid="overflow-scripts-manage"
+                        >
+                          <FileCode size={14} />
+                          <span>Manage Scripts…</span>
+                        </button>
+                      )}
+                    </>
+                  ) : (
+                    onOpenScripts && (
+                      <button
+                        className="mobile-overflow-item mobile-overflow-subitem"
+                        onClick={() => handleOverflowAction(onOpenScripts)}
+                        role="menuitem"
+                        data-testid="overflow-scripts-manage"
+                      >
+                        <FileCode size={14} />
+                        <span>No scripts — add one…</span>
+                      </button>
+                    )
                   )}
                 </div>
               )}

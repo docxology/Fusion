@@ -1,6 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { Header } from "../Header";
+
+// Mock fetchScripts for overflow submenu
+const mockFetchScripts = vi.fn();
+
+vi.mock("../api", () => ({
+  fetchScripts: (...args: unknown[]) => mockFetchScripts(...args),
+}));
 
 // Mock matchMedia for mobile/tablet/desktop viewport tests
 type ViewportTier = "mobile" | "tablet" | "desktop";
@@ -30,6 +37,7 @@ describe("Header", () => {
   beforeEach(() => {
     // Default to desktop viewport
     mockMatchMedia("desktop");
+    mockFetchScripts.mockResolvedValue({});
   });
 
   afterEach(() => {
@@ -536,10 +544,8 @@ describe("Header", () => {
       );
       // Terminal is in overflow menu on mobile, not inline
       fireEvent.click(screen.getByTitle("More header actions"));
-      expect(screen.getByTestId("overflow-terminal-group-trigger")).toBeDefined();
-      // Expand submenu to see Open Terminal
-      fireEvent.click(screen.getByTestId("overflow-terminal-group-trigger"));
-      expect(screen.getByTestId("overflow-terminal-btn")).toBeDefined();
+      expect(screen.getByTestId("overflow-terminal-primary-btn")).toBeDefined();
+      expect(screen.getByTestId("overflow-terminal-submenu-toggle")).toBeDefined();
       // Pause/stop are always inline
       expect(screen.getByTitle("Pause scheduling")).toBeDefined();
       expect(screen.getByTitle("Stop AI engine")).toBeDefined();
@@ -702,13 +708,16 @@ describe("Header", () => {
       expect(onOpenWorkflowSteps).toHaveBeenCalledOnce();
     });
 
-    it("scripts overflow menu item calls onOpenScripts when clicked", () => {
+    it("scripts overflow menu item calls onOpenScripts when clicked", async () => {
       const onOpenScripts = vi.fn();
       render(<Header onOpenSettings={vi.fn()} onOpenScripts={onOpenScripts} onRunScript={vi.fn()} />);
       fireEvent.click(screen.getByTitle("More header actions"));
       // Open the terminal submenu first
-      fireEvent.click(screen.getByTestId("overflow-terminal-group-trigger"));
-      fireEvent.click(screen.getByTestId("overflow-scripts-btn"));
+      fireEvent.click(screen.getByTestId("overflow-terminal-submenu-toggle"));
+      await waitFor(() => {
+        expect(screen.getByTestId("overflow-scripts-manage")).toBeDefined();
+      });
+      fireEvent.click(screen.getByTestId("overflow-scripts-manage"));
       expect(onOpenScripts).toHaveBeenCalledOnce();
     });
   });
