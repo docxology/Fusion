@@ -1,7 +1,24 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+
+vi.mock("node:child_process", () => ({
+  execSync: vi.fn(),
+}));
+
+vi.mock("./worktree-pool.js", () => ({
+  WorktreePool: vi.fn(),
+  scanIdleWorktrees: vi.fn().mockResolvedValue([]),
+  cleanupOrphanedWorktrees: vi.fn().mockResolvedValue(0),
+  scanOrphanedBranches: vi.fn().mockResolvedValue([]),
+}));
+
 import { SelfHealingManager } from "./self-healing.js";
 import type { TaskStore, Settings, Task } from "@fusion/core";
 import { EventEmitter } from "node:events";
+import { execSync } from "node:child_process";
+import { scanOrphanedBranches } from "./worktree-pool.js";
+
+const mockedExecSync = vi.mocked(execSync);
+const mockedScanOrphanedBranches = vi.mocked(scanOrphanedBranches);
 
 // ── Mock helpers ────────────────────────────────────────────────────
 
@@ -289,6 +306,84 @@ describe("SelfHealingManager", () => {
 
       await vi.advanceTimersByTimeAsync(200);
       expect(store.updateSettings).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── cleanupOrphanedBranches ────────────────────────────────────────
+
+  describe("cleanupOrphanedBranches", () => {
+    it("returns 0 when no orphaned branches found", async () => {
+      mockedScanOrphanedBranches.mockResolvedValueOnce([]);
+
+      const result = await manager.cleanupOrphanedBranches();
+
+      expect(result).toBe(0);
+      expect(mockedExecSync).not.toHaveBeenCalled();
+    });
+
+    it("deletes orphaned branches with safe delete (-d)", async () => {
+      mockedScanOrphanedBranches.mockResolvedValueOnce(["fusion/fn-001", "fusion/fn-002"]);
+
+      const result = await manager.cleanupOrphanedBranches();
+
+      expect(result).toBe(2);
+      expect(mockedExecSync).toHaveBeenCalledWith(
+        expect.stringContaining('git branch -d "fusion/fn-001"'),
+        expect.objectContaining({ cwd: "/tmp/test-project" }),
+      );
+      expect(mockedExecSync).toHaveBeenCalledWith(
+        expect.stringContaining('git branch -d "fusion/fn-002"'),
+        expect.objectContaining({ cwd: "/tmp/test-project" }),
+      );
+    });
+
+    it("falls back to force delete (-D) when safe delete fails", async () => {
+      mockedScanOrphanedBranches.mockResolvedValueOnce(["fusion/fn-003"]);
+
+      // Safe delete fails
+      mockedExecSync.mockImplementationOnce(() => {
+        throw new Error("not fully merged");
+      });
+      // Force delete succeeds
+      mockedExecSync.mockImplementationOnce(() => Buffer.from(""));
+
+      const result = await manager.cleanupOrphanedBranches();
+
+      expect(result).toBe(1);
+      expect(mockedExecSync).toHaveBeenCalledWith(
+        expect.stringContaining('git branch -d "fusion/fn-003"'),
+        expect.any(Object),
+      );
+      expect(mockedExecSync).toHaveBeenCalledWith(
+        expect.stringContaining('git branch -D "fusion/fn-003"'),
+        expect.any(Object),
+      );
+    });
+
+    it("counts only successfully deleted branches", async () => {
+      mockedScanOrphanedBranches.mockResolvedValueOnce(["fusion/fn-004", "fusion/fn-005"]);
+
+      // First branch: safe delete succeeds
+      mockedExecSync.mockImplementationOnce(() => Buffer.from(""));
+      // Second branch: both safe and force delete fail
+      mockedExecSync.mockImplementationOnce(() => {
+        throw new Error("not fully merged");
+      });
+      mockedExecSync.mockImplementationOnce(() => {
+        throw new Error("branch not found");
+      });
+
+      const result = await manager.cleanupOrphanedBranches();
+
+      expect(result).toBe(1);
+    });
+
+    it("returns 0 when scanOrphanedBranches throws", async () => {
+      mockedScanOrphanedBranches.mockRejectedValueOnce(new Error("git error"));
+
+      const result = await manager.cleanupOrphanedBranches();
+
+      expect(result).toBe(0);
     });
   });
 });

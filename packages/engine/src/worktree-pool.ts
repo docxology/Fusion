@@ -1,7 +1,7 @@
 import { execSync } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import type { TaskStore } from "@fusion/core";
+import type { Column, TaskStore } from "@fusion/core";
 import { worktreePoolLog } from "./logger.js";
 
 /**
@@ -264,4 +264,61 @@ export async function cleanupOrphanedWorktrees(rootDir: string, store: TaskStore
   }
 
   return cleaned;
+}
+
+/** Columns where the merger handles branch cleanup — skip these during orphan scanning. */
+const MERGER_MANAGED_COLUMNS: ReadonlySet<Column> = new Set(["in-review", "done"]);
+
+/**
+ * Scan for orphaned `fusion/*` branches that are not associated with any
+ * non-archived, non-merger-managed task.
+ *
+ * Lists all local branches matching the `fusion/*` pattern, then compares
+ * against branches stored on tasks (via `task.branch` or derived as
+ * `fusion/${taskId.toLowerCase()}`). Branches belonging to tasks in the
+ * `in-review` or `done` columns are excluded because the merger is
+ * responsible for cleaning those up.
+ *
+ * @param rootDir — Project root directory (git working tree)
+ * @param store — Task store for listing tasks and their branch assignments
+ * @returns Array of orphaned branch names
+ */
+export async function scanOrphanedBranches(rootDir: string, store: TaskStore): Promise<string[]> {
+  // List all local branches matching fusion/*
+  let allBranches: string[];
+  try {
+    const output = execSync("git branch --list 'fusion/*'", {
+      cwd: rootDir,
+      stdio: "pipe",
+      encoding: "utf-8",
+    });
+    allBranches = output
+      .split("\n")
+      .map((line) => line.trim().replace(/^\*?\s*/, ""))
+      .filter((line) => line.startsWith("fusion/"));
+  } catch {
+    return [];
+  }
+
+  if (allBranches.length === 0) return [];
+
+  // Build set of branches associated with active (non-archived, non-merger-managed) tasks
+  const tasks = await store.listTasks();
+  const activeBranches = new Set<string>();
+  for (const task of tasks) {
+    // Skip tasks in columns where the merger handles branch cleanup
+    if (MERGER_MANAGED_COLUMNS.has(task.column)) continue;
+    // Also skip archived tasks
+    if (task.column === "archived") continue;
+
+    // Use stored branch name if available, otherwise derive from task ID
+    if (task.branch) {
+      activeBranches.add(task.branch);
+    }
+    // Always add the derived name too — the task may not have `branch` set yet
+    activeBranches.add(`fusion/${task.id.toLowerCase()}`);
+  }
+
+  // Return branches not associated with any active task
+  return allBranches.filter((branch) => !activeBranches.has(branch));
 }

@@ -1,4 +1,18 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+
+// Mock child_process so we can intercept execSync calls in branch cleanup tests.
+// By default, pass through to the real implementation.
+vi.mock("node:child_process", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("node:child_process")>();
+  return {
+    ...mod,
+    execSync: vi.fn((...args: Parameters<typeof mod.execSync>) => mod.execSync(...args)),
+  };
+});
+
+import { execSync } from "node:child_process";
+const mockedExecSync = vi.mocked(execSync);
+
 import { TaskStore } from "./store.js";
 import { readFile, writeFile, mkdir, rm, readdir, unlink } from "node:fs/promises";
 import { join } from "node:path";
@@ -5310,6 +5324,119 @@ Task with acceptance criteria
       const detail = await store.getTask(task.id);
       expect(detail.recoveryRetryCount).toBeUndefined();
       expect(detail.nextRecoveryAt).toBeUndefined();
+    });
+  });
+
+  // ── Branch Cleanup on Delete/Archive ────────────────────────────
+
+  describe("branch cleanup on delete and archive", () => {
+    beforeEach(() => {
+      mockedExecSync.mockClear();
+    });
+
+    afterEach(() => {
+      mockedExecSync.mockImplementation(
+        (...args: Parameters<typeof execSync>) => {
+          // Restore pass-through to real implementation
+          const { execSync: realExecSync } = require("node:child_process");
+          return realExecSync(...args);
+        },
+      );
+    });
+
+    it("deleteTask attempts branch cleanup via cleanupBranchForTask", async () => {
+      const task = await createTestTask();
+
+      // Mock: verify succeeds, delete succeeds
+      mockedExecSync.mockImplementation((cmd: string) => {
+        if (typeof cmd === "string" && cmd.includes("git rev-parse --verify")) return Buffer.from("");
+        if (typeof cmd === "string" && cmd.includes("git branch -D")) return Buffer.from("");
+        throw new Error(`unexpected execSync call: ${cmd}`);
+      });
+
+      await store.deleteTask(task.id);
+
+      const calls = mockedExecSync.mock.calls.map((c) => c[0] as string);
+      const verifyCalls = calls.filter((c) => c.includes("git rev-parse --verify") && c.includes(`fusion/${task.id.toLowerCase()}`));
+      const deleteCalls = calls.filter((c) => c.includes("git branch -D") && c.includes(`fusion/${task.id.toLowerCase()}`));
+      expect(verifyCalls.length).toBeGreaterThanOrEqual(1);
+      expect(deleteCalls.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it("deleteTask cleans up stored branch and derived branch when set", async () => {
+      const task = await store.createTask({ description: "Branch test" });
+      await store.updateTask(task.id, { branch: "fusion/my-custom-branch" });
+
+      mockedExecSync.mockImplementation((cmd: string) => {
+        if (typeof cmd === "string" && cmd.includes("git rev-parse --verify")) return Buffer.from("");
+        if (typeof cmd === "string" && cmd.includes("git branch -D")) return Buffer.from("");
+        throw new Error(`unexpected execSync call: ${cmd}`);
+      });
+
+      await store.deleteTask(task.id);
+
+      const calls = mockedExecSync.mock.calls.map((c) => c[0] as string);
+
+      // Should verify and delete both stored and derived branches
+      const customBranchVerify = calls.filter((c) => c.includes(`git rev-parse --verify "fusion/my-custom-branch"`));
+      const customBranchDelete = calls.filter((c) => c.includes(`git branch -D "fusion/my-custom-branch"`));
+      const derivedBranchVerify = calls.filter((c) => c.includes(`git rev-parse --verify "fusion/${task.id.toLowerCase()}"`));
+      const derivedBranchDelete = calls.filter((c) => c.includes(`git branch -D "fusion/${task.id.toLowerCase()}"`));
+      expect(customBranchVerify.length).toBeGreaterThanOrEqual(1);
+      expect(customBranchDelete.length).toBeGreaterThanOrEqual(1);
+      expect(derivedBranchVerify.length).toBeGreaterThanOrEqual(1);
+      expect(derivedBranchDelete.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it("deleteTask succeeds even when branch cleanup fails", async () => {
+      const task = await createTestTask();
+
+      mockedExecSync.mockImplementation(() => {
+        throw new Error("not a git repo");
+      });
+
+      const deleted = await store.deleteTask(task.id);
+      expect(deleted.id).toBe(task.id);
+    });
+
+    it("archiveTask with cleanup attempts branch cleanup", async () => {
+      const task = await createTestTask();
+      await store.moveTask(task.id, "todo");
+      await store.moveTask(task.id, "in-progress");
+      await store.moveTask(task.id, "in-review");
+      await store.moveTask(task.id, "done");
+
+      mockedExecSync.mockImplementation((cmd: string) => {
+        if (typeof cmd === "string" && cmd.includes("git rev-parse --verify")) return Buffer.from("");
+        if (typeof cmd === "string" && cmd.includes("git branch -D")) return Buffer.from("");
+        throw new Error(`unexpected execSync call: ${cmd}`);
+      });
+
+      await store.archiveTask(task.id, true);
+
+      const calls = mockedExecSync.mock.calls.map((c) => c[0] as string);
+      const verifyCalls = calls.filter((c) => c.includes("git rev-parse --verify") && c.includes(`fusion/${task.id.toLowerCase()}`));
+      const deleteCalls = calls.filter((c) => c.includes("git branch -D") && c.includes(`fusion/${task.id.toLowerCase()}`));
+      expect(verifyCalls.length).toBeGreaterThanOrEqual(1);
+      expect(deleteCalls.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it("archiveTask without cleanup does NOT attempt branch cleanup", async () => {
+      const task = await createTestTask();
+      await store.moveTask(task.id, "todo");
+      await store.moveTask(task.id, "in-progress");
+      await store.moveTask(task.id, "in-review");
+      await store.moveTask(task.id, "done");
+
+      mockedExecSync.mockImplementation(() => {
+        throw new Error("mocked: no git repo");
+      });
+
+      await store.archiveTask(task.id, false);
+
+      const calls = mockedExecSync.mock.calls.map((c) => c[0] as string);
+      const branchCommands = calls.filter((c) => c.includes("git branch -D") || c.includes("git rev-parse --verify"));
+      expect(branchCommands).toHaveLength(0);
     });
   });
 });

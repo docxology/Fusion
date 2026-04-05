@@ -1395,6 +1395,16 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
         throw new Error(`Task ${id} not found`);
       }
 
+      // Clean up the task's branch before deleting from DB
+      const cleanedBranches = this.cleanupBranchForTask(task);
+      if (cleanedBranches.length > 0) {
+        if (!task.log) task.log = [];
+        task.log.push({
+          timestamp: new Date().toISOString(),
+          action: `Cleaned up branch: ${cleanedBranches.join(", ")}`,
+        });
+      }
+
       // Delete from SQLite
       this.db.prepare('DELETE FROM tasks WHERE id = ?').run(id);
       this.db.bumpLastModified();
@@ -1412,6 +1422,47 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       this.emit("task:deleted", task);
       return task;
     });
+  }
+
+  /**
+   * Clean up the git branch associated with a task.
+   *
+   * Branch name resolution:
+   * 1. Use `task.branch` if set
+   * 2. Fall back to `fusion/${taskId.toLowerCase()}`
+   *
+   * Uses force delete (`git branch -D`) since the task is being removed or archived.
+   * Silently skips if neither branch exists (idempotent).
+   *
+   * @returns Array of branch names that were successfully deleted
+   */
+  private cleanupBranchForTask(task: Task): string[] {
+    const branches = new Set<string>();
+    if (task.branch) {
+      branches.add(task.branch);
+    }
+    branches.add(`fusion/${task.id.toLowerCase()}`);
+
+    const deleted: string[] = [];
+    for (const branch of branches) {
+      try {
+        // Verify branch exists before trying to delete
+        execSync(`git rev-parse --verify "${branch}"`, {
+          cwd: this.rootDir,
+          stdio: "pipe",
+          timeout: 10_000,
+        });
+        execSync(`git branch -D "${branch}"`, {
+          cwd: this.rootDir,
+          stdio: "pipe",
+          timeout: 10_000,
+        });
+        deleted.push(branch);
+      } catch {
+        // Branch doesn't exist or deletion failed — silently skip
+      }
+    }
+    return deleted;
   }
 
   private collectMergeDetails(_id: string, _branch: string, task: Task, commitMessage: string): import("./types.js").MergeDetails {
@@ -1635,6 +1686,15 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
 
       // If cleanup requested, write archive entry BEFORE removing directory
       if (cleanup) {
+        // Clean up the task's branch before removing from DB
+        const cleanedBranches = this.cleanupBranchForTask(task);
+        if (cleanedBranches.length > 0) {
+          task.log.push({
+            timestamp: new Date().toISOString(),
+            action: `Cleaned up branch: ${cleanedBranches.join(", ")}`,
+          });
+        }
+
         const entry: import("./types.js").ArchivedTaskEntry = {
           id: task.id,
           title: task.title,

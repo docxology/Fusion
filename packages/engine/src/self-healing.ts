@@ -18,7 +18,7 @@ import { existsSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { TaskStore, Settings } from "@fusion/core";
 import { createLogger } from "./logger.js";
-import { scanIdleWorktrees } from "./worktree-pool.js";
+import { scanIdleWorktrees, scanOrphanedBranches } from "./worktree-pool.js";
 
 const log = createLogger("self-healing");
 
@@ -232,6 +232,7 @@ export class SelfHealingManager {
     try {
       await this.pruneWorktrees();
       await this.cleanupOrphans();
+      await this.cleanupOrphanedBranches();
       this.checkpointWal();
       await this.enforceWorktreeCap();
 
@@ -288,6 +289,61 @@ export class SelfHealingManager {
       return cleaned;
     } catch (err: any) {
       log.error(`Orphan cleanup failed: ${err.message}`);
+      return 0;
+    }
+  }
+
+  /**
+   * Remove orphaned `fusion/*` branches that are not associated with any
+   * active (non-archived, non-merger-managed) task.
+   *
+   * For each orphaned branch:
+   * 1. Try `git branch -d` (safe delete — only works if branch is fully merged)
+   * 2. Fall back to `git branch -D` (force delete) if safe delete fails
+   * 3. Log each cleanup action
+   *
+   * Individual branch deletion failures are non-fatal.
+   *
+   * @returns Number of branches successfully deleted
+   */
+  async cleanupOrphanedBranches(): Promise<number> {
+    try {
+      const orphaned = await scanOrphanedBranches(this.options.rootDir, this.store);
+      if (orphaned.length === 0) return 0;
+
+      let cleaned = 0;
+      for (const branch of orphaned) {
+        try {
+          // Try safe delete first (-d requires branch to be merged)
+          execSync(`git branch -d "${branch}"`, {
+            cwd: this.options.rootDir,
+            stdio: "pipe",
+            timeout: 30_000,
+          });
+          log.log(`Deleted branch: ${branch}`);
+          cleaned++;
+        } catch {
+          // Safe delete failed (not merged) — force delete
+          try {
+            execSync(`git branch -D "${branch}"`, {
+              cwd: this.options.rootDir,
+              stdio: "pipe",
+              timeout: 30_000,
+            });
+            log.log(`Force-deleted branch: ${branch}`);
+            cleaned++;
+          } catch {
+            // Individual failure is non-fatal
+          }
+        }
+      }
+
+      if (cleaned > 0) {
+        log.log(`Cleaned ${cleaned} orphaned branch(es)`);
+      }
+      return cleaned;
+    } catch (err: any) {
+      log.error(`Orphaned branch cleanup failed: ${err.message}`);
       return 0;
     }
   }

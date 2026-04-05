@@ -9,7 +9,7 @@ vi.mock("node:fs", () => ({
   readdirSync: vi.fn().mockReturnValue([]),
 }));
 
-import { WorktreePool, scanIdleWorktrees, cleanupOrphanedWorktrees } from "./worktree-pool.js";
+import { WorktreePool, scanIdleWorktrees, cleanupOrphanedWorktrees, scanOrphanedBranches } from "./worktree-pool.js";
 import { execSync } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
 import type { Task, Column } from "@fusion/core";
@@ -544,5 +544,149 @@ describe("cleanupOrphanedWorktrees", () => {
     const cleaned = await cleanupOrphanedWorktrees("/root", store);
     expect(cleaned).toBe(0);
     expect(mockedExecSync).not.toHaveBeenCalled();
+  });
+});
+
+// ── scanOrphanedBranches tests ────────────────────────────────────────
+
+describe("scanOrphanedBranches", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // Default: return empty string (no branches)
+    mockedExecSync.mockImplementation((cmd: any) => {
+      const cmdStr = String(cmd);
+      if (cmdStr.includes("git branch")) {
+        return "";
+      }
+      return Buffer.from("");
+    });
+  });
+
+  it("identifies branches not associated with any active task", async () => {
+    mockedExecSync.mockImplementation((cmd: any) => {
+      const cmdStr = String(cmd);
+      if (cmdStr.includes("git branch")) {
+        return "  fusion/fn-001\n  fusion/fn-002\n  fusion/fn-003\n";
+      }
+      return Buffer.from("");
+    });
+
+    const store = createMockStore([
+      makeTask("FN-001", "in-progress"),
+      makeTask("FN-002", "todo"),
+    ]);
+
+    const orphaned = await scanOrphanedBranches("/root", store);
+
+    // FN-001 (in-progress) and FN-002 (todo) are active → not orphaned
+    // FN-003 has no task → orphaned
+    expect(orphaned).toEqual(["fusion/fn-003"]);
+  });
+
+  it("excludes in-review and done tasks (merger manages those)", async () => {
+    mockedExecSync.mockImplementation((cmd: any) => {
+      const cmdStr = String(cmd);
+      if (cmdStr.includes("git branch")) {
+        return "  fusion/fn-001\n  fusion/fn-002\n  fusion/fn-003\n";
+      }
+      return Buffer.from("");
+    });
+
+    const store = createMockStore([
+      makeTask("FN-001", "in-review"),
+      makeTask("FN-002", "done"),
+    ]);
+
+    const orphaned = await scanOrphanedBranches("/root", store);
+
+    // in-review and done tasks are excluded → their branches are orphaned
+    // FN-003 also has no task → orphaned
+    expect(orphaned).toContain("fusion/fn-001");
+    expect(orphaned).toContain("fusion/fn-002");
+    expect(orphaned).toContain("fusion/fn-003");
+  });
+
+  it("excludes archived tasks", async () => {
+    mockedExecSync.mockImplementation((cmd: any) => {
+      const cmdStr = String(cmd);
+      if (cmdStr.includes("git branch")) {
+        return "  fusion/fn-001\n";
+      }
+      return Buffer.from("");
+    });
+
+    const store = createMockStore([
+      makeTask("FN-001", "archived"),
+    ]);
+
+    const orphaned = await scanOrphanedBranches("/root", store);
+
+    // Archived task branch is orphaned
+    expect(orphaned).toEqual(["fusion/fn-001"]);
+  });
+
+  it("uses task.branch field when set", async () => {
+    const task = makeTask("FN-001", "in-progress");
+    task.branch = "fusion/fn-001-custom";
+    mockedExecSync.mockImplementation((cmd: any) => {
+      const cmdStr = String(cmd);
+      if (cmdStr.includes("git branch")) {
+        return "  fusion/fn-001\n  fusion/fn-001-custom\n  fusion/fn-002\n";
+      }
+      return Buffer.from("");
+    });
+
+    const store = createMockStore([task]);
+
+    const orphaned = await scanOrphanedBranches("/root", store);
+
+    // Both fusion/fn-001 (derived) and fusion/fn-001-custom (stored) are active
+    expect(orphaned).toEqual(["fusion/fn-002"]);
+  });
+
+  it("returns empty array when git branch fails", async () => {
+    mockedExecSync.mockImplementation((cmd: any) => {
+      if (typeof cmd === "string" && cmd.includes("git branch")) {
+        throw new Error("not a git repo");
+      }
+      return Buffer.from("");
+    });
+
+    const store = createMockStore([]);
+
+    const orphaned = await scanOrphanedBranches("/root", store);
+    expect(orphaned).toEqual([]);
+  });
+
+  it("returns empty array when no fusion/* branches exist", async () => {
+    mockedExecSync.mockImplementation((cmd: any) => {
+      const cmdStr = String(cmd);
+      if (cmdStr.includes("git branch")) {
+        return "";
+      }
+      return Buffer.from("");
+    });
+
+    const store = createMockStore([]);
+
+    const orphaned = await scanOrphanedBranches("/root", store);
+    expect(orphaned).toEqual([]);
+  });
+
+  it("strips leading * and whitespace from branch names", async () => {
+    mockedExecSync.mockImplementation((cmd: any) => {
+      const cmdStr = String(cmd);
+      if (cmdStr.includes("git branch")) {
+        return "* fusion/fn-001\n  fusion/fn-002\n";
+      }
+      return Buffer.from("");
+    });
+
+    const store = createMockStore([]);
+
+    const orphaned = await scanOrphanedBranches("/root", store);
+
+    expect(orphaned).toContain("fusion/fn-001");
+    expect(orphaned).toContain("fusion/fn-002");
   });
 });
