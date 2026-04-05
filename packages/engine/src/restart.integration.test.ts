@@ -1102,3 +1102,37 @@ describe("Engine pause/unpause cycle", () => {
     expect(secondSlotAcquired).toBe(true);
   });
 });
+
+// ── Regression: getTaskMergeBlocker import contract ──────────────────────
+
+describe("getTaskMergeBlocker import regression", () => {
+  it("getTaskMergeBlocker is importable from @fusion/core at runtime", async () => {
+    // Dynamic import to verify the runtime export contract — if this fails,
+    // packages/core/dist/index.js is stale or the export was removed.
+    const core = await import("@fusion/core");
+    expect(typeof core.getTaskMergeBlocker).toBe("function");
+    expect(typeof core.isTaskReadyForMerge).toBe("function");
+  });
+
+  it("getTaskMergeBlocker rejects non-in-review tasks", async () => {
+    const { getTaskMergeBlocker } = await import("@fusion/core");
+    const blocker = getTaskMergeBlocker({
+      column: "in-progress",
+      paused: false,
+      status: undefined,
+      error: undefined,
+      steps: [],
+      workflowStepResults: [],
+    });
+    expect(blocker).toContain("must be in 'in-review'");
+  });
+
+  it("aiMergeTask can be loaded from merger module (getTaskMergeBlocker reachable)", async () => {
+    // Verify the merger module itself loads without import errors.
+    // aiMergeTask internally uses getTaskMergeBlocker from @fusion/core —
+    // if the core export is broken, this dynamic import will fail.
+    const merger = await import("./merger.js");
+    expect(typeof merger.aiMergeTask).toBe("function");
+    expect(typeof merger.findWorktreeUser).toBe("function");
+  });
+});

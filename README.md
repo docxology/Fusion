@@ -388,6 +388,17 @@ pnpm typecheck                  # Type-check all packages
 
 This command validates TypeScript across all packages using source file resolution, without requiring `dist/` output from prior builds. Run it after cloning or before committing to catch type errors early.
 
+### Keeping Runtime Exports in Sync
+
+When `@fusion/core` (or any workspace package) adds, renames, or removes an exported function, the `dist/` artifacts must be regenerated before downstream consumers (like `@fusion/engine`) can import the change at runtime. The workspace is configured so that TypeScript resolves types from source (`src/index.ts`), but the Node.js runtime resolves from compiled output (`dist/index.js`). If these fall out of sync, engine tests may fail with `TypeError: ... is not a function` or module import errors.
+
+**After modifying exports in `@fusion/core`:**
+
+```bash
+pnpm --filter @fusion/core build   # Regenerate dist/
+pnpm test                           # Verify downstream consumers
+```
+
 ## Dashboard Features
 
 ### Interactive Terminal
