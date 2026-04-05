@@ -92,7 +92,6 @@ vi.mock("lucide-react", () => ({
   ChevronDown: () => null,
   ChevronUp: () => null,
   ChevronRight: () => null,
-  MoreHorizontal: () => null,
 }));
 
 // Mock ModelSelectionModal (kept for backward compatibility - no longer directly rendered)
@@ -159,12 +158,6 @@ function renderQuickEntryBox(props = {}, { startExpanded = false } = {}) {
 function expandQuickEntry() {
   const toggleButton = screen.getByTestId("quick-entry-toggle");
   fireEvent.click(toggleButton);
-}
-
-// Helper to open the actions dropdown (which contains Deps/Models/Save)
-function openActionsDropdown() {
-  const actionsButton = screen.getByTestId("quick-entry-actions-button");
-  fireEvent.click(actionsButton);
 }
 
 describe("QuickEntryBox", () => {
@@ -507,7 +500,7 @@ describe("QuickEntryBox", () => {
   });
 
   describe("Rich creation features", () => {
-    it("shows dependency button when expanded and actions dropdown is open", () => {
+    it("shows dependency button when expanded", () => {
       renderQuickEntryBox({});
 
       // Initially, controls region is collapsed/hidden
@@ -518,14 +511,11 @@ describe("QuickEntryBox", () => {
       const textarea = screen.getByTestId("quick-entry-input");
       fireEvent.change(textarea, { target: { value: "Task with deps" } });
 
-      // Open the actions dropdown to access Deps/Models/Save
-      openActionsDropdown();
-
-      // Now the dependency button should be visible
+      // The dependency button should be directly visible in the disclosure panel
       expect(screen.getByTestId("quick-entry-deps-button")).toBeTruthy();
     });
 
-    it("shows model selector button when expanded and actions dropdown is open", () => {
+    it("shows model selector button when expanded", () => {
       renderQuickEntryBox({});
 
       // Initially, controls region is collapsed/hidden
@@ -536,10 +526,7 @@ describe("QuickEntryBox", () => {
       const textarea = screen.getByTestId("quick-entry-input");
       fireEvent.change(textarea, { target: { value: "Task with models" } });
 
-      // Open the actions dropdown to access Deps/Models/Save
-      openActionsDropdown();
-
-      // Now the model selector button should be visible
+      // The model selector button should be directly visible in the disclosure panel
       expect(screen.getByTestId("quick-entry-models-button")).toBeTruthy();
     });
 
@@ -562,7 +549,6 @@ describe("QuickEntryBox", () => {
     it("opens dependency dropdown when clicking deps button", () => {
       renderQuickEntryBox({});
       expandQuickEntry();
-      openActionsDropdown();
       const textarea = screen.getByTestId("quick-entry-input");
 
       fireEvent.change(textarea, { target: { value: "Task with deps" } });
@@ -576,7 +562,6 @@ describe("QuickEntryBox", () => {
     it("opens model menu when clicking models button", () => {
       renderQuickEntryBox({});
       expandQuickEntry();
-      openActionsDropdown();
       const textarea = screen.getByTestId("quick-entry-input");
 
       fireEvent.change(textarea, { target: { value: "Task with models" } });
@@ -594,7 +579,6 @@ describe("QuickEntryBox", () => {
     it("shows Plan, Executor, and Validator options in model menu", () => {
       renderQuickEntryBox({});
       expandQuickEntry();
-      openActionsDropdown();
       const textarea = screen.getByTestId("quick-entry-input");
 
       fireEvent.change(textarea, { target: { value: "Task with models" } });
@@ -608,7 +592,6 @@ describe("QuickEntryBox", () => {
     it("clicking Executor opens submenu with CustomModelDropdown", () => {
       renderQuickEntryBox({});
       expandQuickEntry();
-      openActionsDropdown();
       const textarea = screen.getByTestId("quick-entry-input");
 
       fireEvent.change(textarea, { target: { value: "Task with models" } });
@@ -624,7 +607,6 @@ describe("QuickEntryBox", () => {
     it("clicking Plan opens submenu with CustomModelDropdown", () => {
       renderQuickEntryBox({});
       expandQuickEntry();
-      openActionsDropdown();
       const textarea = screen.getByTestId("quick-entry-input");
 
       fireEvent.change(textarea, { target: { value: "Task with models" } });
@@ -637,7 +619,6 @@ describe("QuickEntryBox", () => {
     it("clicking Validator opens submenu with CustomModelDropdown", () => {
       renderQuickEntryBox({});
       expandQuickEntry();
-      openActionsDropdown();
       const textarea = screen.getByTestId("quick-entry-input");
 
       fireEvent.change(textarea, { target: { value: "Task with models" } });
@@ -650,7 +631,6 @@ describe("QuickEntryBox", () => {
     it("back button returns to top-level model menu", () => {
       renderQuickEntryBox({});
       expandQuickEntry();
-      openActionsDropdown();
       const textarea = screen.getByTestId("quick-entry-input");
 
       fireEvent.change(textarea, { target: { value: "Task with models" } });
@@ -669,7 +649,6 @@ describe("QuickEntryBox", () => {
     it("Escape from submenu returns to top-level menu without closing it", () => {
       renderQuickEntryBox({});
       expandQuickEntry();
-      openActionsDropdown();
       const textarea = screen.getByTestId("quick-entry-input");
 
       fireEvent.change(textarea, { target: { value: "Task with models" } });
@@ -693,7 +672,6 @@ describe("QuickEntryBox", () => {
     it("selecting Plan model updates the Plan menu item value", () => {
       renderQuickEntryBox({});
       expandQuickEntry();
-      openActionsDropdown();
       const textarea = screen.getByTestId("quick-entry-input");
 
       fireEvent.change(textarea, { target: { value: "Task with models" } });
@@ -717,7 +695,6 @@ describe("QuickEntryBox", () => {
     it("selecting Validator model updates the Validator menu item value", () => {
       renderQuickEntryBox({});
       expandQuickEntry();
-      openActionsDropdown();
       const textarea = screen.getByTestId("quick-entry-input");
 
       fireEvent.change(textarea, { target: { value: "Task with models" } });
@@ -739,7 +716,6 @@ describe("QuickEntryBox", () => {
     it("clearing Plan model returns menu item to default state", () => {
       renderQuickEntryBox({});
       expandQuickEntry();
-      openActionsDropdown();
       const textarea = screen.getByTestId("quick-entry-input");
 
       fireEvent.change(textarea, { target: { value: "Task with models" } });
@@ -762,7 +738,6 @@ describe("QuickEntryBox", () => {
     it("selects dependencies and includes them in submit payload", async () => {
       const { props } = renderQuickEntryBox({});
       expandQuickEntry();
-      openActionsDropdown();
       const textarea = screen.getByTestId("quick-entry-input");
 
       fireEvent.change(textarea, { target: { value: "Task with deps" } });
@@ -905,7 +880,6 @@ describe("QuickEntryBox", () => {
     it("includes selected models in submit payload", async () => {
       const { props } = renderQuickEntryBox({});
       expandQuickEntry();
-      openActionsDropdown();
       const textarea = screen.getByTestId("quick-entry-input");
 
       fireEvent.change(textarea, { target: { value: "Task with model" } });
@@ -940,7 +914,6 @@ describe("QuickEntryBox", () => {
     it("closes model menu on Escape when open", async () => {
       renderQuickEntryBox({});
       expandQuickEntry();
-      openActionsDropdown();
       const textarea = screen.getByTestId("quick-entry-input");
 
       fireEvent.change(textarea, { target: { value: "Task with menu" } });
@@ -959,20 +932,32 @@ describe("QuickEntryBox", () => {
       expect((textarea as HTMLTextAreaElement).value).toBe("Task with menu");
     });
 
-    it("clears all state on second Escape after dropdowns are closed", () => {
+    it("Escape hierarchy: model submenu → model menu → deps popover → input clear", () => {
       renderQuickEntryBox({});
       expandQuickEntry();
       const textarea = screen.getByTestId("quick-entry-input");
 
-      fireEvent.change(textarea, { target: { value: "Task to clear" } });
+      fireEvent.change(textarea, { target: { value: "Hierarchy test" } });
 
-      // First Escape closes any dropdowns
+      // Open model menu
+      fireEvent.click(screen.getByTestId("quick-entry-models-button"));
+      expect(screen.getByTestId("model-nested-menu")).toBeTruthy();
+
+      // Open executor submenu
+      fireEvent.click(screen.getByTestId("model-menu-executor"));
+      expect(screen.getByTestId("model-submenu-back")).toBeTruthy();
+
+      // Escape 1: close submenu → back to model menu top level
       fireEvent.keyDown(textarea, { key: "Escape" });
+      expect(screen.queryByTestId("model-submenu-back")).toBeNull();
+      expect(screen.getByTestId("model-nested-menu")).toBeTruthy();
 
-      // Second Escape clears everything
+      // Escape 2: close model menu
       fireEvent.keyDown(textarea, { key: "Escape" });
+      expect(screen.queryByTestId("model-nested-menu")).toBeNull();
 
-      // Input should be cleared and collapsed
+      // Escape 3: clear input and collapse
+      fireEvent.keyDown(textarea, { key: "Escape" });
       expect((textarea as HTMLTextAreaElement).value).toBe("");
       expect(textarea.classList.contains("quick-entry-input--expanded")).toBe(false);
     });
@@ -1238,7 +1223,6 @@ describe("QuickEntryBox", () => {
     it("does not clear localStorage on first Escape when closing dropdowns", () => {
       renderQuickEntryBox({});
       expandQuickEntry();
-      openActionsDropdown();
       const textarea = screen.getByTestId("quick-entry-input");
 
       // Type something and open dropdown
@@ -1493,7 +1477,7 @@ describe("QuickEntryBox", () => {
   });
 
   describe("Save button", () => {
-    it("shows save button when expanded and actions dropdown is open", () => {
+    it("shows save button when expanded", () => {
       renderQuickEntryBox({});
 
       // Initially, controls region is collapsed/hidden
@@ -1504,17 +1488,13 @@ describe("QuickEntryBox", () => {
       const textarea = screen.getByTestId("quick-entry-input");
       fireEvent.change(textarea, { target: { value: "Task to save" } });
 
-      // Open actions dropdown to access Save
-      openActionsDropdown();
-
-      // Now the save button should be visible
+      // The save button should be directly visible in the disclosure panel
       expect(screen.getByTestId("save-button")).toBeTruthy();
     });
 
     it("save button is disabled when textarea is empty", () => {
       renderQuickEntryBox({});
       expandQuickEntry();
-      openActionsDropdown();
       const textarea = screen.getByTestId("quick-entry-input");
 
       // Type something
@@ -1537,7 +1517,6 @@ describe("QuickEntryBox", () => {
       props.onCreate.mockImplementation(() => new Promise((resolve) => setTimeout(resolve, 100)));
 
       expandQuickEntry();
-      openActionsDropdown();
       const textarea = screen.getByTestId("quick-entry-input");
 
       fireEvent.change(textarea, { target: { value: "New task" } });
@@ -1557,7 +1536,6 @@ describe("QuickEntryBox", () => {
     it("clicking save button persists to localStorage", async () => {
       const { props } = renderQuickEntryBox({});
       expandQuickEntry();
-      openActionsDropdown();
       const textarea = screen.getByTestId("quick-entry-input");
 
       fireEvent.change(textarea, { target: { value: "Draft task description" } });
@@ -1580,7 +1558,6 @@ describe("QuickEntryBox", () => {
     it("clicking save button creates the task", async () => {
       const { props } = renderQuickEntryBox({});
       expandQuickEntry();
-      openActionsDropdown();
       const textarea = screen.getByTestId("quick-entry-input");
 
       fireEvent.change(textarea, { target: { value: "Task to save" } });
@@ -1602,7 +1579,6 @@ describe("QuickEntryBox", () => {
     it("save button has correct test id", () => {
       renderQuickEntryBox({});
       expandQuickEntry();
-      openActionsDropdown();
       const textarea = screen.getByTestId("quick-entry-input");
 
       fireEvent.change(textarea, { target: { value: "Task to save" } });
@@ -1617,7 +1593,6 @@ describe("QuickEntryBox", () => {
     it("save button has correct title attribute", () => {
       renderQuickEntryBox({});
       expandQuickEntry();
-      openActionsDropdown();
       const textarea = screen.getByTestId("quick-entry-input");
 
       fireEvent.change(textarea, { target: { value: "Task to save" } });
@@ -1629,7 +1604,6 @@ describe("QuickEntryBox", () => {
     it("save button prevents textarea blur on mousedown", () => {
       renderQuickEntryBox({});
       expandQuickEntry();
-      openActionsDropdown();
       const textarea = screen.getByTestId("quick-entry-input");
 
       fireEvent.change(textarea, { target: { value: "Task to save" } });
@@ -1676,8 +1650,10 @@ describe("QuickEntryBox", () => {
 
       // Now controls should be visible
       expect(document.getElementById("quick-entry-controls")?.hasAttribute("hidden")).toBe(false);
-      // Actions button should be accessible (Deps/Models/Save are inside it)
-      expect(screen.getByTestId("quick-entry-actions-button")).toBeTruthy();
+      // Deps/Models/Save should be directly accessible (no actions dropdown needed)
+      expect(screen.getByTestId("quick-entry-deps-button")).toBeTruthy();
+      expect(screen.getByTestId("quick-entry-models-button")).toBeTruthy();
+      expect(screen.getByTestId("save-button")).toBeTruthy();
       // Plan/Subtask are always visible in description-actions when expanded
       expect(screen.getByTestId("plan-button")).toBeTruthy();
       expect(screen.getByTestId("subtask-button")).toBeTruthy();
@@ -1689,7 +1665,7 @@ describe("QuickEntryBox", () => {
       // Expand
       expandQuickEntry();
       expect(document.getElementById("quick-entry-controls")?.hasAttribute("hidden")).toBe(false);
-      expect(screen.getByTestId("quick-entry-actions-button")).toBeTruthy();
+      expect(screen.getByTestId("quick-entry-deps-button")).toBeTruthy();
 
       // Collapse
       expandQuickEntry();
@@ -1698,12 +1674,11 @@ describe("QuickEntryBox", () => {
       expect(document.getElementById("quick-entry-controls")?.hasAttribute("hidden")).toBe(true);
     });
 
-    it("verifies all buttons are accessible when expanded and actions dropdown is open", () => {
+    it("verifies all buttons are accessible when expanded", () => {
       renderQuickEntryBox({});
       expandQuickEntry();
-      openActionsDropdown();
 
-      // All buttons should be accessible when expanded + actions dropdown open
+      // All buttons should be directly accessible when expanded (no actions dropdown needed)
       expect(screen.getByTestId("quick-entry-deps-button")).toBeTruthy();
       expect(screen.getByTestId("quick-entry-models-button")).toBeTruthy();
       expect(screen.getByTestId("plan-button")).toBeTruthy();
@@ -1735,28 +1710,30 @@ describe("QuickEntryBox", () => {
       expect(screen.queryByTestId("quick-entry-description-actions")).toBeNull();
     });
 
-    it("Save button is in the actions dropdown, not description-actions", () => {
+    it("Save button is in the controls panel, not description-actions", () => {
       renderQuickEntryBox({});
       expandQuickEntry();
-      openActionsDropdown();
+      const textarea = screen.getByTestId("quick-entry-input");
+      fireEvent.change(textarea, { target: { value: "Task to save" } });
 
       const actionsContainer = screen.getByTestId("quick-entry-description-actions");
       const saveButton = screen.getByTestId("save-button");
 
-      // Save button should NOT be in the description-actions area (it's in the actions dropdown)
+      // Save button should NOT be in the description-actions area (it's in the controls panel)
       expect(actionsContainer.contains(saveButton)).toBe(false);
     });
 
-    it("Deps and Models buttons are in the actions dropdown, not description-actions", () => {
+    it("Deps and Models buttons are in the controls panel, not description-actions", () => {
       renderQuickEntryBox({});
       expandQuickEntry();
-      openActionsDropdown();
+      const textarea = screen.getByTestId("quick-entry-input");
+      fireEvent.change(textarea, { target: { value: "Task text" } });
 
       const actionsContainer = screen.getByTestId("quick-entry-description-actions");
       const depsButton = screen.getByTestId("quick-entry-deps-button");
       const modelsButton = screen.getByTestId("quick-entry-models-button");
 
-      // Deps and Models should NOT be in the description-actions area (they're in the actions dropdown)
+      // Deps and Models should NOT be in the description-actions area (they're in the controls panel)
       expect(actionsContainer.contains(depsButton)).toBe(false);
       expect(actionsContainer.contains(modelsButton)).toBe(false);
     });
@@ -1794,7 +1771,6 @@ describe("QuickEntryBox", () => {
       // Don't pass availableModels so component fetches settings itself
       renderQuickEntryBox({ availableModels: undefined });
       expandQuickEntry();
-      openActionsDropdown();
 
       // Open model menu
       fireEvent.click(screen.getByTestId("quick-entry-models-button"));
@@ -1827,7 +1803,6 @@ describe("QuickEntryBox", () => {
       const onCreate = vi.fn().mockResolvedValue(undefined);
       renderQuickEntryBox({ onCreate, availableModels: undefined });
       expandQuickEntry();
-      openActionsDropdown();
 
       // Open model menu and select an executor via submenu
       fireEvent.click(screen.getByTestId("quick-entry-models-button"));
@@ -1882,7 +1857,6 @@ describe("QuickEntryBox", () => {
     it("renders model menu as a portal in document.body (not inside QuickEntryBox)", () => {
       renderQuickEntryBox({});
       expandQuickEntry();
-      openActionsDropdown();
 
       fireEvent.click(screen.getByTestId("quick-entry-models-button"));
 
@@ -1901,7 +1875,6 @@ describe("QuickEntryBox", () => {
     it("positions the portaled menu with fixed positioning to escape column overflow", () => {
       renderQuickEntryBox({});
       expandQuickEntry();
-      openActionsDropdown();
 
       fireEvent.click(screen.getByTestId("quick-entry-models-button"));
 
@@ -1919,7 +1892,6 @@ describe("QuickEntryBox", () => {
     it("does not close model menu when clicking inside CustomModelDropdown portal", () => {
       renderQuickEntryBox({});
       expandQuickEntry();
-      openActionsDropdown();
 
       fireEvent.click(screen.getByTestId("quick-entry-models-button"));
       expect(screen.getByTestId("model-nested-menu")).toBeTruthy();
@@ -1953,7 +1925,6 @@ describe("QuickEntryBox", () => {
     it("does not close model menu when clicking inside the model-nested-menu portal itself", () => {
       renderQuickEntryBox({});
       expandQuickEntry();
-      openActionsDropdown();
 
       fireEvent.click(screen.getByTestId("quick-entry-models-button"));
       const menu = screen.getByTestId("model-nested-menu");
@@ -1969,7 +1940,6 @@ describe("QuickEntryBox", () => {
     it("closes model menu on outside click (click outside both trigger and portal)", () => {
       renderQuickEntryBox({});
       expandQuickEntry();
-      openActionsDropdown();
       const textarea = screen.getByTestId("quick-entry-input");
 
       fireEvent.change(textarea, { target: { value: "Task with menu" } });
@@ -1992,7 +1962,6 @@ describe("QuickEntryBox", () => {
     it("repositions portaled menu on window resize while open", () => {
       renderQuickEntryBox({});
       expandQuickEntry();
-      openActionsDropdown();
 
       fireEvent.click(screen.getByTestId("quick-entry-models-button"));
       const menu = screen.getByTestId("model-nested-menu");
@@ -2014,7 +1983,6 @@ describe("QuickEntryBox", () => {
 
       renderQuickEntryBox({});
       expandQuickEntry();
-      openActionsDropdown();
 
       fireEvent.click(screen.getByTestId("quick-entry-models-button"));
       const menu = screen.getByTestId("model-nested-menu");
@@ -2029,7 +1997,6 @@ describe("QuickEntryBox", () => {
 
       renderQuickEntryBox({});
       expandQuickEntry();
-      openActionsDropdown();
 
       fireEvent.click(screen.getByTestId("quick-entry-models-button"));
       const menu = screen.getByTestId("model-nested-menu");
@@ -2045,7 +2012,6 @@ describe("QuickEntryBox", () => {
 
       renderQuickEntryBox({});
       expandQuickEntry();
-      openActionsDropdown();
 
       fireEvent.click(screen.getByTestId("quick-entry-models-button"));
       const menu = screen.getByTestId("model-nested-menu");
@@ -2063,7 +2029,6 @@ describe("QuickEntryBox", () => {
 
       renderQuickEntryBox({});
       expandQuickEntry();
-      openActionsDropdown();
 
       fireEvent.click(screen.getByTestId("quick-entry-models-button"));
       const menu = screen.getByTestId("model-nested-menu");
@@ -2079,7 +2044,6 @@ describe("QuickEntryBox", () => {
 
       renderQuickEntryBox({});
       expandQuickEntry();
-      openActionsDropdown();
 
       fireEvent.click(screen.getByTestId("quick-entry-models-button"));
       const menu = screen.getByTestId("model-nested-menu");
@@ -2096,187 +2060,6 @@ describe("QuickEntryBox", () => {
       const mobileWidth = parseFloat(menu.style.width);
       expect(mobileWidth).toBe(375 - 32);
       expect(mobileWidth).toBeGreaterThan(desktopWidth);
-    });
-  });
-
-  describe("Actions dropdown (FN-888)", () => {
-    it("shows actions trigger button when expanded", () => {
-      renderQuickEntryBox({});
-      expandQuickEntry();
-
-      // Actions trigger should be visible in controls area
-      expect(screen.getByTestId("quick-entry-actions-button")).toBeTruthy();
-    });
-
-    it("does not show Deps/Models/Save directly when expanded without opening actions dropdown", () => {
-      renderQuickEntryBox({});
-      expandQuickEntry();
-
-      // These should NOT be visible until actions dropdown is opened
-      expect(screen.queryByTestId("quick-entry-deps-button")).toBeNull();
-      expect(screen.queryByTestId("quick-entry-models-button")).toBeNull();
-      expect(screen.queryByTestId("save-button")).toBeNull();
-    });
-
-    it("opens actions dropdown on click and shows Deps/Models/Save", () => {
-      renderQuickEntryBox({});
-      expandQuickEntry();
-
-      // Click the actions trigger
-      openActionsDropdown();
-
-      // Actions dropdown should be visible
-      expect(screen.getByTestId("actions-dropdown")).toBeTruthy();
-      // Deps, Models, Save should now be accessible
-      expect(screen.getByTestId("quick-entry-deps-button")).toBeTruthy();
-      expect(screen.getByTestId("quick-entry-models-button")).toBeTruthy();
-      expect(screen.getByTestId("save-button")).toBeTruthy();
-    });
-
-    it("closes actions dropdown on second click", () => {
-      renderQuickEntryBox({});
-      expandQuickEntry();
-
-      // Open
-      openActionsDropdown();
-      expect(screen.getByTestId("actions-dropdown")).toBeTruthy();
-
-      // Close by clicking trigger again
-      fireEvent.click(screen.getByTestId("quick-entry-actions-button"));
-      expect(screen.queryByTestId("actions-dropdown")).toBeNull();
-    });
-
-    it("closes actions dropdown on Escape (after child popovers are closed)", () => {
-      renderQuickEntryBox({});
-      expandQuickEntry();
-      openActionsDropdown();
-      const textarea = screen.getByTestId("quick-entry-input");
-
-      fireEvent.change(textarea, { target: { value: "Test" } });
-
-      // Actions dropdown should be open
-      expect(screen.getByTestId("actions-dropdown")).toBeTruthy();
-
-      // Press Escape — should close actions dropdown
-      fireEvent.keyDown(textarea, { key: "Escape" });
-
-      // Actions dropdown should be closed
-      expect(screen.queryByTestId("actions-dropdown")).toBeNull();
-      // Input should still have the value
-      expect((textarea as HTMLTextAreaElement).value).toBe("Test");
-    });
-
-    it("Escape hierarchy: model submenu → model menu → deps popover → actions dropdown → input clear", () => {
-      renderQuickEntryBox({});
-      expandQuickEntry();
-      openActionsDropdown();
-      const textarea = screen.getByTestId("quick-entry-input");
-
-      fireEvent.change(textarea, { target: { value: "Hierarchy test" } });
-
-      // Open model menu
-      fireEvent.click(screen.getByTestId("quick-entry-models-button"));
-      expect(screen.getByTestId("model-nested-menu")).toBeTruthy();
-
-      // Open executor submenu
-      fireEvent.click(screen.getByTestId("model-menu-executor"));
-      expect(screen.getByTestId("model-submenu-back")).toBeTruthy();
-
-      // Escape 1: close submenu → back to model menu top level
-      fireEvent.keyDown(textarea, { key: "Escape" });
-      expect(screen.queryByTestId("model-submenu-back")).toBeNull();
-      expect(screen.getByTestId("model-nested-menu")).toBeTruthy();
-
-      // Escape 2: close model menu
-      fireEvent.keyDown(textarea, { key: "Escape" });
-      expect(screen.queryByTestId("model-nested-menu")).toBeNull();
-      expect(screen.getByTestId("actions-dropdown")).toBeTruthy();
-
-      // Escape 3: close actions dropdown
-      fireEvent.keyDown(textarea, { key: "Escape" });
-      expect(screen.queryByTestId("actions-dropdown")).toBeNull();
-
-      // Escape 4: clear input and collapse
-      fireEvent.keyDown(textarea, { key: "Escape" });
-      expect((textarea as HTMLTextAreaElement).value).toBe("");
-      expect(textarea.classList.contains("quick-entry-input--expanded")).toBe(false);
-    });
-
-    it("actions dropdown has proper aria attributes on trigger", () => {
-      renderQuickEntryBox({});
-      expandQuickEntry();
-
-      const trigger = screen.getByTestId("quick-entry-actions-button");
-      expect(trigger.getAttribute("aria-expanded")).toBe("false");
-      expect(trigger.getAttribute("aria-haspopup")).toBe("menu");
-
-      // Open
-      openActionsDropdown();
-      expect(trigger.getAttribute("aria-expanded")).toBe("true");
-    });
-
-    it("renders actions dropdown as a portal in document.body", () => {
-      renderQuickEntryBox({});
-      expandQuickEntry();
-      openActionsDropdown();
-
-      const dropdown = screen.getByTestId("actions-dropdown");
-      expect(dropdown).toBeTruthy();
-
-      // The dropdown should be in document.body, NOT inside the QuickEntryBox
-      const quickEntryBox = screen.getByTestId("quick-entry-box");
-      expect(quickEntryBox.contains(dropdown)).toBe(false);
-      expect(document.body.contains(dropdown)).toBe(true);
-    });
-
-    it("positions the actions dropdown with fixed positioning", () => {
-      renderQuickEntryBox({});
-      expandQuickEntry();
-      openActionsDropdown();
-
-      const dropdown = screen.getByTestId("actions-dropdown");
-      expect(dropdown.style.position).toBe("fixed");
-      expect(dropdown.style.top).toBeTruthy();
-      expect(dropdown.style.left).toBeTruthy();
-      expect(dropdown.style.width).toBeTruthy();
-    });
-
-    it("closes actions dropdown when clicking outside", () => {
-      renderQuickEntryBox({});
-      expandQuickEntry();
-      openActionsDropdown();
-
-      expect(screen.getByTestId("actions-dropdown")).toBeTruthy();
-
-      // Click outside
-      const outsideElement = document.createElement("div");
-      document.body.appendChild(outsideElement);
-      try {
-        fireEvent.mouseDown(outsideElement);
-      } finally {
-        document.body.removeChild(outsideElement);
-      }
-
-      expect(screen.queryByTestId("actions-dropdown")).toBeNull();
-    });
-
-    it("resets actions dropdown state on form reset after creation", async () => {
-      const { props } = renderQuickEntryBox({});
-      expandQuickEntry();
-      openActionsDropdown();
-
-      const textarea = screen.getByTestId("quick-entry-input");
-      fireEvent.change(textarea, { target: { value: "Task to create" } });
-
-      // Submit
-      fireEvent.keyDown(textarea, { key: "Enter" });
-
-      await waitFor(() => {
-        expect(props.onCreate).toHaveBeenCalled();
-      });
-
-      // After creation, actions dropdown should be closed
-      expect(screen.queryByTestId("actions-dropdown")).toBeNull();
     });
   });
 });

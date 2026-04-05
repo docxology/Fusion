@@ -4,7 +4,7 @@ import type { ToastType } from "../hooks/useToast";
 import type { Task, TaskCreateInput, Settings } from "@fusion/core";
 import type { ModelInfo, RefinementType } from "../api";
 import { fetchModels, fetchSettings, refineText, getRefineErrorMessage, updateGlobalSettings } from "../api";
-import { Link, Brain, Lightbulb, ListTree, Sparkles, Save, ChevronDown, ChevronUp, ChevronRight, MoreHorizontal } from "lucide-react";
+import { Link, Brain, Lightbulb, ListTree, Sparkles, Save, ChevronDown, ChevronUp, ChevronRight } from "lucide-react";
 import { CustomModelDropdown } from "./CustomModelDropdown";
 
 const STORAGE_KEY = "kb-quick-entry-text";
@@ -116,12 +116,6 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
   const refineMenuRef = useRef<HTMLDivElement>(null);
   const refineMenuPortalRef = useRef<HTMLDivElement>(null);
   const [refineMenuPosition, setRefineMenuPosition] = useState<{ top: number; left: number } | null>(null);
-
-  // Actions dropdown state (Deps/Models/Save behind a single dropdown)
-  const [isActionsDropdownOpen, setIsActionsDropdownOpen] = useState(false);
-  const actionsDropdownRef = useRef<HTMLDivElement>(null);
-  const actionsDropdownPortalRef = useRef<HTMLDivElement>(null);
-  const [actionsDropdownPosition, setActionsDropdownPosition] = useState<{ top: number; left: number; width: number } | null>(null);
 
   // Use parent-provided favorites when available, otherwise internal state
   const effectiveFavoriteProviders = parentFavoriteProviders ?? favoriteProviders;
@@ -323,7 +317,6 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
     setIsRefining(false);
     setIsExpanded(false); // Collapse textarea height on reset
     setIsDisclosureExpanded(false); // Always reset controls to collapsed after creation
-    setIsActionsDropdownOpen(false); // Close actions dropdown on reset
     justResetRef.current = true;
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
@@ -403,11 +396,6 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
           setIsRefineMenuOpen(false);
           return;
         }
-        // Close actions dropdown if open
-        if (isActionsDropdownOpen) {
-          setIsActionsDropdownOpen(false);
-          return;
-        }
         // Clear non-empty input on Escape and clear localStorage
         if (description.trim()) {
           setDescription("");
@@ -434,7 +422,6 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
       isModelMenuOpen,
       activeModelSubmenu,
       isRefineMenuOpen,
-      isActionsDropdownOpen,
       setIsDisclosureExpanded,
     ],
   );
@@ -511,88 +498,6 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
       return next;
     });
   }, [updateModelMenuPosition]);
-
-  const updateActionsDropdownPosition = useCallback(() => {
-    const trigger = actionsDropdownRef.current?.querySelector(".quick-entry-actions-trigger") as HTMLElement | null;
-    if (!trigger) return;
-
-    const rect = trigger.getBoundingClientRect();
-    const viewportWidth = window.innerWidth;
-    const isMobile = viewportWidth <= 640;
-
-    if (isMobile) {
-      const mobileWidth = Math.min(viewportWidth - 32, 320);
-      const left = Math.max((viewportWidth - mobileWidth) / 2, 16);
-      setActionsDropdownPosition({
-        top: rect.bottom + 4,
-        left,
-        width: mobileWidth,
-      });
-    } else {
-      setActionsDropdownPosition({
-        top: rect.bottom + 4,
-        left: rect.left,
-        width: Math.max(rect.width, 200),
-      });
-    }
-  }, []);
-
-  const toggleActionsDropdown = useCallback(() => {
-    setIsActionsDropdownOpen((prev) => {
-      const next = !prev;
-      if (next) {
-        updateActionsDropdownPosition();
-      } else {
-        setActionsDropdownPosition(null);
-        // Also close any child popovers
-        setShowDeps(false);
-        setIsModelMenuOpen(false);
-        setActiveModelSubmenu(null);
-      }
-      return next;
-    });
-  }, [updateActionsDropdownPosition]);
-
-  // Close actions dropdown when clicking outside
-  useEffect(() => {
-    if (!isActionsDropdownOpen) return;
-
-    const handleClickOutside = (e: MouseEvent) => {
-      const target = e.target as Node;
-      const clickedInsideTrigger = actionsDropdownRef.current?.contains(target);
-      const clickedInsidePortal = actionsDropdownPortalRef.current?.contains(target);
-      // Also check for clicks inside child popovers (model menu, dep dropdown)
-      const clickedInsideModelMenu = (target instanceof Element) && (
-        target.closest?.(".model-nested-menu--portal") != null ||
-        target.closest?.(".model-combobox-dropdown--portal") != null
-      );
-      const clickedInsideDepDropdown = (target instanceof Element) && (
-        target.closest?.(".dep-dropdown") != null
-      );
-
-      if (!clickedInsideTrigger && !clickedInsidePortal && !clickedInsideModelMenu && !clickedInsideDepDropdown) {
-        setIsActionsDropdownOpen(false);
-      }
-    };
-
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [isActionsDropdownOpen]);
-
-  // Keep actions dropdown portal anchored during scroll/resize
-  useEffect(() => {
-    if (!isActionsDropdownOpen) return;
-
-    const handleReposition = () => updateActionsDropdownPosition();
-
-    window.addEventListener("resize", handleReposition);
-    window.addEventListener("scroll", handleReposition, true);
-
-    return () => {
-      window.removeEventListener("resize", handleReposition);
-      window.removeEventListener("scroll", handleReposition, true);
-    };
-  }, [isActionsDropdownOpen, updateActionsDropdownPosition]);
 
   const updateRefineMenuPosition = useCallback(() => {
     const trigger = refineMenuRef.current?.querySelector(".refine-button") as HTMLElement | null;
@@ -933,249 +838,220 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
         aria-hidden={!showExpandedControls}
       >
         <div className="quick-entry-controls-left">
-          <div className="quick-entry-actions-wrap" ref={actionsDropdownRef}>
+          {/* Deps button */}
+          <div className="dep-trigger-wrap">
             <button
               type="button"
-              className="btn btn-sm quick-entry-actions-trigger"
-              onClick={toggleActionsDropdown}
-              aria-expanded={isActionsDropdownOpen}
-              aria-haspopup="menu"
-              data-testid="quick-entry-actions-button"
-              title="Dependencies, models, and save"
+              className="btn btn-sm dep-trigger"
+              onClick={toggleDepsDropdown}
+              data-testid="quick-entry-deps-button"
             >
-              <MoreHorizontal size={12} style={{ verticalAlign: "middle" }} />
-              Actions
+              <Link size={12} style={{ verticalAlign: "middle" }} />
+              {dependencies.length > 0 ? ` ${dependencies.length} deps` : " Deps"}
             </button>
-            {isActionsDropdownOpen && portalRoot && actionsDropdownPosition && createPortal(
-              <div
-                ref={actionsDropdownPortalRef}
-                className="actions-dropdown actions-dropdown--portal"
-                onMouseDown={(e) => e.preventDefault()}
-                data-testid="actions-dropdown"
-                style={{
-                  position: "fixed",
-                  top: `${actionsDropdownPosition.top}px`,
-                  left: `${actionsDropdownPosition.left}px`,
-                  width: `${actionsDropdownPosition.width}px`,
-                }}
-              >
-                <div className="actions-dropdown-items">
-                  <div className="dep-trigger-wrap">
-                    <button
-                      type="button"
-                      className="btn btn-sm dep-trigger"
-                      onClick={toggleDepsDropdown}
-                      data-testid="quick-entry-deps-button"
-                    >
-                      <Link size={12} style={{ verticalAlign: "middle" }} />
-                      {dependencies.length > 0 ? ` ${dependencies.length} deps` : " Deps"}
-                    </button>
-                    {showDeps && (() => {
-                      const term = depSearch.toLowerCase();
-                      const filtered = (term
-                        ? tasks.filter((t) =>
-                            t.id.toLowerCase().includes(term) ||
-                            (t.title && t.title.toLowerCase().includes(term)) ||
-                            (t.description && t.description.toLowerCase().includes(term))
-                          )
-                        : [...tasks]
-                      ).sort((a, b) => {
-                        const cmp = b.createdAt.localeCompare(a.createdAt);
-                        if (cmp !== 0) return cmp;
-                        const aNum = parseInt(a.id.slice(a.id.lastIndexOf("-") + 1), 10) || 0;
-                        const bNum = parseInt(b.id.slice(b.id.lastIndexOf("-") + 1), 10) || 0;
-                        return bNum - aNum;
-                      });
-                      return (
-                        <div className="dep-dropdown" onMouseDown={(e) => e.preventDefault()}>
-                          <input
-                            className="dep-dropdown-search"
-                            placeholder="Search tasks…"
-                            autoFocus
-                            value={depSearch}
-                            onChange={(e) => setDepSearch(e.target.value)}
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                          {filtered.length === 0 ? (
-                            <div className="dep-dropdown-empty">No existing tasks</div>
-                          ) : (
-                            filtered.map((t) => (
-                              <div
-                                key={t.id}
-                                className={`dep-dropdown-item${dependencies.includes(t.id) ? " selected" : ""}`}
-                                onMouseDown={(e) => e.preventDefault()}
-                                onClick={() => toggleDep(t.id)}
-                              >
-                                <span className="dep-dropdown-id">{t.id}</span>
-                                <span className="dep-dropdown-title">{truncate(t.title || t.description || t.id, 30)}</span>
-                              </div>
-                            ))
-                          )}
-                        </div>
-                      );
-                    })()}
-                  </div>
-
-                  <div className="quick-entry-model-wrap" ref={modelMenuRef}>
-                    <button
-                      type="button"
-                      className="btn btn-sm quick-entry-model-trigger"
-                      onClick={toggleModelMenu}
-                      aria-expanded={isModelMenuOpen}
-                      aria-haspopup="menu"
-                      data-testid="quick-entry-models-button"
-                    >
-                      <Brain size={12} style={{ verticalAlign: "middle" }} />
-                      {selectedPreset
-                        ? ` ${selectedPreset.name}`
-                        : selectedModelCount > 0
-                          ? ` ${selectedModelCount} model${selectedModelCount === 1 ? "" : "s"}`
-                          : " Models"}
-                    </button>
-                    {isModelMenuOpen && portalRoot && modelMenuPosition && createPortal(
+            {showDeps && (() => {
+              const term = depSearch.toLowerCase();
+              const filtered = (term
+                ? tasks.filter((t) =>
+                    t.id.toLowerCase().includes(term) ||
+                    (t.title && t.title.toLowerCase().includes(term)) ||
+                    (t.description && t.description.toLowerCase().includes(term))
+                  )
+                : [...tasks]
+              ).sort((a, b) => {
+                const cmp = b.createdAt.localeCompare(a.createdAt);
+                if (cmp !== 0) return cmp;
+                const aNum = parseInt(a.id.slice(a.id.lastIndexOf("-") + 1), 10) || 0;
+                const bNum = parseInt(b.id.slice(b.id.lastIndexOf("-") + 1), 10) || 0;
+                return bNum - aNum;
+              });
+              return (
+                <div className="dep-dropdown" onMouseDown={(e) => e.preventDefault()}>
+                  <input
+                    className="dep-dropdown-search"
+                    placeholder="Search tasks…"
+                    autoFocus
+                    value={depSearch}
+                    onChange={(e) => setDepSearch(e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                  {filtered.length === 0 ? (
+                    <div className="dep-dropdown-empty">No existing tasks</div>
+                  ) : (
+                    filtered.map((t) => (
                       <div
-                        ref={modelMenuPortalRef}
-                        className="model-nested-menu model-nested-menu--portal"
+                        key={t.id}
+                        className={`dep-dropdown-item${dependencies.includes(t.id) ? " selected" : ""}`}
                         onMouseDown={(e) => e.preventDefault()}
-                        data-testid="model-nested-menu"
-                        style={{
-                          position: "fixed",
-                          top: `${modelMenuPosition.top}px`,
-                          left: `${modelMenuPosition.left}px`,
-                          width: `${modelMenuPosition.width}px`,
-                        }}
+                        onClick={() => toggleDep(t.id)}
                       >
-                        {activeModelSubmenu === null ? (
-                          // Top-level menu with Plan/Executor/Validator choices
-                          <div className="model-menu-items">
-                            <button
-                              type="button"
-                              className={`model-menu-item ${hasPlanningOverride ? "model-menu-item--active" : ""}`}
-                              onClick={() => setActiveModelSubmenu("plan")}
-                              data-testid="model-menu-plan"
-                            >
-                              <span className="model-menu-item-label">
-                                <Lightbulb size={12} style={{ verticalAlign: "middle", marginRight: 6 }} />
-                                Plan
-                              </span>
-                              <span className="model-menu-item-value">
-                                {hasPlanningOverride
-                                  ? getModelBadgeLabel(planningProvider, planningModelId)
-                                  : "Using default"}
-                              </span>
-                              <ChevronRight size={12} style={{ marginLeft: "auto", color: "var(--text-dim)" }} />
-                            </button>
-                            <button
-                              type="button"
-                              className={`model-menu-item ${hasExecutorOverride ? "model-menu-item--active" : ""}`}
-                              onClick={() => setActiveModelSubmenu("executor")}
-                              data-testid="model-menu-executor"
-                            >
-                              <span className="model-menu-item-label">
-                                <Sparkles size={12} style={{ verticalAlign: "middle", marginRight: 6 }} />
-                                Executor
-                              </span>
-                              <span className="model-menu-item-value">
-                                {hasExecutorOverride
-                                  ? getModelBadgeLabel(executorProvider, executorModelId)
-                                  : "Using default"}
-                              </span>
-                              <ChevronRight size={12} style={{ marginLeft: "auto", color: "var(--text-dim)" }} />
-                            </button>
-                            <button
-                              type="button"
-                              className={`model-menu-item ${hasValidatorOverride ? "model-menu-item--active" : ""}`}
-                              onClick={() => setActiveModelSubmenu("validator")}
-                              data-testid="model-menu-validator"
-                            >
-                              <span className="model-menu-item-label">
-                                <Brain size={12} style={{ verticalAlign: "middle", marginRight: 6 }} />
-                                Validator
-                              </span>
-                              <span className="model-menu-item-value">
-                                {hasValidatorOverride
-                                  ? getModelBadgeLabel(validatorProvider, validatorModelId)
-                                  : "Using default"}
-                              </span>
-                              <ChevronRight size={12} style={{ marginLeft: "auto", color: "var(--text-dim)" }} />
-                            </button>
-                          </div>
-                        ) : (
-                          // Submenu with CustomModelDropdown for the selected target
-                          <div className="model-submenu">
-                            <button
-                              type="button"
-                              className="model-submenu-back"
-                              onClick={() => setActiveModelSubmenu(null)}
-                              data-testid="model-submenu-back"
-                            >
-                              <ChevronDown size={12} style={{ transform: "rotate(90deg)", marginRight: 4 }} />
-                              Back
-                            </button>
-                            <div className="model-submenu-header">
-                              {activeModelSubmenu === "plan" && "Plan Model"}
-                              {activeModelSubmenu === "executor" && "Executor Model"}
-                              {activeModelSubmenu === "validator" && "Validator Model"}
-                            </div>
-                            <CustomModelDropdown
-                              models={loadedModels}
-                              value={
-                                activeModelSubmenu === "plan"
-                                  ? planningSelectionValue
-                                  : activeModelSubmenu === "executor"
-                                    ? executorSelectionValue
-                                    : validatorSelectionValue
-                              }
-                              onChange={
-                                activeModelSubmenu === "plan"
-                                  ? handlePlanningModelChange
-                                  : activeModelSubmenu === "executor"
-                                    ? handleExecutorChange
-                                    : handleValidatorChange
-                              }
-                              placeholder="Using default"
-                              disabled={modelsLoading}
-                              id={`model-${activeModelSubmenu}-select`}
-                              label={`${activeModelSubmenu} model`}
-                              favoriteProviders={effectiveFavoriteProviders}
-                              onToggleFavorite={handleToggleFavorite}
-                              favoriteModels={effectiveFavoriteModels}
-                              onToggleModelFavorite={handleToggleModelFavorite}
-                            />
-                            {modelsError && (
-                              <div className="model-submenu-error">
-                                <span>{modelsError}</span>
-                                <button type="button" className="btn btn-sm" onClick={loadModels}>
-                                  Retry
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>,
-                      portalRoot,
-                    )}
-                  </div>
-
-                  {!isSubmitting && (
-                    <button
-                      type="button"
-                      className="btn btn-task-create btn-sm"
-                      onClick={handleSaveClick}
-                      onMouseDown={(e) => e.preventDefault()}
-                      disabled={!description.trim() || isSubmitting}
-                      data-testid="save-button"
-                      title="Create task"
-                    >
-                      <Save size={12} style={{ verticalAlign: "middle", marginRight: 4 }} />
-                      Save
-                    </button>
+                        <span className="dep-dropdown-id">{t.id}</span>
+                        <span className="dep-dropdown-title">{truncate(t.title || t.description || t.id, 30)}</span>
+                      </div>
+                    ))
                   )}
                 </div>
+              );
+            })()}
+          </div>
+
+          {/* Models button */}
+          <div className="quick-entry-model-wrap" ref={modelMenuRef}>
+            <button
+              type="button"
+              className="btn btn-sm quick-entry-model-trigger"
+              onClick={toggleModelMenu}
+              aria-expanded={isModelMenuOpen}
+              aria-haspopup="menu"
+              data-testid="quick-entry-models-button"
+            >
+              <Brain size={12} style={{ verticalAlign: "middle" }} />
+              {selectedPreset
+                ? ` ${selectedPreset.name}`
+                : selectedModelCount > 0
+                  ? ` ${selectedModelCount} model${selectedModelCount === 1 ? "" : "s"}`
+                  : " Models"}
+            </button>
+            {isModelMenuOpen && portalRoot && modelMenuPosition && createPortal(
+              <div
+                ref={modelMenuPortalRef}
+                className="model-nested-menu model-nested-menu--portal"
+                onMouseDown={(e) => e.preventDefault()}
+                data-testid="model-nested-menu"
+                style={{
+                  position: "fixed",
+                  top: `${modelMenuPosition.top}px`,
+                  left: `${modelMenuPosition.left}px`,
+                  width: `${modelMenuPosition.width}px`,
+                }}
+              >
+                {activeModelSubmenu === null ? (
+                  // Top-level menu with Plan/Executor/Validator choices
+                  <div className="model-menu-items">
+                    <button
+                      type="button"
+                      className={`model-menu-item ${hasPlanningOverride ? "model-menu-item--active" : ""}`}
+                      onClick={() => setActiveModelSubmenu("plan")}
+                      data-testid="model-menu-plan"
+                    >
+                      <span className="model-menu-item-label">
+                        <Lightbulb size={12} style={{ verticalAlign: "middle", marginRight: 6 }} />
+                        Plan
+                      </span>
+                      <span className="model-menu-item-value">
+                        {hasPlanningOverride
+                          ? getModelBadgeLabel(planningProvider, planningModelId)
+                          : "Using default"}
+                      </span>
+                      <ChevronRight size={12} style={{ marginLeft: "auto", color: "var(--text-dim)" }} />
+                    </button>
+                    <button
+                      type="button"
+                      className={`model-menu-item ${hasExecutorOverride ? "model-menu-item--active" : ""}`}
+                      onClick={() => setActiveModelSubmenu("executor")}
+                      data-testid="model-menu-executor"
+                    >
+                      <span className="model-menu-item-label">
+                        <Sparkles size={12} style={{ verticalAlign: "middle", marginRight: 6 }} />
+                        Executor
+                      </span>
+                      <span className="model-menu-item-value">
+                        {hasExecutorOverride
+                          ? getModelBadgeLabel(executorProvider, executorModelId)
+                          : "Using default"}
+                      </span>
+                      <ChevronRight size={12} style={{ marginLeft: "auto", color: "var(--text-dim)" }} />
+                    </button>
+                    <button
+                      type="button"
+                      className={`model-menu-item ${hasValidatorOverride ? "model-menu-item--active" : ""}`}
+                      onClick={() => setActiveModelSubmenu("validator")}
+                      data-testid="model-menu-validator"
+                    >
+                      <span className="model-menu-item-label">
+                        <Brain size={12} style={{ verticalAlign: "middle", marginRight: 6 }} />
+                        Validator
+                      </span>
+                      <span className="model-menu-item-value">
+                        {hasValidatorOverride
+                          ? getModelBadgeLabel(validatorProvider, validatorModelId)
+                          : "Using default"}
+                      </span>
+                      <ChevronRight size={12} style={{ marginLeft: "auto", color: "var(--text-dim)" }} />
+                    </button>
+                  </div>
+                ) : (
+                  // Submenu with CustomModelDropdown for the selected target
+                  <div className="model-submenu">
+                    <button
+                      type="button"
+                      className="model-submenu-back"
+                      onClick={() => setActiveModelSubmenu(null)}
+                      data-testid="model-submenu-back"
+                    >
+                      <ChevronDown size={12} style={{ transform: "rotate(90deg)", marginRight: 4 }} />
+                      Back
+                    </button>
+                    <div className="model-submenu-header">
+                      {activeModelSubmenu === "plan" && "Plan Model"}
+                      {activeModelSubmenu === "executor" && "Executor Model"}
+                      {activeModelSubmenu === "validator" && "Validator Model"}
+                    </div>
+                    <CustomModelDropdown
+                      models={loadedModels}
+                      value={
+                        activeModelSubmenu === "plan"
+                          ? planningSelectionValue
+                          : activeModelSubmenu === "executor"
+                            ? executorSelectionValue
+                            : validatorSelectionValue
+                      }
+                      onChange={
+                        activeModelSubmenu === "plan"
+                          ? handlePlanningModelChange
+                          : activeModelSubmenu === "executor"
+                            ? handleExecutorChange
+                            : handleValidatorChange
+                      }
+                      placeholder="Using default"
+                      disabled={modelsLoading}
+                      id={`model-${activeModelSubmenu}-select`}
+                      label={`${activeModelSubmenu} model`}
+                      favoriteProviders={effectiveFavoriteProviders}
+                      onToggleFavorite={handleToggleFavorite}
+                      favoriteModels={effectiveFavoriteModels}
+                      onToggleModelFavorite={handleToggleModelFavorite}
+                    />
+                    {modelsError && (
+                      <div className="model-submenu-error">
+                        <span>{modelsError}</span>
+                        <button type="button" className="btn btn-sm" onClick={loadModels}>
+                          Retry
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>,
               portalRoot,
             )}
           </div>
+
+          {/* Save button */}
+          {!isSubmitting && (
+            <button
+              type="button"
+              className="btn btn-task-create btn-sm"
+              onClick={handleSaveClick}
+              onMouseDown={(e) => e.preventDefault()}
+              disabled={!description.trim() || isSubmitting}
+              data-testid="save-button"
+              title="Create task"
+            >
+              <Save size={12} style={{ verticalAlign: "middle", marginRight: 4 }} />
+              Save
+            </button>
+          )}
         </div>
         <div className="quick-entry-hint">
           Enter to create · Esc to cancel
