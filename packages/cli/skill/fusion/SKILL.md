@@ -25,6 +25,7 @@ Mission → Milestone → Slice → Feature → Task
 - **Task tools** — `kb_task_create`, `kb_task_update`, `kb_task_list`, `kb_task_show`, `kb_task_attach`, `kb_task_pause`, `kb_task_unpause`, `kb_task_retry`, `kb_task_duplicate`, `kb_task_refine`, `kb_task_archive`, `kb_task_unarchive`, `kb_task_delete`, `kb_task_plan`
 - **GitHub tools** — `kb_task_import_github`, `kb_task_import_github_issue`, `kb_task_browse_github_issues`
 - **Mission tools** — `kb_mission_create`, `kb_mission_list`, `kb_mission_show`, `kb_mission_delete`, `kb_milestone_add`, `kb_slice_add`, `kb_feature_add`, `kb_slice_activate`, `kb_feature_link_task`
+- **Agent tools** — `kb_agent_stop`, `kb_agent_start`
 - **Dashboard** — Use `/fn` command to start/stop the dashboard
 
 </essential_principles>

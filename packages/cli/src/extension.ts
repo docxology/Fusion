@@ -1519,6 +1519,132 @@ export default function kbExtension(pi: ExtensionAPI) {
     },
   });
 
+  // ── kb_agent_stop ─────────────────────────────────────────────────
+
+  pi.registerTool({
+    name: "kb_agent_stop",
+    label: "KB: Stop Agent",
+    description:
+      "Stop a running agent — pauses its execution. " +
+      "Transitions the agent from running/active to paused state.",
+    promptSnippet: "Stop (pause) a running Fusion agent",
+    promptGuidelines: [
+      "Use to pause an agent that is currently running or active",
+      "Stopped agents can be resumed with kb_agent_start",
+      "Agents in 'idle', 'error', or 'terminated' state cannot be stopped",
+    ],
+    parameters: Type.Object({
+      id: Type.String({ description: "Agent ID to stop (e.g., agent-abc123)" }),
+    }),
+
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const { AgentStore, AGENT_VALID_TRANSITIONS } = await import("@fusion/core");
+
+      const agentStore = new AgentStore({ rootDir: ctx.cwd + "/.fusion" });
+      await agentStore.init();
+
+      const agent = await agentStore.getAgent(params.id);
+      if (!agent) {
+        return {
+          content: [{ type: "text", text: `Agent ${params.id} not found` }],
+          isError: true,
+          details: { error: "Agent not found" },
+        };
+      }
+
+      if (agent.state === "paused") {
+        return {
+          content: [{ type: "text", text: `Agent ${params.id} is already paused` }],
+          details: { agentId: params.id, state: agent.state },
+        };
+      }
+
+      const validTargets = AGENT_VALID_TRANSITIONS[agent.state];
+      if (!validTargets.includes("paused")) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Cannot stop agent ${params.id} — current state '${agent.state}' cannot transition to 'paused'. Valid transitions: ${validTargets.join(", ")}`,
+            },
+          ],
+          isError: true,
+          details: { agentId: params.id, currentState: agent.state, validTargets },
+        };
+      }
+
+      await agentStore.updateAgentState(params.id, "paused");
+
+      return {
+        content: [{ type: "text", text: `Stopped ${params.id}` }],
+        details: { agentId: params.id, previousState: agent.state, newState: "paused" },
+      };
+    },
+  });
+
+  // ── kb_agent_start ────────────────────────────────────────────────
+
+  pi.registerTool({
+    name: "kb_agent_start",
+    label: "KB: Start Agent",
+    description:
+      "Start a stopped agent — resumes its execution. " +
+      "Transitions the agent from paused to active state.",
+    promptSnippet: "Start (resume) a stopped Fusion agent",
+    promptGuidelines: [
+      "Use to resume an agent that has been paused",
+      "Only agents in 'paused' state can be started",
+      "Agents in 'idle' or 'error' state cannot be started — use reset instead",
+    ],
+    parameters: Type.Object({
+      id: Type.String({ description: "Agent ID to start (e.g., agent-abc123)" }),
+    }),
+
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const { AgentStore, AGENT_VALID_TRANSITIONS } = await import("@fusion/core");
+
+      const agentStore = new AgentStore({ rootDir: ctx.cwd + "/.fusion" });
+      await agentStore.init();
+
+      const agent = await agentStore.getAgent(params.id);
+      if (!agent) {
+        return {
+          content: [{ type: "text", text: `Agent ${params.id} not found` }],
+          isError: true,
+          details: { error: "Agent not found" },
+        };
+      }
+
+      if (agent.state === "active" || agent.state === "running") {
+        return {
+          content: [{ type: "text", text: `Agent ${params.id} is already running (${agent.state})` }],
+          details: { agentId: params.id, state: agent.state },
+        };
+      }
+
+      const validTargets = AGENT_VALID_TRANSITIONS[agent.state];
+      if (!validTargets.includes("active")) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Cannot start agent ${params.id} — current state '${agent.state}' cannot transition to 'active'. Valid transitions: ${validTargets.join(", ")}`,
+            },
+          ],
+          isError: true,
+          details: { agentId: params.id, currentState: agent.state, validTargets },
+        };
+      }
+
+      await agentStore.updateAgentState(params.id, "active");
+
+      return {
+        content: [{ type: "text", text: `Started ${params.id}` }],
+        details: { agentId: params.id, previousState: agent.state, newState: "active" },
+      };
+    },
+  });
+
   // ── /fn command — start the dashboard + engine ───────────────────
 
   let dashboardProcess: ChildProcess | null = null;

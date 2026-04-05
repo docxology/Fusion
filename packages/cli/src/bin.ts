@@ -48,6 +48,7 @@ const { runBackupCreate, runBackupList, runBackupRestore, runBackupCleanup } = a
 const { runMissionCreate, runMissionList, runMissionShow, runMissionDelete, runMissionActivateSlice } = await import("./commands/mission.js");
 const { runProjectList, runProjectAdd, runProjectRemove, runProjectShow, runProjectInfo, runProjectSetDefault, runProjectDetect } = await import("./commands/project.js");
 const { runInit } = await import("./commands/init.js");
+const { runAgentStop, runAgentStart } = await import("./commands/agent.js");
 
 const HELP = `
 fn — AI-orchestrated task board
@@ -106,6 +107,8 @@ Usage:
   fn git push                Push current branch
   fn git pull                Pull current branch
   fn git fetch [remote]      Fetch from remote (default: origin)
+  fn agent stop <id>                Stop a running agent (pause execution)
+  fn agent start <id>               Start a stopped agent (resume execution)
   fn backup --create         Create a database backup immediately
   fn backup --list           List all database backups
   fn backup --restore <file> Restore database from a backup file
@@ -724,6 +727,29 @@ async function main() {
         } else {
           console.error("Usage: fn backup --create | --list | --cleanup | --restore <filename>");
           process.exit(1);
+        }
+        break;
+      }
+
+      case "agent": {
+        const subcommand = args[1];
+        switch (subcommand) {
+          case "stop": {
+            const id = args[2];
+            if (!id) { console.error("Usage: fn agent stop <id>"); process.exit(1); }
+            await runAgentStop(id, projectName);
+            break;
+          }
+          case "start": {
+            const id = args[2];
+            if (!id) { console.error("Usage: fn agent start <id>"); process.exit(1); }
+            await runAgentStart(id, projectName);
+            break;
+          }
+          default:
+            console.error(`Unknown subcommand: agent ${subcommand || ""}`);
+            console.log("Try: fn agent stop <id> | fn agent start <id>");
+            process.exit(1);
         }
         break;
       }

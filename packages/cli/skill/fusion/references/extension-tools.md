@@ -246,6 +246,22 @@ Link a feature to a kb task. Updates feature status to triaged.
 | `featureId` | string | ✓ | Feature ID (e.g., F-001) |
 | `taskId` | string | ✓ | Task ID (e.g., KB-001) |
 
+### kb_agent_stop
+
+Stop (pause) a running agent. Transitions the agent from running/active to paused state.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `id` | string | ✓ | Agent ID to stop (e.g., agent-abc123) |
+
+### kb_agent_start
+
+Start (resume) a stopped agent. Transitions the agent from paused to active state.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `id` | string | ✓ | Agent ID to start (e.g., agent-abc123) |
+
 ## Dashboard Command
 
 ### /fn

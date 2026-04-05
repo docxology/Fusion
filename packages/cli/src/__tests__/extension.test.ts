@@ -101,6 +101,9 @@ describe("kb pi extension", () => {
         "kb_feature_add",
         "kb_slice_activate",
         "kb_feature_link_task",
+        // Agent tools
+        "kb_agent_stop",
+        "kb_agent_start",
       ];
 
       for (const name of expected) {

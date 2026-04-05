@@ -103,6 +103,13 @@ fn task import owner/repo           # Import GitHub issues as tasks
 fn task import owner/repo --limit 10 --labels "bug,enhancement"
 ```
 
+### Agent control
+
+```bash
+fn agent stop <agent-id>            # Stop (pause) a running agent
+fn agent start <agent-id>           # Start (resume) a stopped agent
+```
+
 ### Typical workflow
 
 ```bash

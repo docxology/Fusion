@@ -35,6 +35,8 @@ Triage → Todo → In Progress → In Review → Done → Archived
 | `kb_feature_add` | Add a feature to a slice |
 | `kb_slice_activate` | Activate a pending slice |
 | `kb_feature_link_task` | Link a feature to a task |
+| `kb_agent_stop` | Stop (pause) a running agent |
+| `kb_agent_start` | Start (resume) a stopped agent |
 
 ## CLI Commands (fn)
 
