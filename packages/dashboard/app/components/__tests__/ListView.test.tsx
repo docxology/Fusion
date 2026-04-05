@@ -1463,7 +1463,7 @@ describe("ListView Quick Entry", () => {
     const toggleButton = screen.getByTestId("quick-entry-toggle");
     fireEvent.click(toggleButton);
 
-    // Model selector button should be directly visible in the disclosure panel
+    // Model selector button should be visible (controls are shown directly after toggle)
     const modelButton = await screen.findByTestId("quick-entry-models-button");
     expect(modelButton).toBeDefined();
     expect(document.getElementById("quick-entry-controls")?.hasAttribute("hidden")).toBe(false);
@@ -1480,7 +1480,7 @@ describe("ListView Quick Entry", () => {
     const toggleButton = screen.getByTestId("quick-entry-toggle");
     fireEvent.click(toggleButton);
 
-    // Dependency selector button should be directly visible in the disclosure panel
+    // Dependency selector button should be visible (controls are shown directly after toggle)
     const depsButton = await screen.findByTestId("quick-entry-deps-button");
     expect(depsButton).toBeDefined();
     expect(document.getElementById("quick-entry-controls")?.hasAttribute("hidden")).toBe(false);
@@ -2076,7 +2076,7 @@ describe("ListView - Bulk Selection", () => {
     const toggleButton = screen.getByTestId("quick-entry-toggle");
     fireEvent.click(toggleButton);
 
-    // Model selector button is directly visible in the disclosure panel
+    // Controls are shown directly after toggle (no actions dropdown)
     const modelButton = await screen.findByTestId("quick-entry-models-button");
     fireEvent.click(modelButton);
 
