@@ -7523,6 +7523,24 @@ body {
   height: 100%;
 }
 
+/*
+ * Override xterm's hidden textarea positioning so mobile browsers show the
+ * virtual keyboard when the terminal is tapped.  The upstream CSS sets
+ * width:0, height:0 and left:-9999em which causes many mobile browsers to
+ * skip showing the soft keyboard entirely.  We give the textarea minimal
+ * (1×1 px) dimensions and move it above the viewport instead of to the
+ * left — this keeps it invisible while remaining a valid focus target.
+ */
+.terminal-xterm .xterm .xterm-helper-textarea {
+  left: 0 !important;
+  top: -9999px !important;
+  width: 1px !important;
+  height: 1px !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  z-index: -1 !important;
+}
+
 .terminal-loading {
   display: flex;
   flex-direction: column;
