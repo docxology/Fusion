@@ -62,6 +62,7 @@ export function TerminalModal({ isOpen, onClose, initialCommand }: TerminalModal
   const [keyboardOverlap, setKeyboardOverlap] = useState(0);
   
   const terminalRef = useRef<HTMLDivElement>(null);
+  const modalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<ITerminalAddon | null>(null);
   const hasInitialCommandRun = useRef<string | false>(false);
@@ -83,7 +84,15 @@ export function TerminalModal({ isOpen, onClose, initialCommand }: TerminalModal
     const vv = window.visualViewport;
     if (!vv) return;
 
-    const update = () => setKeyboardOverlap(getKeyboardOverlap());
+    const update = () => {
+      const overlap = getKeyboardOverlap();
+      setKeyboardOverlap(overlap);
+      // Scroll the modal so the status bar (bottom edge) stays visible
+      // when the virtual keyboard pushes the viewport up.
+      if (overlap > 0 && modalRef.current?.scrollIntoView) {
+        modalRef.current.scrollIntoView({ block: "end", behavior: "smooth" });
+      }
+    };
 
     update(); // initial measurement
     vv.addEventListener("resize", update);
@@ -475,6 +484,7 @@ export function TerminalModal({ isOpen, onClose, initialCommand }: TerminalModal
       data-testid="terminal-modal-overlay"
     >
       <div
+        ref={modalRef}
         className="modal terminal-modal"
         data-testid="terminal-modal"
         style={

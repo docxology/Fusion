@@ -1694,6 +1694,51 @@ describe("TerminalModal — virtual keyboard overlap handling", () => {
       expect(modal.style.getPropertyValue("--keyboard-overlap")).toBe("");
     });
   });
+
+  it("scrolls modal into view when keyboard opens on mobile", async () => {
+    const scrollIntoViewSpy = vi.fn();
+    const { listeners } = simulateMobileDevice(250);
+
+    render(<TerminalModal isOpen={true} onClose={mockOnClose} />);
+
+    await waitFor(() => {
+      const modal = screen.getByTestId("terminal-modal");
+      expect(modal.style.getPropertyValue("--keyboard-overlap")).toBe("250px");
+    });
+
+    // Attach the spy to the rendered modal element
+    const modal = screen.getByTestId("terminal-modal");
+    modal.scrollIntoView = scrollIntoViewSpy;
+
+    // Trigger a resize event to re-run the update callback
+    act(() => {
+      for (const cb of listeners.resize) cb();
+    });
+
+    expect(scrollIntoViewSpy).toHaveBeenCalledWith({ block: "end", behavior: "smooth" });
+  });
+
+  it("does not scroll modal when keyboard overlap is zero", async () => {
+    const scrollIntoViewSpy = vi.fn();
+    const { listeners } = simulateMobileDevice(0); // no overlap
+
+    render(<TerminalModal isOpen={true} onClose={mockOnClose} />);
+
+    await waitFor(() => {
+      const modal = screen.getByTestId("terminal-modal");
+      expect(modal.style.getPropertyValue("--keyboard-overlap")).toBe("");
+    });
+
+    const modal = screen.getByTestId("terminal-modal");
+    modal.scrollIntoView = scrollIntoViewSpy;
+
+    // Trigger a resize event
+    act(() => {
+      for (const cb of listeners.resize) cb();
+    });
+
+    expect(scrollIntoViewSpy).not.toHaveBeenCalled();
+  });
 });
 
 // --- Close/reopen regression tests ---
