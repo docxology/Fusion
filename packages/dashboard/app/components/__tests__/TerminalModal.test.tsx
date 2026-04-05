@@ -227,6 +227,35 @@ describe("TerminalModal", () => {
     expect(screen.queryByTestId("terminal-loading")).toBeNull();
   });
 
+  it("initializes xterm when activeTab transitions from null to valid after async session restoration", async () => {
+    // Start with no activeTab (simulating initial async load from useTerminalSessions)
+    mockUseTerminalSessions.mockReturnValue({
+      ...defaultSessionState,
+      activeTab: null,
+      isReady: false,
+    });
+
+    const { rerender } = render(<TerminalModal isOpen={true} onClose={mockOnClose} />);
+
+    // xterm should not initialize yet because activeTab is null
+    expect(mockTerminalInstance.open).not.toHaveBeenCalled();
+
+    // Simulate async session restoration completing
+    mockUseTerminalSessions.mockReturnValue({
+      ...defaultSessionState,
+      activeTab: defaultTab,
+      isReady: true,
+    });
+    mockUseTerminal.mockReturnValue(createMockTerminalState({ connectionStatus: "connected" }));
+
+    rerender(<TerminalModal isOpen={true} onClose={mockOnClose} />);
+
+    // xterm should be initialized after activeTab becomes available
+    await waitFor(() => {
+      expect(mockTerminalInstance.open).toHaveBeenCalled();
+    });
+  });
+
   it("does not show bootstrap error when activeTab exists (recovered state)", async () => {
     mockUseTerminalSessions.mockReturnValue({
       ...defaultSessionState,

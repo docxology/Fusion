@@ -333,7 +333,7 @@ export function TerminalModal({ isOpen, onClose, initialCommand }: TerminalModal
       // Don't dispose xterm here - it should persist across tab switches
       // Only dispose when the modal is fully closed
     };
-  }, [isOpen, isReady, activeTab?.sessionId, sendInput, resize]);
+  }, [isOpen, isReady, activeTab, activeTab?.sessionId, sendInput, resize]);
 
   // Cleanup xterm when modal closes
   useEffect(() => {
