@@ -90,7 +90,7 @@ fn task import owner/repo --labels bug --limit 10      # Import GitHub issues
 - **Quick Entry** — Type a description, press Enter
 - **Plan** (💡) — AI interviews you to refine requirements before creating the task
 - **Subtask** (🌳) — AI suggests 2–5 subtasks with drag-and-drop reordering and dependency linking
-- **Models** (🧠) — Override executor/validator/planning models per task
+- **Actions** (⋯) — Access advanced controls: dependencies, model overrides (executor/validator/planning), and manual save
 - **AI Title Summarization** — When `autoSummarizeTitles` is enabled, tasks without titles get concise AI-generated names (≤60 characters)
 
 ### AI Execution

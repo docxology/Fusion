@@ -584,15 +584,18 @@ The dashboard provides two UI surfaces for creating tasks:
 Both components provide the same task creation experience with the following options:
 
 - **Description input** — Type the task description. Press Enter to create immediately, or use the action buttons for AI-assisted creation.
-- **Deps button** — Add task dependencies before creation.
-- **Models button** — Opens a nested menu with Plan, Executor, and Validator roles. Each role opens a submenu with a model dropdown for per-task overrides.
 - **Plan button** (Lightbulb icon) — Opens the AI Planning Mode modal with the current description pre-filled. This allows refining the task through an interactive Q&A before creation.
 - **Subtask button** (ListTree icon) — Opens the subtask breakdown dialog with the current description pre-filled. The dialog generates 2–5 AI-suggested subtasks, lets the user edit titles, descriptions, sizes, and dependencies, and then creates all subtasks in one action.
+- **Actions button** (⋯) — Opens an actions dropdown providing access to advanced creation controls:
+  - **Deps** — Add task dependencies before creation.
+  - **Models** — Opens a nested menu with Plan, Executor, and Validator roles. Each role opens a submenu with a model dropdown for per-task overrides.
+  - **Save** — Manually save the task (alternative to pressing Enter).
 
 **Behavior:**
 - Both Plan and Subtask buttons are disabled when no description is entered.
 - Clicking either button clears the input after triggering the action.
 - Regular task creation (Enter key) works as before without AI assistance.
+- The actions dropdown closes on Escape or outside click. Escape dismisses in order: model submenu → model menu → dependency picker → actions dropdown → input clear/collapse.
 
 ### Subtask Breakdown Dialog
 

@@ -1452,7 +1452,7 @@ describe("ListView Quick Entry", () => {
     expect(tableContainer?.contains(quickEntry)).toBe(true);
   });
 
-  it("shows model selector button when QuickEntryBox is expanded", async () => {
+  it("shows model selector button when QuickEntryBox is expanded and actions dropdown is open", async () => {
     const mockOnQuickCreate = vi.fn().mockResolvedValue(undefined);
     renderListView({ onQuickCreate: mockOnQuickCreate });
 
@@ -1462,14 +1462,18 @@ describe("ListView Quick Entry", () => {
     // Click the disclosure toggle to expand the QuickEntryBox controls
     const toggleButton = screen.getByTestId("quick-entry-toggle");
     fireEvent.click(toggleButton);
-    
+
+    // Open the actions dropdown to access Deps/Models/Save
+    const actionsButton = screen.getByTestId("quick-entry-actions-button");
+    fireEvent.click(actionsButton);
+
     // Model selector button should be visible
     const modelButton = await screen.findByTestId("quick-entry-models-button");
     expect(modelButton).toBeDefined();
     expect(document.getElementById("quick-entry-controls")?.hasAttribute("hidden")).toBe(false);
   });
 
-  it("shows dependency selector button when QuickEntryBox is expanded", async () => {
+  it("shows dependency selector button when QuickEntryBox is expanded and actions dropdown is open", async () => {
     const mockOnQuickCreate = vi.fn().mockResolvedValue(undefined);
     renderListView({ onQuickCreate: mockOnQuickCreate });
 
@@ -1479,7 +1483,11 @@ describe("ListView Quick Entry", () => {
     // Click the disclosure toggle to expand the QuickEntryBox controls
     const toggleButton = screen.getByTestId("quick-entry-toggle");
     fireEvent.click(toggleButton);
-    
+
+    // Open the actions dropdown to access Deps/Models/Save
+    const actionsButton = screen.getByTestId("quick-entry-actions-button");
+    fireEvent.click(actionsButton);
+
     // Dependency selector button should be visible
     const depsButton = await screen.findByTestId("quick-entry-deps-button");
     expect(depsButton).toBeDefined();
@@ -2075,6 +2083,10 @@ describe("ListView - Bulk Selection", () => {
     // Expand the QuickEntryBox and open the model menu
     const toggleButton = screen.getByTestId("quick-entry-toggle");
     fireEvent.click(toggleButton);
+
+    // Open the actions dropdown to access Deps/Models/Save
+    const actionsButton = screen.getByTestId("quick-entry-actions-button");
+    fireEvent.click(actionsButton);
 
     const modelButton = await screen.findByTestId("quick-entry-models-button");
     fireEvent.click(modelButton);

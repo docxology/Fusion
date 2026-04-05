@@ -12358,6 +12358,47 @@ html .column.drag-over * {
   padding: 3px 8px;
 }
 
+/* Actions dropdown — wraps Deps/Models/Save behind a single trigger */
+.quick-entry-actions-wrap {
+  position: relative;
+}
+
+.quick-entry-actions-trigger {
+  font-size: 12px;
+  padding: 3px 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.actions-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  z-index: 100;
+  min-width: 200px;
+  overflow: hidden;
+}
+
+.actions-dropdown--portal {
+  position: fixed;
+  margin-top: 0;
+  z-index: 1000;
+}
+
+.actions-dropdown-items {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: 8px;
+  flex-wrap: wrap;
+}
+
 /* Nested model menu (replaces ModelSelectionModal in quick entry) */
 .model-nested-menu {
   position: absolute;
