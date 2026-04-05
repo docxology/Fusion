@@ -3509,29 +3509,41 @@ describe("POST /github/issues/batch-import", () => {
   }, 15000); // Increase timeout for multiple retries
 
   it("processes issues sequentially (not parallel)", async () => {
-    const callTimes: number[] = [];
-    fetchSpy.mockImplementation(() => {
-      callTimes.push(Date.now());
-      return Promise.resolve({
-        ok: true,
-        status: 200,
-        json: () => Promise.resolve(mockGitHubIssue(callTimes.length)),
-      } as Response);
-    });
+    vi.useFakeTimers();
 
-    await REQUEST(
-      buildApp(),
-      "POST",
-      "/api/github/issues/batch-import",
-      JSON.stringify({ owner: "owner", repo: "repo", issueNumbers: [1, 2, 3], delayMs: 50 }),
-      { "Content-Type": "application/json" }
-    );
+    try {
+      const callTimes: number[] = [];
+      fetchSpy.mockImplementation(() => {
+        callTimes.push(Date.now());
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve(mockGitHubIssue(callTimes.length)),
+        } as Response);
+      });
 
-    // Verify sequential processing by checking call timing
-    expect(callTimes).toHaveLength(3);
-    // Each call should be at least 40ms after the previous (allowing for small timing variations)
-    for (let i = 1; i < callTimes.length; i++) {
-      expect(callTimes[i] - callTimes[i - 1]).toBeGreaterThanOrEqual(40);
+      // Start the request without awaiting (fake timers block real delays)
+      const requestPromise = REQUEST(
+        buildApp(),
+        "POST",
+        "/api/github/issues/batch-import",
+        JSON.stringify({ owner: "owner", repo: "repo", issueNumbers: [1, 2, 3], delayMs: 50 }),
+        { "Content-Type": "application/json" }
+      );
+
+      // Advance fake time to resolve all sequential delays (3 issues × 50ms)
+      await vi.advanceTimersByTimeAsync(500);
+
+      await requestPromise;
+
+      // Verify sequential processing with deterministic timing
+      expect(callTimes).toHaveLength(3);
+      // With fake timers, each call should be exactly 50ms apart
+      for (let i = 1; i < callTimes.length; i++) {
+        expect(callTimes[i] - callTimes[i - 1]).toBe(50);
+      }
+    } finally {
+      vi.useRealTimers();
     }
   });
 
