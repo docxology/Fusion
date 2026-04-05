@@ -5183,7 +5183,8 @@ body {
 
   /* Hide project selector and back button on mobile (belt-and-suspenders with conditional rendering) */
   .header-project-selector,
-  .header-back-button {
+  .header-back-button,
+  .header-projects-btn {
     display: none;
   }
 
@@ -5348,7 +5349,8 @@ body {
 
   /* Hide project selector and back button on tablet (controlled by React rendering too) */
   .header-project-selector,
-  .header-back-button {
+  .header-back-button,
+  .header-projects-btn {
     display: none;
   }
 
@@ -15272,6 +15274,26 @@ html .column.drag-over * {
 }
 
 .header-back-button:hover {
+  background: var(--card-hover);
+  border-color: var(--text-dim);
+  color: var(--text);
+}
+
+.header-projects-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.header-projects-btn:hover {
   background: var(--card-hover);
   border-color: var(--text-dim);
   color: var(--text);

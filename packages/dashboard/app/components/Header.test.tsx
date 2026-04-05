@@ -797,6 +797,69 @@ describe("Header", () => {
     });
   });
 
+  describe("Projects button", () => {
+    const singleProject = [
+      { id: "1", name: "Test Project", path: "/path/to/project", status: "active" as const },
+    ];
+
+    it("renders Projects button when projects exist", () => {
+      renderHeader({
+        projects: singleProject,
+        onViewAllProjects: noop,
+      }, "desktop");
+      expect(screen.getByTestId("header-projects-btn")).toBeDefined();
+    });
+
+    it("calls onViewAllProjects when Projects button is clicked", () => {
+      const onViewAllProjects = vi.fn();
+      renderHeader({
+        projects: singleProject,
+        onViewAllProjects,
+      }, "desktop");
+      fireEvent.click(screen.getByTestId("header-projects-btn"));
+      expect(onViewAllProjects).toHaveBeenCalled();
+    });
+
+    it("does not render Projects button when no projects", () => {
+      renderHeader({
+        projects: [],
+        onViewAllProjects: noop,
+      }, "desktop");
+      expect(screen.queryByTestId("header-projects-btn")).toBeNull();
+    });
+
+    it("does not render Projects button on mobile", () => {
+      renderHeader({
+        projects: singleProject,
+        onViewAllProjects: noop,
+      }, "mobile");
+      expect(screen.queryByTestId("header-projects-btn")).toBeNull();
+    });
+
+    it("does not render Projects button on tablet", () => {
+      renderHeader({
+        projects: singleProject,
+        onViewAllProjects: noop,
+      }, "tablet");
+      expect(screen.queryByTestId("header-projects-btn")).toBeNull();
+    });
+
+    it("does not render Projects button when onViewAllProjects is not provided", () => {
+      renderHeader({
+        projects: singleProject,
+      }, "desktop");
+      expect(screen.queryByTestId("header-projects-btn")).toBeNull();
+    });
+
+    it("renders Projects button with correct title", () => {
+      renderHeader({
+        projects: singleProject,
+        onViewAllProjects: noop,
+      }, "desktop");
+      expect(screen.getByTitle("View all projects")).toBeDefined();
+    });
+  });
+
   describe("action ordering", () => {
     it("Settings is the last inline user-facing action on desktop (before pause/stop)", () => {
       const { container } = renderHeader({

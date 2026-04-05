@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { Settings, Pause, Play, Square, LayoutGrid, List, Terminal, Lightbulb, Search, X, Activity, MoreHorizontal, Clock, Folder, History, GitBranch, Workflow, Bot, ChevronLeft, Target, Building2, ChevronRight, FileCode, Loader2 } from "lucide-react";
+import { Settings, Pause, Play, Square, LayoutGrid, List, Terminal, Lightbulb, Search, X, Activity, MoreHorizontal, Clock, Folder, History, GitBranch, Workflow, Bot, ChevronLeft, Target, Building2, ChevronRight, FileCode, Loader2, Grid3X3 } from "lucide-react";
 import type { ProjectInfo } from "../api";
 import { fetchScripts } from "../api";
 import { ProjectSelector } from "./ProjectSelector";
@@ -288,6 +288,19 @@ export function Header({
           >
             <ChevronLeft size={14} />
             <span>All Projects</span>
+          </button>
+        )}
+
+        {/* Projects button - always visible when at least 1 project exists (desktop only) */}
+        {!isCompact && projects.length >= 1 && onViewAllProjects && (
+          <button
+            className="header-projects-btn"
+            onClick={onViewAllProjects}
+            title="View all projects"
+            data-testid="header-projects-btn"
+          >
+            <Grid3X3 size={14} />
+            <span>Projects</span>
           </button>
         )}
       </div>

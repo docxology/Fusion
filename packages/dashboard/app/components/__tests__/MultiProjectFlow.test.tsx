@@ -1,6 +1,29 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import type { ProjectInfo } from "@fusion/core";
+import { Header } from "../Header";
+
+// Mock fetchScripts for overflow submenu
+vi.mock("../../api", () => ({
+  fetchScripts: vi.fn().mockResolvedValue({}),
+}));
+
+const noop = () => {};
+
+// Helper to mock desktop viewport
+function mockDesktopMatchMedia() {
+  Object.defineProperty(window, "matchMedia", {
+    writable: true,
+    value: vi.fn().mockImplementation((query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  });
+}
 
 // Simple smoke tests for multi-project flow
 describe("MultiProjectFlow", () => {
@@ -85,5 +108,70 @@ describe("MultiProjectFlow", () => {
     
     expect(storage["kb-dashboard-view-mode"]).toBe("project");
     expect(storage["kb-dashboard-task-view"]).toBe("board");
+  });
+
+  describe("Projects button navigation", () => {
+    const singleProject: ProjectInfo = {
+      id: "proj_1",
+      name: "Solo Project",
+      path: "/path/to/solo",
+      status: "active",
+      isolationMode: "in-process",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+
+    it("shows Projects button and navigates to overview on click", () => {
+      mockDesktopMatchMedia();
+
+      let viewMode: "overview" | "project" = "project";
+      const handleViewAllProjects = vi.fn(() => {
+        viewMode = "overview";
+      });
+
+      render(
+        <Header
+          onOpenSettings={noop}
+          onOpenGitHubImport={noop}
+          globalPaused={false}
+          enginePaused={false}
+          onToggleGlobalPause={noop}
+          onToggleEnginePause={noop}
+          projects={[singleProject]}
+          onViewAllProjects={handleViewAllProjects}
+        />
+      );
+
+      // The Projects button should be visible for single-project users
+      const projectsBtn = screen.getByTestId("header-projects-btn");
+      expect(projectsBtn).toBeDefined();
+
+      // Clicking should trigger navigation to overview
+      fireEvent.click(projectsBtn);
+      expect(handleViewAllProjects).toHaveBeenCalled();
+      expect(viewMode).toBe("overview");
+    });
+
+    it("shows Projects button alongside Back button when currentProject is set", () => {
+      mockDesktopMatchMedia();
+
+      render(
+        <Header
+          onOpenSettings={noop}
+          onOpenGitHubImport={noop}
+          globalPaused={false}
+          enginePaused={false}
+          onToggleGlobalPause={noop}
+          onToggleEnginePause={noop}
+          projects={[singleProject]}
+          currentProject={singleProject}
+          onViewAllProjects={noop}
+        />
+      );
+
+      // Both buttons should be present
+      expect(screen.getByTestId("header-projects-btn")).toBeDefined();
+      expect(screen.getByTestId("back-to-projects-btn")).toBeDefined();
+    });
   });
 });
