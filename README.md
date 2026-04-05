@@ -399,6 +399,12 @@ pnpm --filter @fusion/core build   # Regenerate dist/
 pnpm test                           # Verify downstream consumers
 ```
 
+### Writing Deterministic Executor Tests
+
+The `TaskExecutor` implements retry-with-new-agent-session behavior: when an agent session completes without calling `task_done()`, the executor automatically creates a new session and retries. Tests that are **not** specifically validating retry semantics should avoid asserting exact `createKbAgent` call counts, as the count varies depending on whether the retry path is triggered.
+
+**Prefer behavioral assertions** — verify that tasks are dispatched for execution, resume log entries are written, error handlers fire, and semaphore slots are released. These guarantees are stable regardless of how many internal agent sessions are created.
+
 ## Dashboard Features
 
 ### Interactive Terminal

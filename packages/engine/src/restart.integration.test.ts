@@ -194,8 +194,15 @@ describe("In-progress task resume after restart", () => {
     // Wait for async execute calls to complete
     await new Promise((r) => setTimeout(r, 50));
 
-    // createKbAgent called twice per task (initial + retry when agent finishes without task_done)
-    expect(mockedCreateHaiAgent).toHaveBeenCalledTimes(4);
+    // Each in-progress task should have been dispatched for execution.
+    // We assert at least 2 agent creations (one per in-progress task) without
+    // coupling to the internal retry-with-new-session count, which is an
+    // implementation detail of the executor not relevant to restart semantics.
+    expect(mockedCreateHaiAgent.mock.calls.length).toBeGreaterThanOrEqual(2);
+
+    // Both tasks should have received resume log entries (behavioral guarantee)
+    expect(store.logEntry).toHaveBeenCalledWith("FN-001", "Resumed after engine restart");
+    expect(store.logEntry).toHaveBeenCalledWith("FN-002", "Resumed after engine restart");
   });
 
   it("resumed task reuses existing worktree — no git worktree add called", async () => {
@@ -645,8 +652,13 @@ describe("Crash scenario edge cases", () => {
     await executor.resumeOrphaned();
     await new Promise((r) => setTimeout(r, 50));
 
-    // Agent should have been created again for the re-resume (twice: initial + retry without task_done)
-    expect(mockedCreateHaiAgent).toHaveBeenCalledTimes(2);
+    // Agent was created for the re-resume, proving the task was eligible.
+    // We don't assert exact call count — the retry-with-new-session count is
+    // an executor implementation detail, not a restart-resilience concern.
+    expect(mockedCreateHaiAgent).toHaveBeenCalled();
+
+    // Re-resume should have logged again (behavioral guarantee)
+    expect(store.logEntry).toHaveBeenCalledWith("FN-090", "Resumed after engine restart");
   });
 
   it("engine killed during merge — git reset --merge cleanup, task stays in-review", async () => {
