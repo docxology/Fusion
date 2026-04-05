@@ -51,6 +51,7 @@ function makeMockStore() {
     updatePrInfo: vi.fn().mockResolvedValue({}),
     logEntry: vi.fn().mockResolvedValue(undefined),
     updateTask: vi.fn().mockResolvedValue({}),
+    getFusionDir: vi.fn().mockReturnValue("/tmp/test/.fusion"),
     close: vi.fn(),
     on: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
       emitter.on(event, handler);
@@ -75,6 +76,14 @@ vi.mock("@fusion/core", () => ({
     deleteSchedule: vi.fn().mockResolvedValue({}),
     recordRun: vi.fn().mockResolvedValue({}),
     getDueSchedules: vi.fn().mockResolvedValue([]),
+  })),
+  AgentStore: vi.fn().mockImplementation(() => ({
+    init: vi.fn().mockResolvedValue(undefined),
+    createAgent: vi.fn(),
+    updateAgentState: vi.fn(),
+    listAgents: vi.fn().mockResolvedValue([]),
+    getAgent: vi.fn().mockResolvedValue(null),
+    deleteAgent: vi.fn(),
   })),
   getTaskMergeBlocker: vi.fn((task: any) => {
     if (task.column !== "in-review") return `task is in '${task.column}', must be in 'in-review'`;

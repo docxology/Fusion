@@ -1,7 +1,7 @@
 import { execSync } from "node:child_process";
 import type { AddressInfo } from "node:net";
 import { createInterface } from "node:readline";
-import { TaskStore, AutomationStore, CentralCore, getTaskMergeBlocker } from "@fusion/core";
+import { TaskStore, AutomationStore, CentralCore, AgentStore, getTaskMergeBlocker } from "@fusion/core";
 import type { Settings, TaskDetail, PrInfo } from "@fusion/core";
 import { createServer, GitHubClient } from "@fusion/dashboard";
 import { TriageProcessor, TaskExecutor, Scheduler, AgentSemaphore, WorktreePool, aiMergeTask, UsageLimitPauser, PRIORITY_MERGE, scanIdleWorktrees, cleanupOrphanedWorktrees, NtfyNotifier, PrMonitor, PrCommentHandler, CronRunner, StuckTaskDetector, SelfHealingManager } from "@fusion/engine";
@@ -206,6 +206,15 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
   // ── AutomationStore: scheduled task persistence ──────────────────────
   const automationStore = new AutomationStore(cwd);
   await automationStore.init();
+
+  // ── AgentStore: agent lifecycle tracking ──────────────────────────
+  //
+  // Tracks spawned agents so they appear in the dashboard's Agents view
+  // and are properly managed throughout their lifecycle (creation, state
+  // transitions, termination). Passed to TaskExecutor for agent spawning.
+  //
+  const agentStore = new AgentStore({ rootDir: store.getFusionDir() });
+  await agentStore.init();
 
   // ── NtfyNotifier: push notifications for task completion and failures ─
   //
@@ -598,6 +607,7 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
       pool,
       usageLimitPauser,
       stuckTaskDetector,
+      agentStore,
       onStart: (t, p) => console.log(`[engine] Executing ${t.id} in ${p}`),
       onComplete: (t) => console.log(`[engine] ✓ ${t.id} → in-review`),
       onError: (t, e) => console.log(`[engine] ✗ ${t.id}: ${e.message}`),

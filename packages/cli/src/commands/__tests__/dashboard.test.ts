@@ -19,6 +19,7 @@ function makeMockStore() {
       openrouterModelSync: true,
     }),
     listTasks: vi.fn().mockResolvedValue([]),
+    getFusionDir: vi.fn().mockReturnValue("/tmp/test/.fusion"),
     on: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
       emitter.on(event, handler);
     }),
@@ -37,6 +38,14 @@ vi.mock("@fusion/core", () => ({
     init: vi.fn().mockResolvedValue(undefined),
     listSchedules: vi.fn().mockResolvedValue([]),
     getDueSchedules: vi.fn().mockResolvedValue([]),
+  })),
+  AgentStore: vi.fn().mockImplementation(() => ({
+    init: vi.fn().mockResolvedValue(undefined),
+    createAgent: vi.fn(),
+    updateAgentState: vi.fn(),
+    listAgents: vi.fn().mockResolvedValue([]),
+    getAgent: vi.fn().mockResolvedValue(null),
+    deleteAgent: vi.fn(),
   })),
 }));
 
