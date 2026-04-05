@@ -7346,12 +7346,42 @@ Output ONLY the prompt text (no markdown, no explanations).`;
         return;
       }
 
-      // Done tasks: use commit-backed diff from mergeDetails.commitSha
+      // Done tasks: compute diff from merge base to isolate only this task's changes.
+      // Using `git show SHA` on merge commits shows ALL files changed in the merge,
+      // including files from unrelated commits on main. Instead, find the merge base
+      // (where the feature branch diverged) and diff from that point.
       if (task.column === "done" && task.mergeDetails?.commitSha) {
         const rootDir = scopedStore.getRootDir();
         const sha = task.mergeDetails.commitSha;
+
+        // Resolve the merge base: the common ancestor between this commit and its first parent.
+        // For a merge commit, SHA^1 is the first parent (main branch tip at merge time).
+        let mergeBase = sha;
+        try {
+          const parentSha = nodeChildProcess.execSync(
+            `git rev-parse ${sha}^`,
+            { cwd: rootDir, encoding: "utf-8", timeout: 5000 },
+          ).trim();
+          mergeBase = nodeChildProcess.execSync(
+            `git merge-base ${sha} ${parentSha}`,
+            { cwd: rootDir, encoding: "utf-8", timeout: 5000 },
+          ).trim();
+        } catch {
+          // Fallback: use the parent commit as base if merge-base fails
+          try {
+            mergeBase = nodeChildProcess.execSync(
+              `git rev-parse ${sha}^`,
+              { cwd: rootDir, encoding: "utf-8", timeout: 5000 },
+            ).trim();
+          } catch {
+            // Last resort: no diff available
+            res.json({ files: [], stats: { filesChanged: 0, additions: 0, deletions: 0 } });
+            return;
+          }
+        }
+
         const nameStatus = nodeChildProcess.execSync(
-          `git show --name-status --format="" ${sha}`,
+          `git diff --name-status ${mergeBase}..${sha}`,
           { cwd: rootDir, encoding: "utf-8", timeout: 10000 },
         ).trim();
 
@@ -7376,7 +7406,7 @@ Output ONLY the prompt text (no markdown, no explanations).`;
           let patch = "";
           try {
             patch = nodeChildProcess.execSync(
-              `git show ${sha} -- "${filePath}"`,
+              `git diff ${mergeBase}..${sha} -- "${filePath}"`,
               { cwd: rootDir, encoding: "utf-8", timeout: 10000 },
             );
           } catch { /* ignore */ }
@@ -7493,13 +7523,40 @@ Output ONLY the prompt text (no markdown, no explanations).`;
       const scopedStore = await getScopedStore(req);
       const task = await scopedStore.getTask(req.params.id);
 
-      // Done tasks: derive file diffs from the merge commit
+      // Done tasks: compute diff from merge base to isolate only this task's changes.
+      // Using `git show SHA` on merge commits shows ALL files changed in the merge,
+      // including files from unrelated commits on main. Instead, find the merge base
+      // (where the feature branch diverged) and diff from that point.
       if (task.column === "done" && task.mergeDetails?.commitSha) {
         const rootDir = scopedStore.getRootDir();
         const sha = task.mergeDetails.commitSha;
+
+        // Resolve the merge base: the common ancestor between this commit and its first parent.
+        let mergeBase = sha;
+        try {
+          const parentSha = nodeChildProcess.execSync(
+            `git rev-parse ${sha}^`,
+            { cwd: rootDir, encoding: "utf-8", timeout: 5000 },
+          ).trim();
+          mergeBase = nodeChildProcess.execSync(
+            `git merge-base ${sha} ${parentSha}`,
+            { cwd: rootDir, encoding: "utf-8", timeout: 5000 },
+          ).trim();
+        } catch {
+          try {
+            mergeBase = nodeChildProcess.execSync(
+              `git rev-parse ${sha}^`,
+              { cwd: rootDir, encoding: "utf-8", timeout: 5000 },
+            ).trim();
+          } catch {
+            res.json([]);
+            return;
+          }
+        }
+
         try {
           const nameStatus = nodeChildProcess.execSync(
-            `git show --name-status --format="" ${sha}`,
+            `git diff --name-status ${mergeBase}..${sha}`,
             { cwd: rootDir, encoding: "utf-8", timeout: 5000 },
           ).trim();
           const doneFiles = nameStatus.split("\n").filter(Boolean).map((line) => {
@@ -7513,7 +7570,7 @@ Output ONLY the prompt text (no markdown, no explanations).`;
             let diff = "";
             try {
               diff = nodeChildProcess.execSync(
-                `git show ${sha} -- "${filePath}"`,
+                `git diff ${mergeBase}..${sha} -- "${filePath}"`,
                 { cwd: rootDir, encoding: "utf-8", timeout: 5000 },
               );
             } catch { /* ignore */ }

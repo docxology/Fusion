@@ -360,3 +360,204 @@ new file mode 100644
     });
   });
 });
+
+// ── Done task diff: merge-base computation ────────────────────────────────────
+// Done tasks use merge-base to isolate only this task's changes, avoiding
+// showing files from unrelated commits on the main branch.
+describe("GET /api/tasks/:id/diff — done tasks", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockExistsSync.mockReturnValue(true);
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-01T12:00:00.000Z"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("shows only this task's files using merge-base, not unrelated main branch changes", async () => {
+    const store = new MockStore();
+    store.addTask(createTask({
+      column: "done",
+      mergeDetails: { commitSha: "merge789" },
+    }));
+
+    mockExecSync.mockImplementation((command) => {
+      const cmd = String(command);
+      // git rev-parse merge789^ → first parent (main branch tip at merge time)
+      if (cmd === "git rev-parse merge789^") {
+        return "parent123\n" as any;
+      }
+      // git merge-base merge789 parent123 → true divergence point
+      if (cmd === "git merge-base merge789 parent123") {
+        return "base456\n" as any;
+      }
+      // git diff --name-status base456..merge789 → only this task's files
+      if (cmd === "git diff --name-status base456..merge789") {
+        return "A\tfile-b.txt\n" as any;
+      }
+      // Per-file diff using merge base
+      if (cmd === 'git diff base456..merge789 -- "file-b.txt"') {
+        return "diff --git a/file-b.txt b/file-b.txt\n--- /dev/null\n+++ b/file-b.txt\n+hello\n" as any;
+      }
+      throw new Error(`Unexpected command: ${cmd}`);
+    });
+
+    const app = createServer(store as any);
+    const response = await requestDiff(app);
+
+    expect(response.status).toBe(200);
+    // Should only show file-b.txt (this task's work), NOT file-a.txt (main branch)
+    expect(response.body.files).toHaveLength(1);
+    expect(response.body.files[0].path).toBe("file-b.txt");
+    expect(response.body.files[0].status).toBe("added");
+    expect(response.body.stats.filesChanged).toBe(1);
+  });
+
+  it("computes correct additions and deletions from merge-base diff", async () => {
+    const store = new MockStore();
+    store.addTask(createTask({
+      column: "done",
+      mergeDetails: { commitSha: "sha_with_modifications" },
+    }));
+
+    mockExecSync.mockImplementation((command) => {
+      const cmd = String(command);
+      if (cmd === "git rev-parse sha_with_modifications^") {
+        return "parent_abc\n" as any;
+      }
+      if (cmd === "git merge-base sha_with_modifications parent_abc") {
+        return "base_xyz\n" as any;
+      }
+      if (cmd === "git diff --name-status base_xyz..sha_with_modifications") {
+        return "M\tsrc/app.ts\n" as any;
+      }
+      if (cmd === 'git diff base_xyz..sha_with_modifications -- "src/app.ts"') {
+        return `diff --git a/src/app.ts b/src/app.ts
+--- a/src/app.ts
++++ b/src/app.ts
+@@ -1,3 +1,5 @@
+ const original = true;
+-const removed = true;
++const added1 = true;
++const added2 = true;
+` as any;
+      }
+      throw new Error(`Unexpected command: ${cmd}`);
+    });
+
+    const app = createServer(store as any);
+    const response = await requestDiff(app);
+
+    expect(response.status).toBe(200);
+    expect(response.body.files).toHaveLength(1);
+    expect(response.body.files[0].additions).toBe(2);
+    expect(response.body.files[0].deletions).toBe(1);
+    expect(response.body.stats).toEqual({
+      filesChanged: 1,
+      additions: 2,
+      deletions: 1,
+    });
+  });
+
+  it("falls back to parent commit when merge-base fails", async () => {
+    const store = new MockStore();
+    store.addTask(createTask({
+      column: "done",
+      mergeDetails: { commitSha: "merge_ff" },
+    }));
+
+    mockExecSync.mockImplementation((command) => {
+      const cmd = String(command);
+      // git rev-parse merge_ff^ succeeds (fast-forward: single parent)
+      if (cmd === "git rev-parse merge_ff^") {
+        return "parent_ff\n" as any;
+      }
+      // git merge-base fails (e.g., shallow clone)
+      if (cmd === "git merge-base merge_ff parent_ff") {
+        throw new Error("fatal: not a git repository");
+      }
+      // Fallback: git rev-parse merge_ff^ → parent_ff (called again in catch block)
+      // Name-status from parent to merge commit
+      if (cmd === "git diff --name-status parent_ff..merge_ff") {
+        return "M\treadme.md\n" as any;
+      }
+      if (cmd === 'git diff parent_ff..merge_ff -- "readme.md"') {
+        return "diff --git a/readme.md b/readme.md\n+content\n" as any;
+      }
+      throw new Error(`Unexpected command: ${cmd}`);
+    });
+
+    const app = createServer(store as any);
+    const response = await requestDiff(app);
+
+    expect(response.status).toBe(200);
+    expect(response.body.files).toHaveLength(1);
+    expect(response.body.files[0].path).toBe("readme.md");
+  });
+
+  it("returns empty result when both rev-parse and merge-base fail", async () => {
+    const store = new MockStore();
+    store.addTask(createTask({
+      column: "done",
+      mergeDetails: { commitSha: "broken_sha" },
+    }));
+
+    // All git commands fail
+    mockExecSync.mockImplementation(() => {
+      throw new Error("git command failed");
+    });
+
+    const app = createServer(store as any);
+    const response = await requestDiff(app);
+
+    expect(response.status).toBe(200);
+    expect(response.body.files).toEqual([]);
+    expect(response.body.stats).toEqual({
+      filesChanged: 0,
+      additions: 0,
+      deletions: 0,
+    });
+  });
+
+  it("handles multiple files in a done task diff", async () => {
+    const store = new MockStore();
+    store.addTask(createTask({
+      column: "done",
+      mergeDetails: { commitSha: "multi_merge" },
+    }));
+
+    mockExecSync.mockImplementation((command) => {
+      const cmd = String(command);
+      if (cmd === "git rev-parse multi_merge^") {
+        return "multi_parent\n" as any;
+      }
+      if (cmd === "git merge-base multi_merge multi_parent") {
+        return "multi_base\n" as any;
+      }
+      if (cmd === "git diff --name-status multi_base..multi_merge") {
+        return "A\tsrc/new.ts\nM\tsrc/changed.ts\nD\tsrc/removed.ts\n" as any;
+      }
+      if (cmd === 'git diff multi_base..multi_merge -- "src/new.ts"') {
+        return "diff --git a/src/new.ts b/src/new.ts\n+new\n" as any;
+      }
+      if (cmd === 'git diff multi_base..multi_merge -- "src/changed.ts"') {
+        return "diff --git a/src/changed.ts b/src/changed.ts\n-old\n+new\n" as any;
+      }
+      if (cmd === 'git diff multi_base..multi_merge -- "src/removed.ts"') {
+        return "diff --git a/src/removed.ts b/src/removed.ts\n-old line\n" as any;
+      }
+      throw new Error(`Unexpected command: ${cmd}`);
+    });
+
+    const app = createServer(store as any);
+    const response = await requestDiff(app);
+
+    expect(response.status).toBe(200);
+    expect(response.body.files).toHaveLength(3);
+    expect(response.body.files[0]).toMatchObject({ path: "src/new.ts", status: "added" });
+    expect(response.body.files[1]).toMatchObject({ path: "src/changed.ts", status: "modified" });
+    expect(response.body.files[2]).toMatchObject({ path: "src/removed.ts", status: "deleted" });
+  });
+});
