@@ -168,6 +168,33 @@ function mockAgentFailure(error = "agent crashed") {
   mockedCreateHaiAgent.mockRejectedValue(new Error(error));
 }
 
+/**
+ * Create a mock agent that auto-triggers the task_done tool when prompt is called.
+ * This simulates a successful task execution where the agent calls task_done(),
+ * preventing the executor from entering the "finished without task_done — retrying
+ * with new session" branch. Follows the same pattern as executor.test.ts.
+ *
+ * Uses per-session local customTools capture to avoid race conditions when
+ * multiple tasks execute concurrently.
+ */
+function createAgentWithTaskDone() {
+  mockedCreateHaiAgent.mockImplementation((async (opts: any) => {
+    // Capture tools per-session to avoid race conditions with concurrent tasks
+    const localCustomTools = opts.customTools || [];
+    const session = {
+      prompt: vi.fn().mockImplementation(async () => {
+        // Find and execute task_done tool to set taskDone = true
+        const taskDoneTool = localCustomTools.find((t: any) => t.name === "task_done");
+        if (taskDoneTool) {
+          await taskDoneTool.execute("tool-1", {});
+        }
+      }),
+      dispose: vi.fn(),
+    };
+    return { session };
+  }) as any);
+}
+
 // ── Tests begin ───────────────────────────────────────────────────────────
 
 beforeEach(() => {
@@ -186,7 +213,8 @@ describe("In-progress task resume after restart", () => {
     const taskDone = makeTask("FN-003", "done");
     store.listTasks.mockResolvedValue([task1, task2, taskDone]);
 
-    mockAgentSuccess();
+    // Use deterministic mock that calls task_done to prevent retry-with-new-session
+    createAgentWithTaskDone();
 
     const executor = new TaskExecutor(store, "/tmp/test");
     await executor.resumeOrphaned();
@@ -194,11 +222,8 @@ describe("In-progress task resume after restart", () => {
     // Wait for async execute calls to complete
     await new Promise((r) => setTimeout(r, 50));
 
-    // Each in-progress task should have been dispatched for execution.
-    // We assert at least 2 agent creations (one per in-progress task) without
-    // coupling to the internal retry-with-new-session count, which is an
-    // implementation detail of the executor not relevant to restart semantics.
-    expect(mockedCreateHaiAgent.mock.calls.length).toBeGreaterThanOrEqual(2);
+    // Exactly one agent session per in-progress task (no retry inflation)
+    expect(mockedCreateHaiAgent).toHaveBeenCalledTimes(2);
 
     // Both tasks should have received resume log entries (behavioral guarantee)
     expect(store.logEntry).toHaveBeenCalledWith("FN-001", "Resumed after engine restart");
@@ -647,15 +672,15 @@ describe("Crash scenario edge cases", () => {
     vi.clearAllMocks();
     store.listTasks.mockResolvedValue([task]);
     store.getTask.mockResolvedValue(makeTaskDetail("FN-090", "in-progress"));
-    mockAgentSuccess();
+    // Use deterministic mock that calls task_done to prevent retry-with-new-session
+    createAgentWithTaskDone();
 
     await executor.resumeOrphaned();
     await new Promise((r) => setTimeout(r, 50));
 
-    // Agent was created for the re-resume, proving the task was eligible.
-    // We don't assert exact call count — the retry-with-new-session count is
-    // an executor implementation detail, not a restart-resilience concern.
-    expect(mockedCreateHaiAgent).toHaveBeenCalled();
+    // Exactly one agent created for the re-resume, proving the task was eligible
+    // and completed without retry inflation.
+    expect(mockedCreateHaiAgent).toHaveBeenCalledTimes(1);
 
     // Re-resume should have logged again (behavioral guarantee)
     expect(store.logEntry).toHaveBeenCalledWith("FN-090", "Resumed after engine restart");

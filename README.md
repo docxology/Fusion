@@ -405,6 +405,8 @@ The `TaskExecutor` implements retry-with-new-agent-session behavior: when an age
 
 **Prefer behavioral assertions** — verify that tasks are dispatched for execution, resume log entries are written, error handlers fire, and semaphore slots are released. These guarantees are stable regardless of how many internal agent sessions are created.
 
+**For exact call-count assertions**, test mocks must explicitly drive `task_done` by capturing `customTools` from the `createKbAgent` call, locating the `task_done` tool, and executing it from within `session.prompt()`. Use per-session local variable capture (not a shared variable) when multiple tasks execute concurrently — see the `createAgentWithTaskDone()` helper pattern in `executor.test.ts` and `restart.integration.test.ts`.
+
 ## Dashboard Features
 
 ### Interactive Terminal
