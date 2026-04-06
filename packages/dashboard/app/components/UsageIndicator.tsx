@@ -11,13 +11,20 @@ interface UsageIndicatorProps {
 
 /**
  * Format an ISO 8601 timestamp into a user-friendly absolute time string.
- * Shows time like "2:30 PM" for today, "Tue 2:30 PM" for this week,
- * or "Jan 15, 2:30 PM" for later dates.
+ *
+ * Formatting tiers (applied consistently for all providers):
+ *   - Today:          "2:30 PM"
+ *   - Next 7 days:    "Tue 2:30 PM"   (weekday + time)
+ *   - Beyond 7 days:  "Jan 15, 2:30 PM"
+ *
+ * Day difference is computed from calendar midnight boundaries rather than
+ * raw millisecond division to avoid time-of-day rounding artifacts that could
+ * cause inconsistent formatting (e.g., showing "Apr 6" instead of "Sun 2:30 PM"
+ * for a reset that is just under 7 days away).
  *
  * Used by UsageWindowRow to display the absolute reset time next to the
  * relative "resets in X" text when the backend provides a canonical resetAt
- * timestamp. Currently populated only for Claude session/windows where the
- * reset timestamp is available from the API or CLI fallback parser.
+ * timestamp.
  */
 function formatResetAt(isoTimestamp: string): string {
   const date = new Date(isoTimestamp);
@@ -34,16 +41,22 @@ function formatResetAt(isoTimestamp: string): string {
     return timeStr;
   }
 
-  // Check if within the next 7 days — show short weekday
-  const daysUntil = Math.round(
-    (date.getTime() - now.getTime()) / (24 * 60 * 60 * 1000)
+  // Compute calendar-day distance using midnight boundaries.
+  // This avoids floating-point rounding from raw millisecond division
+  // that can cause off-by-one day counts depending on time-of-day.
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOfTarget = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const calendarDaysUntil = Math.round(
+    (startOfTarget.getTime() - startOfToday.getTime()) / (24 * 60 * 60 * 1000)
   );
-  if (daysUntil > 0 && daysUntil <= 6) {
+
+  // Within the next 7 calendar days — show short weekday + time
+  if (calendarDaysUntil >= 1 && calendarDaysUntil <= 7) {
     const weekday = date.toLocaleDateString(undefined, { weekday: "short" });
     return `${weekday} ${timeStr}`;
   }
 
-  // Beyond a week — show full date
+  // Beyond 7 days — show full date
   const dateStr = date.toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",

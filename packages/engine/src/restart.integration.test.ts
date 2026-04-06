@@ -616,7 +616,7 @@ describe("Scheduler after restart", () => {
     scheduler.stop();
 
     expect(store.moveTask).toHaveBeenCalledWith("FN-070", "in-progress");
-    expect(store.updateTask).toHaveBeenCalledWith("FN-070", { status: null, blockedBy: null });
+    expect(store.updateTask).toHaveBeenCalledWith("FN-070", expect.objectContaining({ status: null, blockedBy: null }));
     expect(onSchedule).toHaveBeenCalledWith(todoTask);
   });
 

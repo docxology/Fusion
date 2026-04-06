@@ -1735,4 +1735,177 @@ describe("UsageIndicator", () => {
     // All windows now get fallback text generation when resetText is null but resetAt exists
     expect(document.querySelector(".usage-window-reset")).toBeInTheDocument();
   });
+
+  // formatResetAt boundary regression tests
+  it("resetAt exactly 7 calendar days away shows weekday format, not month/day", () => {
+    // Construct a date exactly 7 calendar days from now at an arbitrary time
+    const now = new Date();
+    const resetAt = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate() + 7,
+      14, 30, 0, 0 // 2:30 PM seven days from now
+    );
+
+    mockUseUsageData.mockReturnValue({
+      providers: [
+        {
+          name: "Codex",
+          icon: "🟢",
+          status: "ok",
+          windows: [
+            {
+              label: "Session",
+              percentUsed: 20,
+              percentLeft: 80,
+              resetText: "resets in 7d",
+              resetMs: 7 * 24 * 60 * 60 * 1000,
+              resetAt: resetAt.toISOString(),
+            },
+          ],
+        },
+      ],
+      loading: false,
+      error: null,
+      lastUpdated: new Date(),
+      refresh: mockRefresh,
+    });
+
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+
+    const resetAtEl = document.querySelector(".usage-window-reset-at");
+    expect(resetAtEl).toBeInTheDocument();
+    // Should show weekday format like "Mon 2:30 PM", NOT "Apr 13, 2:30 PM"
+    expect(resetAtEl?.textContent).toMatch(/^[A-Z][a-z]{2} \d{1,2}:\d{2} [AP]M$/);
+    // Should NOT contain a comma (which would indicate month/day format)
+    expect(resetAtEl?.textContent).not.toMatch(/,/);
+  });
+
+  it("resetAt just under 7 days shows weekday format regardless of time-of-day", () => {
+    // 6 days + 23 hours — time-of-day rounding could previously cause this
+    // to flip between weekday and month/day format
+    const now = new Date();
+    const resetAt = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate() + 6,
+      now.getHours() + 23,
+      now.getMinutes(),
+      now.getSeconds()
+    );
+
+    mockUseUsageData.mockReturnValue({
+      providers: [
+        {
+          name: "Codex",
+          icon: "🟢",
+          status: "ok",
+          windows: [
+            {
+              label: "Session",
+              percentUsed: 30,
+              percentLeft: 70,
+              resetText: "resets in 6d",
+              resetMs: 6 * 24 * 60 * 60 * 1000 + 23 * 60 * 60 * 1000,
+              resetAt: resetAt.toISOString(),
+            },
+          ],
+        },
+      ],
+      loading: false,
+      error: null,
+      lastUpdated: new Date(),
+      refresh: mockRefresh,
+    });
+
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+
+    const resetAtEl = document.querySelector(".usage-window-reset-at");
+    expect(resetAtEl).toBeInTheDocument();
+    // Should show weekday format like "Sat 3:45 PM"
+    expect(resetAtEl?.textContent).toMatch(/^[A-Z][a-z]{2} \d{1,2}:\d{2} [AP]M$/);
+  });
+
+  it("resetAt 8 calendar days away shows month/day format", () => {
+    const now = new Date();
+    const resetAt = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate() + 8,
+      10, 0, 0, 0
+    );
+
+    mockUseUsageData.mockReturnValue({
+      providers: [
+        {
+          name: "Codex",
+          icon: "🟢",
+          status: "ok",
+          windows: [
+            {
+              label: "Weekly",
+              percentUsed: 10,
+              percentLeft: 90,
+              resetText: "resets in 8d",
+              resetMs: 8 * 24 * 60 * 60 * 1000,
+              resetAt: resetAt.toISOString(),
+            },
+          ],
+        },
+      ],
+      loading: false,
+      error: null,
+      lastUpdated: new Date(),
+      refresh: mockRefresh,
+    });
+
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+
+    const resetAtEl = document.querySelector(".usage-window-reset-at");
+    expect(resetAtEl).toBeInTheDocument();
+    // Should show month/day format like "Apr 14, 10:00 AM"
+    expect(resetAtEl?.textContent).toMatch(/^[A-Z][a-z]{2} \d{1,2}, \d{1,2}:\d{2} [AP]M$/);
+  });
+
+  it("resetAt tomorrow consistently shows weekday format at any hour", () => {
+    // Set the reset time to 1:00 AM tomorrow — previously edge-case for rounding
+    const now = new Date();
+    const resetAt = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate() + 1,
+      1, 0, 0, 0 // 1:00 AM tomorrow
+    );
+
+    mockUseUsageData.mockReturnValue({
+      providers: [
+        {
+          name: "Codex",
+          icon: "🟢",
+          status: "ok",
+          windows: [
+            {
+              label: "Session",
+              percentUsed: 50,
+              percentLeft: 50,
+              resetText: "resets in 1d",
+              resetMs: 24 * 60 * 60 * 1000,
+              resetAt: resetAt.toISOString(),
+            },
+          ],
+        },
+      ],
+      loading: false,
+      error: null,
+      lastUpdated: new Date(),
+      refresh: mockRefresh,
+    });
+
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+
+    const resetAtEl = document.querySelector(".usage-window-reset-at");
+    expect(resetAtEl).toBeInTheDocument();
+    // Tomorrow should always be weekday format, never month/day
+    expect(resetAtEl?.textContent).toMatch(/^[A-Z][a-z]{2} \d{1,2}:\d{2} [AP]M$/);
+  });
 });
