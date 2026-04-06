@@ -126,6 +126,7 @@ Access a fully functional PTY (pseudo-terminal) shell directly from the dashboar
 - **Scrollback Buffer**: 5KB of scrollback history with replay on reconnect
 - **Reconnection Support**: Automatic reconnect with exponential backoff if connection drops
 - **Reliable Prompt Delivery**: Initial shell prompt visible through first keyst press
+- **Mobile Keyboard Support**: On mobile devices, the terminal modal automatically adjusts when the on-screen keyboard opens, constraining its height to fit entirely above the keyboard. This ensures the status bar and terminal content remain visible and interactive without bottom overlap. Protected by regression tests for both CSS contract and component behavior.
 - **Keyboard Shortcuts**:
   - `Ctrl+C` - Send SIGINT to process (copy if text selected)
   - `Ctrl+V` - Paste from clipboard

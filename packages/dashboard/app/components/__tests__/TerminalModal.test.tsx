@@ -2571,4 +2571,60 @@ describe("TerminalModal — FN-872 real-device keyboard overlap refinement", () 
       expect(modal.style.getPropertyValue("--keyboard-overlap")).toBe("167px");
     });
   });
+
+  /**
+   * Regression (FN-1025): terminal moves up when keyboard is open but not
+   * high enough — bottom still overlapped.
+   *
+   * The root cause was that the CSS only set max-height (not height) in the
+   * keyboard-open selector, and the inherited min-height: 90vh from desktop
+   * prevented the modal from shrinking to fit above the keyboard.
+   *
+   * This test verifies the component correctly sets BOTH --keyboard-overlap
+   * and --vv-height CSS variables so the CSS contract can constrain the modal
+   * to the visual viewport height (via height + max-height + min-height: auto).
+   */
+  it("FN-1025: sets both --keyboard-overlap and --vv-height for partial overlap (moves up but still overlapped)", async () => {
+    // Simulate a keyboard that partially covers the terminal — the classic
+    // "moves up but not enough" scenario. Overlap of 150px on a 667px screen
+    // means the modal should shrink to 517px (vv.height).
+    const { listeners, mockVV } = simulateChromeAndroid(150);
+
+    render(<TerminalModal isOpen={true} onClose={mockOnClose} />);
+
+    await waitFor(() => {
+      const modal = screen.getByTestId("terminal-modal");
+      // --keyboard-overlap must be set so the CSS selector matches
+      expect(modal.style.getPropertyValue("--keyboard-overlap")).toBe("150px");
+      // --vv-height must be set so height/max-height resolve correctly
+      // vv.height = 667 - 150 = 517
+      expect(modal.style.getPropertyValue("--vv-height")).toBe("517px");
+    });
+  });
+
+  it("FN-1025: updates both CSS variables when keyboard height changes", async () => {
+    const { listeners, mockVV } = simulateChromeAndroid(150);
+
+    render(<TerminalModal isOpen={true} onClose={mockOnClose} />);
+
+    await waitFor(() => {
+      const modal = screen.getByTestId("terminal-modal");
+      expect(modal.style.getPropertyValue("--keyboard-overlap")).toBe("150px");
+      expect(modal.style.getPropertyValue("--vv-height")).toBe("517px");
+    });
+
+    // Keyboard grows taller: overlap increases from 150 to 300
+    Object.defineProperty(mockVV, "height", { value: 367, writable: true, configurable: true });
+
+    act(() => {
+      for (const cb of listeners.resize) cb();
+    });
+
+    await waitFor(() => {
+      const modal = screen.getByTestId("terminal-modal");
+      // overlap = 667 - 367 = 300
+      expect(modal.style.getPropertyValue("--keyboard-overlap")).toBe("300px");
+      expect(modal.style.getPropertyValue("--vv-height")).toBe("367px");
+    });
+  });
 });

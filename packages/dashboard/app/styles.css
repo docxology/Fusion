@@ -7881,6 +7881,16 @@ body {
      works uniformly across Chrome Android and iOS Safari.
      Falls back to 100dvh - overlap when --vv-height is not available. */
   .terminal-modal[style*="--keyboard-overlap"] {
+    /* Neutralize inherited desktop min-height (90vh) so the modal can
+       shrink below the full-viewport mobile default when the keyboard
+       is open.  Without this, min-height keeps the modal taller than
+       the available space and the bottom overlaps the keyboard. */
+    min-height: auto;
+    /* Apply both height and max-height so the modal is *exactly* the
+       visual viewport height — not just capped at it.  Using height
+       ensures the element cannot be taller than max-height due to
+       inherited min-height or flex layout. */
+    height: var(--vv-height, calc(100dvh - var(--keyboard-overlap, 0px)));
     max-height: var(--vv-height, calc(100dvh - var(--keyboard-overlap, 0px)));
   }
 }
