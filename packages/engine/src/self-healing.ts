@@ -293,7 +293,7 @@ export class SelfHealingManager {
 
       let recovered = 0;
       for (const task of stuckCompleted) {
-        log.log(`Recovering completed task ${task.id}: ${task.title || task.description.slice(0, 60)}`);
+        log.log(`Recovering completed task ${task.id}: ${task.title || task.description?.slice(0, 60) || "(untitled)"}`);
         const success = await recoverFn(task);
         if (success) recovered++;
       }
