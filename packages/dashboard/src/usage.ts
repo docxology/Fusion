@@ -842,6 +842,13 @@ async function fetchClaudeUsage(): Promise<ProviderUsage> {
         const msLeft = new Date(resetAtValue).getTime() - Date.now();
         resetMs = msLeft > 0 ? msLeft : 0;
         resetText = msLeft > 0 ? `resets in ${formatDuration(msLeft)}` : "resetting now";
+      } else if (windowDurationMs === FIVE_HOURS_MS) {
+        // Fallback for session window: when the API doesn't provide reset time,
+        // use the full window duration as a best-effort estimate. This enables
+        // pace calculation and reset text for the session (5h) window even when
+        // the API omits resets_at / reset_at / resetAt fields.
+        resetMs = windowDurationMs;
+        resetText = "resets in 5h";
       }
 
       return {

@@ -769,7 +769,7 @@ describe("usage", () => {
       expect(weeklyWindow.resetAt).toBeDefined();
     });
 
-    it("omits resetAt when API response has no resets_at field", async () => {
+    it("uses fallback reset time for session window when API omits resets_at", async () => {
       setupClaudeMocks({
         credFileContent: {
           accessToken: "test-token",
@@ -781,7 +781,7 @@ describe("usage", () => {
       setupClaudeApiResponse({
         five_hour: {
           utilization: 30.0,
-          // no resets_at field
+          // no resets_at field — triggers fallback
         },
       });
 
@@ -791,7 +791,40 @@ describe("usage", () => {
       expect(claude.status).toBe("ok");
       const sessionWindow = claude.windows.find((w) => w.label.includes("Session"))!;
       expect(sessionWindow.resetAt).toBeUndefined();
-      expect(sessionWindow.resetText).toBeNull();
+      // Fallback: when resets_at is missing, session window gets resetMs = 5h
+      expect(sessionWindow.resetMs).toBe(5 * 60 * 60 * 1000);
+      expect(sessionWindow.resetText).toBe("resets in 5h");
+    });
+
+    it("calculates pace for session window with fallback reset time", async () => {
+      setupClaudeMocks({
+        credFileContent: {
+          accessToken: "test-token",
+          scopes: ["user:profile"],
+          subscriptionType: "pro",
+        },
+      });
+
+      setupClaudeApiResponse({
+        five_hour: {
+          utilization: 50.0,
+          // no resets_at — fallback uses full 5h duration
+        },
+      });
+
+      const providers = await fetchAllProviderUsage();
+      const claude = providers.find((p) => p.name === "Claude")!;
+
+      expect(claude.status).toBe("ok");
+      const sessionWindow = claude.windows.find((w) => w.label.includes("Session"))!;
+      expect(sessionWindow.percentUsed).toBe(50);
+      // With fallback resetMs = 5h and percentUsed = 50%, the window duration
+      // and reset time are both set, enabling pace indicator on the frontend.
+      expect(sessionWindow.windowDurationMs).toBe(5 * 60 * 60 * 1000);
+      expect(sessionWindow.resetMs).toBe(5 * 60 * 60 * 1000);
+      expect(sessionWindow.resetText).toBe("resets in 5h");
+      // resetAt stays undefined because the API didn't provide it
+      expect(sessionWindow.resetAt).toBeUndefined();
     });
 
     it("handles empty JSON object from API gracefully", async () => {
