@@ -1203,6 +1203,22 @@ export function SettingsModal({
               <small>Timeout in minutes for detecting stuck tasks. When a task&apos;s agent session shows no activity for longer than this duration, the task is terminated and retried. Leave empty to disable. Suggested: 10.</small>
             </div>
             <div className="form-group">
+              <label htmlFor="maxStuckKills">Max Stuck Retries</label>
+              <input
+                id="maxStuckKills"
+                type="number"
+                min={1}
+                step={1}
+                value={form.maxStuckKills ?? ""}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  const num = Number(val);
+                  setForm((f) => ({ ...f, maxStuckKills: val && num > 0 ? num : undefined }));
+                }}
+              />
+              <small>Maximum stuck-detector retries before a task is marked failed. Default: 6.</small>
+            </div>
+            <div className="form-group">
               <label htmlFor="groupOverlappingFiles" className="checkbox-label">
                 <input
                   id="groupOverlappingFiles"

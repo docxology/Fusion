@@ -1,5 +1,7 @@
 import type { Task } from "@fusion/core";
 
+const NON_STUCK_STATUSES = new Set(["failed", "stuck-killed"]);
+
 /**
  * Check if a task is stuck based on the project's stuck timeout setting.
  *
@@ -13,6 +15,10 @@ import type { Task } from "@fusion/core";
  */
 export function isTaskStuck(task: Task, taskStuckTimeoutMs: number | undefined): boolean {
   if (task.column !== "in-progress") {
+    return false;
+  }
+
+  if (task.status && NON_STUCK_STATUSES.has(task.status)) {
     return false;
   }
 

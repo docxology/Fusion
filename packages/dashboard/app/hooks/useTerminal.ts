@@ -117,8 +117,6 @@ export function useTerminal(sessionId: string | null): UseTerminalReturn {
     const buffer = initialBufferRef.current;
     if (buffer.connected) {
       callback(buffer.connected);
-      // Clear after replay — connected info is one-shot
-      buffer.connected = null;
     }
     return () => onConnectCallbacksRef.current.delete(callback);
   }, []);
@@ -129,8 +127,6 @@ export function useTerminal(sessionId: string | null): UseTerminalReturn {
     const buffer = initialBufferRef.current;
     if (buffer.scrollback) {
       callback(buffer.scrollback);
-      // Clear after replay — scrollback is one-shot per connection
-      buffer.scrollback = null;
     }
     return () => onScrollbackCallbacksRef.current.delete(callback);
   }, []);

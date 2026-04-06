@@ -188,7 +188,7 @@ export class SelfHealingManager {
   async checkStuckBudget(taskId: string): Promise<boolean> {
     try {
       const settings = await this.store.getSettings();
-      const maxKills = settings.maxStuckKills ?? 3;
+      const maxKills = settings.maxStuckKills ?? 6;
 
       const task = await this.store.getTask(taskId);
       const newCount = (task.stuckKillCount ?? 0) + 1;

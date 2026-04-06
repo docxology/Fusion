@@ -24,6 +24,7 @@ const defaultSettings: Settings = {
   ntfyTopic: undefined,
   ntfyEvents: ["in-review", "merged", "failed"],
   taskStuckTimeoutMs: undefined,
+  maxStuckKills: 6,
 };
 
 vi.mock("../../api", () => ({
@@ -1948,6 +1949,42 @@ describe("SettingsModal", () => {
     fireEvent.click(screen.getByText("Scheduling"));
     const input = screen.getByLabelText("Stuck Task Timeout (minutes)") as HTMLInputElement;
     expect(input.value).toBe("10");
+  });
+
+  it("Max Stuck Retries field saves correctly when set to a value", async () => {
+    render(<SettingsModal onClose={onClose} addToast={addToast} />);
+    await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByText("Scheduling"));
+    const input = screen.getByLabelText("Max Stuck Retries") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "8" } });
+    expect(input.value).toBe("8");
+
+    fireEvent.click(screen.getByText("Save"));
+    await waitFor(() => expect(updateSettings).toHaveBeenCalledTimes(1));
+
+    const payload = (updateSettings as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(payload.maxStuckKills).toBe(8);
+  });
+
+  it("Max Stuck Retries field submits undefined when cleared", async () => {
+    (fetchSettings as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ...defaultSettings,
+      maxStuckKills: 6,
+    });
+
+    render(<SettingsModal onClose={onClose} addToast={addToast} />);
+    await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByText("Scheduling"));
+    const input = screen.getByLabelText("Max Stuck Retries") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "" } });
+
+    fireEvent.click(screen.getByText("Save"));
+    await waitFor(() => expect(updateSettings).toHaveBeenCalledTimes(1));
+
+    const payload = (updateSettings as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(payload.maxStuckKills).toBeUndefined();
   });
 
   it("scope banners render for global and project sections", async () => {

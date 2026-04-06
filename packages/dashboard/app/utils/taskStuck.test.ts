@@ -47,6 +47,18 @@ describe("isTaskStuck", () => {
     expect(isTaskStuck(task, 600000)).toBe(false);
   });
 
+  it("returns false for failed in-progress tasks", () => {
+    const stale = new Date(Date.now() - 600001).toISOString();
+    const task = createTask({ status: "failed", updatedAt: stale });
+    expect(isTaskStuck(task, 600000)).toBe(false);
+  });
+
+  it("returns false for stuck-killed in-progress tasks", () => {
+    const stale = new Date(Date.now() - 600001).toISOString();
+    const task = createTask({ status: "stuck-killed", updatedAt: stale });
+    expect(isTaskStuck(task, 600000)).toBe(false);
+  });
+
   it("returns false for recent in-progress tasks within timeout", () => {
     const recent = new Date(Date.now() - 300000).toISOString(); // 5 minutes ago
     const task = createTask({ updatedAt: recent });
@@ -122,6 +134,7 @@ describe("countStuckTasks", () => {
     const tasks = [
       createTask({ id: "FN-001", updatedAt: stale }), // stuck
       createTask({ id: "FN-002", updatedAt: recent }), // not stuck
+      createTask({ id: "FN-004", status: "failed", updatedAt: stale }), // terminal status
       createTask({ id: "FN-003", column: "todo", updatedAt: stale }), // not in-progress
     ];
     expect(countStuckTasks(tasks, 600000)).toBe(1);

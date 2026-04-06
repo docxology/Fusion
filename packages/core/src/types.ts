@@ -836,7 +836,7 @@ export interface ProjectSettings {
   /** Maximum delay cap in milliseconds for auto-unpause backoff. Default: 3600000 (60 min). */
   autoUnpauseMaxDelayMs?: number;
   /** Maximum number of times the stuck-task detector can kill and re-queue a task
-   *  before it is marked as permanently failed. Default: 3. */
+   *  before it is marked as permanently failed. Default: 6. */
   maxStuckKills?: number;
   /** Maximum number of child agents a single parent agent can spawn.
    *  Limits the fan-out per executor task to prevent resource exhaustion.
@@ -977,7 +977,7 @@ export const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
   autoUnpauseEnabled: true,
   autoUnpauseBaseDelayMs: 300_000,
   autoUnpauseMaxDelayMs: 3_600_000,
-  maxStuckKills: 3,
+  maxStuckKills: 6,
   maxSpawnedAgentsPerParent: 5,
   maxSpawnedAgentsGlobal: 20,
   maintenanceIntervalMs: 900_000,
@@ -1058,6 +1058,7 @@ export const PROJECT_SETTINGS_KEYS: ReadonlyArray<keyof ProjectSettings> = [
   "smartConflictResolution",
   "requirePlanApproval",
   "taskStuckTimeoutMs",
+  "maxStuckKills",
   "autoUpdatePrStatus",
   "autoCreatePr",
   "autoBackupEnabled",

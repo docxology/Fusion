@@ -736,7 +736,7 @@ export class TaskExecutor {
         this.createTaskCreateTool(),
         this.createTaskAddDepTool(task.id),
         this.createTaskDoneTool(task.id, () => { taskDone = true; }),
-        this.createReviewStepTool(task.id, worktreePath, detail.prompt, codeReviewVerdicts, sessionRef, stepCheckpoints, detail),
+        this.createReviewStepTool(task.id, worktreePath, detail.prompt, codeReviewVerdicts, sessionRef, stepCheckpoints, detail, stuckDetector),
         this.createSpawnAgentTool(task.id, worktreePath, settings),
       ];
 
@@ -1471,6 +1471,7 @@ export class TaskExecutor {
     sessionRef: { current: AgentSession | null },
     stepCheckpoints: Map<number, string>,
     detail: TaskDetail,
+    stuckDetector?: StuckTaskDetector,
   ): ToolDefinition {
     const store = this.store;
     const options = this.options;
@@ -1518,6 +1519,7 @@ export class TaskExecutor {
             result.summary,
           );
           reviewerLog.log(`${taskId}: Step ${step} ${reviewType} → ${result.verdict}`);
+          stuckDetector?.recordProgress(taskId);
 
           // Track code review verdicts for enforcement. Plan reviews remain
           // advisory — only code reviews write to the verdict map.

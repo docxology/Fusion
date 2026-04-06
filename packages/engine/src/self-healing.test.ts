@@ -30,7 +30,7 @@ function createMockStore(overrides: Record<string, unknown> = {}): TaskStore & E
       autoUnpauseEnabled: true,
       autoUnpauseBaseDelayMs: 100,
       autoUnpauseMaxDelayMs: 800,
-      maxStuckKills: 3,
+      maxStuckKills: 6,
       maintenanceIntervalMs: 0,
       maxWorktrees: 4,
       globalPause: true, // default: paused (for auto-unpause tests)
@@ -192,7 +192,7 @@ describe("SelfHealingManager", () => {
       expect(store.updateTask).toHaveBeenCalledWith("FN-001", { stuckKillCount: 1 });
       expect(store.logEntry).toHaveBeenCalledWith(
         "FN-001",
-        expect.stringContaining("Stuck kill 1/3"),
+        expect.stringContaining("Stuck kill 1/6"),
       );
     });
 
@@ -213,7 +213,7 @@ describe("SelfHealingManager", () => {
     it("returns false and marks failed when budget exceeded", async () => {
       (store.getTask as ReturnType<typeof vi.fn>).mockResolvedValue({
         id: "FN-001",
-        stuckKillCount: 3,
+        stuckKillCount: 6,
       } as unknown as Task);
 
       manager.start();
@@ -222,9 +222,9 @@ describe("SelfHealingManager", () => {
 
       expect(result).toBe(false);
       expect(store.updateTask).toHaveBeenCalledWith("FN-001", {
-        stuckKillCount: 4,
+        stuckKillCount: 7,
         status: "failed",
-        error: expect.stringContaining("exceeded maximum of 3"),
+        error: expect.stringContaining("exceeded maximum of 6"),
       });
       expect(store.logEntry).toHaveBeenCalledWith(
         "FN-001",
