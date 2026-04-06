@@ -361,9 +361,9 @@ new file mode 100644
   });
 });
 
-// ── Done task diff: merge-base computation ────────────────────────────────────
-// Done tasks use merge-base to isolate only this task's changes, avoiding
-// showing files from unrelated commits on the main branch.
+// ── Done task diff: first-parent computation ──────────────────────────────────
+// Done tasks use the first parent of the merge commit (sha^) to isolate only
+// this task's changes, avoiding files from unrelated commits on the main branch.
 describe("GET /api/tasks/:id/diff — done tasks", () => {
   beforeEach(() => {
     vi.clearAllMocks();
