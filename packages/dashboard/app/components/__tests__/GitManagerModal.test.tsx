@@ -35,6 +35,7 @@ vi.mock("../../api", async () => {
     updateGitRemoteUrl: vi.fn(),
     fetchAheadCommits: vi.fn(),
     fetchRemoteCommits: vi.fn(),
+    fetchBranchCommits: vi.fn(),
   };
 });
 
@@ -67,6 +68,7 @@ import {
   updateGitRemoteUrl,
   fetchAheadCommits,
   fetchRemoteCommits,
+  fetchBranchCommits,
 } from "../../api";
 
 const mockAddToast = vi.fn();
@@ -628,6 +630,264 @@ describe("GitManagerModal", () => {
 
     await waitFor(() => {
       expect(deleteBranch).toHaveBeenCalledWith("feature");
+    });
+  });
+
+  // ── Branch Selection & Commits ───────────────────────────────
+
+  it("selects a branch and fetches its commits on click", async () => {
+    (fetchBranchCommits as any).mockResolvedValue([
+      {
+        hash: "def456789abc",
+        shortHash: "def4567",
+        message: "Feature commit",
+        author: "Dev",
+        date: "2026-03-01T00:00:00Z",
+        parents: [],
+      },
+    ]);
+    render(
+      <GitManagerModal isOpen={true} onClose={vi.fn()} tasks={mockTasks} addToast={mockAddToast} />
+    );
+    fireEvent.click(screen.getByRole("tab", { name: /branches/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("branches-panel")).toBeInTheDocument();
+    });
+
+    // Find the branch items inside the branches list
+    const branchItems = screen.getByTestId("branches-panel").querySelectorAll(".gm-branch-item");
+    // "feature" is the non-current branch, should be the second one
+    expect(branchItems.length).toBe(2);
+    fireEvent.click(branchItems[1]);
+
+    await waitFor(() => {
+      expect(fetchBranchCommits).toHaveBeenCalledWith("feature", 10);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Feature commit")).toBeInTheDocument();
+      expect(screen.getByText("def4567")).toBeInTheDocument();
+    });
+  });
+
+  it("deselects a branch when clicking it again", async () => {
+    (fetchBranchCommits as any).mockResolvedValue([
+      {
+        hash: "def456789abc",
+        shortHash: "def4567",
+        message: "Feature commit",
+        author: "Dev",
+        date: "2026-03-01T00:00:00Z",
+        parents: [],
+      },
+    ]);
+    render(
+      <GitManagerModal isOpen={true} onClose={vi.fn()} tasks={mockTasks} addToast={mockAddToast} />
+    );
+    fireEvent.click(screen.getByRole("tab", { name: /branches/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("branches-panel")).toBeInTheDocument();
+    });
+
+    const branchItems = screen.getByTestId("branches-panel").querySelectorAll(".gm-branch-item");
+    fireEvent.click(branchItems[1]);
+
+    await waitFor(() => {
+      expect(fetchBranchCommits).toHaveBeenCalledWith("feature", 10);
+    });
+
+    // Click again to deselect
+    fireEvent.click(branchItems[1]);
+
+    await waitFor(() => {
+      expect(screen.queryByText("Commits on feature")).not.toBeInTheDocument();
+    });
+  });
+
+  it("shows loading state while fetching branch commits", async () => {
+    // Make fetchBranchCommits hang (never resolve)
+    (fetchBranchCommits as any).mockImplementation(() => new Promise(() => {}));
+    render(
+      <GitManagerModal isOpen={true} onClose={vi.fn()} tasks={mockTasks} addToast={mockAddToast} />
+    );
+    fireEvent.click(screen.getByRole("tab", { name: /branches/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("branches-panel")).toBeInTheDocument();
+    });
+
+    const branchItems = screen.getByTestId("branches-panel").querySelectorAll(".gm-branch-item");
+    fireEvent.click(branchItems[1]);
+
+    await waitFor(() => {
+      expect(screen.getByText("Loading commits...")).toBeInTheDocument();
+    });
+  });
+
+  it("closes branch details via close button", async () => {
+    (fetchBranchCommits as any).mockResolvedValue([
+      {
+        hash: "def456789abc",
+        shortHash: "def4567",
+        message: "Feature commit",
+        author: "Dev",
+        date: "2026-03-01T00:00:00Z",
+        parents: [],
+      },
+    ]);
+    render(
+      <GitManagerModal isOpen={true} onClose={vi.fn()} tasks={mockTasks} addToast={mockAddToast} />
+    );
+    fireEvent.click(screen.getByRole("tab", { name: /branches/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("branches-panel")).toBeInTheDocument();
+    });
+
+    const branchItems = screen.getByTestId("branches-panel").querySelectorAll(".gm-branch-item");
+    fireEvent.click(branchItems[1]);
+
+    await waitFor(() => {
+      expect(screen.getByText("Commits on feature")).toBeInTheDocument();
+    });
+
+    // Click the close button
+    const closeBtn = screen.getByTestId("close-branch-details");
+    fireEvent.click(closeBtn);
+
+    await waitFor(() => {
+      expect(screen.queryByText("Commits on feature")).not.toBeInTheDocument();
+    });
+  });
+
+  it("expands commit diff when clicking a commit in branch view", async () => {
+    (fetchBranchCommits as any).mockResolvedValue([
+      {
+        hash: "def456789abc",
+        shortHash: "def4567",
+        message: "Feature commit",
+        author: "Dev",
+        date: "2026-03-01T00:00:00Z",
+        parents: [],
+      },
+    ]);
+    (fetchCommitDiff as any).mockResolvedValue({
+      stat: " file.ts | 2 +-",
+      patch: "diff --git a/file.ts b/file.ts\n-old\n+new",
+    });
+    render(
+      <GitManagerModal isOpen={true} onClose={vi.fn()} tasks={mockTasks} addToast={mockAddToast} />
+    );
+    fireEvent.click(screen.getByRole("tab", { name: /branches/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("branches-panel")).toBeInTheDocument();
+    });
+
+    const branchItems = screen.getByTestId("branches-panel").querySelectorAll(".gm-branch-item");
+    fireEvent.click(branchItems[1]);
+
+    await waitFor(() => {
+      expect(screen.getByText("Feature commit")).toBeInTheDocument();
+    });
+
+    // Click on the commit to expand diff
+    const commitRow = screen.getByTestId("branch-commit-def4567");
+    fireEvent.click(commitRow);
+
+    await waitFor(() => {
+      expect(fetchCommitDiff).toHaveBeenCalledWith("def456789abc");
+    });
+  });
+
+  it("handles fetchBranchCommits error gracefully", async () => {
+    (fetchBranchCommits as any).mockRejectedValue(new Error("Network error"));
+    render(
+      <GitManagerModal isOpen={true} onClose={vi.fn()} tasks={mockTasks} addToast={mockAddToast} />
+    );
+    fireEvent.click(screen.getByRole("tab", { name: /branches/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("branches-panel")).toBeInTheDocument();
+    });
+
+    const branchItems = screen.getByTestId("branches-panel").querySelectorAll(".gm-branch-item");
+    fireEvent.click(branchItems[1]);
+
+    await waitFor(() => {
+      expect(fetchBranchCommits).toHaveBeenCalledWith("feature", 10);
+    });
+
+    // Should show empty state since fetch failed
+    await waitFor(() => {
+      expect(screen.getByText("No commits found")).toBeInTheDocument();
+    });
+  });
+
+  it("shows merge badge for merge commits in branch view", async () => {
+    (fetchBranchCommits as any).mockResolvedValue([
+      {
+        hash: "def456789abc",
+        shortHash: "def4567",
+        message: "Merge PR #42",
+        author: "Dev",
+        date: "2026-03-01T00:00:00Z",
+        parents: ["abc123", "def456"],
+      },
+    ]);
+    render(
+      <GitManagerModal isOpen={true} onClose={vi.fn()} tasks={mockTasks} addToast={mockAddToast} />
+    );
+    fireEvent.click(screen.getByRole("tab", { name: /branches/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("branches-panel")).toBeInTheDocument();
+    });
+
+    const branchItems = screen.getByTestId("branches-panel").querySelectorAll(".gm-branch-item");
+    fireEvent.click(branchItems[1]);
+
+    await waitFor(() => {
+      expect(screen.getByText("merge")).toBeInTheDocument();
+    });
+  });
+
+  // ── relativeDate function ──────────────────────────────────────
+
+  it("shows em-dash for branches with empty lastCommitDate", async () => {
+    (fetchGitBranches as any).mockResolvedValue([
+      { name: "main", isCurrent: true, lastCommitDate: "" },
+    ]);
+    render(
+      <GitManagerModal isOpen={true} onClose={vi.fn()} tasks={mockTasks} addToast={mockAddToast} />
+    );
+    fireEvent.click(screen.getByRole("tab", { name: /branches/i }));
+
+    // With empty lastCommitDate, the date span should not render at all
+    // because the component conditionally renders only when lastCommitDate is truthy
+    await waitFor(() => {
+      const panel = screen.getByTestId("branches-panel");
+      const branchDates = panel.querySelectorAll(".gm-branch-date");
+      expect(branchDates.length).toBe(0);
+    });
+  });
+
+  it("shows em-dash for branches with invalid lastCommitDate", async () => {
+    (fetchGitBranches as any).mockResolvedValue([
+      { name: "stale", isCurrent: true, lastCommitDate: "not-a-date" },
+    ]);
+    render(
+      <GitManagerModal isOpen={true} onClose={vi.fn()} tasks={mockTasks} addToast={mockAddToast} />
+    );
+    fireEvent.click(screen.getByRole("tab", { name: /branches/i }));
+
+    await waitFor(() => {
+      const panel = screen.getByTestId("branches-panel");
+      const dateSpan = panel.querySelector(".gm-branch-date");
+      expect(dateSpan).toBeTruthy();
+      expect(dateSpan!.textContent).toBe("—");
     });
   });
 

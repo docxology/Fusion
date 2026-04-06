@@ -408,6 +408,42 @@ function isValidGitRef(ref: string): boolean {
 }
 
 /**
+ * Get recent commits for a specific branch.
+ * @param branch The branch name (validated before calling)
+ * @param limit Maximum number of commits to return
+ * @param cwd Working directory
+ */
+function getGitCommitsForBranch(branch: string, limit: number = 10, cwd?: string): GitCommit[] {
+  try {
+    const format = "%H|%h|%s|%an|%aI|%P";
+    const execOptions = { encoding: "utf-8" as const, timeout: 10000, cwd };
+    const output = execSync(`git log --max-count=${limit} --pretty=format:"${format}" "${branch}"`, execOptions);
+
+    const commits: GitCommit[] = [];
+    for (const line of output.split("\n")) {
+      const parts = line.split("|");
+      if (parts.length < 5) continue;
+
+      const [hash, shortHash, message, author, date, parentsStr] = parts;
+      const parents = parentsStr ? parentsStr.split(" ").filter(Boolean) : [];
+
+      commits.push({
+        hash,
+        shortHash,
+        message: message || "",
+        author: author || "",
+        date: date || "",
+        parents,
+      });
+    }
+
+    return commits;
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Get commits ahead of the upstream tracking branch (commits that would be pushed).
  * Returns the list of local commits not yet present on the upstream.
  * Returns an empty array if there is no upstream configured.
@@ -2871,6 +2907,32 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
       }
       const branches = getGitBranches(rootDir);
       res.json(branches);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  /**
+   * GET /api/git/branches/:name/commits
+   * Returns recent commits for a specific branch.
+   * Query params: limit (default 10, max 100)
+   * Response: Array of GitCommit objects
+   */
+  router.get("/git/branches/:name/commits", (req, res) => {
+    try {
+      const rootDir = store.getRootDir();
+      if (!isGitRepo(rootDir)) {
+        res.status(400).json({ error: "Not a git repository" });
+        return;
+      }
+      const { name } = req.params;
+      if (!isValidGitRef(name)) {
+        res.status(400).json({ error: "Invalid branch name" });
+        return;
+      }
+      const limit = Math.min(Math.max(parseInt(String(req.query.limit)) || 10, 1), 100);
+      const commits = getGitCommitsForBranch(name, limit, rootDir);
+      res.json(commits);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

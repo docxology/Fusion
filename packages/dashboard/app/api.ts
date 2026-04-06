@@ -869,6 +869,12 @@ export function fetchGitBranches(): Promise<GitBranch[]> {
   return api<GitBranch[]>("/git/branches");
 }
 
+/** Fetch recent commits for a specific branch */
+export function fetchBranchCommits(branchName: string, limit?: number): Promise<GitCommit[]> {
+  const query = limit ? `?limit=${limit}` : "";
+  return api<GitCommit[]>(`/git/branches/${encodeURIComponent(branchName)}/commits${query}`);
+}
+
 /** Fetch all worktrees */
 export function fetchGitWorktrees(): Promise<GitWorktree[]> {
   return api<GitWorktree[]>("/git/worktrees");

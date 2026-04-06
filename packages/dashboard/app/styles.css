@@ -16220,6 +16220,80 @@ html .column.drag-over * {
   flex-shrink: 0;
 }
 
+/* ── Branch Selection Details ── */
+
+.gm-branch-item.selected {
+  background: rgba(88, 166, 255, 0.08);
+  cursor: pointer;
+}
+
+.gm-branch-item.selected:hover {
+  background: rgba(88, 166, 255, 0.12);
+}
+
+.gm-branch-details {
+  background: rgba(0, 0, 0, 0.15);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  padding: var(--space-sm) var(--space-md);
+}
+
+.gm-branch-details-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-sm);
+}
+
+.gm-branch-details-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.gm-branch-details-loading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.gm-branch-commits-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.gm-branch-commit {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+.gm-branch-commit:last-child {
+  border-bottom: none;
+}
+
+.gm-branch-commit-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: var(--space-xs) var(--space-sm);
+  background: none;
+  border: none;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: background var(--transition-fast);
+}
+
+.gm-branch-commit-row:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
 /* ── Worktrees Panel ── */
 
 .gm-worktree-stats {
@@ -16856,6 +16930,18 @@ html .column.drag-over * {
 
 [data-theme="light"] .gm-branch-item.current {
   background: rgba(9, 105, 218, 0.04);
+}
+
+[data-theme="light"] .gm-branch-item.selected {
+  background: rgba(9, 105, 218, 0.08);
+}
+
+[data-theme="light"] .gm-branch-item.selected:hover {
+  background: rgba(9, 105, 218, 0.12);
+}
+
+[data-theme="light"] .gm-branch-details {
+  background: rgba(0, 0, 0, 0.02);
 }
 
 [data-theme="light"] .gm-hash {

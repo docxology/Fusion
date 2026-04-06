@@ -42,6 +42,7 @@ import {
   updateGitRemoteUrl,
   fetchAheadCommits,
   fetchRemoteCommits,
+  fetchBranchCommits,
 } from "../api";
 import {
   GitBranch as GitBranchIcon,
@@ -138,9 +139,11 @@ function useCopyToClipboard(addToast: (msg: string, type?: ToastType) => void) {
   );
 }
 
-/** Format relative date */
-function relativeDate(dateStr: string): string {
+/** Format relative date. Returns "—" for invalid/empty dates. */
+function relativeDate(dateStr: string | undefined | null): string {
+  if (!dateStr) return "—";
   const date = new Date(dateStr);
+  if (isNaN(date.getTime())) return "—";
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
   const diffMins = Math.floor(diffMs / 60000);
@@ -195,6 +198,12 @@ export function GitManagerModal({ isOpen, onClose, tasks, addToast }: GitManager
   const [newBranchName, setNewBranchName] = useState("");
   const [branchBase, setBranchBase] = useState("");
   const [branchSearch, setBranchSearch] = useState("");
+  const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
+  const [branchCommits, setBranchCommits] = useState<GitCommit[]>([]);
+  const [loadingBranchCommits, setLoadingBranchCommits] = useState(false);
+  const [expandedBranchCommit, setExpandedBranchCommit] = useState<string | null>(null);
+  const [branchCommitDiff, setBranchCommitDiff] = useState<{ stat: string; patch: string } | null>(null);
+  const [loadingBranchCommitDiff, setLoadingBranchCommitDiff] = useState(false);
 
   // ── Worktrees state
   const [worktrees, setWorktrees] = useState<GitWorktree[]>([]);
@@ -502,6 +511,61 @@ export function GitManagerModal({ isOpen, onClose, tasks, addToast }: GitManager
     return branches.filter((b) => b.name.toLowerCase().includes(q));
   }, [branches, branchSearch]);
 
+  // ── Branch Selection Handlers ───────────────────────────────────
+
+  /** Toggle branch selection to show commits for that branch */
+  const handleSelectBranch = useCallback(async (name: string) => {
+    if (selectedBranch === name) {
+      // Deselect
+      setSelectedBranch(null);
+      setBranchCommits([]);
+      setExpandedBranchCommit(null);
+      setBranchCommitDiff(null);
+      return;
+    }
+    setSelectedBranch(name);
+    setBranchCommits([]);
+    setExpandedBranchCommit(null);
+    setBranchCommitDiff(null);
+    setLoadingBranchCommits(true);
+    try {
+      const data = await fetchBranchCommits(name, 10);
+      setBranchCommits(data);
+    } catch {
+      setBranchCommits([]);
+    } finally {
+      setLoadingBranchCommits(false);
+    }
+  }, [selectedBranch]);
+
+  /** Click a commit in the branch view to expand/collapse its diff */
+  const handleBranchCommitClick = useCallback(async (hash: string) => {
+    if (expandedBranchCommit === hash) {
+      setExpandedBranchCommit(null);
+      setBranchCommitDiff(null);
+      return;
+    }
+    setExpandedBranchCommit(hash);
+    setBranchCommitDiff(null);
+    setLoadingBranchCommitDiff(true);
+    try {
+      const diff = await fetchCommitDiff(hash);
+      setBranchCommitDiff(diff);
+    } catch {
+      setBranchCommitDiff(null);
+    } finally {
+      setLoadingBranchCommitDiff(false);
+    }
+  }, [expandedBranchCommit]);
+
+  /** Close branch details panel */
+  const handleCloseBranchDetails = useCallback(() => {
+    setSelectedBranch(null);
+    setBranchCommits([]);
+    setExpandedBranchCommit(null);
+    setBranchCommitDiff(null);
+  }, []);
+
   // ── Stash Handlers ──────────────────────────────────────────────
 
   const handleCreateStash = useCallback(async (e: React.FormEvent) => {
@@ -731,6 +795,15 @@ export function GitManagerModal({ isOpen, onClose, tasks, addToast }: GitManager
                 onDeleteBranch={handleDeleteBranch}
                 loading={loading}
                 allBranches={branches}
+                selectedBranch={selectedBranch}
+                branchCommits={branchCommits}
+                loadingBranchCommits={loadingBranchCommits}
+                expandedBranchCommit={expandedBranchCommit}
+                branchCommitDiff={branchCommitDiff}
+                loadingBranchCommitDiff={loadingBranchCommitDiff}
+                onSelectBranch={handleSelectBranch}
+                onBranchCommitClick={handleBranchCommitClick}
+                onCloseBranchDetails={handleCloseBranchDetails}
               />
             )}
 
@@ -1190,7 +1263,7 @@ function CommitsPanel({
   );
 }
 
-/** Branches panel with creation, search, checkout, delete */
+/** Branches panel with creation, search, checkout, delete, and branch commit viewing */
 function BranchesPanel({
   branches,
   branchSearch,
@@ -1204,6 +1277,15 @@ function BranchesPanel({
   onDeleteBranch,
   loading,
   allBranches,
+  selectedBranch,
+  branchCommits,
+  loadingBranchCommits,
+  expandedBranchCommit,
+  branchCommitDiff,
+  loadingBranchCommitDiff,
+  onSelectBranch,
+  onBranchCommitClick,
+  onCloseBranchDetails,
 }: {
   branches: GitBranch[];
   branchSearch: string;
@@ -1217,6 +1299,15 @@ function BranchesPanel({
   onDeleteBranch: (name: string) => void;
   loading: boolean;
   allBranches: GitBranch[];
+  selectedBranch: string | null;
+  branchCommits: GitCommit[];
+  loadingBranchCommits: boolean;
+  expandedBranchCommit: string | null;
+  branchCommitDiff: { stat: string; patch: string } | null;
+  loadingBranchCommitDiff: boolean;
+  onSelectBranch: (name: string) => void;
+  onBranchCommitClick: (hash: string) => void;
+  onCloseBranchDetails: () => void;
 }) {
   return (
     <div className="gm-panel" data-testid="branches-panel">
@@ -1273,44 +1364,116 @@ function BranchesPanel({
           </div>
         ) : (
           branches.map((branch) => (
-            <div
-              key={branch.name}
-              className={`gm-branch-item${branch.isCurrent ? " current" : ""}`}
-            >
-              <div className="gm-branch-info">
-                <span className="gm-branch-name">
-                  {branch.isCurrent && <Check size={14} className="gm-current-icon" />}
-                  {branch.name}
-                </span>
-                {branch.remote && (
-                  <span className="gm-branch-remote">→ {branch.remote}</span>
-                )}
-                {branch.lastCommitDate && (
-                  <span className="gm-branch-date">{relativeDate(branch.lastCommitDate)}</span>
-                )}
+            <div key={branch.name}>
+              <div
+                className={`gm-branch-item${branch.isCurrent ? " current" : ""}${selectedBranch === branch.name ? " selected" : ""}`}
+                onClick={() => onSelectBranch(branch.name)}
+              >
+                <div className="gm-branch-info">
+                  <span className="gm-branch-name">
+                    {branch.isCurrent && <Check size={14} className="gm-current-icon" />}
+                    {branch.name}
+                  </span>
+                  {branch.remote && (
+                    <span className="gm-branch-remote">→ {branch.remote}</span>
+                  )}
+                  {branch.lastCommitDate && (
+                    <span className="gm-branch-date">{relativeDate(branch.lastCommitDate)}</span>
+                  )}
+                </div>
+                <div className="gm-branch-actions">
+                  {!branch.isCurrent && (
+                    <>
+                      <button
+                        className="btn btn-sm"
+                        onClick={(e) => { e.stopPropagation(); onCheckoutBranch(branch.name); }}
+                        disabled={loading}
+                        title="Checkout"
+                      >
+                        <GitBranchIcon size={14} />
+                      </button>
+                      <button
+                        className="btn btn-sm btn-danger"
+                        onClick={(e) => { e.stopPropagation(); onDeleteBranch(branch.name); }}
+                        disabled={loading}
+                        title="Delete"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
-              <div className="gm-branch-actions">
-                {!branch.isCurrent && (
-                  <>
+
+              {/* Branch commit details — shown when this branch is selected */}
+              {selectedBranch === branch.name && (
+                <div className="gm-branch-details">
+                  <div className="gm-branch-details-header">
+                    <span className="gm-branch-details-title">
+                      <GitCommitIcon size={14} />
+                      Commits on {branch.name}
+                    </span>
                     <button
-                      className="btn btn-sm"
-                      onClick={() => onCheckoutBranch(branch.name)}
-                      disabled={loading}
-                      title="Checkout"
+                      className="gm-icon-btn"
+                      onClick={onCloseBranchDetails}
+                      title="Close"
+                      data-testid="close-branch-details"
                     >
-                      <GitBranchIcon size={14} />
+                      <X size={14} />
                     </button>
-                    <button
-                      className="btn btn-sm btn-danger"
-                      onClick={() => onDeleteBranch(branch.name)}
-                      disabled={loading}
-                      title="Delete"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </>
-                )}
-              </div>
+                  </div>
+                  {loadingBranchCommits ? (
+                    <div className="gm-branch-details-loading">
+                      <Loader2 size={16} className="spin" />
+                      Loading commits...
+                    </div>
+                  ) : branchCommits.length === 0 ? (
+                    <div className="gm-empty">No commits found</div>
+                  ) : (
+                    <div className="gm-branch-commits-list">
+                      {branchCommits.map((commit) => (
+                        <div key={commit.hash} className="gm-branch-commit">
+                          <button
+                            className="gm-branch-commit-row"
+                            onClick={() => onBranchCommitClick(commit.hash)}
+                            data-testid={`branch-commit-${commit.shortHash}`}
+                          >
+                            <span className="gm-commit-hash">{commit.shortHash}</span>
+                            <span className="gm-commit-message" title={commit.message}>
+                              {commit.message}
+                            </span>
+                            <div className="gm-commit-meta">
+                              <span>{commit.author}</span>
+                              <span>•</span>
+                              <span>{relativeDate(commit.date)}</span>
+                              {commit.parents.length > 1 && (
+                                <span className="gm-merge-badge">merge</span>
+                              )}
+                            </div>
+                          </button>
+                          {expandedBranchCommit === commit.hash && (
+                            <div className="gm-commit-diff">
+                              {loadingBranchCommitDiff ? (
+                                <div className="gm-diff-loading">
+                                  <Loader2 size={16} className="spin" />
+                                  Loading diff...
+                                </div>
+                              ) : branchCommitDiff ? (
+                                <>
+                                  {branchCommitDiff.stat && <pre className="gm-diff-stat">{branchCommitDiff.stat}</pre>}
+                                  <pre className="gm-diff-patch">{branchCommitDiff.patch}</pre>
+                                </>
+                              ) : (
+                                <div className="gm-diff-error">Failed to load diff</div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           ))
         )}

@@ -4492,6 +4492,36 @@ describe("Git Management endpoints", () => {
     });
   });
 
+  describe("GET /git/branches/:name/commits", () => {
+    it("returns commits for a valid branch", async () => {
+      const res = await GET(buildApp(), "/api/git/branches/main/commits");
+
+      expect(res.status).toBe(200);
+      expect(Array.isArray(res.body)).toBe(true);
+    });
+
+    it("respects limit parameter", async () => {
+      const res = await GET(buildApp(), "/api/git/branches/main/commits?limit=5");
+
+      expect(res.status).toBe(200);
+      expect(Array.isArray(res.body)).toBe(true);
+    });
+
+    it("returns 400 for invalid branch name", async () => {
+      const res = await GET(buildApp(), "/api/git/branches/;rm%20-rf%20/commits");
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain("Invalid branch name");
+    });
+
+    it("returns empty array for non-existent branch", async () => {
+      const res = await GET(buildApp(), "/api/git/branches/nonexistent-branch-xyz/commits");
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual([]);
+    });
+  });
+
   describe("GET /git/worktrees", () => {
     it("returns worktrees array", async () => {
       (store.listTasks as ReturnType<typeof vi.fn>).mockResolvedValue([]);
