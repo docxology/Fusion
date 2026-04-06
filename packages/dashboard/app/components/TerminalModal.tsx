@@ -36,11 +36,13 @@ function getKeyboardOverlap(): number {
   const chromeOverlap = Math.max(0, window.innerHeight - vv.offsetTop - vv.height);
   if (chromeOverlap > 0) return chromeOverlap;
   // On iOS Safari, window.innerHeight shrinks to match visualViewport.
-  // Detect keyboard by checking if visual viewport is shorter than
-  // a reasonable threshold (more than 150px shorter than initial height).
+  // Detect keyboard by checking if visual viewport is shorter than initial
+  // height by more than 80px (with a 30px noise filter).
   const initialHeight = getInitialViewportHeight();
   const gap = initialHeight - vv.offsetTop - vv.height;
-  return gap > 150 ? gap : 0;
+  // Minimum 30px gap required to filter noise (address bar, toolbar changes).
+  // Threshold of 80px: only consider keyboard present when gap exceeds this.
+  return gap >= 30 && gap > 80 ? gap : 0;
 }
 
 /** Cached initial viewport height before any keyboard opened. */

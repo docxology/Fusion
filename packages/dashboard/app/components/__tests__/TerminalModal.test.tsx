@@ -2415,6 +2415,140 @@ describe("TerminalModal — FN-872 real-device keyboard overlap refinement", () 
     expect(screen.queryByTestId("terminal-modal")).toBeNull();
   });
 
+  // --- FN-1002: Lowered threshold (150 → 80) with 30px noise filter ---
+  it("detects keyboard with gap of 85px (above new 80px threshold)", async () => {
+    // Previously with the 150px threshold, 85px would NOT be detected.
+    // With the new 80px threshold, it should be detected.
+    const { listeners, mockVV } = simulateIOSSafari(false, 667);
+
+    render(<TerminalModal isOpen={true} onClose={mockOnClose} />);
+
+    // Initially no overlap
+    await waitFor(() => {
+      const modal = screen.getByTestId("terminal-modal");
+      expect(modal.style.getPropertyValue("--keyboard-overlap")).toBe("");
+    });
+
+    // Simulate keyboard opening with gap of 85px: vv.height = 667 - 85 = 582
+    Object.defineProperty(window, "innerHeight", {
+      value: 582,
+      writable: true,
+      configurable: true,
+    });
+    Object.defineProperty(mockVV, "height", {
+      value: 582,
+      writable: true,
+      configurable: true,
+    });
+
+    act(() => {
+      for (const cb of listeners.resize) cb();
+    });
+
+    await waitFor(() => {
+      const modal = screen.getByTestId("terminal-modal");
+      expect(modal.style.getPropertyValue("--keyboard-overlap")).toBe("85px");
+    });
+  });
+
+  it("does not detect keyboard with very small gap of 20px (noise filter)", async () => {
+    // Gap of 20px is below the 30px noise filter — should return 0.
+    const { listeners, mockVV } = simulateIOSSafari(false, 667);
+
+    render(<TerminalModal isOpen={true} onClose={mockOnClose} />);
+
+    await waitFor(() => {
+      const modal = screen.getByTestId("terminal-modal");
+      expect(modal.style.getPropertyValue("--keyboard-overlap")).toBe("");
+    });
+
+    // Simulate tiny viewport change: gap = 20px, vv.height = 667 - 20 = 647
+    Object.defineProperty(window, "innerHeight", {
+      value: 647,
+      writable: true,
+      configurable: true,
+    });
+    Object.defineProperty(mockVV, "height", {
+      value: 647,
+      writable: true,
+      configurable: true,
+    });
+
+    act(() => {
+      for (const cb of listeners.resize) cb();
+    });
+
+    await waitFor(() => {
+      const modal = screen.getByTestId("terminal-modal");
+      expect(modal.style.getPropertyValue("--keyboard-overlap")).toBe("");
+    });
+  });
+
+  it("does not detect keyboard when gap is exactly 80px (boundary, not > 80)", async () => {
+    const { listeners, mockVV } = simulateIOSSafari(false, 667);
+
+    render(<TerminalModal isOpen={true} onClose={mockOnClose} />);
+
+    await waitFor(() => {
+      const modal = screen.getByTestId("terminal-modal");
+      expect(modal.style.getPropertyValue("--keyboard-overlap")).toBe("");
+    });
+
+    // gap = 80px exactly: vv.height = 667 - 80 = 587
+    Object.defineProperty(window, "innerHeight", {
+      value: 587,
+      writable: true,
+      configurable: true,
+    });
+    Object.defineProperty(mockVV, "height", {
+      value: 587,
+      writable: true,
+      configurable: true,
+    });
+
+    act(() => {
+      for (const cb of listeners.resize) cb();
+    });
+
+    await waitFor(() => {
+      const modal = screen.getByTestId("terminal-modal");
+      // 80 is NOT > 80, so should not be detected
+      expect(modal.style.getPropertyValue("--keyboard-overlap")).toBe("");
+    });
+  });
+
+  it("detects keyboard when gap is 81px (just above 80px boundary)", async () => {
+    const { listeners, mockVV } = simulateIOSSafari(false, 667);
+
+    render(<TerminalModal isOpen={true} onClose={mockOnClose} />);
+
+    await waitFor(() => {
+      const modal = screen.getByTestId("terminal-modal");
+      expect(modal.style.getPropertyValue("--keyboard-overlap")).toBe("");
+    });
+
+    // gap = 81px: vv.height = 667 - 81 = 586
+    Object.defineProperty(window, "innerHeight", {
+      value: 586,
+      writable: true,
+      configurable: true,
+    });
+    Object.defineProperty(mockVV, "height", {
+      value: 586,
+      writable: true,
+      configurable: true,
+    });
+
+    act(() => {
+      for (const cb of listeners.resize) cb();
+    });
+
+    await waitFor(() => {
+      const modal = screen.getByTestId("terminal-modal");
+      expect(modal.style.getPropertyValue("--keyboard-overlap")).toBe("81px");
+    });
+  });
+
   it("scroll event on visualViewport also triggers keyboard overlap update", async () => {
     const { listeners, mockVV } = simulateChromeAndroid(250);
 
