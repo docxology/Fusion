@@ -3228,6 +3228,146 @@ describe("TaskCard files-changed in done column", () => {
   });
 });
 
+describe("TaskCard singular/plural file count", () => {
+  const noopToast = vi.fn();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUseSessionFiles.mockReturnValue({ files: [], loading: false });
+    mockUseTaskDiffStats.mockReturnValue({ stats: null, loading: false });
+  });
+
+  it("displays '1 file changed' (singular) for in-progress column with 1 session file", () => {
+    const task = makeTask({
+      column: "in-progress",
+      worktree: "/repo/.worktrees/fn-099",
+      status: "executing",
+    });
+    mockUseSessionFiles.mockReturnValue({ files: ["src/a.ts"], loading: false });
+
+    render(
+      <TaskCard
+        task={task}
+        onOpenDetail={vi.fn()}
+        addToast={noopToast}
+      />
+    );
+
+    expect(screen.getByText("1 file changed")).toBeInTheDocument();
+  });
+
+  it("displays '2 files changed' (plural) for in-progress column with 2 session files", () => {
+    const task = makeTask({
+      column: "in-progress",
+      worktree: "/repo/.worktrees/fn-099",
+      status: "executing",
+    });
+    mockUseSessionFiles.mockReturnValue({ files: ["src/a.ts", "src/b.ts"], loading: false });
+
+    render(
+      <TaskCard
+        task={task}
+        onOpenDetail={vi.fn()}
+        addToast={noopToast}
+      />
+    );
+
+    expect(screen.getByText("2 files changed")).toBeInTheDocument();
+  });
+
+  it("displays '1 file changed' (singular) for done column with displayCount=1 via diffStats", () => {
+    const task = makeTask({
+      column: "done",
+      mergeDetails: { filesChanged: 7, mergedAt: "2026-01-01T00:00:00Z", targetBranch: "main" },
+    });
+    mockUseSessionFiles.mockReturnValue({ files: [], loading: false });
+    mockUseTaskDiffStats.mockReturnValue({ stats: { filesChanged: 1, additions: 5, deletions: 0 }, loading: false });
+
+    render(
+      <TaskCard
+        task={task}
+        onOpenDetail={vi.fn()}
+        addToast={noopToast}
+      />
+    );
+
+    expect(screen.getByText("1 file changed")).toBeInTheDocument();
+    expect(screen.queryByText("1 files changed")).not.toBeInTheDocument();
+  });
+
+  it("displays '1 file changed' (singular) for done column with modifiedFiles of length 1", () => {
+    const task = makeTask({
+      column: "done",
+      modifiedFiles: ["src/a.ts"],
+    });
+    mockUseSessionFiles.mockReturnValue({ files: [], loading: false });
+
+    render(
+      <TaskCard
+        task={task}
+        onOpenDetail={vi.fn()}
+        addToast={noopToast}
+      />
+    );
+
+    expect(screen.getByText("1 file changed")).toBeInTheDocument();
+    expect(screen.queryByText("1 files changed")).not.toBeInTheDocument();
+  });
+
+  it("displays '1 file changed' (singular) for done column with sessionFiles fallback of length 1", () => {
+    const task = makeTask({
+      column: "done",
+      worktree: "/repo/.worktrees/fn-099",
+    });
+    mockUseSessionFiles.mockReturnValue({ files: ["src/a.ts"], loading: false });
+
+    render(
+      <TaskCard
+        task={task}
+        onOpenDetail={vi.fn()}
+        addToast={noopToast}
+      />
+    );
+
+    expect(screen.getByText("1 file changed")).toBeInTheDocument();
+    expect(screen.queryByText("1 files changed")).not.toBeInTheDocument();
+  });
+
+  it("displays 'N files changed' (plural) for done column with diffStats count > 1", () => {
+    const task = makeTask({ column: "done" });
+    mockUseSessionFiles.mockReturnValue({ files: [], loading: false });
+    mockUseTaskDiffStats.mockReturnValue({ stats: { filesChanged: 3, additions: 10, deletions: 2 }, loading: false });
+
+    render(
+      <TaskCard
+        task={task}
+        onOpenDetail={vi.fn()}
+        addToast={noopToast}
+      />
+    );
+
+    expect(screen.getByText("3 files changed")).toBeInTheDocument();
+  });
+
+  it("displays 'N files changed' (plural) for done column with modifiedFiles length > 1", () => {
+    const task = makeTask({
+      column: "done",
+      modifiedFiles: ["src/a.ts", "src/b.ts"],
+    });
+    mockUseSessionFiles.mockReturnValue({ files: [], loading: false });
+
+    render(
+      <TaskCard
+        task={task}
+        onOpenDetail={vi.fn()}
+        addToast={noopToast}
+      />
+    );
+
+    expect(screen.getByText("2 files changed")).toBeInTheDocument();
+  });
+});
+
 describe("TaskCard mission badge", () => {
   const createTask = (overrides: Partial<Task> = {}): Task => ({
     id: "FN-001",

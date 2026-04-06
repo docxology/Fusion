@@ -781,7 +781,7 @@ function TaskCardComponent({
         >
           <Folder size={12} />
           <span>
-            {sessionFilesLoading ? "Checking files…" : `${sessionFiles.length} files changed`}
+            {sessionFilesLoading ? "Checking files…" : `${sessionFiles.length} ${sessionFiles.length === 1 ? "file" : "files"} changed`}
           </span>
         </button>
       )}
@@ -800,7 +800,7 @@ function TaskCardComponent({
               disabled={!onOpenDetailWithTab}
             >
               <Folder size={12} />
-              <span>{displayCount} files changed</span>
+              <span>{displayCount} {displayCount === 1 ? "file" : "files"} changed</span>
             </button>
           );
         }
@@ -814,7 +814,7 @@ function TaskCardComponent({
               disabled={!onOpenDetailWithTab}
             >
               <Folder size={12} />
-              <span>{modifiedCount} files changed</span>
+              <span>{modifiedCount} {modifiedCount === 1 ? "file" : "files"} changed</span>
             </button>
           );
         }
@@ -828,7 +828,7 @@ function TaskCardComponent({
             >
               <Folder size={12} />
               <span>
-                {sessionFilesLoading ? "Checking files…" : `${sessionFiles.length} files changed`}
+                {sessionFilesLoading ? "Checking files…" : `${sessionFiles.length} ${sessionFiles.length === 1 ? "file" : "files"} changed`}
               </span>
             </button>
           );
