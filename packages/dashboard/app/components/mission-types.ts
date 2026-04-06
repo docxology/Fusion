@@ -5,6 +5,18 @@ export type MilestoneStatus = "planning" | "active" | "blocked" | "complete";
 export type SliceStatus = "pending" | "active" | "complete";
 export type FeatureStatus = "defined" | "triaged" | "in-progress" | "done";
 
+/** Autopilot state values for mission autonomous progression */
+export type AutopilotState = "inactive" | "watching" | "activating" | "completing";
+
+/** Autopilot status returned by API */
+export interface AutopilotStatus {
+  enabled: boolean;
+  state: AutopilotState;
+  watched: boolean;
+  lastActivityAt?: string;
+  nextScheduledCheck?: string;
+}
+
 export interface Mission {
   id: string;
   title: string;
@@ -12,6 +24,9 @@ export interface Mission {
   status: MissionStatus;
   interviewState: "not_started" | "in_progress" | "completed" | "needs_update";
   autoAdvance?: boolean;
+  autopilotEnabled?: boolean;
+  autopilotState?: AutopilotState;
+  lastAutopilotActivityAt?: string;
   createdAt: string;
   updatedAt: string;
 }

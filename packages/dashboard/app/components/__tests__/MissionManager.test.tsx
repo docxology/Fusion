@@ -716,4 +716,133 @@ describe("MissionManager", () => {
       });
     });
   });
+
+  // ── Autopilot UI ──
+  describe("autopilot UI", () => {
+    const autopilotMockMissions = [
+      {
+        id: "M-AUTO1",
+        title: "Autopilot Mission",
+        description: "Mission with autopilot enabled",
+        status: "active",
+        autoAdvance: true,
+        autopilotEnabled: true,
+        autopilotState: "watching",
+        milestones: [],
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        id: "M-AUTO2",
+        title: "Normal Mission",
+        description: "Mission without autopilot",
+        status: "planning",
+        autoAdvance: false,
+        autopilotEnabled: false,
+        milestones: [],
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ];
+
+    const autopilotMockDetail = {
+      id: "M-AUTO1",
+      title: "Autopilot Mission",
+      description: "Mission with autopilot enabled",
+      status: "active",
+      autoAdvance: true,
+      autopilotEnabled: true,
+      autopilotState: "watching",
+      milestones: [
+        {
+          id: "MS-001",
+          title: "Phase 1",
+          description: "First phase",
+          status: "active",
+          dependencies: [] as string[],
+          slices: [],
+          missionId: "M-AUTO1",
+        },
+      ],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+
+    function createAutopilotFetchMock() {
+      let callCount = 0;
+      return vi.fn().mockImplementation((_url: string) => {
+        callCount++;
+        if (callCount === 1) {
+          return Promise.resolve(mockApiResponse(autopilotMockMissions));
+        }
+        if (_url.includes("/autopilot")) {
+          return Promise.resolve(mockApiResponse({
+            enabled: true,
+            state: "watching",
+            watched: true,
+            lastActivityAt: "2026-01-01T12:00:00.000Z",
+          }));
+        }
+        return Promise.resolve(mockApiResponse(autopilotMockDetail));
+      });
+    }
+
+    it("shows autopilot icon for missions with autopilotEnabled in list view", async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue(mockApiResponse(autopilotMockMissions));
+      render(<MissionManager isOpen={true} onClose={vi.fn()} addToast={vi.fn()} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Autopilot Mission")).toBeDefined();
+        // Autopilot icon should have title attribute
+        expect(screen.getByTitle("Autopilot enabled")).toBeDefined();
+      });
+    });
+
+    it("does not show autopilot icon for missions without autopilot", async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue(mockApiResponse(autopilotMockMissions));
+      render(<MissionManager isOpen={true} onClose={vi.fn()} addToast={vi.fn()} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Normal Mission")).toBeDefined();
+      });
+
+      // There should be only one autopilot icon (for Autopilot Mission)
+      const autopilotIcons = screen.queryAllByTitle("Autopilot enabled");
+      expect(autopilotIcons).toHaveLength(1);
+    });
+
+    it("shows autopilot toggle and status badge in detail view", async () => {
+      globalThis.fetch = createAutopilotFetchMock();
+      render(<MissionManager isOpen={true} onClose={vi.fn()} addToast={vi.fn()} />);
+
+      // Navigate to detail
+      await waitFor(() => {
+        expect(screen.getByText("Autopilot Mission")).toBeDefined();
+      });
+      fireEvent.click(screen.getByText("Autopilot Mission"));
+
+      await waitFor(() => {
+        // Should show Autopilot label
+        expect(screen.getByText("Autopilot")).toBeDefined();
+        // Should show status badge with "watching" state
+        expect(screen.getByTestId("autopilot-state-badge")).toBeDefined();
+      });
+    });
+
+    it("shows pulsing dot when autopilot is watching in detail view", async () => {
+      globalThis.fetch = createAutopilotFetchMock();
+      render(<MissionManager isOpen={true} onClose={vi.fn()} addToast={vi.fn()} />);
+
+      // Navigate to detail
+      await waitFor(() => {
+        expect(screen.getByText("Autopilot Mission")).toBeDefined();
+      });
+      fireEvent.click(screen.getByText("Autopilot Mission"));
+
+      await waitFor(() => {
+        const dot = document.querySelector(".mission-detail__autopilot-dot");
+        expect(dot).toBeDefined();
+      });
+    });
+  });
 });

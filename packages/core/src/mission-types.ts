@@ -31,6 +31,19 @@ export type FeatureStatus = (typeof FEATURE_STATUSES)[number];
 export const INTERVIEW_STATES = ["not_started", "in_progress", "completed", "needs_update"] as const;
 export type InterviewState = (typeof INTERVIEW_STATES)[number];
 
+/** Autopilot state values for mission autonomous progression */
+export const AUTOPILOT_STATES = ["inactive", "watching", "activating", "completing"] as const;
+export type AutopilotState = (typeof AUTOPILOT_STATES)[number];
+
+/** Autopilot status for a mission */
+export interface AutopilotStatus {
+  enabled: boolean;
+  state: AutopilotState;
+  watched: boolean;
+  lastActivityAt?: string;
+  nextScheduledCheck?: string;
+}
+
 // ── Core Entity Types ───────────────────────────────────────────────
 
 /**
@@ -50,6 +63,12 @@ export interface Mission {
   interviewState: InterviewState;
   /** When true, automatically activate the next pending slice when current slice completes */
   autoAdvance?: boolean;
+  /** When true, enable autopilot monitoring system for this mission */
+  autopilotEnabled?: boolean;
+  /** Current autopilot runtime state */
+  autopilotState?: AutopilotState;
+  /** ISO-8601 timestamp of last autopilot activity (only populated when active) */
+  lastAutopilotActivityAt?: string;
   /** ISO-8601 timestamp of creation */
   createdAt: string;
   /** ISO-8601 timestamp of last update */

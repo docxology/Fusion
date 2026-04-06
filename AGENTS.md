@@ -1215,6 +1215,50 @@ When `unarchiveTask()` is called:
 - Writes archive entry atomically before directory removal
 - Can be called idempotently
 
+## Mission Autopilot
+
+Missions can run in **autopilot mode** for autonomous progression through slices and milestones without manual intervention. When enabled, the autopilot system watches task completion events and automatically activates the next slice when the current one finishes.
+
+### How It Works
+
+1. **User enables autopilot** on a mission via the dashboard UI
+2. The `MissionAutopilot` class starts watching the mission
+3. As tasks complete, the scheduler notifies the autopilot
+4. Autopilot checks if the current slice is complete
+5. If complete, autopilot activates the next pending slice via the scheduler
+6. When all milestones are done, autopilot marks the mission as complete
+
+### Autopilot State Machine
+
+| State | Description |
+|-------|-------------|
+| `inactive` | Dormant — autopilot not watching |
+| `watching` | Monitoring task completion events |
+| `activating` | Progressing to the next slice |
+| `completing` | Wrapping up the mission |
+
+### Relationship Between autopilotEnabled and autoAdvance
+
+- **`autoAdvance`** — When a slice completes, automatically activate the next pending slice (existing behavior)
+- **`autopilotEnabled`** — Enable the autopilot monitoring system for this mission (new behavior)
+- Both can be true simultaneously. `autopilotEnabled: true` with `autoAdvance: true` provides full automation
+- `autopilotEnabled: true` with `autoAdvance: false` provides monitoring but manual slice activation
+
+### Key Implementation
+
+- **File:** `packages/engine/src/mission-autopilot.ts` — `MissionAutopilot` class
+- **Integration:** Scheduler calls `missionAutopilot.handleTaskCompletion()` after feature status updates
+- **Storage:** `autopilotEnabled`, `autopilotState`, and `lastAutopilotActivityAt` columns in missions table
+- **Background poll:** Every 60 seconds checks that enabled missions are being watched and stale missions are flagged
+- **Failure recovery:** Slice activation retries up to 3 times with exponential backoff
+
+### API Endpoints
+
+- `GET /api/missions/:missionId/autopilot` — Returns autopilot status
+- `PATCH /api/missions/:missionId/autopilot` — Enable/disable autopilot (`{ enabled: boolean }`)
+- `POST /api/missions/:missionId/autopilot/start` — Manually start watching
+- `POST /api/missions/:missionId/autopilot/stop` — Manually stop watching
+
 ## Workflow Steps
 
 Workflow steps are reusable quality gates that run at configurable lifecycle phases. Each step can be configured to run as **pre-merge** (after implementation, before merge — can block) or **post-merge** (after merge success — informational only). They enable post-implementation review, documentation checks, QA validation, deployment notifications, and other automated checks.

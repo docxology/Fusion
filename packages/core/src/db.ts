@@ -450,6 +450,14 @@ export class Database {
 
     // Future migrations go here:
     // if (version < 10) { this.applyMigration(10, () => { ... }); }
+
+    if (version < 10) {
+      this.applyMigration(10, () => {
+        this.addColumnIfMissing("missions", "autopilotEnabled", "INTEGER DEFAULT 0");
+        this.addColumnIfMissing("missions", "autopilotState", "TEXT DEFAULT 'inactive'");
+        this.addColumnIfMissing("missions", "lastAutopilotActivityAt", "TEXT");
+      });
+    }
   }
 
   /**

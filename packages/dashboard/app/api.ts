@@ -2356,6 +2356,18 @@ export type SliceStatus = "pending" | "active" | "complete";
 /** Feature status values */
 export type FeatureStatus = "defined" | "triaged" | "in-progress" | "done";
 
+/** Autopilot state values for mission autonomous progression */
+export type AutopilotState = "inactive" | "watching" | "activating" | "completing";
+
+/** Autopilot status for a mission */
+export interface AutopilotStatus {
+  enabled: boolean;
+  state: AutopilotState;
+  watched: boolean;
+  lastActivityAt?: string;
+  nextScheduledCheck?: string;
+}
+
 /** Mission entity */
 export interface Mission {
   id: string;
@@ -2364,6 +2376,12 @@ export interface Mission {
   status: MissionStatus;
   interviewState: "not_started" | "in_progress" | "completed" | "needs_update";
   autoAdvance?: boolean;
+  /** When true, enable autopilot monitoring system for this mission */
+  autopilotEnabled?: boolean;
+  /** Current autopilot runtime state */
+  autopilotState?: AutopilotState;
+  /** ISO-8601 timestamp of last autopilot activity */
+  lastAutopilotActivityAt?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -2441,7 +2459,7 @@ export function fetchMissions(projectId?: string): Promise<MissionWithSummary[]>
 }
 
 /** Create a new mission */
-export function createMission(input: { title: string; description?: string }, projectId?: string): Promise<Mission> {
+export function createMission(input: { title: string; description?: string; autoAdvance?: boolean; autopilotEnabled?: boolean }, projectId?: string): Promise<Mission> {
   return api<Mission>(withProjectId("/missions", projectId), {
     method: "POST",
     body: JSON.stringify(input),
@@ -2624,6 +2642,35 @@ export function resumeMission(missionId: string, projectId?: string): Promise<Mi
 /** Stop a mission (sets status to "blocked" and pauses all linked tasks) */
 export function stopMission(missionId: string, projectId?: string): Promise<Mission & { pausedTaskIds: string[] }> {
   return api<Mission & { pausedTaskIds: string[] }>(withProjectId(`/missions/${encodeURIComponent(missionId)}/stop`, projectId), {
+    method: "POST",
+  });
+}
+
+// ── Mission Autopilot API ────────────────────────────────────────────────
+
+/** Fetch autopilot status for a mission */
+export function fetchMissionAutopilotStatus(missionId: string, projectId?: string): Promise<AutopilotStatus> {
+  return api<AutopilotStatus>(withProjectId(`/missions/${encodeURIComponent(missionId)}/autopilot`, projectId));
+}
+
+/** Update autopilot settings for a mission (enable/disable) */
+export function updateMissionAutopilot(missionId: string, updates: { enabled?: boolean }, projectId?: string): Promise<AutopilotStatus> {
+  return api<AutopilotStatus>(withProjectId(`/missions/${encodeURIComponent(missionId)}/autopilot`, projectId), {
+    method: "PATCH",
+    body: JSON.stringify(updates),
+  });
+}
+
+/** Manually start autopilot watching for a mission */
+export function startMissionAutopilot(missionId: string, projectId?: string): Promise<AutopilotStatus> {
+  return api<AutopilotStatus>(withProjectId(`/missions/${encodeURIComponent(missionId)}/autopilot/start`, projectId), {
+    method: "POST",
+  });
+}
+
+/** Manually stop autopilot watching for a mission */
+export function stopMissionAutopilot(missionId: string, projectId?: string): Promise<AutopilotStatus> {
+  return api<AutopilotStatus>(withProjectId(`/missions/${encodeURIComponent(missionId)}/autopilot/stop`, projectId), {
     method: "POST",
   });
 }

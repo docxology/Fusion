@@ -63,6 +63,8 @@ export interface SchedulerOptions {
   prMonitor?: PrMonitor;
   /** Optional MissionStore for slice activation and auto-advance */
   missionStore?: MissionStore;
+  /** Optional MissionAutopilot for autonomous mission progression */
+  missionAutopilot?: import("./mission-autopilot.js").MissionAutopilot;
   /**
    * Called when a task with a closed/merged PR moves out of in-review
    * and the PrMonitor has buffered actionable comments.
@@ -281,6 +283,19 @@ export class Scheduler {
     this.pollInterval = setInterval(() => this.schedule(), interval);
     this.schedule();
     schedulerLog.log(`Started (poll interval: ${interval}ms)`);
+
+    // Wire up MissionAutopilot: set scheduler reference for lazy injection
+    // and start watching all missions with autopilotEnabled: true
+    if (this.options.missionAutopilot && this.options.missionStore) {
+      this.options.missionAutopilot.setScheduler(this);
+      const missions = this.options.missionStore.listMissions();
+      for (const mission of missions) {
+        if (mission.autopilotEnabled && mission.status !== "complete" && mission.status !== "archived") {
+          this.options.missionAutopilot.watchMission(mission.id);
+        }
+      }
+      this.options.missionAutopilot.start();
+    }
   }
 
   stop(): void {
@@ -293,6 +308,10 @@ export class Scheduler {
     // Stop all PR monitoring when scheduler shuts down
     if (this.options.prMonitor) {
       this.options.prMonitor.stopAll();
+    }
+    // Stop MissionAutopilot when scheduler shuts down
+    if (this.options.missionAutopilot) {
+      this.options.missionAutopilot.stop();
     }
     schedulerLog.log("Stopped");
   }
@@ -681,7 +700,10 @@ export class Scheduler {
    * When a task moves to "done", update the linked feature status to "done".
    * updateFeatureStatus cascades via recomputeSliceStatus — if all features
    * in the slice are done the slice status becomes "complete" automatically.
-   * We then call onSliceComplete to trigger auto-advance to the next slice.
+   *
+   * If MissionAutopilot is configured, delegate slice advancement to it
+   * (which tracks autopilot state and handles retries). Otherwise fall back
+   * to the legacy onSliceComplete() path for non-autopilot missions.
    */
   private async handleMissionTaskCompletion(taskId: string, sliceId: string): Promise<void> {
     if (!this.options.missionStore) return;
@@ -709,8 +731,18 @@ export class Scheduler {
       // Check if the slice became complete after the feature update
       const slice = missionStore.getSlice(sliceIdBeforeUpdate);
       if (slice && slice.status === "complete") {
-        schedulerLog.log(`Slice ${slice.id} is complete — triggering auto-advance`);
-        await this.onSliceComplete(slice);
+        // If MissionAutopilot is available, delegate progression to it.
+        // The autopilot handles: watching missions, autoAdvance guard,
+        // retry logic, and state tracking. The autopilot will call back
+        // into scheduler.activateNextPendingSlice() when appropriate.
+        if (this.options.missionAutopilot) {
+          schedulerLog.log(`Slice ${slice.id} is complete — delegating to autopilot`);
+          await this.options.missionAutopilot.handleTaskCompletion(taskId);
+        } else {
+          // Legacy path for missions without autopilot
+          schedulerLog.log(`Slice ${slice.id} is complete — triggering auto-advance`);
+          await this.onSliceComplete(slice);
+        }
       }
     } catch (err) {
       schedulerLog.error(`Error handling mission task completion for ${taskId}:`, err);

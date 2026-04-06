@@ -18636,6 +18636,91 @@ html .column.drag-over * {
   padding-top: var(--space-xs);
 }
 
+/* ── Autopilot section ── */
+.mission-detail__autopilot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+  padding: var(--space-xs) 0;
+}
+
+.mission-detail__autopilot-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.mission-detail__autopilot-icon {
+  color: var(--color-warning, #eab308);
+}
+
+.mission-detail__autopilot-activity {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.mission-detail__autopilot-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.mission-detail__autopilot-pulse {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #22c55e;
+  margin-right: 4px;
+  animation: autopilot-pulse 2s ease-in-out infinite;
+}
+
+.mission-detail__autopilot-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #22c55e;
+  flex-shrink: 0;
+  animation: autopilot-pulse 2s ease-in-out infinite;
+}
+
+.mission-detail__title-text {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mission-checkbox--autopilot {
+  font-weight: 500;
+}
+
+.mission-btn--sm {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  min-height: 0;
+}
+
+.mission-list__item-autopilot-icon {
+  color: #eab308;
+  flex-shrink: 0;
+}
+
+@keyframes autopilot-pulse {
+  0%, 100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4);
+  }
+  50% {
+    opacity: 0.7;
+    box-shadow: 0 0 0 4px rgba(34, 197, 94, 0);
+  }
+}
+
 /* ── Milestones ── */
 .mission-detail__milestones {
   display: flex;

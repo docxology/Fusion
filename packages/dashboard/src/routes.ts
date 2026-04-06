@@ -7096,7 +7096,7 @@ Output ONLY the prompt text (no markdown, no explanations).`;
 
   // ── Mission Routes ─────────────────────────────────────────────────────────
   // Mount mission routes at /api/missions
-  router.use("/missions", createMissionRouter(store));
+  router.use("/missions", createMissionRouter(store, options?.missionAutopilot));
 
   // ── AI Session Routes (Background Tasks) ─────────────────────────────────
 

@@ -76,3 +76,6 @@ export const projectManagerLog = createLogger("project-manager");
 
 /** Logger for the hybrid executor subsystem. */
 export const hybridExecutorLog = createLogger("hybrid-executor");
+
+/** Logger for the mission autopilot subsystem. */
+export const autopilotLog = createLogger("autopilot");

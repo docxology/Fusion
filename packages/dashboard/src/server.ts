@@ -40,6 +40,16 @@ export interface ServerOptions {
   automationStore?: AutomationStore;
   /** Optional AiSessionStore — if not provided, one is created from the default store's database */
   aiSessionStore?: AiSessionStore;
+  /** Optional MissionAutopilot for autonomous mission progression */
+  missionAutopilot?: {
+    watchMission(missionId: string): void;
+    unwatchMission(missionId: string): void;
+    isWatching(missionId: string): boolean;
+    getAutopilotStatus(missionId: string): import("@fusion/core").AutopilotStatus;
+    checkAndStartMission(missionId: string): Promise<void>;
+    start(): void;
+    stop(): void;
+  };
 }
 
 type DashboardExpressApp = ReturnType<typeof express> & {

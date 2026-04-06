@@ -29,6 +29,7 @@ import type {
   SliceStatus,
   FeatureStatus,
   InterviewState,
+  AutopilotState,
 } from "./mission-types.js";
 
 // ── Mission Summary Type ─────────────────────────────────────────────
@@ -112,6 +113,9 @@ export class MissionStore extends EventEmitter<MissionStoreEvents> {
       status: row.status as MissionStatus,
       interviewState: row.interviewState as InterviewState,
       autoAdvance: Boolean(row.autoAdvance),
+      autopilotEnabled: Boolean(row.autopilotEnabled),
+      autopilotState: (row.autopilotState as AutopilotState) || "inactive",
+      lastAutopilotActivityAt: row.lastAutopilotActivityAt || undefined,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     };
@@ -178,7 +182,7 @@ export class MissionStore extends EventEmitter<MissionStoreEvents> {
    * @param input - Mission creation input
    * @returns The created mission
    */
-  createMission(input: MissionCreateInput): Mission {
+  createMission(input: MissionCreateInput & { autopilotEnabled?: boolean }): Mission {
     const now = new Date().toISOString();
     const id = this.generateMissionId();
 
@@ -189,13 +193,15 @@ export class MissionStore extends EventEmitter<MissionStoreEvents> {
       status: "planning",
       interviewState: "not_started",
       autoAdvance: false,
+      autopilotEnabled: input.autopilotEnabled ?? false,
+      autopilotState: "inactive",
       createdAt: now,
       updatedAt: now,
     };
 
     this.db.prepare(`
-      INSERT INTO missions (id, title, description, status, interviewState, autoAdvance, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO missions (id, title, description, status, interviewState, autoAdvance, autopilotEnabled, autopilotState, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       mission.id,
       mission.title,
@@ -203,6 +209,8 @@ export class MissionStore extends EventEmitter<MissionStoreEvents> {
       mission.status,
       mission.interviewState,
       mission.autoAdvance ? 1 : 0,
+      mission.autopilotEnabled ? 1 : 0,
+      mission.autopilotState ?? "inactive",
       mission.createdAt,
       mission.updatedAt,
     );
@@ -337,6 +345,9 @@ export class MissionStore extends EventEmitter<MissionStoreEvents> {
         status = ?,
         interviewState = ?,
         autoAdvance = ?,
+        autopilotEnabled = ?,
+        autopilotState = ?,
+        lastAutopilotActivityAt = ?,
         updatedAt = ?
       WHERE id = ?
     `).run(
@@ -345,6 +356,9 @@ export class MissionStore extends EventEmitter<MissionStoreEvents> {
       updated.status,
       updated.interviewState,
       updated.autoAdvance ? 1 : 0,
+      updated.autopilotEnabled ? 1 : 0,
+      updated.autopilotState ?? "inactive",
+      updated.lastAutopilotActivityAt ?? null,
       updated.updatedAt,
       updated.id,
     );

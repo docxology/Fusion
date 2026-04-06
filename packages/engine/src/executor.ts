@@ -2874,7 +2874,8 @@ When all steps are complete: call \`task_done()\`
 If a build command is configured, run that exact command in this worktree before calling \`task_done()\`.
 Treat a non-zero exit code as a blocking failure. Do not claim success without a real passing run.
 Run the configured/full test suite and fix failures even when that requires edits outside the original File Scope.
-If the repo has a typecheck command, run it before \`task_done()\` and fix any failures it reports.`;
+If the repo has a typecheck command, run it before \`task_done()\` and fix any failures it reports.
+Use \`task_create\` for truly separate follow-up work, not for fixes required to get tests, build, or typecheck back to green.`;
 }
 
 /**

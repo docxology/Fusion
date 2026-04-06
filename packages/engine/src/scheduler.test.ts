@@ -1567,4 +1567,186 @@ describe("Scheduler", () => {
       expect(store.moveTask).toHaveBeenCalledWith("FN-012", "in-progress");
     });
   });
+
+  describe("autopilot integration", () => {
+    it("watches missions with autopilotEnabled on start", () => {
+      const store = createMockStore();
+      const mockMissionStore = createMockMissionStore({
+        listMissions: vi.fn().mockReturnValue([
+          { id: "M-001", autopilotEnabled: true, status: "active" },
+          { id: "M-002", autopilotEnabled: false, status: "active" },
+          { id: "M-003", autopilotEnabled: true, status: "complete" },
+        ]),
+        getMission: vi.fn((id: string) => {
+          const missions: Record<string, any> = {
+            "M-001": { id: "M-001", autopilotEnabled: true, autopilotState: "inactive" },
+            "M-002": { id: "M-002", autopilotEnabled: false, autopilotState: "inactive" },
+          };
+          return missions[id];
+        }),
+      });
+      const mockAutopilot = {
+        setScheduler: vi.fn(),
+        watchMission: vi.fn(),
+        start: vi.fn(),
+        stop: vi.fn(),
+      };
+
+      const scheduler = new Scheduler(store, {
+        missionStore: mockMissionStore as any,
+        missionAutopilot: mockAutopilot as any,
+      });
+      scheduler.start();
+
+      // setScheduler should be called with the scheduler instance
+      expect(mockAutopilot.setScheduler).toHaveBeenCalledWith(scheduler);
+      // Only M-001 should be watched (autopilotEnabled, not complete/archived)
+      expect(mockAutopilot.watchMission).toHaveBeenCalledWith("M-001");
+      expect(mockAutopilot.watchMission).not.toHaveBeenCalledWith("M-002");
+      expect(mockAutopilot.watchMission).not.toHaveBeenCalledWith("M-003");
+      // Autopilot should be started
+      expect(mockAutopilot.start).toHaveBeenCalled();
+
+      scheduler.stop();
+      // Autopilot should be stopped
+      expect(mockAutopilot.stop).toHaveBeenCalled();
+    });
+
+    it("does not start autopilot when no missionAutopilot option", () => {
+      const store = createMockStore();
+      const scheduler = new Scheduler(store);
+      scheduler.start();
+      // Should not throw
+      scheduler.stop();
+    });
+
+    it("delegates to autopilot.handleTaskCompletion when autopilot is available", async () => {
+      const store = createMockStore();
+      const mockAutopilot = {
+        setScheduler: vi.fn(),
+        watchMission: vi.fn(),
+        start: vi.fn(),
+        stop: vi.fn(),
+        handleTaskCompletion: vi.fn().mockResolvedValue(undefined),
+      };
+      const completeSlice = {
+        id: "SL-001",
+        milestoneId: "MS-001",
+        status: "complete",
+        orderIndex: 0,
+      };
+
+      const mockMissionStore = createMockMissionStore({
+        getFeatureByTaskId: vi.fn().mockReturnValue({
+          id: "F-001",
+          sliceId: "SL-001",
+          status: "active",
+        }),
+        updateFeatureStatus: vi.fn(),
+        getSlice: vi.fn().mockReturnValue(completeSlice),
+      });
+
+      const scheduler = new Scheduler(store, {
+        missionStore: mockMissionStore as any,
+        missionAutopilot: mockAutopilot as any,
+      });
+
+      // Simulate task:moved event: task with sliceId moves to "done"
+      await (scheduler as any).handleMissionTaskCompletion("FN-001", "SL-001");
+
+      // Feature status should be updated to "done"
+      expect(mockMissionStore.updateFeatureStatus).toHaveBeenCalledWith("F-001", "done");
+      // Should delegate to autopilot (not call onSliceComplete)
+      expect(mockAutopilot.handleTaskCompletion).toHaveBeenCalledWith("FN-001");
+    });
+
+    it("falls back to onSliceComplete when no autopilot", async () => {
+      const store = createMockStore();
+      const completeSlice = {
+        id: "SL-001",
+        milestoneId: "MS-001",
+        status: "complete",
+        orderIndex: 0,
+      };
+
+      const missionHierarchy = {
+        id: "M-001",
+        status: "active",
+        autoAdvance: true,
+        milestones: [
+          {
+            id: "MS-001",
+            missionId: "M-001",
+            status: "active",
+            dependencies: [],
+            slices: [
+              { id: "SL-001", status: "complete", orderIndex: 0 },
+              { id: "SL-002", status: "pending", orderIndex: 1 },
+            ],
+          },
+        ],
+      };
+
+      const mockMissionStore = createMockMissionStore({
+        getFeatureByTaskId: vi.fn().mockReturnValue({
+          id: "F-001",
+          sliceId: "SL-001",
+          status: "active",
+        }),
+        updateFeatureStatus: vi.fn(),
+        getSlice: vi.fn().mockReturnValue(completeSlice),
+        getMilestone: vi.fn().mockReturnValue({ id: "MS-001", missionId: "M-001" }),
+        getMission: vi.fn().mockReturnValue({ id: "M-001", status: "active", autoAdvance: true }),
+        getMissionWithHierarchy: vi.fn().mockReturnValue(missionHierarchy),
+        activateSlice: vi.fn().mockResolvedValue({ id: "SL-002" }),
+      });
+
+      const scheduler = new Scheduler(store, {
+        missionStore: mockMissionStore as any,
+      });
+
+      await (scheduler as any).handleMissionTaskCompletion("FN-001", "SL-001");
+
+      // Feature status should be updated
+      expect(mockMissionStore.updateFeatureStatus).toHaveBeenCalledWith("F-001", "done");
+      // Legacy path: activateSlice should be called via onSliceComplete
+      expect(mockMissionStore.activateSlice).toHaveBeenCalledWith("SL-002");
+    });
+
+    it("autopilot does not advance when autoAdvance is false", async () => {
+      const store = createMockStore();
+      const mockAutopilot = {
+        setScheduler: vi.fn(),
+        watchMission: vi.fn(),
+        start: vi.fn(),
+        stop: vi.fn(),
+        handleTaskCompletion: vi.fn().mockResolvedValue(undefined),
+      };
+
+      const mockMissionStore = createMockMissionStore({
+        getFeatureByTaskId: vi.fn().mockReturnValue({
+          id: "F-001",
+          sliceId: "SL-001",
+          status: "done",
+        }),
+        updateFeatureStatus: vi.fn(),
+        getSlice: vi.fn().mockReturnValue({
+          id: "SL-001",
+          milestoneId: "MS-001",
+          status: "complete",
+          orderIndex: 0,
+        }),
+      });
+
+      const scheduler = new Scheduler(store, {
+        missionStore: mockMissionStore as any,
+        missionAutopilot: mockAutopilot as any,
+      });
+
+      await (scheduler as any).handleMissionTaskCompletion("FN-001", "SL-001");
+
+      // Delegates to autopilot, which internally checks autoAdvance
+      expect(mockAutopilot.handleTaskCompletion).toHaveBeenCalledWith("FN-001");
+    });
+  });
 });

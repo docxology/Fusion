@@ -141,7 +141,18 @@ function asyncHandler(fn: (req: TypedRequest, res: Response, next: NextFunction)
 
 // ── Router Factory ──────────────────────────────────────────────────────────
 
-export function createMissionRouter(store: TaskStore): Router {
+export function createMissionRouter(
+  store: TaskStore,
+  missionAutopilot?: {
+    watchMission(missionId: string): void;
+    unwatchMission(missionId: string): void;
+    isWatching(missionId: string): boolean;
+    getAutopilotStatus(missionId: string): import("@fusion/core").AutopilotStatus;
+    checkAndStartMission(missionId: string): Promise<void>;
+    start(): void;
+    stop(): void;
+  },
+): Router {
   const router = Router();
   const requestContext = new AsyncLocalStorage<ReturnType<TaskStore["getMissionStore"]>>();
 
@@ -209,7 +220,7 @@ export function createMissionRouter(store: TaskStore): Router {
   router.post(
     "/",
     asyncHandler(async (req, res) => {
-      const { title, description, autoAdvance } = req.body;
+      const { title, description, autoAdvance, autopilotEnabled } = req.body;
 
       const validatedTitle = validateTitle(title);
       const validatedDescription = validateDescription(description);
@@ -221,10 +232,16 @@ export function createMissionRouter(store: TaskStore): Router {
 
       const mission = missionStore.createMission(input);
 
+      const updates: Partial<Mission> = {};
       if (autoAdvance !== undefined) {
-        const updatedMission = missionStore.updateMission(mission.id, {
-          autoAdvance: validateBoolean(autoAdvance, "autoAdvance"),
-        });
+        updates.autoAdvance = validateBoolean(autoAdvance, "autoAdvance");
+      }
+      if (autopilotEnabled !== undefined) {
+        updates.autopilotEnabled = validateBoolean(autopilotEnabled, "autopilotEnabled");
+      }
+
+      if (Object.keys(updates).length > 0) {
+        const updatedMission = missionStore.updateMission(mission.id, updates);
         res.status(201).json(updatedMission);
         return;
       }
@@ -265,7 +282,7 @@ export function createMissionRouter(store: TaskStore): Router {
     "/:missionId",
     asyncHandler(async (req, res) => {
       const { missionId } = req.params;
-      const { title, description, status, autoAdvance } = req.body;
+      const { title, description, status, autoAdvance, autopilotEnabled } = req.body;
 
       if (!validateMissionId(missionId)) {
         res.status(400).json({ error: "Invalid mission ID format" });
@@ -285,6 +302,9 @@ export function createMissionRouter(store: TaskStore): Router {
       }
       if (autoAdvance !== undefined) {
         updates.autoAdvance = validateBoolean(autoAdvance, "autoAdvance");
+      }
+      if (autopilotEnabled !== undefined) {
+        updates.autopilotEnabled = validateBoolean(autopilotEnabled, "autopilotEnabled");
       }
 
       if (Object.keys(updates).length === 0) {
@@ -1309,6 +1329,180 @@ export function createMissionRouter(store: TaskStore): Router {
       }
 
       res.json({ ...updated, pausedTaskIds });
+    })
+  );
+
+  // ── Autopilot Endpoints ──────────────────────────────────────────────────────
+
+  /**
+   * GET /api/missions/:missionId/autopilot
+   * Get the current autopilot status for a mission.
+   * Returns { enabled, state, watched, lastActivityAt }
+   */
+  router.get(
+    "/:missionId/autopilot",
+    asyncHandler(async (req, res) => {
+      const { missionId } = req.params;
+
+      if (!validateMissionId(missionId)) {
+        res.status(400).json({ error: "Invalid mission ID format" });
+        return;
+      }
+
+      const mission = missionStore.getMission(missionId);
+      if (!mission) {
+        res.status(404).json({ error: "Mission not found" });
+        return;
+      }
+
+      if (missionAutopilot) {
+        const status = missionAutopilot.getAutopilotStatus(missionId);
+        res.json(status);
+      } else {
+        // No autopilot instance — return status from mission data
+        res.json({
+          enabled: mission.autopilotEnabled ?? false,
+          state: mission.autopilotState ?? "inactive",
+          watched: false,
+          lastActivityAt: mission.lastAutopilotActivityAt,
+        });
+      }
+    })
+  );
+
+  /**
+   * PATCH /api/missions/:missionId/autopilot
+   * Enable or disable autopilot for a mission.
+   * Body: { enabled?: boolean }
+   * When enabling: starts watching if autopilot is available.
+   * When disabling: stops watching if autopilot is available.
+   */
+  router.patch(
+    "/:missionId/autopilot",
+    asyncHandler(async (req, res) => {
+      const { missionId } = req.params;
+      const { enabled } = req.body;
+
+      if (!validateMissionId(missionId)) {
+        res.status(400).json({ error: "Invalid mission ID format" });
+        return;
+      }
+
+      if (enabled === undefined || typeof enabled !== "boolean") {
+        res.status(400).json({ error: "enabled is required and must be a boolean" });
+        return;
+      }
+
+      const mission = missionStore.getMission(missionId);
+      if (!mission) {
+        res.status(404).json({ error: "Mission not found" });
+        return;
+      }
+
+      // Update the mission's autopilotEnabled field
+      missionStore.updateMission(missionId, { autopilotEnabled: enabled });
+
+      if (missionAutopilot) {
+        if (enabled) {
+          // Enable: start watching and potentially start the mission
+          missionAutopilot.watchMission(missionId);
+          if (mission.status === "planning") {
+            await missionAutopilot.checkAndStartMission(missionId);
+          }
+        } else {
+          // Disable: stop watching
+          missionAutopilot.unwatchMission(missionId);
+        }
+
+        const status = missionAutopilot.getAutopilotStatus(missionId);
+        res.json(status);
+      } else {
+        // No autopilot instance — return updated status from mission data
+        const updated = missionStore.getMission(missionId);
+        res.json({
+          enabled: updated?.autopilotEnabled ?? false,
+          state: updated?.autopilotState ?? "inactive",
+          watched: false,
+          lastActivityAt: updated?.lastAutopilotActivityAt,
+        });
+      }
+    })
+  );
+
+  /**
+   * POST /api/missions/:missionId/autopilot/start
+   * Manually start autopilot watching for a mission.
+   */
+  router.post(
+    "/:missionId/autopilot/start",
+    asyncHandler(async (req, res) => {
+      const { missionId } = req.params;
+
+      if (!validateMissionId(missionId)) {
+        res.status(400).json({ error: "Invalid mission ID format" });
+        return;
+      }
+
+      const mission = missionStore.getMission(missionId);
+      if (!mission) {
+        res.status(404).json({ error: "Mission not found" });
+        return;
+      }
+
+      if (!mission.autopilotEnabled) {
+        res.status(400).json({ error: "Autopilot is not enabled for this mission" });
+        return;
+      }
+
+      if (!missionAutopilot) {
+        res.status(503).json({ error: "Autopilot service is not available" });
+        return;
+      }
+
+      missionAutopilot.watchMission(missionId);
+
+      // If mission is in planning, start it
+      if (mission.status === "planning") {
+        await missionAutopilot.checkAndStartMission(missionId);
+      }
+
+      const status = missionAutopilot.getAutopilotStatus(missionId);
+      res.json(status);
+    })
+  );
+
+  /**
+   * POST /api/missions/:missionId/autopilot/stop
+   * Manually stop autopilot watching for a mission.
+   */
+  router.post(
+    "/:missionId/autopilot/stop",
+    asyncHandler(async (req, res) => {
+      const { missionId } = req.params;
+
+      if (!validateMissionId(missionId)) {
+        res.status(400).json({ error: "Invalid mission ID format" });
+        return;
+      }
+
+      const mission = missionStore.getMission(missionId);
+      if (!mission) {
+        res.status(404).json({ error: "Mission not found" });
+        return;
+      }
+
+      if (missionAutopilot) {
+        missionAutopilot.unwatchMission(missionId);
+        const status = missionAutopilot.getAutopilotStatus(missionId);
+        res.json(status);
+      } else {
+        res.json({
+          enabled: mission.autopilotEnabled ?? false,
+          state: "inactive",
+          watched: false,
+          lastActivityAt: mission.lastAutopilotActivityAt,
+        });
+      }
     })
   );
 
