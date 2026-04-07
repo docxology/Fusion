@@ -25,6 +25,8 @@ const defaultSettings: Settings = {
   ntfyEvents: ["in-review", "merged", "failed"],
   taskStuckTimeoutMs: undefined,
   maxStuckKills: 6,
+  runStepsInNewSessions: false,
+  maxParallelSteps: 2,
 };
 
 vi.mock("../../api", () => ({
@@ -1274,7 +1276,7 @@ describe("SettingsModal", () => {
     const sidebar = container.querySelector(".settings-sidebar");
     expect(sidebar).toBeTruthy();
     const navItems = sidebar!.querySelectorAll(".settings-nav-item");
-    expect(navItems.length).toBe(11);
+    expect(navItems.length).toBe(12);
 
     // Labels include scope emoji indicators (🌐 for global, 📁 for project)
     const labels = Array.from(navItems).map((el) => el.textContent);
@@ -1284,6 +1286,7 @@ describe("SettingsModal", () => {
       "🌐Appearance",
       "📁Scheduling",
       "📁Worktrees",
+      "📁Execution",
       "📁Commands",
       "📁Merge",
       "📁Memory",
@@ -2071,5 +2074,68 @@ describe("SettingsModal", () => {
 
     fireEvent.click(screen.getByText("Save"));
     await waitFor(() => expect(addToast).toHaveBeenCalledWith("Internal server error", "error"));
+  });
+
+  // --- Execution section tests ---
+
+  it("shows Execution in sidebar", async () => {
+    render(<SettingsModal onClose={onClose} addToast={addToast} />);
+    await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
+
+    expect(screen.getAllByText("Execution").length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("shows runStepsInNewSessions checkbox and maxParallelSteps input in Execution section", async () => {
+    render(<SettingsModal onClose={onClose} addToast={addToast} />);
+    await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByText("Execution"));
+    const checkbox = screen.getByLabelText("Run each step in a new session");
+    expect(checkbox).toBeTruthy();
+    expect(checkbox.getAttribute("type")).toBe("checkbox");
+
+    const input = screen.getByLabelText("Maximum parallel steps");
+    expect(input).toBeTruthy();
+    expect(input.getAttribute("type")).toBe("number");
+  });
+
+  it("maxParallelSteps input is disabled when runStepsInNewSessions is false", async () => {
+    render(<SettingsModal onClose={onClose} addToast={addToast} />);
+    await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByText("Execution"));
+    const input = screen.getByLabelText("Maximum parallel steps") as HTMLInputElement;
+    expect(input.disabled).toBe(true);
+  });
+
+  it("toggling runStepsInNewSessions to true enables the maxParallelSteps input", async () => {
+    render(<SettingsModal onClose={onClose} addToast={addToast} />);
+    await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByText("Execution"));
+    const checkbox = screen.getByLabelText("Run each step in a new session");
+    fireEvent.click(checkbox);
+
+    const input = screen.getByLabelText("Maximum parallel steps") as HTMLInputElement;
+    expect(input.disabled).toBe(false);
+  });
+
+  it("saving with runStepsInNewSessions true includes both fields in save payload", async () => {
+    render(<SettingsModal onClose={onClose} addToast={addToast} />);
+    await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByText("Execution"));
+    const checkbox = screen.getByLabelText("Run each step in a new session");
+    fireEvent.click(checkbox);
+
+    const input = screen.getByLabelText("Maximum parallel steps") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "3" } });
+
+    fireEvent.click(screen.getByText("Save"));
+    await waitFor(() => expect(updateSettings).toHaveBeenCalledTimes(1));
+
+    const payload = (updateSettings as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(payload.runStepsInNewSessions).toBe(true);
+    expect(payload.maxParallelSteps).toBe(3);
   });
 });

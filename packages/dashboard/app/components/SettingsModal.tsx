@@ -39,6 +39,7 @@ const SETTINGS_SECTIONS = [
   { id: "appearance", label: "Appearance", scope: "global" as const },
   { id: "scheduling", label: "Scheduling", scope: "project" as const },
   { id: "worktrees", label: "Worktrees", scope: "project" as const },
+  { id: "execution", label: "Execution", scope: "project" as const },
   { id: "commands", label: "Commands", scope: "project" as const },
   { id: "merge", label: "Merge", scope: "project" as const },
   { id: "memory", label: "Memory", scope: "project" as const },
@@ -1314,6 +1315,42 @@ export function SettingsModal({
                   ? "Naming style is not applicable when recycling worktrees — pooled worktrees retain their existing names"
                   : "How to name fresh worktree directories. Only applies when recycling is off."}
               </small>
+            </div>
+          </>
+        );
+      case "execution":
+        return (
+          <>
+            {renderScopeBanner()}
+            <h4 className="settings-section-heading">Execution</h4>
+            <div className="form-group">
+              <label htmlFor="runStepsInNewSessions" className="checkbox-label">
+                <input
+                  id="runStepsInNewSessions"
+                  type="checkbox"
+                  checked={form.runStepsInNewSessions || false}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, runStepsInNewSessions: e.target.checked }))
+                  }
+                />
+                Run each step in a new session
+              </label>
+              <small>Run each task step in its own fresh agent session for better isolation and error recovery. Failed steps can be retried individually.</small>
+            </div>
+            <div className="form-group">
+              <label htmlFor="maxParallelSteps">Maximum parallel steps</label>
+              <input
+                id="maxParallelSteps"
+                type="number"
+                min={1}
+                max={4}
+                value={form.maxParallelSteps ?? 2}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, maxParallelSteps: Number(e.target.value) }))
+                }
+                disabled={!form.runStepsInNewSessions}
+              />
+              <small>Maximum number of steps to run in parallel when file scopes don&apos;t overlap (1-4)</small>
             </div>
           </>
         );
