@@ -20,6 +20,7 @@ import { withRateLimitRetry } from "./rate-limit-retry.js";
 import { computeRecoveryDecision, formatDelay, MAX_RECOVERY_RETRIES } from "./recovery-policy.js";
 import type { StuckTaskDetector, StuckTaskEvent } from "./stuck-task-detector.js";
 import { isContextLimitError } from "./context-limit-detector.js";
+import { StepSessionExecutor, type StepSessionExecutorOptions, type StepResult } from "./step-session-executor.js";
 
 // Re-export for backward compatibility (tests import from executor.ts)
 export { summarizeToolArgs } from "./agent-logger.js";
@@ -241,6 +242,8 @@ export class TaskExecutor {
     session: AgentSession;
     seenSteeringIds: Set<string>;
   }>();
+  /** Active step-session executors per task (mutually exclusive with activeSessions). */
+  private activeStepExecutors = new Map<string, StepSessionExecutor>();
   /** Tasks that were paused mid-execution (to avoid marking them as "failed"). */
   private pausedAborted = new Set<string>();
   /** Tasks that had a dependency added mid-execution (abort + discard worktree). */
@@ -305,13 +308,21 @@ export class TaskExecutor {
     // 4. Comments are marked as seen BEFORE injection to prevent retry loops on failure
     // 5. Each injection is logged to the task for user visibility
     store.on("task:updated", async (task) => {
-      // Handle pause - terminate the agent session
+      // Handle pause - terminate the agent session or step sessions
       if (task.paused && this.activeSessions.has(task.id)) {
         executorLog.log(`Pausing ${task.id} — terminating agent session`);
         this.pausedAborted.add(task.id);
         this.options.stuckTaskDetector?.untrackTask(task.id);
         const { session } = this.activeSessions.get(task.id)!;
         session.dispose();
+        return;
+      }
+      if (task.paused && this.activeStepExecutors.has(task.id)) {
+        executorLog.log(`Pausing ${task.id} — terminating step sessions`);
+        this.pausedAborted.add(task.id);
+        this.options.stuckTaskDetector?.untrackTask(task.id);
+        const stepExecutor = this.activeStepExecutors.get(task.id)!;
+        await stepExecutor.terminateAllSessions();
         return;
       }
 
@@ -383,6 +394,14 @@ export class TaskExecutor {
           this.pausedAborted.add(taskId);
           this.options.stuckTaskDetector?.untrackTask(taskId);
           session.dispose();
+        }
+        for (const [taskId, stepExecutor] of this.activeStepExecutors) {
+          executorLog.log(`Global pause — terminating step sessions for ${taskId}`);
+          this.pausedAborted.add(taskId);
+          this.options.stuckTaskDetector?.untrackTask(taskId);
+          stepExecutor.terminateAllSessions().catch(err =>
+            executorLog.warn(`Failed to terminate step sessions for global pause ${taskId}: ${err}`)
+          );
         }
       }
     });
@@ -720,6 +739,184 @@ export class TaskExecutor {
         }
       }
 
+      // ── Step-Session vs Single-Session execution path ──
+      // When runStepsInNewSessions is enabled, each step runs in its own
+      // fresh agent session via StepSessionExecutor. Otherwise, the existing
+      // single-session flow runs all steps in one monolithic session.
+      if (settings.runStepsInNewSessions) {
+        // ── Step-Session Path ──────────────────────────────────────────
+        executorLog.log(`${task.id}: using step-session mode (maxParallel=${settings.maxParallelSteps ?? 2})`);
+
+        const stepExecutor = new StepSessionExecutor({
+          taskDetail: detail,
+          worktreePath,
+          rootDir: this.rootDir,
+          settings,
+          semaphore: this.options.semaphore,
+          stuckTaskDetector: this.options.stuckTaskDetector,
+          onStepStart: (stepIndex) => {
+            this.options.stuckTaskDetector?.recordProgress(task.id);
+          },
+          onStepComplete: (stepIndex, result) => {
+            executorLog.log(`${task.id}: step ${stepIndex} ${result.success ? "succeeded" : "failed"} (${result.retries} retries)`);
+          },
+        });
+        this.activeStepExecutors.set(task.id, stepExecutor);
+
+        const stepWork = async () => {
+          const results = await stepExecutor.executeAll();
+
+          // Check abort conditions after execution completes
+          if (this.depAborted.has(task.id)) {
+            this.depAborted.delete(task.id);
+            await this.handleDepAbortCleanup(task.id, worktreePath);
+            return;
+          }
+          if (this.pausedAborted.has(task.id)) {
+            this.pausedAborted.delete(task.id);
+            await this.store.logEntry(task.id, "Execution paused — step sessions terminated, moved to todo");
+            await this.store.moveTask(task.id, "todo");
+            return;
+          }
+          if (this.stuckAborted.has(task.id)) {
+            stuckRequeue = this.stuckAborted.get(task.id) ?? true;
+            this.stuckAborted.delete(task.id);
+            return;
+          }
+
+          const allSuccess = results.every(r => r.success);
+          if (allSuccess) {
+            const updatedTask = await this.store.getTask(task.id);
+            const modifiedFiles = this.captureModifiedFiles(worktreePath, updatedTask.baseCommitSha);
+            if (modifiedFiles.length > 0) {
+              await this.store.updateTask(task.id, { modifiedFiles });
+              executorLog.log(`${task.id}: captured ${modifiedFiles.length} modified files`);
+            }
+
+            const workflowSuccess = await this.runWorkflowSteps(task, worktreePath, settings);
+            if (!workflowSuccess) {
+              await this.store.updateTask(task.id, { status: "failed", error: "Workflow step failed" });
+              await this.store.moveTask(task.id, "in-review");
+              executorLog.log(`✗ ${task.id} workflow step failed → in-review`);
+              this.options.onError?.(task, new Error("Workflow step failed"));
+              return;
+            }
+
+            await this.store.moveTask(task.id, "in-review");
+            executorLog.log(`✓ ${task.id} completed (step-session) → in-review`);
+            this.options.onComplete?.(task);
+          } else {
+            const failedSteps = results.filter(r => !r.success);
+            const errorSummary = failedSteps.map(r => `Step ${r.stepIndex}: ${r.error || "unknown error"}`).join("; ");
+            await this.store.updateTask(task.id, { status: "failed", error: errorSummary });
+            await this.store.moveTask(task.id, "in-review");
+            executorLog.log(`✗ ${task.id} step-session failed → in-review: ${errorSummary}`);
+            this.options.onError?.(task, new Error(errorSummary));
+          }
+        };
+
+        const retryableStepWork = () => withRateLimitRetry(stepWork, {
+          onRetry: (attempt, delayMs, error) => {
+            const delaySec = Math.round(delayMs / 1000);
+            executorLog.warn(`⏳ ${task.id} rate limited — retry ${attempt} in ${delaySec}s: ${error.message}`);
+            this.store.logEntry(task.id, `Rate limited — retry ${attempt} in ${delaySec}s`).catch(() => {});
+          },
+        });
+
+        try {
+          if (this.options.semaphore) {
+            await this.options.semaphore.run(retryableStepWork, PRIORITY_EXECUTE);
+          } else {
+            await retryableStepWork();
+          }
+        } catch (err: any) {
+          if (this.depAborted.has(task.id)) {
+            this.depAborted.delete(task.id);
+            await this.handleDepAbortCleanup(task.id, worktreePath);
+          } else if (this.pausedAborted.has(task.id)) {
+            this.pausedAborted.delete(task.id);
+            await this.store.logEntry(task.id, "Execution paused during step-session");
+            await this.store.moveTask(task.id, "todo");
+          } else if (this.stuckAborted.has(task.id)) {
+            stuckRequeue = this.stuckAborted.get(task.id) ?? true;
+            this.stuckAborted.delete(task.id);
+          } else if (this.options.usageLimitPauser && isUsageLimitError(err.message)) {
+            await this.options.usageLimitPauser.onUsageLimitHit("executor", task.id, err.message);
+          } else if (isTransientError(err.message)) {
+            const decision = computeRecoveryDecision({
+              recoveryRetryCount: task.recoveryRetryCount,
+              nextRecoveryAt: task.nextRecoveryAt,
+            });
+
+            if (decision.shouldRetry) {
+              const attempt = decision.nextState.recoveryRetryCount;
+              const delay = formatDelay(decision.delayMs);
+              if (!isSilentTransientError(err.message)) {
+                executorLog.warn(`⚡ ${task.id} transient error — retry ${attempt}/${MAX_RECOVERY_RETRIES} in ${delay}: ${err.message}`);
+                await this.store.logEntry(task.id, `Transient error (retry ${attempt}/${MAX_RECOVERY_RETRIES} in ${delay}): ${err.message}`);
+              }
+              if (worktreePath && existsSync(worktreePath)) {
+                try {
+                  execSync(`git worktree remove "${worktreePath}" --force`, { cwd: this.rootDir, stdio: "pipe" });
+                } catch {}
+              }
+              await this.store.updateTask(task.id, {
+                recoveryRetryCount: decision.nextState.recoveryRetryCount,
+                nextRecoveryAt: decision.nextState.nextRecoveryAt,
+                worktree: undefined,
+                branch: undefined,
+              });
+              await this.store.moveTask(task.id, "todo");
+              stuckRequeue = null; // Prevent outer finally from re-processing
+              return;
+            }
+
+            executorLog.error(`✗ ${task.id} transient error retries exhausted: ${err.message}`);
+            await this.store.updateTask(task.id, {
+              status: "failed",
+              error: err.message,
+              recoveryRetryCount: null,
+              nextRecoveryAt: null,
+            });
+            this.options.onError?.(task, err);
+          } else {
+            executorLog.error(`✗ ${task.id} step-session execution failed:`, err.message);
+            await this.store.logEntry(task.id, `Step-session execution failed: ${err.message}`);
+            await this.store.updateTask(task.id, { status: "failed", error: err.message });
+            this.options.onError?.(task, err);
+          }
+        } finally {
+          this.executing.delete(task.id);
+          this.loopRecoveryState.delete(task.id);
+          await stepExecutor.cleanup().catch(cleanupErr =>
+            executorLog.warn(`StepSessionExecutor cleanup failed for ${task.id}: ${cleanupErr}`)
+          );
+          this.activeStepExecutors.delete(task.id);
+
+          // Stuck-requeue: clean up worktree and move to todo
+          if (stuckRequeue === true) {
+            try {
+              if (worktreePath && existsSync(worktreePath)) {
+                try {
+                  execSync(`git worktree remove "${worktreePath}" --force`, { cwd: this.rootDir, stdio: "pipe" });
+                } catch {}
+              }
+              await this.store.updateTask(task.id, { status: "stuck-killed", worktree: undefined, branch: undefined });
+              if (task.column !== "todo") {
+                await this.store.moveTask(task.id, "todo");
+                executorLog.log(`${task.id} moved to todo for retry after stuck kill`);
+              }
+            } catch (err: any) {
+              executorLog.error(`Failed to requeue stuck task ${task.id}: ${err.message}`);
+            }
+            stuckRequeue = null; // Prevent outer finally from re-processing
+          }
+        }
+        // Step-session path handled completely — return before outer catch/finally
+        return;
+      }
+
+      // ── Single-Session Path (default) ────────────────────────────────
       // Build custom tools for the worker
       // Track the last code review verdict per step so we can enforce REVISE
       // (block task_update status="done" until the agent re-reviews and gets APPROVE).
@@ -1430,6 +1627,14 @@ export class TaskExecutor {
         this.depAborted.add(taskId);
         const activeSession = this.activeSessions.get(taskId);
         activeSession?.session.dispose();
+
+        // Also terminate step sessions if active
+        const stepExecutor = this.activeStepExecutors.get(taskId);
+        if (stepExecutor) {
+          stepExecutor.terminateAllSessions().catch(err =>
+            executorLog.warn(`Failed to terminate step sessions for dep-abort ${taskId}: ${err}`)
+          );
+        }
 
         return {
           content: [{
@@ -2477,6 +2682,13 @@ If issues are found that need attention, describe them clearly.`;
    *   false if the stuck kill budget is exhausted (task already marked failed).
    */
   markStuckAborted(taskId: string, shouldRequeue: boolean = true): void {
+    // Terminate step-session executor if active
+    const stepExecutor = this.activeStepExecutors.get(taskId);
+    if (stepExecutor) {
+      stepExecutor.terminateAllSessions().catch(err =>
+        executorLog.warn(`Failed to terminate step sessions for stuck task ${taskId}: ${err}`)
+      );
+    }
     this.stuckAborted.set(taskId, shouldRequeue);
   }
 

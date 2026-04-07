@@ -19,6 +19,8 @@ export { StuckTaskDetector, type StuckTaskDetectorOptions, type DisposableSessio
 export { TokenCapDetector, type TokenCapCheckResult } from "./token-cap-detector.js";
 export { SelfHealingManager, type SelfHealingOptions } from "./self-healing.js";
 export { ProjectManager } from "./project-manager.js";
+export { StepSessionExecutor } from "./step-session-executor.js";
+export type { StepResult, ParallelWave, StepSessionExecutorOptions } from "./step-session-executor.js";
 // Multi-project runtime types
 export {
   type ProjectRuntime,
