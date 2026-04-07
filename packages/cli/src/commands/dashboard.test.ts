@@ -33,6 +33,13 @@ const {
 // Minimal mock store backed by EventEmitter so `store.on` works
 function makeMockStore() {
   const emitter = new EventEmitter();
+  const mockMissionStore = {
+    listMissions: vi.fn().mockReturnValue([]),
+    getMission: vi.fn(),
+    updateMission: vi.fn(),
+    listMilestones: vi.fn().mockReturnValue([]),
+    listFeatures: vi.fn().mockReturnValue([]),
+  };
   return {
     init: vi.fn().mockResolvedValue(undefined),
     watch: vi.fn().mockResolvedValue(undefined),
@@ -52,6 +59,7 @@ function makeMockStore() {
     logEntry: vi.fn().mockResolvedValue(undefined),
     updateTask: vi.fn().mockResolvedValue({}),
     getFusionDir: vi.fn().mockReturnValue("/tmp/test/.fusion"),
+    getMissionStore: vi.fn().mockReturnValue(mockMissionStore),
     close: vi.fn(),
     on: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
       emitter.on(event, handler);
@@ -219,6 +227,11 @@ vi.mock("@fusion/engine", async (importOriginal) => {
         checkStuckBudget: mockCheckStuckBudget,
       };
     }),
+    MissionAutopilot: vi.fn().mockImplementation(() => ({
+      start: vi.fn(),
+      stop: vi.fn(),
+      setScheduler: vi.fn(),
+    })),
     scanIdleWorktrees: vi.fn().mockResolvedValue([]),
     cleanupOrphanedWorktrees: vi.fn().mockResolvedValue(0),
   };

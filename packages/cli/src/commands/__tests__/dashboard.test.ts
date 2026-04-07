@@ -6,6 +6,13 @@ import { EventEmitter } from "node:events";
 // Minimal mock store backed by EventEmitter so `store.on` works
 function makeMockStore() {
   const emitter = new EventEmitter();
+  const mockMissionStore = {
+    listMissions: vi.fn().mockReturnValue([]),
+    getMission: vi.fn(),
+    updateMission: vi.fn(),
+    listMilestones: vi.fn().mockReturnValue([]),
+    listFeatures: vi.fn().mockReturnValue([]),
+  };
   return {
     init: vi.fn().mockResolvedValue(undefined),
     watch: vi.fn().mockResolvedValue(undefined),
@@ -20,6 +27,7 @@ function makeMockStore() {
     }),
     listTasks: vi.fn().mockResolvedValue([]),
     getFusionDir: vi.fn().mockReturnValue("/tmp/test/.fusion"),
+    getMissionStore: vi.fn().mockReturnValue(mockMissionStore),
     on: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
       emitter.on(event, handler);
     }),
@@ -91,6 +99,11 @@ vi.mock("@fusion/engine", async (importOriginal) => {
     ...original,
     WorktreePool: original.WorktreePool,
     AgentSemaphore: original.AgentSemaphore,
+    MissionAutopilot: vi.fn().mockImplementation(() => ({
+      start: vi.fn(),
+      stop: vi.fn(),
+      setScheduler: vi.fn(),
+    })),
     TriageProcessor: vi.fn().mockImplementation(() => ({
       start: vi.fn(),
       stop: vi.fn(),
@@ -279,5 +292,62 @@ describe("runDashboard — AuthStorage & ModelRegistry wiring", () => {
     await runDashboard(0, {});
 
     expect(mockAuthStorage.getApiKey).not.toHaveBeenCalled();
+  });
+});
+
+describe("runDashboard — MissionAutopilot wiring", () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    mockDiscoverAndLoadExtensions.mockResolvedValue({
+      runtime: { pendingProviderRegistrations: [] },
+      errors: [],
+    });
+    const { TaskStore } = await import("@fusion/core");
+    (TaskStore as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => makeMockStore());
+  });
+
+  it("creates a MissionAutopilot instance and passes it to createServer", async () => {
+    const { createServer } = await import("@fusion/dashboard");
+    const { MissionAutopilot } = await import("@fusion/engine");
+
+    await runDashboard(0, {});
+
+    expect(MissionAutopilot).toHaveBeenCalledTimes(1);
+    expect(createServer).toHaveBeenCalledTimes(1);
+    const serverOpts = (createServer as ReturnType<typeof vi.fn>).mock.calls[0][1];
+    expect(serverOpts).toHaveProperty("missionAutopilot");
+    expect(serverOpts.missionAutopilot).toBeDefined();
+  });
+
+  it("passes missionAutopilot and missionStore to Scheduler options", async () => {
+    const { Scheduler } = await import("@fusion/engine");
+
+    await runDashboard(0, {});
+
+    expect(Scheduler).toHaveBeenCalledTimes(1);
+    const schedulerOpts = (Scheduler as ReturnType<typeof vi.fn>).mock.calls[0][1];
+    expect(schedulerOpts).toHaveProperty("missionAutopilot");
+    expect(schedulerOpts).toHaveProperty("missionStore");
+    expect(schedulerOpts.missionAutopilot).toBeDefined();
+    expect(schedulerOpts.missionStore).toBeDefined();
+  });
+
+  it("calls setScheduler on the MissionAutopilot instance after Scheduler creation", async () => {
+    const { MissionAutopilot } = await import("@fusion/engine");
+
+    await runDashboard(0, {});
+
+    expect(MissionAutopilot).toHaveBeenCalledTimes(1);
+    const autopilotInstance = (MissionAutopilot as ReturnType<typeof vi.fn>).mock.results[0].value;
+    expect(autopilotInstance.setScheduler).toHaveBeenCalledTimes(1);
+  });
+
+  it("starts the MissionAutopilot service", async () => {
+    const { MissionAutopilot } = await import("@fusion/engine");
+
+    await runDashboard(0, {});
+
+    const autopilotInstance = (MissionAutopilot as ReturnType<typeof vi.fn>).mock.results[0].value;
+    expect(autopilotInstance.start).toHaveBeenCalledTimes(1);
   });
 });

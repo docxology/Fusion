@@ -4,7 +4,7 @@ import { createInterface } from "node:readline";
 import { TaskStore, AutomationStore, CentralCore, AgentStore, getTaskMergeBlocker } from "@fusion/core";
 import type { Settings, TaskDetail, PrInfo } from "@fusion/core";
 import { createServer, GitHubClient } from "@fusion/dashboard";
-import { TriageProcessor, TaskExecutor, Scheduler, AgentSemaphore, WorktreePool, aiMergeTask, UsageLimitPauser, PRIORITY_MERGE, scanIdleWorktrees, cleanupOrphanedWorktrees, NtfyNotifier, PrMonitor, PrCommentHandler, CronRunner, StuckTaskDetector, SelfHealingManager } from "@fusion/engine";
+import { TriageProcessor, TaskExecutor, Scheduler, AgentSemaphore, WorktreePool, aiMergeTask, UsageLimitPauser, PRIORITY_MERGE, scanIdleWorktrees, cleanupOrphanedWorktrees, NtfyNotifier, PrMonitor, PrCommentHandler, CronRunner, StuckTaskDetector, SelfHealingManager, MissionAutopilot } from "@fusion/engine";
 import { AuthStorage, DefaultPackageManager, ModelRegistry, SettingsManager, discoverAndLoadExtensions, getAgentDir, createExtensionRuntime } from "@mariozechner/pi-coding-agent";
 
 /**
@@ -563,8 +563,16 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
     modelRegistry.refresh();
   }
 
+  // ── MissionAutopilot: autonomous mission progression ─────────────
+  //
+  // Declared before createServer so it can be passed to both the server
+  // and the Scheduler. Assigned inside the engine block below (dev mode
+  // skips the engine entirely, so missionAutopilot stays undefined).
+  //
+  let missionAutopilot: InstanceType<typeof MissionAutopilot> | undefined;
+
   // Start the web server with AI merge, auth, and model registry wired in
-  const app = createServer(store, { onMerge, authStorage, modelRegistry, automationStore });
+  const app = createServer(store, { onMerge, authStorage, modelRegistry, automationStore, missionAutopilot });
 
   // Start the AI engine (unless in dev mode)
   if (!opts.dev) {
@@ -621,9 +629,19 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
       prCommentHandler.handleNewComments(taskId, prInfo, comments),
     );
 
+    // ── MissionAutopilot: autonomous mission progression ─────────────
+    //
+    // Created before the Scheduler since Scheduler's constructor accepts
+    // missionAutopilot. The scheduler reference is set after construction
+    // via setScheduler() to break the circular dependency.
+    //
+    missionAutopilot = new MissionAutopilot(store, store.getMissionStore());
+
     const scheduler = new Scheduler(store, {
       semaphore,
       prMonitor,
+      missionStore: store.getMissionStore(),
+      missionAutopilot,
       onSchedule: (t) => console.log(`[engine] Scheduled ${t.id}`),
       onBlocked: (t, deps) => console.log(`[engine] ${t.id} blocked by ${deps.join(", ")}`),
       onClosedPrFeedback: async (taskId, prInfo, comments) => {
@@ -631,12 +649,16 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
       },
     });
 
+    // Break circular dependency: Scheduler ↔ MissionAutopilot
+    missionAutopilot.setScheduler(scheduler);
+
     // ── CronRunner: scheduled task execution ──────────────────────────
     const cronRunner = new CronRunner(store, automationStore);
     cronRunner.start();
 
     triage.start();
     scheduler.start();
+    missionAutopilot.start();
     stuckTaskDetector.start();
     selfHealing.start();
 
@@ -751,6 +773,7 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
     const shutdown = () => {
       selfHealing.stop();
       stuckTaskDetector.stop();
+      missionAutopilot.stop();
       triage.stop();
       scheduler.stop();
       cronRunner.stop();
