@@ -21454,50 +21454,18 @@ html .column.drag-over * {
 /* Agents tab */
 .mailbox-agents {
   display: flex;
-  gap: 16px;
+  flex-direction: column;
+  gap: 12px;
   min-height: 300px;
 }
 
-.mailbox-agents-sidebar {
-  width: 200px;
+.mailbox-agents-dropdown {
   flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  border-right: 1px solid var(--border);
-  padding-right: 12px;
 }
 
-.mailbox-agents-label {
-  font-size: 0.8rem;
-  color: var(--text-muted);
-  margin-bottom: 4px;
-  font-weight: 600;
-}
-
-.mailbox-agent-btn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 10px;
-  border: none;
-  border-radius: 6px;
-  background: none;
-  color: var(--text-primary);
-  font-size: 0.85rem;
-  cursor: pointer;
-  text-align: left;
+.mailbox-agent-select {
   width: 100%;
-  transition: background-color 0.1s;
-}
-
-.mailbox-agent-btn:hover {
-  background: var(--bg-hover);
-}
-
-.mailbox-agent-btn.active {
-  background: var(--bg-active);
-  font-weight: 600;
+  max-width: 300px;
 }
 
 .mailbox-agents-content {

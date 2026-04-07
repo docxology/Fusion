@@ -197,16 +197,31 @@ describe("MailboxModal", () => {
     });
   });
 
-  it("shows agent buttons in agents tab", async () => {
+  it("shows agent dropdown in agents tab", async () => {
     render(<MailboxModal {...defaultProps} />);
     fireEvent.click(screen.getByTestId("mailbox-tab-agents"));
     await waitFor(() => {
-      expect(screen.getByTestId("mailbox-agent-btn-agent-001")).toBeDefined();
-      expect(screen.getByTestId("mailbox-agent-btn-agent-002")).toBeDefined();
+      expect(screen.getByTestId("mailbox-agent-select")).toBeDefined();
+    });
+    // Should have placeholder plus two agent options
+    const select = screen.getByTestId("mailbox-agent-select") as HTMLSelectElement;
+    expect(select.options.length).toBe(3); // placeholder + 2 agents
+    expect(select.options[0].textContent).toBe("Select an agent…");
+    expect(select.options[1].textContent).toBe("Test Agent 1");
+    expect(select.options[2].textContent).toBe("Test Agent 2");
+  });
+
+  it("shows Select an agent… placeholder in dropdown", async () => {
+    render(<MailboxModal {...defaultProps} />);
+    fireEvent.click(screen.getByTestId("mailbox-tab-agents"));
+    await waitFor(() => {
+      const select = screen.getByTestId("mailbox-agent-select") as HTMLSelectElement;
+      expect(select.value).toBe("");
+      expect(select.options[0].textContent).toBe("Select an agent…");
     });
   });
 
-  it("loads agent mailbox when agent is selected", async () => {
+  it("loads agent mailbox when selecting an agent from dropdown", async () => {
     mockFetchAgentMailbox.mockResolvedValue({
       ownerId: "agent-001",
       ownerType: "agent",
@@ -216,11 +231,19 @@ describe("MailboxModal", () => {
     render(<MailboxModal {...defaultProps} />);
     fireEvent.click(screen.getByTestId("mailbox-tab-agents"));
     await waitFor(() => {
-      expect(screen.getByTestId("mailbox-agent-btn-agent-001")).toBeDefined();
+      expect(screen.getByTestId("mailbox-agent-select")).toBeDefined();
     });
-    fireEvent.click(screen.getByTestId("mailbox-agent-btn-agent-001"));
+    fireEvent.change(screen.getByTestId("mailbox-agent-select"), { target: { value: "agent-001" } });
     await waitFor(() => {
       expect(mockFetchAgentMailbox).toHaveBeenCalledWith("agent-001", undefined);
+    });
+  });
+
+  it("shows empty state when no agents exist", async () => {
+    render(<MailboxModal {...defaultProps} agents={[]} />);
+    fireEvent.click(screen.getByTestId("mailbox-tab-agents"));
+    await waitFor(() => {
+      expect(screen.getByText("No agents found")).toBeDefined();
     });
   });
 
