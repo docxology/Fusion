@@ -405,7 +405,7 @@ export class MissionStore extends EventEmitter<MissionStoreEvents> {
       SELECT *
       FROM mission_events
       WHERE ${whereSql}
-      ORDER BY timestamp DESC, rowid DESC
+      ORDER BY timestamp DESC, id DESC
       LIMIT ? OFFSET ?
     `).all(...params, limit, offset) as any[];
 
@@ -479,7 +479,7 @@ export class MissionStore extends EventEmitter<MissionStoreEvents> {
       SELECT timestamp, description
       FROM mission_events
       WHERE missionId = ? AND eventType = 'error'
-      ORDER BY timestamp DESC, rowid DESC
+      ORDER BY timestamp DESC, id DESC
       LIMIT 1
     `).get(missionId) as { timestamp: string; description: string } | undefined;
 
