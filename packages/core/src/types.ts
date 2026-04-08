@@ -1019,6 +1019,10 @@ export const DEFAULT_GLOBAL_SETTINGS: Required<Pick<GlobalSettings, "themeMode" 
   ntfyTopic: undefined,
   ntfyEvents: ["in-review", "merged", "failed", "awaiting-approval"],
   ntfyDashboardHost: undefined,
+  defaultProjectId: undefined,
+  setupComplete: undefined,
+  favoriteProviders: undefined,
+  favoriteModels: undefined,
   openrouterModelSync: true,
   modelOnboardingComplete: undefined,
 };
@@ -1034,6 +1038,8 @@ export const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
   autoMerge: true,
   mergeStrategy: "direct",
   worktreeInitCommand: undefined,
+  testCommand: undefined,
+  buildCommand: undefined,
   recycleWorktrees: false,
   worktreeNaming: "random",
   taskPrefix: "FN",
@@ -1076,6 +1082,8 @@ export const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
   titleSummarizerModelId: undefined,
   titleSummarizerFallbackProvider: undefined,
   titleSummarizerFallbackModelId: undefined,
+  scripts: undefined,
+  setupScript: undefined,
   insightExtractionEnabled: false,
   insightExtractionSchedule: "0 2 * * *",
   insightExtractionMinIntervalMs: 86_400_000,
@@ -1116,6 +1124,9 @@ export const GLOBAL_SETTINGS_KEYS: ReadonlyArray<keyof GlobalSettings> = [
   "ntfyEvents",
   "ntfyDashboardHost",
   "defaultProjectId",
+  "setupComplete",
+  "favoriteProviders",
+  "favoriteModels",
   "openrouterModelSync",
   "modelOnboardingComplete",
 ] as const;
@@ -1150,8 +1161,14 @@ export const PROJECT_SETTINGS_KEYS: ReadonlyArray<keyof ProjectSettings> = [
   "defaultPresetBySize",
   "autoResolveConflicts",
   "smartConflictResolution",
+  "strictScopeEnforcement",
+  "buildRetryCount",
+  "buildTimeoutMs",
   "requirePlanApproval",
   "taskStuckTimeoutMs",
+  "autoUnpauseEnabled",
+  "autoUnpauseBaseDelayMs",
+  "autoUnpauseMaxDelayMs",
   "aiSessionTtlMs",
   "aiSessionCleanupIntervalMs",
   "maxStuckKills",
@@ -1166,6 +1183,8 @@ export const PROJECT_SETTINGS_KEYS: ReadonlyArray<keyof ProjectSettings> = [
   "titleSummarizerModelId",
   "titleSummarizerFallbackProvider",
   "titleSummarizerFallbackModelId",
+  "scripts",
+  "setupScript",
   "tokenCap",
   "insightExtractionEnabled",
   "insightExtractionSchedule",
@@ -1173,6 +1192,7 @@ export const PROJECT_SETTINGS_KEYS: ReadonlyArray<keyof ProjectSettings> = [
   "memoryEnabled",
   "maxSpawnedAgentsPerParent",
   "maxSpawnedAgentsGlobal",
+  "maintenanceIntervalMs",
   "runStepsInNewSessions",
   "maxParallelSteps",
   "missionStaleThresholdMs",
@@ -1183,6 +1203,24 @@ export const PROJECT_SETTINGS_KEYS: ReadonlyArray<keyof ProjectSettings> = [
   "reflectionIntervalMs",
   "reflectionAfterTask",
 ] as const;
+
+// ── Compile-time parity: ensures every interface key is listed exactly once ──
+// If either assertion fails with "Type 'X' is not assignable to type 'Y'",
+// a key was added to the interface without updating the corresponding array
+// (or vice versa). Add or remove the key to fix.
+type _GlobalKeysCheck = typeof GLOBAL_SETTINGS_KEYS[number] extends keyof GlobalSettings
+  ? keyof GlobalSettings extends typeof GLOBAL_SETTINGS_KEYS[number]
+    ? true
+    : never
+  : never;
+const _globalParity: _GlobalKeysCheck = true as _GlobalKeysCheck;
+
+type _ProjectKeysCheck = typeof PROJECT_SETTINGS_KEYS[number] extends keyof ProjectSettings
+  ? keyof ProjectSettings extends typeof PROJECT_SETTINGS_KEYS[number]
+    ? true
+    : never
+  : never;
+const _projectParity: _ProjectKeysCheck = true as _ProjectKeysCheck;
 
 export interface BoardConfig {
   nextId: number;
