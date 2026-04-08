@@ -459,6 +459,44 @@ describe("Header", () => {
       expect(screen.getByPlaceholderText("Search tasks...")).toBeDefined();
     });
 
+    it("focuses mobile search input when expanded", async () => {
+      const onSearchChange = vi.fn();
+      render(
+        <Header
+          view="board"
+          onChangeView={vi.fn()}
+          searchQuery=""
+          onSearchChange={onSearchChange}
+        />
+      );
+
+      fireEvent.click(screen.getByTitle("Open search"));
+      const input = screen.getByPlaceholderText("Search tasks...") as HTMLInputElement;
+
+      await waitFor(() => {
+        expect(document.activeElement).toBe(input);
+      });
+    });
+
+    it("renders expanded mobile search container with expected class", () => {
+      const onSearchChange = vi.fn();
+      render(
+        <Header
+          view="board"
+          onChangeView={vi.fn()}
+          searchQuery=""
+          onSearchChange={onSearchChange}
+        />
+      );
+
+      fireEvent.click(screen.getByTitle("Open search"));
+      const input = screen.getByPlaceholderText("Search tasks...");
+      const expandedContainer = input.closest(".mobile-search-expanded");
+
+      expect(expandedContainer).not.toBeNull();
+      expect(expandedContainer?.className).toContain("mobile-search-expanded");
+    });
+
     it("mobile search stays expanded when searchQuery is non-empty", () => {
       const onSearchChange = vi.fn();
       render(

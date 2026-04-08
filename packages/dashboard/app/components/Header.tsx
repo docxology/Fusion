@@ -195,13 +195,6 @@ export function Header({
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  // Focus input when mobile search opens
-  useEffect(() => {
-    if (isMobileSearchOpen && mobileSearchInputRef.current) {
-      setTimeout(() => mobileSearchInputRef.current?.focus(), 0);
-    }
-  }, [isMobileSearchOpen]);
-
   const handleMobileSearchToggle = useCallback(() => {
     setIsMobileSearchOpen((prev) => !prev);
   }, []);
@@ -335,6 +328,7 @@ export function Header({
                 <Search size={14} className="header-search-icon" />
                 <input
                   ref={mobileSearchInputRef}
+                  autoFocus
                   type="text"
                   placeholder="Search tasks..."
                   value={searchQuery}
