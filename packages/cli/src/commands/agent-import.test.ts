@@ -5,22 +5,6 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { AgentStore } from "@fusion/core";
 import { runAgentImport } from "./agent-import.js";
-import type { CompaniesShAgent } from "@fusion/core";
-
-// ── Helpers ──────────────────────────────────────────────────────────────
-
-function encodeManifest(agents: unknown[]): string {
-  return Buffer.from(JSON.stringify(agents)).toString("base64");
-}
-
-function makeScript(companyName: string, agents: unknown[], envLines?: string[]): string {
-  const manifest = encodeManifest(agents);
-  let script = `#!/bin/bash\n# Agent Company Manifest\nCOMPANY_NAME="${companyName}"\nAGENT_MANIFEST="${manifest}"`;
-  if (envLines && envLines.length > 0) {
-    script += "\n\n" + envLines.join("\n");
-  }
-  return script;
-}
 
 function makeAgentManifest(options: {
   name: string;
@@ -46,7 +30,14 @@ function createCompanyDirectory(basePath: string, agentName = "CEO"): string {
   mkdirSync(basePath, { recursive: true });
   writeFileSync(
     join(basePath, "COMPANY.md"),
-    "---\nname: Example Company\n---\nCompany description",
+    "---\nname: Example Company\nslug: example-company\n---\nCompany description",
+  );
+
+  const teamDir = join(basePath, "teams", "engineering");
+  mkdirSync(teamDir, { recursive: true });
+  writeFileSync(
+    join(teamDir, "TEAM.md"),
+    "---\nname: Engineering\nmanager: ../ceo/AGENTS.md\n---",
   );
 
   const agentDir = join(basePath, "agents", "ceo");
@@ -56,7 +47,7 @@ function createCompanyDirectory(basePath: string, agentName = "CEO"): string {
     makeAgentManifest({
       name: agentName,
       title: "Chief Executive",
-      skills: ["executor"],
+      skills: ["review"],
       body: "Lead the company",
     }),
   );
@@ -64,10 +55,8 @@ function createCompanyDirectory(basePath: string, agentName = "CEO"): string {
   return basePath;
 }
 
-// ── Tests ────────────────────────────────────────────────────────────────
-
 describe("agent-import", () => {
-  const tmpDir = join(tmpdir(), "kb-agent-import-test-" + process.pid);
+  const tmpDir = join(tmpdir(), `kb-agent-import-test-${process.pid}`);
   let createAgentMock: ReturnType<typeof vi.fn>;
   let listAgentsMock: ReturnType<typeof vi.fn>;
   let initMock: ReturnType<typeof vi.fn>;
@@ -92,171 +81,44 @@ describe("agent-import", () => {
     }
   });
 
-  it("reports error on invalid file path", async () => {
+  it("reports error on invalid source path", async () => {
     const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => {
       throw new Error("process.exit");
     });
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    await expect(
-      runAgentImport(join(tmpDir, "nonexistent.sh")),
-    ).rejects.toThrow("process.exit");
+    await expect(runAgentImport(join(tmpDir, "missing"))).rejects.toThrow("process.exit");
 
-    expect(errorSpy).toHaveBeenCalledWith(
-      expect.stringContaining("File not found"),
-    );
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Path not found"));
 
     exitSpy.mockRestore();
     errorSpy.mockRestore();
   });
 
-  it("reports parse error on invalid manifest", async () => {
-    const badFile = join(tmpDir, "bad.sh");
-    writeFileSync(badFile, "#!/bin/bash\nCOMPANY_NAME=\"test\"\nAGENT_MANIFEST=\"not-valid!!!\"");
+  it("reports parse error on malformed AGENTS.md", async () => {
+    const manifestPath = join(tmpDir, "AGENTS.md");
+    writeFileSync(manifestPath, "name: missing frontmatter delimiters");
 
     const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => {
       throw new Error("process.exit");
     });
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    await expect(
-      runAgentImport(badFile),
-    ).rejects.toThrow("process.exit");
-
-    expect(errorSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Parse error"),
-    );
+    await expect(runAgentImport(manifestPath)).rejects.toThrow("process.exit");
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Parse error"));
 
     exitSpy.mockRestore();
     errorSpy.mockRestore();
   });
 
-  it("handles empty manifest gracefully", async () => {
-    const emptyFile = join(tmpDir, "empty.sh");
-    writeFileSync(emptyFile, makeScript("empty-co", []));
-
+  it("handles empty directory gracefully", async () => {
+    const emptyDir = join(tmpDir, "empty-company");
+    mkdirSync(emptyDir, { recursive: true });
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
-    await runAgentImport(emptyFile);
+    await runAgentImport(emptyDir);
 
-    expect(logSpy).toHaveBeenCalledWith(
-      expect.stringContaining("No agents found"),
-    );
-
-    logSpy.mockRestore();
-  });
-
-  it("shows dry-run preview without creating agents", async () => {
-    const agents: CompaniesShAgent[] = [
-      { name: "Preview Agent 1", role: "executor" },
-      { name: "Preview Agent 2", role: "reviewer" },
-    ];
-    const manifestFile = join(tmpDir, "preview.sh");
-    writeFileSync(manifestFile, makeScript("preview-co", agents));
-
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-
-    await runAgentImport(manifestFile, { dryRun: true });
-
-    // Should show DRY RUN prefix
-    const output = logSpy.mock.calls.flat().join(" ");
-    expect(output).toContain("[DRY RUN]");
-    expect(output).toContain("Preview Agent 1");
-    expect(output).toContain("Preview Agent 2");
-
-    logSpy.mockRestore();
-  });
-
-  it("creates agents from valid manifest", async () => {
-    const agents: CompaniesShAgent[] = [
-      { name: "New Agent", role: "executor", metadata: { title: "Test Executor" } },
-      { name: "Another Agent", role: "reviewer" },
-    ];
-    const manifestFile = join(tmpDir, "create.sh");
-    writeFileSync(manifestFile, makeScript("test-co", agents));
-
-    const createdAgents: Array<Record<string, unknown>> = [];
-    createAgentMock.mockImplementation(async (input: any) => {
-      createdAgents.push(input);
-      return { id: `agent-${createdAgents.length}`, ...input };
-    });
-
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-
-    await runAgentImport(manifestFile);
-
-    expect(createAgentMock).toHaveBeenCalledTimes(2);
-    expect(createdAgents[0]).toEqual(
-      expect.objectContaining({ name: "New Agent", role: "executor", title: "Test Executor" }),
-    );
-    expect(createdAgents[1]).toEqual(
-      expect.objectContaining({ name: "Another Agent", role: "reviewer" }),
-    );
-
-    const output = logSpy.mock.calls.flat().join(" ");
-    expect(output).toContain("Created: 2");
-    expect(output).toContain("New Agent");
-    expect(output).toContain("Another Agent");
-
-    logSpy.mockRestore();
-  });
-
-  it("skips existing agents with --skip-existing", async () => {
-    const agents: CompaniesShAgent[] = [
-      { name: "Existing Agent", role: "executor" },
-      { name: "New Agent", role: "reviewer" },
-    ];
-    const manifestFile = join(tmpDir, "skip.sh");
-    writeFileSync(manifestFile, makeScript("skip-co", agents));
-
-    listAgentsMock.mockResolvedValue([
-      { id: "agent-1", name: "Existing Agent", role: "executor" },
-    ]);
-
-    const createdAgents: Array<Record<string, unknown>> = [];
-    createAgentMock.mockImplementation(async (input: any) => {
-      createdAgents.push(input);
-      return { id: `agent-${createdAgents.length}`, ...input };
-    });
-
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-
-    await runAgentImport(manifestFile, { skipExisting: true });
-
-    // Only the new agent should be created
-    expect(createAgentMock).toHaveBeenCalledTimes(1);
-    expect(createdAgents).toEqual([
-      expect.objectContaining({ name: "New Agent", role: "reviewer" }),
-    ]);
-
-    const output = logSpy.mock.calls.flat().join(" ");
-    expect(output).toContain("Skipped: 1");
-
-    logSpy.mockRestore();
-  });
-
-  it("reports creation errors in summary", async () => {
-    const agents: CompaniesShAgent[] = [
-      { name: "Good Agent", role: "executor" },
-      { name: "Bad Agent", role: "reviewer" },
-    ];
-    const manifestFile = join(tmpDir, "mixed.sh");
-    writeFileSync(manifestFile, makeScript("mixed-co", agents));
-
-    createAgentMock
-      .mockResolvedValueOnce({ id: "agent-1", name: "Good Agent" })
-      .mockRejectedValueOnce(new Error("Database error"));
-
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-
-    await runAgentImport(manifestFile);
-
-    const output = logSpy.mock.calls.flat().join(" ");
-    expect(output).toContain("Created: 1");
-    expect(output).toContain("Errors: 1");
-    expect(output).toContain("Bad Agent");
-    expect(output).toContain("Database error");
-
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("No agents found"));
     logSpy.mockRestore();
   });
 
@@ -267,18 +129,18 @@ describe("agent-import", () => {
 
     expect(createAgentMock).toHaveBeenCalledTimes(1);
     expect(createAgentMock).toHaveBeenCalledWith(
-      expect.objectContaining({ name: "CEO", role: "executor", title: "Chief Executive" }),
+      expect.objectContaining({ name: "CEO", role: "custom", title: "Chief Executive" }),
     );
   });
 
-  it("imports agents from a single .md AGENTS manifest", async () => {
+  it("imports agents from a single AGENTS.md file", async () => {
     const manifestPath = join(tmpDir, "AGENTS.md");
     writeFileSync(
       manifestPath,
       makeAgentManifest({
         name: "Solo Agent",
         title: "Single File Agent",
-        skills: ["reviewer"],
+        skills: ["review"],
       }),
     );
 
@@ -286,7 +148,7 @@ describe("agent-import", () => {
 
     expect(createAgentMock).toHaveBeenCalledTimes(1);
     expect(createAgentMock).toHaveBeenCalledWith(
-      expect.objectContaining({ name: "Solo Agent", role: "reviewer" }),
+      expect.objectContaining({ name: "Solo Agent", role: "custom" }),
     );
   });
 
@@ -300,11 +162,11 @@ describe("agent-import", () => {
 
     expect(createAgentMock).toHaveBeenCalledTimes(1);
     expect(createAgentMock).toHaveBeenCalledWith(
-      expect.objectContaining({ name: "Archive CEO", role: "executor" }),
+      expect.objectContaining({ name: "Archive CEO", role: "custom" }),
     );
   });
 
-  it("supports dry-run for directory imports", async () => {
+  it("supports dry-run mode", async () => {
     const companyDir = createCompanyDirectory(join(tmpDir, "company-dry-run"));
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
@@ -313,22 +175,23 @@ describe("agent-import", () => {
     expect(createAgentMock).not.toHaveBeenCalled();
     const output = logSpy.mock.calls.flat().join(" ");
     expect(output).toContain("[DRY RUN]");
-    expect(output).toContain("CEO");
+    expect(output).toContain("Agents: 1");
+    expect(output).toContain("Teams: 1");
 
     logSpy.mockRestore();
   });
 
-  it("supports skip-existing for directory imports", async () => {
+  it("supports skip-existing", async () => {
     const companyDir = createCompanyDirectory(join(tmpDir, "company-skip"));
-    listAgentsMock.mockResolvedValue([{ id: "agent-1", name: "CEO", role: "executor" }]);
+    listAgentsMock.mockResolvedValue([{ id: "agent-1", name: "CEO", role: "custom" }]);
 
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-
     await runAgentImport(companyDir, { skipExisting: true });
 
     expect(createAgentMock).not.toHaveBeenCalled();
     const output = logSpy.mock.calls.flat().join(" ");
     expect(output).toContain("Skipped: 1");
+
     logSpy.mockRestore();
   });
 
@@ -343,9 +206,7 @@ describe("agent-import", () => {
 
     await expect(runAgentImport(unsupportedPath)).rejects.toThrow("process.exit");
 
-    expect(errorSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Unsupported format"),
-    );
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("Unsupported format"));
 
     exitSpy.mockRestore();
     errorSpy.mockRestore();

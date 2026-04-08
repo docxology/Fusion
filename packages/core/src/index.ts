@@ -221,28 +221,6 @@ export {
   readProjectMemory,
 } from "./project-memory.js";
 
-// ── companies.sh Types ───────────────────────────────────────────────────
-
-export type {
-  CompaniesShManifest,
-  CompaniesShAgent,
-  CompaniesShConfig,
-  CompaniesShMetadata,
-  CompaniesShEnvVar,
-  CompaniesShImportResult,
-  CompaniesShRole,
-} from "./companies-sh-types.js";
-
-// ── companies.sh Parser ──────────────────────────────────────────────
-
-export {
-  parseCompaniesShManifest,
-  companiesShAgentToAgentCreateInput,
-  convertCompaniesShAgents,
-  mapRoleToCapability,
-  CompaniesShParseError,
-} from "./companies-sh-parser.js";
-
 // ── Agent Companies Types ──────────────────────────────────
 
 export type {
@@ -255,7 +233,6 @@ export type {
   TeamManifest,
   AgentManifest,
   ProjectManifest,
-  SkillManifest,
   TaskManifest,
   SourceReference,
 } from "./agent-companies-types.js";
@@ -267,11 +244,12 @@ export {
   parseCompanyManifest,
   parseTeamManifest,
   parseAgentManifest,
+  parseSingleAgentManifest,
   parseProjectManifest,
   parseTaskManifest,
-  parseSkillManifest,
   parseCompanyDirectory,
   parseCompanyArchive,
+  mapRoleToCapability,
   agentManifestToAgentCreateInput,
   convertAgentCompanies,
   AgentCompaniesParseError,

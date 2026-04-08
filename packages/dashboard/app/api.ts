@@ -2100,6 +2100,7 @@ export function fetchAgentTasks(agentId: string, projectId?: string): Promise<Ta
 /** Result of importing agents from an Agent Companies source */
 export interface AgentImportResult {
   companyName?: string;
+  companySlug?: string;
   agents?: Array<{ name: string; role: string; title?: string; skills?: string[] }>;
   /** In dry-run mode: agent name strings. In live mode: agent objects with id and name. */
   created: string[] | Array<{ id: string; name: string }>;
@@ -2113,7 +2114,7 @@ export interface AgentImportResult {
  * Uses dryRun for preview, then actual import.
  */
 export function importAgents(
-  input: { manifest?: string; source?: string; agents?: unknown[] },
+  input: { manifest: string } | { source: string } | { agents: unknown[] },
   options?: { dryRun?: boolean; skipExisting?: boolean },
   projectId?: string,
 ): Promise<AgentImportResult> {

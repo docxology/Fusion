@@ -7270,12 +7270,12 @@ Output ONLY the prompt text (no markdown, no explanations).`;
 
   /**
    * POST /api/agents/import
-   * Import agents from Agent Companies packages or legacy companies.sh manifests.
+   * Import agents from Agent Companies sources.
    *
    * Body modes (checked in order):
    *  - { agents: AgentManifest[], skipExisting?, dryRun? }
-   *  - { source: string, skipExisting?, dryRun? }
-   *  - { manifest: string, skipExisting?, dryRun? }
+   *  - { source: string, skipExisting?, dryRun? }   // server directory path
+   *  - { manifest: string, skipExisting?, dryRun? } // raw AGENTS.md content
    */
   router.post("/agents/import", async (req, res) => {
     try {
@@ -7284,12 +7284,9 @@ Output ONLY the prompt text (no markdown, no explanations).`;
         AgentStore,
         parseCompanyDirectory,
         parseCompanyArchive,
-        parseAgentManifest,
+        parseSingleAgentManifest,
         convertAgentCompanies,
         AgentCompaniesParseError,
-        parseCompaniesShManifest,
-        convertCompaniesShAgents,
-        CompaniesShParseError,
       } = await import("@fusion/core");
 
       const scopedStore = await getScopedStore(req);
@@ -7300,27 +7297,22 @@ Output ONLY the prompt text (no markdown, no explanations).`;
       const existingNames = new Set(existingAgents.map((a: any) => a.name));
       const conversionOptions = skipExisting ? { skipExisting: [...existingNames] } : undefined;
 
-      let companyName: string | undefined;
-      let inputs: any[] = [];
-      let result: {
-        created: string[];
-        skipped: string[];
-        errors: Array<{ name: string; error: string }>;
-      } = {
-        created: [],
-        skipped: [],
-        errors: [],
+      let pkg: {
+        company?: { name?: string; slug?: string };
+        agents: unknown[];
+        teams: unknown[];
+        projects: unknown[];
+        tasks: unknown[];
       };
 
       if (Array.isArray(agents)) {
-        const pkg = {
+        pkg = {
+          company: undefined,
           agents,
           teams: [],
           projects: [],
           tasks: [],
-          skills: [],
         };
-        ({ inputs, result } = convertAgentCompanies(pkg as any, conversionOptions));
       } else if (typeof source === "string" && source.trim()) {
         const sourcePath = resolve(source);
         if (!existsSync(sourcePath)) {
@@ -7328,76 +7320,35 @@ Output ONLY the prompt text (no markdown, no explanations).`;
           return;
         }
 
-        const isArchive =
-          sourcePath.endsWith(".tar.gz") || sourcePath.endsWith(".tgz") || sourcePath.endsWith(".zip");
+        const isArchive = sourcePath.endsWith(".tar.gz")
+          || sourcePath.endsWith(".tgz")
+          || sourcePath.endsWith(".zip");
 
-        let pkg;
-        if (nodeFs.statSync(sourcePath).isDirectory()) {
-          pkg = parseCompanyDirectory(sourcePath);
-        } else if (isArchive) {
+        if (isArchive) {
           pkg = await parseCompanyArchive(sourcePath);
+        } else if (nodeFs.statSync(sourcePath).isDirectory()) {
+          pkg = parseCompanyDirectory(sourcePath);
         } else {
-          res.status(400).json({ error: "Unsupported source format. Provide a directory or .tar.gz/.zip archive path." });
+          res.status(400).json({ error: "Source must be a server-side directory or archive path" });
           return;
         }
-
-        companyName = pkg.company?.name;
-        ({ inputs, result } = convertAgentCompanies(pkg, conversionOptions));
       } else if (typeof manifest === "string") {
-        try {
-          const segmentedMatches = [...manifest.matchAll(
-            /--- FILE:\s*([^\n]+)\s*---\n([\s\S]*?)(?=(?:\n--- FILE:\s*[^\n]+\s*---\n)|$)/g,
-          )];
-
-          if (segmentedMatches.length > 0) {
-            const parsedAgents = segmentedMatches
-              .map(([, relativePath, content]) => ({
-                relativePath: relativePath.trim(),
-                content,
-              }))
-              .filter(({ relativePath }) => relativePath.toLowerCase().endsWith("agents.md"))
-              .map(({ content }) => parseAgentManifest(content));
-
-            const pkg = {
-              agents: parsedAgents,
-              teams: [],
-              projects: [],
-              tasks: [],
-              skills: [],
-            };
-            ({ inputs, result } = convertAgentCompanies(pkg, conversionOptions));
-          } else {
-            const parsedAgentManifest = parseAgentManifest(manifest);
-            const pkg = {
-              agents: [parsedAgentManifest],
-              teams: [],
-              projects: [],
-              tasks: [],
-              skills: [],
-            };
-            ({ inputs, result } = convertAgentCompanies(pkg, conversionOptions));
-          }
-        } catch (err) {
-          if (!(err instanceof AgentCompaniesParseError)) {
-            throw err;
-          }
-
-          try {
-            const parsedCompaniesSh = parseCompaniesShManifest(manifest);
-            companyName = parsedCompaniesSh.companyName;
-            ({ inputs, result } = convertCompaniesShAgents(parsedCompaniesSh.agents as any[], conversionOptions));
-          } catch (fallbackErr) {
-            if (fallbackErr instanceof CompaniesShParseError) {
-              res.status(400).json({ error: fallbackErr.message });
-              return;
-            }
-            throw fallbackErr;
-          }
-        }
+        const { manifest: singleAgent } = parseSingleAgentManifest(manifest);
+        pkg = {
+          company: undefined,
+          agents: [singleAgent],
+          teams: [],
+          projects: [],
+          tasks: [],
+        };
       } else {
         res.status(400).json({ error: "Provide one of: agents (array), source (path), or manifest (string)" });
         return;
       }
+
+      const { inputs, result } = convertAgentCompanies(pkg as any, conversionOptions);
+      const companyName = pkg.company?.name ?? "Unknown";
+      const companySlug = typeof pkg.company?.slug === "string" ? pkg.company.slug : undefined;
 
       if (inputs.length === 0 && result.errors.length === 0 && result.skipped.length === 0) {
         res.status(400).json({ error: "No agents found in manifest" });
@@ -7417,6 +7368,7 @@ Output ONLY the prompt text (no markdown, no explanations).`;
         res.json({
           dryRun: true,
           companyName,
+          ...(companySlug ? { companySlug } : {}),
           agents: agentPreview,
           created: result.created,
           skipped: result.skipped,
@@ -7425,7 +7377,7 @@ Output ONLY the prompt text (no markdown, no explanations).`;
         return;
       }
 
-      const created: any[] = [];
+      const created: Array<{ id: string; name: string }> = [];
       const errors: Array<{ name: string; error: string }> = [...result.errors];
 
       for (const input of inputs) {
@@ -7436,7 +7388,7 @@ Output ONLY the prompt text (no markdown, no explanations).`;
 
         try {
           const agent = await agentStore.createAgent(input);
-          created.push(agent);
+          created.push({ id: agent.id, name: agent.name });
         } catch (err: any) {
           errors.push({ name: input.name, error: err.message });
         }
@@ -7444,12 +7396,13 @@ Output ONLY the prompt text (no markdown, no explanations).`;
 
       res.json({
         companyName,
+        ...(companySlug ? { companySlug } : {}),
         created,
         skipped: result.skipped,
         errors,
       });
     } catch (err: any) {
-      if (err?.name === "AgentCompaniesParseError" || err?.name === "CompaniesShParseError") {
+      if (err?.name === "AgentCompaniesParseError") {
         res.status(400).json({ error: err.message });
         return;
       }

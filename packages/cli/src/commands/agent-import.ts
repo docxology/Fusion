@@ -13,18 +13,15 @@ import {
   AgentStore,
   parseCompanyDirectory,
   parseCompanyArchive,
-  parseAgentManifest,
+  parseSingleAgentManifest,
   convertAgentCompanies,
   AgentCompaniesParseError,
-  parseCompaniesShManifest,
-  convertCompaniesShAgents,
-  CompaniesShParseError,
 } from "@fusion/core";
 import type { AgentCreateInput } from "@fusion/core";
 import { resolveProject } from "../project-context.js";
 
 const UNSUPPORTED_FORMAT_MESSAGE =
-  "Unsupported format. Provide a directory, .tar.gz/.zip archive, .md file, or .sh manifest.";
+  "Unsupported format. Provide an Agent Companies directory, .tar.gz/.tgz/.zip archive, or AGENTS.md file.";
 
 /**
  * Get the project path for agent operations.
@@ -49,6 +46,8 @@ async function getProjectPath(projectName?: string): Promise<string> {
  */
 function printSummary(
   companyName: string | undefined,
+  agentCount: number,
+  teamCount: number,
   created: string[],
   skipped: string[],
   errors: Array<{ name: string; error: string }>,
@@ -56,7 +55,9 @@ function printSummary(
 ): void {
   const prefix = dryRun ? "[DRY RUN] " : "";
   console.log();
-  console.log(`  ${prefix}Import from company: ${companyName ?? "Unknown"}`);
+  console.log(`  ${prefix}Company: ${companyName ?? "Unknown"}`);
+  console.log(`  ${prefix}Agents: ${agentCount}`);
+  console.log(`  ${prefix}Teams: ${teamCount}`);
   console.log(`  ${prefix}Created: ${created.length}`);
   for (const name of created) {
     console.log(`    ✓ ${name}`);
@@ -99,7 +100,7 @@ export async function runAgentImport(
 
   const sourcePath = resolve(source);
   if (!existsSync(sourcePath)) {
-    console.error(`File not found: ${sourcePath}`);
+    console.error(`Path not found: ${sourcePath}`);
     process.exit(1);
   }
 
@@ -110,8 +111,11 @@ export async function runAgentImport(
 
   const existingAgents = await agentStore.listAgents();
   const existingNames = new Set(existingAgents.map((a) => a.name));
+  const conversionOptions = skipExisting ? { skipExisting: [...existingNames] } : undefined;
 
   let companyName: string | undefined;
+  let agentCount = 0;
+  let teamCount = 0;
   let inputs: AgentCreateInput[] = [];
   let result: {
     created: string[];
@@ -129,45 +133,33 @@ export async function runAgentImport(
     if (sourceStats.isDirectory()) {
       const pkg = parseCompanyDirectory(sourcePath);
       companyName = pkg.company?.name;
-      ({ inputs, result } = convertAgentCompanies(
-        pkg,
-        skipExisting ? { skipExisting: [...existingNames] } : undefined,
-      ));
+      agentCount = pkg.agents.length;
+      teamCount = pkg.teams.length;
+      ({ inputs, result } = convertAgentCompanies(pkg, conversionOptions));
     } else if (isArchivePath(sourcePath)) {
       const pkg = await parseCompanyArchive(sourcePath);
       companyName = pkg.company?.name;
-      ({ inputs, result } = convertAgentCompanies(
-        pkg,
-        skipExisting ? { skipExisting: [...existingNames] } : undefined,
-      ));
+      agentCount = pkg.agents.length;
+      teamCount = pkg.teams.length;
+      ({ inputs, result } = convertAgentCompanies(pkg, conversionOptions));
     } else if (sourcePath.endsWith(".md")) {
       const content = readFileSync(sourcePath, "utf-8");
-      const manifest = parseAgentManifest(content);
+      const { manifest } = parseSingleAgentManifest(content);
       const pkg = {
         company: undefined,
         agents: [manifest],
         teams: [],
         projects: [],
         tasks: [],
-        skills: [],
       };
-      ({ inputs, result } = convertAgentCompanies(
-        pkg,
-        skipExisting ? { skipExisting: [...existingNames] } : undefined,
-      ));
-    } else if (sourcePath.endsWith(".sh")) {
-      const content = readFileSync(sourcePath, "utf-8");
-      const manifest = parseCompaniesShManifest(content);
-      companyName = manifest.companyName;
-      ({ inputs, result } = convertCompaniesShAgents(
-        manifest.agents,
-        skipExisting ? { skipExisting: [...existingNames] } : undefined,
-      ));
+      agentCount = pkg.agents.length;
+      teamCount = 0;
+      ({ inputs, result } = convertAgentCompanies(pkg, conversionOptions));
     } else {
       throw new Error(UNSUPPORTED_FORMAT_MESSAGE);
     }
   } catch (err) {
-    if (err instanceof AgentCompaniesParseError || err instanceof CompaniesShParseError) {
+    if (err instanceof AgentCompaniesParseError) {
       console.error(`Parse error: ${err.message}`);
       process.exit(1);
     }
@@ -190,7 +182,7 @@ export async function runAgentImport(
 
   // Dry run: just preview
   if (dryRun) {
-    printSummary(companyName, result.created, result.skipped, result.errors, true);
+    printSummary(companyName, agentCount, teamCount, result.created, result.skipped, result.errors, true);
     return;
   }
 
@@ -213,5 +205,5 @@ export async function runAgentImport(
     }
   }
 
-  printSummary(companyName, created, result.skipped, errors, false);
+  printSummary(companyName, agentCount, teamCount, created, result.skipped, errors, false);
 }

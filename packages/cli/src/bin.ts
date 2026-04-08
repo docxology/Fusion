@@ -127,7 +127,7 @@ Usage:
   fn agent stop <id>                Stop a running agent (pause execution)
   fn agent start <id>               Start a stopped agent (resume execution)
   fn agent import <path> [--dry-run] [--skip-existing]
-                                      Import agents from an Agent Companies package (directory, archive, or .md file)
+                                      Import agents from an Agent Companies package (directory, archive, or AGENTS.md file)
   fn agent mailbox <id>             View an agent's mailbox
   fn message inbox                  List inbox messages
   fn message outbox                 List sent messages

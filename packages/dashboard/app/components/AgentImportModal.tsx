@@ -19,9 +19,17 @@ interface AgentPreview {
 /** Import result from the API */
 interface ImportResult {
   companyName?: string;
+  companySlug?: string;
   created: Array<{ id: string; name: string }>;
   skipped: string[];
   errors: Array<{ name: string; error: string }>;
+}
+
+interface DirectoryAgentInput {
+  name: string;
+  title?: string;
+  skills?: string[];
+  instructionBody?: string;
 }
 
 /** API error response shape */
@@ -32,11 +40,62 @@ interface ApiErrorResponse {
 type ModalStep = "input" | "preview" | "result";
 type InputMethod = "paste" | "file" | "directory";
 
+function parseDirectoryAgentManifest(content: string): DirectoryAgentInput {
+  const match = content.match(/^---\s*\r?\n([\s\S]*?)\r?\n---(?:\r?\n([\s\S]*))?$/);
+  if (!match) {
+    throw new Error("Missing YAML frontmatter delimiters (---)");
+  }
+
+  const frontmatterLines = match[1].split(/\r?\n/);
+  const body = match[2] ?? "";
+  const result: DirectoryAgentInput = { name: "" };
+  const skills: string[] = [];
+  let inSkills = false;
+
+  for (const rawLine of frontmatterLines) {
+    const line = rawLine.trimEnd();
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    if (trimmed.startsWith("skills:")) {
+      inSkills = true;
+      continue;
+    }
+
+    if (inSkills && trimmed.startsWith("- ")) {
+      skills.push(trimmed.slice(2).trim());
+      continue;
+    }
+
+    inSkills = false;
+
+    const [key, ...valueParts] = trimmed.split(":");
+    const value = valueParts.join(":").trim();
+    const normalizedValue = value.replace(/^['"]|['"]$/g, "");
+
+    if (key === "name") result.name = normalizedValue;
+    if (key === "title") result.title = normalizedValue;
+  }
+
+  if (!result.name) {
+    throw new Error("Missing required field: name");
+  }
+
+  if (skills.length > 0) {
+    result.skills = skills;
+  }
+  if (body.trim().length > 0) {
+    result.instructionBody = body;
+  }
+
+  return result;
+}
+
 /**
  * Modal for importing agents from Agent Companies manifests.
  *
  * Supports three input methods:
- * - File upload (.md/.txt/.sh files)
+ * - File upload (.md/.txt files)
  * - Directory upload (webkitdirectory)
  * - Paste raw manifest content
  *
@@ -46,6 +105,7 @@ export function AgentImportModal({ isOpen, onClose, onImported, projectId }: Age
   const [step, setStep] = useState<ModalStep>("input");
   const [inputMethod, setInputMethod] = useState<InputMethod>("paste");
   const [manifestContent, setManifestContent] = useState("");
+  const [directoryAgents, setDirectoryAgents] = useState<DirectoryAgentInput[]>([]);
   const [companyName, setCompanyName] = useState("Unknown");
   const [agents, setAgents] = useState<AgentPreview[]>([]);
   const [isParsing, setIsParsing] = useState(false);
@@ -60,6 +120,7 @@ export function AgentImportModal({ isOpen, onClose, onImported, projectId }: Age
     setStep("input");
     setInputMethod("paste");
     setManifestContent("");
+    setDirectoryAgents([]);
     setCompanyName("Unknown");
     setAgents([]);
     setIsParsing(false);
@@ -82,6 +143,7 @@ export function AgentImportModal({ isOpen, onClose, onImported, projectId }: Age
     reader.onload = (ev) => {
       const content = ev.target?.result as string;
       setInputMethod("file");
+      setDirectoryAgents([]);
       setManifestContent(content);
       setParseError(null);
     };
@@ -99,31 +161,31 @@ export function AgentImportModal({ isOpen, onClose, onImported, projectId }: Age
     if (files.length === 0) return;
 
     try {
-      const textFiles = files
-        .filter((file) => /\.(md|txt|sh)$/i.test(file.name))
+      const agentFiles = files
+        .filter((file) => (file.webkitRelativePath || file.name).toLowerCase().endsWith("agents.md"))
         .sort((a, b) => {
           const aPath = a.webkitRelativePath || a.name;
           const bPath = b.webkitRelativePath || b.name;
           return aPath.localeCompare(bPath);
         });
 
-      if (textFiles.length === 0) {
-        setParseError("Selected directory has no .md, .txt, or .sh files");
+      if (agentFiles.length === 0) {
+        setParseError("Selected directory has no AGENTS.md files");
         return;
       }
 
-      const chunks: string[] = [];
-      for (const file of textFiles) {
-        const relativePath = file.webkitRelativePath || file.name;
+      const parsedAgents: DirectoryAgentInput[] = [];
+      for (const file of agentFiles) {
         const content = await file.text();
-        chunks.push(`--- FILE: ${relativePath} ---\n${content}`);
+        parsedAgents.push(parseDirectoryAgentManifest(content));
       }
 
       setInputMethod("directory");
-      setManifestContent(chunks.join("\n\n"));
+      setDirectoryAgents(parsedAgents);
+      setManifestContent("");
       setParseError(null);
     } catch {
-      setParseError("Failed to read selected directory");
+      setParseError("Failed to parse AGENTS.md files from selected directory");
     } finally {
       e.target.value = "";
     }
@@ -138,7 +200,11 @@ export function AgentImportModal({ isOpen, onClose, onImported, projectId }: Age
 
   /** Parse the manifest content by calling the API with dryRun=true */
   const handleParse = useCallback(async () => {
-    if (!manifestContent.trim()) {
+    if (inputMethod === "directory" && directoryAgents.length === 0) {
+      setParseError("Please select a directory containing AGENTS.md files");
+      return;
+    }
+    if (inputMethod !== "directory" && !manifestContent.trim()) {
       setParseError("Please provide manifest content");
       return;
     }
@@ -147,10 +213,14 @@ export function AgentImportModal({ isOpen, onClose, onImported, projectId }: Age
     setParseError(null);
 
     try {
+      const body = inputMethod === "directory"
+        ? { agents: directoryAgents, dryRun: true }
+        : { manifest: manifestContent, dryRun: true };
+
       const res = await fetch(buildUrl("/agents/import"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ manifest: manifestContent, dryRun: true }),
+        body: JSON.stringify(body),
       });
 
       if (!res.ok) {
@@ -178,7 +248,7 @@ export function AgentImportModal({ isOpen, onClose, onImported, projectId }: Age
     } finally {
       setIsParsing(false);
     }
-  }, [manifestContent, projectId]);
+  }, [inputMethod, directoryAgents, manifestContent, projectId]);
 
   /** Execute the actual import */
   const handleImport = useCallback(async () => {
@@ -186,10 +256,14 @@ export function AgentImportModal({ isOpen, onClose, onImported, projectId }: Age
     setImportError(null);
 
     try {
+      const body = inputMethod === "directory"
+        ? { agents: directoryAgents, skipExisting: true }
+        : { manifest: manifestContent, skipExisting: true };
+
       const res = await fetch(buildUrl("/agents/import"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ manifest: manifestContent, skipExisting: true }),
+        body: JSON.stringify(body),
       });
 
       if (!res.ok) {
@@ -206,7 +280,7 @@ export function AgentImportModal({ isOpen, onClose, onImported, projectId }: Age
     } finally {
       setIsImporting(false);
     }
-  }, [manifestContent, projectId, onImported]);
+  }, [inputMethod, directoryAgents, manifestContent, projectId, onImported]);
 
   if (!isOpen) return null;
 
@@ -235,7 +309,7 @@ export function AgentImportModal({ isOpen, onClose, onImported, projectId }: Age
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept=".md,.txt,.sh"
+                  accept=".md,.txt"
                   onChange={handleFileChange}
                   className="agent-import-file-input"
                   aria-label="Upload agent manifest file"
@@ -266,7 +340,7 @@ export function AgentImportModal({ isOpen, onClose, onImported, projectId }: Age
                   <FolderOpen size={16} />
                   Select Directory
                 </button>
-                <span className="agent-import-file-hint">.md, .txt, and .sh files supported</span>
+                <span className="agent-import-file-hint">.md and .txt files supported</span>
               </div>
 
               {/* Or divider */}
@@ -277,10 +351,11 @@ export function AgentImportModal({ isOpen, onClose, onImported, projectId }: Age
               {/* Text area for paste */}
               <textarea
                 className="agent-import-textarea"
-                placeholder={"---\nname: Agent Name\ntitle: Agent Title\nskills:\n  - review\n---\nAgent instructions go here..."}
+                placeholder={"---\nname: CEO\ntitle: Chief Executive Officer\nreportsTo: null\nskills:\n  - review\n---\nAgent instructions go here..."}
                 value={manifestContent}
                 onChange={(e) => {
                   setInputMethod("paste");
+                  setDirectoryAgents([]);
                   setManifestContent(e.target.value);
                   setParseError(null);
                 }}
@@ -414,7 +489,7 @@ export function AgentImportModal({ isOpen, onClose, onImported, projectId }: Age
             <button
               className="btn btn--primary"
               onClick={() => void handleParse()}
-              disabled={isParsing || !manifestContent.trim()}
+              disabled={isParsing || (inputMethod === "directory" ? directoryAgents.length === 0 : !manifestContent.trim())}
             >
               {isParsing ? (
                 <>
