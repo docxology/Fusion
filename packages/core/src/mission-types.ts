@@ -35,6 +35,27 @@ export type InterviewState = (typeof INTERVIEW_STATES)[number];
 export const AUTOPILOT_STATES = ["inactive", "watching", "activating", "completing"] as const;
 export type AutopilotState = (typeof AUTOPILOT_STATES)[number];
 
+/** Persisted mission lifecycle event categories for observability/audit trails. */
+export const MISSION_EVENT_TYPES = [
+  "slice_activated",
+  "feature_triaged",
+  "feature_completed",
+  "slice_completed",
+  "milestone_completed",
+  "mission_completed",
+  "mission_started",
+  "mission_paused",
+  "mission_resumed",
+  "autopilot_enabled",
+  "autopilot_disabled",
+  "autopilot_state_changed",
+  "autopilot_retry",
+  "autopilot_stale",
+  "error",
+  "warning",
+] as const;
+export type MissionEventType = (typeof MISSION_EVENT_TYPES)[number];
+
 /** Autopilot status for a mission */
 export interface AutopilotStatus {
   enabled: boolean;
@@ -42,6 +63,34 @@ export interface AutopilotStatus {
   watched: boolean;
   lastActivityAt?: string;
   nextScheduledCheck?: string;
+}
+
+/** Persisted audit event describing a mission lifecycle transition or warning. */
+export interface MissionEvent {
+  id: string;
+  missionId: string;
+  eventType: MissionEventType;
+  description: string;
+  metadata: Record<string, unknown> | null;
+  timestamp: string;
+}
+
+/** Computed mission health snapshot used by observability APIs. */
+export interface MissionHealth {
+  missionId: string;
+  status: MissionStatus;
+  tasksCompleted: number;
+  tasksFailed: number;
+  tasksInFlight: number;
+  totalTasks: number;
+  currentSliceId?: string;
+  currentMilestoneId?: string;
+  estimatedCompletionPercent: number;
+  lastErrorAt?: string;
+  lastErrorDescription?: string;
+  autopilotState: AutopilotState;
+  autopilotEnabled: boolean;
+  lastActivityAt?: string;
 }
 
 // ── Core Entity Types ───────────────────────────────────────────────

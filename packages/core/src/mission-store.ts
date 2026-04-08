@@ -13,7 +13,7 @@
 
 import { EventEmitter } from "node:events";
 import type { Database } from "./db.js";
-import { fromJson, toJson } from "./db.js";
+import { fromJson, toJson, toJsonNullable } from "./db.js";
 import type {
   Mission,
   Milestone,
@@ -30,6 +30,9 @@ import type {
   FeatureStatus,
   InterviewState,
   AutopilotState,
+  MissionEvent,
+  MissionEventType,
+  MissionHealth,
 } from "./mission-types.js";
 
 // ── Mission Summary Type ─────────────────────────────────────────────
@@ -79,6 +82,8 @@ export interface MissionStoreEvents {
   "feature:deleted": [string];
   /** Emitted when a feature is linked to a task */
   "feature:linked": [{ feature: MissionFeature; taskId: string }];
+  /** Emitted when a mission lifecycle event is persisted */
+  "mission:event": [MissionEvent];
 }
 
 // ── MissionStore Class ──────────────────────────────────────────────
@@ -170,6 +175,20 @@ export class MissionStore extends EventEmitter<MissionStoreEvents> {
       status: row.status as FeatureStatus,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
+    };
+  }
+
+  /**
+   * Convert a database row to a MissionEvent object.
+   */
+  private rowToMissionEvent(row: any): MissionEvent {
+    return {
+      id: row.id,
+      missionId: row.missionId,
+      eventType: row.eventType as MissionEventType,
+      description: row.description,
+      metadata: fromJson<Record<string, unknown>>(row.metadata) ?? null,
+      timestamp: row.timestamp,
     };
   }
 
@@ -313,6 +332,172 @@ export class MissionStore extends EventEmitter<MissionStoreEvents> {
       totalFeatures,
       completedFeatures,
       progressPercent,
+    };
+  }
+
+  /**
+   * Persist a mission lifecycle event for observability and auditing.
+   */
+  logMissionEvent(
+    missionId: string,
+    eventType: MissionEventType,
+    description: string,
+    metadata?: Record<string, unknown>,
+  ): MissionEvent {
+    const mission = this.getMission(missionId);
+    if (!mission) {
+      throw new Error(`Mission ${missionId} not found`);
+    }
+
+    const event: MissionEvent = {
+      id: this.generateMissionEventId(),
+      missionId,
+      eventType,
+      description,
+      metadata: metadata ?? null,
+      timestamp: new Date().toISOString(),
+    };
+
+    this.db.prepare(`
+      INSERT INTO mission_events (id, missionId, eventType, description, metadata, timestamp)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      event.id,
+      event.missionId,
+      event.eventType,
+      event.description,
+      toJsonNullable(event.metadata),
+      event.timestamp,
+    );
+
+    this.db.bumpLastModified();
+    this.emit("mission:event", event);
+    return event;
+  }
+
+  /**
+   * List mission lifecycle events with pagination/filtering.
+   */
+  getMissionEvents(
+    missionId: string,
+    options?: { limit?: number; offset?: number; eventType?: string },
+  ): { events: MissionEvent[]; total: number } {
+    const limit = Math.max(0, options?.limit ?? 50);
+    const offset = Math.max(0, options?.offset ?? 0);
+    const eventType = options?.eventType;
+
+    const whereClauses = ["missionId = ?"];
+    const params: string[] = [missionId];
+
+    if (eventType) {
+      whereClauses.push("eventType = ?");
+      params.push(eventType);
+    }
+
+    const whereSql = whereClauses.join(" AND ");
+    const totalRow = this.db.prepare(`
+      SELECT COUNT(*) as count
+      FROM mission_events
+      WHERE ${whereSql}
+    `).get(...params) as { count: number };
+
+    const rows = this.db.prepare(`
+      SELECT *
+      FROM mission_events
+      WHERE ${whereSql}
+      ORDER BY timestamp DESC
+      LIMIT ? OFFSET ?
+    `).all(...params, limit, offset) as any[];
+
+    return {
+      events: rows.map((row) => this.rowToMissionEvent(row)),
+      total: totalRow?.count ?? 0,
+    };
+  }
+
+  /**
+   * Compute a mission health snapshot for observability endpoints.
+   */
+  getMissionHealth(missionId: string): MissionHealth | undefined {
+    const mission = this.getMission(missionId);
+    if (!mission) {
+      return undefined;
+    }
+
+    const milestones = this.listMilestones(missionId);
+    const summary = this.getMissionSummary(missionId);
+
+    let totalTasks = 0;
+    let tasksCompleted = 0;
+    let tasksInFlight = 0;
+    let currentSliceId: string | undefined;
+    let currentMilestoneId: string | undefined;
+    const featureTaskIds: string[] = [];
+
+    for (const milestone of milestones) {
+      if (!currentMilestoneId && milestone.status === "active") {
+        currentMilestoneId = milestone.id;
+      }
+
+      const slices = this.listSlices(milestone.id);
+      for (const slice of slices) {
+        if (!currentSliceId && slice.status === "active") {
+          currentSliceId = slice.id;
+          currentMilestoneId ??= milestone.id;
+        }
+
+        const features = this.listFeatures(slice.id);
+        for (const feature of features) {
+          totalTasks += 1;
+          if (feature.status === "done") {
+            tasksCompleted += 1;
+          }
+          if (feature.status === "triaged" || feature.status === "in-progress") {
+            tasksInFlight += 1;
+          }
+          if (feature.taskId) {
+            featureTaskIds.push(feature.taskId);
+          }
+        }
+      }
+    }
+
+    let tasksFailed = 0;
+    if (featureTaskIds.length > 0) {
+      const uniqueTaskIds = [...new Set(featureTaskIds)];
+      const placeholders = uniqueTaskIds.map(() => "?").join(", ");
+      const failedTaskRows = this.db.prepare(`
+        SELECT id
+        FROM tasks
+        WHERE status = 'failed' AND id IN (${placeholders})
+      `).all(...uniqueTaskIds) as Array<{ id: string }>;
+      const failedTaskIds = new Set(failedTaskRows.map((row) => row.id));
+      tasksFailed = featureTaskIds.filter((taskId) => failedTaskIds.has(taskId)).length;
+    }
+
+    const lastErrorRow = this.db.prepare(`
+      SELECT timestamp, description
+      FROM mission_events
+      WHERE missionId = ? AND eventType = 'error'
+      ORDER BY timestamp DESC
+      LIMIT 1
+    `).get(missionId) as { timestamp: string; description: string } | undefined;
+
+    return {
+      missionId,
+      status: mission.status,
+      tasksCompleted,
+      tasksFailed,
+      tasksInFlight,
+      totalTasks,
+      currentSliceId,
+      currentMilestoneId,
+      estimatedCompletionPercent: summary.progressPercent,
+      lastErrorAt: lastErrorRow?.timestamp,
+      lastErrorDescription: lastErrorRow?.description,
+      autopilotState: mission.autopilotState ?? "inactive",
+      autopilotEnabled: mission.autopilotEnabled ?? false,
+      lastActivityAt: mission.lastAutopilotActivityAt,
     };
   }
 
@@ -1410,5 +1595,11 @@ export class MissionStore extends EventEmitter<MissionStoreEvents> {
     const timestamp = Date.now();
     const random = Math.random().toString(36).substring(2, 6).toUpperCase();
     return `F-${timestamp.toString(36).toUpperCase()}-${random}`;
+  }
+
+  private generateMissionEventId(): string {
+    const timestamp = Date.now();
+    const random = Math.random().toString(36).substring(2, 6).toUpperCase();
+    return `ME-${timestamp.toString(36).toUpperCase()}-${random}`;
   }
 }

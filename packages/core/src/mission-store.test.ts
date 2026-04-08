@@ -15,11 +15,12 @@ function createTaskInDb(
   database: Database,
   taskId: string,
   description = "Test task",
+  status?: string,
 ): void {
   const now = new Date().toISOString();
   database.prepare(
-    `INSERT INTO tasks (id, description, "column", createdAt, updatedAt) VALUES (?, ?, ?, ?, ?)`
-  ).run(taskId, description, "triage", now, now);
+    `INSERT INTO tasks (id, description, "column", status, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?)`
+  ).run(taskId, description, "triage", status ?? null, now, now);
 }
 
 describe("MissionStore", () => {
@@ -277,6 +278,139 @@ describe("MissionStore", () => {
 
       const next = store.findNextPendingSlice(mission.id);
       expect(next?.id).toBe(pending.id);
+    });
+  });
+
+  // ── Mission Observability Tests ───────────────────────────────────────
+
+  describe("Mission observability", () => {
+    it("logMissionEvent persists the event and emits mission:event", () => {
+      const mission = store.createMission({ title: "Observable mission" });
+      const eventHandler = vi.fn();
+      store.on("mission:event", eventHandler);
+
+      const event = store.logMissionEvent(
+        mission.id,
+        "mission_started",
+        "Mission was started",
+        { source: "test" },
+      );
+
+      expect(event.id).toMatch(/^ME-/);
+      expect(event.missionId).toBe(mission.id);
+      expect(event.eventType).toBe("mission_started");
+      expect(event.description).toBe("Mission was started");
+      expect(event.metadata).toEqual({ source: "test" });
+      expect(eventHandler).toHaveBeenCalledWith(event);
+
+      const events = store.getMissionEvents(mission.id);
+      expect(events.total).toBe(1);
+      expect(events.events[0]).toEqual(event);
+    });
+
+    it("getMissionEvents supports pagination, filtering, and newest-first ordering", async () => {
+      const mission = store.createMission({ title: "Events mission" });
+
+      const first = store.logMissionEvent(mission.id, "mission_started", "first");
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      const second = store.logMissionEvent(mission.id, "warning", "second warning");
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      const third = store.logMissionEvent(mission.id, "error", "third error");
+
+      const pageOne = store.getMissionEvents(mission.id, { limit: 2, offset: 0 });
+      expect(pageOne.total).toBe(3);
+      expect(pageOne.events).toHaveLength(2);
+      expect(pageOne.events.map((event) => event.id)).toEqual([third.id, second.id]);
+
+      const pageTwo = store.getMissionEvents(mission.id, { limit: 2, offset: 2 });
+      expect(pageTwo.total).toBe(3);
+      expect(pageTwo.events).toHaveLength(1);
+      expect(pageTwo.events[0].id).toBe(first.id);
+
+      const filtered = store.getMissionEvents(mission.id, { eventType: "error" });
+      expect(filtered.total).toBe(1);
+      expect(filtered.events).toHaveLength(1);
+      expect(filtered.events[0].eventType).toBe("error");
+      expect(filtered.events[0].id).toBe(third.id);
+    });
+
+    it("getMissionHealth computes mission metrics and latest error context", () => {
+      const mission = store.createMission({ title: "Health mission" });
+      store.updateMission(mission.id, {
+        status: "active",
+        autopilotEnabled: true,
+        autopilotState: "watching",
+        lastAutopilotActivityAt: "2026-01-01T10:00:00.000Z",
+      });
+
+      const milestone = store.addMilestone(mission.id, { title: "Milestone" });
+      const slice = store.addSlice(milestone.id, { title: "Slice" });
+      store.updateMilestone(milestone.id, { status: "active" });
+      store.updateSlice(slice.id, { status: "active" });
+
+      const doneFeature = store.addFeature(slice.id, { title: "Done feature" });
+      store.updateFeature(doneFeature.id, { status: "done" });
+
+      const triagedFeature = store.addFeature(slice.id, { title: "Triaged feature" });
+      store.updateFeature(triagedFeature.id, { status: "triaged" });
+
+      const inProgressFeature = store.addFeature(slice.id, { title: "In progress feature" });
+      store.updateFeature(inProgressFeature.id, { status: "in-progress" });
+
+      createTaskInDb(db, "FN-FAILED", "Failed task", "failed");
+      const failedFeature = store.addFeature(slice.id, { title: "Failed feature" });
+      store.linkFeatureToTask(failedFeature.id, "FN-FAILED");
+      // Keep failed feature out of in-flight count for deterministic assertions.
+      store.updateFeature(failedFeature.id, { status: "defined" });
+
+      store.logMissionEvent(mission.id, "error", "Old error", { at: "old" });
+      const latestError = store.logMissionEvent(mission.id, "error", "Latest error", { at: "latest" });
+
+      const health = store.getMissionHealth(mission.id);
+
+      expect(health).toEqual({
+        missionId: mission.id,
+        status: "active",
+        tasksCompleted: 1,
+        tasksFailed: 1,
+        tasksInFlight: 2,
+        totalTasks: 4,
+        currentSliceId: slice.id,
+        currentMilestoneId: milestone.id,
+        estimatedCompletionPercent: 25,
+        lastErrorAt: latestError.timestamp,
+        lastErrorDescription: "Latest error",
+        autopilotState: "watching",
+        autopilotEnabled: true,
+        lastActivityAt: "2026-01-01T10:00:00.000Z",
+      });
+    });
+
+    it("getMissionHealth returns undefined for non-existent mission", () => {
+      expect(store.getMissionHealth("M-NONEXISTENT")).toBeUndefined();
+    });
+
+    it("getMissionHealth handles an empty mission", () => {
+      const mission = store.createMission({ title: "Empty health mission" });
+
+      const health = store.getMissionHealth(mission.id);
+
+      expect(health).toEqual({
+        missionId: mission.id,
+        status: "planning",
+        tasksCompleted: 0,
+        tasksFailed: 0,
+        tasksInFlight: 0,
+        totalTasks: 0,
+        currentSliceId: undefined,
+        currentMilestoneId: undefined,
+        estimatedCompletionPercent: 0,
+        lastErrorAt: undefined,
+        lastErrorDescription: undefined,
+        autopilotState: "inactive",
+        autopilotEnabled: false,
+        lastActivityAt: undefined,
+      });
     });
   });
 

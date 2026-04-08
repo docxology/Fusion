@@ -78,6 +78,14 @@ function createMockMissionStore(missions: Mission[] = []) {
       missionMap.set(id, updated);
       return updated;
     }),
+    logMissionEvent: vi.fn((missionId: string, eventType: string, description: string, metadata?: Record<string, unknown>) => ({
+      id: `ME-${Date.now()}`,
+      missionId,
+      eventType,
+      description,
+      metadata: metadata ?? null,
+      timestamp: new Date().toISOString(),
+    })),
     getMilestone: vi.fn(),
     listMilestones: vi.fn(),
     getSlice: vi.fn(),
@@ -168,6 +176,18 @@ describe("MissionAutopilot", () => {
         "M-TEST1",
         expect.objectContaining({ autopilotState: "watching" }),
       );
+      expect(missionStore.logMissionEvent).toHaveBeenCalledWith(
+        "M-TEST1",
+        "autopilot_enabled",
+        expect.stringContaining("Autopilot enabled"),
+        expect.objectContaining({ source: "watchMission" }),
+      );
+      expect(missionStore.logMissionEvent).toHaveBeenCalledWith(
+        "M-TEST1",
+        "autopilot_state_changed",
+        expect.stringContaining("inactive to watching"),
+        expect.objectContaining({ fromState: "inactive", toState: "watching" }),
+      );
     });
 
     it("should not watch a mission without autopilot enabled", () => {
@@ -200,6 +220,12 @@ describe("MissionAutopilot", () => {
       expect(missionStore.updateMission).toHaveBeenCalledWith(
         "M-TEST1",
         expect.objectContaining({ autopilotState: "inactive" }),
+      );
+      expect(missionStore.logMissionEvent).toHaveBeenCalledWith(
+        "M-TEST1",
+        "autopilot_disabled",
+        expect.stringContaining("Autopilot disabled"),
+        expect.objectContaining({ source: "unwatchMission" }),
       );
     });
 
@@ -366,6 +392,20 @@ describe("MissionAutopilot", () => {
       await autopilot.advanceToNextSlice("M-TEST1");
       expect(scheduler.activateNextPendingSlice).not.toHaveBeenCalled();
     });
+
+    it("logs retry events when slice activation fails", async () => {
+      scheduler.activateNextPendingSlice.mockRejectedValueOnce(new Error("boom"));
+
+      autopilot.watchMission("M-TEST1");
+      await autopilot.advanceToNextSlice("M-TEST1");
+
+      expect(missionStore.logMissionEvent).toHaveBeenCalledWith(
+        "M-TEST1",
+        "autopilot_retry",
+        expect.stringContaining("Retrying slice activation"),
+        expect.objectContaining({ retryCount: 1, maxRetries: 3 }),
+      );
+    });
   });
 
   // ── Check and Start Mission ──────────────────────────────────────
@@ -384,6 +424,12 @@ describe("MissionAutopilot", () => {
       expect(store.updateMission).toHaveBeenCalledWith(
         "M-TEST1",
         expect.objectContaining({ status: "active" }),
+      );
+      expect(store.logMissionEvent).toHaveBeenCalledWith(
+        "M-TEST1",
+        "mission_started",
+        expect.stringContaining("started by autopilot"),
+        expect.objectContaining({ source: "checkAndStartMission" }),
       );
     });
 
@@ -424,6 +470,12 @@ describe("MissionAutopilot", () => {
         "M-TEST1",
         expect.objectContaining({ status: "complete" }),
       );
+      expect(missionStore.logMissionEvent).toHaveBeenCalledWith(
+        "M-TEST1",
+        "mission_completed",
+        expect.stringContaining("marked complete"),
+        expect.objectContaining({ milestoneCount: 1 }),
+      );
       expect(autopilot.isWatching("M-TEST1")).toBe(false);
     });
 
@@ -445,6 +497,33 @@ describe("MissionAutopilot", () => {
     it("should return false for non-existent mission", async () => {
       const result = await autopilot.checkMissionCompletion("M-NONEXISTENT");
       expect(result).toBe(false);
+    });
+  });
+
+  // ── Poll / stale detection ──────────────────────────────────────
+
+  describe("poll stale detection", () => {
+    it("logs warning events for stale watched missions", () => {
+      const staleMission = createMockMission({
+        lastAutopilotActivityAt: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
+      });
+      const store = createMockMissionStore([staleMission]);
+      const ap = new MissionAutopilot(taskStore as any, store as any, { scheduler });
+
+      ap.start();
+      ap.watchMission("M-TEST1");
+      store.logMissionEvent.mockClear();
+
+      vi.advanceTimersByTime(60_000);
+
+      expect(store.logMissionEvent).toHaveBeenCalledWith(
+        "M-TEST1",
+        "warning",
+        expect.stringContaining("stale"),
+        expect.objectContaining({ category: "autopilot_stale" }),
+      );
+
+      ap.stop();
     });
   });
 

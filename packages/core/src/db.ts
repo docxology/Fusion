@@ -59,7 +59,7 @@ export function fromJson<T>(json: string | null | undefined): T | undefined {
 
 // ── Schema Definition ────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 16;
+const SCHEMA_VERSION = 17;
 
 function normalizeTaskComments(
   steeringComments: SteeringComment[] | undefined,
@@ -329,6 +329,20 @@ CREATE TABLE IF NOT EXISTS mission_features (
   FOREIGN KEY (sliceId) REFERENCES slices(id) ON DELETE CASCADE,
   FOREIGN KEY (taskId) REFERENCES tasks(id) ON DELETE SET NULL
 );
+
+-- Mission event log for lifecycle observability
+CREATE TABLE IF NOT EXISTS mission_events (
+  id TEXT PRIMARY KEY,
+  missionId TEXT NOT NULL,
+  eventType TEXT NOT NULL,
+  description TEXT NOT NULL,
+  metadata TEXT,
+  timestamp TEXT NOT NULL,
+  FOREIGN KEY (missionId) REFERENCES missions(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idxMissionEventsMissionId ON mission_events(missionId);
+CREATE INDEX IF NOT EXISTS idxMissionEventsTimestamp ON mission_events(timestamp);
+CREATE INDEX IF NOT EXISTS idxMissionEventsType ON mission_events(eventType);
 `;
 
 // ── Database Class ───────────────────────────────────────────────────
@@ -633,6 +647,25 @@ export class Database {
             updatedAt,
           );
         }
+      });
+    }
+
+    if (version < 17) {
+      this.applyMigration(17, () => {
+        this.db.exec(`
+          CREATE TABLE IF NOT EXISTS mission_events (
+            id TEXT PRIMARY KEY,
+            missionId TEXT NOT NULL,
+            eventType TEXT NOT NULL,
+            description TEXT NOT NULL,
+            metadata TEXT,
+            timestamp TEXT NOT NULL,
+            FOREIGN KEY (missionId) REFERENCES missions(id) ON DELETE CASCADE
+          )
+        `);
+        this.db.exec(`CREATE INDEX IF NOT EXISTS idxMissionEventsMissionId ON mission_events(missionId)`);
+        this.db.exec(`CREATE INDEX IF NOT EXISTS idxMissionEventsTimestamp ON mission_events(timestamp)`);
+        this.db.exec(`CREATE INDEX IF NOT EXISTS idxMissionEventsType ON mission_events(eventType)`);
       });
     }
   }

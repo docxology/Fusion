@@ -97,6 +97,7 @@ export {
   FEATURE_STATUSES,
   INTERVIEW_STATES,
   AUTOPILOT_STATES,
+  MISSION_EVENT_TYPES,
 } from "./mission-types.js";
 export type {
   MissionStatus,
@@ -105,11 +106,14 @@ export type {
   FeatureStatus,
   InterviewState,
   AutopilotState,
+  MissionEventType,
   AutopilotStatus,
   Mission,
   Milestone,
   Slice,
   MissionFeature,
+  MissionEvent,
+  MissionHealth,
   MissionCreateInput,
   MilestoneCreateInput,
   SliceCreateInput,

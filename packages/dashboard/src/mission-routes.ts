@@ -743,6 +743,83 @@ export function createMissionRouter(
     })
   );
 
+  /**
+   * GET /api/missions/:missionId/events
+   * Get paginated mission event log
+   */
+  router.get(
+    "/:missionId/events",
+    asyncHandler(async (req, res) => {
+      const { missionId } = req.params;
+
+      if (!validateMissionId(missionId)) {
+        res.status(400).json({ error: "Invalid mission ID format" });
+        return;
+      }
+
+      const mission = missionStore.getMission(missionId);
+      if (!mission) {
+        res.status(404).json({ error: "Mission not found" });
+        return;
+      }
+
+      const parseIntParam = (value: string | string[] | undefined, fallback: number): number => {
+        if (typeof value !== "string") return fallback;
+        const parsed = Number.parseInt(value, 10);
+        return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+      };
+
+      const limit = Math.min(parseIntParam(req.query.limit as string | string[] | undefined, 50), 200);
+      const offset = parseIntParam(req.query.offset as string | string[] | undefined, 0);
+      const eventType = typeof req.query.eventType === "string" && req.query.eventType.trim().length > 0
+        ? req.query.eventType.trim()
+        : undefined;
+
+      const result = missionStore.getMissionEvents(missionId, {
+        limit,
+        offset,
+        eventType,
+      });
+
+      res.json({
+        events: result.events,
+        total: result.total,
+        limit,
+        offset,
+      });
+    })
+  );
+
+  /**
+   * GET /api/missions/:missionId/health
+   * Get computed mission health metrics
+   */
+  router.get(
+    "/:missionId/health",
+    asyncHandler(async (req, res) => {
+      const { missionId } = req.params;
+
+      if (!validateMissionId(missionId)) {
+        res.status(400).json({ error: "Invalid mission ID format" });
+        return;
+      }
+
+      const mission = missionStore.getMission(missionId);
+      if (!mission) {
+        res.status(404).json({ error: "Mission not found" });
+        return;
+      }
+
+      const health = missionStore.getMissionHealth(missionId);
+      if (!health) {
+        res.status(404).json({ error: "Mission not found" });
+        return;
+      }
+
+      res.json(health);
+    })
+  );
+
   // ── Interview State Endpoints (Mission) ────────────────────────────────────
 
   /**

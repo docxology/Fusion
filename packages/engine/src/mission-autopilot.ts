@@ -19,7 +19,15 @@
  * - `completing` → `inactive`: Mission complete
  */
 
-import type { TaskStore, MissionStore, Mission, AutopilotState, AutopilotStatus, Slice } from "@fusion/core";
+import type {
+  TaskStore,
+  MissionStore,
+  Mission,
+  AutopilotState,
+  AutopilotStatus,
+  Slice,
+  MissionEventType,
+} from "@fusion/core";
 import { autopilotLog } from "./logger.js";
 
 /** Maximum retry attempts for slice activation failures. */
@@ -143,6 +151,16 @@ export class MissionAutopilot {
 
     this.watchedMissions.set(missionId, { missionId, retryCount: 0 });
     this.setAutopilotState(missionId, "watching");
+    this.logMissionEventSafe(
+      missionId,
+      "autopilot_enabled",
+      `Autopilot enabled for mission ${mission.title}`,
+      {
+        source: "watchMission",
+        missionStatus: mission.status,
+        autoAdvance: mission.autoAdvance ?? false,
+      },
+    );
     autopilotLog.log(`Watching mission ${missionId} (${mission.title})`);
   }
 
@@ -163,6 +181,12 @@ export class MissionAutopilot {
     } catch {
       // Mission may have been deleted
     }
+    this.logMissionEventSafe(
+      missionId,
+      "autopilot_disabled",
+      `Autopilot disabled for mission ${missionId}`,
+      { source: "unwatchMission" },
+    );
     autopilotLog.log(`Unwatched mission ${missionId}`);
   }
 
@@ -287,6 +311,12 @@ export class MissionAutopilot {
       state.retryCount++;
       if (state.retryCount <= MAX_RETRY_ATTEMPTS) {
         const delay = RETRY_BASE_DELAY_MS * Math.pow(3, state.retryCount - 1);
+        this.logMissionEventSafe(
+          missionId,
+          "autopilot_retry",
+          `Retrying slice activation after error (attempt ${state.retryCount}/${MAX_RETRY_ATTEMPTS})`,
+          { retryCount: state.retryCount, maxRetries: MAX_RETRY_ATTEMPTS, delayMs: delay },
+        );
         autopilotLog.log(`Retrying slice activation for mission ${missionId} (attempt ${state.retryCount}/${MAX_RETRY_ATTEMPTS}, delay ${delay}ms)`);
         setTimeout(() => {
           if (this.isWatching(missionId)) {
@@ -294,6 +324,12 @@ export class MissionAutopilot {
           }
         }, delay);
       } else {
+        this.logMissionEventSafe(
+          missionId,
+          "error",
+          `Autopilot exceeded max slice-activation retries (${MAX_RETRY_ATTEMPTS})`,
+          { retryCount: state.retryCount, maxRetries: MAX_RETRY_ATTEMPTS },
+        );
         autopilotLog.error(`Max retries exceeded for mission ${missionId} — pausing autopilot`);
         this.setAutopilotState(missionId, "watching");
         state.retryCount = 0;
@@ -316,6 +352,12 @@ export class MissionAutopilot {
       autopilotLog.log(`Starting mission ${missionId} (transitioning from planning to active)`);
 
       this.missionStore.updateMission(missionId, { status: "active" });
+      this.logMissionEventSafe(
+        missionId,
+        "mission_started",
+        `Mission ${mission.title} started by autopilot`,
+        { source: "checkAndStartMission" },
+      );
       this.updateActivity(missionId);
 
       // Activate first pending slice
@@ -347,6 +389,12 @@ export class MissionAutopilot {
       autopilotLog.log(`Mission ${missionId} is complete!`);
       this.setAutopilotState(missionId, "completing");
       this.missionStore.updateMission(missionId, { status: "complete" });
+      this.logMissionEventSafe(
+        missionId,
+        "mission_completed",
+        `Mission ${mission.title} marked complete`,
+        { milestoneCount: milestones.length },
+      );
       this.updateActivity(missionId);
       this.setAutopilotState(missionId, "inactive");
       this.watchedMissions.delete(missionId);
@@ -396,7 +444,20 @@ export class MissionAutopilot {
         if (mission.lastAutopilotActivityAt) {
           const lastActivity = new Date(mission.lastAutopilotActivityAt).getTime();
           if (now - lastActivity > STALE_THRESHOLD_MS) {
-            autopilotLog.warn(`Mission ${missionId} is stale (no activity for ${Math.round((now - lastActivity) / 60_000)} minutes)`);
+            const staleMinutes = Math.round((now - lastActivity) / 60_000);
+            this.logMissionEventSafe(
+              missionId,
+              "warning",
+              `Mission autopilot appears stale (no activity for ${staleMinutes} minutes)`,
+              {
+                staleMinutes,
+                staleThresholdMs: STALE_THRESHOLD_MS,
+                lastActivityAt: mission.lastAutopilotActivityAt,
+                retryCount: state.retryCount,
+                category: "autopilot_stale",
+              },
+            );
+            autopilotLog.warn(`Mission ${missionId} is stale (no activity for ${staleMinutes} minutes)`);
           }
         }
       }
@@ -408,13 +469,43 @@ export class MissionAutopilot {
   // ── Helpers ────────────────────────────────────────────────────────
 
   /**
+   * Best-effort mission event logging that must never break autopilot control flow.
+   */
+  private logMissionEventSafe(
+    missionId: string,
+    eventType: MissionEventType,
+    description: string,
+    metadata?: Record<string, unknown>,
+  ): void {
+    try {
+      this.missionStore.logMissionEvent(missionId, eventType, description, metadata);
+    } catch (err) {
+      autopilotLog.error(
+        `Failed to persist mission event (${eventType}) for ${missionId}:`,
+        err,
+      );
+    }
+  }
+
+  /**
    * Update the `autopilotState` on a mission in the store.
    */
   private setAutopilotState(missionId: string, state: AutopilotState): void {
     try {
       const mission = this.missionStore.getMission(missionId);
-      if (mission && mission.autopilotState !== state) {
+      if (!mission) {
+        return;
+      }
+
+      const previousState = mission.autopilotState ?? "inactive";
+      if (previousState !== state) {
         this.missionStore.updateMission(missionId, { autopilotState: state });
+        this.logMissionEventSafe(
+          missionId,
+          "autopilot_state_changed",
+          `Autopilot state changed from ${previousState} to ${state}`,
+          { fromState: previousState, toState: state },
+        );
       }
     } catch (err) {
       autopilotLog.error(`Error setting autopilot state for mission ${missionId}:`, err);

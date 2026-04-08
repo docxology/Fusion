@@ -69,6 +69,7 @@ describe("Database", () => {
       expect(tableNames).toContain("milestones");
       expect(tableNames).toContain("slices");
       expect(tableNames).toContain("mission_features");
+      expect(tableNames).toContain("mission_events");
       expect(tableNames).toContain("ai_sessions");
       expect(tableNames).toContain("messages");
       expect(tableNames).toContain("agentRatings");
@@ -93,10 +94,13 @@ describe("Database", () => {
       expect(indexNames).toContain("idxMessagesTo");
       expect(indexNames).toContain("idxAgentRatingsAgentId");
       expect(indexNames).toContain("idxAgentRatingsCreatedAt");
+      expect(indexNames).toContain("idxMissionEventsMissionId");
+      expect(indexNames).toContain("idxMissionEventsTimestamp");
+      expect(indexNames).toContain("idxMissionEventsType");
     });
 
     it("seeds schema version", () => {
-      expect(db.getSchemaVersion()).toBe(16);
+      expect(db.getSchemaVersion()).toBe(17);
     });
 
     it("seeds lastModified", () => {
@@ -119,7 +123,7 @@ describe("Database", () => {
 
     it("is idempotent - calling init() twice does not fail", () => {
       expect(() => db.init()).not.toThrow();
-      expect(db.getSchemaVersion()).toBe(16);
+      expect(db.getSchemaVersion()).toBe(17);
     });
 
     it("does not overwrite existing config on re-init", () => {
@@ -726,7 +730,7 @@ describe("schema migrations", () => {
     db.init();
 
     // Verify version bumped to 5 (includes v1→v2, v2→v3, v3→v4, and v4→v5 migrations)
-    expect(db.getSchemaVersion()).toBe(16);
+    expect(db.getSchemaVersion()).toBe(17);
 
     // Verify new columns exist and existing data is intact
     const cols = db.prepare("PRAGMA table_info(tasks)").all() as Array<{ name: string }>;
@@ -751,11 +755,11 @@ describe("schema migrations", () => {
     const db = new Database(kbDir);
     db.init();
 
-    expect(db.getSchemaVersion()).toBe(16);
+    expect(db.getSchemaVersion()).toBe(17);
 
     // Re-init should not fail
     db.init();
-    expect(db.getSchemaVersion()).toBe(16);
+    expect(db.getSchemaVersion()).toBe(17);
 
     db.close();
   });
@@ -771,7 +775,7 @@ describe("schema migrations", () => {
 
     db.init();
 
-    expect(db.getSchemaVersion()).toBe(16);
+    expect(db.getSchemaVersion()).toBe(17);
 
     const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name = 'agentRatings'").all() as Array<{ name: string }>;
     expect(tables).toEqual([{ name: "agentRatings" }]);
@@ -780,6 +784,31 @@ describe("schema migrations", () => {
     const indexNames = indexes.map((index) => index.name);
     expect(indexNames).toContain("idxAgentRatingsAgentId");
     expect(indexNames).toContain("idxAgentRatingsCreatedAt");
+
+    db.close();
+  });
+
+  it("migrates a v16 database by creating mission_events table and indexes", () => {
+    tmpDir = makeTmpDir();
+    const kbDir = join(tmpDir, ".fusion");
+
+    const db = new Database(kbDir);
+    db.exec("CREATE TABLE IF NOT EXISTS __meta (key TEXT PRIMARY KEY, value TEXT)");
+    db.exec("INSERT INTO __meta (key, value) VALUES ('schemaVersion', '16')");
+    db.exec("INSERT INTO __meta (key, value) VALUES ('lastModified', '1000')");
+
+    db.init();
+
+    expect(db.getSchemaVersion()).toBe(17);
+
+    const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name = 'mission_events'").all() as Array<{ name: string }>;
+    expect(tables).toEqual([{ name: "mission_events" }]);
+
+    const indexes = db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name = 'mission_events' ORDER BY name").all() as Array<{ name: string }>;
+    const indexNames = indexes.map((index) => index.name);
+    expect(indexNames).toContain("idxMissionEventsMissionId");
+    expect(indexNames).toContain("idxMissionEventsTimestamp");
+    expect(indexNames).toContain("idxMissionEventsType");
 
     db.close();
   });
@@ -874,7 +903,7 @@ describe("schema migrations", () => {
     db.init();
 
     // Verify version bumped to 5
-    expect(db.getSchemaVersion()).toBe(16);
+    expect(db.getSchemaVersion()).toBe(17);
 
     // Verify new columns exist and existing data is intact
     const cols = db.prepare("PRAGMA table_info(tasks)").all() as Array<{ name: string }>;
@@ -1084,7 +1113,7 @@ describe("createDatabase factory", () => {
     const db = createDatabase(kbDir);
     db.init();
 
-    expect(db.getSchemaVersion()).toBe(16);
+    expect(db.getSchemaVersion()).toBe(17);
     expect(db.getLastModified()).toBeGreaterThan(0);
 
     db.close();

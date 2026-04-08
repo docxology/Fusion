@@ -18,6 +18,8 @@ import type {
   Slice,
   MissionFeature,
   MissionWithHierarchy,
+  MissionEvent,
+  MissionHealth,
 } from "@fusion/core";
 import {
   __resetMissionInterviewState,
@@ -31,6 +33,7 @@ function createMockMissionStore() {
   const milestones: Map<string, Milestone> = new Map();
   const slices: Map<string, Slice> = new Map();
   const features: Map<string, MissionFeature> = new Map();
+  const missionEvents: Map<string, MissionEvent[]> = new Map();
 
   let missionCounter = 1;
   let milestoneCounter = 1;
@@ -102,6 +105,40 @@ function createMockMissionStore() {
       totalFeatures: 0,
       completedFeatures: 0,
     })),
+
+    getMissionEvents: vi.fn((missionId: string, options?: { limit?: number; offset?: number; eventType?: string }) => {
+      const allEvents = missionEvents.get(missionId) ?? [];
+      const filtered = options?.eventType
+        ? allEvents.filter((event) => event.eventType === options.eventType)
+        : allEvents;
+      const limit = options?.limit ?? 50;
+      const offset = options?.offset ?? 0;
+      return {
+        events: filtered.slice(offset, offset + limit),
+        total: filtered.length,
+      };
+    }),
+
+    getMissionHealth: vi.fn((missionId: string): MissionHealth | undefined => {
+      const mission = missions.get(missionId);
+      if (!mission) return undefined;
+      return {
+        missionId,
+        status: mission.status,
+        tasksCompleted: 0,
+        tasksFailed: 0,
+        tasksInFlight: 0,
+        totalTasks: 0,
+        currentSliceId: undefined,
+        currentMilestoneId: undefined,
+        estimatedCompletionPercent: 0,
+        lastErrorAt: undefined,
+        lastErrorDescription: undefined,
+        autopilotState: mission.autopilotState ?? "inactive",
+        autopilotEnabled: mission.autopilotEnabled ?? false,
+        lastActivityAt: mission.lastAutopilotActivityAt,
+      };
+    }),
 
     updateMission: vi.fn((id: string, updates: Partial<Mission>) => {
       const mission = missions.get(id);
@@ -403,6 +440,139 @@ describe("Mission API", () => {
       const { app } = buildApp();
       const res = await get(app, "/api/missions/M-999");
       expect(res.status).toBe(404);
+    });
+  });
+
+  describe("Mission observability endpoints", () => {
+    it("GET /api/missions/:missionId/events returns paginated events", async () => {
+      const { app, missionStore } = buildApp();
+      const mission = missionStore.createMission({ title: "Observable Mission" });
+
+      const mockEvents: MissionEvent[] = [
+        {
+          id: "ME-003",
+          missionId: mission.id,
+          eventType: "warning",
+          description: "Stale warning",
+          metadata: { category: "autopilot_stale" },
+          timestamp: "2026-04-08T12:02:00.000Z",
+        },
+        {
+          id: "ME-002",
+          missionId: mission.id,
+          eventType: "error",
+          description: "Autopilot failed",
+          metadata: { retryCount: 3 },
+          timestamp: "2026-04-08T12:01:00.000Z",
+        },
+      ];
+      missionStore.getMissionEvents.mockReturnValue({ events: mockEvents, total: 7 });
+
+      const res = await get(app, `/api/missions/${mission.id}/events`);
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({
+        events: mockEvents,
+        total: 7,
+        limit: 50,
+        offset: 0,
+      });
+      expect(missionStore.getMissionEvents).toHaveBeenCalledWith(mission.id, {
+        limit: 50,
+        offset: 0,
+        eventType: undefined,
+      });
+    });
+
+    it("GET /api/missions/:missionId/events supports limit/offset query params", async () => {
+      const { app, missionStore } = buildApp();
+      const mission = missionStore.createMission({ title: "Observable Mission" });
+      missionStore.getMissionEvents.mockReturnValue({ events: [], total: 42 });
+
+      const res = await get(app, `/api/missions/${mission.id}/events?limit=10&offset=5`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.limit).toBe(10);
+      expect(res.body.offset).toBe(5);
+      expect(missionStore.getMissionEvents).toHaveBeenCalledWith(mission.id, {
+        limit: 10,
+        offset: 5,
+        eventType: undefined,
+      });
+    });
+
+    it("GET /api/missions/:missionId/events supports eventType filtering", async () => {
+      const { app, missionStore } = buildApp();
+      const mission = missionStore.createMission({ title: "Observable Mission" });
+
+      const filteredEvents: MissionEvent[] = [
+        {
+          id: "ME-010",
+          missionId: mission.id,
+          eventType: "error",
+          description: "latest error",
+          metadata: null,
+          timestamp: "2026-04-08T12:10:00.000Z",
+        },
+      ];
+      missionStore.getMissionEvents.mockReturnValue({ events: filteredEvents, total: 1 });
+
+      const res = await get(app, `/api/missions/${mission.id}/events?eventType=error`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.events).toEqual(filteredEvents);
+      expect(missionStore.getMissionEvents).toHaveBeenCalledWith(mission.id, {
+        limit: 50,
+        offset: 0,
+        eventType: "error",
+      });
+    });
+
+    it("GET /api/missions/:missionId/events returns 404 for unknown mission", async () => {
+      const { app } = buildApp();
+
+      const res = await get(app, "/api/missions/M-999/events");
+
+      expect(res.status).toBe(404);
+      expect(res.body.error).toBe("Mission not found");
+    });
+
+    it("GET /api/missions/:missionId/health returns mission health", async () => {
+      const { app, missionStore } = buildApp();
+      const mission = missionStore.createMission({ title: "Healthy Mission" });
+
+      const health: MissionHealth = {
+        missionId: mission.id,
+        status: "active",
+        tasksCompleted: 5,
+        tasksFailed: 1,
+        tasksInFlight: 2,
+        totalTasks: 8,
+        currentSliceId: "SL-MOCK1-TST",
+        currentMilestoneId: "MS-MOCK1-TST",
+        estimatedCompletionPercent: 63,
+        lastErrorAt: "2026-04-08T12:00:00.000Z",
+        lastErrorDescription: "Most recent error",
+        autopilotState: "watching",
+        autopilotEnabled: true,
+        lastActivityAt: "2026-04-08T12:05:00.000Z",
+      };
+      missionStore.getMissionHealth.mockReturnValue(health);
+
+      const res = await get(app, `/api/missions/${mission.id}/health`);
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual(health);
+      expect(missionStore.getMissionHealth).toHaveBeenCalledWith(mission.id);
+    });
+
+    it("GET /api/missions/:missionId/health returns 404 for unknown mission", async () => {
+      const { app } = buildApp();
+
+      const res = await get(app, "/api/missions/M-999/health");
+
+      expect(res.status).toBe(404);
+      expect(res.body.error).toBe("Mission not found");
     });
   });
 
