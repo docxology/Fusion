@@ -40,7 +40,7 @@ const engineReady = initEngine();
 // ── Constants ───────────────────────────────────────────────────────────────
 
 /** System prompt for the AI agent that generates agent specifications */
-export const AGENT_GENERATION_SYSTEM_PROMPT = `You are an agent specification generator for the kb task board system.
+export const AGENT_GENERATION_SYSTEM_PROMPT = `You are an agent specification generator for the fn task board system.
 
 Your job: given a user-provided role description, generate a complete agent specification suitable for creating an AI agent.
 

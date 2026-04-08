@@ -22,7 +22,7 @@ export interface ProjectDetectionResultsProps {
  * Displays detected projects with:
  * - Checkboxes for selection
  * - Editable names
- * - Warnings for projects without kb database
+ * - Warnings for projects without fn database
  * - Register Selected / Register All buttons
  */
 export function ProjectDetectionResults({
@@ -202,7 +202,7 @@ export function ProjectDetectionResults({
                 {!hasKbDb && (
                   <div className="detection-result-warning">
                     <AlertCircle size={12} />
-                    <span>No kb database found - will be initialized</span>
+                    <span>No fn database found - will be initialized</span>
                   </div>
                 )}
               </div>

@@ -161,7 +161,7 @@ describe("build-exe", () => {
           child!.stdout!.on("data", (d: Buffer) => {
             startupOutput += d.toString();
             if (
-              startupOutput.includes("kb board") &&
+              startupOutput.includes("fn board") &&
               startupOutput.includes(`→ http://localhost:${port}`)
             ) {
               settle("ready");

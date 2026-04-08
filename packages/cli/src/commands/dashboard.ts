@@ -840,7 +840,7 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
     }
 
     console.log();
-    console.log(`  kb board`);
+    console.log(`  fn board`);
     console.log(`  ────────────────────────`);
     console.log(`  → http://localhost:${actualPort}`);
     console.log();

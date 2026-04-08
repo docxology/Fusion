@@ -184,10 +184,10 @@ export async function detectProjectFromCwd(
 
   // Walk up the directory tree
   while (true) {
-    // Check for kb database
+    // Check for fn database
     const kbPath = resolve(currentDir, ".fusion", "fusion.db");
     if (existsSync(kbPath)) {
-      // Found a kb project - check if it's registered
+      // Found a fn project - check if it's registered
       const project = await central.getProjectByPath(currentDir);
       if (project) {
         return project;

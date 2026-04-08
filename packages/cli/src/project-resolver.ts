@@ -245,7 +245,7 @@ export async function resolveProject(options: ResolveOptions = {}): Promise<Reso
 
     // 4. Has .fusion/ but not registered
     if (interactive) {
-      console.log(`\n  Found kb project at ${kbDir} but it's not registered.`);
+      console.log(`\n  Found fn project at ${kbDir} but it's not registered.`);
       const shouldRegister = await promptConfirm("Register this project now?", true);
 
       if (shouldRegister) {
@@ -284,7 +284,7 @@ export async function resolveProject(options: ResolveOptions = {}): Promise<Reso
       }
     } else {
       throw new ProjectResolutionError(
-        `Found kb project at ${kbDir} but it's not registered.\n\n` +
+        `Found fn project at ${kbDir} but it's not registered.\n\n` +
           "Run `fn project add " + kbDir + "` to register it, or use --project <name>.",
         "NOT_REGISTERED",
         { directory: kbDir }
@@ -301,7 +301,7 @@ export async function resolveProject(options: ResolveOptions = {}): Promise<Reso
       "No projects registered.\n\n" +
         "To get started:\n" +
         "  1. Navigate to your project directory\n" +
-        "  2. Run `fn init` to initialize kb\n" +
+        "  2. Run `fn init` to initialize fn\n" +
         "  3. Run `fn project add .` to register it\n" +
         "\nOr: `fn project add <path>` to register from anywhere.",
       "NO_PROJECTS"
@@ -450,7 +450,7 @@ export async function isProjectNameTaken(
 }
 
 /**
- * Validate that a path contains an initialized kb project (.fusion/ directory exists).
+ * Validate that a path contains an initialized fn project (.fusion/ directory exists).
  */
 export function isKbProject(path: string): boolean {
   const kbPath = resolve(path, ".fusion");
@@ -557,14 +557,14 @@ export async function registerProjectInteractive(
   if (!isKbProject(absPath)) {
     if (interactive) {
       console.log(`\n  No .fusion/ directory found in ${absPath}`);
-      const shouldInit = await promptConfirm("Initialize kb here first?", true);
+      const shouldInit = await promptConfirm("Initialize fn here first?", true);
 
       if (shouldInit) {
         // Initialize the project (create .fusion/)
         const { TaskStore } = await import("@fusion/core");
         const store = new TaskStore(absPath);
         await store.init();
-        console.log(`  ✓ Initialized kb at ${absPath}`);
+        console.log(`  ✓ Initialized fn at ${absPath}`);
       } else {
         throw new ProjectResolutionError(
           "Cannot register project without .fusion/ directory. Run `fn init` first.",

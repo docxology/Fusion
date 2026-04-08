@@ -55,7 +55,7 @@ const engineReady = initEngine();
 // ── Constants ───────────────────────────────────────────────────────────────
 
 /** Planning system prompt for the AI agent */
-export const PLANNING_SYSTEM_PROMPT = `You are a planning assistant for the kb task board system.
+export const PLANNING_SYSTEM_PROMPT = `You are a planning assistant for the fn task board system.
 
 Your job: help users transform vague, high-level ideas into well-defined, actionable tasks.
 

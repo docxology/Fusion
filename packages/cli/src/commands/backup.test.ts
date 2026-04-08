@@ -104,7 +104,7 @@ describe("backup commands", () => {
 
   it("runBackupList without project falls back to current cwd task store when resolution fails", async () => {
     const cwdSpy = vi.spyOn(process, "cwd").mockReturnValue("/local/project");
-    mockResolveProject.mockRejectedValueOnce(new Error("No kb project found"));
+    mockResolveProject.mockRejectedValueOnce(new Error("No fn project found"));
     await runBackupList();
     expect(mockResolveProject).toHaveBeenCalledWith(undefined);
     expect(TaskStore).toHaveBeenCalledWith("/local/project");
@@ -113,7 +113,7 @@ describe("backup commands", () => {
 
   it("falls back to current cwd task store when project resolution fails for project-targeted commands", async () => {
     const cwdSpy = vi.spyOn(process, "cwd").mockReturnValue("/fallback/project");
-    mockResolveProject.mockRejectedValue(new Error("Project 'missing' not found. Run 'kb project list' to see registered projects."));
+    mockResolveProject.mockRejectedValue(new Error("Project 'missing' not found. Run 'fn project list' to see registered projects."));
 
     await runBackupList("missing");
     expect(TaskStore).toHaveBeenCalledWith("/fallback/project");

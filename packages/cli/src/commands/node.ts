@@ -38,7 +38,7 @@ export async function runNodeList(options: NodeListOptions = {}): Promise<void> 
         console.log(JSON.stringify([], null, 2));
       } else {
         console.log("\n  No nodes registered.");
-        console.log("  Register one with: kb node add <name>\n");
+        console.log("  Register one with: fn node add <name>\n");
       }
       return;
     }
@@ -78,7 +78,7 @@ export async function runNodeList(options: NodeListOptions = {}): Promise<void> 
  */
 export async function runNodeAdd(name: string, options: NodeAddOptions = {}): Promise<void> {
   if (!name) {
-    console.error("Usage: kb node add <name> [--url <url>] [--api-key <key>] [--max-concurrent <n>]");
+    console.error("Usage: fn node add <name> [--url <url>] [--api-key <key>] [--max-concurrent <n>]");
     process.exit(1);
   }
 
@@ -140,7 +140,7 @@ export async function runNodeAdd(name: string, options: NodeAddOptions = {}): Pr
  */
 export async function runNodeRemove(name: string, options: NodeRemoveOptions = {}): Promise<void> {
   if (!name) {
-    console.error("Usage: kb node remove <name> [--force]");
+    console.error("Usage: fn node remove <name> [--force]");
     process.exit(1);
   }
 
@@ -223,7 +223,7 @@ export async function runNodeShow(name?: string): Promise<void> {
  */
 export async function runNodeHealth(name: string): Promise<void> {
   if (!name) {
-    console.error("Usage: kb node health <name>");
+    console.error("Usage: fn node health <name>");
     process.exit(1);
   }
 

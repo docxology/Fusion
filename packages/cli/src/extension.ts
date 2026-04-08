@@ -1492,7 +1492,7 @@ export default function kbExtension(pi: ExtensionAPI) {
     name: "kb_feature_link_task",
     label: "KB: Link Feature to Task",
     description:
-      "Link a feature to a kb task for implementation. " +
+      "Link a feature to a fn task for implementation. " +
       "Updates the feature status to 'triaged' and associates it with the task.",
     promptSnippet: "Link a feature to a task",
     promptGuidelines: [

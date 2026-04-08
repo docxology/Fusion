@@ -5,7 +5,7 @@ import { resolveProject } from "../project-context.js";
 
 /**
  * Run settings export command.
- * Usage: kb settings export [--output <path>] [--scope global|project|both]
+ * Usage: fn settings export [--output <path>] [--scope global|project|both]
  *
  * @param options.output - Custom output file path (optional, auto-generates if not provided)
  * @param options.scope - Which settings to export: 'global', 'project', or 'both' (default: 'both')

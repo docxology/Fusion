@@ -401,9 +401,9 @@ export async function syncBackupAutomation(
   }
   
   // Build the backup command
-  // The CLI command will be: kb backup --auto
+  // The CLI command will be: fn backup --auto
   // The --auto flag indicates this is an automated run (can add special handling if needed)
-  const command = "kb backup --create";
+  const command = "fn backup --create";
   
   if (existingSchedule) {
     // Update existing schedule

@@ -210,7 +210,7 @@ function unpersistSubtaskSession(sessionId: string): void {
   _aiSessionStore.delete(sessionId);
 }
 
-export const SUBTASK_BREAKDOWN_PROMPT = `You are a task decomposition assistant for the kb task board system.
+export const SUBTASK_BREAKDOWN_PROMPT = `You are a task decomposition assistant for the fn task board system.
 
 Analyze the user's task description and break it down into 2-5 smaller, independently executable subtasks.
 

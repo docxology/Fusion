@@ -78,7 +78,7 @@ describe("settings commands", () => {
 
     expect(getSettings).toHaveBeenCalled();
     expect(resolveProject).not.toHaveBeenCalled();
-    expect(logSpy).toHaveBeenCalledWith("  kb Global Settings");
+    expect(logSpy).toHaveBeenCalledWith("  fn Global Settings");
   });
 
   it("runSettingsShow with project uses project store", async () => {
@@ -94,7 +94,7 @@ describe("settings commands", () => {
     await runSettingsShow("demo-project");
 
     expect(resolveProject).toHaveBeenCalledWith("demo-project");
-    expect(logSpy).toHaveBeenCalledWith("  kb Settings for project 'demo-project'");
+    expect(logSpy).toHaveBeenCalledWith("  fn Settings for project 'demo-project'");
   });
 
   it("runSettingsSet without project updates global-only settings", async () => {

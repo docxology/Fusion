@@ -85,7 +85,7 @@ export function PrSection({
             Pull Request
           </h4>
           <div className="pr-hint pr-hint--muted">
-            kb is creating a pull request automatically for this task.
+            fn is creating a pull request automatically for this task.
           </div>
         </div>
       );
@@ -199,7 +199,7 @@ export function PrSection({
         </div>
         {automationStatus === "merging-pr" && (
           <div className="pr-hint pr-hint--info">
-            kb is merging this pull request automatically.
+            fn is merging this pull request automatically.
           </div>
         )}
         {automationStatus === "awaiting-pr-checks" && (
@@ -211,7 +211,7 @@ export function PrSection({
         )}
         {prInfo.status === "merged" && (
           <div className="pr-hint pr-hint--info">
-            This PR is merged. kb will finish local cleanup and move the task to Done.
+            This PR is merged. fn will finish local cleanup and move the task to Done.
           </div>
         )}
         <div className="pr-footer">

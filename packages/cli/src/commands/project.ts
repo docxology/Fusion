@@ -1,5 +1,5 @@
 /**
- * Project command implementations for kb CLI.
+ * Project command implementations for fn CLI.
  *
  * Provides commands for managing the project registry:
  * - list: List all registered projects
@@ -157,7 +157,7 @@ export async function runProjectList(options: ProjectListOptions = {}): Promise<
         console.log(JSON.stringify([], null, 2));
       } else {
         console.log("\n  No projects registered.");
-        console.log("  Register one with: kb project add <name> <path>\n");
+        console.log("  Register one with: fn project add <name> <path>\n");
       }
       return;
     }
@@ -281,17 +281,17 @@ export async function runProjectAdd(
       // Check for .fusion directory
       const kbDbPath = resolve(absolutePath, ".fusion", "fusion.db");
       if (!existsSync(kbDbPath) && !options.force) {
-        console.log(`\n  No kb project found at ${formatDisplayPath(absolutePath)}`);
-        const init = await rl.question("  Initialize kb here first? [Y/n] ");
+        console.log(`\n  No fn project found at ${formatDisplayPath(absolutePath)}`);
+        const init = await rl.question("  Initialize fn here first? [Y/n] ");
         rl.close();
 
         if (init.trim().toLowerCase() !== "n") {
           // Initialize the project
           const store = new TaskStore(absolutePath);
           await store.init();
-          console.log(`  ✓ Initialized kb at ${absolutePath}`);
+          console.log(`  ✓ Initialized fn at ${absolutePath}`);
         } else {
-          console.log("\n  Cancelled. Run `kb init` to initialize a project first.\n");
+          console.log("\n  Cancelled. Run `fn init` to initialize a project first.\n");
           process.exit(1);
         }
       }
@@ -334,8 +334,8 @@ export async function runProjectAdd(
     // Check for .fusion directory
     const kbDbPath = resolve(absolutePath, ".fusion", "fusion.db");
     if (!existsSync(kbDbPath) && !options.force) {
-      console.error(`\n  ✗ No kb project found at ${formatDisplayPath(absolutePath)}`);
-      console.error("  Run `kb init` first to initialize the project.\n");
+      console.error(`\n  ✗ No fn project found at ${formatDisplayPath(absolutePath)}`);
+      console.error("  Run `fn init` first to initialize the project.\n");
       process.exit(1);
     }
 
@@ -383,7 +383,7 @@ export async function runProjectAdd(
  */
 export async function runProjectRemove(name: string, options: ProjectRemoveOptions = {}): Promise<void> {
   if (!name) {
-    console.error("Usage: kb project remove <name> [--force]");
+    console.error("Usage: fn project remove <name> [--force]");
     process.exit(1);
   }
 
@@ -414,7 +414,7 @@ export async function runProjectRemove(name: string, options: ProjectRemoveOptio
     console.log(`    Location: ${formatDisplayPath(project.path)}`);
     console.log();
     console.log("  Note: Project data is preserved. You can re-register with:");
-    console.log(`        kb project add ${project.name} ${project.path}`);
+    console.log(`        fn project add ${project.name} ${project.path}`);
     console.log();
   } finally {
     await central.close();
@@ -461,7 +461,7 @@ export async function runProjectShow(name?: string): Promise<void> {
             }
           }
           console.log();
-          console.log("  Run 'kb project add' to register this project.");
+          console.log("  Run 'fn project add' to register this project.");
           console.log();
           return;
         }
@@ -530,7 +530,7 @@ export const runProjectInfo = runProjectShow;
  */
 export async function runProjectSetDefault(name: string): Promise<void> {
   if (!name) {
-    console.error("Usage: kb project set-default <name>");
+    console.error("Usage: fn project set-default <name>");
     process.exit(1);
   }
 
@@ -579,7 +579,7 @@ export async function runProjectDetect(): Promise<void> {
       console.log();
     } else {
       console.log();
-      console.log("  No kb project detected from current directory.");
+      console.log("  No fn project detected from current directory.");
       console.log();
     }
   } finally {

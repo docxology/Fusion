@@ -5,7 +5,7 @@ import { resolveProject } from "../project-context.js";
 
 /**
  * Run settings import command.
- * Usage: kb settings import <file> [--scope global|project|both] [--merge] [--yes]
+ * Usage: fn settings import <file> [--scope global|project|both] [--merge] [--yes]
  *
  * @param filePath - Path to the JSON file to import
  * @param options.scope - Which settings to import: 'global', 'project', or 'both' (default: 'both')

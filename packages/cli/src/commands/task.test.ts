@@ -282,7 +282,7 @@ describe("project-aware task command behavior", () => {
     const init = vi.fn();
 
     vi.mocked(resolveProject).mockRejectedValueOnce(
-      new Error("No kb project found in current directory. Use --project or run from a project directory.")
+      new Error("No fn project found in current directory. Use --project or run from a project directory.")
     );
 
     (TaskStore as unknown as ReturnType<typeof vi.fn>).mockImplementation((projectPath: string) => ({
@@ -661,11 +661,11 @@ describe("project-aware task command behavior", () => {
 
   it("surfaces project resolution failures from shared context when project flag is explicit", async () => {
     vi.mocked(resolveProject).mockRejectedValueOnce(
-      new Error("Project 'demo-project' not found. Run 'kb project list' to see registered projects.")
+      new Error("Project 'demo-project' not found. Run 'fn project list' to see registered projects.")
     );
 
     await expect(runTaskList("demo-project")).rejects.toThrow(
-      "Project 'demo-project' not found. Run 'kb project list' to see registered projects."
+      "Project 'demo-project' not found. Run 'fn project list' to see registered projects."
     );
   });
 });

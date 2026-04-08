@@ -158,7 +158,7 @@ export async function runTaskList(projectName?: string) {
   const tasks = await store.listTasks();
 
   if (tasks.length === 0) {
-    console.log("\n  No tasks yet. Create one with: kb task create\n");
+    console.log("\n  No tasks yet. Create one with: fn task create\n");
     process.exit(0);
   }
 

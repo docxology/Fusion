@@ -280,7 +280,7 @@ export function fetchGlobalSettings(): Promise<GlobalSettings> {
   return api<GlobalSettings>("/settings/global");
 }
 
-/** Update global (user-level) settings. These persist across all kb projects. */
+/** Update global (user-level) settings. These persist across all fn projects. */
 export function updateGlobalSettings(settings: Partial<GlobalSettings>): Promise<Settings> {
   return api<Settings>("/settings/global", {
     method: "PUT",
@@ -507,7 +507,7 @@ export function apiFetchGitHubIssues(
   });
 }
 
-/** Import a specific GitHub issue as a kb task */
+/** Import a specific GitHub issue as a fn task */
 export function apiImportGitHubIssue(owner: string, repo: string, issueNumber: number): Promise<Task> {
   return api<Task>("/github/issues/import", {
     method: "POST",
@@ -525,7 +525,7 @@ export interface BatchImportResult {
   retryAfter?: number;
 }
 
-/** Batch import multiple GitHub issues as kb tasks with throttling */
+/** Batch import multiple GitHub issues as fn tasks with throttling */
 export function apiBatchImportGitHubIssues(
   owner: string,
   repo: string,
@@ -562,7 +562,7 @@ export function apiFetchGitHubPulls(
   });
 }
 
-/** Import a specific GitHub pull request as a kb review task */
+/** Import a specific GitHub pull request as a fn review task */
 export function apiImportGitHubPull(owner: string, repo: string, prNumber: number): Promise<Task> {
   return api<Task>("/github/pulls/import", {
     method: "POST",

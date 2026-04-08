@@ -581,7 +581,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
   /**
    * Update global (user-level) settings in `~/.pi/fusion/settings.json`.
    *
-   * These settings persist across all kb projects for the current user.
+   * These settings persist across all fn projects for the current user.
    * Only fields defined in `GlobalSettings` are accepted.
    */
   async updateGlobalSettings(patch: Partial<GlobalSettings>): Promise<Settings> {
@@ -1828,7 +1828,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
           `Merge conflict merging '${branch}'. Resolve manually:\n` +
             `  cd ${this.rootDir}\n` +
             `  git merge --squash ${branch}\n` +
-            `  # resolve conflicts, then: kb task move ${id} done`,
+            `  # resolve conflicts, then: fn task move ${id} done`,
         );
       }
 

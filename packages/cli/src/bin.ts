@@ -59,7 +59,7 @@ const HELP = `
 fn — AI-orchestrated task board
 
 Usage:
-  fn init [opts]                      Initialize a new kb project in the current directory
+  fn init [opts]                      Initialize a new fn project in the current directory
   fn dashboard                        Start the board web UI
   fn dashboard --paused               Start with automation paused
   fn dashboard --dev                  Start web UI only (no AI engine)

@@ -126,7 +126,7 @@ describe("git commands", () => {
   });
 
   it("propagates project resolution errors for git commands", async () => {
-    vi.mocked(resolveProject).mockRejectedValue(new Error("Project 'missing' not found. Run 'kb project list' to see registered projects."));
+    vi.mocked(resolveProject).mockRejectedValue(new Error("Project 'missing' not found. Run 'fn project list' to see registered projects."));
 
     await expect(runGitFetch("origin", "missing")).rejects.toThrow("Project 'missing' not found");
   });

@@ -171,8 +171,8 @@ function getSettingLabel(key: string): string {
  * Run settings show command.
  *
  * Behavior:
- * - `kb settings` shows global settings
- * - `kb settings --project <name>` shows project settings for that project
+ * - `fn settings` shows global settings
+ * - `fn settings --project <name>` shows project settings for that project
  */
 export async function runSettingsShow(projectName?: string): Promise<void> {
   const project = projectName ? await resolveProject(projectName) : undefined;
@@ -182,8 +182,8 @@ export async function runSettingsShow(projectName?: string): Promise<void> {
 
   console.log();
   console.log(project
-    ? `  kb Settings for project '${project.projectName}'`
-    : "  kb Global Settings");
+    ? `  fn Settings for project '${project.projectName}'`
+    : "  fn Global Settings");
   console.log("  " + "─".repeat(50));
 
   const settingGroups = [

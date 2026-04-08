@@ -1,7 +1,7 @@
 /**
- * Init command for kb CLI.
+ * Init command for fn CLI.
  *
- * Initializes a new kb project in the current directory by:
+ * Initializes a new fn project in the current directory by:
  * 1. Creating the .fusion/ directory with fusion.db
  * 2. Registering the project in the central database
  *
@@ -42,7 +42,7 @@ export async function runInit(options: InitOptions = {}): Promise<void> {
 
     const existing = await central.getProjectByPath(cwd);
     if (existing) {
-      console.log(`✓ kb project already initialized: "${existing.name}"`);
+      console.log(`✓ fn project already initialized: "${existing.name}"`);
       console.log(`  Path: ${cwd}`);
       console.log(`\n  Project is registered in the central registry.`);
       console.log(`  To re-initialize with a different name, run:`);
@@ -64,7 +64,7 @@ export async function runInit(options: InitOptions = {}): Promise<void> {
   // Get or generate project name
   const projectName = options.name ?? detectProjectName(cwd);
 
-  console.log(`Initializing kb project: "${projectName}"`);
+  console.log(`Initializing fn project: "${projectName}"`);
   console.log(`  Path: ${cwd}`);
 
   // Create .fusion/ directory

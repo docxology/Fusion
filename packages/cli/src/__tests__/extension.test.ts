@@ -57,7 +57,7 @@ function makeCtx(cwd: string) {
 
 // ── Tests ──────────────────────────────────────────────────────────
 
-describe("kb pi extension", () => {
+describe("fn pi extension", () => {
   let tmpDir: string;
   let api: ReturnType<typeof createMockAPI>;
 

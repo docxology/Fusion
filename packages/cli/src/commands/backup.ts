@@ -34,7 +34,7 @@ async function getBackupManager(projectName?: string): Promise<{
 
 /**
  * Create a database backup immediately.
- * Usage: kb backup --create
+ * Usage: fn backup --create
  */
 export async function runBackupCreate(projectName?: string): Promise<void> {
   const { manager, kbDir, store } = await getBackupManager(projectName);
@@ -55,7 +55,7 @@ export async function runBackupCreate(projectName?: string): Promise<void> {
 
 /**
  * List all database backups.
- * Usage: kb backup --list
+ * Usage: fn backup --list
  */
 export async function runBackupList(projectName?: string): Promise<void> {
   const { manager } = await getBackupManager(projectName);
@@ -88,7 +88,7 @@ export async function runBackupList(projectName?: string): Promise<void> {
 
 /**
  * Restore database from a backup file.
- * Usage: kb backup --restore <filename>
+ * Usage: fn backup --restore <filename>
  */
 export async function runBackupRestore(filename: string, projectName?: string): Promise<void> {
   const { manager } = await getBackupManager(projectName);
@@ -108,7 +108,7 @@ export async function runBackupRestore(filename: string, projectName?: string): 
 
 /**
  * Remove old backups exceeding retention limit.
- * Usage: kb backup --cleanup
+ * Usage: fn backup --cleanup
  */
 export async function runBackupCleanup(projectName?: string): Promise<void> {
   const { manager } = await getBackupManager(projectName);
