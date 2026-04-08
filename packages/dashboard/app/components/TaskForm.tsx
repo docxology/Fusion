@@ -101,7 +101,18 @@ export function TaskForm({
   onSubtaskBreakdown,
   onClose,
 }: TaskFormProps) {
+  const hasInitialMoreOptions =
+    dependencies.length > 0 ||
+    pendingImages.length > 0 ||
+    selectedWorkflowSteps.length > 0 ||
+    presetMode !== "default" ||
+    executorModel !== "" ||
+    validatorModel !== "" ||
+    (planningModel || "") !== "" ||
+    (thinkingLevel || "off") !== "off";
+
   const [showDepDropdown, setShowDepDropdown] = useState(false);
+  const [showMoreOptions, setShowMoreOptions] = useState(hasInitialMoreOptions);
   const [depSearch, setDepSearch] = useState("");
   const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
   const [favoriteProviders, setFavoriteProviders] = useState<string[]>([]);
@@ -124,6 +135,7 @@ export function TaskForm({
   const autoSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoSaveStatusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isAutoSavingRef = useRef(false);
+  const hadMoreOptionSelectionsRef = useRef(hasInitialMoreOptions);
   const initialDescriptionRef = useRef(description.trim());
   const lastAutoSavedDescriptionRef = useRef(description.trim());
 
@@ -149,6 +161,15 @@ export function TaskForm({
 
   const availablePresets = settings?.modelPresets || [];
   const selectedPreset = availablePresets.find((preset) => preset.id === selectedPresetId);
+  const hasMoreOptionSelections =
+    dependencies.length > 0 ||
+    pendingImages.length > 0 ||
+    selectedWorkflowSteps.length > 0 ||
+    presetMode !== "default" ||
+    executorModel !== "" ||
+    validatorModel !== "" ||
+    (planningModel || "") !== "" ||
+    (thinkingLevel || "off") !== "off";
 
   // Auto-select preset by size (create mode only)
   useEffect(() => {
@@ -185,6 +206,21 @@ export function TaskForm({
       defaultOnAppliedRef.current = false;
     }
   }, [isActive]);
+
+  // Auto-expand advanced options when non-default values are present.
+  useEffect(() => {
+    if (hasMoreOptionSelections && !hadMoreOptionSelectionsRef.current) {
+      setShowMoreOptions(true);
+    }
+    hadMoreOptionSelectionsRef.current = hasMoreOptionSelections;
+  }, [hasMoreOptionSelections]);
+
+  // Keep dependency dropdown state clean when advanced options are collapsed.
+  useEffect(() => {
+    if (showMoreOptions) return;
+    setShowDepDropdown(false);
+    setDepSearch("");
+  }, [showMoreOptions]);
 
   // Auto-focus description (create) or title (edit) when active
   useEffect(() => {
@@ -485,7 +521,8 @@ export function TaskForm({
       onDragOver={(e) => e.preventDefault()}
       onPaste={handlePaste}
     >
-      {/* Title field (edit mode only) */}
+      <div className="task-form-primary-section">
+        {/* Title field (edit mode only) */}
       {mode === "edit" && onTitleChange && (
         <div className="form-group">
           <label htmlFor="task-form-title">Title</label>
@@ -538,7 +575,7 @@ export function TaskForm({
             value={description}
             onChange={handleDescriptionInput}
             placeholder="What needs to be done?"
-            rows={mode === "edit" ? 8 : 3}
+            rows={mode === "edit" ? 8 : 5}
             disabled={disabled || isRefining}
           />
           {mode === "edit" && !disabled && !isDescriptionExpanded && (
@@ -634,7 +671,27 @@ export function TaskForm({
           )}
         </div>
       )}
+      </div>
 
+      <button
+        type="button"
+        className="task-form-more-options-toggle"
+        onClick={() => setShowMoreOptions((prev) => !prev)}
+        aria-expanded={showMoreOptions}
+        aria-controls="task-form-more-options"
+        disabled={disabled}
+        data-testid="task-form-more-options-toggle"
+      >
+        <span>More options</span>
+        {showMoreOptions ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+      </button>
+
+      <div
+        id="task-form-more-options"
+        className={`task-form-more-options${showMoreOptions ? "" : " collapsed"}`}
+        aria-hidden={!showMoreOptions}
+        data-testid="task-form-more-options"
+      >
       {/* Attachments */}
       <div className="form-group">
         <label>Attachments</label>
@@ -984,7 +1041,7 @@ export function TaskForm({
           </div>
         )}
       </div>
-
+      </div>
     </div>
   );
 }

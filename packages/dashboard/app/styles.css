@@ -6117,8 +6117,20 @@ body {
   }
 
   .task-form-description-actions {
+    width: 100%;
     flex-wrap: wrap;
     gap: var(--space-xs);
+  }
+
+  .task-form-more-options-toggle {
+    margin: 0 14px var(--space-sm);
+    width: calc(100% - 28px);
+  }
+
+  .task-form-more-options {
+    margin-left: 0;
+    padding-left: 0;
+    border-left: none;
   }
 
   .task-form .checkbox-label {
@@ -15608,6 +15620,142 @@ body[data-color-theme="terminal"][data-theme="light"]::before {
 
 .new-task-modal .checkbox-label {
   margin-bottom: 4px !important;
+}
+
+.task-form-primary-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  margin-bottom: var(--space-sm);
+}
+
+.task-form-primary-section .form-group {
+  margin-bottom: 0;
+}
+
+.task-form-primary-section .description-with-refine {
+  padding: var(--space-sm);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-tertiary);
+}
+
+.task-form-primary-section .description-with-refine textarea {
+  min-height: 120px;
+  padding: 12px 70px 12px 12px;
+  line-height: 1.5;
+  background: var(--surface);
+}
+
+.task-form-primary-section .description-with-refine.description--fullscreen {
+  padding: var(--space-lg);
+  border: none;
+  background: var(--surface);
+}
+
+.task-form-primary-section .description-with-refine.description--fullscreen textarea {
+  min-height: unset;
+}
+
+.task-form-description-actions {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  width: fit-content;
+  margin-top: 0;
+  margin-bottom: 0;
+  padding: 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-tertiary);
+}
+
+.task-form-description-actions .btn {
+  border-color: var(--border);
+}
+
+.task-form-more-options-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  padding: 10px 2px;
+  margin: 0 0 var(--space-sm);
+  border: none;
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+  background: transparent;
+  color: var(--text-secondary, var(--text-muted));
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.task-form-more-options-toggle:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.task-form-more-options-toggle:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.task-form-more-options-toggle svg {
+  color: var(--text-dim);
+}
+
+.task-form-more-options {
+  margin-left: 6px;
+  padding-left: 12px;
+  border-left: 1px solid var(--border-subtle);
+  overflow: hidden;
+  max-height: 2400px;
+  opacity: 1;
+  transition:
+    max-height 0.24s ease,
+    opacity 0.2s ease,
+    margin-top 0.2s ease,
+    padding 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.task-form-more-options.collapsed {
+  max-height: 0;
+  opacity: 0;
+  pointer-events: none;
+  margin-top: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-left-color: transparent;
+}
+
+.task-form-more-options .form-group {
+  margin-bottom: var(--space-md);
+}
+
+.task-form-more-options .form-group:last-of-type {
+  margin-bottom: 0;
+}
+
+.task-form-more-options .form-group label {
+  font-size: 11px;
+  color: var(--text-dim);
+  letter-spacing: 0.4px;
+}
+
+.task-form-more-options .form-group small {
+  margin-top: 6px;
+  color: var(--text-secondary, var(--text-muted));
+}
+
+.task-form-more-options .model-select-row {
+  margin-bottom: var(--space-sm);
 }
 
 /* Workflow step reorder controls */

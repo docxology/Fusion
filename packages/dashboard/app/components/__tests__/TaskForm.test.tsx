@@ -146,6 +146,8 @@ describe("TaskForm", () => {
 
     renderTaskForm({ tasks, onDependenciesChange });
 
+    fireEvent.click(screen.getByTestId("task-form-more-options-toggle"));
+
     const depButton = screen.getByRole("button", { name: "Add dependencies" });
     expect(depButton).toBeTruthy();
 

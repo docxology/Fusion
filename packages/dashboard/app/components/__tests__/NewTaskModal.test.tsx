@@ -68,17 +68,34 @@ describe("NewTaskModal", () => {
 
   it("renders all form fields when open", () => {
     renderNewTaskModal();
-    
+
     expect(screen.getByText("New Task")).toBeTruthy();
     expect(screen.getByLabelText(/Description/i)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Add dependencies" })).toBeTruthy();
-    expect(screen.getByText(/Model Configuration/i)).toBeTruthy();
-    // Plan and Subtask buttons for AI-assisted creation (replaced planning mode checkbox)
     expect(screen.getByRole("button", { name: "Plan" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Subtask" })).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("task-form-more-options-toggle"));
+
+    expect(screen.getByRole("button", { name: "Add dependencies" })).toBeTruthy();
+    expect(screen.getByText(/Model Configuration/i)).toBeTruthy();
     expect(screen.getByText(/Attachments/i)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Create Task" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeTruthy();
+  });
+
+  it("shows More options toggle and reveals advanced fields when clicked", () => {
+    renderNewTaskModal();
+
+    const toggle = screen.getByTestId("task-form-more-options-toggle");
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("button", { name: "Add dependencies" })).toBeNull();
+
+    fireEvent.click(toggle);
+
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("button", { name: "Add dependencies" })).toBeTruthy();
+    expect(screen.getByText(/Model Configuration/i)).toBeTruthy();
+    expect(screen.getByText(/Attachments/i)).toBeTruthy();
   });
 
   it("renders attachments before dependencies in form order", () => {
