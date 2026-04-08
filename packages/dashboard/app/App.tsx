@@ -1,7 +1,7 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect } from "react";
 import type { TaskDetail, TaskCreateInput, Task, ThemeMode } from "@fusion/core";
-import { fetchConfig, fetchSettings, fetchAuthStatus, fetchGlobalSettings, updateSettings, updateGlobalSettings, fetchModels, fetchTaskDetail, updateProject, unregisterProject, fetchUnreadCount, fetchAgents } from "./api";
-import type { ModelInfo, ProjectInfo, Agent } from "./api";
+import { updateProject, unregisterProject } from "./api";
+import type { ProjectInfo } from "./api";
 import { Header, useViewportMode } from "./components/Header";
 import { Board } from "./components/Board";
 import { ListView } from "./components/ListView";
@@ -14,7 +14,6 @@ import { SettingsModal } from "./components/SettingsModal";
 import { ModelOnboardingModal } from "./components/ModelOnboardingModal";
 import { PlanningModeModal } from "./components/PlanningModeModal";
 import { SubtaskBreakdownModal } from "./components/SubtaskBreakdownModal";
-import type { SectionId } from "./components/SettingsModal";
 import { ToastContainer } from "./components/ToastContainer";
 import { GitHubImportModal } from "./components/GitHubImportModal";
 import { GitManagerModal } from "./components/GitManagerModal";
@@ -39,6 +38,11 @@ import { useNodes } from "./hooks/useNodes";
 import { useCurrentProject } from "./hooks/useCurrentProject";
 import { ToastProvider, useToast } from "./hooks/useToast";
 import { useTheme } from "./hooks/useTheme";
+import { useModalManager } from "./hooks/useModalManager";
+import { useAppSettings } from "./hooks/useAppSettings";
+import { useDeepLink } from "./hooks/useDeepLink";
+import { useFavorites } from "./hooks/useFavorites";
+import { useAuthOnboarding } from "./hooks/useAuthOnboarding";
 
 type ViewMode = "overview" | "project";
 type TaskView = "board" | "list" | "agents";
@@ -83,74 +87,119 @@ function AppInner() {
   const viewportMode = useViewportMode();
   const isMobile = viewportMode === "mobile";
 
-  // Modal states
-  const [newTaskModalOpen, setNewTaskModalOpen] = useState(false);
-  const [isPlanningOpen, setIsPlanningOpen] = useState(false);
-  const [planningInitialPlan, setPlanningInitialPlan] = useState<string | null>(null);
-  const [isSubtaskOpen, setIsSubtaskOpen] = useState(false);
-  const [subtaskInitialDescription, setSubtaskInitialDescription] = useState<string | null>(null);
-  const [detailTask, setDetailTask] = useState<TaskDetail | null>(null);
-  const [detailTaskInitialTab, setDetailTaskInitialTab] = useState<"definition" | "logs" | "changes" | "commits" | "comments" | "model" | "workflow">("definition");
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [schedulesOpen, setSchedulesOpen] = useState(false);
-  const [githubImportOpen, setGitHubImportOpen] = useState(false);
-  const [usageOpen, setUsageOpen] = useState(false);
-  const [terminalOpen, setTerminalOpen] = useState(false);
-  const [filesOpen, setFilesOpen] = useState(false);
-  const [fileBrowserWorkspace, setFileBrowserWorkspace] = useState("project");
-  const [activityLogOpen, setActivityLogOpen] = useState(false);
-  const [mailboxOpen, setMailboxOpen] = useState(false);
-  const [mailboxUnreadCount, setMailboxUnreadCount] = useState(0);
-  const [mailboxAgents, setMailboxAgents] = useState<Agent[]>([]);
-  const [gitManagerOpen, setGitManagerOpen] = useState(false);
-  const [workflowStepsOpen, setWorkflowStepsOpen] = useState(false);
-  const [missionsOpen, setMissionsOpen] = useState(false);
-  const [agentsOpen, setAgentsOpen] = useState(false);
-  const [nodesOpen, setNodesOpen] = useState(false);
-  const [scriptsOpen, setScriptsOpen] = useState(false);
-  const [planningResumeSessionId, setPlanningResumeSessionId] = useState<string | undefined>(undefined);
-  const [subtaskResumeSessionId, setSubtaskResumeSessionId] = useState<string | undefined>(undefined);
-  const [missionResumeSessionId, setMissionResumeSessionId] = useState<string | undefined>(undefined);
-  const [missionTargetId, setMissionTargetId] = useState<string | undefined>(undefined);
-  const [terminalInitialCommand, setTerminalInitialCommand] = useState<string | undefined>(undefined);
-  const [settingsInitialSection, setSettingsInitialSection] = useState<SectionId | undefined>(undefined);
-  const [setupWizardOpen, setSetupWizardOpen] = useState(false);
-  const [modelOnboardingOpen, setModelOnboardingOpen] = useState(false);
+  // Modal state/handlers extracted to a dedicated manager hook.
+  const {
+    newTaskModalOpen,
+    isPlanningOpen,
+    planningInitialPlan,
+    planningResumeSessionId,
+    isSubtaskOpen,
+    subtaskInitialDescription,
+    subtaskResumeSessionId,
+    detailTask,
+    detailTaskInitialTab,
+    settingsOpen,
+    settingsInitialSection,
+    schedulesOpen,
+    githubImportOpen,
+    usageOpen,
+    terminalOpen,
+    terminalInitialCommand,
+    filesOpen,
+    fileBrowserWorkspace,
+    activityLogOpen,
+    mailboxOpen,
+    mailboxUnreadCount,
+    mailboxAgents,
+    gitManagerOpen,
+    workflowStepsOpen,
+    missionsOpen,
+    missionResumeSessionId,
+    missionTargetId,
+    agentsOpen,
+    scriptsOpen,
+    setupWizardOpen,
+    modelOnboardingOpen,
+    anyModalOpen,
+    openNewTask,
+    closeNewTask,
+    openPlanning,
+    openPlanningWithInitialPlan,
+    resumePlanning,
+    openPlanningWithSession,
+    closePlanning,
+    openSubtaskBreakdown,
+    openSubtaskWithSession,
+    closeSubtask,
+    openDetailTask,
+    openDetailWithChangesTab,
+    updateDetailTask,
+    closeDetailTask,
+    openSettings,
+    closeSettings,
+    openSchedules,
+    closeSchedules,
+    openGitHubImport,
+    closeGitHubImport,
+    openUsage,
+    closeUsage,
+    toggleTerminal,
+    closeTerminal,
+    openFiles,
+    closeFiles,
+    setFileWorkspace,
+    openActivityLog,
+    closeActivityLog,
+    openMailbox,
+    closeMailbox,
+    openGitManager,
+    closeGitManager,
+    openWorkflowSteps,
+    closeWorkflowSteps,
+    openMissions,
+    openMissionById,
+    openMissionWithSession,
+    closeMissions,
+    closeAgents,
+    openScripts,
+    closeScripts,
+    runScript,
+    openSetupWizard,
+    closeSetupWizard,
+    openModelOnboarding,
+    closeModelOnboarding,
+    onPlanningTaskCreated,
+    onPlanningTasksCreated,
+    onSubtaskTasksCreated,
+  } = useModalManager({
+    projectId: currentProject?.id,
+    planningSessions: bgPlanningSessions,
+  });
 
-  const anyModalOpen = !!(
-    detailTask ||
-    settingsOpen ||
-    newTaskModalOpen ||
-    isPlanningOpen ||
-    isSubtaskOpen ||
-    terminalOpen ||
-    filesOpen ||
-    activityLogOpen ||
-    mailboxOpen ||
-    gitManagerOpen ||
-    workflowStepsOpen ||
-    missionsOpen ||
-    scriptsOpen ||
-    agentsOpen ||
-    usageOpen ||
-    schedulesOpen ||
-    githubImportOpen ||
-    setupWizardOpen ||
-    modelOnboardingOpen
-  );
+  // Nodes management is an overlay view (not a modal), so it stays local to App.
+  const [nodesOpen, setNodesOpen] = useState(false);
 
   // Settings state
-  const [maxConcurrent, setMaxConcurrent] = useState(2);
-  const [rootDir, setRootDir] = useState<string>(".");
-  const [autoMerge, setAutoMerge] = useState(true);
-  const [globalPaused, setGlobalPaused] = useState(false);
-  const [enginePaused, setEnginePaused] = useState(false);
+  const {
+    maxConcurrent,
+    rootDir,
+    autoMerge,
+    globalPaused,
+    enginePaused,
+    taskStuckTimeoutMs,
+    githubTokenConfigured,
+    toggleAutoMerge,
+    toggleGlobalPause,
+    toggleEnginePause,
+  } = useAppSettings(currentProject?.id);
   const [searchQuery, setSearchQuery] = useState("");
-  const [taskStuckTimeoutMs, setTaskStuckTimeoutMs] = useState<number | undefined>(undefined);
-  const [githubTokenConfigured, setGithubTokenConfigured] = useState(false);
-  const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
-  const [favoriteProviders, setFavoriteProviders] = useState<string[]>([]);
-  const [favoriteModels, setFavoriteModels] = useState<string[]>([]);
+  const {
+    availableModels,
+    favoriteProviders,
+    favoriteModels,
+    toggleFavoriteProvider,
+    toggleFavoriteModel,
+  } = useFavorites();
 
   // Persist view mode
   useEffect(() => {
@@ -186,10 +235,10 @@ function AppInner() {
 
     // Only open when truly no projects exist and no project is being restored
     const timer = setTimeout(() => {
-      setSetupWizardOpen(true);
+      openSetupWizard();
     }, 500);
     return () => clearTimeout(timer);
-  }, [projectsLoading, projects.length, currentProjectLoading, currentProject, setupWizardOpen]);
+  }, [projectsLoading, projects.length, currentProjectLoading, currentProject, setupWizardOpen, openSetupWizard]);
 
   // Theme toggle handler: cycles Dark → Light → System → Dark
   const handleToggleTheme = useCallback(() => {
@@ -199,151 +248,39 @@ function AppInner() {
     setThemeMode(nextMode);
   }, [themeMode, setThemeMode]);
 
-  // Initial data fetch
-  useEffect(() => {
-    fetchConfig(currentProject?.id)
-      .then((cfg) => {
-        setMaxConcurrent(cfg.maxConcurrent);
-        setRootDir(cfg.rootDir);
-      })
-      .catch(() => {/* keep default */});
-    fetchSettings(currentProject?.id)
-      .then((s) => {
-        setAutoMerge(!!s.autoMerge);
-        setGlobalPaused(!!s.globalPause);
-        setEnginePaused(!!s.enginePaused);
-        setGithubTokenConfigured(!!s.githubTokenConfigured);
-        setTaskStuckTimeoutMs(s.taskStuckTimeoutMs);
-      })
-      .catch(() => {/* keep default */});
-    fetchAuthStatus()
-      .then(({ providers }) => {
-        const hasAuthenticatedProvider = providers.some((p) => p.authenticated);
-        // Check if onboarding is needed: either no authenticated providers,
-        // or providers are authenticated but no default model is configured
-        const needsSetup = providers.length > 0 && !hasAuthenticatedProvider;
-        if (needsSetup || (providers.length > 0 && hasAuthenticatedProvider)) {
-          fetchGlobalSettings()
-            .then((globalSettings) => {
-              const hasDefaultModel = !!(globalSettings.defaultProvider && globalSettings.defaultModelId);
-              const setupIncomplete = !hasAuthenticatedProvider || !hasDefaultModel;
-              if (!globalSettings.modelOnboardingComplete && setupIncomplete) {
-                // First-run: show onboarding modal
-                setModelOnboardingOpen(true);
-              } else if (!hasAuthenticatedProvider) {
-                // Already onboarded but no auth: open settings to authentication
-                setSettingsOpen(true);
-                setSettingsInitialSection("authentication");
-              }
-            })
-            .catch(() => {
-              // If we can't fetch global settings, fall back to onboarding
-              if (!hasAuthenticatedProvider) {
-                setModelOnboardingOpen(true);
-              }
-            });
-        }
-      })
-      .catch(() => {/* fail silently */});
-  }, [currentProject?.id]);
+  // Auth and onboarding bootstrap logic extracted to a dedicated hook.
+  useAuthOnboarding({
+    projectId: currentProject?.id,
+    openModelOnboarding,
+    openSettings,
+  });
 
-  // Fetch available models
-  useEffect(() => {
-    fetchModels()
-      .then((response) => {
-        setAvailableModels(response.models);
-        setFavoriteProviders(response.favoriteProviders);
-        setFavoriteModels(response.favoriteModels);
-      })
-      .catch(() => {/* keep empty array on failure */});
-  }, []);
-
-  // Favorite provider/model toggle handlers (shared by ListView bulk edit)
   const handleToggleFavorite = useCallback(async (provider: string) => {
-    const currentFavorites = favoriteProviders;
-    const isFavorite = currentFavorites.includes(provider);
-    const newFavorites = isFavorite
-      ? currentFavorites.filter((p) => p !== provider)
-      : [provider, ...currentFavorites];
-
-    setFavoriteProviders(newFavorites);
-
     try {
-      await updateGlobalSettings({ favoriteProviders: newFavorites, favoriteModels });
+      await toggleFavoriteProvider(provider);
     } catch {
-      setFavoriteProviders(currentFavorites);
       addToast("Failed to update favorites", "error");
     }
-  }, [favoriteProviders, favoriteModels, addToast]);
+  }, [toggleFavoriteProvider, addToast]);
 
   const handleToggleModelFavorite = useCallback(async (modelId: string) => {
-    const currentFavorites = favoriteModels;
-    const isFavorite = currentFavorites.includes(modelId);
-    const newFavorites = isFavorite
-      ? currentFavorites.filter((m) => m !== modelId)
-      : [modelId, ...currentFavorites];
-
-    setFavoriteModels(newFavorites);
-
     try {
-      await updateGlobalSettings({ favoriteProviders, favoriteModels: newFavorites });
+      await toggleFavoriteModel(modelId);
     } catch {
-      setFavoriteModels(currentFavorites);
       addToast("Failed to update model favorites", "error");
     }
-  }, [favoriteModels, favoriteProviders, addToast]);
+  }, [toggleFavoriteModel, addToast]);
 
-  // Handle deep link to task on mount (with optional project context)
-  // Uses a ref to prevent duplicate fetches when setCurrentProject triggers
-  // a re-run of this effect during project switching.
-  const deepLinkFetchedRef = useRef(false);
-  // Tracks the task ID currently open from a deep link so that dismissing
-  // the modal can clean the URL (one-time open behaviour).
-  const deepLinkTaskIdRef = useRef<string | null>(null);
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const projectParam = params.get("project");
-    const taskId = params.get("task");
-
-    // If no task to load, nothing to do
-    if (!taskId) return;
-
-    // Wait for projects to finish loading before resolving deep links.
-    // Without this guard, an empty projects list during loading would
-    // produce a false "project not found" error toast.
-    if (projectsLoading) return;
-
-    // If project param is present, validate it and switch project if needed
-    if (projectParam) {
-      const matchingProject = projects.find((p) => p.id === projectParam);
-      if (!matchingProject) {
-        addToast(`Project '${projectParam}' not found`, "error");
-        return;
-      }
-      // Switch to the project if it's different from the current one
-      if (currentProject?.id !== matchingProject.id) {
-        setCurrentProject(matchingProject);
-      }
-    }
-
-    // Skip if we've already fetched this task (prevents double-fetch when
-    // setCurrentProject causes this effect to re-run).
-    if (deepLinkFetchedRef.current) return;
-    deepLinkFetchedRef.current = true;
-
-    // Use project param as the authoritative project context for the fetch
-    // when present; otherwise fall back to the current/default project.
-    const taskProjectId = projectParam ?? currentProject?.id;
-    fetchTaskDetail(taskId, taskProjectId)
-      .then((detail) => {
-        setDetailTask(detail);
-        // Mark this as a deep-linked open so dismissal can clean the URL
-        deepLinkTaskIdRef.current = taskId;
-      })
-      .catch(() => {
-        addToast(`Task ${taskId} not found`, "error");
-      });
-  }, [addToast, projects, projectsLoading, currentProject, setCurrentProject]);
+  const { handleDetailClose } = useDeepLink({
+    projectId: currentProject?.id,
+    projects,
+    projectsLoading,
+    currentProject,
+    setCurrentProject,
+    addToast,
+    openTaskDetail: openDetailTask,
+    closeTaskDetail: closeDetailTask,
+  });
 
   // View change handlers
   const handleChangeTaskView = useCallback((newView: TaskView) => {
@@ -361,21 +298,25 @@ function AppInner() {
     setViewMode("overview");
   }, [clearCurrentProject]);
 
+  const handleOpenSettings = useCallback(() => {
+    openSettings();
+  }, [openSettings]);
+
   const handleAddProject = useCallback(() => {
-    setSetupWizardOpen(true);
-  }, []);
+    openSetupWizard();
+  }, [openSetupWizard]);
 
   const handleSetupComplete = useCallback((project: ProjectInfo) => {
-    setSetupWizardOpen(false);
+    closeSetupWizard();
     setCurrentProject(project);
     setViewMode("project");
     addToast(`Project ${project.name} registered successfully`, "success");
     refreshProjects();
-  }, [setCurrentProject, addToast, refreshProjects]);
+  }, [closeSetupWizard, setCurrentProject, addToast, refreshProjects]);
 
   const handleModelOnboardingComplete = useCallback(() => {
-    setModelOnboardingOpen(false);
-  }, []);
+    closeModelOnboarding();
+  }, [closeModelOnboarding]);
 
   const handlePauseProject = useCallback(async (project: ProjectInfo) => {
     try {
@@ -413,8 +354,8 @@ function AppInner() {
   }, [unregisterProject, currentProject, clearCurrentProject, addToast, refreshProjects]);
 
   // Task handlers
-  const handleNewTaskOpen = useCallback(() => setNewTaskModalOpen(true), []);
-  const handleNewTaskClose = useCallback(() => setNewTaskModalOpen(false), []);
+  const handleNewTaskOpen = openNewTask;
+  const handleNewTaskClose = closeNewTask;
 
   const handleBoardQuickCreate = useCallback(
     async (input: TaskCreateInput): Promise<void> => {
@@ -432,167 +373,75 @@ function AppInner() {
   );
 
   // Planning mode handlers
-  const handlePlanningOpen = useCallback(() => setIsPlanningOpen(true), []);
-  const handleResumePlanning = useCallback(() => {
-    const session = bgPlanningSessions[0];
-    if (session) {
-      setPlanningResumeSessionId(session.id);
-      setIsPlanningOpen(true);
-    }
-  }, [bgPlanningSessions]);
-  const handlePlanningClose = useCallback(() => {
-    setIsPlanningOpen(false);
-    setPlanningInitialPlan(null);
-    setPlanningResumeSessionId(undefined);
-  }, []);
+  const handlePlanningOpen = openPlanning;
+  const handleResumePlanning = resumePlanning;
+  const handlePlanningClose = closePlanning;
   const handlePlanningTaskCreated = useCallback((task: Task) => {
-    addToast(`Created ${task.id} from planning mode`, "success");
-    setIsPlanningOpen(false);
-    setPlanningInitialPlan(null);
-  }, [addToast]);
+    onPlanningTaskCreated(task, addToast);
+  }, [onPlanningTaskCreated, addToast]);
 
   const handlePlanningTasksCreated = useCallback((createdTasks: Task[]) => {
-    const ids = createdTasks.map((task) => task.id).join(", ");
-    addToast(`Created ${ids} from planning mode`, "success");
-    setIsPlanningOpen(false);
-    setPlanningInitialPlan(null);
-  }, [addToast]);
+    onPlanningTasksCreated(createdTasks, addToast);
+  }, [onPlanningTasksCreated, addToast]);
 
   // Handle planning mode from new task dialog
-  const handleNewTaskPlanningMode = useCallback((initialPlan: string) => {
-    setPlanningInitialPlan(initialPlan);
-    setIsPlanningOpen(true);
-  }, []);
+  const handleNewTaskPlanningMode = openPlanningWithInitialPlan;
 
   // Handle subtask breakdown from inline/quick create
-  const handleSubtaskBreakdown = useCallback((description: string) => {
-    setSubtaskInitialDescription(description);
-    setIsSubtaskOpen(true);
-  }, []);
-
-  const handleSubtaskClose = useCallback(() => {
-    setIsSubtaskOpen(false);
-    setSubtaskInitialDescription(null);
-    setSubtaskResumeSessionId(undefined);
-  }, []);
+  const handleSubtaskBreakdown = openSubtaskBreakdown;
+  const handleSubtaskClose = closeSubtask;
 
   const handleSubtaskTasksCreated = useCallback((createdTasks: Task[]) => {
-    const ids = createdTasks.map((task) => task.id).join(", ");
-    addToast(`Created ${ids} from subtask breakdown`, "success");
-    setIsSubtaskOpen(false);
-    setSubtaskInitialDescription(null);
-  }, [addToast]);
+    onSubtaskTasksCreated(createdTasks, addToast);
+  }, [onSubtaskTasksCreated, addToast]);
 
   // Usage indicator handlers
-  const handleOpenUsage = useCallback(() => setUsageOpen(true), []);
-  const handleCloseUsage = useCallback(() => setUsageOpen(false), []);
+  const handleOpenUsage = openUsage;
+  const handleCloseUsage = closeUsage;
 
   // Schedules modal handlers
-  const handleOpenSchedules = useCallback(() => setSchedulesOpen(true), []);
-  const handleCloseSchedules = useCallback(() => setSchedulesOpen(false), []);
+  const handleOpenSchedules = openSchedules;
+  const handleCloseSchedules = closeSchedules;
 
-  const handleToggleAutoMerge = useCallback(async () => {
-    const next = !autoMerge;
-    setAutoMerge(next);
-    try {
-      await updateSettings({ autoMerge: next }, currentProject?.id);
-    } catch {
-      setAutoMerge(!next); // revert on failure
-    }
-  }, [autoMerge, currentProject?.id]);
+  const handleToggleAutoMerge = toggleAutoMerge;
+  const handleToggleGlobalPause = toggleGlobalPause;
+  const handleToggleEnginePause = toggleEnginePause;
 
-  const handleToggleGlobalPause = useCallback(async () => {
-    const next = !globalPaused;
-    setGlobalPaused(next);
-    try {
-      await updateSettings({ globalPause: next }, currentProject?.id);
-    } catch {
-      setGlobalPaused(!next); // revert on failure
-    }
-  }, [globalPaused, currentProject?.id]);
-
-  const handleToggleEnginePause = useCallback(async () => {
-    const next = !enginePaused;
-    setEnginePaused(next);
-    try {
-      await updateSettings({ enginePaused: next }, currentProject?.id);
-    } catch {
-      setEnginePaused(!next); // revert on failure
-    }
-  }, [enginePaused, currentProject?.id]);
-
-  const handleDetailOpen = useCallback((task: TaskDetail) => {
-    setDetailTask(task);
-    setDetailTaskInitialTab("definition");
-  }, []);
+  const handleDetailOpen = openDetailTask;
 
   const handleOpenDetailWithTab = useCallback((task: TaskDetail, initialTab: "changes") => {
-    setDetailTask(task);
-    setDetailTaskInitialTab(initialTab);
-  }, []);
-
-  const handleDetailClose = useCallback(() => {
-    // If the modal was opened from a deep link (?task=...), remove the task
-    // param from the URL so refreshing does not reopen it. Preserve any other
-    // query parameters (e.g. ?project=...).
-    if (deepLinkTaskIdRef.current) {
-      const params = new URLSearchParams(window.location.search);
-      params.delete("task");
-      const qs = params.toString();
-      window.history.replaceState(
-        null,
-        "",
-        qs ? `${window.location.pathname}?${qs}` : window.location.pathname,
-      );
-      deepLinkTaskIdRef.current = null;
+    if (initialTab === "changes") {
+      openDetailWithChangesTab(task);
+      return;
     }
-    setDetailTask(null);
-  }, []);
+    openDetailTask(task, initialTab);
+  }, [openDetailTask, openDetailWithChangesTab]);
+
 
   const handleGitHubImport = useCallback((task: Task) => {
     addToast(`Imported ${task.id} from GitHub`, "success");
   }, [addToast]);
 
-  const handleToggleTerminal = useCallback(() => {
-    setTerminalOpen((prev) => !prev);
-  }, []);
-
-  const handleOpenFiles = useCallback(() => {
-    setFilesOpen(true);
-  }, []);
-
-  const handleWorkspaceChange = useCallback((workspace: string) => {
-    setFileBrowserWorkspace(workspace);
-  }, []);
+  const handleToggleTerminal = toggleTerminal;
+  const handleOpenFiles = openFiles;
+  const handleWorkspaceChange = setFileWorkspace;
 
   // Activity log handlers
-  const handleOpenActivityLog = useCallback(() => setActivityLogOpen(true), []);
-  const handleCloseActivityLog = useCallback(() => setActivityLogOpen(false), []);
+  const handleOpenActivityLog = openActivityLog;
+  const handleCloseActivityLog = closeActivityLog;
 
-  const handleOpenMailbox = useCallback(() => {
-    setMailboxOpen(true);
-    // Refresh unread count and agents when opening mailbox
-    fetchUnreadCount(currentProject?.id).then((data) => {
-      setMailboxUnreadCount(data.unreadCount);
-    }).catch(() => {});
-    fetchAgents(undefined, currentProject?.id).then((agents) => {
-      setMailboxAgents(agents);
-    }).catch(() => {});
-  }, [currentProject?.id]);
-  const handleCloseMailbox = useCallback(() => setMailboxOpen(false), []);
+  const handleOpenMailbox = openMailbox;
+  const handleCloseMailbox = closeMailbox;
 
   // Mission link handler from TaskCard
-  const handleOpenMission = useCallback((missionId: string) => {
-    setMissionTargetId(missionId);
-    setMissionsOpen(true);
-  }, []);
+  const handleOpenMission = openMissionById;
 
   // Git Manager handlers
-  const handleOpenGitManager = useCallback(() => setGitManagerOpen(true), []);
-  const handleCloseGitManager = useCallback(() => setGitManagerOpen(false), []);
+  const handleOpenGitManager = openGitManager;
+  const handleCloseGitManager = closeGitManager;
 
   // Agent handlers
-  const handleCloseAgents = useCallback(() => setAgentsOpen(false), []);
+  const handleCloseAgents = closeAgents;
 
   // Node management view handlers
   const handleOpenNodes = useCallback(() => {
@@ -603,25 +452,12 @@ function AppInner() {
   }, []);
 
   // Scripts handlers
-  const handleOpenScripts = useCallback(() => setScriptsOpen(true), []);
-  const handleCloseScripts = useCallback(() => setScriptsOpen(false), []);
-  const handleRunScript = useCallback(async (name: string, command: string) => {
-    // Close the scripts modal immediately so the terminal becomes the
-    // topmost surface once it opens.
-    setScriptsOpen(false);
-
-    // Launch the script command in the interactive terminal modal.
-    // Reset the initial command ref so the terminal knows to run the
-    // new command even if it is already open.
-    setTerminalInitialCommand(command);
-    setTerminalOpen(true);
-  }, []);
+  const handleOpenScripts = openScripts;
+  const handleCloseScripts = closeScripts;
+  const handleRunScript = runScript;
 
   // Terminal close handler
-  const handleTerminalClose = useCallback(() => {
-    setTerminalOpen(false);
-    setTerminalInitialCommand(undefined);
-  }, []);
+  const handleTerminalClose = closeTerminal;
 
   // Render main content based on view mode
   const renderMainContent = () => {
@@ -716,8 +552,8 @@ function AppInner() {
     <>
       <Header
         isElectron={isElectron}
-        onOpenSettings={() => setSettingsOpen(true)}
-        onOpenGitHubImport={() => setGitHubImportOpen(true)}
+        onOpenSettings={handleOpenSettings}
+        onOpenGitHubImport={openGitHubImport}
         onOpenPlanning={handlePlanningOpen}
         onResumePlanning={handleResumePlanning}
         activePlanningSessionCount={bgPlanningSessions.length}
@@ -728,8 +564,8 @@ function AppInner() {
         onOpenSchedules={handleOpenSchedules}
         onOpenGitManager={handleOpenGitManager}
         onOpenNodes={handleOpenNodes}
-        onOpenWorkflowSteps={() => setWorkflowStepsOpen(true)}
-        onOpenMissions={viewMode === "project" && currentProject ? () => setMissionsOpen(true) : undefined}
+        onOpenWorkflowSteps={openWorkflowSteps}
+        onOpenMissions={viewMode === "project" && currentProject ? openMissions : undefined}
         onOpenScripts={handleOpenScripts}
         onRunScript={handleRunScript}
         onToggleTerminal={handleToggleTerminal}
@@ -765,14 +601,11 @@ function AppInner() {
           backgroundNeedsInput={bgNeedsInput}
           onOpenBackgroundSession={(session) => {
             if (session.type === "planning") {
-              setPlanningResumeSessionId(session.id);
-              setIsPlanningOpen(true);
+              openPlanningWithSession(session.id);
             } else if (session.type === "subtask") {
-              setSubtaskResumeSessionId(session.id);
-              setIsSubtaskOpen(true);
+              openSubtaskWithSession(session.id);
             } else if (session.type === "mission_interview") {
-              setMissionResumeSessionId(session.id);
-              setMissionsOpen(true);
+              openMissionWithSession(session.id);
             }
           }}
           onDismissBackgroundSession={bgDismiss}
@@ -783,18 +616,18 @@ function AppInner() {
         onChangeView={viewMode === "project" && currentProject ? handleChangeTaskView : () => {}}
         footerVisible={viewMode === "project" && !!currentProject}
         modalOpen={anyModalOpen}
-        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenSettings={handleOpenSettings}
         onOpenActivityLog={handleOpenActivityLog}
         onOpenMailbox={handleOpenMailbox}
         mailboxUnreadCount={mailboxUnreadCount}
         onOpenGitManager={handleOpenGitManager}
-        onOpenWorkflowSteps={() => setWorkflowStepsOpen(true)}
-        onOpenMissions={viewMode === "project" && currentProject ? () => setMissionsOpen(true) : undefined}
+        onOpenWorkflowSteps={openWorkflowSteps}
+        onOpenMissions={viewMode === "project" && currentProject ? openMissions : undefined}
         onOpenSchedules={handleOpenSchedules}
         onOpenScripts={handleOpenScripts}
         onToggleTerminal={handleToggleTerminal}
         onOpenFiles={handleOpenFiles}
-        onOpenGitHubImport={() => setGitHubImportOpen(true)}
+        onOpenGitHubImport={openGitHubImport}
         onOpenPlanning={handlePlanningOpen}
         onResumePlanning={handleResumePlanning}
         activePlanningSessionCount={bgPlanningSessions.length}
@@ -817,7 +650,7 @@ function AppInner() {
           onMergeTask={mergeTask}
           onRetryTask={retryTask}
           onDuplicateTask={duplicateTask}
-          onTaskUpdated={(updated) => setDetailTask(prev => prev ? { ...prev, ...updated } : prev)}
+          onTaskUpdated={updateDetailTask}
           addToast={addToast}
           githubTokenConfigured={githubTokenConfigured}
           initialTab={detailTaskInitialTab}
@@ -825,10 +658,7 @@ function AppInner() {
       )}
       {settingsOpen && (
         <SettingsModal
-          onClose={() => {
-            setSettingsOpen(false);
-            setSettingsInitialSection(undefined);
-          }}
+          onClose={closeSettings}
           addToast={addToast}
           initialSection={settingsInitialSection}
           projectId={currentProject?.id}
@@ -840,7 +670,7 @@ function AppInner() {
       )}
       <GitHubImportModal
         isOpen={githubImportOpen}
-        onClose={() => setGitHubImportOpen(false)}
+        onClose={closeGitHubImport}
         onImport={handleGitHubImport}
         tasks={tasks}
       />
@@ -878,7 +708,7 @@ function AppInner() {
         <FileBrowserModal
           initialWorkspace={fileBrowserWorkspace}
           isOpen={true}
-          onClose={() => setFilesOpen(false)}
+          onClose={closeFiles}
           onWorkspaceChange={handleWorkspaceChange}
         />
       )}
@@ -924,13 +754,13 @@ function AppInner() {
       />
       <WorkflowStepManager
         isOpen={workflowStepsOpen}
-        onClose={() => setWorkflowStepsOpen(false)}
+        onClose={closeWorkflowSteps}
         addToast={addToast}
         projectId={currentProject?.id}
       />
       <MissionManager
         isOpen={missionsOpen}
-        onClose={() => { setMissionsOpen(false); setMissionResumeSessionId(undefined); setMissionTargetId(undefined); }}
+        onClose={closeMissions}
         addToast={addToast}
         projectId={currentProject?.id}
         resumeSessionId={missionResumeSessionId}
@@ -939,7 +769,7 @@ function AppInner() {
         onSelectTask={(taskId) => {
           const task = tasks.find((t) => t.id === taskId);
           if (task) {
-            setDetailTask(task as TaskDetail);
+            openDetailTask(task as TaskDetail);
           }
         }}
       />
@@ -959,7 +789,7 @@ function AppInner() {
       {setupWizardOpen && (
         <SetupWizardModal
           onProjectRegistered={handleSetupComplete}
-          onClose={() => setSetupWizardOpen(false)}
+          onClose={closeSetupWizard}
         />
       )}
       {modelOnboardingOpen && (
