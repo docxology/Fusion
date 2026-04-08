@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { fetchAiSessions, deleteAiSession, type AiSessionSummary } from "../api";
+import { useAiSessionSync } from "./useAiSessionSync";
 
 interface UseBackgroundSessionsResult {
   sessions: AiSessionSummary[];
@@ -11,20 +12,120 @@ interface UseBackgroundSessionsResult {
   refresh: () => void;
 }
 
+function parseTimestamp(updatedAt: string | undefined): number {
+  if (!updatedAt) return 0;
+  const parsed = Date.parse(updatedAt);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function shouldIncludeSession(session: AiSessionSummary): boolean {
+  return (
+    session.status === "generating" ||
+    session.status === "awaiting_input" ||
+    session.status === "complete" ||
+    session.status === "error"
+  );
+}
+
 export function useBackgroundSessions(projectId?: string): UseBackgroundSessionsResult {
   const [sessions, setSessions] = useState<AiSessionSummary[]>([]);
   const eventSourceRef = useRef<EventSource | null>(null);
+  const sessionTimestampsRef = useRef<Map<string, number>>(new Map());
+
+  const {
+    sessions: syncedSessions,
+    broadcastUpdate,
+    broadcastCompleted,
+    requestSync,
+  } = useAiSessionSync();
 
   const refresh = useCallback(() => {
-    fetchAiSessions(projectId).then(setSessions).catch(() => {});
+    fetchAiSessions(projectId)
+      .then((fetched) => {
+        const nextTimestampMap = new Map<string, number>();
+        for (const session of fetched) {
+          nextTimestampMap.set(session.id, parseTimestamp(session.updatedAt));
+        }
+        sessionTimestampsRef.current = nextTimestampMap;
+        setSessions(fetched);
+      })
+      .catch(() => {});
   }, [projectId]);
 
-  // Initial fetch
+  // Initial load: request state from sibling tabs first, then fetch authoritative API state.
   useEffect(() => {
+    requestSync();
     refresh();
-  }, [refresh]);
+  }, [refresh, requestSync]);
 
-  // Listen for SSE events
+  // Merge cross-tab state updates as a low-latency supplement to SSE/API.
+  useEffect(() => {
+    setSessions((prev) => {
+      if (syncedSessions.size === 0) {
+        return prev;
+      }
+
+      let changed = false;
+      const nextById = new Map(prev.map((session) => [session.id, session]));
+
+      for (const syncState of syncedSessions.values()) {
+        if (projectId && syncState.projectId && syncState.projectId !== projectId) {
+          continue;
+        }
+
+        const incomingTimestamp = syncState.lastEventTimestamp;
+        const knownTimestamp = sessionTimestampsRef.current.get(syncState.sessionId) ?? 0;
+        if (incomingTimestamp < knownTimestamp) {
+          continue;
+        }
+
+        const existing = nextById.get(syncState.sessionId);
+        const type = syncState.type ?? existing?.type;
+        const title = syncState.title ?? existing?.title;
+
+        // Without type/title metadata we cannot safely materialize a new list item yet.
+        if (!existing && (!type || !title)) {
+          continue;
+        }
+
+        const nextSession: AiSessionSummary = {
+          id: syncState.sessionId,
+          type: type ?? "planning",
+          status: syncState.status,
+          title: title ?? "AI Session",
+          projectId: syncState.projectId ?? existing?.projectId ?? projectId ?? null,
+          lockedByTab: syncState.owningTabId ?? existing?.lockedByTab ?? null,
+          updatedAt: syncState.updatedAt ?? existing?.updatedAt ?? new Date(incomingTimestamp).toISOString(),
+        };
+
+        const previous = nextById.get(syncState.sessionId);
+        const hasChanged =
+          !previous ||
+          previous.status !== nextSession.status ||
+          previous.title !== nextSession.title ||
+          previous.type !== nextSession.type ||
+          previous.projectId !== nextSession.projectId ||
+          previous.lockedByTab !== nextSession.lockedByTab ||
+          previous.updatedAt !== nextSession.updatedAt;
+
+        if (hasChanged) {
+          nextById.set(syncState.sessionId, nextSession);
+          sessionTimestampsRef.current.set(syncState.sessionId, incomingTimestamp);
+          changed = true;
+        }
+      }
+
+      if (!changed) {
+        return prev;
+      }
+
+      return [...nextById.values()].sort(
+        (a, b) => parseTimestamp(b.updatedAt) - parseTimestamp(a.updatedAt),
+      );
+    });
+  }, [projectId, syncedSessions]);
+
+  // Listen for server-side SSE events (authoritative source of truth).
   useEffect(() => {
     const params = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
     const es = new EventSource(`/api/events${params}`);
@@ -33,32 +134,62 @@ export function useBackgroundSessions(projectId?: string): UseBackgroundSessions
     const handleUpdated = (e: MessageEvent) => {
       try {
         const updated = JSON.parse(e.data) as AiSessionSummary;
+        const eventTimestamp = parseTimestamp(updated.updatedAt) || Date.now();
+
         setSessions((prev) => {
+          const knownTimestamp = sessionTimestampsRef.current.get(updated.id) ?? 0;
+          if (eventTimestamp < knownTimestamp) {
+            return prev;
+          }
+
+          sessionTimestampsRef.current.set(updated.id, eventTimestamp);
+
           const idx = prev.findIndex((s) => s.id === updated.id);
           if (idx >= 0) {
             const next = [...prev];
             next[idx] = updated;
             return next;
           }
-          // New session — include in-progress, complete, and retryable error sessions
-          if (
-            updated.status === "generating" ||
-            updated.status === "awaiting_input" ||
-            updated.status === "complete" ||
-            updated.status === "error"
-          ) {
+
+          if (shouldIncludeSession(updated)) {
             return [updated, ...prev];
           }
+
           return prev;
         });
-      } catch { /* ignore */ }
+
+        broadcastUpdate({
+          sessionId: updated.id,
+          status: updated.status,
+          needsInput: updated.status === "awaiting_input",
+          type: updated.type,
+          title: updated.title,
+          projectId: updated.projectId,
+          owningTabId: updated.lockedByTab,
+          updatedAt: updated.updatedAt,
+          timestamp: eventTimestamp,
+        });
+
+        if (updated.status === "complete" || updated.status === "error") {
+          broadcastCompleted({
+            sessionId: updated.id,
+            status: updated.status,
+            timestamp: eventTimestamp,
+          });
+        }
+      } catch {
+        // ignore malformed payload
+      }
     };
 
     const handleDeleted = (e: MessageEvent) => {
       try {
-        const id = JSON.parse(e.data);
+        const id = JSON.parse(e.data) as string;
         setSessions((prev) => prev.filter((s) => s.id !== id));
-      } catch { /* ignore */ }
+        sessionTimestampsRef.current.delete(id);
+      } catch {
+        // ignore malformed payload
+      }
     };
 
     es.addEventListener("ai_session:updated", handleUpdated);
@@ -69,28 +200,28 @@ export function useBackgroundSessions(projectId?: string): UseBackgroundSessions
       es.removeEventListener("ai_session:deleted", handleDeleted);
       es.close();
     };
-  }, [projectId]);
+  }, [broadcastCompleted, broadcastUpdate, projectId]);
 
   const dismissSession = useCallback((id: string) => {
     deleteAiSession(id).catch(() => {});
     setSessions((prev) => prev.filter((s) => s.id !== id));
+    sessionTimestampsRef.current.delete(id);
   }, []);
 
-  // Filter to only active sessions
-  const active = sessions.filter(
-    (s) =>
-      s.status === "generating" ||
-      s.status === "awaiting_input" ||
-      s.status === "complete" ||
-      s.status === "error",
+  const active = useMemo(
+    () => sessions.filter((session) => shouldIncludeSession(session)),
+    [sessions],
   );
 
-  const planningSessions = active.filter((s) => s.type === "planning");
+  const planningSessions = useMemo(
+    () => active.filter((session) => session.type === "planning"),
+    [active],
+  );
 
   return {
     sessions: active,
-    generating: active.filter((s) => s.status === "generating").length,
-    needsInput: active.filter((s) => s.status === "awaiting_input").length,
+    generating: active.filter((session) => session.status === "generating").length,
+    needsInput: active.filter((session) => session.status === "awaiting_input").length,
     planningSessions,
     dismissSession,
     refresh,

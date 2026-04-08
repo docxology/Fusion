@@ -19,6 +19,7 @@ import {
 import { CheckCircle, Loader2, ListTree, Plus, Trash2, X, GripVertical, ArrowUp, ArrowDown, Minimize2, RefreshCw, Lock } from "lucide-react";
 import { ConversationHistory } from "./ConversationHistory";
 import { useSessionLock } from "../hooks/useSessionLock";
+import { useAiSessionSync } from "../hooks/useAiSessionSync";
 import { getSessionTabId } from "../utils/getSessionTabId";
 
 interface SubtaskBreakdownModalProps {
@@ -89,6 +90,7 @@ export function SubtaskBreakdownModal({ isOpen, onClose, initialDescription, onT
   const streamRef = useRef<{ close: () => void; isConnected: () => boolean } | null>(null);
   const titleRefs = useRef<Array<HTMLInputElement | null>>([]);
   const autoStartedRef = useRef(false);
+  const trackedLockSessionRef = useRef<string | null>(null);
 
   const sessionId = view.type === "generating" || view.type === "editing" || view.type === "creating" || view.type === "error"
     ? view.sessionId
@@ -99,6 +101,14 @@ export function SubtaskBreakdownModal({ isOpen, onClose, initialDescription, onT
     takeControl,
     isLoading: isLockLoading,
   } = useSessionLock(isOpen ? sessionId : null);
+  const {
+    activeTabMap,
+    broadcastUpdate,
+    broadcastCompleted,
+    broadcastLock,
+    broadcastUnlock,
+    broadcastHeartbeat,
+  } = useAiSessionSync();
 
   const isInvalid = useMemo(() => {
     if (subtasks.length === 0) return true;
@@ -107,6 +117,10 @@ export function SubtaskBreakdownModal({ isOpen, onClose, initialDescription, onT
   }, [subtasks]);
 
   const showSendToBackgroundButton = view.type === "generating" || view.type === "editing" || view.type === "error";
+  const activeLockInfo = sessionId ? activeTabMap.get(sessionId) : null;
+  const activeRemoteTab = activeLockInfo && activeLockInfo.tabId !== sessionTabId;
+  const activeInAnotherTab = Boolean(activeRemoteTab && !activeLockInfo.stale);
+  const allowTakeover = isLockedByOther && (!activeRemoteTab || activeLockInfo.stale);
 
   const resetState = useCallback(() => {
     // Save to localStorage before cleanup (preserve for re-entry)
@@ -152,7 +166,18 @@ export function SubtaskBreakdownModal({ isOpen, onClose, initialDescription, onT
     (activeSessionId: string) => {
       streamRef.current?.close();
       streamRef.current = connectSubtaskStream(activeSessionId, projectId, {
-        onThinking: (data) => setThinkingOutput((prev) => prev + data),
+        onThinking: (data) => {
+          setThinkingOutput((prev) => prev + data);
+          broadcastUpdate({
+            sessionId: activeSessionId,
+            status: "generating",
+            needsInput: false,
+            owningTabId: sessionTabId,
+            type: "subtask",
+            title: localDescription.trim() || "Subtask breakdown",
+            projectId: projectId ?? null,
+          });
+        },
         onSubtasks: (items) => {
           setIsReconnecting(false);
           setIsRetrying(false);
@@ -160,6 +185,16 @@ export function SubtaskBreakdownModal({ isOpen, onClose, initialDescription, onT
           setSubtasks(items);
           setView({ type: "editing", sessionId: activeSessionId });
           setDirty(false);
+
+          broadcastUpdate({
+            sessionId: activeSessionId,
+            status: "awaiting_input",
+            needsInput: true,
+            owningTabId: sessionTabId,
+            type: "subtask",
+            title: localDescription.trim() || "Subtask breakdown",
+            projectId: projectId ?? null,
+          });
         },
         onError: (message) => {
           const errorMessage = message || "Session failed while contacting the AI.";
@@ -167,13 +202,33 @@ export function SubtaskBreakdownModal({ isOpen, onClose, initialDescription, onT
           setIsRetrying(false);
           setError(null);
           setView({ type: "error", sessionId: activeSessionId, errorMessage });
+
+          broadcastUpdate({
+            sessionId: activeSessionId,
+            status: "error",
+            needsInput: false,
+            owningTabId: sessionTabId,
+            type: "subtask",
+            title: localDescription.trim() || "Subtask breakdown",
+            projectId: projectId ?? null,
+          });
+          broadcastCompleted({ sessionId: activeSessionId, status: "error" });
+        },
+        onComplete: () => {
+          broadcastCompleted({ sessionId: activeSessionId, status: "complete" });
         },
         onConnectionStateChange: (state) => {
           setIsReconnecting(state === "reconnecting");
         },
       });
     },
-    [projectId],
+    [
+      broadcastCompleted,
+      broadcastUpdate,
+      localDescription,
+      projectId,
+      sessionTabId,
+    ],
   );
 
   const beginBreakdown = useCallback(async () => {
@@ -246,11 +301,56 @@ export function SubtaskBreakdownModal({ isOpen, onClose, initialDescription, onT
     })();
   }, [connectToSubtaskStream, isOpen, resumeSessionId, view.type, projectId]);
 
+  // Broadcast lock ownership transitions across tabs.
+  useEffect(() => {
+    if (!isOpen) {
+      if (trackedLockSessionRef.current) {
+        broadcastUnlock(trackedLockSessionRef.current, sessionTabId);
+        trackedLockSessionRef.current = null;
+      }
+      return;
+    }
+
+    if (sessionId && trackedLockSessionRef.current !== sessionId) {
+      if (trackedLockSessionRef.current) {
+        broadcastUnlock(trackedLockSessionRef.current, sessionTabId);
+      }
+      broadcastLock(sessionId, sessionTabId);
+      trackedLockSessionRef.current = sessionId;
+      return;
+    }
+
+    if (!sessionId && trackedLockSessionRef.current) {
+      broadcastUnlock(trackedLockSessionRef.current, sessionTabId);
+      trackedLockSessionRef.current = null;
+    }
+  }, [broadcastLock, broadcastUnlock, isOpen, sessionId, sessionTabId]);
+
+  // Keep ownership heartbeat alive while this tab is interacting with the session.
+  useEffect(() => {
+    if (!isOpen || !sessionId || trackedLockSessionRef.current !== sessionId) {
+      return;
+    }
+
+    broadcastHeartbeat(sessionTabId);
+    const timer = setInterval(() => {
+      broadcastHeartbeat(sessionTabId);
+    }, 30_000);
+
+    return () => {
+      clearInterval(timer);
+    };
+  }, [broadcastHeartbeat, isOpen, sessionId, sessionTabId]);
+
   useEffect(() => {
     return () => {
       streamRef.current?.close();
+      if (trackedLockSessionRef.current) {
+        broadcastUnlock(trackedLockSessionRef.current, sessionTabId);
+        trackedLockSessionRef.current = null;
+      }
     };
-  }, []);
+  }, [broadcastUnlock, sessionTabId]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -442,6 +542,11 @@ export function SubtaskBreakdownModal({ isOpen, onClose, initialDescription, onT
         <div className="planning-modal-body">
           {error && <div className="form-error planning-error">{error}</div>}
           {isReconnecting && <div className="form-hint text-muted">Reconnecting…</div>}
+          {activeInAnotherTab && (
+            <div className="form-hint text-muted" data-testid="session-active-another-tab-banner">
+              Session is active in another tab.
+            </div>
+          )}
 
           {view.type === "initial" && (
             <div className="planning-initial">
@@ -691,17 +796,23 @@ export function SubtaskBreakdownModal({ isOpen, onClose, initialDescription, onT
             <div className="session-lock-overlay" data-testid="session-lock-overlay">
               <div className="session-lock-banner">
                 <Lock size={16} />
-                <span>This session is active in another tab</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    void takeControl();
-                  }}
-                  disabled={isLockLoading}
-                  className="btn btn-primary session-lock-take-control"
-                >
-                  {isLockLoading ? "Taking control..." : "Take Control"}
-                </button>
+                <span>
+                  {allowTakeover
+                    ? "This session is active in another tab"
+                    : "This session is active in another tab (live heartbeat)"}
+                </span>
+                {allowTakeover && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void takeControl();
+                    }}
+                    disabled={isLockLoading}
+                    className="btn btn-primary session-lock-take-control"
+                  >
+                    {isLockLoading ? "Taking control..." : "Take Control"}
+                  </button>
+                )}
               </div>
             </div>
           )}

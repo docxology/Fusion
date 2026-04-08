@@ -25,6 +25,7 @@ import { Lightbulb, X, Loader2, CheckCircle, ArrowLeft, ArrowRight, Sparkles, Li
 import { CustomModelDropdown } from "./CustomModelDropdown";
 import { ConversationHistory } from "./ConversationHistory";
 import { useSessionLock } from "../hooks/useSessionLock";
+import { useAiSessionSync } from "../hooks/useAiSessionSync";
 import { getSessionTabId } from "../utils/getSessionTabId";
 
 interface PlanningModeModalProps {
@@ -105,6 +106,14 @@ export function PlanningModeModal({ isOpen, onClose, onTaskCreated, onTasksCreat
     takeControl,
     isLoading: isLockLoading,
   } = useSessionLock(isOpen ? lockSessionId : null);
+  const {
+    activeTabMap,
+    broadcastUpdate,
+    broadcastCompleted,
+    broadcastLock,
+    broadcastUnlock,
+    broadcastHeartbeat,
+  } = useAiSessionSync();
   const [planningModelProvider, setPlanningModelProvider] = useState<string | undefined>(undefined);
   const [planningModelId, setPlanningModelId] = useState<string | undefined>(undefined);
   const [loadedModels, setLoadedModels] = useState<ModelInfo[]>([]);
@@ -112,6 +121,7 @@ export function PlanningModeModal({ isOpen, onClose, onTaskCreated, onTasksCreat
   const [modelsError, setModelsError] = useState<string | null>(null);
   const [favoriteProviders, setFavoriteProviders] = useState<string[]>([]);
   const [favoriteModels, setFavoriteModels] = useState<string[]>([]);
+  const trackedLockSessionRef = useRef<string | null>(null);
 
   const planningSelectionValue = getModelSelectionValue(planningModelProvider, planningModelId);
 
@@ -158,6 +168,15 @@ export function PlanningModeModal({ isOpen, onClose, onTaskCreated, onTasksCreat
       const connection = connectPlanningStream(sessionId, projectId, {
         onThinking: (data) => {
           setStreamingOutput((prev) => prev + data);
+          broadcastUpdate({
+            sessionId,
+            status: "generating",
+            needsInput: false,
+            owningTabId: sessionTabId,
+            type: "planning",
+            title: initialPlan.trim() || "Planning session",
+            projectId: projectId ?? null,
+          });
         },
         onQuestion: (question) => {
           setIsReconnecting(false);
@@ -168,6 +187,16 @@ export function PlanningModeModal({ isOpen, onClose, onTaskCreated, onTasksCreat
             session: { sessionId, currentQuestion: question, summary: null },
           });
           setStreamingOutput("");
+
+          broadcastUpdate({
+            sessionId,
+            status: "awaiting_input",
+            needsInput: true,
+            owningTabId: sessionTabId,
+            type: "planning",
+            title: initialPlan.trim() || "Planning session",
+            projectId: projectId ?? null,
+          });
         },
         onSummary: (summary) => {
           setIsReconnecting(false);
@@ -180,6 +209,16 @@ export function PlanningModeModal({ isOpen, onClose, onTaskCreated, onTasksCreat
           });
           setEditedSummary(summary);
           setStreamingOutput("");
+
+          broadcastUpdate({
+            sessionId,
+            status: "complete",
+            needsInput: false,
+            owningTabId: sessionTabId,
+            type: "planning",
+            title: initialPlan.trim() || "Planning session",
+            projectId: projectId ?? null,
+          });
         },
         onError: (message) => {
           const errorMessage = message || "Session failed while contacting the AI.";
@@ -198,11 +237,23 @@ export function PlanningModeModal({ isOpen, onClose, onTaskCreated, onTasksCreat
           });
           setStreamingOutput("");
           currentSessionIdRef.current = sessionId;
+
+          broadcastUpdate({
+            sessionId,
+            status: "error",
+            needsInput: false,
+            owningTabId: sessionTabId,
+            type: "planning",
+            title: initialPlan.trim() || "Planning session",
+            projectId: projectId ?? null,
+          });
+          broadcastCompleted({ sessionId, status: "error" });
         },
         onComplete: () => {
           setIsReconnecting(false);
           setIsRetrying(false);
           currentSessionIdRef.current = null;
+          broadcastCompleted({ sessionId, status: "complete" });
         },
         onConnectionStateChange: (state) => {
           setIsReconnecting(state === "reconnecting");
@@ -211,7 +262,7 @@ export function PlanningModeModal({ isOpen, onClose, onTaskCreated, onTasksCreat
 
       streamConnectionRef.current = connection;
     },
-    [projectId],
+    [broadcastCompleted, broadcastUpdate, initialPlan, projectId, sessionTabId],
   );
 
   const handleStartPlanning = useCallback(async (planOverride?: string) => {
@@ -341,13 +392,59 @@ export function PlanningModeModal({ isOpen, onClose, onTaskCreated, onTasksCreat
     }
   }, [isOpen]);
 
+  // Broadcast lock ownership transitions for cross-tab awareness.
+  useEffect(() => {
+    if (!isOpen) {
+      if (trackedLockSessionRef.current) {
+        broadcastUnlock(trackedLockSessionRef.current, sessionTabId);
+        trackedLockSessionRef.current = null;
+      }
+      return;
+    }
+
+    if (lockSessionId && trackedLockSessionRef.current !== lockSessionId) {
+      if (trackedLockSessionRef.current) {
+        broadcastUnlock(trackedLockSessionRef.current, sessionTabId);
+      }
+      broadcastLock(lockSessionId, sessionTabId);
+      trackedLockSessionRef.current = lockSessionId;
+      return;
+    }
+
+    if (!lockSessionId && trackedLockSessionRef.current) {
+      broadcastUnlock(trackedLockSessionRef.current, sessionTabId);
+      trackedLockSessionRef.current = null;
+    }
+  }, [broadcastLock, broadcastUnlock, isOpen, lockSessionId, sessionTabId]);
+
+  // Emit heartbeat while this tab actively owns the current session lock.
+  useEffect(() => {
+    if (!isOpen || !lockSessionId || trackedLockSessionRef.current !== lockSessionId) {
+      return;
+    }
+
+    broadcastHeartbeat(sessionTabId);
+    const timer = setInterval(() => {
+      broadcastHeartbeat(sessionTabId);
+    }, 30_000);
+
+    return () => {
+      clearInterval(timer);
+    };
+  }, [broadcastHeartbeat, isOpen, lockSessionId, sessionTabId]);
+
   // Cleanup stream connection on unmount
   useEffect(() => {
     return () => {
       streamConnectionRef.current?.close();
       streamConnectionRef.current = null;
+
+      if (trackedLockSessionRef.current) {
+        broadcastUnlock(trackedLockSessionRef.current, sessionTabId);
+        trackedLockSessionRef.current = null;
+      }
     };
-  }, []);
+  }, [broadcastUnlock, sessionTabId]);
 
   // Handle browser unload while modal is open
   useEffect(() => {
@@ -569,6 +666,11 @@ export function PlanningModeModal({ isOpen, onClose, onTaskCreated, onTasksCreat
   const showSendToBackgroundButton =
     view.type === "loading" || view.type === "question" || view.type === "summary" || view.type === "error";
 
+  const activeLockInfo = lockSessionId ? activeTabMap.get(lockSessionId) : null;
+  const activeRemoteTab = activeLockInfo && activeLockInfo.tabId !== sessionTabId;
+  const activeInAnotherTab = Boolean(activeRemoteTab && !activeLockInfo.stale);
+  const allowTakeover = isLockedByOther && (!activeRemoteTab || activeLockInfo.stale);
+
   if (!isOpen) return null;
 
   return (
@@ -599,6 +701,11 @@ export function PlanningModeModal({ isOpen, onClose, onTaskCreated, onTasksCreat
         <div className="planning-modal-body">
           {error && <div className="form-error planning-error">{error}</div>}
           {isReconnecting && <div className="form-hint text-muted">Reconnecting…</div>}
+          {activeInAnotherTab && (
+            <div className="form-hint text-muted" data-testid="session-active-another-tab-banner">
+              Session is active in another tab.
+            </div>
+          )}
 
           {view.type === "initial" && (
             <div className="planning-initial">
@@ -848,17 +955,23 @@ export function PlanningModeModal({ isOpen, onClose, onTaskCreated, onTasksCreat
             <div className="session-lock-overlay" data-testid="session-lock-overlay">
               <div className="session-lock-banner">
                 <Lock size={16} />
-                <span>This session is active in another tab</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    void takeControl();
-                  }}
-                  disabled={isLockLoading}
-                  className="btn btn-primary session-lock-take-control"
-                >
-                  {isLockLoading ? "Taking control..." : "Take Control"}
-                </button>
+                <span>
+                  {allowTakeover
+                    ? "This session is active in another tab"
+                    : "This session is active in another tab (live heartbeat)"}
+                </span>
+                {allowTakeover && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void takeControl();
+                    }}
+                    disabled={isLockLoading}
+                    className="btn btn-primary session-lock-take-control"
+                  >
+                    {isLockLoading ? "Taking control..." : "Take Control"}
+                  </button>
+                )}
               </div>
             </div>
           )}

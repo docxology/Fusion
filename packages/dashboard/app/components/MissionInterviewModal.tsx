@@ -42,6 +42,7 @@ import {
 } from "lucide-react";
 import { ConversationHistory } from "./ConversationHistory";
 import { useSessionLock } from "../hooks/useSessionLock";
+import { useAiSessionSync } from "../hooks/useAiSessionSync";
 import { getSessionTabId } from "../utils/getSessionTabId";
 
 interface MissionInterviewModalProps {
@@ -95,6 +96,7 @@ export function MissionInterviewModal({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const streamConnectionRef = useRef<{ close: () => void; isConnected: () => boolean } | null>(null);
   const currentSessionIdRef = useRef<string | null>(null);
+  const trackedLockSessionRef = useRef<string | null>(null);
   const [lockSessionId, setLockSessionId] = useState<string | null>(resumeSessionId ?? null);
   const sessionTabId = useMemo(() => getSessionTabId(), []);
   const {
@@ -102,6 +104,14 @@ export function MissionInterviewModal({
     takeControl,
     isLoading: isLockLoading,
   } = useSessionLock(isOpen ? lockSessionId : null);
+  const {
+    activeTabMap,
+    broadcastUpdate,
+    broadcastCompleted,
+    broadcastLock,
+    broadcastUnlock,
+    broadcastHeartbeat,
+  } = useAiSessionSync();
 
   const connectToMissionInterviewStream = useCallback(
     (sessionId: string) => {
@@ -109,6 +119,15 @@ export function MissionInterviewModal({
       const connection = connectMissionInterviewStream(sessionId, projectId, {
         onThinking: (data) => {
           setStreamingOutput((prev) => prev + data);
+          broadcastUpdate({
+            sessionId,
+            status: "generating",
+            needsInput: false,
+            owningTabId: sessionTabId,
+            type: "mission_interview",
+            title: missionGoal.trim() || "Mission interview",
+            projectId: projectId ?? null,
+          });
         },
         onQuestion: (question) => {
           setIsReconnecting(false);
@@ -117,6 +136,16 @@ export function MissionInterviewModal({
           setView({ type: "question", sessionId, question });
           setStreamingOutput("");
           setHasProgress(true);
+
+          broadcastUpdate({
+            sessionId,
+            status: "awaiting_input",
+            needsInput: true,
+            owningTabId: sessionTabId,
+            type: "mission_interview",
+            title: missionGoal.trim() || "Mission interview",
+            projectId: projectId ?? null,
+          });
         },
         onSummary: (summary) => {
           setIsReconnecting(false);
@@ -126,6 +155,16 @@ export function MissionInterviewModal({
           setEditedSummary(summary);
           setStreamingOutput("");
           setHasProgress(true);
+
+          broadcastUpdate({
+            sessionId,
+            status: "complete",
+            needsInput: false,
+            owningTabId: sessionTabId,
+            type: "mission_interview",
+            title: missionGoal.trim() || "Mission interview",
+            projectId: projectId ?? null,
+          });
         },
         onError: (message) => {
           const errorMessage = message || "Session failed while contacting the AI.";
@@ -136,11 +175,23 @@ export function MissionInterviewModal({
           setStreamingOutput("");
           setHasProgress(true);
           currentSessionIdRef.current = sessionId;
+
+          broadcastUpdate({
+            sessionId,
+            status: "error",
+            needsInput: false,
+            owningTabId: sessionTabId,
+            type: "mission_interview",
+            title: missionGoal.trim() || "Mission interview",
+            projectId: projectId ?? null,
+          });
+          broadcastCompleted({ sessionId, status: "error" });
         },
         onComplete: () => {
           setIsReconnecting(false);
           setIsRetrying(false);
           currentSessionIdRef.current = null;
+          broadcastCompleted({ sessionId, status: "complete" });
         },
         onConnectionStateChange: (state) => {
           setIsReconnecting(state === "reconnecting");
@@ -149,7 +200,7 @@ export function MissionInterviewModal({
 
       streamConnectionRef.current = connection;
     },
-    [projectId],
+    [broadcastCompleted, broadcastUpdate, missionGoal, projectId, sessionTabId],
   );
 
   const handleStartInterview = useCallback(
@@ -285,13 +336,59 @@ export function MissionInterviewModal({
     };
   }, [connectToMissionInterviewStream, isOpen, resumeSessionId, view.type, projectId]);
 
+  // Broadcast ownership transitions between tabs.
+  useEffect(() => {
+    if (!isOpen) {
+      if (trackedLockSessionRef.current) {
+        broadcastUnlock(trackedLockSessionRef.current, sessionTabId);
+        trackedLockSessionRef.current = null;
+      }
+      return;
+    }
+
+    if (lockSessionId && trackedLockSessionRef.current !== lockSessionId) {
+      if (trackedLockSessionRef.current) {
+        broadcastUnlock(trackedLockSessionRef.current, sessionTabId);
+      }
+      broadcastLock(lockSessionId, sessionTabId);
+      trackedLockSessionRef.current = lockSessionId;
+      return;
+    }
+
+    if (!lockSessionId && trackedLockSessionRef.current) {
+      broadcastUnlock(trackedLockSessionRef.current, sessionTabId);
+      trackedLockSessionRef.current = null;
+    }
+  }, [broadcastLock, broadcastUnlock, isOpen, lockSessionId, sessionTabId]);
+
+  // Keep heartbeat alive while this tab owns an active mission interview session.
+  useEffect(() => {
+    if (!isOpen || !lockSessionId || trackedLockSessionRef.current !== lockSessionId) {
+      return;
+    }
+
+    broadcastHeartbeat(sessionTabId);
+    const timer = setInterval(() => {
+      broadcastHeartbeat(sessionTabId);
+    }, 30_000);
+
+    return () => {
+      clearInterval(timer);
+    };
+  }, [broadcastHeartbeat, isOpen, lockSessionId, sessionTabId]);
+
   // Cleanup stream on unmount
   useEffect(() => {
     return () => {
       streamConnectionRef.current?.close();
       streamConnectionRef.current = null;
+
+      if (trackedLockSessionRef.current) {
+        broadcastUnlock(trackedLockSessionRef.current, sessionTabId);
+        trackedLockSessionRef.current = null;
+      }
     };
-  }, []);
+  }, [broadcastUnlock, sessionTabId]);
 
   // Unload protection
   useEffect(() => {
@@ -475,6 +572,11 @@ export function MissionInterviewModal({
   const showSendToBackgroundButton =
     view.type === "loading" || view.type === "question" || view.type === "summary" || view.type === "error";
 
+  const activeLockInfo = lockSessionId ? activeTabMap.get(lockSessionId) : null;
+  const activeRemoteTab = activeLockInfo && activeLockInfo.tabId !== sessionTabId;
+  const activeInAnotherTab = Boolean(activeRemoteTab && !activeLockInfo.stale);
+  const allowTakeover = isLockedByOther && (!activeRemoteTab || activeLockInfo.stale);
+
   if (!isOpen) return null;
 
   return (
@@ -505,6 +607,11 @@ export function MissionInterviewModal({
         <div className="planning-modal-body">
           {error && <div className="form-error planning-error">{error}</div>}
           {isReconnecting && <div className="form-hint text-muted">Reconnecting…</div>}
+          {activeInAnotherTab && (
+            <div className="form-hint text-muted" data-testid="session-active-another-tab-banner">
+              Session is active in another tab.
+            </div>
+          )}
 
           {view.type === "initial" && (
             <div className="planning-initial">
@@ -657,17 +764,23 @@ export function MissionInterviewModal({
             <div className="session-lock-overlay" data-testid="session-lock-overlay">
               <div className="session-lock-banner">
                 <Lock size={16} />
-                <span>This session is active in another tab</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    void takeControl();
-                  }}
-                  disabled={isLockLoading}
-                  className="btn btn-primary session-lock-take-control"
-                >
-                  {isLockLoading ? "Taking control..." : "Take Control"}
-                </button>
+                <span>
+                  {allowTakeover
+                    ? "This session is active in another tab"
+                    : "This session is active in another tab (live heartbeat)"}
+                </span>
+                {allowTakeover && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void takeControl();
+                    }}
+                    disabled={isLockLoading}
+                    className="btn btn-primary session-lock-take-control"
+                  >
+                    {isLockLoading ? "Taking control..." : "Take Control"}
+                  </button>
+                )}
               </div>
             </div>
           )}
