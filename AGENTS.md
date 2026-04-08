@@ -35,7 +35,7 @@ Only `@gsxdsm/fusion` is published. The others are internal workspace packages.
 
 ## SQLite Storage Architecture
 
-kb uses a hybrid storage architecture: structured metadata lives in SQLite while large blob files remain on the filesystem.
+Fusion uses a hybrid storage architecture: structured metadata lives in SQLite while large blob files remain on the filesystem.
 
 ### Database Location
 
@@ -96,7 +96,7 @@ When upgrading to multi-project mode, existing single-project users are automati
 If the central database causes issues:
 1. Delete `~/.pi/fusion/fusion-central.db` (this only removes the project registry)
 2. Your per-project `.fusion/fusion.db` files remain intact with all data
-3. kb will fall back to single-project legacy mode
+3. fn will fall back to single-project legacy mode
 4. Re-run `fn init` in your project to re-register if needed
 
 **Safety Features:**
@@ -131,7 +131,7 @@ Tests are required. Typechecks and manual verification are not substitutes for r
 
 ## Multi-Project Architecture / Central Core
 
-kb supports multi-project coordination through a central infrastructure that provides:
+fn supports multi-project coordination through a central infrastructure that provides:
 
 - **Project Registry** — Track all registered projects with metadata and settings
 - **Unified Activity Feed** — Centralized activity log spanning all projects  
@@ -230,7 +230,7 @@ Projects have one of these statuses:
 
 ### Unified vs Per-Project Activity Logs
 
-kb has two activity log systems:
+fn has two activity log systems:
 
 1. **Per-project activity log** (`.fusion/fusion.db` → `activityLog` table)
    - Contains events for a single project
@@ -251,7 +251,7 @@ kb has two activity log systems:
 
 ## Multi-Project Runtime Architecture
 
-kb's multi-project support is built on a runtime abstraction layer that enables task execution across multiple projects with configurable isolation modes. This architecture provides both efficiency (in-process) and security (child-process isolation) options.
+fn's multi-project support is built on a runtime abstraction layer that enables task execution across multiple projects with configurable isolation modes. This architecture provides both efficiency (in-process) and security (child-process isolation) options.
 
 ### Overview
 
@@ -429,28 +429,28 @@ Choose isolation mode based on your requirements:
 
 ## Multi-Project CLI Usage
 
-The kb CLI supports managing multiple projects through the `kb project` subcommand and the `--project` global flag.
+The fn CLI supports managing multiple projects through the `fn project` subcommand and the `--project` global flag.
 
 ### Project Subcommands
 
 ```bash
 # List all registered projects
-kb project list
+fn project list
 
 # Register a new project
-kb project add my-app /path/to/app
+fn project add my-app /path/to/app
 
 # Unregister a project (data is preserved)
-kb project remove my-app [--force]
+fn project remove my-app [--force]
 
 # Show project details
-kb project show my-app
+fn project show my-app
 
 # Set default project for CLI operations
-kb project set-default my-app
+fn project set-default my-app
 
 # Detect which project you're currently in
-kb project detect
+fn project detect
 ```
 
 ### Global --project Flag
@@ -459,64 +459,64 @@ All task commands accept a `--project` (or `-P`) flag to target a specific proje
 
 ```bash
 # Create a task in a specific project
-kb task create "Fix login bug" --project my-app
+fn task create "Fix login bug" --project my-app
 
 # List tasks from a specific project
-kb task list --project my-app
+fn task list --project my-app
 
 # Show task details from a project
-kb task show KB-001 --project my-app
+fn task show KB-001 --project my-app
 
 # Move a task to a different column
-kb task move KB-001 done --project my-app
+fn task move KB-001 done --project my-app
 
 # Archive a completed task
-kb task archive KB-001 --project my-app
+fn task archive KB-001 --project my-app
 
 # Delete a task
-kb task delete KB-001 --force --project my-app
+fn task delete KB-001 --force --project my-app
 
 # Attach a file to a task
-kb task attach KB-001 screenshot.png --project my-app
+fn task attach KB-001 screenshot.png --project my-app
 
 # Pause/unpause a task
-kb task pause KB-001 --project my-app
-kb task unpause KB-001 --project my-app
+fn task pause KB-001 --project my-app
+fn task unpause KB-001 --project my-app
 
 # Retry a failed task
-kb task retry KB-001 --project my-app
+fn task retry KB-001 --project my-app
 
 # Create a PR for a task
-kb task pr-create KB-001 --project my-app
+fn task pr-create KB-001 --project my-app
 
 # Import GitHub issues as tasks
-kb task import owner/repo --project my-app
+fn task import owner/repo --project my-app
 
 # Show and update settings for a project
-kb settings --project my-app
-kb settings set maxConcurrent 4 --project my-app
+fn settings --project my-app
+fn settings set maxConcurrent 4 --project my-app
 
 # Git operations in a project
-kb git status --project my-app
-kb git pull --project my-app
-kb git push --project my-app
+fn git status --project my-app
+fn git pull --project my-app
+fn git push --project my-app
 
 # Backup operations for a project
-kb backup --create --project my-app
-kb backup --list --project my-app
+fn backup --create --project my-app
+fn backup --list --project my-app
 ```
 
 ### Project Resolution Order
 
-When you run a kb command without `--project`, the CLI resolves the project in this order:
+When you run an fn command without `--project`, the CLI resolves the project in this order:
 
 1. **Explicit `--project` flag** — Uses the specified project
-2. **Default project** — Uses the project set via `kb project set-default`
+2. **Default project** — Uses the project set via `fn project set-default`
 3. **CWD auto-detection** — Walks up the directory tree looking for `.fusion/fusion.db`
 
 If no project is found, the CLI exits with an error:
 ```
-No kb project found in current directory. Use --project or run from a project directory.
+No fn project found in current directory. Use --project or run from a project directory.
 ```
 
 ### Common Workflows
@@ -524,50 +524,50 @@ No kb project found in current directory. Use --project or run from a project di
 **Cross-project operations without changing directories:**
 ```bash
 # Create tasks in different projects from the same shell
-kb task create "Backend API endpoint" --project api-service
-kb task create "Frontend component" --project web-ui
-kb task create "Documentation update" --project docs
+fn task create "Backend API endpoint" --project api-service
+fn task create "Frontend component" --project web-ui
+fn task create "Documentation update" --project docs
 
 # Check status of all projects
-kb project list
+fn project list
 
 # Archive completed tasks across projects
-kb task archive API-042 --project api-service
-kb task archive WEB-123 --project web-ui
+fn task archive API-042 --project api-service
+fn task archive WEB-123 --project web-ui
 ```
 
 **Setting up a default project:**
 ```bash
 # Register your main project
-kb project add main ~/projects/my-app
+fn project add main ~/projects/my-app
 
 # Set it as default
-kb project set-default main
+fn project set-default main
 
 # Now all commands use the default project without --project
-kb task list
-kb task create "New feature"
-kb git status
+fn task list
+fn task create "New feature"
+fn git status
 ```
 
 **Switching between projects:**
 ```bash
 # Quick switch with shell aliases
-alias kb-api='kb --project api-service'
-alias kb-web='kb --project web-ui'
+alias fn-api='fn --project api-service'
+alias fn-web='fn --project web-ui'
 
 # Or use the explicit flag
-kb task list --project api-service
-kb task list --project web-ui
+fn task list --project api-service
+fn task list --project web-ui
 ```
 
 ## Pi Extension (`packages/cli/src/extension.ts`)
 
-The pi extension provides tools and a `/kb` command for interacting with kb from within a pi session. It ships as part of `@gsxdsm/fusion` — one `pi install` gives you both the CLI and the extension.
+The pi extension provides tools and a `/fn` command for interacting with fn from within a pi session. It ships as part of `@gsxdsm/fusion` — one `pi install` gives you both the CLI and the extension.
 
 Update it when:
 
-- **CLI commands change** — if `kb task create`, `kb task list`, `kb task show`, `kb task attach`, `kb task pause`, or `kb task unpause` change their behavior, flags, or output, update the corresponding tool in `packages/cli/src/extension.ts`.
+- **CLI commands change** — if `fn task create`, `fn task list`, `fn task show`, `fn task attach`, `fn task pause`, or `fn task unpause` change their behavior, flags, or output, update the corresponding tool in `packages/cli/src/extension.ts`.
 - **Task store API changes** — the extension calls `TaskStore` directly (`createTask`, `listTasks`, `getTask`, `addAttachment`, `pauseTask`). If these methods change signature or behavior, update the extension.
 - **New user-facing features** — if a new CLI command is added that the chat agent should be able to use (task creation, status checking, automation control), add a tool for it.
 
@@ -944,9 +944,9 @@ curl http://remote-host:4040/api/health
 
 ## Settings
 
-kb uses a two-tier settings hierarchy:
+fn uses a two-tier settings hierarchy:
 
-- **Global settings** — User preferences stored in `~/.pi/fusion/settings.json`. These persist across all kb projects for the current user.
+- **Global settings** — User preferences stored in `~/.pi/fusion/settings.json`. These persist across all fn projects for the current user.
 - **Project settings** — Project-specific workflow and resource settings stored in `.fusion/config.json`. These control how the engine operates for a particular project.
 
 When reading settings, project values override global values. The merged view is what the engine and dashboard use.
@@ -976,7 +976,7 @@ The dashboard Settings modal shows scope indicators (🌐 global, 📁 project) 
 - `PUT /api/settings/global` — Updates global settings
 - `GET /api/settings/scopes` — Returns settings separated by scope: `{ global, project }`
 
-The following settings are available in the kb configuration:
+The following settings are available in the fn configuration:
 
 ### `autoResolveConflicts` (default: `true`)
 
@@ -1215,7 +1215,7 @@ Controls how worktree directory names are generated when `recycleWorktrees` is N
 
 ### `autoBackupEnabled` (default: `false`)
 
-When true, enables automatic database backups for the kb SQLite database.
+When true, enables automatic database backups for the fn SQLite database.
 
 **How it works:**
 - When enabled, the system creates scheduled automation to run backups on the configured schedule
@@ -1305,10 +1305,10 @@ The `/api/ai/summarize-title` endpoint is rate-limited to 10 requests per hour p
 Manual backup operations are available via the CLI:
 
 ```bash
-kb backup --create         # Create a backup immediately
-kb backup --list           # List all backups with sizes
-kb backup --restore <file> # Restore database from backup
-kb backup --cleanup        # Remove old backups
+fn backup --create         # Create a backup immediately
+fn backup --list           # List all backups with sizes
+fn backup --restore <file> # Restore database from backup
+fn backup --cleanup        # Remove old backups
 ```
 
 ### Dashboard
@@ -1372,7 +1372,7 @@ Configurable agent role prompt templates and assignments. When set, allows per-p
 
 ## Model Presets
 
-The kb dashboard supports reusable model presets so teams can standardize AI model choices without manually selecting executor and validator models for every task.
+The fn dashboard supports reusable model presets so teams can standardize AI model choices without manually selecting executor and validator models for every task.
 
 ### How It Works
 
@@ -1391,7 +1391,7 @@ Settings can optionally enable automatic preset recommendation by task size:
 - **Medium (`M`)** → mapped preset ID
 - **Large (`L`)** → mapped preset ID
 
-When enabled, task creation UIs can preselect the configured preset for the detected task size. If no mapping exists for a given size, kb falls back to normal default-model behavior.
+When enabled, task creation UIs can preselect the configured preset for the detected task size. If no mapping exists for a given size, fn falls back to normal default-model behavior.
 
 ### Interaction with Per-Task Overrides
 
@@ -1403,7 +1403,7 @@ Presets are an alternative to manual per-task model selection, not a replacement
 
 ## Per-Task Model Overrides
 
-The kb dashboard allows overriding the global AI model selection on a per-task basis. This enables using different models for different types of work without changing global settings.
+The fn dashboard allows overriding the global AI model selection on a per-task basis. This enables using different models for different types of work without changing global settings.
 
 ### How It Works
 
