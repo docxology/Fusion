@@ -19217,6 +19217,32 @@ html .column.drag-over * {
   opacity: 0.7;
 }
 
+.workflow-results-tab {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md, 16px);
+}
+
+.workflow-results-edit-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm, 8px);
+}
+
+.workflow-results-edit-header h4 {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-primary, #e6edf3);
+}
+
+.workflow-results-editor {
+  border: 1px solid var(--border, #30363d);
+  border-radius: 8px;
+  background: var(--surface-elevated, #161b22);
+  padding: var(--space-md, 16px);
+}
+
 .workflow-results-list {
   display: flex;
   flex-direction: column;

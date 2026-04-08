@@ -260,6 +260,7 @@ export function TaskDetailModal({
   // Workflow results state
   const [workflowResults, setWorkflowResults] = useState<WorkflowStepResult[]>([]);
   const [workflowResultsLoading, setWorkflowResultsLoading] = useState(false);
+  const [workflowEnabledSteps, setWorkflowEnabledSteps] = useState<string[]>(task.enabledWorkflowSteps || []);
 
   // Reset edit state when task changes
   useEffect(() => {
@@ -267,6 +268,10 @@ export function TaskDetailModal({
     setEditDescription(task.description || "");
     setIsEditing(false);
   }, [task.id, task.title, task.description]);
+
+  useEffect(() => {
+    setWorkflowEnabledSteps(task.enabledWorkflowSteps || []);
+  }, [task.id, task.enabledWorkflowSteps]);
 
   // Load merged settings for effective model resolution
   useEffect(() => {
@@ -648,6 +653,20 @@ export function TaskDetailModal({
     }
   }, [task.id, addToast]);
 
+  const handleWorkflowStepsChange = useCallback(async (enabledWorkflowSteps: string[]) => {
+    const previousSteps = workflowEnabledSteps;
+    setWorkflowEnabledSteps(enabledWorkflowSteps);
+
+    try {
+      const updatedTask = await updateTask(task.id, { enabledWorkflowSteps }, projectId);
+      addToast("Workflow steps updated", "success");
+      onTaskUpdated?.(updatedTask);
+    } catch (err: any) {
+      setWorkflowEnabledSteps(previousSteps);
+      addToast(`Failed to update workflow steps: ${err.message}`, "error");
+    }
+  }, [task.id, projectId, workflowEnabledSteps, onTaskUpdated, addToast]);
+
   const handleAddDep = useCallback(async (depId: string) => {
     const newDeps = [...dependencies, depId];
     setDependencies(newDeps);
@@ -902,7 +921,10 @@ export function TaskDetailModal({
                 taskId={task.id}
                 results={workflowResults}
                 loading={workflowResultsLoading}
-                enabledWorkflowSteps={task.enabledWorkflowSteps}
+                enabledWorkflowSteps={workflowEnabledSteps}
+                canEdit={canEdit}
+                projectId={projectId}
+                onWorkflowStepsChange={handleWorkflowStepsChange}
               />
             </div>
           ) : activeTab === "model" ? (

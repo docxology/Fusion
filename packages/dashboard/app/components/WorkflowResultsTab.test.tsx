@@ -1,9 +1,46 @@
-import { describe, it, expect } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { WorkflowResultsTab } from "./WorkflowResultsTab";
-import type { WorkflowStepResult } from "@fusion/core";
+import { fetchWorkflowSteps } from "../api";
+import type { WorkflowStep, WorkflowStepResult } from "@fusion/core";
+
+vi.mock("../api", () => ({
+  fetchWorkflowSteps: vi.fn(),
+}));
+
+const mockedFetchWorkflowSteps = vi.mocked(fetchWorkflowSteps);
 
 describe("WorkflowResultsTab", () => {
+  const mockWorkflowSteps: WorkflowStep[] = [
+    {
+      id: "WS-101",
+      name: "QA Check",
+      description: "Run test suite",
+      mode: "prompt",
+      phase: "pre-merge",
+      prompt: "Run QA checks",
+      enabled: true,
+      createdAt: "2026-04-01T00:00:00Z",
+      updatedAt: "2026-04-01T00:00:00Z",
+    },
+    {
+      id: "WS-102",
+      name: "Docs Review",
+      description: "Review docs",
+      mode: "prompt",
+      phase: "post-merge",
+      prompt: "Review docs",
+      enabled: true,
+      createdAt: "2026-04-01T00:00:00Z",
+      updatedAt: "2026-04-01T00:00:00Z",
+    },
+  ];
+
+  beforeEach(() => {
+    mockedFetchWorkflowSteps.mockReset();
+    mockedFetchWorkflowSteps.mockResolvedValue(mockWorkflowSteps);
+  });
+
   const mockResults: WorkflowStepResult[] = [
     {
       workflowStepId: "WS-001",
@@ -322,6 +359,147 @@ describe("WorkflowResultsTab", () => {
       fireEvent.click(screen.getByTestId("workflow-result-toggle-WS-001"));
       expect(screen.queryByTestId("workflow-result-output-WS-001")).not.toBeInTheDocument();
       expect(screen.getByTestId("workflow-result-output-WS-002")).toBeInTheDocument();
+    });
+  });
+
+  describe("workflow step editing", () => {
+    it("shows edit button when canEdit is true", () => {
+      render(<WorkflowResultsTab taskId="FN-001" results={[]} canEdit />);
+
+      expect(screen.getByTestId("workflow-steps-edit-toggle")).toBeInTheDocument();
+    });
+
+    it("does not show edit button when canEdit is false or undefined", () => {
+      const { rerender } = render(<WorkflowResultsTab taskId="FN-001" results={[]} canEdit={false} />);
+      expect(screen.queryByTestId("workflow-steps-edit-toggle")).not.toBeInTheDocument();
+
+      rerender(<WorkflowResultsTab taskId="FN-001" results={[]} />);
+      expect(screen.queryByTestId("workflow-steps-edit-toggle")).not.toBeInTheDocument();
+    });
+
+    it("shows and hides workflow step checkboxes when edit is toggled", async () => {
+      render(<WorkflowResultsTab taskId="FN-001" results={[]} canEdit />);
+
+      expect(screen.queryByTestId("workflow-steps-editor")).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByTestId("workflow-steps-edit-toggle"));
+      expect(screen.getByTestId("workflow-steps-editor")).toBeInTheDocument();
+      await screen.findByTestId("workflow-step-checkbox-WS-101");
+      expect(screen.getByTestId("browser-verification-checkbox")).toBeInTheDocument();
+
+      fireEvent.click(screen.getByTestId("workflow-steps-edit-toggle"));
+      expect(screen.queryByTestId("workflow-steps-editor")).not.toBeInTheDocument();
+    });
+
+    it("calls onWorkflowStepsChange when checking and unchecking steps", async () => {
+      const onWorkflowStepsChange = vi.fn();
+
+      const { rerender } = render(
+        <WorkflowResultsTab
+          taskId="FN-001"
+          results={[]}
+          canEdit
+          enabledWorkflowSteps={[]}
+          onWorkflowStepsChange={onWorkflowStepsChange}
+        />,
+      );
+
+      fireEvent.click(screen.getByTestId("workflow-steps-edit-toggle"));
+      const stepCheckbox = (await screen.findByTestId("workflow-step-checkbox-WS-101")).querySelector("input") as HTMLInputElement;
+      fireEvent.click(stepCheckbox);
+
+      expect(onWorkflowStepsChange).toHaveBeenCalledWith(["WS-101"]);
+
+      onWorkflowStepsChange.mockClear();
+      rerender(
+        <WorkflowResultsTab
+          taskId="FN-001"
+          results={[]}
+          canEdit
+          enabledWorkflowSteps={["WS-101"]}
+          onWorkflowStepsChange={onWorkflowStepsChange}
+        />,
+      );
+
+      const selectedCheckbox = (await screen.findByTestId("workflow-step-checkbox-WS-101")).querySelector("input") as HTMLInputElement;
+      expect(selectedCheckbox.checked).toBe(true);
+      fireEvent.click(selectedCheckbox);
+
+      expect(onWorkflowStepsChange).toHaveBeenCalledWith([]);
+    });
+
+    it("reorders selected workflow steps with move buttons", async () => {
+      const onWorkflowStepsChange = vi.fn();
+
+      render(
+        <WorkflowResultsTab
+          taskId="FN-001"
+          results={[]}
+          canEdit
+          enabledWorkflowSteps={["WS-101", "WS-102"]}
+          onWorkflowStepsChange={onWorkflowStepsChange}
+        />,
+      );
+
+      fireEvent.click(screen.getByTestId("workflow-steps-edit-toggle"));
+      await screen.findByTestId("workflow-step-order");
+
+      fireEvent.click(screen.getByTestId("workflow-step-move-down-WS-101"));
+      expect(onWorkflowStepsChange).toHaveBeenCalledWith(["WS-102", "WS-101"]);
+    });
+
+    it("removes a selected workflow step from execution order", async () => {
+      const onWorkflowStepsChange = vi.fn();
+
+      render(
+        <WorkflowResultsTab
+          taskId="FN-001"
+          results={[]}
+          canEdit
+          enabledWorkflowSteps={["WS-101", "WS-102"]}
+          onWorkflowStepsChange={onWorkflowStepsChange}
+        />,
+      );
+
+      fireEvent.click(screen.getByTestId("workflow-steps-edit-toggle"));
+      await screen.findByTestId("workflow-step-order");
+
+      fireEvent.click(screen.getByTestId("workflow-step-remove-WS-101"));
+      expect(onWorkflowStepsChange).toHaveBeenCalledWith(["WS-102"]);
+    });
+
+    it("shows both results and edit UI when editing with existing results", async () => {
+      render(
+        <WorkflowResultsTab
+          taskId="FN-001"
+          results={mockResults}
+          canEdit
+          enabledWorkflowSteps={["WS-101"]}
+        />,
+      );
+
+      expect(screen.getByTestId("workflow-results-list")).toBeInTheDocument();
+      fireEvent.click(screen.getByTestId("workflow-steps-edit-toggle"));
+
+      expect(screen.getByTestId("workflow-results-list")).toBeInTheDocument();
+      expect(screen.getByTestId("workflow-steps-editor")).toBeInTheDocument();
+      await screen.findByTestId("workflow-step-checkbox-WS-101");
+    });
+
+    it("fetches workflow step definitions when canEdit and projectId are provided", async () => {
+      render(
+        <WorkflowResultsTab
+          taskId="FN-001"
+          results={[]}
+          canEdit
+          projectId="proj-123"
+          enabledWorkflowSteps={[]}
+        />,
+      );
+
+      await waitFor(() => {
+        expect(mockedFetchWorkflowSteps).toHaveBeenCalledWith("proj-123");
+      });
     });
   });
 });
