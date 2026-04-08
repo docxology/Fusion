@@ -22,7 +22,7 @@ Like Trello, but your tasks get specified, executed, and delivered by AI — pow
 
 3. **Open** [http://localhost:4040](http://localhost:4040) — create tasks from the board or the CLI.
 
-**First-run setup:** On first launch, Fusion opens a guided onboarding modal that walks you through configuring provider credentials (OAuth login or API key entry) and selecting a default AI model. Completion is tracked via the `modelOnboardingComplete` global setting. You can re-trigger onboarding at any time by clearing this flag in Settings, or configure providers and models manually from the Settings modal.
+**First-run setup:** On first launch, Fusion opens the **Model Onboarding wizard**. It walks you through provider authentication (OAuth login or API key entry) and default model selection before automation starts. Completion is tracked via the global `modelOnboardingComplete` setting. You can re-trigger onboarding later by clearing this flag in Settings, or configure providers/models manually from the Settings modal.
 
 ### Prerequisites
 
@@ -88,7 +88,7 @@ fn task import owner/repo --labels bug --limit 10      # Import GitHub issues
 
 **Dashboard creation options:**
 - **Quick Entry** — Type a description, press Enter
-- **Plan** (💡) — AI interviews you to refine requirements before creating the task
+- **Plan** (💡) — AI interviews you to refine requirements before creating the task; summary view supports **Break into Tasks** for multi-task generation with dependencies
 - **Subtask** (🌳) — AI suggests 2–5 subtasks with drag-and-drop reordering and dependency linking
 - **Actions** (⋯) — Access advanced controls: dependencies, model overrides (executor/validator/planning), and manual save
 - **AI Title Summarization** — When `autoSummarizeTitles` is enabled, tasks without titles get concise AI-generated names (≤60 characters)
@@ -99,8 +99,12 @@ Each task is implemented by an AI agent with a full Plan → Review → Execute 
 
 1. **Automatic spec writing** — The triage agent generates a detailed `PROMPT.md` with steps, file scope, and acceptance criteria
 2. **Step-by-step execution** — For each step: plan, AI code review, implement, AI code review
-3. **Git worktree isolation** — Each task runs in its own worktree (`fusion/{task-id}` branch)
-4. **Workflow steps** — Configurable quality gates (pre-merge: blocks merge; post-merge: informational)
+3. **Session-per-step mode** — Enable `runStepsInNewSessions` to isolate each step in a fresh agent session with better retry behavior
+4. **Parallel step execution** — Configure `maxParallelSteps` (1–4) to run non-conflicting steps concurrently in isolated worktrees
+5. **Git worktree isolation** — Each task runs in its own worktree (`fusion/{task-id}` branch)
+6. **Workflow steps** — Configurable quality gates (pre-merge: blocks merge; post-merge: informational)
+
+Step status is tracked in real time in the dashboard so you can see pending/in-progress/done progress as the executor advances.
 
 ```bash
 fn task show FN-001                    # View task details, steps, log
@@ -114,13 +118,18 @@ Real-time kanban board at `localhost:4040`:
 
 - **Board view** — Drag-and-drop cards between columns, real-time search, column visibility toggle
 - **List view** — Group by column or size, inline title editing, duplicate tasks
+- **Agents view** — Agent list + detail panels with runtime config, heartbeat controls, metrics, and run history
+- **Mailbox** — Inter-agent/user messaging UI for inbox/outbox and direct coordination
 - **Interactive terminal** — Full PTY-based terminal with xterm.js, multiple tabs, mobile-aware with virtual keyboard handling that re-fits the terminal view above the on-screen keyboard on real devices (Chrome Android and iOS Safari)
 - **Git manager** — View commits/diffs, manage branches, worktree associations, push/pull, inline edit controls for remote name and URL
+- **Mission manager** — Hierarchical mission/milestone/slice/feature planning with progress tracking and autopilot controls
 - **Activity log** — Task lifecycle events, settings changes, filter by type, auto-refresh
 - **Files browser** — Browse project root or task worktrees, edit files with syntax highlighting
 - **Theme system** — Dark/Light/System modes, 17 color themes (Ocean, Forest, Nord, Dracula, and more)
 - **Usage dialog** — Real-time AI provider subscription usage with progress bars and reset timers
-- **Spec editor** — Edit `PROMPT.md` directly or request AI revision from the dashboard
+- **Spec editor** — Edit `PROMPT.md` directly, request AI revision, or rebuild/regenerate specs
+- **Planning Mode (multi-task)** — After AI planning, choose **Create Task** or **Break into Tasks** to generate dependency-linked subtasks
+- **Model onboarding wizard** — Guided provider/model setup from the dashboard, re-openable from Settings
 
 ### GitHub Integration
 
@@ -232,6 +241,21 @@ fn mission delete <id> [--force]            # Delete mission (cascades to childr
 fn mission activate-slice <slice-id>        # Manually activate a pending slice
 ```
 
+**Agent Management & Messaging:**
+```bash
+fn agent stop <id>                          # Stop a running agent
+fn agent start <id>                         # Start/resume a stopped agent
+fn agent import <file> [--dry-run] [--skip-existing]
+                                            # Import agents from a companies.sh manifest
+fn agent mailbox <id>                       # View one agent's mailbox
+
+fn message inbox                            # List inbox messages
+fn message outbox                           # List sent messages
+fn message send <agent-id> <msg>            # Send a message to an agent
+fn message read <id>                        # Read a specific message
+fn message delete <id>                      # Delete a message
+```
+
 **Git Commands:**
 ```bash
 fn git status                             # Show branch, commit, dirty state
@@ -266,6 +290,15 @@ Fusion supports two distinct kinds of discussion on a task:
 ### Refinement Tasks
 
 `fn task refine` creates a follow-up task in Triage that depends on the original. The title follows the format `Refinement: {source label}` for easy identification.
+
+### Spec Editing, Revision, and Rebuild
+
+From the dashboard task detail modal:
+- **Edit spec** — Update `PROMPT.md` directly
+- **AI revision** — Submit feedback and ask AI to revise the current specification
+- **Respecify/Rebuild** — Regenerate the specification and move the task back to triage for a fresh spec/review cycle
+
+Use rebuild when requirements changed significantly or the spec drifted from current project reality.
 
 ### Archive
 
@@ -323,6 +356,60 @@ Project settings override global settings. Configure in the dashboard under **Se
 
 The dashboard Agent Log subview shows which AI models were used for each task (Executor, Validator, Planning/Triage). When no model can be resolved, the header shows "Using default".
 
+## Agents Management
+
+Fusion includes a dedicated **Agents view** in the dashboard for operating autonomous workers:
+
+- Agent list with status and assignment
+- Detail panel with runtime configuration and custom instructions
+- Health/heartbeat status, recent activity, and run history
+- Metrics panels for throughput and reliability trends
+
+### Agent Presets and Prompt Templates
+
+Built-in prompt templates are available for common roles:
+
+- `default-executor`, `default-triage`, `default-reviewer`, `default-merger`
+- `senior-engineer`, `strict-reviewer`, `concise-triage`
+
+Assign templates per role with the `agentPrompts` project setting, and add custom templates for team-specific behavior. You can also set per-agent custom instructions in the dashboard.
+
+### Agent Controls (CLI)
+
+```bash
+fn agent stop <id>
+fn agent start <id>
+fn agent import <file> [--dry-run] [--skip-existing]
+fn agent mailbox <id>
+```
+
+### Per-Agent Heartbeat Configuration
+
+Each agent can override heartbeat behavior through `runtimeConfig`:
+- `enabled`
+- `heartbeatIntervalMs`
+- `heartbeatTimeoutMs`
+- `maxConcurrentRuns`
+
+Configure this in the agent detail panel (**Heartbeat Settings**). These values control timer triggers, unresponsive detection, and concurrent run limits per agent.
+
+## Inter-Agent Messaging
+
+Fusion provides built-in messaging for coordination between users and agents.
+
+- **Dashboard mailbox UI** — Inbox/outbox view and conversation management
+- **CLI messaging** — Send and manage direct messages from terminal workflows
+
+```bash
+fn message send <agent-id> <msg>
+fn message inbox
+fn message outbox
+fn message read <id>
+fn message delete <id>
+```
+
+Use messaging for handoffs ("review this next"), clarifications, and explicit coordination between specialized agents.
+
 ## Missions
 
 The Missions system provides a hierarchical planning structure for large-scale projects:
@@ -347,6 +434,24 @@ Mission ("Build Auth System")
 **Hierarchy:** Mission → Milestone → Slice → Feature → Task
 
 Status flows automatically: when features are linked to tasks and completed, slice status updates. When all slices in a milestone are complete, the milestone becomes complete. When all milestones are done, the mission is complete.
+
+### Mission Autopilot
+
+Enable **autopilot** to let Fusion progress a mission with less manual intervention.
+
+- `autoAdvance` — Existing behavior: activate the next pending slice when the current slice completes
+- `autopilotEnabled` — Enable active monitoring and progression orchestration for a mission
+
+When autopilot is enabled, the runtime tracks task completions and advances mission state through:
+
+`inactive → watching → activating → completing`
+
+Autopilot API endpoints:
+
+- `GET /api/missions/:missionId/autopilot`
+- `PATCH /api/missions/:missionId/autopilot` (`{ enabled: boolean }`)
+- `POST /api/missions/:missionId/autopilot/start`
+- `POST /api/missions/:missionId/autopilot/stop`
 
 ## Workflow Steps
 
@@ -522,14 +627,18 @@ Project settings override global settings. Configure in the dashboard under **Se
 | `ntfyEnabled` | Global | false | Enable push notifications |
 | `ntfyTopic` | Global | - | ntfy.sh topic for notifications |
 | `ntfyDashboardHost` | Global | - | Dashboard URL for notification deep links |
+| `modelOnboardingComplete` | Global | false | Tracks completion of first-run model onboarding wizard |
 | `maxConcurrent` | Project | 2 | Concurrent task execution limit |
 | `autoMerge` | Project | true | Auto-merge completed tasks |
 | `smartConflictResolution` | Project | true | Auto-resolve lock/generated files |
 | `requirePlanApproval` | Project | false | Manual approval for AI specs |
 | `taskStuckTimeoutMs` | Project | - | Stuck task detection timeout (ms) |
+| `runStepsInNewSessions` | Project | false | Run each task step in its own agent session |
+| `maxParallelSteps` | Project | 2 | Max concurrent steps when per-step sessions are enabled |
 | `worktreeNaming` | Project | random | Worktree naming: random/task-id/task-title |
 | `recycleWorktrees` | Project | false | Pool and reuse worktrees for efficiency |
 | `groupOverlappingFiles` | Project | false | Serialize tasks with shared file scopes |
+| `agentPrompts` | Project | - | Role-based prompt templates and assignments |
 | `autoSummarizeTitles` | Project | false | Auto-generate titles for untitled tasks |
 | `autoBackupEnabled` | Project | false | Enable automatic database backups |
 | `autoBackupSchedule` | Project | `0 2 * * *` | Cron expression for backup schedule |
