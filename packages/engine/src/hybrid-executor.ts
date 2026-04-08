@@ -429,6 +429,11 @@ export class HybridExecutor extends EventEmitter<HybridExecutorEvents> {
 
   /**
    * Set up listeners for CentralCore project events.
+   *
+   * Async guard convention: any async operation triggered from these listeners
+   * must end with an explicit `.catch(...)` handler (for example, project
+   * removal calls `removeProject(...).catch(...)`) so EventEmitter dispatch
+   * cannot surface unhandled promise rejections.
    */
   private setupCentralCoreListeners(): void {
     // When a new project is registered, we don't auto-add it

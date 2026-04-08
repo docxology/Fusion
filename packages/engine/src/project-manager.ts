@@ -352,7 +352,9 @@ export class ProjectManager extends EventEmitter<ProjectManagerEvents> {
     // Forward task:created
     runtime.on("task:created", (task: Task) => {
       this.emit("task:created", { projectId, projectName, task });
-      this.logActivity("task:created", projectId, projectName, `Task ${task.id} created`, task.id, task.title);
+      this.logActivity("task:created", projectId, projectName, `Task ${task.id} created`, task.id, task.title).catch((err: unknown) => {
+        projectManagerLog.warn(`Failed to log task:created activity for ${projectId}:`, err);
+      });
     });
 
     // Forward task:moved
@@ -366,7 +368,9 @@ export class ProjectManager extends EventEmitter<ProjectManagerEvents> {
         data.task.id,
         data.task.title,
         { from: data.from, to: data.to }
-      );
+      ).catch((err: unknown) => {
+        projectManagerLog.warn(`Failed to log task:moved activity for ${projectId}:`, err);
+      });
     });
 
     // Forward task:updated
@@ -382,7 +386,9 @@ export class ProjectManager extends EventEmitter<ProjectManagerEvents> {
         projectId,
         projectName,
         `Error in ${projectName}: ${error.message}`
-      );
+      ).catch((err: unknown) => {
+        projectManagerLog.warn(`Failed to log task:failed activity for ${projectId}:`, err);
+      });
     });
 
     // Forward health changes

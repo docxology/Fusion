@@ -110,6 +110,13 @@ export class Scheduler {
   /** Tracks mission-linked tasks observed with status=failed before moveTask clears status/error. */
   private failedTaskIds = new Set<string>();
 
+  /**
+   * Async listener guard convention:
+   * - Any async mission helper invoked from event listeners is wrapped in internal try/catch
+   *   (`handleMissionTaskStart` / `handleMissionTaskCompletion`).
+   * - Fire-and-forget Promise chains in listeners terminate with `.catch(...)`.
+   * Keep this invariant when adding new async EventEmitter callbacks.
+   */
   constructor(
     private store: TaskStore,
     private options: SchedulerOptions = {},

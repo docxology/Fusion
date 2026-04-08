@@ -14,6 +14,7 @@ const {
   mockSelfHealingStart,
   mockSelfHealingStop,
   mockCheckStuckBudget,
+  mockStuckCheckNow,
 } = vi.hoisted(() => ({
   mockAuthStorage: { getAuth: vi.fn(), setAuth: vi.fn() },
   mockModelRegistry: {
@@ -28,6 +29,7 @@ const {
   mockSelfHealingStart: vi.fn(),
   mockSelfHealingStop: vi.fn(),
   mockCheckStuckBudget: vi.fn().mockResolvedValue(true),
+  mockStuckCheckNow: vi.fn().mockResolvedValue(undefined),
 }));
 
 // Minimal mock store backed by EventEmitter so `store.on` works
@@ -197,6 +199,14 @@ vi.mock("@fusion/engine", async (importOriginal) => {
         resumeOrphaned: vi.fn().mockResolvedValue(undefined),
       };
     }),
+    StuckTaskDetector: vi.fn().mockImplementation(() => ({
+      start: vi.fn(),
+      stop: vi.fn(),
+      checkNow: mockStuckCheckNow,
+      trackTask: vi.fn(),
+      untrackTask: vi.fn(),
+      markTaskProgress: vi.fn(),
+    })),
     Scheduler: vi.fn().mockImplementation(() => ({
       start: vi.fn(),
       stop: vi.fn(),
@@ -311,6 +321,8 @@ beforeEach(() => {
   mockExecSync.mockReset();
   mockExecSync.mockReturnValue("");
   mockExec.mockClear();
+  mockStuckCheckNow.mockReset();
+  mockStuckCheckNow.mockResolvedValue(undefined);
 });
 
 describe("PR merge helpers", () => {
@@ -918,6 +930,54 @@ describe("runDashboard — engine pause/unpause cycle", () => {
     await new Promise((r) => setTimeout(r, 50));
 
     expect(resumeOrphaned).toHaveBeenCalled();
+  });
+});
+
+describe("runDashboard — stuck task timeout listener guards", () => {
+  let mockStore: ReturnType<typeof makeMockStore>;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    resetGitHubMocks();
+    mockStore = makeMockStore();
+    const { TaskStore } = await import("@fusion/core");
+    (TaskStore as unknown as ReturnType<typeof vi.fn>).mockImplementation(() => mockStore);
+    const engine = await import("@fusion/engine");
+    (engine.TaskExecutor as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+      (_store: unknown, _cwd: unknown, opts: unknown) => {
+        capturedExecutorOpts = opts as Record<string, unknown>;
+        return { resumeOrphaned: vi.fn().mockResolvedValue(undefined) };
+      },
+    );
+  });
+
+  it("catches and logs checkNow errors when taskStuckTimeoutMs changes", async () => {
+    const detectorError = new Error("detector exploded");
+    mockStuckCheckNow.mockRejectedValueOnce(detectorError);
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const unhandledRejectionSpy = vi.fn();
+    process.on("unhandledRejection", unhandledRejectionSpy);
+
+    try {
+      await runDashboard(0, { open: false });
+
+      mockStore.emit("settings:updated", {
+        settings: { taskStuckTimeoutMs: 600_000 },
+        previous: { taskStuckTimeoutMs: 1_200_000 },
+      });
+
+      await new Promise((r) => setTimeout(r, 50));
+
+      expect(mockStuckCheckNow).toHaveBeenCalledTimes(1);
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        "[stuck-detector] Error during immediate stuck-task check:",
+        detectorError,
+      );
+      expect(unhandledRejectionSpy).not.toHaveBeenCalled();
+    } finally {
+      process.off("unhandledRejection", unhandledRejectionSpy);
+      consoleErrorSpy.mockRestore();
+    }
   });
 });
 

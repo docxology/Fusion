@@ -110,6 +110,7 @@ import type { Column, Task, TaskDetail } from "@fusion/core";
 import { SessionManager } from "@mariozechner/pi-coding-agent";
 import { StuckTaskDetector } from "./stuck-task-detector.js";
 import { StepSessionExecutor } from "./step-session-executor.js";
+import { executorLog } from "./logger.js";
 
 const mockedCreateHaiAgent = vi.mocked(createKbAgent);
 const mockedSessionManager = vi.mocked(SessionManager);
@@ -3008,6 +3009,41 @@ describe("TaskExecutor executor model hot-swap", () => {
     expect(dispose).toHaveBeenCalledTimes(1);
     expect(findModel).not.toHaveBeenCalled();
     expect(setModel).not.toHaveBeenCalled();
+  });
+});
+
+describe("TaskExecutor task:updated listener guards", () => {
+  it("catches and logs errors from async task:updated operations", async () => {
+    const store = createMockStore();
+    const terminateError = new Error("terminate failed");
+    const terminateAllSessions = vi.fn().mockRejectedValue(terminateError);
+
+    const executor = new TaskExecutor(store, "/tmp/test");
+    (executor as any).activeStepExecutors.set("FN-001", {
+      terminateAllSessions,
+    });
+
+    const taskUpdatedHandler = (store.on as unknown as ReturnType<typeof vi.fn>).mock.calls
+      .find((call: any[]) => call[0] === "task:updated")?.[1];
+
+    expect(taskUpdatedHandler).toBeTypeOf("function");
+
+    await expect(taskUpdatedHandler({
+      id: "FN-001",
+      title: "Guard test",
+      description: "Guard test",
+      column: "in-progress",
+      paused: true,
+      dependencies: [],
+      steps: [],
+      currentStep: 0,
+      log: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    } satisfies Task)).resolves.toBeUndefined();
+
+    expect(terminateAllSessions).toHaveBeenCalledTimes(1);
+    expect(executorLog.error).toHaveBeenCalledWith("Uncaught error in task:updated listener:", terminateError);
   });
 });
 

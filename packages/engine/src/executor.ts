@@ -329,117 +329,121 @@ export class TaskExecutor {
     // 4. Comments are marked as seen BEFORE injection to prevent retry loops on failure
     // 5. Each injection is logged to the task for user visibility
     store.on("task:updated", async (task) => {
-      // Handle pause - terminate the agent session or step sessions
-      if (task.paused && this.activeSessions.has(task.id)) {
-        executorLog.log(`Pausing ${task.id} — terminating agent session`);
-        this.pausedAborted.add(task.id);
-        this.options.stuckTaskDetector?.untrackTask(task.id);
-        const { session } = this.activeSessions.get(task.id)!;
-        session.dispose();
-        return;
-      }
-      if (task.paused && this.activeStepExecutors.has(task.id)) {
-        executorLog.log(`Pausing ${task.id} — terminating step sessions`);
-        this.pausedAborted.add(task.id);
-        this.options.stuckTaskDetector?.untrackTask(task.id);
-        const stepExecutor = this.activeStepExecutors.get(task.id)!;
-        await stepExecutor.terminateAllSessions();
-        return;
-      }
-
-      // Handle unpause of an in-progress task with no active session.
-      // This covers orphaned states (e.g., engine restarted while task was
-      // paused in-progress) where the task needs to resume execution.
-      // The executing/executing guards prevent duplicate runs.
-      if (!task.paused && task.column === "in-progress" && !this.activeSessions.has(task.id)) {
-        if (!this.executing.has(task.id)) {
-          executorLog.log(`Unpaused ${task.id} in-progress with no session — resuming execution`);
-          try {
-            await this.clearResumeFailureState(task);
-            await this.store.logEntry(task.id, "Resuming execution after unpause");
-          } catch { /* non-critical */ }
-          this.execute(task).catch((err) =>
-            executorLog.error(`Failed to resume unpaused ${task.id}:`, err),
-          );
+      try {
+        // Handle pause - terminate the agent session or step sessions
+        if (task.paused && this.activeSessions.has(task.id)) {
+          executorLog.log(`Pausing ${task.id} — terminating agent session`);
+          this.pausedAborted.add(task.id);
+          this.options.stuckTaskDetector?.untrackTask(task.id);
+          const { session } = this.activeSessions.get(task.id)!;
+          session.dispose();
+          return;
         }
-        return;
-      }
+        if (task.paused && this.activeStepExecutors.has(task.id)) {
+          executorLog.log(`Pausing ${task.id} — terminating step sessions`);
+          this.pausedAborted.add(task.id);
+          this.options.stuckTaskDetector?.untrackTask(task.id);
+          const stepExecutor = this.activeStepExecutors.get(task.id)!;
+          await stepExecutor.terminateAllSessions();
+          return;
+        }
 
-      // Handle executor model hot-swap on active single-session executions
-      if (this.activeSessions.has(task.id) && !task.paused) {
-        const activeEntry = this.activeSessions.get(task.id)!;
-        const providerChanged = task.modelProvider !== activeEntry.lastModelProvider;
-        const modelIdChanged = task.modelId !== activeEntry.lastModelId;
-
-        if (providerChanged || modelIdChanged) {
-          activeEntry.lastModelProvider = task.modelProvider;
-          activeEntry.lastModelId = task.modelId;
-
-          const settings = await this.store.getSettings();
-          const newProvider = task.modelProvider && task.modelId
-            ? task.modelProvider
-            : settings?.defaultProvider;
-          const newModelId = task.modelProvider && task.modelId
-            ? task.modelId
-            : settings?.defaultModelId;
-
-          if (newProvider && newModelId) {
+        // Handle unpause of an in-progress task with no active session.
+        // This covers orphaned states (e.g., engine restarted while task was
+        // paused in-progress) where the task needs to resume execution.
+        // The executing/executing guards prevent duplicate runs.
+        if (!task.paused && task.column === "in-progress" && !this.activeSessions.has(task.id)) {
+          if (!this.executing.has(task.id)) {
+            executorLog.log(`Unpaused ${task.id} in-progress with no session — resuming execution`);
             try {
-              const model = this.modelRegistry.find(newProvider, newModelId);
-              if (model) {
-                await activeEntry.session.setModel(model);
-                executorLog.log(`${task.id}: executor model hot-swapped to ${newProvider}/${newModelId}`);
-                await this.store.logEntry(task.id, `Model changed to ${newProvider}/${newModelId}`);
-              } else {
-                executorLog.log(`${task.id}: model ${newProvider}/${newModelId} not found in registry for hot-swap`);
+              await this.clearResumeFailureState(task);
+              await this.store.logEntry(task.id, "Resuming execution after unpause");
+            } catch { /* non-critical */ }
+            this.execute(task).catch((err) =>
+              executorLog.error(`Failed to resume unpaused ${task.id}:`, err),
+            );
+          }
+          return;
+        }
+
+        // Handle executor model hot-swap on active single-session executions
+        if (this.activeSessions.has(task.id) && !task.paused) {
+          const activeEntry = this.activeSessions.get(task.id)!;
+          const providerChanged = task.modelProvider !== activeEntry.lastModelProvider;
+          const modelIdChanged = task.modelId !== activeEntry.lastModelId;
+
+          if (providerChanged || modelIdChanged) {
+            activeEntry.lastModelProvider = task.modelProvider;
+            activeEntry.lastModelId = task.modelId;
+
+            const settings = await this.store.getSettings();
+            const newProvider = task.modelProvider && task.modelId
+              ? task.modelProvider
+              : settings?.defaultProvider;
+            const newModelId = task.modelProvider && task.modelId
+              ? task.modelId
+              : settings?.defaultModelId;
+
+            if (newProvider && newModelId) {
+              try {
+                const model = this.modelRegistry.find(newProvider, newModelId);
+                if (model) {
+                  await activeEntry.session.setModel(model);
+                  executorLog.log(`${task.id}: executor model hot-swapped to ${newProvider}/${newModelId}`);
+                  await this.store.logEntry(task.id, `Model changed to ${newProvider}/${newModelId}`);
+                } else {
+                  executorLog.log(`${task.id}: model ${newProvider}/${newModelId} not found in registry for hot-swap`);
+                }
+              } catch (err: any) {
+                executorLog.error(`${task.id}: failed to hot-swap model: ${err.message}`);
+                await this.store.logEntry(task.id, `Model change failed: ${err.message}`);
               }
-            } catch (err: any) {
-              executorLog.error(`${task.id}: failed to hot-swap model: ${err.message}`);
-              await this.store.logEntry(task.id, `Model change failed: ${err.message}`);
             }
           }
         }
-      }
 
-      // Handle steering comments - inject new ones into the running session
-      // Only process if session is active (activeSessions check is sufficient
-      // since entries are only added when a task is in-progress)
-      if (this.activeSessions.has(task.id) && task.steeringComments) {
-        const activeSession = this.activeSessions.get(task.id)!;
-        const { session, seenSteeringIds } = activeSession;
+        // Handle steering comments - inject new ones into the running session
+        // Only process if session is active (activeSessions check is sufficient
+        // since entries are only added when a task is in-progress)
+        if (this.activeSessions.has(task.id) && task.steeringComments) {
+          const activeSession = this.activeSessions.get(task.id)!;
+          const { session, seenSteeringIds } = activeSession;
 
-        // Find new steering comments that haven't been seen yet
-        const newComments = task.steeringComments.filter(c => !seenSteeringIds.has(c.id));
+          // Find new steering comments that haven't been seen yet
+          const newComments = task.steeringComments.filter(c => !seenSteeringIds.has(c.id));
 
-        if (newComments.length > 0) {
-          for (const comment of newComments) {
-            const summary = comment.text.length > 80
-              ? comment.text.slice(0, 80) + "..."
-              : comment.text;
+          if (newComments.length > 0) {
+            for (const comment of newComments) {
+              const summary = comment.text.length > 80
+                ? comment.text.slice(0, 80) + "..."
+                : comment.text;
 
-            // Mark as seen BEFORE attempting injection to prevent retry loops on failure
-            seenSteeringIds.add(comment.id);
+              // Mark as seen BEFORE attempting injection to prevent retry loops on failure
+              seenSteeringIds.add(comment.id);
 
-            // Format and inject the comment
-            const commentMessage = formatCommentForInjection(comment);
-            try {
-              executorLog.log(`Injecting comment into ${task.id}: ${summary}`);
-              await session.steer(commentMessage);
-              executorLog.log(`Successfully injected comment into ${task.id}`);
+              // Format and inject the comment
+              const commentMessage = formatCommentForInjection(comment);
+              try {
+                executorLog.log(`Injecting comment into ${task.id}: ${summary}`);
+                await session.steer(commentMessage);
+                executorLog.log(`Successfully injected comment into ${task.id}`);
 
-              // Log to the task that comment was received
-              await this.store.logEntry(
-                task.id,
-                `Comment received mid-execution: ${summary}`,
-                `by ${comment.author}`
-              );
-            } catch (err) {
-              executorLog.error(`Failed to inject comment for ${task.id}:`, err);
-              // Comment is already marked as seen - we won't retry to avoid spamming
-              // the agent with failed injections. The error is logged for debugging.
+                // Log to the task that comment was received
+                await this.store.logEntry(
+                  task.id,
+                  `Comment received mid-execution: ${summary}`,
+                  `by ${comment.author}`
+                );
+              } catch (err) {
+                executorLog.error(`Failed to inject comment for ${task.id}:`, err);
+                // Comment is already marked as seen - we won't retry to avoid spamming
+                // the agent with failed injections. The error is logged for debugging.
+              }
             }
           }
         }
+      } catch (err) {
+        executorLog.error("Uncaught error in task:updated listener:", err);
       }
     });
 

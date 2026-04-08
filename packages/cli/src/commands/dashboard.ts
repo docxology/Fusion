@@ -794,8 +794,12 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
     // immediately check for stuck tasks under the new timer value.
     registerHandler(store, "settings:updated", async ({ settings: s, previous: prev }) => {
       if (s.taskStuckTimeoutMs !== prev.taskStuckTimeoutMs) {
-        console.log(`[stuck-detector] Timeout changed to ${s.taskStuckTimeoutMs}ms — running immediate check`);
-        await stuckTaskDetector.checkNow();
+        try {
+          console.log(`[stuck-detector] Timeout changed to ${s.taskStuckTimeoutMs}ms — running immediate check`);
+          await stuckTaskDetector.checkNow();
+        } catch (err) {
+          console.error("[stuck-detector] Error during immediate stuck-task check:", err);
+        }
       }
     });
 
