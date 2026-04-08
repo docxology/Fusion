@@ -104,7 +104,7 @@ export interface WorkflowStep {
 
 /** Input for creating a new workflow step. */
 /** Event types that can trigger ntfy notifications */
-export type NtfyNotificationEvent = "in-review" | "merged" | "failed";
+export type NtfyNotificationEvent = "in-review" | "merged" | "failed" | "awaiting-approval";
 
 export interface WorkflowStepInput {
   /** Built-in template source ID when creating a concrete step from a template. */
@@ -990,7 +990,7 @@ export const DEFAULT_GLOBAL_SETTINGS: Required<Pick<GlobalSettings, "themeMode" 
   defaultThinkingLevel: undefined,
   ntfyEnabled: false,
   ntfyTopic: undefined,
-  ntfyEvents: ["in-review", "merged", "failed"],
+  ntfyEvents: ["in-review", "merged", "failed", "awaiting-approval"],
   ntfyDashboardHost: undefined,
   openrouterModelSync: true,
   modelOnboardingComplete: undefined,

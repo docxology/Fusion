@@ -40,7 +40,7 @@ interface NtfyConfig {
 }
 
 /** Event types for notification deduplication */
-type NotificationEventType = "in-review" | "merged" | "failed";
+type NotificationEventType = "in-review" | "merged" | "failed" | "awaiting-approval";
 
 /**
  * NtfyNotifier sends push notifications via ntfy.sh when tasks complete
@@ -50,11 +50,11 @@ type NotificationEventType = "in-review" | "merged" | "failed";
  * Features:
  * - Runtime reconfiguration via settings:updated events
  * - Best-effort delivery (errors are logged but never thrown)
- * - Duplicate prevention per event type (in-review, merged, failed)
+ * - Duplicate prevention per event type (in-review, merged, failed, awaiting-approval)
  * - Configurable notification events (hardcoded defaults)
  */
 export class NtfyNotifier {
-  private config: NtfyConfig = { enabled: false, topic: undefined, dashboardHost: undefined, events: ["in-review", "merged", "failed"] };
+  private config: NtfyConfig = { enabled: false, topic: undefined, dashboardHost: undefined, events: ["in-review", "merged", "failed", "awaiting-approval"] };
   private ntfyBaseUrl: string;
   /** Project identifier for deep links in notifications */
   private projectId?: string;
@@ -157,6 +157,20 @@ export class NtfyNotifier {
         ),
       );
     }
+
+    // Notify when task requires manual plan approval
+    if (task.status === "awaiting-approval" && this.isEventEnabled("awaiting-approval")) {
+      const clickUrl = this.buildTaskUrl(task.id);
+      this.maybeNotify(task.id, "awaiting-approval", () =>
+        this.sendNotification(
+          this.config.topic!,
+          `Plan needs approval for ${task.id}`,
+          `Task "${formatTaskIdentifier(task)}" needs your approval before it can proceed`,
+          "high",
+          clickUrl,
+        ),
+      );
+    }
   };
 
   private handleTaskMerged = (result: MergeResult): void => {
@@ -207,7 +221,7 @@ export class NtfyNotifier {
       enabled: settings.ntfyEnabled ?? false,
       topic: settings.ntfyTopic,
       dashboardHost: settings.ntfyDashboardHost,
-      events: settings.ntfyEvents ?? ["in-review", "merged", "failed"],
+      events: settings.ntfyEvents ?? ["in-review", "merged", "failed", "awaiting-approval"],
     };
   }
 

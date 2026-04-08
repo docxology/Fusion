@@ -946,12 +946,13 @@ To enable manual plan approval:
 
 ### `ntfyEnabled` (default: `false`)
 
-When true, enables ntfy.sh push notifications for task completion and failures.
+When true, enables ntfy.sh push notifications for task completion, failures, and plan approval requests.
 
 **Notification events:**
 - Task moves to "in-review" — "Task completed — ready for review"
 - Task moves to "done" — "Task merged to main"
 - Task status becomes "failed" — "Task failed" (high priority)
+- Task status becomes "awaiting-approval" — "Plan needs approval for {taskId}" (high priority)
 
 **Configuration:**
 1. Go to https://ntfy.sh and pick a unique topic name (or self-host ntfy)
@@ -963,7 +964,8 @@ When true, enables ntfy.sh push notifications for task completion and failures.
 {
   "settings": {
     "ntfyEnabled": true,
-    "ntfyTopic": "my-kb-notifications"
+    "ntfyTopic": "my-kb-notifications",
+    "ntfyEvents": ["in-review", "merged", "failed", "awaiting-approval"]
   }
 }
 ```

@@ -178,6 +178,29 @@ describe("NtfyNotifier", () => {
       );
     });
 
+    it("sends high priority notification when task is awaiting approval", async () => {
+      notifier = new NtfyNotifier(store);
+      await notifier.start();
+
+      const awaitingApprovalTask = createTask("FN-002", "Spec Task", "awaiting-approval");
+      store.triggerTaskUpdated(awaitingApprovalTask);
+
+      await flushAsyncWork();
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(fetchMock).toHaveBeenCalledWith(
+        "https://ntfy.sh/test-topic",
+        expect.objectContaining({
+          method: "POST",
+          headers: expect.objectContaining({
+            "Title": "Plan needs approval for FN-002",
+            "Priority": "high",
+          }),
+          body: 'Task "Spec Task" needs your approval before it can proceed',
+        })
+      );
+    });
+
     it("sends notification when task is merged", async () => {
       notifier = new NtfyNotifier(store);
       await notifier.start();
@@ -386,6 +409,29 @@ describe("NtfyNotifier", () => {
         expect.objectContaining({
           headers: expect.objectContaining({
             "Click": "https://fusion.example.com/?task=FN-001",
+          }),
+        })
+      );
+    });
+
+    it("includes Click header for awaiting-approval notifications when dashboard host is set", async () => {
+      store.setSettings({
+        ntfyEnabled: true,
+        ntfyTopic: "test-topic",
+        ntfyDashboardHost: "https://fusion.example.com",
+      });
+      notifier = new NtfyNotifier(store);
+      await notifier.start();
+
+      const awaitingApprovalTask = createTask("FN-002", "Spec Task", "awaiting-approval");
+      store.triggerTaskUpdated(awaitingApprovalTask);
+      await flushAsyncWork();
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        "https://ntfy.sh/test-topic",
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            "Click": "https://fusion.example.com/?task=FN-002",
           }),
         })
       );
@@ -700,6 +746,29 @@ describe("NtfyNotifier", () => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
+    it("prevents duplicate awaiting-approval notifications for the same task", async () => {
+      notifier = new NtfyNotifier(store);
+      await notifier.start();
+
+      const task = createTask("FN-004", "Approval Task", "awaiting-approval");
+
+      store.triggerTaskUpdated(task);
+      store.triggerTaskUpdated(task);
+      store.triggerTaskUpdated(task);
+
+      await flushAsyncWork();
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(fetchMock).toHaveBeenCalledWith(
+        "https://ntfy.sh/test-topic",
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            "Title": "Plan needs approval for FN-004",
+          }),
+        }),
+      );
+    });
+
     it("allows different event types for the same task", async () => {
       notifier = new NtfyNotifier(store);
       await notifier.start();
@@ -723,6 +792,21 @@ describe("NtfyNotifier", () => {
       await flushAsyncWork();
 
       // Should have two notifications now
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it("allows awaiting-approval alongside other event types for the same task", async () => {
+      notifier = new NtfyNotifier(store);
+      await notifier.start();
+
+      const task = createTask("FN-005", "Approval + Failure");
+
+      store.triggerTaskUpdated({ ...task, status: "awaiting-approval" });
+      await flushAsyncWork();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+
+      store.triggerTaskUpdated({ ...task, status: "failed" });
+      await flushAsyncWork();
       expect(fetchMock).toHaveBeenCalledTimes(2);
     });
 
@@ -982,7 +1066,7 @@ describe("NtfyNotifier", () => {
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
-    it("does not notify on task:updated when status is not failed", async () => {
+    it("does not notify on task:updated when status is neither failed nor awaiting-approval", async () => {
       store.setSettings({ ntfyEnabled: true, ntfyTopic: "test-topic" });
       fetchMock.mockResolvedValue({ ok: true });
       notifier = new NtfyNotifier(store);
@@ -1016,7 +1100,7 @@ describe("NtfyNotifier", () => {
     });
 
     it("does not send in-review notification when 'in-review' is not in ntfyEvents", async () => {
-      store.setSettings({ ntfyEnabled: true, ntfyTopic: "test-topic", ntfyEvents: ["merged", "failed"] });
+      store.setSettings({ ntfyEnabled: true, ntfyTopic: "test-topic", ntfyEvents: ["merged", "failed", "awaiting-approval"] });
       notifier = new NtfyNotifier(store);
       await notifier.start();
 
@@ -1027,7 +1111,7 @@ describe("NtfyNotifier", () => {
     });
 
     it("does not send merged notification when 'merged' is not in ntfyEvents", async () => {
-      store.setSettings({ ntfyEnabled: true, ntfyTopic: "test-topic", ntfyEvents: ["in-review", "failed"] });
+      store.setSettings({ ntfyEnabled: true, ntfyTopic: "test-topic", ntfyEvents: ["in-review", "failed", "awaiting-approval"] });
       notifier = new NtfyNotifier(store);
       await notifier.start();
 
@@ -1045,12 +1129,24 @@ describe("NtfyNotifier", () => {
     });
 
     it("does not send failed notification when 'failed' is not in ntfyEvents", async () => {
-      store.setSettings({ ntfyEnabled: true, ntfyTopic: "test-topic", ntfyEvents: ["in-review", "merged"] });
+      store.setSettings({ ntfyEnabled: true, ntfyTopic: "test-topic", ntfyEvents: ["in-review", "merged", "awaiting-approval"] });
       notifier = new NtfyNotifier(store);
       await notifier.start();
 
       const failedTask = createTask("FN-001", "Test Task", "failed");
       store.triggerTaskUpdated(failedTask);
+      await flushAsyncWork();
+
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("does not send awaiting-approval notification when 'awaiting-approval' is not in ntfyEvents", async () => {
+      store.setSettings({ ntfyEnabled: true, ntfyTopic: "test-topic", ntfyEvents: ["in-review", "merged", "failed"] });
+      notifier = new NtfyNotifier(store);
+      await notifier.start();
+
+      const awaitingApprovalTask = createTask("FN-006", "Approval Task", "awaiting-approval");
+      store.triggerTaskUpdated(awaitingApprovalTask);
       await flushAsyncWork();
 
       expect(fetchMock).not.toHaveBeenCalled();
@@ -1083,6 +1179,12 @@ describe("NtfyNotifier", () => {
       store.triggerTaskUpdated(failedTask);
       await flushAsyncWork();
       expect(fetchMock).toHaveBeenCalledTimes(1); // Still 1, no new call
+
+      // awaiting-approval - should NOT send
+      const awaitingApprovalTask = createTask("FN-004", "Test Task 4", "awaiting-approval");
+      store.triggerTaskUpdated(awaitingApprovalTask);
+      await flushAsyncWork();
+      expect(fetchMock).toHaveBeenCalledTimes(1); // Still 1, no new call
     });
 
     it("defaults to all events when ntfyEvents is undefined", async () => {
@@ -1109,10 +1211,15 @@ describe("NtfyNotifier", () => {
       store.triggerTaskUpdated(failedTask);
       await flushAsyncWork();
       expect(fetchMock).toHaveBeenCalledTimes(3);
+
+      const awaitingApprovalTask = createTask("FN-004", "Test Task 4", "awaiting-approval");
+      store.triggerTaskUpdated(awaitingApprovalTask);
+      await flushAsyncWork();
+      expect(fetchMock).toHaveBeenCalledTimes(4);
     });
 
     it("updates notifications when ntfyEvents changes at runtime", async () => {
-      store.setSettings({ ntfyEnabled: true, ntfyTopic: "test-topic", ntfyEvents: ["in-review", "merged", "failed"] });
+      store.setSettings({ ntfyEnabled: true, ntfyTopic: "test-topic", ntfyEvents: ["in-review", "merged", "failed", "awaiting-approval"] });
       notifier = new NtfyNotifier(store);
       await notifier.start();
 
@@ -1122,14 +1229,14 @@ describe("NtfyNotifier", () => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
 
       // Disable in-review
-      store.setSettings({ ntfyEvents: ["merged", "failed"] });
+      store.setSettings({ ntfyEvents: ["merged", "failed", "awaiting-approval"] });
 
       store.triggerTaskMoved(createTask("FN-002", "Test Task 2"), "in-progress", "in-review");
       await flushAsyncWork();
       expect(fetchMock).toHaveBeenCalledTimes(1); // No new call for in-review
 
       // Enable in-review again
-      store.setSettings({ ntfyEvents: ["in-review", "merged", "failed"] });
+      store.setSettings({ ntfyEvents: ["in-review", "merged", "failed", "awaiting-approval"] });
 
       store.triggerTaskMoved(createTask("FN-003", "Test Task 3"), "in-progress", "in-review");
       await flushAsyncWork();

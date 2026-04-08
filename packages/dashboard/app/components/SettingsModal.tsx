@@ -1679,7 +1679,7 @@ export function SettingsModal({
                       type="checkbox"
                       checked={form.ntfyEvents?.includes("in-review") ?? true}
                       onChange={(e) => {
-                        const current = form.ntfyEvents ?? (["in-review", "merged", "failed"] as NtfyNotificationEvent[]);
+                        const current = form.ntfyEvents ?? (["in-review", "merged", "failed", "awaiting-approval"] as NtfyNotificationEvent[]);
                         const newEvents = e.target.checked
                           ? (current.includes("in-review") ? current : [...current, "in-review" as NtfyNotificationEvent])
                           : current.filter((ev): ev is NtfyNotificationEvent => ev !== "in-review");
@@ -1695,7 +1695,7 @@ export function SettingsModal({
                       type="checkbox"
                       checked={form.ntfyEvents?.includes("merged") ?? true}
                       onChange={(e) => {
-                        const current = form.ntfyEvents ?? (["in-review", "merged", "failed"] as NtfyNotificationEvent[]);
+                        const current = form.ntfyEvents ?? (["in-review", "merged", "failed", "awaiting-approval"] as NtfyNotificationEvent[]);
                         const newEvents = e.target.checked
                           ? (current.includes("merged") ? current : [...current, "merged" as NtfyNotificationEvent])
                           : current.filter((ev): ev is NtfyNotificationEvent => ev !== "merged");
@@ -1711,7 +1711,7 @@ export function SettingsModal({
                       type="checkbox"
                       checked={form.ntfyEvents?.includes("failed") ?? true}
                       onChange={(e) => {
-                        const current = form.ntfyEvents ?? (["in-review", "merged", "failed"] as NtfyNotificationEvent[]);
+                        const current = form.ntfyEvents ?? (["in-review", "merged", "failed", "awaiting-approval"] as NtfyNotificationEvent[]);
                         const newEvents = e.target.checked
                           ? (current.includes("failed") ? current : [...current, "failed" as NtfyNotificationEvent])
                           : current.filter((ev): ev is NtfyNotificationEvent => ev !== "failed");
@@ -1721,6 +1721,22 @@ export function SettingsModal({
                     Task failed
                   </label>
                   <small>When a task fails during execution (high priority)</small>
+
+                  <label className="checkbox-label">
+                    <input
+                      type="checkbox"
+                      checked={form.ntfyEvents?.includes("awaiting-approval") ?? true}
+                      onChange={(e) => {
+                        const current = form.ntfyEvents ?? (["in-review", "merged", "failed", "awaiting-approval"] as NtfyNotificationEvent[]);
+                        const newEvents = e.target.checked
+                          ? (current.includes("awaiting-approval") ? current : [...current, "awaiting-approval" as NtfyNotificationEvent])
+                          : current.filter((ev): ev is NtfyNotificationEvent => ev !== "awaiting-approval");
+                        setForm((f) => ({ ...f, ntfyEvents: newEvents.length > 0 ? newEvents : undefined }));
+                      }}
+                    />
+                    Plan needs approval
+                  </label>
+                  <small>When a task specification needs manual approval before execution</small>
                 </div>
               </div>
               <div className="form-group">
