@@ -1734,3 +1734,137 @@ describe("stale approval detection", () => {
     await rm(rootDir, { recursive: true, force: true });
   });
 });
+
+describe("pause-abort status clearing (bug fix)", () => {
+  it("clears specifying status to null on global pause (not a no-op)", async () => {
+    const settingsListeners: Array<(e: any) => void> = [];
+
+    const store = {
+      on: vi.fn((event: string, cb: (e: any) => void) => {
+        if (event === "settings:updated") settingsListeners.push(cb);
+      }),
+      getTask: vi.fn().mockResolvedValue({ ...mockTaskDetail }),
+      getSettings: vi.fn().mockResolvedValue({ maxConcurrent: 2, maxWorktrees: 4, pollIntervalMs: 10000, groupOverlappingFiles: false, autoMerge: true } as Settings),
+      listTasks: vi.fn().mockResolvedValue([]),
+      updateTask: vi.fn().mockResolvedValue(undefined),
+      logEntry: vi.fn().mockResolvedValue(undefined),
+      appendAgentLog: vi.fn().mockResolvedValue(undefined),
+      parseDependenciesFromPrompt: vi.fn().mockResolvedValue([]),
+    } as unknown as TaskStore;
+
+    let resolveDispose: () => void;
+    const disposePromise = new Promise<void>((r) => { resolveDispose = r; });
+    mockCreateKbAgent.mockResolvedValue({
+      session: {
+        state: {},
+        sessionManager: {},
+        prompt: vi.fn().mockReturnValue(disposePromise),
+        dispose: vi.fn().mockImplementation(() => resolveDispose()),
+        navigateTree: vi.fn(),
+      },
+    });
+
+    const task: Task = { id: "FN-001", description: "test", column: "triage", dependencies: [], steps: [], currentStep: 0, log: [], createdAt: "", updatedAt: "" };
+    const processor = new TriageProcessor(store, "/tmp/root");
+    const specifyPromise = processor.specifyTask(task);
+
+    await new Promise((r) => setTimeout(r, 20));
+
+    for (const fn of settingsListeners) {
+      fn({ settings: { globalPause: true }, previous: { globalPause: false } });
+    }
+
+    await specifyPromise;
+
+    // Status must be set to null so the next poll can retry (old bug: undefined was a no-op)
+    const nullStatusCall = (store.updateTask as ReturnType<typeof vi.fn>).mock.calls
+      .find((c) => c[1]?.status === null);
+    expect(nullStatusCall).toBeDefined();
+
+    const undefinedStatusCall = (store.updateTask as ReturnType<typeof vi.fn>).mock.calls
+      .find((c) => "status" in c[1] && c[1].status === undefined);
+    expect(undefinedStatusCall).toBeUndefined();
+  });
+});
+
+describe("stuck task detector integration", () => {
+  it("markStuckAborted clears specifying status to null for retry", async () => {
+    const store = {
+      on: vi.fn(),
+      getTask: vi.fn().mockResolvedValue({ ...mockTaskDetail }),
+      getSettings: vi.fn().mockResolvedValue({ maxConcurrent: 2, maxWorktrees: 4, pollIntervalMs: 10000, groupOverlappingFiles: false, autoMerge: true } as Settings),
+      listTasks: vi.fn().mockResolvedValue([]),
+      updateTask: vi.fn().mockResolvedValue(undefined),
+      logEntry: vi.fn().mockResolvedValue(undefined),
+      appendAgentLog: vi.fn().mockResolvedValue(undefined),
+      parseDependenciesFromPrompt: vi.fn().mockResolvedValue([]),
+    } as unknown as TaskStore;
+
+    let resolveDispose: () => void;
+    let mockDispose: ReturnType<typeof vi.fn>;
+    const disposePromise = new Promise<void>((r) => { resolveDispose = r; });
+    mockDispose = vi.fn().mockImplementation(() => resolveDispose());
+    mockCreateKbAgent.mockResolvedValue({
+      session: {
+        state: {},
+        sessionManager: {},
+        prompt: vi.fn().mockReturnValue(disposePromise),
+        dispose: mockDispose,
+        navigateTree: vi.fn(),
+      },
+    });
+
+    const task: Task = { id: "FN-001", description: "test", column: "triage", dependencies: [], steps: [], currentStep: 0, log: [], createdAt: "", updatedAt: "" };
+    const processor = new TriageProcessor(store, "/tmp/root");
+    const specifyPromise = processor.specifyTask(task);
+
+    await new Promise((r) => setTimeout(r, 20));
+
+    // Stuck detector marks task then disposes the session (simulating StuckTaskDetector.killAndRetry)
+    processor.markStuckAborted("FN-001");
+    mockDispose();
+
+    await specifyPromise;
+
+    // Status cleared to null so next poll retries
+    const nullStatusCall = (store.updateTask as ReturnType<typeof vi.fn>).mock.calls
+      .find((c) => c[1]?.status === null);
+    expect(nullStatusCall).toBeDefined();
+  });
+
+  it("tracks and untracks sessions with stuckTaskDetector", async () => {
+    const trackTask = vi.fn();
+    const untrackTask = vi.fn();
+    const recordActivity = vi.fn();
+    const mockDetector = { trackTask, untrackTask, recordActivity } as any;
+
+    const store = {
+      on: vi.fn(),
+      getTask: vi.fn().mockResolvedValue({ ...mockTaskDetail }),
+      getSettings: vi.fn().mockResolvedValue({ maxConcurrent: 2, maxWorktrees: 4, pollIntervalMs: 10000, groupOverlappingFiles: false, autoMerge: true } as Settings),
+      listTasks: vi.fn().mockResolvedValue([]),
+      updateTask: vi.fn().mockResolvedValue(undefined),
+      logEntry: vi.fn().mockResolvedValue(undefined),
+      appendAgentLog: vi.fn().mockResolvedValue(undefined),
+      parseDependenciesFromPrompt: vi.fn().mockResolvedValue([]),
+    } as unknown as TaskStore;
+
+    mockCreateKbAgent.mockResolvedValue({
+      session: {
+        state: {},
+        sessionManager: {},
+        prompt: vi.fn().mockResolvedValue(undefined),
+        dispose: vi.fn(),
+        navigateTree: vi.fn(),
+      },
+    });
+
+    const task: Task = { id: "FN-001", description: "test", column: "triage", dependencies: [], steps: [], currentStep: 0, log: [], createdAt: "", updatedAt: "" };
+    const processor = new TriageProcessor(store, "/tmp/root", { stuckTaskDetector: mockDetector });
+    await processor.specifyTask(task);
+
+    expect(trackTask).toHaveBeenCalledWith("FN-001", expect.objectContaining({ dispose: expect.any(Function) }));
+    expect(untrackTask).toHaveBeenCalledWith("FN-001");
+    expect(recordActivity).toHaveBeenCalled();
+  });
+});

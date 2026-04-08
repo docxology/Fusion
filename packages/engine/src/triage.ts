@@ -26,6 +26,7 @@ import {
 import { isTransientError, isSilentTransientError } from "./transient-error-detector.js";
 import { withRateLimitRetry } from "./rate-limit-retry.js";
 import { computeRecoveryDecision, formatDelay, MAX_RECOVERY_RETRIES } from "./recovery-policy.js";
+import type { StuckTaskDetector } from "./stuck-task-detector.js";
 
 export const TRIAGE_SYSTEM_PROMPT = `You are a task specification agent for "kb", an AI-orchestrated task board.
 
@@ -233,6 +234,8 @@ export interface TriageProcessorOptions {
   semaphore?: AgentSemaphore;
   /** Usage limit pauser — triggers global pause when API limits are detected. */
   usageLimitPauser?: UsageLimitPauser;
+  /** Stuck task detector — monitors triage sessions for stagnation and triggers recovery. */
+  stuckTaskDetector?: StuckTaskDetector;
   onSpecifyStart?: (task: Task) => void;
   onSpecifyComplete?: (task: Task) => void;
   onSpecifyError?: (task: Task, error: Error) => void;
@@ -264,6 +267,8 @@ export class TriageProcessor {
   private activeSessions = new Map<string, { dispose: () => void }>();
   /** Tasks aborted due to globalPause (to avoid reporting as errors). */
   private pauseAborted = new Set<string>();
+  /** Tasks killed by the stuck task detector (to avoid reporting as errors). */
+  private stuckAborted = new Set<string>();
 
   /**
    * @param store — Task store instance (also used to listen for `settings:updated` events)
@@ -288,6 +293,7 @@ export class TriageProcessor {
             `Global pause — terminating triage session for ${taskId}`,
           );
           this.pauseAborted.add(taskId);
+          this.options.stuckTaskDetector?.untrackTask(taskId);
           session.dispose();
         }
       }
@@ -340,6 +346,15 @@ export class TriageProcessor {
       this.activePollMs = null;
     }
     triageLog.log("Processor stopped");
+  }
+
+  /**
+   * Mark a task as stuck-aborted so the catch block knows not to treat
+   * the disposed session as a genuine failure.
+   * Called by the stuck task detector's onStuck callback.
+   */
+  markStuckAborted(taskId: string): void {
+    this.stuckAborted.add(taskId);
   }
 
   /**
@@ -451,14 +466,18 @@ export class TriageProcessor {
         // tasks waiting in the queue don't appear as "specifying".
         await this.store.updateTask(task.id, { status: "specifying" });
 
+        const stuckDetector = this.options.stuckTaskDetector;
+
         const agentLogger = new AgentLogger({
           store: this.store,
           taskId: task.id,
           agent: "triage",
-          onAgentText: this.options.onAgentText
-            ? (id, delta) => this.options.onAgentText!(id, delta)
-            : undefined,
+          onAgentText: (id, delta) => {
+            stuckDetector?.recordActivity(task.id);
+            this.options.onAgentText?.(id, delta);
+          },
           onAgentTool: (_id, name) => {
+            stuckDetector?.recordActivity(task.id);
             triageLog.log(`${task.id} tool: ${name}`);
           },
         });
@@ -560,6 +579,10 @@ export class TriageProcessor {
 
         // Register session so the global pause listener can terminate it
         this.activeSessions.set(task.id, session);
+
+        // Register with stuck task detector for heartbeat monitoring
+        stuckDetector?.trackTask(task.id, session);
+        stuckDetector?.recordActivity(task.id);
 
         try {
           // Read attachment contents for inlining in prompt
@@ -734,6 +757,7 @@ export class TriageProcessor {
           }
         } finally {
           this.activeSessions.delete(task.id);
+          stuckDetector?.untrackTask(task.id);
           await agentLogger.flush();
           session.dispose();
         }
@@ -761,8 +785,16 @@ export class TriageProcessor {
         // Pause (global or engine) — clear specifying status without reporting an error
         this.pauseAborted.delete(task.id);
         triageLog.log(`${task.id} aborted by pause — clearing status`);
-        // For re-specification, restore needs-respecify status
-        const restoreStatus = task.status === "needs-respecify" ? "needs-respecify" : undefined;
+        // For re-specification, restore needs-respecify status; otherwise clear to null
+        // so the next poll can re-pick this task up.
+        const restoreStatus = task.status === "needs-respecify" ? "needs-respecify" : null;
+        await this.store.updateTask(task.id, { status: restoreStatus }).catch(() => {});
+      } else if (this.stuckAborted.has(task.id)) {
+        // Stuck task detector killed this session — clear specifying status so the
+        // next poll retries the task from scratch without reporting an error.
+        this.stuckAborted.delete(task.id);
+        triageLog.log(`${task.id} killed by stuck detector — clearing status for retry`);
+        const restoreStatus = task.status === "needs-respecify" ? "needs-respecify" : null;
         await this.store.updateTask(task.id, { status: restoreStatus }).catch(() => {});
       } else {
         // Check if the error is a usage-limit error and trigger global pause
@@ -787,7 +819,7 @@ export class TriageProcessor {
               triageLog.warn(`⚡ ${task.id} transient error during triage — retry ${attempt}/${MAX_RECOVERY_RETRIES} in ${delay}: ${err.message}`);
               await this.store.logEntry(task.id, `Transient error during specification (retry ${attempt}/${MAX_RECOVERY_RETRIES} in ${delay}): ${err.message}`).catch(() => {});
             }
-            const restoreStatus = task.status === "needs-respecify" ? "needs-respecify" : undefined;
+            const restoreStatus = task.status === "needs-respecify" ? "needs-respecify" : null;
             await this.store.updateTask(task.id, {
               status: restoreStatus,
               recoveryRetryCount: decision.nextState.recoveryRetryCount,
@@ -807,8 +839,9 @@ export class TriageProcessor {
           this.options.onSpecifyError?.(task, err);
           return;
         }
-        // For re-specification, restore needs-respecify status so it can be retried
-        const restoreStatus = task.status === "needs-respecify" ? "needs-respecify" : undefined;
+        // For re-specification, restore needs-respecify status so it can be retried;
+        // otherwise clear to null so the next poll can re-pick the task up.
+        const restoreStatus = task.status === "needs-respecify" ? "needs-respecify" : null;
         await this.store.updateTask(task.id, { status: restoreStatus }).catch(() => {});
         triageLog.error(`✗ ${task.id} specification failed:`, err.message);
         this.options.onSpecifyError?.(task, err);

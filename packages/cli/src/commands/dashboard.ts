@@ -578,15 +578,6 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
 
   // Start the AI engine (unless in dev mode)
   if (!opts.dev) {
-    const triage = new TriageProcessor(store, cwd, {
-      semaphore,
-      usageLimitPauser,
-      agentStore,
-      onSpecifyStart: (t) => console.log(`[engine] Specifying ${t.id}...`),
-      onSpecifyComplete: (t) => console.log(`[engine] ✓ ${t.id} → todo`),
-      onSpecifyError: (t, e) => console.log(`[engine] ✗ ${t.id}: ${e.message}`),
-    });
-
     // ── Self-healing: auto-unpause, stuck kill budgets, maintenance ─────
     const selfHealing = new SelfHealingManager(store, {
       rootDir: cwd,
@@ -595,14 +586,18 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
     });
 
     // ── Stuck task detector: monitors agent sessions for stagnation ────
-    // Created before the executor so it can be passed in options.
-    // The onStuck callback is wired to executor.markStuckAborted after
-    // executor creation (late-binding via closure on executorRef).
+    // Created before triage/executor so it can be passed in options.
+    // The onStuck callback is wired via late-binding closures on triageRef
+    // and executorRef to avoid circular construction order dependencies.
     const executorRef: { current: TaskExecutor | null } = { current: null };
+    const triageRef: { current: TriageProcessor | null } = { current: null };
     const stuckTaskDetector = new StuckTaskDetector(store, {
       beforeRequeue: (taskId) => selfHealing.checkStuckBudget(taskId),
       onLoopDetected: (event) => executorRef.current?.handleLoopDetected(event) ?? Promise.resolve(false),
       onStuck: (event) => {
+        // Notify whichever component owns this task (triage or executor).
+        // Both check their own tracking sets so only the owner acts.
+        triageRef.current?.markStuckAborted(event.taskId);
         executorRef.current?.markStuckAborted(event.taskId, event.shouldRequeue);
         console.log(
           `[engine] ⚠ ${event.taskId} stuck (${event.reason}) — ` +
@@ -612,6 +607,17 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
         );
       },
     });
+
+    const triage = new TriageProcessor(store, cwd, {
+      semaphore,
+      usageLimitPauser,
+      stuckTaskDetector,
+      agentStore,
+      onSpecifyStart: (t) => console.log(`[engine] Specifying ${t.id}...`),
+      onSpecifyComplete: (t) => console.log(`[engine] ✓ ${t.id} → todo`),
+      onSpecifyError: (t, e) => console.log(`[engine] ✗ ${t.id}: ${e.message}`),
+    });
+    triageRef.current = triage;
 
     const executor = new TaskExecutor(store, cwd, {
       semaphore,
