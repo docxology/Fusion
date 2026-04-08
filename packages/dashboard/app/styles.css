@@ -5935,6 +5935,20 @@ body {
     width: 100%;
     max-height: 200px;
   }
+
+  /* Model combobox dropdown: mobile-friendly sizing */
+  .model-combobox-dropdown {
+    max-height: 50vh;
+    width: min(360px, calc(100vw - 32px));
+  }
+
+  .model-combobox-search {
+    font-size: 16px;
+  }
+
+  .model-combobox-option {
+    min-height: 44px;
+  }
 }
 
 /* === Tablet Responsive Tier (769px–1024px) === */
@@ -8911,15 +8925,25 @@ body {
 /* Mobile responsive model dropdown */
 @media (max-width: 768px) {
   .model-combobox-dropdown {
-    max-height: 70vh;
-    max-height: 70dvh; /* Use dynamic viewport height where supported */
+    max-height: 50vh;
+    max-height: 50dvh; /* Use dynamic viewport height where supported */
+    width: min(360px, calc(100vw - 32px));
+  }
+
+  .model-combobox-search {
+    font-size: 16px;
+  }
+
+  .model-combobox-option {
+    min-height: 44px;
   }
 }
 
 @media (max-width: 640px) {
   .model-combobox-dropdown {
-    max-height: 60vh;
-    max-height: 60dvh;
+    max-height: 50vh;
+    max-height: 50dvh;
+    width: min(360px, calc(100vw - 32px));
   }
 }
 
@@ -14138,6 +14162,74 @@ body[data-color-theme="terminal"][data-theme="light"]::before {
 
   /* Prevent mobile zoom on focus for planning text inputs (16px minimum) */
   .planning-textarea {
+    font-size: 16px;
+  }
+
+  /* Planning options compact on mobile */
+  .planning-option {
+    padding: 12px;
+  }
+
+  /* Subtask breakdown: touch-friendly drag handles with padding */
+  .subtask-drag-handle {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Subtask action buttons meet 44px touch target */
+  .subtask-item-actions .btn-icon {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  /* Subtask items: prevent overflow */
+  .subtask-item-header {
+    flex-wrap: wrap;
+    gap: var(--space-xs);
+  }
+
+  /* Dependency chips: touch-friendly */
+  .planning-dep-chip {
+    min-height: 44px;
+  }
+
+  /* Size select: prevent iOS zoom */
+  .planning-size-select {
+    font-size: 16px;
+  }
+
+  /* Progress bar compact on narrow screens */
+  .planning-progress-bar {
+    gap: var(--space-xs);
+  }
+
+  .planning-progress-text {
+    font-size: 11px;
+  }
+
+  /* Confirm buttons meet 44px touch target */
+  .planning-confirm-btn {
+    min-height: 44px;
+    padding: var(--space-sm) var(--space-md);
+  }
+
+  /* Model selection: rows don't overflow */
+  .planning-modal-body .inline-create-model-row {
+    gap: var(--space-sm);
+  }
+
+  .planning-modal-body .model-badge {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Model selection: prevent iOS zoom on select elements */
+  .planning-modal-body select {
     font-size: 16px;
   }
 }
@@ -20845,6 +20937,46 @@ body[data-color-theme="terminal"][data-theme="light"]::before {
   /* Confirm panels: full-width, no horizontal overflow */
   .mission-confirm-panel__content {
     padding: var(--space-md);
+  }
+
+  /* Header wraps on narrow screens */
+  .mission-manager__header {
+    flex-wrap: wrap;
+    gap: var(--space-xs);
+  }
+
+  /* Fix touch targets to meet 44px minimum */
+  .mission-list__item-actions .mission-icon-btn,
+  .mission-milestone__actions .mission-icon-btn,
+  .mission-slice__actions .mission-icon-btn,
+  .mission-feature__actions .mission-icon-btn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  /* Prevent horizontal overflow in body */
+  .mission-manager__body {
+    overflow-x: hidden;
+  }
+
+  /* Detail view safe area bottom padding */
+  .mission-detail {
+    padding-bottom: calc(var(--space-lg) + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* Feature actions wrap on narrow screens */
+  .mission-feature__actions {
+    flex-wrap: wrap;
+  }
+
+  /* Progress bars fit narrow screens */
+  .mission-list__item-progress-bar {
+    max-width: 100%;
+  }
+
+  /* Confirm panel inputs fill width */
+  .mission-confirm-panel__content input[type="text"] {
+    width: 100%;
   }
 }
 
