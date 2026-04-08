@@ -157,8 +157,49 @@ export function TerminalModal({ isOpen, onClose, initialCommand }: TerminalModal
   const hasInitialCommandRun = useRef<string | false>(false);
   const xtermInitializedRef = useRef<string | false>(false);
   const resizeRef = useRef<((cols: number, rows: number) => void) | null>(null);
+  const keyboardOverlapRef = useRef(0);
   /** Tracks a pending requestAnimationFrame for deferred xterm re-fit. */
   const pendingFitRef = useRef<number | null>(null);
+
+  // Keep the latest keyboard overlap in a ref so async xterm setup can read
+  // current mobile keyboard state without forcing the init effect to re-run.
+  keyboardOverlapRef.current = keyboardOverlap;
+
+  /**
+   * Fit xterm and publish cols/rows for a specific terminal session.
+   *
+   * FN-1234 root cause: mobile visualViewport rAF callbacks can fire while
+   * tab switching is still re-initializing xterm asynchronously. Without a
+   * session guard, stale deferred work can mutate whichever xterm instance is
+   * currently in refs, causing the newly active tab to display stale output.
+   */
+  const fitAndResizeForSession = useCallback((expectedSessionId?: string) => {
+    if (expectedSessionId && xtermInitializedRef.current !== expectedSessionId) {
+      return;
+    }
+
+    const currentFitAddon = fitAddonRef.current;
+    const currentXterm = xtermRef.current;
+    const currentResize = resizeRef.current;
+
+    if (!currentFitAddon || !currentXterm) {
+      return;
+    }
+
+    if (expectedSessionId && xtermInitializedRef.current !== expectedSessionId) {
+      return;
+    }
+
+    try {
+      const fitAddon = currentFitAddon as InstanceType<typeof import("@xterm/addon-fit").FitAddon>;
+      fitAddon.fit();
+      if (currentResize) {
+        currentResize(currentXterm.cols, currentXterm.rows);
+      }
+    } catch {
+      // Ignore fit errors during viewport transitions
+    }
+  }, []);
 
   // Bump open generation whenever the modal opens so the initialCommand
   // effect re-evaluates after a close/reopen cycle (deps may be identical).
@@ -209,24 +250,13 @@ export function TerminalModal({ isOpen, onClose, initialCommand }: TerminalModal
         cancelAnimationFrame(pendingFitRef.current);
         pendingFitRef.current = null;
       }
+      const scheduledSessionId =
+        typeof xtermInitializedRef.current === "string"
+          ? xtermInitializedRef.current
+          : undefined;
       pendingFitRef.current = requestAnimationFrame(() => {
         pendingFitRef.current = null;
-        // Read refs inside the callback to avoid stale closures
-        const currentFitAddon = fitAddonRef.current;
-        const currentXterm = xtermRef.current;
-        const currentResize = resizeRef.current;
-        if (currentFitAddon && currentXterm) {
-          try {
-            const fitAddon = currentFitAddon as InstanceType<typeof import("@xterm/addon-fit").FitAddon>;
-            fitAddon.fit();
-            const { cols, rows } = currentXterm;
-            if (currentResize) {
-              currentResize(cols, rows);
-            }
-          } catch {
-            // Ignore fit errors during viewport transitions
-          }
-        }
+        fitAndResizeForSession(scheduledSessionId);
       });
     };
 
@@ -245,7 +275,7 @@ export function TerminalModal({ isOpen, onClose, initialCommand }: TerminalModal
       setKeyboardOverlap(0);
       setViewportHeight(null);
     };
-  }, [isOpen]);
+  }, [fitAndResizeForSession, isOpen]);
 
   // Use the session management hook
   const { 
@@ -379,6 +409,20 @@ export function TerminalModal({ isOpen, onClose, initialCommand }: TerminalModal
         fitAddonRef.current = fitAddon;
         xtermInitializedRef.current = currentSessionId;
 
+        // If the virtual keyboard opened while xterm was still in async
+        // initialization for this tab, force a post-init fit so this new
+        // session uses the already-constrained mobile modal height.
+        if (keyboardOverlapRef.current > 0) {
+          if (pendingFitRef.current !== null) {
+            cancelAnimationFrame(pendingFitRef.current);
+            pendingFitRef.current = null;
+          }
+          pendingFitRef.current = requestAnimationFrame(() => {
+            pendingFitRef.current = null;
+            fitAndResizeForSession(currentSessionId);
+          });
+        }
+
         // Signal that xterm is ready so the subscription effect re-runs
         setXtermReady(true);
         // Clear any prior xterm init error
@@ -426,7 +470,7 @@ export function TerminalModal({ isOpen, onClose, initialCommand }: TerminalModal
       // Don't dispose xterm here - it should persist across tab switches
       // Only dispose when the modal is fully closed
     };
-  }, [isOpen, isReady, activeTab, activeTab?.sessionId, sendInput, resize]);
+  }, [fitAndResizeForSession, isOpen, isReady, activeTab, activeTab?.sessionId, sendInput, resize]);
 
   // Cleanup xterm when modal closes
   useEffect(() => {
@@ -456,12 +500,20 @@ export function TerminalModal({ isOpen, onClose, initialCommand }: TerminalModal
   useEffect(() => {
     if (!xtermReady || !xtermRef.current || !activeTab) return;
 
-    const unsubData = onData((data) => {
+    const expectedSessionId = activeTab.sessionId;
+    const writeToExpectedSession = (data: string) => {
+      if (xtermInitializedRef.current !== expectedSessionId) {
+        return;
+      }
       xtermRef.current?.write(data);
+    };
+
+    const unsubData = onData((data) => {
+      writeToExpectedSession(data);
     });
 
     const unsubScrollback = onScrollback((data) => {
-      xtermRef.current?.write(data);
+      writeToExpectedSession(data);
     });
 
     const unsubConnect = onConnect((info) => {
@@ -470,6 +522,9 @@ export function TerminalModal({ isOpen, onClose, initialCommand }: TerminalModal
     });
 
     const unsubExit = onExit((code) => {
+      if (xtermInitializedRef.current !== expectedSessionId) {
+        return;
+      }
       setExitCode(code);
       xtermRef.current?.write(`\r\n\x1b[33m[Process exited with code ${code}]\x1b[0m\r\n`);
     });

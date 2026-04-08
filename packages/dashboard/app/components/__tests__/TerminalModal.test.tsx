@@ -1687,6 +1687,373 @@ describe("TerminalModal — new tab while modal open", () => {
   }
 });
 
+// --- FN-1234 mobile tab + keyboard regression tests ---
+describe("TerminalModal — FN-1234 mobile tab switch with keyboard", () => {
+  const mockOnClose = vi.fn();
+
+  const createMockTerminalState = (overrides = {}) => ({
+    connectionStatus: "connected" as const,
+    sendInput: vi.fn(),
+    resize: vi.fn(),
+    onData: vi.fn(() => vi.fn()),
+    onExit: vi.fn(() => vi.fn()),
+    onConnect: vi.fn(() => vi.fn()),
+    onScrollback: vi.fn(() => vi.fn()),
+    reconnect: vi.fn(),
+    onSessionInvalid: vi.fn(() => vi.fn()),
+    ...overrides,
+  });
+
+  const makeTab = (id: string, sessionId: string, isActive: boolean, title = id) => ({
+    id,
+    sessionId,
+    title,
+    isActive,
+    createdAt: Date.now(),
+  });
+
+  const makeSessionState = (tabs: Array<ReturnType<typeof makeTab>>) => ({
+    tabs,
+    activeTab: tabs.find((tab) => tab.isActive) ?? null,
+    isReady: true,
+    bootstrapError: null,
+    createTab: vi.fn(),
+    closeTab: vi.fn(),
+    setActiveTab: vi.fn(),
+    updateTabTitle: vi.fn(),
+    restartActiveTab: vi.fn(),
+    retryBootstrap: vi.fn(),
+    replaceActiveTabSession: vi.fn().mockResolvedValue(undefined),
+  });
+
+  const createTerminalInstance = (cols: number, rows: number) => ({
+    loadAddon: vi.fn(),
+    open: vi.fn(),
+    onData: vi.fn(() => ({ dispose: vi.fn() })),
+    dispose: vi.fn(),
+    write: vi.fn(),
+    clear: vi.fn(),
+    focus: vi.fn(),
+    options: { fontSize: 14 },
+    cols,
+    rows,
+  });
+
+  let savedVisualViewport: typeof window.visualViewport;
+  let savedInnerWidth: typeof window.innerWidth;
+  let savedInnerHeight: typeof window.innerHeight;
+  let savedOntouchstart: typeof window.ontouchstart;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    _resetInitialViewportHeight();
+
+    savedVisualViewport = window.visualViewport;
+    savedInnerWidth = window.innerWidth;
+    savedInnerHeight = window.innerHeight;
+    savedOntouchstart = window.ontouchstart;
+  });
+
+  afterEach(() => {
+    Object.defineProperty(window, "visualViewport", {
+      value: savedVisualViewport,
+      writable: true,
+      configurable: true,
+    });
+    Object.defineProperty(window, "innerWidth", {
+      value: savedInnerWidth,
+      writable: true,
+      configurable: true,
+    });
+    Object.defineProperty(window, "innerHeight", {
+      value: savedInnerHeight,
+      writable: true,
+      configurable: true,
+    });
+    Object.defineProperty(window, "ontouchstart", {
+      value: savedOntouchstart,
+      writable: true,
+      configurable: true,
+    });
+    vi.restoreAllMocks();
+  });
+
+  function simulateMobileDevice(initialVvHeight = 667) {
+    (window as any).ontouchstart = null;
+    Object.defineProperty(window, "innerWidth", {
+      value: 375,
+      writable: true,
+      configurable: true,
+    });
+    Object.defineProperty(window, "innerHeight", {
+      value: 667,
+      writable: true,
+      configurable: true,
+    });
+
+    const listeners: Record<string, Array<() => void>> = {
+      resize: [],
+      scroll: [],
+    };
+
+    const mockVV = {
+      width: 375,
+      height: initialVvHeight,
+      offsetTop: 0,
+      offsetLeft: 0,
+      addEventListener: vi.fn((event: string, cb: () => void) => {
+        listeners[event]?.push(cb);
+      }),
+      removeEventListener: vi.fn(),
+    };
+
+    Object.defineProperty(window, "visualViewport", {
+      value: mockVV,
+      writable: true,
+      configurable: true,
+    });
+
+    return { listeners, mockVV };
+  }
+
+  it("tab switch + keyboard open keeps data on the active session terminal", async () => {
+    const { listeners, mockVV } = simulateMobileDevice();
+    const tab1 = makeTab("tab-1", "session-1", true, "one");
+    const tab2 = makeTab("tab-2", "session-2", false, "two");
+
+    const terminalOne = createTerminalInstance(80, 24);
+    const terminalTwo = createTerminalInstance(120, 40);
+
+    const xtermModule = await import("@xterm/xterm");
+    vi.mocked(xtermModule.Terminal)
+      .mockImplementationOnce(() => terminalOne as any)
+      .mockImplementationOnce(() => terminalTwo as any);
+
+    let sessionOneDataCallback: ((data: string) => void) | null = null;
+    let sessionTwoDataCallback: ((data: string) => void) | null = null;
+
+    mockUseTerminalSessions.mockReturnValue(makeSessionState([tab1, tab2]));
+    mockUseTerminal.mockReturnValue(
+      createMockTerminalState({
+        onData: vi.fn((cb: (data: string) => void) => {
+          sessionOneDataCallback = cb;
+          return vi.fn();
+        }),
+      })
+    );
+
+    const { rerender } = render(<TerminalModal isOpen={true} onClose={mockOnClose} />);
+
+    await waitFor(() => {
+      expect(terminalOne.open).toHaveBeenCalled();
+    });
+
+    mockUseTerminalSessions.mockReturnValue(
+      makeSessionState([{ ...tab1, isActive: false }, { ...tab2, isActive: true }])
+    );
+    mockUseTerminal.mockReturnValue(
+      createMockTerminalState({
+        onData: vi.fn((cb: (data: string) => void) => {
+          sessionTwoDataCallback = cb;
+          return vi.fn();
+        }),
+      })
+    );
+
+    rerender(<TerminalModal isOpen={true} onClose={mockOnClose} />);
+
+    await waitFor(() => {
+      expect(terminalTwo.open).toHaveBeenCalled();
+    });
+
+    Object.defineProperty(mockVV, "height", {
+      value: 417,
+      writable: true,
+      configurable: true,
+    });
+    act(() => {
+      listeners.resize.forEach((cb) => cb());
+    });
+
+    terminalOne.write.mockClear();
+    terminalTwo.write.mockClear();
+
+    act(() => {
+      sessionOneDataCallback?.("session-1 stale output\\r\\n");
+      sessionTwoDataCallback?.("session-2 fresh output\\r\\n");
+    });
+
+    expect(terminalTwo.write).toHaveBeenCalledWith("session-2 fresh output\\r\\n");
+    expect(terminalTwo.write).not.toHaveBeenCalledWith("session-1 stale output\\r\\n");
+    expect(terminalOne.write).not.toHaveBeenCalledWith("session-1 stale output\\r\\n");
+  });
+
+  it("re-fits and resizes the switched tab terminal when keyboard opens", async () => {
+    const { listeners, mockVV } = simulateMobileDevice();
+    const tab1 = makeTab("tab-1", "session-1", true, "one");
+    const tab2 = makeTab("tab-2", "session-2", false, "two");
+
+    const terminalOne = createTerminalInstance(90, 30);
+    const terminalTwo = createTerminalInstance(132, 44);
+    const fitOne = { fit: vi.fn(), dispose: vi.fn() };
+    const fitTwo = { fit: vi.fn(), dispose: vi.fn() };
+    const resizeOne = vi.fn();
+    const resizeTwo = vi.fn();
+
+    const xtermModule = await import("@xterm/xterm");
+    vi.mocked(xtermModule.Terminal)
+      .mockImplementationOnce(() => terminalOne as any)
+      .mockImplementationOnce(() => terminalTwo as any);
+
+    const fitModule = await import("@xterm/addon-fit");
+    vi.mocked(fitModule.FitAddon)
+      .mockImplementationOnce(() => fitOne as any)
+      .mockImplementationOnce(() => fitTwo as any);
+
+    mockUseTerminalSessions.mockReturnValue(makeSessionState([tab1, tab2]));
+    mockUseTerminal.mockReturnValue(createMockTerminalState({ resize: resizeOne }));
+
+    const { rerender } = render(<TerminalModal isOpen={true} onClose={mockOnClose} />);
+
+    await waitFor(() => {
+      expect(terminalOne.open).toHaveBeenCalled();
+    });
+
+    mockUseTerminalSessions.mockReturnValue(
+      makeSessionState([{ ...tab1, isActive: false }, { ...tab2, isActive: true }])
+    );
+    mockUseTerminal.mockReturnValue(createMockTerminalState({ resize: resizeTwo }));
+
+    rerender(<TerminalModal isOpen={true} onClose={mockOnClose} />);
+
+    await waitFor(() => {
+      expect(terminalTwo.open).toHaveBeenCalled();
+    });
+
+    fitTwo.fit.mockClear();
+    resizeOne.mockClear();
+    resizeTwo.mockClear();
+
+    Object.defineProperty(mockVV, "height", {
+      value: 350,
+      writable: true,
+      configurable: true,
+    });
+    act(() => {
+      listeners.resize.forEach((cb) => cb());
+    });
+
+    await waitFor(() => {
+      expect(fitTwo.fit).toHaveBeenCalled();
+    });
+    expect(resizeTwo).toHaveBeenCalledWith(132, 44);
+    expect(resizeOne).not.toHaveBeenCalled();
+  });
+
+  it("applies keyboard overlap CSS vars on the switched tab after keyboard opens", async () => {
+    const { listeners, mockVV } = simulateMobileDevice();
+    const tab1 = makeTab("tab-1", "session-1", true, "one");
+    const tab2 = makeTab("tab-2", "session-2", false, "two");
+
+    mockUseTerminalSessions.mockReturnValue(makeSessionState([tab1, tab2]));
+    mockUseTerminal.mockReturnValue(createMockTerminalState());
+
+    const { rerender } = render(<TerminalModal isOpen={true} onClose={mockOnClose} />);
+
+    mockUseTerminalSessions.mockReturnValue(
+      makeSessionState([{ ...tab1, isActive: false }, { ...tab2, isActive: true }])
+    );
+    rerender(<TerminalModal isOpen={true} onClose={mockOnClose} />);
+
+    Object.defineProperty(mockVV, "height", {
+      value: 430,
+      writable: true,
+      configurable: true,
+    });
+    act(() => {
+      listeners.resize.forEach((cb) => cb());
+    });
+
+    await waitFor(() => {
+      const modal = screen.getByTestId("terminal-modal");
+      expect(modal.style.getPropertyValue("--keyboard-overlap")).toBe("237px");
+      expect(modal.style.getPropertyValue("--vv-height")).toBe("430px");
+    });
+  });
+
+  it("replays scrollback to the active session after tab switch + keyboard open", async () => {
+    const { listeners, mockVV } = simulateMobileDevice();
+    const tab1 = makeTab("tab-1", "session-1", true, "one");
+    const tab2 = makeTab("tab-2", "session-2", false, "two");
+
+    const terminalOne = createTerminalInstance(80, 24);
+    const terminalTwo = createTerminalInstance(100, 32);
+
+    const xtermModule = await import("@xterm/xterm");
+    vi.mocked(xtermModule.Terminal)
+      .mockImplementationOnce(() => terminalOne as any)
+      .mockImplementationOnce(() => terminalTwo as any);
+
+    let sessionOneScrollbackCallback: ((data: string) => void) | null = null;
+    let sessionTwoScrollbackCallback: ((data: string) => void) | null = null;
+
+    mockUseTerminalSessions.mockReturnValue(makeSessionState([tab1, tab2]));
+    mockUseTerminal.mockReturnValue(
+      createMockTerminalState({
+        onScrollback: vi.fn((cb: (data: string) => void) => {
+          sessionOneScrollbackCallback = cb;
+          return vi.fn();
+        }),
+      })
+    );
+
+    const { rerender } = render(<TerminalModal isOpen={true} onClose={mockOnClose} />);
+
+    await waitFor(() => {
+      expect(terminalOne.open).toHaveBeenCalled();
+    });
+
+    mockUseTerminalSessions.mockReturnValue(
+      makeSessionState([{ ...tab1, isActive: false }, { ...tab2, isActive: true }])
+    );
+    mockUseTerminal.mockReturnValue(
+      createMockTerminalState({
+        onScrollback: vi.fn((cb: (data: string) => void) => {
+          sessionTwoScrollbackCallback = cb;
+          return vi.fn();
+        }),
+      })
+    );
+
+    rerender(<TerminalModal isOpen={true} onClose={mockOnClose} />);
+
+    await waitFor(() => {
+      expect(terminalTwo.open).toHaveBeenCalled();
+    });
+
+    Object.defineProperty(mockVV, "height", {
+      value: 390,
+      writable: true,
+      configurable: true,
+    });
+    act(() => {
+      listeners.resize.forEach((cb) => cb());
+    });
+
+    terminalOne.write.mockClear();
+    terminalTwo.write.mockClear();
+
+    act(() => {
+      sessionOneScrollbackCallback?.("session-1 scrollback\\r\\n");
+      sessionTwoScrollbackCallback?.("session-2 scrollback\\r\\n");
+    });
+
+    expect(terminalTwo.write).toHaveBeenCalledWith("session-2 scrollback\\r\\n");
+    expect(terminalTwo.write).not.toHaveBeenCalledWith("session-1 scrollback\\r\\n");
+    expect(terminalOne.write).not.toHaveBeenCalledWith("session-1 scrollback\\r\\n");
+  });
+});
+
 // --- Virtual keyboard overlap handling ---
 describe("TerminalModal — virtual keyboard overlap handling", () => {
   const mockOnClose = vi.fn();
