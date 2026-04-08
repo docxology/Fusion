@@ -1506,6 +1506,8 @@ export interface Agent {
   instructionsText?: string;
 }
 
+export type MessageResponseMode = "immediate" | "on-heartbeat";
+
 /** Per-agent heartbeat configuration, stored in agent.runtimeConfig */
 export interface AgentHeartbeatConfig {
   /** Whether heartbeat triggers are enabled for this agent (default: true) */
@@ -1516,6 +1518,12 @@ export interface AgentHeartbeatConfig {
   heartbeatTimeoutMs?: number;
   /** Max concurrent heartbeat runs per agent (default: 1). Min: 1 */
   maxConcurrentRuns?: number;
+  /**
+   * How this agent responds to incoming messages.
+   * "immediate" triggers a heartbeat run when a message arrives.
+   * "on-heartbeat" defers message handling to the next scheduled heartbeat (default).
+   */
+  messageResponseMode?: MessageResponseMode;
 }
 
 /** Extended agent information including heartbeat history */

@@ -39,6 +39,8 @@ export interface MessageStoreEvents {
 export interface MessageStoreOptions {
   /** Root directory for kb data (default: .fusion) */
   rootDir?: string;
+  /** Optional hook invoked when a message is addressed to an agent */
+  onMessageToAgent?: (message: Message) => void;
 }
 
 /** Index structure for mailbox lookups */
@@ -55,12 +57,14 @@ export class MessageStore extends EventEmitter {
   private rootDir: string;
   private messagesDir: string;
   private indexPath: string;
+  private onMessageToAgent?: (message: Message) => void;
 
   constructor(options: MessageStoreOptions = {}) {
     super();
     this.rootDir = options.rootDir ?? ".fusion";
     this.messagesDir = join(this.rootDir, "messages");
     this.indexPath = join(this.messagesDir, "index.json");
+    this.onMessageToAgent = options.onMessageToAgent;
   }
 
   /**
@@ -108,6 +112,10 @@ export class MessageStore extends EventEmitter {
 
     this.emit("message:sent", message);
     this.emit("message:received", message);
+
+    if (message.toType === "agent" && this.onMessageToAgent) {
+      this.onMessageToAgent(message);
+    }
 
     return message;
   }
@@ -289,6 +297,13 @@ export class MessageStore extends EventEmitter {
       unreadCount,
       lastMessage,
     };
+  }
+
+  /**
+   * Set or update the hook used when messages are sent to agents.
+   */
+  setMessageToAgentHook(hook: (message: Message) => void): void {
+    this.onMessageToAgent = hook;
   }
 
   // ─────────────────────────────────────────────────────────────────────────

@@ -17,7 +17,7 @@
  * - onTerminated: Called when an unresponsive agent is terminated
  */
 
-import type { AgentStore, AgentHeartbeatRun, HeartbeatInvocationSource, AgentHeartbeatConfig, TaskStore, TaskDetail } from "@fusion/core";
+import type { AgentStore, AgentHeartbeatRun, HeartbeatInvocationSource, AgentHeartbeatConfig, Message, MessageStore, TaskStore, TaskDetail } from "@fusion/core";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import { Type, type Static } from "@mariozechner/pi-ai";
 import { createTaskCreateTool, createTaskLogTool, taskCreateParams } from "./agent-tools.js";
@@ -42,6 +42,8 @@ export interface HeartbeatMonitorOptions {
   /** Optional separate AgentStore reference for reading per-agent runtimeConfig.
    *  If not provided, falls back to `store`. */
   agentStore?: AgentStore;
+  /** Optional MessageStore for wake-on-message behavior */
+  messageStore?: MessageStore;
   /** Polling interval in milliseconds (default: 30000) */
   pollIntervalMs?: number;
   /** Heartbeat timeout in milliseconds (default: 60000) */
@@ -144,6 +146,7 @@ export class HeartbeatMonitor {
   private onRunCompleted?: (agentId: string, run: AgentHeartbeatRun) => void;
   private taskStore?: TaskStore;
   private rootDir?: string;
+  private messageStore?: MessageStore;
 
   private trackedAgents: Map<string, TrackedAgent> = new Map();
   private agentStartLocks: Map<string, Promise<unknown>> = new Map();
@@ -166,6 +169,7 @@ export class HeartbeatMonitor {
     this.onRunCompleted = options.onRunCompleted;
     this.taskStore = options.taskStore;
     this.rootDir = options.rootDir;
+    this.messageStore = options.messageStore;
   }
 
   /**
@@ -176,6 +180,9 @@ export class HeartbeatMonitor {
     if (this.isRunning) return;
 
     this.isRunning = true;
+    if (this.messageStore) {
+      this.messageStore.setMessageToAgentHook(this.handleMessageToAgent.bind(this));
+    }
     this.pollInterval = setInterval(() => {
       void this.checkMissedHeartbeats();
     }, this.pollIntervalMs);
@@ -186,6 +193,9 @@ export class HeartbeatMonitor {
    * Does not untrack agents - they remain in memory.
    */
   stop(): void {
+    if (this.messageStore) {
+      this.messageStore.setMessageToAgentHook(() => {});
+    }
     if (!this.isRunning) return;
 
     this.isRunning = false;
@@ -415,6 +425,36 @@ export class HeartbeatMonitor {
    */
   getLastSeen(agentId: string): number | undefined {
     return this.trackedAgents.get(agentId)?.lastSeen;
+  }
+
+  private handleMessageToAgent(message: Message): void {
+    if (message.toType !== "agent") {
+      return;
+    }
+
+    const agent = this.configStore.getCachedAgent(message.toId);
+    if (!agent) {
+      return;
+    }
+
+    const runtimeConfig = agent.runtimeConfig as AgentHeartbeatConfig | undefined;
+    if (runtimeConfig?.messageResponseMode !== "immediate") {
+      return;
+    }
+
+    const validStates = new Set(["active", "idle", "running"]);
+    if (!validStates.has(agent.state)) {
+      return;
+    }
+
+    void this.executeHeartbeat({
+      agentId: message.toId,
+      source: "on_demand",
+      triggerDetail: "wake-on-message",
+    }).catch((error) => {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      heartbeatLog.warn(`Wake-on-message heartbeat failed for ${message.toId}: ${errorMessage}`);
+    });
   }
 
   // ─────────────────────────────────────────────────────────────────────────

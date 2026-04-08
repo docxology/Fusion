@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -92,6 +92,86 @@ describe("MessageStore", () => {
     it("returns null for non-existent message", async () => {
       const result = await store.getMessage("msg-nonexistent");
       expect(result).toBeNull();
+    });
+  });
+
+  describe("message-to-agent hook", () => {
+    it("does not call the hook for non-agent recipients", async () => {
+      const hook = vi.fn();
+      const hookedStore = new MessageStore({ rootDir: tempDir, onMessageToAgent: hook });
+      await hookedStore.init();
+
+      await hookedStore.sendMessage({
+        fromId: "agent-1",
+        fromType: "agent",
+        toId: "user-1",
+        toType: "user",
+        content: "Hello user",
+        type: "agent-to-user",
+      });
+
+      expect(hook).not.toHaveBeenCalled();
+    });
+
+    it("calls the hook when a message is sent to an agent", async () => {
+      const hook = vi.fn();
+      const hookedStore = new MessageStore({ rootDir: tempDir, onMessageToAgent: hook });
+      await hookedStore.init();
+
+      const message = await hookedStore.sendMessage({
+        fromId: "user-1",
+        fromType: "user",
+        toId: "agent-1",
+        toType: "agent",
+        content: "Hello agent",
+        type: "user-to-agent",
+      });
+
+      expect(hook).toHaveBeenCalledTimes(1);
+      expect(hook).toHaveBeenCalledWith(message);
+    });
+
+    it("does nothing when no hook is configured", async () => {
+      await expect(
+        store.sendMessage({
+          fromId: "user-1",
+          fromType: "user",
+          toId: "agent-1",
+          toType: "agent",
+          content: "No hook configured",
+          type: "user-to-agent",
+        }),
+      ).resolves.toMatchObject({ toId: "agent-1", toType: "agent" });
+    });
+
+    it("setMessageToAgentHook updates the hook used for subsequent messages", async () => {
+      const firstHook = vi.fn();
+      const secondHook = vi.fn();
+      const hookedStore = new MessageStore({ rootDir: tempDir, onMessageToAgent: firstHook });
+      await hookedStore.init();
+
+      await hookedStore.sendMessage({
+        fromId: "user-1",
+        fromType: "user",
+        toId: "agent-1",
+        toType: "agent",
+        content: "First",
+        type: "user-to-agent",
+      });
+
+      hookedStore.setMessageToAgentHook(secondHook);
+
+      await hookedStore.sendMessage({
+        fromId: "user-1",
+        fromType: "user",
+        toId: "agent-1",
+        toType: "agent",
+        content: "Second",
+        type: "user-to-agent",
+      });
+
+      expect(firstHook).toHaveBeenCalledTimes(1);
+      expect(secondHook).toHaveBeenCalledTimes(1);
     });
   });
 

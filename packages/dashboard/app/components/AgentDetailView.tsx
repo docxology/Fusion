@@ -1175,6 +1175,9 @@ function ConfigTab({
     if (rc.heartbeatTimeoutMs !== undefined && rc.heartbeatTimeoutMs !== null) {
       initial.heartbeatTimeoutMs = String(rc.heartbeatTimeoutMs);
     }
+    if (rc.messageResponseMode === "immediate" || rc.messageResponseMode === "on-heartbeat") {
+      initial.messageResponseMode = rc.messageResponseMode;
+    }
     return initial;
   });
 
@@ -1199,7 +1202,7 @@ function ConfigTab({
     }
     // Check heartbeat values
     const rc = agent.runtimeConfig ?? {};
-    for (const key of ["heartbeatIntervalMs", "heartbeatTimeoutMs"] as const) {
+    for (const key of ["heartbeatIntervalMs", "heartbeatTimeoutMs", "messageResponseMode"] as const) {
       const current = heartbeatValues[key]?.trim() ?? "";
       const persisted = rc[key] !== undefined && rc[key] !== null ? String(rc[key]) : "";
       if (current !== persisted) return true;
@@ -1259,6 +1262,11 @@ function ConfigTab({
       }
     }
 
+    const messageResponseModeForValidation = heartbeatValues.messageResponseMode?.trim();
+    if (messageResponseModeForValidation && !["immediate", "on-heartbeat"].includes(messageResponseModeForValidation)) {
+      validationErrors.messageResponseMode = "\"Message Response Mode\" must be either immediate or on-heartbeat";
+    }
+
     if (Object.keys(validationErrors).length > 0) {
       setErrors(validationErrors);
       addToast("Please fix validation errors before saving", "error");
@@ -1288,6 +1296,13 @@ function ConfigTab({
       } else {
         newRuntimeConfig[key] = Number(raw);
       }
+    }
+
+    const messageResponseMode = heartbeatValues.messageResponseMode?.trim();
+    if (!messageResponseMode) {
+      delete newRuntimeConfig.messageResponseMode;
+    } else {
+      newRuntimeConfig.messageResponseMode = messageResponseMode;
     }
 
     setIsSaving(true);
@@ -1402,6 +1417,25 @@ function ConfigTab({
               <span className="config-error">{errors.heartbeatTimeoutMs}</span>
             ) : (
               <span className="config-hint">Time without heartbeat before agent is considered unresponsive. Leave empty for system default (60000ms)</span>
+            )}
+          </div>
+
+          <div className="config-field">
+            <label htmlFor="hb-messageResponseMode">Message Response Mode</label>
+            <select
+              id="hb-messageResponseMode"
+              className={cn("select", !!errors.messageResponseMode && "input--error")}
+              value={heartbeatValues.messageResponseMode ?? ""}
+              onChange={(e) => handleHeartbeatFieldChange("messageResponseMode", e.target.value)}
+            >
+              <option value="">System Default (On Heartbeat)</option>
+              <option value="on-heartbeat">On Heartbeat</option>
+              <option value="immediate">Immediate</option>
+            </select>
+            {errors.messageResponseMode ? (
+              <span className="config-error">{errors.messageResponseMode}</span>
+            ) : (
+              <span className="config-hint">How this agent responds to incoming messages. &apos;Immediate&apos; wakes the agent as soon as a message arrives. &apos;On Heartbeat&apos; defers processing to the next scheduled heartbeat.</span>
             )}
           </div>
         </div>

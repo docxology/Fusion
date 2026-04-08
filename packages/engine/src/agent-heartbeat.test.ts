@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { HeartbeatMonitor, HeartbeatTriggerScheduler, type AgentSession, type HeartbeatExecutionOptions, HEARTBEAT_SYSTEM_PROMPT } from "./agent-heartbeat.js";
-import type { AgentStore, AgentHeartbeatRun, TaskStore, TaskDetail, Agent } from "@fusion/core";
+import type { AgentStore, AgentHeartbeatRun, TaskStore, TaskDetail, Agent, MessageStore, Message } from "@fusion/core";
 
 // Mock logger to suppress noise in test output
 vi.mock("./logger.js", () => {
@@ -40,6 +40,31 @@ function createMockStore(overrides: Partial<AgentStore> = {}): AgentStore {
 function createMockSession(): AgentSession {
   return {
     dispose: vi.fn(),
+  };
+}
+
+function createMockMessageStore(onSetHook?: (hook: (message: Message) => void) => void): MessageStore {
+  return {
+    setMessageToAgentHook: vi.fn((hook: (message: Message) => void) => {
+      onSetHook?.(hook);
+    }),
+  } as unknown as MessageStore;
+}
+
+function createMessage(overrides: Partial<Message> = {}): Message {
+  const now = new Date().toISOString();
+  return {
+    id: "msg-001",
+    fromId: "user-1",
+    fromType: "user",
+    toId: "agent-1",
+    toType: "agent",
+    content: "hello",
+    type: "user-to-agent",
+    read: false,
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
   };
 }
 
@@ -136,6 +161,164 @@ describe("HeartbeatMonitor", () => {
 
       expect(monitor.isActive()).toBe(false);
       vi.useRealTimers();
+    });
+  });
+
+  describe("wake-on-message", () => {
+    it("executes heartbeat when messageResponseMode is immediate", () => {
+      let messageHook: ((message: Message) => void) | undefined;
+      const messageStore = createMockMessageStore((hook) => {
+        messageHook = hook;
+      });
+      const configStore = createMockStore({
+        getCachedAgent: vi.fn().mockReturnValue({
+          id: "agent-1",
+          state: "active",
+          runtimeConfig: { messageResponseMode: "immediate" },
+        }),
+      });
+
+      const customMonitor = new HeartbeatMonitor({
+        store,
+        agentStore: configStore,
+        messageStore,
+      });
+      const executeHeartbeatSpy = vi
+        .spyOn(customMonitor, "executeHeartbeat")
+        .mockResolvedValue({ id: "run-1" } as AgentHeartbeatRun);
+
+      customMonitor.start();
+      messageHook?.(createMessage({ toId: "agent-1", toType: "agent" }));
+
+      expect(executeHeartbeatSpy).toHaveBeenCalledWith({
+        agentId: "agent-1",
+        source: "on_demand",
+        triggerDetail: "wake-on-message",
+      });
+
+      customMonitor.stop();
+    });
+
+    it("does not execute heartbeat when messageResponseMode is on-heartbeat or unset", () => {
+      let messageHook: ((message: Message) => void) | undefined;
+      const messageStore = createMockMessageStore((hook) => {
+        messageHook = hook;
+      });
+      const getCachedAgent = vi
+        .fn()
+        .mockReturnValueOnce({
+          id: "agent-1",
+          state: "active",
+          runtimeConfig: { messageResponseMode: "on-heartbeat" },
+        })
+        .mockReturnValueOnce({
+          id: "agent-1",
+          state: "active",
+          runtimeConfig: {},
+        });
+      const configStore = createMockStore({ getCachedAgent });
+
+      const customMonitor = new HeartbeatMonitor({
+        store,
+        agentStore: configStore,
+        messageStore,
+      });
+      const executeHeartbeatSpy = vi
+        .spyOn(customMonitor, "executeHeartbeat")
+        .mockResolvedValue({ id: "run-1" } as AgentHeartbeatRun);
+
+      customMonitor.start();
+      messageHook?.(createMessage({ toId: "agent-1", toType: "agent", id: "msg-1" }));
+      messageHook?.(createMessage({ toId: "agent-1", toType: "agent", id: "msg-2" }));
+
+      expect(executeHeartbeatSpy).not.toHaveBeenCalled();
+
+      customMonitor.stop();
+    });
+
+    it("does not execute heartbeat when agent is paused or error", () => {
+      let messageHook: ((message: Message) => void) | undefined;
+      const messageStore = createMockMessageStore((hook) => {
+        messageHook = hook;
+      });
+      const getCachedAgent = vi
+        .fn()
+        .mockReturnValueOnce({
+          id: "agent-1",
+          state: "paused",
+          runtimeConfig: { messageResponseMode: "immediate" },
+        })
+        .mockReturnValueOnce({
+          id: "agent-1",
+          state: "error",
+          runtimeConfig: { messageResponseMode: "immediate" },
+        });
+      const configStore = createMockStore({ getCachedAgent });
+
+      const customMonitor = new HeartbeatMonitor({
+        store,
+        agentStore: configStore,
+        messageStore,
+      });
+      const executeHeartbeatSpy = vi
+        .spyOn(customMonitor, "executeHeartbeat")
+        .mockResolvedValue({ id: "run-1" } as AgentHeartbeatRun);
+
+      customMonitor.start();
+      messageHook?.(createMessage({ toId: "agent-1", toType: "agent", id: "msg-paused" }));
+      messageHook?.(createMessage({ toId: "agent-1", toType: "agent", id: "msg-error" }));
+
+      expect(executeHeartbeatSpy).not.toHaveBeenCalled();
+
+      customMonitor.stop();
+    });
+
+    it("registers the message hook on start and clears it on stop", () => {
+      const hooks: Array<(message: Message) => void> = [];
+      const messageStore = createMockMessageStore((hook) => {
+        hooks.push(hook);
+      });
+      const customMonitor = new HeartbeatMonitor({ store, messageStore });
+
+      customMonitor.start();
+
+      expect(messageStore.setMessageToAgentHook).toHaveBeenCalledTimes(1);
+      expect(hooks).toHaveLength(1);
+
+      customMonitor.stop();
+
+      expect(messageStore.setMessageToAgentHook).toHaveBeenCalledTimes(2);
+      expect(hooks).toHaveLength(2);
+      expect(hooks[0]).not.toBe(hooks[1]);
+    });
+
+    it("ignores non-agent messages", () => {
+      let messageHook: ((message: Message) => void) | undefined;
+      const messageStore = createMockMessageStore((hook) => {
+        messageHook = hook;
+      });
+      const configStore = createMockStore({
+        getCachedAgent: vi.fn().mockReturnValue({
+          id: "agent-1",
+          state: "active",
+          runtimeConfig: { messageResponseMode: "immediate" },
+        }),
+      });
+      const customMonitor = new HeartbeatMonitor({
+        store,
+        agentStore: configStore,
+        messageStore,
+      });
+      const executeHeartbeatSpy = vi
+        .spyOn(customMonitor, "executeHeartbeat")
+        .mockResolvedValue({ id: "run-1" } as AgentHeartbeatRun);
+
+      customMonitor.start();
+      messageHook?.(createMessage({ toType: "user", toId: "user-1" }));
+
+      expect(executeHeartbeatSpy).not.toHaveBeenCalled();
+
+      customMonitor.stop();
     });
   });
 
