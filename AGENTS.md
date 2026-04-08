@@ -853,6 +853,95 @@ The `AgentSemaphore` (`packages/engine/src/concurrency.ts`) has defensive guards
 - One commit per step (not per file change)
 - Always include the task ID prefix
 
+## Headless Node Mode (`fn serve`)
+
+The `fn serve` command starts Fusion as a **headless node**: API server + AI engine, with no frontend UI. Use it to run Fusion on remote machines or in Docker containers so they can participate as nodes in the mesh. Remote Fusion instances connect to the node API to submit tasks, stream events, and check health.
+
+### Usage
+
+```bash
+fn serve [--port <port>] [--host <host>] [--paused]
+fn serve --interactive
+```
+
+### Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--port`, `-p` | `4040` | Port for the API server |
+| `--host` | `0.0.0.0` | Host to bind (all interfaces, unlike `fn dashboard` which binds `localhost`) |
+| `--paused` | — | Start with engine paused (automation disabled) |
+| `--interactive` | — | Interactive port selection |
+
+### Key Differences from `fn dashboard`
+
+- `fn serve` binds to `0.0.0.0` by default (not `localhost`), so it is reachable remotely.
+- `fn serve` uses `createServer(store, { headless: true })`, so it skips frontend static file serving and the `index.html` SPA fallback.
+- `fn serve` still runs the full AI engine stack: triage, scheduler, executor, merge, cron, stuck detection, self-healing, mission autopilot, and ntfy notifications.
+- `fn serve` prints a node-oriented startup banner instead of opening a browser.
+
+### Startup Banner
+
+```text
+  Fusion Node
+  ────────────────────────
+  → http://0.0.0.0:4040
+
+  Health:     GET /api/health
+  API:        /api/*
+  AI engine:  ✓ active
+  Press Ctrl+C to stop
+```
+
+### Local Node Registration Lifecycle
+
+- On startup, `runServe()` initializes `CentralCore`, finds the existing local node (created during `CentralCore.init()`), and sets it to `status: "online"`.
+- On shutdown (`SIGINT`/`SIGTERM`), it sets that local node to `status: "offline"` before closing.
+- If CentralCore is unavailable, `fn serve` continues starting and logs a warning (best-effort node status updates).
+
+### Shutdown Behavior
+
+`SIGINT`/`SIGTERM` triggers graceful shutdown. `runServe()` stops, in order:
+
+- self-healing manager
+- stuck task detector
+- mission autopilot
+- triage processor
+- scheduler
+- cron runner
+- ntfy notifier
+
+Then it updates local node status to `"offline"` (if available), closes the HTTP server, closes the `TaskStore`, and exits.
+
+### Implementation Notes
+
+- **File:** `packages/cli/src/commands/serve.ts` (`runServe()`)
+- **Server option:** `createServer(store, { headless: true })` in `packages/dashboard/src/server.ts` (skips frontend serving/fallback)
+- **Health endpoint:** `GET /api/health` returns `{ status: "ok", version: string, uptime: number }` without authentication
+
+### `/api/health` Endpoint
+
+- **Method:** `GET /api/health`
+- **Auth:** None (intended for liveness/readiness probes and load balancers)
+- **Response:** `{ status: "ok", version: string, uptime: number }`
+- Available in both `fn dashboard` and `fn serve` because it is defined in the shared server.
+
+### Common Workflows
+
+```bash
+# Start a headless node on a remote machine
+fn serve --port 4040 --host 0.0.0.0
+
+# Start in Docker (expose port)
+docker run -p 4040:4040 my-fusion-image fn serve
+
+# Start with paused engine for initial setup
+fn serve --paused
+
+# Check if a remote node is healthy
+curl http://remote-host:4040/api/health
+```
+
 ## Settings
 
 kb uses a two-tier settings hierarchy:
