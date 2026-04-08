@@ -23,6 +23,7 @@
   },
   "pnpm": {
     "onlyBuiltDependencies": [
+      "electron",
       "esbuild",
       "koffi",
       "protobufjs"
