@@ -2,7 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const commandMocks = vi.hoisted(() => ({
   runDashboard: vi.fn(),
+  runServe: vi.fn(),
   runDesktop: vi.fn(),
+  runInit: vi.fn(),
+
   runTaskCreate: vi.fn(),
   runTaskList: vi.fn(),
   runTaskMove: vi.fn(),
@@ -15,6 +18,7 @@ const commandMocks = vi.hoisted(() => ({
   runTaskPause: vi.fn(),
   runTaskUnpause: vi.fn(),
   runTaskImportFromGitHub: vi.fn(),
+  runTaskImportGitHubInteractive: vi.fn(),
   runTaskDuplicate: vi.fn(),
   runTaskArchive: vi.fn(),
   runTaskUnarchive: vi.fn(),
@@ -26,23 +30,28 @@ const commandMocks = vi.hoisted(() => ({
   runTaskComments: vi.fn(),
   runTaskSteer: vi.fn(),
   runTaskPrCreate: vi.fn(),
+
   runSettingsShow: vi.fn(),
   runSettingsSet: vi.fn(),
   runSettingsExport: vi.fn(),
   runSettingsImport: vi.fn(),
+
   runGitStatus: vi.fn(),
   runGitFetch: vi.fn(),
   runGitPull: vi.fn(),
   runGitPush: vi.fn(),
+
   runBackupCreate: vi.fn(),
   runBackupList: vi.fn(),
   runBackupRestore: vi.fn(),
   runBackupCleanup: vi.fn(),
+
   runMissionCreate: vi.fn(),
   runMissionList: vi.fn(),
   runMissionShow: vi.fn(),
   runMissionDelete: vi.fn(),
   runMissionActivateSlice: vi.fn(),
+
   runProjectList: vi.fn(),
   runProjectAdd: vi.fn(),
   runProjectRemove: vi.fn(),
@@ -50,10 +59,30 @@ const commandMocks = vi.hoisted(() => ({
   runProjectInfo: vi.fn(),
   runProjectSetDefault: vi.fn(),
   runProjectDetect: vi.fn(),
+
+  runNodeList: vi.fn(),
+  runNodeAdd: vi.fn(),
+  runNodeRemove: vi.fn(),
+  runNodeShow: vi.fn(),
+  runNodeHealth: vi.fn(),
+
+  runAgentStop: vi.fn(),
+  runAgentStart: vi.fn(),
+  runAgentImport: vi.fn(),
+
+  runMessageInbox: vi.fn(),
+  runMessageOutbox: vi.fn(),
+  runMessageSend: vi.fn(),
+  runMessageRead: vi.fn(),
+  runMessageDelete: vi.fn(),
+  runAgentMailbox: vi.fn(),
 }));
 
 vi.mock("./commands/dashboard.js", () => ({ runDashboard: commandMocks.runDashboard }));
+vi.mock("./commands/serve.js", () => ({ runServe: commandMocks.runServe }));
 vi.mock("./commands/desktop.js", () => ({ runDesktop: commandMocks.runDesktop }));
+vi.mock("./commands/init.js", () => ({ runInit: commandMocks.runInit }));
+
 vi.mock("./commands/task.js", () => ({
   runTaskCreate: commandMocks.runTaskCreate,
   runTaskList: commandMocks.runTaskList,
@@ -67,6 +96,7 @@ vi.mock("./commands/task.js", () => ({
   runTaskPause: commandMocks.runTaskPause,
   runTaskUnpause: commandMocks.runTaskUnpause,
   runTaskImportFromGitHub: commandMocks.runTaskImportFromGitHub,
+  runTaskImportGitHubInteractive: commandMocks.runTaskImportGitHubInteractive,
   runTaskDuplicate: commandMocks.runTaskDuplicate,
   runTaskArchive: commandMocks.runTaskArchive,
   runTaskUnarchive: commandMocks.runTaskUnarchive,
@@ -79,24 +109,28 @@ vi.mock("./commands/task.js", () => ({
   runTaskSteer: commandMocks.runTaskSteer,
   runTaskPrCreate: commandMocks.runTaskPrCreate,
 }));
+
 vi.mock("./commands/settings.js", () => ({
   runSettingsShow: commandMocks.runSettingsShow,
   runSettingsSet: commandMocks.runSettingsSet,
 }));
 vi.mock("./commands/settings-export.js", () => ({ runSettingsExport: commandMocks.runSettingsExport }));
 vi.mock("./commands/settings-import.js", () => ({ runSettingsImport: commandMocks.runSettingsImport }));
+
 vi.mock("./commands/git.js", () => ({
   runGitStatus: commandMocks.runGitStatus,
   runGitFetch: commandMocks.runGitFetch,
   runGitPull: commandMocks.runGitPull,
   runGitPush: commandMocks.runGitPush,
 }));
+
 vi.mock("./commands/backup.js", () => ({
   runBackupCreate: commandMocks.runBackupCreate,
   runBackupList: commandMocks.runBackupList,
   runBackupRestore: commandMocks.runBackupRestore,
   runBackupCleanup: commandMocks.runBackupCleanup,
 }));
+
 vi.mock("./commands/mission.js", () => ({
   runMissionCreate: commandMocks.runMissionCreate,
   runMissionList: commandMocks.runMissionList,
@@ -104,6 +138,7 @@ vi.mock("./commands/mission.js", () => ({
   runMissionDelete: commandMocks.runMissionDelete,
   runMissionActivateSlice: commandMocks.runMissionActivateSlice,
 }));
+
 vi.mock("./commands/project.js", () => ({
   runProjectList: commandMocks.runProjectList,
   runProjectAdd: commandMocks.runProjectAdd,
@@ -114,15 +149,42 @@ vi.mock("./commands/project.js", () => ({
   runProjectDetect: commandMocks.runProjectDetect,
 }));
 
+vi.mock("./commands/node.js", () => ({
+  runNodeList: commandMocks.runNodeList,
+  runNodeAdd: commandMocks.runNodeAdd,
+  runNodeRemove: commandMocks.runNodeRemove,
+  runNodeShow: commandMocks.runNodeShow,
+  runNodeHealth: commandMocks.runNodeHealth,
+}));
+
+vi.mock("./commands/agent.js", () => ({
+  runAgentStop: commandMocks.runAgentStop,
+  runAgentStart: commandMocks.runAgentStart,
+}));
+
+vi.mock("./commands/agent-import.js", () => ({
+  runAgentImport: commandMocks.runAgentImport,
+}));
+
+vi.mock("./commands/message.js", () => ({
+  runMessageInbox: commandMocks.runMessageInbox,
+  runMessageOutbox: commandMocks.runMessageOutbox,
+  runMessageSend: commandMocks.runMessageSend,
+  runMessageRead: commandMocks.runMessageRead,
+  runMessageDelete: commandMocks.runMessageDelete,
+  runAgentMailbox: commandMocks.runAgentMailbox,
+}));
+
 const originalArgv = process.argv;
 const originalExit = process.exit;
-const originalEnvProject = process.env.FN_PROJECT;
+const originalSkipMigration = process.env.KB_SKIP_MIGRATION;
 
 let importCounter = 0;
 
 async function runBin(args: string[]) {
   process.argv = ["node", "bin.ts", ...args];
   importCounter += 1;
+
   if (importCounter === 1) {
     await import("./bin.ts?test=1");
   } else if (importCounter === 2) {
@@ -133,15 +195,86 @@ async function runBin(args: string[]) {
     await import("./bin.ts?test=4");
   } else if (importCounter === 5) {
     await import("./bin.ts?test=5");
-  } else {
+  } else if (importCounter === 6) {
     await import("./bin.ts?test=6");
+  } else if (importCounter === 7) {
+    await import("./bin.ts?test=7");
+  } else if (importCounter === 8) {
+    await import("./bin.ts?test=8");
+  } else if (importCounter === 9) {
+    await import("./bin.ts?test=9");
+  } else if (importCounter === 10) {
+    await import("./bin.ts?test=10");
+  } else if (importCounter === 11) {
+    await import("./bin.ts?test=11");
+  } else if (importCounter === 12) {
+    await import("./bin.ts?test=12");
+  } else if (importCounter === 13) {
+    await import("./bin.ts?test=13");
+  } else if (importCounter === 14) {
+    await import("./bin.ts?test=14");
+  } else if (importCounter === 15) {
+    await import("./bin.ts?test=15");
+  } else if (importCounter === 16) {
+    await import("./bin.ts?test=16");
+  } else if (importCounter === 17) {
+    await import("./bin.ts?test=17");
+  } else if (importCounter === 18) {
+    await import("./bin.ts?test=18");
+  } else if (importCounter === 19) {
+    await import("./bin.ts?test=19");
+  } else if (importCounter === 20) {
+    await import("./bin.ts?test=20");
+  } else if (importCounter === 21) {
+    await import("./bin.ts?test=21");
+  } else if (importCounter === 22) {
+    await import("./bin.ts?test=22");
+  } else if (importCounter === 23) {
+    await import("./bin.ts?test=23");
+  } else if (importCounter === 24) {
+    await import("./bin.ts?test=24");
+  } else if (importCounter === 25) {
+    await import("./bin.ts?test=25");
+  } else if (importCounter === 26) {
+    await import("./bin.ts?test=26");
+  } else if (importCounter === 27) {
+    await import("./bin.ts?test=27");
+  } else if (importCounter === 28) {
+    await import("./bin.ts?test=28");
+  } else if (importCounter === 29) {
+    await import("./bin.ts?test=29");
+  } else if (importCounter === 30) {
+    await import("./bin.ts?test=30");
+  } else if (importCounter === 31) {
+    await import("./bin.ts?test=31");
+  } else if (importCounter === 32) {
+    await import("./bin.ts?test=32");
+  } else if (importCounter === 33) {
+    await import("./bin.ts?test=33");
+  } else if (importCounter === 34) {
+    await import("./bin.ts?test=34");
+  } else if (importCounter === 35) {
+    await import("./bin.ts?test=35");
+  } else if (importCounter === 36) {
+    await import("./bin.ts?test=36");
+  } else if (importCounter === 37) {
+    await import("./bin.ts?test=37");
+  } else if (importCounter === 38) {
+    await import("./bin.ts?test=38");
+  } else if (importCounter === 39) {
+    await import("./bin.ts?test=39");
+  } else {
+    await import("./bin.ts?test=40");
   }
 }
 
-describe("bin mission command integration", () => {
+describe("bin command routing and fallbacks", () => {
+  const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+  const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
   beforeEach(() => {
     vi.clearAllMocks();
-    delete process.env.FN_PROJECT;
+    process.env.KB_SKIP_MIGRATION = "1";
     process.exit = vi.fn(((code?: number) => {
       throw new Error(`process.exit:${code ?? 0}`);
     }) as typeof process.exit);
@@ -150,11 +283,171 @@ describe("bin mission command integration", () => {
   afterEach(() => {
     process.argv = originalArgv;
     process.exit = originalExit;
-    if (originalEnvProject === undefined) {
-      delete process.env.FN_PROJECT;
+    if (originalSkipMigration === undefined) {
+      delete process.env.KB_SKIP_MIGRATION;
     } else {
-      process.env.FN_PROJECT = originalEnvProject;
+      process.env.KB_SKIP_MIGRATION = originalSkipMigration;
     }
+  });
+
+  it("shows help with --help and exits 0", async () => {
+    await expect(runBin(["--help"])).rejects.toThrow("process.exit:0");
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("fn — AI-orchestrated task board"));
+  });
+
+  it("shows help when no args are provided", async () => {
+    await expect(runBin([])).rejects.toThrow("process.exit:0");
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("Usage:"));
+  });
+
+  it("prints an error for unknown top-level command", async () => {
+    await expect(runBin(["unknown-cmd"])).rejects.toThrow("process.exit:1");
+    expect(errorSpy).toHaveBeenCalledWith("Unknown command: unknown-cmd");
+  });
+
+  it("errors on duplicate --project flags", async () => {
+    await expect(runBin(["task", "list", "--project", "alpha", "-P", "beta"])).rejects.toThrow(
+      "Duplicate --project flag",
+    );
+  });
+
+  it("errors when --project is missing a value", async () => {
+    await expect(runBin(["task", "list", "--project"])).rejects.toThrow("Usage: --project <name>");
+  });
+
+  it("routes settings export with scope/output/project", async () => {
+    await runBin(["settings", "export", "--scope", "global", "--output", "./out.json", "-P", "demo"]);
+
+    expect(commandMocks.runSettingsExport).toHaveBeenCalledWith({
+      scope: "global",
+      output: "./out.json",
+      projectName: "demo",
+    });
+  });
+
+  it("routes settings import with file and flags", async () => {
+    await runBin(["settings", "import", "file.json", "--scope", "global", "--merge", "--yes", "-P", "demo"]);
+
+    expect(commandMocks.runSettingsImport).toHaveBeenCalledWith("file.json", {
+      scope: "global",
+      merge: true,
+      yes: true,
+      projectName: "demo",
+    });
+  });
+
+  it("errors when settings import file is missing", async () => {
+    await expect(runBin(["settings", "import"])).rejects.toThrow("process.exit:1");
+    expect(errorSpy).toHaveBeenCalledWith(
+      "Usage: fn settings import <file> [--scope global|project|both] [--merge] [--yes]",
+    );
+  });
+
+  it("errors on unknown settings subcommand", async () => {
+    await expect(runBin(["settings", "oops"])).rejects.toThrow("process.exit:1");
+    expect(errorSpy).toHaveBeenCalledWith("Unknown settings subcommand: oops");
+  });
+
+  it("routes git fetch/pull/push with expected options", async () => {
+    await runBin(["git", "fetch", "origin", "-P", "demo"]);
+    await runBin(["git", "pull", "--yes", "-P", "demo"]);
+    await runBin(["git", "push", "--yes", "-P", "demo"]);
+
+    expect(commandMocks.runGitFetch).toHaveBeenCalledWith("origin", "demo");
+    expect(commandMocks.runGitPull).toHaveBeenCalledWith({ skipConfirm: true, projectName: "demo" });
+    expect(commandMocks.runGitPush).toHaveBeenCalledWith({ skipConfirm: true, projectName: "demo" });
+  });
+
+  it("errors on unknown git subcommand", async () => {
+    await expect(runBin(["git", "rebase"])).rejects.toThrow("process.exit:1");
+    expect(errorSpy).toHaveBeenCalledWith("Unknown subcommand: git rebase");
+  });
+
+  it("routes backup create/list/cleanup/restore", async () => {
+    await runBin(["backup", "--create", "-P", "demo"]);
+    await runBin(["backup", "--list", "-P", "demo"]);
+    await runBin(["backup", "--cleanup", "-P", "demo"]);
+    await runBin(["backup", "--restore", "backup.db", "-P", "demo"]);
+
+    expect(commandMocks.runBackupCreate).toHaveBeenCalledWith("demo");
+    expect(commandMocks.runBackupList).toHaveBeenCalledWith("demo");
+    expect(commandMocks.runBackupCleanup).toHaveBeenCalledWith("demo");
+    expect(commandMocks.runBackupRestore).toHaveBeenCalledWith("backup.db", "demo");
+  });
+
+  it("errors when backup flags are missing", async () => {
+    await expect(runBin(["backup"])).rejects.toThrow("process.exit:1");
+    expect(errorSpy).toHaveBeenCalledWith(
+      "Usage: fn backup --create | --list | --cleanup | --restore <filename>",
+    );
+  });
+
+  it("errors for task move missing arguments", async () => {
+    await expect(runBin(["task", "move"])).rejects.toThrow("process.exit:1");
+    expect(errorSpy).toHaveBeenCalledWith("Usage: fn task move <id> <column>");
+  });
+
+  it("errors for task show missing id", async () => {
+    await expect(runBin(["task", "show"])).rejects.toThrow("process.exit:1");
+    expect(errorSpy).toHaveBeenCalledWith("Usage: fn task show <id>");
+  });
+
+  it("routes agent subcommands stop/start/import/mailbox", async () => {
+    await runBin(["agent", "stop", "agent-1", "-P", "demo"]);
+    await runBin(["agent", "start", "agent-1", "-P", "demo"]);
+    await runBin(["agent", "import", "company.md", "--dry-run", "-P", "demo"]);
+    await runBin(["agent", "mailbox", "agent-1", "-P", "demo"]);
+
+    expect(commandMocks.runAgentStop).toHaveBeenCalledWith("agent-1", "demo");
+    expect(commandMocks.runAgentStart).toHaveBeenCalledWith("agent-1", "demo");
+    expect(commandMocks.runAgentImport).toHaveBeenCalledWith("company.md", {
+      dryRun: true,
+      skipExisting: false,
+      project: "demo",
+    });
+    expect(commandMocks.runAgentMailbox).toHaveBeenCalledWith("agent-1", "demo");
+  });
+
+  it("routes message subcommands send/read/delete/inbox/outbox", async () => {
+    await runBin(["message", "send", "agent-7", "hello", "there", "-P", "demo"]);
+    await runBin(["message", "read", "msg-1", "-P", "demo"]);
+    await runBin(["message", "delete", "msg-1", "-P", "demo"]);
+    await runBin(["message", "inbox", "-P", "demo"]);
+    await runBin(["message", "outbox", "-P", "demo"]);
+
+    expect(commandMocks.runMessageSend).toHaveBeenCalledWith("agent-7", "hello there", "demo");
+    expect(commandMocks.runMessageRead).toHaveBeenCalledWith("msg-1", "demo");
+    expect(commandMocks.runMessageDelete).toHaveBeenCalledWith("msg-1", "demo");
+    expect(commandMocks.runMessageInbox).toHaveBeenCalledWith("demo");
+    expect(commandMocks.runMessageOutbox).toHaveBeenCalledWith("demo");
+  });
+
+  it("routes node add with typed option parsing", async () => {
+    await runBin([
+      "node",
+      "add",
+      "worker-a",
+      "--url",
+      "http://x",
+      "--api-key",
+      "key",
+      "--max-concurrent",
+      "4",
+    ]);
+
+    expect(commandMocks.runNodeAdd).toHaveBeenCalledWith("worker-a", {
+      url: "http://x",
+      apiKey: "key",
+      maxConcurrent: 4,
+    });
+  });
+
+  it("passes extracted --project into command handlers", async () => {
+    await runBin(["task", "list", "--project", "alpha"]);
+    await runBin(["settings", "show", "-P", "alpha"]);
+
+    expect(commandMocks.runTaskList).toHaveBeenCalledWith("alpha");
+    expect(commandMocks.runSettingsShow).toHaveBeenCalledWith("alpha");
   });
 
   it("routes mission create with multi-word description and project flag", async () => {
