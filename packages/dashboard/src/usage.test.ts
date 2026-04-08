@@ -790,7 +790,10 @@ describe("usage", () => {
 
       expect(claude.status).toBe("ok");
       const sessionWindow = claude.windows.find((w) => w.label.includes("Session"))!;
-      expect(sessionWindow.resetAt).toBeUndefined();
+      expect(sessionWindow.resetAt).toBeDefined();
+      const resetAtDate = new Date(sessionWindow.resetAt!);
+      const expectedMs = Date.now() + 5 * 60 * 60 * 1000;
+      expect(Math.abs(resetAtDate.getTime() - expectedMs)).toBeLessThan(1000);
       // Fallback: when resets_at is missing, session window gets resetMs = 5h
       expect(sessionWindow.resetMs).toBe(5 * 60 * 60 * 1000);
       expect(sessionWindow.resetText).toBe("resets in 5h");
@@ -823,8 +826,10 @@ describe("usage", () => {
       expect(sessionWindow.windowDurationMs).toBe(5 * 60 * 60 * 1000);
       expect(sessionWindow.resetMs).toBe(5 * 60 * 60 * 1000);
       expect(sessionWindow.resetText).toBe("resets in 5h");
-      // resetAt stays undefined because the API didn't provide it
-      expect(sessionWindow.resetAt).toBeUndefined();
+      expect(sessionWindow.resetAt).toBeDefined();
+      const resetAtDate = new Date(sessionWindow.resetAt!);
+      const expectedMs = Date.now() + 5 * 60 * 60 * 1000;
+      expect(Math.abs(resetAtDate.getTime() - expectedMs)).toBeLessThan(1000);
     });
 
     it("handles empty JSON object from API gracefully", async () => {

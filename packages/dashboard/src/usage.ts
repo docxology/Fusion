@@ -837,7 +837,7 @@ async function fetchClaudeUsage(): Promise<ProviderUsage> {
       let resetText: string | null = null;
       let resetMs: number | undefined;
 
-      const resetAtValue = w.resets_at || w.reset_at || w.resetAt;
+      let resetAtValue = w.resets_at || w.reset_at || w.resetAt;
       if (resetAtValue) {
         const msLeft = new Date(resetAtValue).getTime() - Date.now();
         resetMs = msLeft > 0 ? msLeft : 0;
@@ -849,6 +849,7 @@ async function fetchClaudeUsage(): Promise<ProviderUsage> {
         // the API omits resets_at / reset_at / resetAt fields.
         resetMs = windowDurationMs;
         resetText = "resets in 5h";
+        resetAtValue = new Date(Date.now() + windowDurationMs).toISOString();
       }
 
       return {
