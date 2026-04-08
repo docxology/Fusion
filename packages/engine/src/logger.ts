@@ -82,3 +82,9 @@ export const autopilotLog = createLogger("autopilot");
 
 /** Logger for the heartbeat execution subsystem. */
 export const heartbeatLog = createLogger("heartbeat");
+
+/** Logger for remote node runtime/client subsystems. */
+export const remoteNodeLog = createLogger("remote-node");
+
+/** Logger for periodic node health monitor subsystem. */
+export const nodeHealthMonitorLog = createLogger("node-health-monitor");

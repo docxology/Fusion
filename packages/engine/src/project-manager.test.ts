@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { CentralCore, RegisteredProject, Task } from "@fusion/core";
+import { InProcessRuntime } from "./runtimes/in-process-runtime.js";
+import { ChildProcessRuntime } from "./runtimes/child-process-runtime.js";
+import { RemoteNodeRuntime } from "./runtimes/remote-node-runtime.js";
 import { ProjectManager } from "./project-manager.js";
 import type { ProjectRuntimeConfig } from "./project-runtime.js";
 
@@ -40,6 +43,26 @@ vi.mock("./runtimes/child-process-runtime.js", () => ({
   })),
 }));
 
+vi.mock("./runtimes/remote-node-runtime.js", () => ({
+  RemoteNodeRuntime: vi.fn().mockImplementation(() => ({
+    start: vi.fn().mockResolvedValue(undefined),
+    stop: vi.fn().mockResolvedValue(undefined),
+    getStatus: vi.fn().mockReturnValue("active"),
+    getTaskStore: vi.fn().mockImplementation(() => {
+      throw new Error("TaskStore not accessible for remote node runtime");
+    }),
+    getScheduler: vi.fn().mockImplementation(() => {
+      throw new Error("Scheduler not accessible for remote node runtime");
+    }),
+    getMetrics: vi.fn().mockReturnValue({
+      inFlightTasks: 0,
+      activeAgents: 0,
+      lastActivityAt: new Date().toISOString(),
+    }),
+    on: vi.fn().mockReturnThis(),
+  })),
+}));
+
 describe("ProjectManager", () => {
   let manager: ProjectManager;
   let mockCentralCore: CentralCore;
@@ -56,6 +79,7 @@ describe("ProjectManager", () => {
   beforeEach(() => {
     mockCentralCore = {
       getProject: vi.fn().mockResolvedValue(mockProject),
+      getNode: vi.fn().mockResolvedValue(undefined),
       getGlobalConcurrencyState: vi.fn().mockResolvedValue({
         globalMaxConcurrent: 4,
         currentlyActive: 0,
@@ -142,6 +166,84 @@ describe("ProjectManager", () => {
         "proj_test123",
         { status: "active" }
       );
+    });
+
+    it("routes to RemoteNodeRuntime when assigned node is remote", async () => {
+      (mockCentralCore.getProject as ReturnType<typeof vi.fn>).mockResolvedValue({
+        ...mockProject,
+        nodeId: "node_remote_1",
+      });
+      (mockCentralCore.getNode as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: "node_remote_1",
+        name: "Remote 1",
+        type: "remote",
+        url: "https://remote.example.com",
+        apiKey: "remote-token",
+        status: "online",
+        maxConcurrent: 4,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+
+      await manager.addProject(testConfig);
+
+      expect(RemoteNodeRuntime).toHaveBeenCalledWith({
+        nodeConfig: expect.objectContaining({ id: "node_remote_1", type: "remote" }),
+        projectId: "proj_test123",
+        projectName: "Test Project",
+      });
+    });
+
+    it("routes to InProcessRuntime when assigned node is local", async () => {
+      (mockCentralCore.getProject as ReturnType<typeof vi.fn>).mockResolvedValue({
+        ...mockProject,
+        nodeId: "node_local_1",
+      });
+      (mockCentralCore.getNode as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: "node_local_1",
+        name: "Local 1",
+        type: "local",
+        status: "online",
+        maxConcurrent: 4,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+
+      await manager.addProject(testConfig);
+
+      expect(InProcessRuntime).toHaveBeenCalled();
+      expect(RemoteNodeRuntime).not.toHaveBeenCalled();
+    });
+
+    it("routes to InProcessRuntime when no node assignment exists", async () => {
+      (mockCentralCore.getProject as ReturnType<typeof vi.fn>).mockResolvedValue({
+        ...mockProject,
+        nodeId: undefined,
+      });
+
+      await manager.addProject(testConfig);
+
+      expect(InProcessRuntime).toHaveBeenCalled();
+      expect(mockCentralCore.getNode).not.toHaveBeenCalled();
+    });
+
+    it("falls back to InProcessRuntime and logs warning when assigned node is missing", async () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      (mockCentralCore.getProject as ReturnType<typeof vi.fn>).mockResolvedValue({
+        ...mockProject,
+        nodeId: "node_missing",
+      });
+      (mockCentralCore.getNode as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+
+      await manager.addProject(testConfig);
+
+      expect(InProcessRuntime).toHaveBeenCalled();
+      expect(RemoteNodeRuntime).not.toHaveBeenCalled();
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("[project-manager] Assigned node node_missing not found")
+      );
+
+      warnSpy.mockRestore();
     });
   });
 

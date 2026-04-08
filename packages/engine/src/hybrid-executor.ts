@@ -1,6 +1,7 @@
 import { EventEmitter } from "node:events";
 import type { Task, CentralCore, RegisteredProject } from "@fusion/core";
 import { ProjectManager } from "./project-manager.js";
+import { NodeHealthMonitor } from "./node-health-monitor.js";
 import type {
   ProjectRuntime,
   ProjectRuntimeConfig,
@@ -133,6 +134,7 @@ export interface HybridExecutorOptions {
  */
 export class HybridExecutor extends EventEmitter<HybridExecutorEvents> {
   private projectManager: ProjectManager;
+  private nodeHealthMonitor: NodeHealthMonitor | null = null;
   private initialized = false;
 
   /**
@@ -196,6 +198,10 @@ export class HybridExecutor extends EventEmitter<HybridExecutorEvents> {
 
     // Listen for CentralCore project events
     this.setupCentralCoreListeners();
+
+    // Start remote node health monitoring after project runtimes are loaded.
+    this.nodeHealthMonitor = new NodeHealthMonitor(this.centralCore);
+    await this.nodeHealthMonitor.start();
 
     this.initialized = true;
     hybridExecutorLog.log("HybridExecutor initialized");
@@ -319,6 +325,13 @@ export class HybridExecutor extends EventEmitter<HybridExecutorEvents> {
   }
 
   /**
+   * Get the optional node health monitor instance.
+   */
+  getNodeHealthMonitor(): NodeHealthMonitor | null {
+    return this.nodeHealthMonitor;
+  }
+
+  /**
    * Acquire a global concurrency slot.
    *
    * @param projectId - Project requesting the slot
@@ -354,6 +367,12 @@ export class HybridExecutor extends EventEmitter<HybridExecutorEvents> {
     this.centralCore.removeAllListeners("project:registered");
     this.centralCore.removeAllListeners("project:unregistered");
     this.centralCore.removeAllListeners("project:updated");
+
+    // Stop node health monitor before shutting down runtimes.
+    if (this.nodeHealthMonitor) {
+      await this.nodeHealthMonitor.stop();
+      this.nodeHealthMonitor = null;
+    }
 
     // Stop all runtimes
     await this.projectManager.stopAll();

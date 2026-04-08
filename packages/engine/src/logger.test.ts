@@ -1,5 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { createLogger, schedulerLog, executorLog, triageLog, mergerLog, worktreePoolLog, reviewerLog } from "./logger.js";
+import {
+  createLogger,
+  schedulerLog,
+  executorLog,
+  triageLog,
+  mergerLog,
+  worktreePoolLog,
+  reviewerLog,
+  remoteNodeLog,
+} from "./logger.js";
 
 describe("createLogger", () => {
   let logSpy: ReturnType<typeof vi.spyOn>;
@@ -71,5 +80,8 @@ describe("createLogger", () => {
 
     reviewerLog.log("review");
     expect(logSpy).toHaveBeenCalledWith("[reviewer] review");
+
+    remoteNodeLog.log("stream");
+    expect(logSpy).toHaveBeenCalledWith("[remote-node] stream");
   });
 });

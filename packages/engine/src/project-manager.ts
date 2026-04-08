@@ -2,6 +2,7 @@ import { EventEmitter } from "node:events";
 import type { Task, CentralCore, RegisteredProject } from "@fusion/core";
 import { InProcessRuntime } from "./runtimes/in-process-runtime.js";
 import { ChildProcessRuntime } from "./runtimes/child-process-runtime.js";
+import { RemoteNodeRuntime } from "./runtimes/remote-node-runtime.js";
 import { AgentSemaphore } from "./concurrency.js";
 import type {
   ProjectRuntime,
@@ -163,8 +164,28 @@ export class ProjectManager extends EventEmitter<ProjectManagerEvents> {
     if (config.isolationMode === "child-process") {
       runtime = new ChildProcessRuntime(config, this.centralCore);
     } else {
-      // Default to in-process
-      runtime = new InProcessRuntime(config, this.centralCore);
+      let assignedNode = undefined;
+
+      if (project.nodeId) {
+        assignedNode = await this.centralCore.getNode(project.nodeId);
+
+        if (!assignedNode) {
+          projectManagerLog.warn(
+            `Assigned node ${project.nodeId} not found for project ${project.id}; falling back to InProcessRuntime`
+          );
+        }
+      }
+
+      if (assignedNode?.type === "remote") {
+        runtime = new RemoteNodeRuntime({
+          nodeConfig: assignedNode,
+          projectId: config.projectId,
+          projectName: project.name,
+        });
+      } else {
+        // Default to local in-process runtime (includes unassigned + local-node assigned)
+        runtime = new InProcessRuntime(config, this.centralCore);
+      }
     }
 
     // Set up event forwarding with project attribution

@@ -6,64 +6,106 @@ import type { ProjectRuntimeConfig } from "../project-runtime.js";
 // Mock the ProjectManager
 const mockRuntimes = new Map();
 const mockProjectIds: string[] = [];
+const mockProjectManagerInstances: Array<{
+  addProject: ReturnType<typeof vi.fn>;
+  removeProject: ReturnType<typeof vi.fn>;
+  getRuntime: ReturnType<typeof vi.fn>;
+  listRuntimes: ReturnType<typeof vi.fn>;
+  getProjectIds: ReturnType<typeof vi.fn>;
+  getGlobalMetrics: ReturnType<typeof vi.fn>;
+  acquireGlobalSlot: ReturnType<typeof vi.fn>;
+  releaseGlobalSlot: ReturnType<typeof vi.fn>;
+  stopAll: ReturnType<typeof vi.fn>;
+  on: ReturnType<typeof vi.fn>;
+}> = [];
 
 vi.mock("../project-manager.js", () => ({
-  ProjectManager: vi.fn().mockImplementation(() => ({
-    addProject: vi.fn().mockImplementation((config: ProjectRuntimeConfig) => {
-      const runtime = {
-        start: vi.fn().mockResolvedValue(undefined),
-        stop: vi.fn().mockResolvedValue(undefined),
-        getStatus: vi.fn().mockReturnValue("active"),
-        getTaskStore: vi.fn(),
-        getScheduler: vi.fn(),
-        getMetrics: vi.fn().mockReturnValue({
-          inFlightTasks: 0,
-          activeAgents: 0,
-          lastActivityAt: new Date().toISOString(),
-        }),
-        on: vi.fn().mockReturnThis(),
-      };
-      mockRuntimes.set(config.projectId, runtime);
-      mockProjectIds.push(config.projectId);
-      return Promise.resolve(runtime);
-    }),
-    removeProject: vi.fn().mockImplementation((projectId: string) => {
-      mockRuntimes.delete(projectId);
-      const index = mockProjectIds.indexOf(projectId);
-      if (index > -1) mockProjectIds.splice(index, 1);
-      return Promise.resolve(undefined);
-    }),
-    getRuntime: vi.fn().mockImplementation((projectId: string) => {
-      return mockRuntimes.get(projectId);
-    }),
-    listRuntimes: vi.fn().mockImplementation(() => {
-      return Array.from(mockRuntimes.values());
-    }),
-    getProjectIds: vi.fn().mockImplementation(() => {
-      return [...mockProjectIds];
-    }),
-    getGlobalMetrics: vi.fn().mockResolvedValue({
-      totalInFlightTasks: 0,
-      totalActiveAgents: 0,
-      runtimeCountByStatus: {
-        active: 0,
-        paused: 0,
-        errored: 0,
-        stopped: 0,
-        starting: 0,
-        stopping: 0,
-      },
-      totalRuntimes: 0,
-    }),
-    acquireGlobalSlot: vi.fn().mockResolvedValue(true),
-    releaseGlobalSlot: vi.fn().mockResolvedValue(undefined),
-    stopAll: vi.fn().mockImplementation(() => {
-      mockRuntimes.clear();
-      mockProjectIds.length = 0;
-      return Promise.resolve(undefined);
-    }),
-    on: vi.fn().mockReturnThis(),
-  })),
+  ProjectManager: vi.fn().mockImplementation(() => {
+    const instance = {
+      addProject: vi.fn().mockImplementation((config: ProjectRuntimeConfig) => {
+        const runtime = {
+          start: vi.fn().mockResolvedValue(undefined),
+          stop: vi.fn().mockResolvedValue(undefined),
+          getStatus: vi.fn().mockReturnValue("active"),
+          getTaskStore: vi.fn(),
+          getScheduler: vi.fn(),
+          getMetrics: vi.fn().mockReturnValue({
+            inFlightTasks: 0,
+            activeAgents: 0,
+            lastActivityAt: new Date().toISOString(),
+          }),
+          on: vi.fn().mockReturnThis(),
+        };
+        mockRuntimes.set(config.projectId, runtime);
+        mockProjectIds.push(config.projectId);
+        return Promise.resolve(runtime);
+      }),
+      removeProject: vi.fn().mockImplementation((projectId: string) => {
+        mockRuntimes.delete(projectId);
+        const index = mockProjectIds.indexOf(projectId);
+        if (index > -1) mockProjectIds.splice(index, 1);
+        return Promise.resolve(undefined);
+      }),
+      getRuntime: vi.fn().mockImplementation((projectId: string) => {
+        return mockRuntimes.get(projectId);
+      }),
+      listRuntimes: vi.fn().mockImplementation(() => {
+        return Array.from(mockRuntimes.values());
+      }),
+      getProjectIds: vi.fn().mockImplementation(() => {
+        return [...mockProjectIds];
+      }),
+      getGlobalMetrics: vi.fn().mockResolvedValue({
+        totalInFlightTasks: 0,
+        totalActiveAgents: 0,
+        runtimeCountByStatus: {
+          active: 0,
+          paused: 0,
+          errored: 0,
+          stopped: 0,
+          starting: 0,
+          stopping: 0,
+        },
+        totalRuntimes: 0,
+      }),
+      acquireGlobalSlot: vi.fn().mockResolvedValue(true),
+      releaseGlobalSlot: vi.fn().mockResolvedValue(undefined),
+      stopAll: vi.fn().mockImplementation(() => {
+        mockRuntimes.clear();
+        mockProjectIds.length = 0;
+        return Promise.resolve(undefined);
+      }),
+      on: vi.fn().mockReturnThis(),
+    };
+
+    mockProjectManagerInstances.push(instance);
+    return instance;
+  }),
+}));
+
+const mockNodeHealthMonitorInstances: Array<{
+  start: ReturnType<typeof vi.fn>;
+  stop: ReturnType<typeof vi.fn>;
+  checkAllNodes: ReturnType<typeof vi.fn>;
+}> = [];
+
+vi.mock("../node-health-monitor.js", () => ({
+  NodeHealthMonitor: vi.fn().mockImplementation(() => {
+    const instance = {
+      start: vi.fn().mockResolvedValue(undefined),
+      stop: vi.fn().mockResolvedValue(undefined),
+      checkAllNodes: vi.fn().mockResolvedValue({
+        checked: 0,
+        online: 0,
+        offline: 0,
+        error: 0,
+        connecting: 0,
+      }),
+    };
+
+    mockNodeHealthMonitorInstances.push(instance);
+    return instance;
+  }),
 }));
 
 describe("HybridExecutor", () => {
@@ -112,6 +154,8 @@ describe("HybridExecutor", () => {
     vi.clearAllMocks();
     mockRuntimes.clear();
     mockProjectIds.length = 0;
+    mockProjectManagerInstances.length = 0;
+    mockNodeHealthMonitorInstances.length = 0;
   });
 
   describe("initialization", () => {
@@ -127,6 +171,30 @@ describe("HybridExecutor", () => {
     it("should load existing projects on initialize", async () => {
       await executor.initialize();
       expect(mockCentralCore.listProjects).toHaveBeenCalled();
+    });
+
+    it("should forward remote-node assigned projects to ProjectManager for routing", async () => {
+      const remoteAssignedProject: RegisteredProject = {
+        ...mockProject,
+        id: "proj_remote_1",
+        name: "Remote Assigned Project",
+        status: "active",
+        nodeId: "node_remote_1",
+      };
+      (mockCentralCore.listProjects as ReturnType<typeof vi.fn>).mockResolvedValue([
+        remoteAssignedProject,
+      ]);
+
+      await executor.initialize();
+
+      const manager = mockProjectManagerInstances[0];
+      expect(manager?.addProject).toHaveBeenCalledWith(
+        expect.objectContaining({
+          projectId: "proj_remote_1",
+          isolationMode: "in-process",
+          workingDirectory: "/tmp/test-project",
+        })
+      );
     });
 
     it("should setup CentralCore listeners on initialize", async () => {
@@ -145,12 +213,22 @@ describe("HybridExecutor", () => {
       );
     });
 
+    it("should create and start node health monitor on initialize", async () => {
+      await executor.initialize();
+
+      expect(mockNodeHealthMonitorInstances).toHaveLength(1);
+      expect(mockNodeHealthMonitorInstances[0]?.start).toHaveBeenCalledTimes(1);
+      expect(executor.getNodeHealthMonitor()).toBe(mockNodeHealthMonitorInstances[0]);
+    });
+
     it("should be idempotent (initialize multiple times)", async () => {
       await executor.initialize();
       const callCount = (mockCentralCore.listProjects as ReturnType<typeof vi.fn>).mock.calls.length;
 
       await executor.initialize();
       expect(mockCentralCore.listProjects).toHaveBeenCalledTimes(callCount);
+      expect(mockNodeHealthMonitorInstances).toHaveLength(1);
+      expect(mockNodeHealthMonitorInstances[0]?.start).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -318,6 +396,21 @@ describe("HybridExecutor", () => {
       expect(mockCentralCore.removeAllListeners).toHaveBeenCalledWith(
         "project:updated"
       );
+    });
+
+    it("should stop node health monitor before stopping runtimes", async () => {
+      const monitor = mockNodeHealthMonitorInstances[0];
+      const manager = mockProjectManagerInstances[0];
+
+      await executor.shutdown();
+
+      expect(monitor?.stop).toHaveBeenCalledTimes(1);
+      expect(manager?.stopAll).toHaveBeenCalledTimes(1);
+
+      const monitorStopOrder = monitor?.stop.mock.invocationCallOrder[0] ?? Number.MAX_SAFE_INTEGER;
+      const stopAllOrder = manager?.stopAll.mock.invocationCallOrder[0] ?? Number.MIN_SAFE_INTEGER;
+      expect(monitorStopOrder).toBeLessThan(stopAllOrder);
+      expect(executor.getNodeHealthMonitor()).toBeNull();
     });
   });
 

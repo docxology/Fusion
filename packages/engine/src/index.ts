@@ -19,6 +19,9 @@ export { StuckTaskDetector, type StuckTaskDetectorOptions, type DisposableSessio
 export { TokenCapDetector, type TokenCapCheckResult } from "./token-cap-detector.js";
 export { SelfHealingManager, type SelfHealingOptions } from "./self-healing.js";
 export { ProjectManager } from "./project-manager.js";
+export { NodeHealthMonitor } from "./node-health-monitor.js";
+export { RemoteNodeClient } from "./runtimes/remote-node-client.js";
+export { RemoteNodeRuntime, type RemoteNodeRuntimeConfig } from "./runtimes/remote-node-runtime.js";
 export { StepSessionExecutor } from "./step-session-executor.js";
 export type { StepResult, ParallelWave, StepSessionExecutorOptions } from "./step-session-executor.js";
 // Multi-project runtime types
