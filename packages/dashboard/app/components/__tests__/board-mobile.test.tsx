@@ -252,6 +252,85 @@ describe("TaskCard mobile", () => {
     expect(fetchTaskDetail).not.toHaveBeenCalled();
   });
 
+  it("does not open task detail when tapping the edit button", async () => {
+    const task = createTask({ id: "FN-204", column: "todo" });
+
+    render(
+      <TaskCard
+        task={task}
+        onOpenDetail={vi.fn()}
+        addToast={vi.fn()}
+        onUpdateTask={vi.fn().mockResolvedValue(task)}
+      />,
+    );
+
+    const editButton = screen.getByRole("button", { name: "Edit task" });
+    fireEvent.touchStart(editButton, {
+      touches: [{ clientX: 100, clientY: 100 }],
+    });
+    fireEvent.touchEnd(editButton, {
+      changedTouches: [{ clientX: 100, clientY: 100 }],
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(fetchTaskDetail).not.toHaveBeenCalled();
+  });
+
+  it("does not open task detail when tapping the steps toggle", async () => {
+    const task = createTask({
+      id: "FN-205",
+      column: "todo",
+      steps: [
+        { name: "Step 1", status: "done" },
+        { name: "Step 2", status: "in-progress" },
+      ],
+    });
+
+    render(
+      <TaskCard task={task} onOpenDetail={vi.fn()} addToast={vi.fn()} />,
+    );
+
+    const toggleButton = screen.getByRole("button", { name: "Show steps" });
+    fireEvent.touchStart(toggleButton, {
+      touches: [{ clientX: 100, clientY: 100 }],
+    });
+    fireEvent.touchEnd(toggleButton, {
+      changedTouches: [{ clientX: 100, clientY: 100 }],
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(fetchTaskDetail).not.toHaveBeenCalled();
+  });
+
+  it("does not open task detail when touch target is an SVG element inside a button", async () => {
+    const task = createTask({
+      id: "FN-206",
+      column: "todo",
+      steps: [
+        { name: "Step 1", status: "done" },
+        { name: "Step 2", status: "in-progress" },
+      ],
+    });
+
+    render(
+      <TaskCard task={task} onOpenDetail={vi.fn()} addToast={vi.fn()} />,
+    );
+
+    const toggleButton = screen.getByRole("button", { name: "Show steps" });
+    const svgTarget = toggleButton.querySelector("svg");
+    expect(svgTarget).toBeTruthy();
+
+    fireEvent.touchStart(svgTarget as SVGElement, {
+      touches: [{ clientX: 100, clientY: 100 }],
+    });
+    fireEvent.touchEnd(svgTarget as SVGElement, {
+      changedTouches: [{ clientX: 100, clientY: 100 }],
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(fetchTaskDetail).not.toHaveBeenCalled();
+  });
+
   it("renders edit button with aria-label in editable columns", () => {
     const task = createTask({ id: "FN-202", column: "todo" });
 

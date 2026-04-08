@@ -206,7 +206,7 @@ function TaskCardComponent({
   const hasTouchMovedRef = useRef(false);
 
   const isInteractiveTarget = useCallback((target: EventTarget | null): boolean => {
-    if (!(target instanceof HTMLElement)) return false;
+    if (!(target instanceof Element)) return false;
     return !!target.closest("button, a, input, textarea, select, label, [role='button']");
   }, []);
 
