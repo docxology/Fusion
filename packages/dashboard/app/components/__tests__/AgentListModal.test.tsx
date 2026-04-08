@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { AgentListModal } from "../AgentListModal";
 import * as apiModule from "../../api";
 import type { Agent, AgentState, AgentCapability } from "../../api";
+import { scopedKey } from "../../utils/projectStorage";
 
 // Mock the API module
 vi.mock("../../api", () => ({
@@ -20,6 +21,8 @@ const mockDeleteAgent = vi.mocked(apiModule.deleteAgent);
 describe("AgentListModal", () => {
   const mockOnClose = vi.fn();
   const mockAddToast = vi.fn();
+  const TEST_PROJECT_ID = "proj-123";
+  const AGENT_VIEW_KEY = scopedKey("kb-agent-view", TEST_PROJECT_ID);
 
   const mockAgents: Agent[] = [
     {
@@ -989,12 +992,13 @@ describe("AgentListModal", () => {
       });
     });
 
-    it("persists view preference to localStorage", async () => {
+    it("persists view preference to project-scoped localStorage", async () => {
       const { unmount } = render(
         <AgentListModal
           isOpen={true}
           onClose={mockOnClose}
           addToast={mockAddToast}
+          projectId={TEST_PROJECT_ID}
         />
       );
 
@@ -1006,7 +1010,7 @@ describe("AgentListModal", () => {
       fireEvent.click(screen.getByTitle("Board view"));
 
       await waitFor(() => {
-        expect(localStorage.getItem("kb-agent-view")).toBe("board");
+        expect(localStorage.getItem(AGENT_VIEW_KEY)).toBe("board");
       });
 
       // Unmount and remount to test persistence
@@ -1017,6 +1021,7 @@ describe("AgentListModal", () => {
           isOpen={true}
           onClose={mockOnClose}
           addToast={mockAddToast}
+          projectId={TEST_PROJECT_ID}
         />
       );
 

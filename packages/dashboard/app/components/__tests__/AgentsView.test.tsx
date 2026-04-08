@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { AgentsView } from "../AgentsView";
 import * as apiModule from "../../api";
 import type { Agent, AgentState, AgentCapability } from "../../api";
+import { scopedKey } from "../../utils/projectStorage";
 
 // Mock the API module
 vi.mock("../../api", () => ({
@@ -25,6 +26,7 @@ const mockFetchAgentStats = vi.mocked((apiModule as any).fetchAgentStats);
 
 describe("AgentsView", () => {
   const mockAddToast = vi.fn();
+  const projectId = "proj_123";
 
   const mockAgents: Agent[] = [
     {
@@ -109,9 +111,9 @@ describe("AgentsView", () => {
     });
 
     it("passes projectId to agent fetches", async () => {
-      render(<AgentsView addToast={mockAddToast} projectId="proj_123" />);
+      render(<AgentsView addToast={mockAddToast} projectId={projectId} />);
       await waitFor(() => {
-        expect(mockFetchAgents).toHaveBeenCalledWith(undefined, "proj_123");
+        expect(mockFetchAgents).toHaveBeenCalledWith(undefined, projectId);
       });
     });
 
@@ -189,8 +191,8 @@ describe("AgentsView", () => {
       });
     });
 
-    it("persists view toggle preference to localStorage", async () => {
-      render(<AgentsView addToast={mockAddToast} />);
+    it("persists view toggle preference to project-scoped localStorage", async () => {
+      render(<AgentsView addToast={mockAddToast} projectId={projectId} />);
 
       await waitFor(() => {
         expect(screen.getByText("Agents")).toBeTruthy();
@@ -199,7 +201,7 @@ describe("AgentsView", () => {
       fireEvent.click(screen.getByTitle("Board view"));
 
       await waitFor(() => {
-        expect(localStorage.getItem("kb-agent-view")).toBe("board");
+        expect(localStorage.getItem(scopedKey("kb-agent-view", projectId))).toBe("board");
       });
     });
 

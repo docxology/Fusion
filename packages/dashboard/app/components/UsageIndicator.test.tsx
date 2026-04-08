@@ -3,6 +3,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { UsageIndicator } from "./UsageIndicator";
 import * as useUsageDataModule from "../hooks/useUsageData";
 import type { ProviderUsage } from "../api";
+import { scopedKey } from "../utils/projectStorage";
 
 // Mock the useUsageData hook
 vi.mock("../hooks/useUsageData", () => ({
@@ -10,6 +11,8 @@ vi.mock("../hooks/useUsageData", () => ({
 }));
 
 const mockUseUsageData = vi.mocked(useUsageDataModule.useUsageData);
+const TEST_PROJECT_ID = "proj-123";
+const USAGE_VIEW_MODE_KEY = scopedKey("kb-usage-view-mode", TEST_PROJECT_ID);
 
 describe("UsageIndicator", () => {
   const mockOnClose = vi.fn();
@@ -64,7 +67,7 @@ describe("UsageIndicator", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     // Clear localStorage to ensure clean view mode state
-    localStorage.removeItem("kb-usage-view-mode");
+    localStorage.removeItem(USAGE_VIEW_MODE_KEY);
   });
 
   it("renders nothing when isOpen is false", () => {
@@ -76,7 +79,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    const { container } = render(<UsageIndicator isOpen={false} onClose={mockOnClose} />);
+    const { container } = render(<UsageIndicator isOpen={false} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
     expect(container.firstChild).toBeNull();
   });
 
@@ -89,7 +92,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     expect(screen.getByTestId("usage-modal")).toBeInTheDocument();
     expect(screen.getByText("Usage")).toBeInTheDocument();
@@ -104,7 +107,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     // Check provider names are rendered
     expect(screen.getByText("Anthropic")).toBeInTheDocument();
@@ -130,7 +133,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     // Should show skeleton elements
     expect(document.querySelector(".usage-skeleton")).toBeInTheDocument();
@@ -145,7 +148,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     expect(screen.getByText("Failed to load usage data")).toBeInTheDocument();
     expect(screen.getByText("Failed to fetch usage data")).toBeInTheDocument();
@@ -163,7 +166,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     // Should show skeleton because initial fetch completed but returned empty
     expect(document.querySelector(".usage-skeleton")).toBeInTheDocument();
@@ -178,7 +181,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     const refreshBtn = screen.getByTestId("usage-refresh-btn");
     fireEvent.click(refreshBtn);
@@ -195,7 +198,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     const closeBtn = screen.getByTestId("usage-modal-close");
     fireEvent.click(closeBtn);
@@ -212,7 +215,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     const overlay = screen.getByTestId("usage-modal-overlay");
     fireEvent.click(overlay);
@@ -229,7 +232,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     fireEvent.keyDown(document, { key: "Escape" });
 
@@ -256,7 +259,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     // Check progress bars exist with correct widths
     const progressBars = document.querySelectorAll(".usage-progress-fill");
@@ -277,7 +280,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     const refreshBtn = screen.getByTestId("usage-refresh-btn");
     expect(refreshBtn).toBeDisabled();
@@ -296,7 +299,7 @@ describe("UsageIndicator", () => {
     mockUseUsageData.mockClear();
 
     // When isOpen is true, autoRefresh should be true
-    const { unmount } = render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    const { unmount } = render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     expect(mockUseUsageData).toHaveBeenCalledWith({ autoRefresh: true });
 
@@ -306,7 +309,7 @@ describe("UsageIndicator", () => {
     mockUseUsageData.mockClear();
 
     // When isOpen is false, autoRefresh should be false to prevent polling
-    render(<UsageIndicator isOpen={false} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={false} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     // The hook is called even when isOpen is false because hooks must be called
     // unconditionally at the top level in React
@@ -330,7 +333,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     expect(screen.getByText("Error")).toBeInTheDocument();
     expect(screen.getByText("Auth expired — run 'claude' to re-login")).toBeInTheDocument();
@@ -346,7 +349,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     expect(screen.getByText(/Last updated:/)).toBeInTheDocument();
     expect(screen.getByText(/10:30:00/)).toBeInTheDocument();
@@ -370,7 +373,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     expect(screen.getByText("45% used")).toBeInTheDocument();
     expect(screen.getByText("55% left")).toBeInTheDocument();
@@ -387,7 +390,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     const usedBtn = screen.getByTestId("usage-view-toggle-used");
     const remainingBtn = screen.getByTestId("usage-view-toggle-remaining");
@@ -416,7 +419,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     const usedBtn = screen.getByTestId("usage-view-toggle-used");
     const remainingBtn = screen.getByTestId("usage-view-toggle-remaining");
@@ -443,7 +446,7 @@ describe("UsageIndicator", () => {
 
   it("reads view mode from localStorage on mount", () => {
     // Set localStorage to 'remaining' before rendering
-    localStorage.setItem("kb-usage-view-mode", "remaining");
+    localStorage.setItem(USAGE_VIEW_MODE_KEY, "remaining");
 
     mockUseUsageData.mockReturnValue({
       providers: [
@@ -462,7 +465,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     const usedBtn = screen.getByTestId("usage-view-toggle-used");
     const remainingBtn = screen.getByTestId("usage-view-toggle-remaining");
@@ -473,7 +476,7 @@ describe("UsageIndicator", () => {
     expect(screen.getByText("55% remaining")).toBeInTheDocument();
 
     // Clean up
-    localStorage.removeItem("kb-usage-view-mode");
+    localStorage.removeItem(USAGE_VIEW_MODE_KEY);
   });
 
   it("persists view mode to localStorage when changed", () => {
@@ -485,7 +488,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     const remainingBtn = screen.getByTestId("usage-view-toggle-remaining");
 
@@ -493,10 +496,10 @@ describe("UsageIndicator", () => {
     fireEvent.click(remainingBtn);
 
     // Should save to localStorage
-    expect(localStorage.getItem("kb-usage-view-mode")).toBe("remaining");
+    expect(localStorage.getItem(USAGE_VIEW_MODE_KEY)).toBe("remaining");
 
     // Clean up
-    localStorage.removeItem("kb-usage-view-mode");
+    localStorage.removeItem(USAGE_VIEW_MODE_KEY);
   });
 
   // ProviderIcon integration tests
@@ -513,7 +516,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     // Should render SVG icons with correct provider data attributes
     expect(document.querySelector('[data-provider="anthropic"]')).toBeInTheDocument();
@@ -532,7 +535,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     expect(document.querySelector('[data-provider="anthropic"]')).toBeInTheDocument();
     expect(document.querySelector("svg[aria-label='Anthropic']")).toBeInTheDocument();
@@ -549,7 +552,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     expect(document.querySelector('[data-provider="openai"]')).toBeInTheDocument();
     expect(document.querySelector("svg[aria-label='OpenAI']")).toBeInTheDocument();
@@ -566,7 +569,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     expect(document.querySelector('[data-provider="google"]')).toBeInTheDocument();
     expect(document.querySelector("svg[aria-label='Google Gemini']")).toBeInTheDocument();
@@ -603,7 +606,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     const paceMarker = document.querySelector('[data-testid="pace-marker"]');
     expect(paceMarker).toBeInTheDocument();
@@ -642,7 +645,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     const paceMarkers = document.querySelectorAll('[data-testid="pace-marker"]');
     expect(paceMarkers.length).toBe(0);
@@ -672,7 +675,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     const paceMarker = document.querySelector('[data-testid="pace-marker"]');
     expect(paceMarker).not.toBeInTheDocument();
@@ -708,7 +711,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     const paceRow = screen.getByTestId("pace-row");
     expect(paceRow).toHaveTextContent(/over pace/);
@@ -745,7 +748,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     const paceRow = screen.getByTestId("pace-row");
     expect(paceRow).toHaveTextContent(/under pace/);
@@ -782,7 +785,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     const paceRow = screen.getByTestId("pace-row");
     expect(paceRow).toHaveTextContent(/On pace/);
@@ -819,7 +822,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     // In used mode: marker at 50%
     let paceMarker = document.querySelector('[data-testid="pace-marker"]') as HTMLElement;
@@ -837,7 +840,7 @@ describe("UsageIndicator", () => {
 
   it("pace percentage text uses backend message directly", () => {
     // Clear localStorage to ensure fresh 'used' mode
-    localStorage.removeItem("kb-usage-view-mode");
+    localStorage.removeItem(USAGE_VIEW_MODE_KEY);
     
     // Setup: 70% used (ahead of pace), 30% remaining
     mockUseUsageData.mockReturnValue({
@@ -869,7 +872,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     // In used mode: ahead of pace (70% used vs 50% elapsed)
     let paceRow = screen.getByTestId("pace-row");
@@ -894,13 +897,13 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    const { rerender } = render(<UsageIndicator isOpen={false} onClose={mockOnClose} />);
+    const { rerender } = render(<UsageIndicator isOpen={false} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     // Initially isOpen is false, refresh should not be called
     expect(mockRefresh).not.toHaveBeenCalled();
 
     // Open the modal - isOpen transitions to true
-    rerender(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    rerender(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     // refresh should be called when modal opens
     expect(mockRefresh).toHaveBeenCalledTimes(1);
@@ -916,7 +919,7 @@ describe("UsageIndicator", () => {
     });
 
     // Render with isOpen=true initially
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     // refresh should NOT be called on initial mount when isOpen is already true
     // (the hook will handle initial data fetch)
@@ -932,13 +935,13 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    const { rerender } = render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    const { rerender } = render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     // Clear any calls from initial render
     mockRefresh.mockClear();
 
     // Close the modal - isOpen transitions to false
-    rerender(<UsageIndicator isOpen={false} onClose={mockOnClose} />);
+    rerender(<UsageIndicator isOpen={false} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     // refresh should NOT be called when modal closes
     expect(mockRefresh).not.toHaveBeenCalled();
@@ -956,13 +959,13 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    const { rerender } = render(<UsageIndicator isOpen={false} onClose={mockOnClose} />);
+    const { rerender } = render(<UsageIndicator isOpen={false} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     // Clear any calls from initial render
     mockRefresh.mockClear();
 
     // Open the modal
-    rerender(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    rerender(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     // refresh should NOT be called because data is fresh (within 5 seconds)
     expect(mockRefresh).not.toHaveBeenCalled();
@@ -980,13 +983,13 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    const { rerender } = render(<UsageIndicator isOpen={false} onClose={mockOnClose} />);
+    const { rerender } = render(<UsageIndicator isOpen={false} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     // Clear any calls from initial render
     mockRefresh.mockClear();
 
     // Open the modal
-    rerender(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    rerender(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     // refresh should be called because data is stale (older than 5 seconds)
     expect(mockRefresh).toHaveBeenCalledTimes(1);
@@ -1001,17 +1004,17 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    const { rerender } = render(<UsageIndicator isOpen={false} onClose={mockOnClose} />);
+    const { rerender } = render(<UsageIndicator isOpen={false} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     // Open the modal first time
-    rerender(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    rerender(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
     expect(mockRefresh).toHaveBeenCalledTimes(1);
 
     // Close the modal
-    rerender(<UsageIndicator isOpen={false} onClose={mockOnClose} />);
+    rerender(<UsageIndicator isOpen={false} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     // Reopen the modal
-    rerender(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    rerender(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     // refresh should be called again on reopen
     expect(mockRefresh).toHaveBeenCalledTimes(2);
@@ -1028,14 +1031,14 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     // Should show skeleton because initial fetch hasn't completed
     expect(document.querySelector(".usage-skeleton")).toBeInTheDocument();
   });
 
   it("shows skeleton when modal reopens after being closed with data", () => {
-    const { rerender } = render(<UsageIndicator isOpen={false} onClose={mockOnClose} />);
+    const { rerender } = render(<UsageIndicator isOpen={false} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     // First open: show data
     mockUseUsageData.mockReturnValue({
@@ -1046,14 +1049,14 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    rerender(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    rerender(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     // Should show providers, not skeleton
     expect(screen.getByText("Anthropic")).toBeInTheDocument();
     expect(document.querySelector(".usage-skeleton")).not.toBeInTheDocument();
 
     // Close the modal
-    rerender(<UsageIndicator isOpen={false} onClose={mockOnClose} />);
+    rerender(<UsageIndicator isOpen={false} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     // Reopen with no providers (simulating stale state before fetch completes)
     mockUseUsageData.mockReturnValue({
@@ -1064,7 +1067,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    rerender(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    rerender(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     // Should show skeleton on reopen until providers arrive
     expect(document.querySelector(".usage-skeleton")).toBeInTheDocument();
@@ -1080,7 +1083,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    const { rerender } = render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    const { rerender } = render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     // Should show skeleton initially
     expect(document.querySelector(".usage-skeleton")).toBeInTheDocument();
@@ -1095,7 +1098,7 @@ describe("UsageIndicator", () => {
     });
 
     // Trigger a re-render with new data
-    rerender(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    rerender(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     // Now should show providers
     expect(screen.getByText("Anthropic")).toBeInTheDocument();
@@ -1122,7 +1125,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     // Should display rounded values: 46% used, 54% left
     expect(screen.getByText("46% used")).toBeInTheDocument();
@@ -1148,7 +1151,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     // Switch to remaining mode
     const remainingBtn = screen.getByTestId("usage-view-toggle-remaining");
@@ -1177,7 +1180,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     // Check progress bar width is rounded
     const progressBar = document.querySelector(".usage-progress-fill") as HTMLElement;
@@ -1212,7 +1215,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     // Should show both relative text and absolute time
     expect(screen.getByText("resets in 2h")).toBeInTheDocument();
@@ -1244,7 +1247,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     expect(screen.getByText("resets in 2h")).toBeInTheDocument();
     expect(document.querySelector(".usage-window-reset-at")).not.toBeInTheDocument();
@@ -1276,7 +1279,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     // Relative reset text should be present
     expect(screen.getByText("resets in 3d")).toBeInTheDocument();
@@ -1321,7 +1324,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     // Session (5h) row should exist
     expect(screen.getByText("Session (5h)")).toBeInTheDocument();
@@ -1369,7 +1372,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     // Session (5h) should still be visible
     expect(screen.getByText("Session (5h)")).toBeInTheDocument();
@@ -1423,7 +1426,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     // Both providers should render normally
     expect(screen.getByText("Codex")).toBeInTheDocument();
@@ -1472,7 +1475,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     // Relative reset text should be present for both weekly variants
     const resetTexts = screen.getAllByText("resets in 4d");
@@ -1508,7 +1511,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     expect(screen.getByText("resets in 3d")).toBeInTheDocument();
     // All providers now show the absolute reset time for all windows
@@ -1541,7 +1544,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     expect(screen.getByText("resets in 3d")).toBeInTheDocument();
     // Non-Claude weekly windows are unaffected — should still show absolute time
@@ -1575,7 +1578,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     // Should show fallback "resets in Xd Xh" text
     expect(screen.getByText(/resets in \d+d \d+h/)).toBeInTheDocument();
@@ -1607,7 +1610,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     expect(screen.getByText(/resets in \d+d/)).toBeInTheDocument();
   });
@@ -1638,7 +1641,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     expect(screen.getByText(/resets in \d+h/)).toBeInTheDocument();
   });
@@ -1669,7 +1672,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     expect(screen.getByText(/resets in \d+m/)).toBeInTheDocument();
   });
@@ -1698,7 +1701,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     // No reset text should be shown
     expect(document.querySelector(".usage-window-reset")).not.toBeInTheDocument();
@@ -1730,7 +1733,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     // All windows now get fallback text generation when resetText is null but resetAt exists
     expect(document.querySelector(".usage-window-reset")).toBeInTheDocument();
@@ -1771,7 +1774,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     const resetAtEl = document.querySelector(".usage-window-reset-at");
     expect(resetAtEl).toBeInTheDocument();
@@ -1818,7 +1821,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     const resetAtEl = document.querySelector(".usage-window-reset-at");
     expect(resetAtEl).toBeInTheDocument();
@@ -1859,7 +1862,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     const resetAtEl = document.querySelector(".usage-window-reset-at");
     expect(resetAtEl).toBeInTheDocument();
@@ -1901,7 +1904,7 @@ describe("UsageIndicator", () => {
       refresh: mockRefresh,
     });
 
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} />);
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
 
     const resetAtEl = document.querySelector(".usage-window-reset-at");
     expect(resetAtEl).toBeInTheDocument();

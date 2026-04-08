@@ -124,6 +124,7 @@ interface TerminalModalProps {
   isOpen: boolean;
   onClose: () => void;
   initialCommand?: string;
+  projectId?: string;
 }
 
 /**
@@ -141,7 +142,7 @@ interface TerminalModalProps {
  * 
  * The terminal spawns a real shell (bash/zsh/powershell based on platform).
  */
-export function TerminalModal({ isOpen, onClose, initialCommand }: TerminalModalProps) {
+export function TerminalModal({ isOpen, onClose, initialCommand, projectId }: TerminalModalProps) {
   const [error, setError] = useState<string | null>(null);
   const [exitCode, setExitCode] = useState<number | null>(null);
   const [xtermReady, setXtermReady] = useState(false);
@@ -290,7 +291,7 @@ export function TerminalModal({ isOpen, onClose, initialCommand }: TerminalModal
     restartActiveTab,
     retryBootstrap,
     replaceActiveTabSession,
-  } = useTerminalSessions();
+  } = useTerminalSessions(projectId);
 
   // Get the WebSocket connection for the active session
   const { connectionStatus, sendInput, resize, onData, onConnect, onExit, onScrollback, reconnect, onSessionInvalid } = 

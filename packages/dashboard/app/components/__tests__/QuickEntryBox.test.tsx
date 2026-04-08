@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor, act } from "@testing-library/react"
 import { QuickEntryBox } from "../QuickEntryBox";
 import type { Task } from "@fusion/core";
 import { fetchSettings, fetchAgents } from "../../api";
+import { scopedKey } from "../../utils/projectStorage";
 
 const MOCK_MODELS = [
   {
@@ -20,6 +21,9 @@ const MOCK_MODELS = [
     contextWindow: 128_000,
   },
 ];
+
+const TEST_PROJECT_ID = "proj-123";
+const QUICK_ENTRY_STORAGE_KEY = scopedKey("kb-quick-entry-text", TEST_PROJECT_ID);
 
 const mockTasks: Task[] = [
   {
@@ -153,6 +157,7 @@ function renderQuickEntryBox(props = {}, { startExpanded = false } = {}) {
     addToast: vi.fn(),
     tasks: mockTasks,
     availableModels: MOCK_MODELS,
+    projectId: TEST_PROJECT_ID,
   };
   const result = render(<QuickEntryBox {...defaultProps} {...props} />);
   return { ...result, props: { ...defaultProps, ...props } };
@@ -1239,7 +1244,7 @@ describe("QuickEntryBox", () => {
 
     it("saved draft description does not reveal controls panel", () => {
       // Pre-populate localStorage with saved draft text
-      localStorage.setItem("kb-quick-entry-text", "Previously saved draft task");
+      localStorage.setItem(QUICK_ENTRY_STORAGE_KEY, "Previously saved draft task");
 
       renderQuickEntryBox();
       const textarea = screen.getByTestId("quick-entry-input");
@@ -1316,7 +1321,7 @@ describe("QuickEntryBox", () => {
 
     it("restores description from localStorage on mount", () => {
       // Pre-populate localStorage
-      localStorage.setItem("kb-quick-entry-text", "Saved task description");
+      localStorage.setItem(QUICK_ENTRY_STORAGE_KEY, "Saved task description");
 
       renderQuickEntryBox({});
       const textarea = screen.getByTestId("quick-entry-input");
@@ -1333,7 +1338,7 @@ describe("QuickEntryBox", () => {
 
       // Wait for the useEffect to run
       await waitFor(() => {
-        expect(localStorage.getItem("kb-quick-entry-text")).toBe("Typing this task");
+        expect(localStorage.getItem(QUICK_ENTRY_STORAGE_KEY)).toBe("Typing this task");
       });
     });
 
@@ -1344,7 +1349,7 @@ describe("QuickEntryBox", () => {
       // Type something to set localStorage
       fireEvent.change(textarea, { target: { value: "Task to create" } });
       await waitFor(() => {
-        expect(localStorage.getItem("kb-quick-entry-text")).toBe("Task to create");
+        expect(localStorage.getItem(QUICK_ENTRY_STORAGE_KEY)).toBe("Task to create");
       });
 
       // Submit the task
@@ -1355,7 +1360,7 @@ describe("QuickEntryBox", () => {
       });
 
       // localStorage should be cleared
-      expect(localStorage.getItem("kb-quick-entry-text")).toBeNull();
+      expect(localStorage.getItem(QUICK_ENTRY_STORAGE_KEY)).toBeNull();
     });
 
     it("clears localStorage when Escape clears non-empty input", async () => {
@@ -1366,7 +1371,7 @@ describe("QuickEntryBox", () => {
       // Type something to set localStorage
       fireEvent.change(textarea, { target: { value: "Task to clear" } });
       await waitFor(() => {
-        expect(localStorage.getItem("kb-quick-entry-text")).toBe("Task to clear");
+        expect(localStorage.getItem(QUICK_ENTRY_STORAGE_KEY)).toBe("Task to clear");
       });
 
       // Press Escape to clear the input
@@ -1374,7 +1379,7 @@ describe("QuickEntryBox", () => {
 
       // Input and localStorage should be cleared
       expect((textarea as HTMLTextAreaElement).value).toBe("");
-      expect(localStorage.getItem("kb-quick-entry-text")).toBeNull();
+      expect(localStorage.getItem(QUICK_ENTRY_STORAGE_KEY)).toBeNull();
     });
 
     it("does not clear localStorage on first Escape when closing dropdowns", () => {
@@ -1387,14 +1392,14 @@ describe("QuickEntryBox", () => {
       openDepsFromActions();
 
       // localStorage should have the value
-      expect(localStorage.getItem("kb-quick-entry-text")).toBe("Task with dropdown");
+      expect(localStorage.getItem(QUICK_ENTRY_STORAGE_KEY)).toBe("Task with dropdown");
 
       // First Escape closes dropdown but keeps input
       fireEvent.keyDown(textarea, { key: "Escape" });
 
       // Input and localStorage should be preserved
       expect((textarea as HTMLTextAreaElement).value).toBe("Task with dropdown");
-      expect(localStorage.getItem("kb-quick-entry-text")).toBe("Task with dropdown");
+      expect(localStorage.getItem(QUICK_ENTRY_STORAGE_KEY)).toBe("Task with dropdown");
     });
   });
 
@@ -1661,7 +1666,7 @@ describe("QuickEntryBox", () => {
       fireEvent.change(textarea, { target: { value: "Draft task description" } });
 
       await waitFor(() => {
-        expect(localStorage.getItem("kb-quick-entry-text")).toBe("Draft task description");
+        expect(localStorage.getItem(QUICK_ENTRY_STORAGE_KEY)).toBe("Draft task description");
       });
 
       clickSaveFromActions();
@@ -1670,7 +1675,7 @@ describe("QuickEntryBox", () => {
         expect(props.onCreate).toHaveBeenCalled();
       });
 
-      expect(localStorage.getItem("kb-quick-entry-text")).toBeNull();
+      expect(localStorage.getItem(QUICK_ENTRY_STORAGE_KEY)).toBeNull();
     });
 
     it("clicking save action creates the task", async () => {

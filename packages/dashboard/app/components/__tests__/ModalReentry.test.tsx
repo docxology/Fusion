@@ -206,7 +206,7 @@ describe("ModalReentry", () => {
         fireEvent.click(closeButton);
       });
 
-      expect(mockSavePlanningDescription).toHaveBeenCalledWith("My planning text");
+      expect(mockSavePlanningDescription).toHaveBeenCalledWith("My planning text", undefined);
       unmount();
     });
 
@@ -306,7 +306,7 @@ describe("ModalReentry", () => {
         fireEvent.click(closeButton);
       });
 
-      expect(mockSaveSubtaskDescription).toHaveBeenCalledWith("Some description");
+      expect(mockSaveSubtaskDescription).toHaveBeenCalledWith("Some description", undefined);
       unmount();
     });
   });
@@ -377,7 +377,7 @@ describe("ModalReentry", () => {
         fireEvent.click(closeButton);
       });
 
-      expect(mockSaveMissionGoal).toHaveBeenCalledWith("My mission goal");
+      expect(mockSaveMissionGoal).toHaveBeenCalledWith("My mission goal", undefined);
       unmount();
     });
 

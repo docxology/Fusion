@@ -3,6 +3,7 @@ import type { JSX } from "react";
 import { X, Plus, Play, Pause, Square, Activity, Heart, Trash2, RefreshCw, Bot, LayoutGrid, List, Filter } from "lucide-react";
 import type { Agent, AgentCapability, AgentState } from "../api";
 import { fetchAgents, createAgent, updateAgent, updateAgentState, deleteAgent } from "../api";
+import { getScopedItem, setScopedItem } from "../utils/projectStorage";
 
 interface AgentListModalProps {
   isOpen: boolean;
@@ -39,14 +40,23 @@ export function AgentListModal({ isOpen, onClose, addToast, projectId }: AgentLi
   const [filterState, setFilterState] = useState<AgentState | "all">("all");
   const [view, setView] = useState<"board" | "list">(() => {
     if (typeof window === "undefined") return "list";
-    const saved = localStorage.getItem("kb-agent-view");
+    const saved = getScopedItem("kb-agent-view", projectId);
     return (saved === "board" || saved === "list") ? saved : "list";
   });
 
+  useEffect(() => {
+    const saved = getScopedItem("kb-agent-view", projectId);
+    if (saved === "board" || saved === "list") {
+      setView(saved);
+      return;
+    }
+    setView("list");
+  }, [projectId]);
+
   // Persist view preference to localStorage
   useEffect(() => {
-    localStorage.setItem("kb-agent-view", view);
-  }, [view]);
+    setScopedItem("kb-agent-view", view, projectId);
+  }, [projectId, view]);
 
   const [editingRoleForAgent, setEditingRoleForAgent] = useState<string | null>(null);
   const roleSelectRef = useRef<HTMLSelectElement>(null);

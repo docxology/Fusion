@@ -6,6 +6,7 @@ import type { ModelInfo, RefinementType, Agent } from "../api";
 import { fetchModels, fetchSettings, refineText, getRefineErrorMessage, updateGlobalSettings, fetchAgents } from "../api";
 import { Link, Brain, Lightbulb, ListTree, Sparkles, Save, MoreHorizontal, ChevronDown, ChevronUp, ChevronRight, Bot } from "lucide-react";
 import { CustomModelDropdown } from "./CustomModelDropdown";
+import { getScopedItem, removeScopedItem, setScopedItem } from "../utils/projectStorage";
 
 const STORAGE_KEY = "kb-quick-entry-text";
 
@@ -75,7 +76,7 @@ function parseModelSelection(value: string): { provider?: string; modelId?: stri
 export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels, onPlanningMode, onSubtaskBreakdown, projectId, autoExpand = true, favoriteProviders: parentFavoriteProviders, favoriteModels: parentFavoriteModels, onToggleFavorite: parentToggleFavorite, onToggleModelFavorite: parentToggleModelFavorite }: QuickEntryBoxProps) {
   const [description, setDescription] = useState(() => {
     if (typeof window !== "undefined") {
-      return localStorage.getItem(STORAGE_KEY) || "";
+      return getScopedItem(STORAGE_KEY, projectId) || "";
     }
     return "";
   });
@@ -210,12 +211,16 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
     [loadedModels],
   );
 
+  useEffect(() => {
+    setDescription(getScopedItem(STORAGE_KEY, projectId) || "");
+  }, [projectId]);
+
   // Persist description to localStorage whenever it changes
   useEffect(() => {
     if (typeof window !== "undefined") {
-      localStorage.setItem(STORAGE_KEY, description);
+      setScopedItem(STORAGE_KEY, description, projectId);
     }
-  }, [description]);
+  }, [description, projectId]);
 
   // Clean up legacy disclosure persistence key from previous versions
   useEffect(() => {
@@ -372,9 +377,9 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
     }
     // Clear localStorage when form is reset (after successful creation)
     if (typeof window !== "undefined") {
-      localStorage.removeItem(STORAGE_KEY);
+      removeScopedItem(STORAGE_KEY, projectId);
     }
-  }, []);
+  }, [projectId]);
 
   const handleSubmit = useCallback(async () => {
     const trimmed = description.trim();
@@ -472,7 +477,7 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
           }
           // Clear localStorage when user explicitly clears input
           if (typeof window !== "undefined") {
-            localStorage.removeItem(STORAGE_KEY);
+            removeScopedItem(STORAGE_KEY, projectId);
           }
         }
         // Collapse textarea and disclosure on escape
@@ -491,6 +496,7 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
       isModelMenuOpen,
       activeModelSubmenu,
       isRefineMenuOpen,
+      projectId,
       setIsDisclosureExpanded,
     ],
   );

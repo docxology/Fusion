@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { useAgentHierarchy } from "../useAgentHierarchy";
 import type { Agent, AgentCapability, AgentState } from "../../api";
+import { scopedKey } from "../../utils/projectStorage";
 
 // Mock localStorage
 const localStorageStore: Record<string, string> = {};
@@ -19,6 +20,9 @@ const localStorageMock = {
 };
 vi.stubGlobal("localStorage", localStorageMock);
 
+const PROJECT_ID = "proj-123";
+const EXPANDED_STORAGE_KEY = scopedKey("kb-agent-tree-expanded", PROJECT_ID);
+
 function createMockAgent(overrides: Partial<Agent> = {}): Agent {
   return {
     id: "agent-001",
@@ -30,6 +34,10 @@ function createMockAgent(overrides: Partial<Agent> = {}): Agent {
     updatedAt: "2026-01-01T00:00:00Z",
     ...overrides,
   };
+}
+
+function renderHierarchy(agents: Agent[], projectId: string | undefined = PROJECT_ID) {
+  return renderHook(() => useAgentHierarchy(agents, projectId));
 }
 
 beforeEach(() => {
@@ -51,7 +59,7 @@ describe("useAgentHierarchy", () => {
     const parent = createMockAgent({ id: "parent-1", name: "Parent" });
     const child = createMockAgent({ id: "child-1", name: "Child", reportsTo: "parent-1" });
 
-    const { result } = renderHook(() => useAgentHierarchy([parent, child]));
+    const { result } = renderHierarchy([parent, child]);
 
     expect(result.current.rootNodes).toHaveLength(1);
     expect(result.current.rootNodes[0].agent.id).toBe("parent-1");
@@ -59,7 +67,7 @@ describe("useAgentHierarchy", () => {
   });
 
   it("handles empty agents array", () => {
-    const { result } = renderHook(() => useAgentHierarchy([]));
+    const { result } = renderHierarchy([]);
 
     expect(result.current.rootNodes).toHaveLength(0);
     expect(result.current.isLoading).toBe(false);
@@ -70,7 +78,7 @@ describe("useAgentHierarchy", () => {
     const agent2 = createMockAgent({ id: "agent-2" });
     const agent3 = createMockAgent({ id: "agent-3" });
 
-    const { result } = renderHook(() => useAgentHierarchy([agent1, agent2, agent3]));
+    const { result } = renderHierarchy([agent1, agent2, agent3]);
 
     expect(result.current.rootNodes).toHaveLength(3);
     expect(result.current.rootNodes.map((n) => n.agent.id)).toEqual(["agent-1", "agent-2", "agent-3"]);
@@ -83,11 +91,11 @@ describe("useAgentHierarchy", () => {
 
     // Pre-expand parent and child so grandchild shows up
     localStorageMock.getItem.mockImplementation((key: string) => {
-      if (key === "kb-agent-tree-expanded") return JSON.stringify(["parent", "child"]);
+      if (key === EXPANDED_STORAGE_KEY) return JSON.stringify(["parent", "child"]);
       return localStorageStore[key] ?? null;
     });
 
-    const { result } = renderHook(() => useAgentHierarchy([parent, child, grandchild]));
+    const { result } = renderHierarchy([parent, child, grandchild]);
 
     expect(result.current.rootNodes).toHaveLength(1);
     const rootNode = result.current.rootNodes[0];
@@ -105,7 +113,7 @@ describe("useAgentHierarchy", () => {
     const parent = createMockAgent({ id: "parent-1", name: "Parent" });
     const child = createMockAgent({ id: "child-1", name: "Child", reportsTo: "parent-1" });
 
-    const { result } = renderHook(() => useAgentHierarchy([parent, child]));
+    const { result } = renderHierarchy([parent, child]);
 
     // Initially not expanded
     expect(result.current.isExpanded("parent-1")).toBe(false);
@@ -128,27 +136,27 @@ describe("useAgentHierarchy", () => {
   it("persists expand state to localStorage", () => {
     const parent = createMockAgent({ id: "parent-1", name: "Parent" });
 
-    const { result } = renderHook(() => useAgentHierarchy([parent]));
+    const { result } = renderHierarchy([parent]);
 
     act(() => {
       result.current.toggleExpand("parent-1");
     });
 
     expect(localStorageMock.setItem).toHaveBeenCalledWith(
-      "kb-agent-tree-expanded",
+      EXPANDED_STORAGE_KEY,
       JSON.stringify(["parent-1"]),
     );
   });
 
   it("restores expand state from localStorage on mount", () => {
     localStorageMock.getItem.mockImplementation((key: string) => {
-      if (key === "kb-agent-tree-expanded") return JSON.stringify(["parent-1"]);
+      if (key === EXPANDED_STORAGE_KEY) return JSON.stringify(["parent-1"]);
       return localStorageStore[key] ?? null;
     });
 
     const parent = createMockAgent({ id: "parent-1", name: "Parent" });
 
-    const { result } = renderHook(() => useAgentHierarchy([parent]));
+    const { result } = renderHierarchy([parent]);
 
     expect(result.current.isExpanded("parent-1")).toBe(true);
   });
@@ -157,7 +165,7 @@ describe("useAgentHierarchy", () => {
     const agent1 = createMockAgent({ id: "agent-1" });
     const agent2 = createMockAgent({ id: "agent-2" });
 
-    const { result } = renderHook(() => useAgentHierarchy([agent1, agent2]));
+    const { result } = renderHierarchy([agent1, agent2]);
 
     expect(result.current.isExpanded("agent-1")).toBe(false);
     expect(result.current.isExpanded("agent-2")).toBe(false);
@@ -176,7 +184,7 @@ describe("useAgentHierarchy", () => {
     const child2 = createMockAgent({ id: "child-2", name: "Child 2", reportsTo: "parent-1" });
     const unrelated = createMockAgent({ id: "unrelated", name: "Unrelated" });
 
-    const { result } = renderHook(() => useAgentHierarchy([parent, child1, child2, unrelated]));
+    const { result } = renderHierarchy([parent, child1, child2, unrelated]);
 
     const children = result.current.getChildren("parent-1");
     expect(children).toHaveLength(2);
@@ -187,7 +195,7 @@ describe("useAgentHierarchy", () => {
     const orphan = createMockAgent({ id: "orphan-1", name: "Orphan", reportsTo: "missing-parent" });
     const normal = createMockAgent({ id: "normal-1", name: "Normal" });
 
-    const { result } = renderHook(() => useAgentHierarchy([orphan, normal]));
+    const { result } = renderHierarchy([orphan, normal]);
 
     // Orphan should be treated as a root node since parent doesn't exist
     expect(result.current.rootNodes).toHaveLength(2);

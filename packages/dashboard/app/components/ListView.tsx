@@ -9,6 +9,7 @@ import { CustomModelDropdown } from "./CustomModelDropdown";
 import { isTaskStuck } from "../utils/taskStuck";
 import type { ToastType } from "../hooks/useToast";
 import { useViewportMode } from "../hooks/useViewportMode";
+import { getScopedItem, setScopedItem } from "../utils/projectStorage";
 
 const COLUMN_COLOR_MAP: Record<Column, string> = {
   triage: "var(--triage)",
@@ -27,6 +28,71 @@ type SortDirection = "asc" | "desc";
 // Column visibility types
 const ALL_LIST_COLUMNS = ["id", "title", "status", "column", "dependencies", "progress"] as const;
 type ListColumn = typeof ALL_LIST_COLUMNS[number];
+
+function readVisibleColumns(projectId?: string): Set<ListColumn> {
+  try {
+    const saved = getScopedItem("kb-dashboard-list-columns", projectId);
+    if (saved) {
+      const parsed = JSON.parse(saved) as ListColumn[];
+      const validColumns = parsed.filter((col): col is ListColumn =>
+        ALL_LIST_COLUMNS.includes(col as ListColumn)
+      );
+      if (validColumns.length > 0) {
+        return new Set(validColumns);
+      }
+    }
+  } catch {
+    // Invalid localStorage data - fall through to default
+  }
+
+  return new Set(ALL_LIST_COLUMNS);
+}
+
+function readHideDoneTasks(projectId?: string): boolean {
+  try {
+    const saved = getScopedItem("kb-dashboard-hide-done", projectId);
+    if (saved !== null) {
+      return saved === "true";
+    }
+  } catch {
+    // Invalid localStorage data - fall through to default
+  }
+
+  return false;
+}
+
+function readCollapsedSections(projectId?: string): Set<Column> {
+  try {
+    const saved = getScopedItem("kb-dashboard-list-collapsed", projectId);
+    if (saved) {
+      const parsed = JSON.parse(saved) as Column[];
+      const validColumns = parsed.filter((col): col is Column =>
+        COLUMNS.includes(col as Column)
+      );
+      if (validColumns.length > 0) {
+        return new Set(validColumns);
+      }
+    }
+  } catch {
+    // Invalid localStorage data - fall through to default
+  }
+
+  return new Set<Column>();
+}
+
+function readSelectedTaskIds(projectId?: string): Set<string> {
+  try {
+    const saved = getScopedItem("kb-dashboard-selected-tasks", projectId);
+    if (saved) {
+      const parsed = JSON.parse(saved) as string[];
+      return new Set(parsed);
+    }
+  } catch {
+    // Invalid localStorage data - fall through to default
+  }
+
+  return new Set<string>();
+}
 
 interface ListViewProps {
   tasks: Task[];
@@ -104,111 +170,57 @@ export function ListView({
   const isMobile = viewportMode === "mobile";
 
   // Column visibility state - initialize from localStorage or default to all columns
-  const [visibleColumns, setVisibleColumns] = useState<Set<ListColumn>>(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const saved = localStorage.getItem("kb-dashboard-list-columns");
-        if (saved) {
-          const parsed = JSON.parse(saved) as ListColumn[];
-          // Validate that all saved columns are valid ListColumn values
-          const validColumns = parsed.filter((col): col is ListColumn =>
-            ALL_LIST_COLUMNS.includes(col as ListColumn)
-          );
-          if (validColumns.length > 0) {
-            return new Set(validColumns);
-          }
-        }
-      } catch {
-        // Invalid localStorage data - fall through to default
-      }
-    }
-    return new Set(ALL_LIST_COLUMNS);
-  });
+  const [visibleColumns, setVisibleColumns] = useState<Set<ListColumn>>(() => readVisibleColumns(projectId));
 
   // Hide done tasks state - initialize from localStorage
-  const [hideDoneTasks, setHideDoneTasks] = useState<boolean>(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const saved = localStorage.getItem("kb-dashboard-hide-done");
-        if (saved !== null) {
-          return saved === "true";
-        }
-      } catch {
-        // Invalid localStorage data - fall through to default
-      }
-    }
-    return false; // Default: show done tasks
-  });
+  const [hideDoneTasks, setHideDoneTasks] = useState<boolean>(() => readHideDoneTasks(projectId));
 
   // Collapsed sections state - initialize from localStorage
-  const [collapsedSections, setCollapsedSections] = useState<Set<Column>>(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const saved = localStorage.getItem("kb-dashboard-list-collapsed");
-        if (saved) {
-          const parsed = JSON.parse(saved) as Column[];
-          // Validate that all saved columns are valid Column values
-          const validColumns = parsed.filter((col): col is Column =>
-            COLUMNS.includes(col as Column)
-          );
-          if (validColumns.length > 0) {
-            return new Set(validColumns);
-          }
-        }
-      } catch {
-        // Invalid localStorage data - fall through to default
-      }
-    }
-    return new Set<Column>(); // Default: all sections expanded
-  });
+  const [collapsedSections, setCollapsedSections] = useState<Set<Column>>(() =>
+    readCollapsedSections(projectId),
+  );
 
   // Persist column visibility changes to localStorage
   useEffect(() => {
     if (typeof window !== "undefined") {
-      localStorage.setItem("kb-dashboard-list-columns", JSON.stringify([...visibleColumns]));
+      setScopedItem("kb-dashboard-list-columns", JSON.stringify([...visibleColumns]), projectId);
     }
-  }, [visibleColumns]);
+  }, [projectId, visibleColumns]);
 
   // Persist hide done tasks state to localStorage
   useEffect(() => {
     if (typeof window !== "undefined") {
-      localStorage.setItem("kb-dashboard-hide-done", hideDoneTasks.toString());
+      setScopedItem("kb-dashboard-hide-done", hideDoneTasks.toString(), projectId);
     }
-  }, [hideDoneTasks]);
+  }, [hideDoneTasks, projectId]);
 
   // Persist collapsed sections state to localStorage
   useEffect(() => {
     if (typeof window !== "undefined") {
-      localStorage.setItem("kb-dashboard-list-collapsed", JSON.stringify([...collapsedSections]));
+      setScopedItem("kb-dashboard-list-collapsed", JSON.stringify([...collapsedSections]), projectId);
     }
-  }, [collapsedSections]);
+  }, [collapsedSections, projectId]);
 
   // Column dropdown state
   const [columnDropdownOpen, setColumnDropdownOpen] = useState(false);
   const columnDropdownRef = useRef<HTMLDivElement>(null);
 
   // Selection state - initialize from localStorage
-  const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const saved = localStorage.getItem("kb-dashboard-selected-tasks");
-        if (saved) {
-          const parsed = JSON.parse(saved) as string[];
-          return new Set(parsed);
-        }
-      } catch {
-        // Invalid localStorage data - fall through to default
-      }
-    }
-    return new Set<string>();
-  });
+  const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(() => readSelectedTaskIds(projectId));
+
+  useEffect(() => {
+    setVisibleColumns(readVisibleColumns(projectId));
+    setHideDoneTasks(readHideDoneTasks(projectId));
+    setCollapsedSections(readCollapsedSections(projectId));
+    setSelectedTaskIds(readSelectedTaskIds(projectId));
+  }, [projectId]);
 
   // Persist selection to localStorage
   useEffect(() => {
     if (typeof window !== "undefined") {
-      localStorage.setItem("kb-dashboard-selected-tasks", JSON.stringify([...selectedTaskIds]));
+      setScopedItem("kb-dashboard-selected-tasks", JSON.stringify([...selectedTaskIds]), projectId);
     }
-  }, [selectedTaskIds]);
+  }, [projectId, selectedTaskIds]);
 
   // Toggle task selection
   const toggleTaskSelection = useCallback((taskId: string) => {

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, waitFor, act } from "@testing-library/react";
 import { useTerminalSessions } from "../useTerminalSessions";
+import { scopedKey } from "../../utils/projectStorage";
 import * as apiModule from "../../api";
 
 // Mock API
@@ -25,6 +26,9 @@ const localStorageMock = {
 Object.defineProperty(window, "localStorage", {
   value: localStorageMock,
 });
+
+const TEST_PROJECT_ID = "proj-123";
+const TERMINAL_TABS_KEY = scopedKey("kb-terminal-tabs", TEST_PROJECT_ID);
 
 describe("useTerminalSessions", () => {
   beforeEach(() => {
@@ -51,7 +55,7 @@ describe("useTerminalSessions", () => {
       localStorageMock.getItem.mockReturnValue(null);
       mockListTerminalSessions.mockResolvedValue([]);
 
-      const { result } = renderHook(() => useTerminalSessions());
+      const { result } = renderHook(() => useTerminalSessions(TEST_PROJECT_ID));
 
       await waitFor(() => {
         expect(result.current.isReady).toBe(true);
@@ -80,7 +84,7 @@ describe("useTerminalSessions", () => {
       // Session is still valid on server
       mockListTerminalSessions.mockResolvedValue([{ id: "session-1", shell: "/bin/bash", cwd: "/project" }]);
 
-      const { result } = renderHook(() => useTerminalSessions());
+      const { result } = renderHook(() => useTerminalSessions(TEST_PROJECT_ID));
 
       await waitFor(() => {
         expect(result.current.isReady).toBe(true);
@@ -118,7 +122,7 @@ describe("useTerminalSessions", () => {
         { id: "session-valid", shell: "/bin/zsh", cwd: "/project" }
       ]);
 
-      const { result } = renderHook(() => useTerminalSessions());
+      const { result } = renderHook(() => useTerminalSessions(TEST_PROJECT_ID));
 
       await waitFor(() => {
         expect(result.current.isReady).toBe(true);
@@ -147,7 +151,7 @@ describe("useTerminalSessions", () => {
       // No sessions exist on server
       mockListTerminalSessions.mockResolvedValue([]);
 
-      const { result } = renderHook(() => useTerminalSessions());
+      const { result } = renderHook(() => useTerminalSessions(TEST_PROJECT_ID));
 
       await waitFor(() => {
         expect(result.current.isReady).toBe(true);
@@ -179,7 +183,7 @@ describe("useTerminalSessions", () => {
           cwd: "/project",
         });
 
-      const { result } = renderHook(() => useTerminalSessions());
+      const { result } = renderHook(() => useTerminalSessions(TEST_PROJECT_ID));
 
       await waitFor(() => {
         expect(result.current.isReady).toBe(true);
@@ -210,7 +214,7 @@ describe("useTerminalSessions", () => {
         .mockResolvedValueOnce({ sessionId: "session-2", shell: "/bin/bash", cwd: "/project" })
         .mockResolvedValueOnce({ sessionId: "session-3", shell: "/bin/bash", cwd: "/project" });
 
-      const { result } = renderHook(() => useTerminalSessions());
+      const { result } = renderHook(() => useTerminalSessions(TEST_PROJECT_ID));
 
       await waitFor(() => {
         expect(result.current.tabs.length).toBe(1);
@@ -238,7 +242,7 @@ describe("useTerminalSessions", () => {
       
       mockCreateTerminalSession.mockResolvedValue({ sessionId: "session-1", shell: "/bin/bash", cwd: "/project" });
 
-      const { result } = renderHook(() => useTerminalSessions());
+      const { result } = renderHook(() => useTerminalSessions(TEST_PROJECT_ID));
 
       await waitFor(() => {
         expect(result.current.tabs.length).toBe(1);
@@ -278,7 +282,7 @@ describe("useTerminalSessions", () => {
         { id: "session-2", shell: "/bin/bash", cwd: "/project" },
       ]);
 
-      const { result } = renderHook(() => useTerminalSessions());
+      const { result } = renderHook(() => useTerminalSessions(TEST_PROJECT_ID));
 
       await waitFor(() => {
         expect(result.current.isReady).toBe(true);
@@ -309,7 +313,7 @@ describe("useTerminalSessions", () => {
       localStorageMock.getItem.mockReturnValue(JSON.stringify(storedTabs));
       mockListTerminalSessions.mockResolvedValue([{ id: "session-1", shell: "/bin/bash", cwd: "/project" }]);
 
-      const { result } = renderHook(() => useTerminalSessions());
+      const { result } = renderHook(() => useTerminalSessions(TEST_PROJECT_ID));
 
       await waitFor(() => {
         expect(result.current.isReady).toBe(true);
@@ -363,7 +367,7 @@ describe("useTerminalSessions", () => {
         { id: "session-2", shell: "/bin/bash", cwd: "/project" },
       ]);
 
-      const { result } = renderHook(() => useTerminalSessions());
+      const { result } = renderHook(() => useTerminalSessions(TEST_PROJECT_ID));
 
       await waitFor(() => {
         expect(result.current.isReady).toBe(true);
@@ -386,7 +390,7 @@ describe("useTerminalSessions", () => {
       localStorageMock.getItem.mockReturnValue(null);
       mockListTerminalSessions.mockResolvedValue([]);
 
-      const { result } = renderHook(() => useTerminalSessions());
+      const { result } = renderHook(() => useTerminalSessions(TEST_PROJECT_ID));
 
       await waitFor(() => {
         expect(result.current.tabs.length).toBe(1);
@@ -409,7 +413,7 @@ describe("useTerminalSessions", () => {
         .mockResolvedValueOnce({ sessionId: "session-1", shell: "/bin/bash", cwd: "/project" })
         .mockResolvedValueOnce({ sessionId: "session-new", shell: "/bin/bash", cwd: "/project" });
 
-      const { result } = renderHook(() => useTerminalSessions());
+      const { result } = renderHook(() => useTerminalSessions(TEST_PROJECT_ID));
 
       await waitFor(() => {
         expect(result.current.tabs.length).toBe(1);
@@ -436,7 +440,7 @@ describe("useTerminalSessions", () => {
         .mockResolvedValueOnce({ sessionId: "session-1", shell: "/bin/bash", cwd: "/project" })
         .mockResolvedValueOnce({ sessionId: "session-replacement", shell: "/bin/bash", cwd: "/project" });
 
-      const { result } = renderHook(() => useTerminalSessions());
+      const { result } = renderHook(() => useTerminalSessions(TEST_PROJECT_ID));
 
       await waitFor(() => {
         expect(result.current.tabs.length).toBe(1);
@@ -466,7 +470,7 @@ describe("useTerminalSessions", () => {
         .mockResolvedValueOnce({ sessionId: "session-1", shell: "/bin/bash", cwd: "/project" })
         .mockRejectedValueOnce(new Error("Server unreachable"));
 
-      const { result } = renderHook(() => useTerminalSessions());
+      const { result } = renderHook(() => useTerminalSessions(TEST_PROJECT_ID));
 
       await waitFor(() => {
         expect(result.current.tabs.length).toBe(1);
@@ -492,7 +496,7 @@ describe("useTerminalSessions", () => {
       // Make auto-create hang so no tab is created
       mockCreateTerminalSession.mockReturnValue(new Promise(() => {}));
 
-      const { result } = renderHook(() => useTerminalSessions());
+      const { result } = renderHook(() => useTerminalSessions(TEST_PROJECT_ID));
 
       // Wait for isReady to be true (list completes) but tabs are empty (create pending)
       await waitFor(() => {
@@ -517,7 +521,7 @@ describe("useTerminalSessions", () => {
         .mockRejectedValueOnce(new Error("Temporary failure"))
         .mockResolvedValueOnce({ sessionId: "session-recovered", shell: "/bin/bash", cwd: "/project" });
 
-      const { result } = renderHook(() => useTerminalSessions());
+      const { result } = renderHook(() => useTerminalSessions(TEST_PROJECT_ID));
 
       await waitFor(() => {
         expect(result.current.tabs.length).toBe(1);
@@ -550,7 +554,7 @@ describe("useTerminalSessions", () => {
       mockListTerminalSessions.mockResolvedValue([]);
       mockCreateTerminalSession.mockResolvedValue({ sessionId: "session-1", shell: "/bin/bash", cwd: "/project" });
 
-      renderHook(() => useTerminalSessions());
+      renderHook(() => useTerminalSessions(TEST_PROJECT_ID));
 
       await waitFor(() => {
         expect(localStorageMock.setItem).toHaveBeenCalled();
@@ -559,8 +563,9 @@ describe("useTerminalSessions", () => {
       // Verify the stored data contains the tabs
       const setItemCalls = localStorageMock.setItem.mock.calls;
       expect(setItemCalls.length).toBeGreaterThan(0);
-      
+
       const lastCall = setItemCalls[setItemCalls.length - 1];
+      expect(lastCall[0]).toBe(TERMINAL_TABS_KEY);
       const storedTabs = JSON.parse(lastCall[1]);
       expect(storedTabs).toBeInstanceOf(Array);
     });
@@ -574,7 +579,7 @@ describe("useTerminalSessions", () => {
       mockListTerminalSessions.mockResolvedValue([]);
 
       // Should not throw
-      const { result } = renderHook(() => useTerminalSessions());
+      const { result } = renderHook(() => useTerminalSessions(TEST_PROJECT_ID));
 
       await waitFor(() => {
         expect(result.current.isReady).toBe(true);
@@ -590,7 +595,7 @@ describe("useTerminalSessions", () => {
       localStorageMock.getItem.mockReturnValue(null);
       mockListTerminalSessions.mockRejectedValue(new Error("Server error"));
 
-      const { result } = renderHook(() => useTerminalSessions());
+      const { result } = renderHook(() => useTerminalSessions(TEST_PROJECT_ID));
 
       await waitFor(() => {
         expect(result.current.isReady).toBe(true);
@@ -607,7 +612,7 @@ describe("useTerminalSessions", () => {
       mockListTerminalSessions.mockResolvedValue([]);
       mockKillPtyTerminalSession.mockRejectedValue(new Error("Kill failed"));
 
-      const { result } = renderHook(() => useTerminalSessions());
+      const { result } = renderHook(() => useTerminalSessions(TEST_PROJECT_ID));
 
       await waitFor(() => {
         expect(result.current.tabs.length).toBe(1);
@@ -630,7 +635,7 @@ describe("useTerminalSessions", () => {
       mockListTerminalSessions.mockResolvedValue([]);
       mockCreateTerminalSession.mockRejectedValue(new Error("Server unreachable"));
 
-      const { result } = renderHook(() => useTerminalSessions());
+      const { result } = renderHook(() => useTerminalSessions(TEST_PROJECT_ID));
 
       // Should become ready (validation passed)
       await waitFor(() => {
@@ -652,7 +657,7 @@ describe("useTerminalSessions", () => {
       mockListTerminalSessions.mockResolvedValue([]);
       mockCreateTerminalSession.mockRejectedValue("string error");
 
-      const { result } = renderHook(() => useTerminalSessions());
+      const { result } = renderHook(() => useTerminalSessions(TEST_PROJECT_ID));
 
       await waitFor(() => {
         expect(result.current.isReady).toBe(true);
@@ -670,7 +675,7 @@ describe("useTerminalSessions", () => {
       // First attempt fails
       mockCreateTerminalSession.mockRejectedValueOnce(new Error("Connection refused"));
 
-      const { result } = renderHook(() => useTerminalSessions());
+      const { result } = renderHook(() => useTerminalSessions(TEST_PROJECT_ID));
 
       await waitFor(() => {
         expect(result.current.bootstrapError).toBe("Connection refused");
@@ -710,7 +715,7 @@ describe("useTerminalSessions", () => {
         cwd: "/project",
       });
 
-      const { result } = renderHook(() => useTerminalSessions());
+      const { result } = renderHook(() => useTerminalSessions(TEST_PROJECT_ID));
 
       // Wait for initial tab creation
       await waitFor(() => {
@@ -739,7 +744,7 @@ describe("useTerminalSessions", () => {
         cwd: "/project",
       });
 
-      const { result } = renderHook(() => useTerminalSessions());
+      const { result } = renderHook(() => useTerminalSessions(TEST_PROJECT_ID));
 
       await waitFor(() => {
         expect(result.current.tabs.length).toBe(1);
@@ -766,7 +771,7 @@ describe("useTerminalSessions", () => {
       // Auto-create fails
       mockCreateTerminalSession.mockRejectedValue(new Error("Internal server error"));
 
-      const { result } = renderHook(() => useTerminalSessions());
+      const { result } = renderHook(() => useTerminalSessions(TEST_PROJECT_ID));
 
       await waitFor(() => {
         expect(result.current.isReady).toBe(true);
@@ -790,7 +795,7 @@ describe("useTerminalSessions", () => {
       // createTerminalSession never resolves
       mockCreateTerminalSession.mockReturnValue(new Promise(() => {}));
 
-      const { result } = renderHook(() => useTerminalSessions());
+      const { result } = renderHook(() => useTerminalSessions(TEST_PROJECT_ID));
 
       // isReady should become true (list resolved)
       await waitFor(() => {
@@ -822,7 +827,7 @@ describe("useTerminalSessions", () => {
       // First create call hangs forever
       mockCreateTerminalSession.mockReturnValue(new Promise(() => {}));
 
-      const { result } = renderHook(() => useTerminalSessions());
+      const { result } = renderHook(() => useTerminalSessions(TEST_PROJECT_ID));
 
       await waitFor(() => {
         expect(result.current.isReady).toBe(true);
@@ -874,7 +879,7 @@ describe("useTerminalSessions", () => {
       });
       mockCreateTerminalSession.mockReturnValueOnce(firstPromise);
 
-      const { result } = renderHook(() => useTerminalSessions());
+      const { result } = renderHook(() => useTerminalSessions(TEST_PROJECT_ID));
 
       await waitFor(() => {
         expect(result.current.isReady).toBe(true);

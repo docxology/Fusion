@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import type { ProjectInfo } from "@fusion/core";
 import { Header } from "../Header";
+import { scopedKey } from "../../utils/projectStorage";
 
 // Mock fetchScripts for overflow submenu
 vi.mock("../../api", () => ({
@@ -98,16 +99,16 @@ describe("MultiProjectFlow", () => {
     expect(viewMode).toBe("project");
   });
 
-  it("validates view mode and task view preferences in localStorage", () => {
-    // Mock localStorage
+  it("validates global view mode and project-scoped task view preferences", () => {
     const storage: Record<string, string> = {};
-    
-    // Simulate saving view preferences
+    const projectId = "proj_1";
+    const taskViewKey = scopedKey("kb-dashboard-task-view", projectId);
+
     storage["kb-dashboard-view-mode"] = "project";
-    storage["kb-dashboard-task-view"] = "board";
-    
+    storage[taskViewKey] = "board";
+
     expect(storage["kb-dashboard-view-mode"]).toBe("project");
-    expect(storage["kb-dashboard-task-view"]).toBe("board");
+    expect(storage[taskViewKey]).toBe("board");
   });
 
   describe("Projects button navigation", () => {

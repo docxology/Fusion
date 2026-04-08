@@ -5,6 +5,7 @@ import { InlineCreateCard } from "../InlineCreateCard";
 import type { Task, Column } from "@fusion/core";
 import { fetchModels, fetchSettings, fetchAgents } from "../../api";
 import type { ModelInfo } from "../../api";
+import { scopedKey } from "../../utils/projectStorage";
 
 // Mock lucide-react
 vi.mock("lucide-react", () => ({
@@ -98,6 +99,9 @@ vi.mock("../../api", () => ({
   fetchAgents: vi.fn().mockResolvedValue([]),
 }));
 
+const TEST_PROJECT_ID = "proj-123";
+const INLINE_CREATE_STORAGE_KEY = scopedKey("kb-inline-create-text", TEST_PROJECT_ID);
+
 const MOCK_MODELS: ModelInfo[] = [
   {
     provider: "anthropic",
@@ -141,6 +145,7 @@ function renderCard(
     onCancel: vi.fn(),
     addToast: vi.fn(),
     availableModels: MOCK_MODELS,
+    projectId: TEST_PROJECT_ID,
     ...overrides,
   };
   const result = render(<InlineCreateCard {...props} />);
@@ -673,7 +678,7 @@ describe("InlineCreateCard localStorage persistence", () => {
 
   it("restores description from localStorage on mount", () => {
     // Pre-populate localStorage
-    localStorage.setItem("kb-inline-create-text", "Saved draft description");
+    localStorage.setItem(INLINE_CREATE_STORAGE_KEY, "Saved draft description");
 
     renderCard();
     const textarea = screen.getByPlaceholderText("What needs to be done?");
@@ -690,7 +695,7 @@ describe("InlineCreateCard localStorage persistence", () => {
 
     // Wait for the useEffect to run
     await waitFor(() => {
-      expect(localStorage.getItem("kb-inline-create-text")).toBe("Typing this task");
+      expect(localStorage.getItem(INLINE_CREATE_STORAGE_KEY)).toBe("Typing this task");
     });
   });
 
@@ -702,7 +707,7 @@ describe("InlineCreateCard localStorage persistence", () => {
     // Type something to set localStorage
     fireEvent.change(textarea, { target: { value: "Task to create" } });
     await waitFor(() => {
-      expect(localStorage.getItem("kb-inline-create-text")).toBe("Task to create");
+      expect(localStorage.getItem(INLINE_CREATE_STORAGE_KEY)).toBe("Task to create");
     });
 
     // Submit the task by clicking the Save button
@@ -713,7 +718,7 @@ describe("InlineCreateCard localStorage persistence", () => {
     });
 
     // localStorage should be cleared
-    expect(localStorage.getItem("kb-inline-create-text")).toBeNull();
+    expect(localStorage.getItem(INLINE_CREATE_STORAGE_KEY)).toBeNull();
   });
 
   it("clears localStorage when cancelling via Escape key", async () => {
@@ -723,7 +728,7 @@ describe("InlineCreateCard localStorage persistence", () => {
     // Type something to set localStorage
     fireEvent.change(textarea, { target: { value: "Draft to cancel" } });
     await waitFor(() => {
-      expect(localStorage.getItem("kb-inline-create-text")).toBe("Draft to cancel");
+      expect(localStorage.getItem(INLINE_CREATE_STORAGE_KEY)).toBe("Draft to cancel");
     });
 
     // Press Escape to cancel
@@ -735,7 +740,7 @@ describe("InlineCreateCard localStorage persistence", () => {
     });
 
     // localStorage should be cleared
-    expect(localStorage.getItem("kb-inline-create-text")).toBeNull();
+    expect(localStorage.getItem(INLINE_CREATE_STORAGE_KEY)).toBeNull();
   });
 
   it("starts with empty description when localStorage is empty", () => {

@@ -1,5 +1,6 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import type { Agent } from "../api";
+import { getScopedItem, setScopedItem } from "../utils/projectStorage";
 
 const EXPANDED_KEY = "kb-agent-tree-expanded";
 
@@ -17,9 +18,9 @@ export interface UseAgentHierarchyReturn {
   isLoading: boolean;
 }
 
-function readExpandedFromStorage(): Set<string> {
+function readExpandedFromStorage(projectId?: string): Set<string> {
   try {
-    const stored = localStorage.getItem(EXPANDED_KEY);
+    const stored = getScopedItem(EXPANDED_KEY, projectId);
     if (stored) {
       const parsed: string[] = JSON.parse(stored);
       return new Set(Array.isArray(parsed) ? parsed : []);
@@ -30,9 +31,9 @@ function readExpandedFromStorage(): Set<string> {
   return new Set();
 }
 
-function writeExpandedToStorage(expanded: Set<string>): void {
+function writeExpandedToStorage(expanded: Set<string>, projectId?: string): void {
   try {
-    localStorage.setItem(EXPANDED_KEY, JSON.stringify([...expanded]));
+    setScopedItem(EXPANDED_KEY, JSON.stringify([...expanded]), projectId);
   } catch {
     // Gracefully degrade if localStorage is unavailable
   }
@@ -71,8 +72,12 @@ function buildTree(agents: Agent[], expanded: Set<string>): AgentNode[] {
  * Derives the tree structure from the `reportsTo` field on agents.
  * Expand/collapse state is persisted to localStorage.
  */
-export function useAgentHierarchy(agents: Agent[]): UseAgentHierarchyReturn {
-  const [expanded, setExpanded] = useState<Set<string>>(() => readExpandedFromStorage());
+export function useAgentHierarchy(agents: Agent[], projectId?: string): UseAgentHierarchyReturn {
+  const [expanded, setExpanded] = useState<Set<string>>(() => readExpandedFromStorage(projectId));
+
+  useEffect(() => {
+    setExpanded(readExpandedFromStorage(projectId));
+  }, [projectId]);
 
   const rootNodes = useMemo(() => buildTree(agents, expanded), [agents, expanded]);
 
@@ -84,10 +89,10 @@ export function useAgentHierarchy(agents: Agent[]): UseAgentHierarchyReturn {
       } else {
         next.add(agentId);
       }
-      writeExpandedToStorage(next);
+      writeExpandedToStorage(next, projectId);
       return next;
     });
-  }, []);
+  }, [projectId]);
 
   const isExpanded = useCallback(
     (agentId: string) => expanded.has(agentId),

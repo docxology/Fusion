@@ -13,6 +13,7 @@ import {
   getMissionGoal,
   clearMissionGoal,
 } from "../modalPersistence";
+import { scopedKey } from "../../utils/projectStorage";
 
 describe("modalPersistence", () => {
   beforeEach(() => {
@@ -39,6 +40,14 @@ describe("modalPersistence", () => {
       expect(getPlanningDescription()).toBe("Build authentication");
     });
 
+    it("saves and retrieves planning description per project", () => {
+      savePlanningDescription("Build auth for project", "proj-123");
+      expect(getPlanningDescription("proj-123")).toBe("Build auth for project");
+      expect(localStorage.getItem(scopedKey(STORED_PLANNING_KEY, "proj-123"))).toBe(
+        "Build auth for project",
+      );
+    });
+
     it("returns empty string when nothing saved", () => {
       expect(getPlanningDescription()).toBe("");
     });
@@ -47,6 +56,12 @@ describe("modalPersistence", () => {
       savePlanningDescription("Test");
       clearPlanningDescription();
       expect(getPlanningDescription()).toBe("");
+    });
+
+    it("clears correctly per project", () => {
+      savePlanningDescription("Test", "proj-123");
+      clearPlanningDescription("proj-123");
+      expect(getPlanningDescription("proj-123")).toBe("");
     });
 
     it("returns empty string when localStorage returns null", () => {
@@ -68,6 +83,14 @@ describe("modalPersistence", () => {
       expect(getSubtaskDescription()).toBe("Implement login feature");
     });
 
+    it("saves and retrieves subtask description per project", () => {
+      saveSubtaskDescription("Implement login feature", "proj-123");
+      expect(getSubtaskDescription("proj-123")).toBe("Implement login feature");
+      expect(localStorage.getItem(scopedKey(STORED_SUBTASK_KEY, "proj-123"))).toBe(
+        "Implement login feature",
+      );
+    });
+
     it("returns empty string when nothing saved", () => {
       expect(getSubtaskDescription()).toBe("");
     });
@@ -76,6 +99,12 @@ describe("modalPersistence", () => {
       saveSubtaskDescription("Test");
       clearSubtaskDescription();
       expect(getSubtaskDescription()).toBe("");
+    });
+
+    it("clears correctly per project", () => {
+      saveSubtaskDescription("Test", "proj-123");
+      clearSubtaskDescription("proj-123");
+      expect(getSubtaskDescription("proj-123")).toBe("");
     });
 
     it("overwrites previous value", () => {
@@ -91,6 +120,14 @@ describe("modalPersistence", () => {
       expect(getMissionGoal()).toBe("Build a SaaS platform");
     });
 
+    it("saves and retrieves mission goal per project", () => {
+      saveMissionGoal("Build a SaaS platform", "proj-123");
+      expect(getMissionGoal("proj-123")).toBe("Build a SaaS platform");
+      expect(localStorage.getItem(scopedKey(STORED_MISSION_KEY, "proj-123"))).toBe(
+        "Build a SaaS platform",
+      );
+    });
+
     it("returns empty string when nothing saved", () => {
       expect(getMissionGoal()).toBe("");
     });
@@ -99,6 +136,12 @@ describe("modalPersistence", () => {
       saveMissionGoal("Test");
       clearMissionGoal();
       expect(getMissionGoal()).toBe("");
+    });
+
+    it("clears correctly per project", () => {
+      saveMissionGoal("Test", "proj-123");
+      clearMissionGoal("proj-123");
+      expect(getMissionGoal("proj-123")).toBe("");
     });
 
     it("overwrites previous value", () => {
@@ -139,6 +182,15 @@ describe("modalPersistence", () => {
       expect(getPlanningDescription()).toBe("planning");
       expect(getSubtaskDescription()).toBe("");
       expect(getMissionGoal()).toBe("mission");
+    });
+
+    it("project-scoped values do not interfere with other projects", () => {
+      savePlanningDescription("project-a", "proj-a");
+      savePlanningDescription("project-b", "proj-b");
+
+      expect(getPlanningDescription("proj-a")).toBe("project-a");
+      expect(getPlanningDescription("proj-b")).toBe("project-b");
+      expect(getPlanningDescription()).toBe("");
     });
   });
 });

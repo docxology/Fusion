@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import type { Settings } from "@fusion/core";
+import { scopedKey } from "../../utils/projectStorage";
 
 const defaultSettings: Settings = {
   maxConcurrent: 2,
@@ -68,8 +69,12 @@ const mockProjectsState = {
   loading: false,
 };
 
+const DEFAULT_PROJECT_ID = "proj_123";
+const taskViewStorageKey = (projectId = DEFAULT_PROJECT_ID) =>
+  scopedKey("kb-dashboard-task-view", projectId);
+
 const mockCurrentProjectState = {
-  currentProject: { id: "proj_123", name: "Test Project", path: "/test", status: "active", isolationMode: "in-process", createdAt: "", updatedAt: "" },
+  currentProject: { id: DEFAULT_PROJECT_ID, name: "Test Project", path: "/test", status: "active", isolationMode: "in-process", createdAt: "", updatedAt: "" },
   setCurrentProject: vi.fn(),
   clearCurrentProject: vi.fn(),
   loading: false,
@@ -128,7 +133,7 @@ beforeEach(() => {
   // Reset mock states
   mockProjectsState.projects = [];
   mockProjectsState.loading = false;
-  mockCurrentProjectState.currentProject = { id: "proj_123", name: "Test Project", path: "/test", status: "active", isolationMode: "in-process", createdAt: "", updatedAt: "" };
+  mockCurrentProjectState.currentProject = { id: DEFAULT_PROJECT_ID, name: "Test Project", path: "/test", status: "active", isolationMode: "in-process", createdAt: "", updatedAt: "" };
   mockCurrentProjectState.setCurrentProject.mockClear();
   mockCurrentProjectState.clearCurrentProject.mockClear();
 });
@@ -868,7 +873,7 @@ describe("App view switching", () => {
 
   it("persists view preference to localStorage", async () => {
     // Clear any previous value and set project mode
-    localStorage.removeItem("kb-dashboard-task-view");
+    localStorage.removeItem(taskViewStorageKey());
     localStorage.setItem("kb-dashboard-view-mode", "project");
 
     render(<App />);
@@ -883,7 +888,7 @@ describe("App view switching", () => {
 
     // Should have saved to localStorage
     await waitFor(() => {
-      expect(localStorage.getItem("kb-dashboard-task-view")).toBe("list");
+      expect(localStorage.getItem(taskViewStorageKey())).toBe("list");
     });
 
     // Cleanup
@@ -892,7 +897,7 @@ describe("App view switching", () => {
 
   it("initializes view from localStorage if available", async () => {
     // Set localStorage to list view and project mode
-    localStorage.setItem("kb-dashboard-task-view", "list");
+    localStorage.setItem(taskViewStorageKey(), "list");
     localStorage.setItem("kb-dashboard-view-mode", "project");
 
     render(<App />);
@@ -906,7 +911,7 @@ describe("App view switching", () => {
     expect(screen.getByTitle("List view").className).toContain("active");
 
     // Cleanup
-    localStorage.removeItem("kb-dashboard-task-view");
+    localStorage.removeItem(taskViewStorageKey());
     localStorage.removeItem("kb-dashboard-view-mode");
   });
 
@@ -956,7 +961,7 @@ describe("App view switching", () => {
   });
 
   it("persists agents view preference to localStorage", async () => {
-    localStorage.removeItem("kb-dashboard-task-view");
+    localStorage.removeItem(taskViewStorageKey());
 
     render(<App />);
 
@@ -967,12 +972,12 @@ describe("App view switching", () => {
     fireEvent.click(screen.getByTitle("Agents view"));
 
     await waitFor(() => {
-      expect(localStorage.getItem("kb-dashboard-task-view")).toBe("agents");
+      expect(localStorage.getItem(taskViewStorageKey())).toBe("agents");
     });
   });
 
   it("initializes agents view from localStorage if saved", async () => {
-    localStorage.setItem("kb-dashboard-task-view", "agents");
+    localStorage.setItem(taskViewStorageKey(), "agents");
 
     render(<App />);
 
@@ -982,7 +987,7 @@ describe("App view switching", () => {
 
     expect(screen.getByTitle("Agents view").className).toContain("active");
 
-    localStorage.removeItem("kb-dashboard-task-view");
+    localStorage.removeItem(taskViewStorageKey());
   });
 });
 
@@ -1274,7 +1279,7 @@ describe("Script-to-terminal modal handoff", () => {
 describe("App footer-safe project layout", () => {
   afterEach(() => {
     localStorage.removeItem("kb-dashboard-view-mode");
-    localStorage.removeItem("kb-dashboard-task-view");
+    localStorage.removeItem(taskViewStorageKey());
   });
 
   it("wraps project content in project-content div with footer class when project is selected", async () => {
@@ -1335,7 +1340,7 @@ describe("App footer-safe project layout", () => {
 
   it("renders agents view inside the footer-safe wrapper", async () => {
     localStorage.setItem("kb-dashboard-view-mode", "project");
-    localStorage.setItem("kb-dashboard-task-view", "agents");
+    localStorage.setItem(taskViewStorageKey(), "agents");
 
     render(<App />);
 
@@ -1348,7 +1353,7 @@ describe("App footer-safe project layout", () => {
 
   it("renders list view inside the footer-safe wrapper", async () => {
     localStorage.setItem("kb-dashboard-view-mode", "project");
-    localStorage.setItem("kb-dashboard-task-view", "list");
+    localStorage.setItem(taskViewStorageKey(), "list");
 
     render(<App />);
 
@@ -1368,7 +1373,7 @@ describe("App footer-safe project layout", () => {
    */
   it("renders board inside the footer-safe wrapper (FN-824 mobile regression)", async () => {
     localStorage.setItem("kb-dashboard-view-mode", "project");
-    localStorage.setItem("kb-dashboard-task-view", "board");
+    localStorage.setItem(taskViewStorageKey(), "board");
 
     render(<App />);
 

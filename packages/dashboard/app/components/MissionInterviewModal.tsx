@@ -98,7 +98,7 @@ export function MissionInterviewModal({
       try {
         const { sessionId } = await startMissionInterview(goal.trim(), projectId);
         currentSessionIdRef.current = sessionId;
-        clearMissionGoal();
+        clearMissionGoal(projectId);
 
         const connection = connectMissionInterviewStream(sessionId, projectId, {
           onThinking: (data) => {
@@ -106,14 +106,14 @@ export function MissionInterviewModal({
           },
           onQuestion: (question) => {
             setIsReconnecting(false);
-            clearMissionGoal();
+            clearMissionGoal(projectId);
             setView({ type: "question", sessionId, question });
             setStreamingOutput("");
             setHasProgress(true);
           },
           onSummary: (summary) => {
             setIsReconnecting(false);
-            clearMissionGoal();
+            clearMissionGoal(projectId);
             setView({ type: "summary", sessionId, summary });
             setEditedSummary(summary);
             setStreamingOutput("");
@@ -165,7 +165,7 @@ export function MissionInterviewModal({
       return () => clearTimeout(timer);
     } else if (isOpen && !initialGoalProp && !hasAutoStartedRef.current && view.type === "initial") {
       // Check localStorage for persisted goal when no prop provided
-      const persisted = getMissionGoal();
+      const persisted = getMissionGoal(projectId);
       if (persisted) {
         setMissionGoal(persisted);
       }
@@ -190,7 +190,7 @@ export function MissionInterviewModal({
 
       if (session.status === "awaiting_input" && session.currentQuestion) {
         try {
-          clearMissionGoal();
+          clearMissionGoal(projectId);
           const question = JSON.parse(session.currentQuestion) as import("@fusion/core").PlanningQuestion;
           currentSessionIdRef.current = session.id;
           setHasProgress(true);
@@ -200,7 +200,7 @@ export function MissionInterviewModal({
         }
       } else if (session.status === "complete" && session.result) {
         try {
-          clearMissionGoal();
+          clearMissionGoal(projectId);
           const summary = JSON.parse(session.result) as MissionPlanSummary;
           currentSessionIdRef.current = session.id;
           setHasProgress(true);
@@ -223,13 +223,13 @@ export function MissionInterviewModal({
           },
           onQuestion: (question) => {
             setIsReconnecting(false);
-            clearMissionGoal();
+            clearMissionGoal(projectId);
             setView({ type: "question", sessionId: session.id, question });
             setStreamingOutput("");
           },
           onSummary: (summary) => {
             setIsReconnecting(false);
-            clearMissionGoal();
+            clearMissionGoal(projectId);
             setView({ type: "summary", sessionId: session.id, summary });
             setEditedSummary(summary);
             setStreamingOutput("");
@@ -296,7 +296,7 @@ export function MissionInterviewModal({
   const handleCancel = useCallback(async () => {
     // Save to localStorage BEFORE any cleanup
     if (missionGoal) {
-      saveMissionGoal(missionGoal);
+      saveMissionGoal(missionGoal, projectId);
     }
 
     if (hasProgress) {
@@ -379,7 +379,7 @@ export function MissionInterviewModal({
     try {
       const mission = await createMissionFromInterview(view.sessionId, editedSummary || undefined, projectId);
       onMissionCreated(mission);
-      clearMissionGoal();
+      clearMissionGoal(projectId);
       // Reset state without confirmation
       streamConnectionRef.current?.close();
       streamConnectionRef.current = null;

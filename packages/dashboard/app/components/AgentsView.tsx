@@ -11,6 +11,7 @@ import { useAgentHierarchy } from "../hooks/useAgentHierarchy";
 import type { AgentNode } from "../hooks/useAgentHierarchy";
 import { NewAgentDialog } from "./NewAgentDialog";
 import { AgentImportModal } from "./AgentImportModal";
+import { getScopedItem, setScopedItem } from "../utils/projectStorage";
 
 export interface AgentsViewProps {
   addToast: (message: string, type?: "success" | "error") => void;
@@ -134,19 +135,28 @@ export function AgentsView({ addToast, projectId }: AgentsViewProps) {
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [agentView, setAgentView] = useState<"board" | "list" | "tree">(() => {
     if (typeof window === "undefined") return "list";
-    const saved = localStorage.getItem("kb-agent-view");
+    const saved = getScopedItem("kb-agent-view", projectId);
     return (saved === "board" || saved === "list" || saved === "tree") ? saved : "list";
   });
 
+  useEffect(() => {
+    const saved = getScopedItem("kb-agent-view", projectId);
+    if (saved === "board" || saved === "list" || saved === "tree") {
+      setAgentView(saved);
+      return;
+    }
+    setAgentView("list");
+  }, [projectId]);
+
   // Persist view preference to localStorage
   useEffect(() => {
-    localStorage.setItem("kb-agent-view", agentView);
-  }, [agentView]);
+    setScopedItem("kb-agent-view", agentView, projectId);
+  }, [agentView, projectId]);
 
   const [editingRoleForAgent, setEditingRoleForAgent] = useState<string | null>(null);
   const roleSelectRef = useRef<HTMLSelectElement>(null);
 
-  const hierarchy = useAgentHierarchy(agents);
+  const hierarchy = useAgentHierarchy(agents, projectId);
 
   const loadAgents = useCallback(async () => {
     setIsLoading(true);

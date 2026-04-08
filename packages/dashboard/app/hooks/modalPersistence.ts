@@ -1,3 +1,5 @@
+import { getScopedItem, removeScopedItem, setScopedItem } from "../utils/projectStorage";
+
 // Storage keys — each modal type has independent storage
 export const STORED_PLANNING_KEY = "kb-planning-last-description";
 export const STORED_SUBTASK_KEY = "kb-subtask-last-description";
@@ -5,57 +7,42 @@ export const STORED_MISSION_KEY = "kb-mission-last-goal";
 
 // Planning persistence
 
-export function savePlanningDescription(description: string): void {
-  if (typeof window !== "undefined") {
-    localStorage.setItem(STORED_PLANNING_KEY, description);
-  }
+export function savePlanningDescription(description: string, projectId?: string): void {
+  setScopedItem(STORED_PLANNING_KEY, description, projectId);
 }
 
-export function getPlanningDescription(): string {
-  if (typeof window === "undefined") return "";
-  return localStorage.getItem(STORED_PLANNING_KEY) || "";
+export function getPlanningDescription(projectId?: string): string {
+  return getScopedItem(STORED_PLANNING_KEY, projectId) || "";
 }
 
-export function clearPlanningDescription(): void {
-  if (typeof window !== "undefined") {
-    localStorage.removeItem(STORED_PLANNING_KEY);
-  }
+export function clearPlanningDescription(projectId?: string): void {
+  removeScopedItem(STORED_PLANNING_KEY, projectId);
 }
 
 // Subtask persistence
 
-export function saveSubtaskDescription(description: string): void {
-  if (typeof window !== "undefined") {
-    localStorage.setItem(STORED_SUBTASK_KEY, description);
-  }
+export function saveSubtaskDescription(description: string, projectId?: string): void {
+  setScopedItem(STORED_SUBTASK_KEY, description, projectId);
 }
 
-export function getSubtaskDescription(): string {
-  if (typeof window === "undefined") return "";
-  return localStorage.getItem(STORED_SUBTASK_KEY) || "";
+export function getSubtaskDescription(projectId?: string): string {
+  return getScopedItem(STORED_SUBTASK_KEY, projectId) || "";
 }
 
-export function clearSubtaskDescription(): void {
-  if (typeof window !== "undefined") {
-    localStorage.removeItem(STORED_SUBTASK_KEY);
-  }
+export function clearSubtaskDescription(projectId?: string): void {
+  removeScopedItem(STORED_SUBTASK_KEY, projectId);
 }
 
 // Mission persistence
 
-export function saveMissionGoal(goal: string): void {
-  if (typeof window !== "undefined") {
-    localStorage.setItem(STORED_MISSION_KEY, goal);
-  }
+export function saveMissionGoal(goal: string, projectId?: string): void {
+  setScopedItem(STORED_MISSION_KEY, goal, projectId);
 }
 
-export function getMissionGoal(): string {
-  if (typeof window === "undefined") return "";
-  return localStorage.getItem(STORED_MISSION_KEY) || "";
+export function getMissionGoal(projectId?: string): string {
+  return getScopedItem(STORED_MISSION_KEY, projectId) || "";
 }
 
-export function clearMissionGoal(): void {
-  if (typeof window !== "undefined") {
-    localStorage.removeItem(STORED_MISSION_KEY);
-  }
+export function clearMissionGoal(projectId?: string): void {
+  removeScopedItem(STORED_MISSION_KEY, projectId);
 }

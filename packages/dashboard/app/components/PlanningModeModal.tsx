@@ -162,7 +162,7 @@ export function PlanningModeModal({ isOpen, onClose, onTaskCreated, onTasksCreat
         },
         onQuestion: (question) => {
           setIsReconnecting(false);
-          clearPlanningDescription();
+          clearPlanningDescription(projectId);
           setView({
             type: "question",
             session: { sessionId, currentQuestion: question, summary: null },
@@ -171,7 +171,7 @@ export function PlanningModeModal({ isOpen, onClose, onTaskCreated, onTasksCreat
         },
         onSummary: (summary) => {
           setIsReconnecting(false);
-          clearPlanningDescription();
+          clearPlanningDescription(projectId);
           setView({
             type: "summary",
             session: { sessionId, currentQuestion: null, summary },
@@ -233,7 +233,7 @@ export function PlanningModeModal({ isOpen, onClose, onTaskCreated, onTasksCreat
       return () => clearTimeout(timer);
     } else if (isOpen && !initialPlanProp && !hasAutoStartedRef.current && view.type === "initial") {
       // Check localStorage for persisted description when no prop provided
-      const persisted = getPlanningDescription();
+      const persisted = getPlanningDescription(projectId);
       if (persisted) {
         setInitialPlan(persisted);
       }
@@ -252,12 +252,12 @@ export function PlanningModeModal({ isOpen, onClose, onTaskCreated, onTasksCreat
         currentSessionIdRef.current = resumeSessionId;
 
         if (session.status === "awaiting_input" && session.currentQuestion) {
-          clearPlanningDescription();
+          clearPlanningDescription(projectId);
           const question = JSON.parse(session.currentQuestion);
           setView({ type: "question", session: { sessionId: resumeSessionId, currentQuestion: question, summary: null } });
           if (session.thinkingOutput) setStreamingOutput(session.thinkingOutput);
         } else if (session.status === "complete" && session.result) {
-          clearPlanningDescription();
+          clearPlanningDescription(projectId);
           const summary = JSON.parse(session.result);
           setView({ type: "summary", session: { sessionId: resumeSessionId, currentQuestion: null, summary }, summary });
           setEditedSummary(summary);
@@ -269,13 +269,13 @@ export function PlanningModeModal({ isOpen, onClose, onTaskCreated, onTasksCreat
             onThinking: (data) => setStreamingOutput((prev) => prev + data),
             onQuestion: (question) => {
               setIsReconnecting(false);
-              clearPlanningDescription();
+              clearPlanningDescription(projectId);
               setView({ type: "question", session: { sessionId: resumeSessionId, currentQuestion: question, summary: null } });
               setStreamingOutput("");
             },
             onSummary: (summary) => {
               setIsReconnecting(false);
-              clearPlanningDescription();
+              clearPlanningDescription(projectId);
               setView({ type: "summary", session: { sessionId: resumeSessionId, currentQuestion: null, summary }, summary });
               setEditedSummary(summary);
               setStreamingOutput("");
@@ -344,7 +344,7 @@ export function PlanningModeModal({ isOpen, onClose, onTaskCreated, onTasksCreat
   const handleCancel = useCallback(() => {
     // Save to localStorage BEFORE any cleanup (preserve for re-entry)
     if (initialPlan) {
-      savePlanningDescription(initialPlan);
+      savePlanningDescription(initialPlan, projectId);
     }
 
     // Always close the stream connection
@@ -362,7 +362,7 @@ export function PlanningModeModal({ isOpen, onClose, onTaskCreated, onTasksCreat
     setPlanningModelId(undefined);
     currentSessionIdRef.current = null;
     onClose();
-  }, [initialPlan, onClose]);
+  }, [initialPlan, onClose, projectId]);
 
   // Handle escape key to close
   useEffect(() => {

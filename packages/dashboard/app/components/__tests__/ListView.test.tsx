@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { ListView } from "../ListView";
 import type { Task, TaskDetail } from "@fusion/core";
+import { scopedKey } from "../../utils/projectStorage";
 
 // Mock the API
 vi.mock("../../api", () => ({
@@ -23,6 +24,8 @@ vi.mock("../../api", () => ({
 import { fetchTaskDetail } from "../../api";
 
 const mockAddToast = vi.fn();
+const TEST_PROJECT_ID = "proj-123";
+const scopedStorageKey = (key: string) => scopedKey(key, TEST_PROJECT_ID);
 
 const createMockTask = (overrides: Partial<Task> = {}): Task => ({
   id: "FN-001",
@@ -48,6 +51,7 @@ const renderListView = (props: Partial<React.ComponentProps<typeof ListView>> = 
     addToast: mockAddToast,
     globalPaused: false,
     onNewTask: vi.fn(),
+    projectId: TEST_PROJECT_ID,
   };
 
   return render(<ListView {...defaultProps} {...props} />);
@@ -216,7 +220,7 @@ describe("ListView", () => {
     fireEvent.click(row!);
 
     await waitFor(() => {
-      expect(fetchTaskDetail).toHaveBeenCalledWith("FN-001", undefined);
+      expect(fetchTaskDetail).toHaveBeenCalledWith("FN-001", TEST_PROJECT_ID);
     });
 
     expect(mockOnOpenDetail).toHaveBeenCalledWith(mockDetail);
@@ -1061,7 +1065,7 @@ describe("ListView Column Visibility", () => {
     fireEvent.click(titleCheckbox);
 
     // Verify localStorage was updated
-    const saved = localStorage.getItem("kb-dashboard-list-columns");
+    const saved = localStorage.getItem(scopedStorageKey("kb-dashboard-list-columns"));
     expect(saved).toBeTruthy();
     const parsed = JSON.parse(saved!);
     expect(parsed).not.toContain("title");
@@ -1069,7 +1073,7 @@ describe("ListView Column Visibility", () => {
 
   it("initializes column visibility from localStorage", () => {
     // Set up localStorage with only ID and Status visible
-    localStorage.setItem("kb-dashboard-list-columns", JSON.stringify(["id", "status"]));
+    localStorage.setItem(scopedStorageKey("kb-dashboard-list-columns"), JSON.stringify(["id", "status"]));
 
     const tasks = [createMockTask({ id: "FN-001", title: "Test Task", status: "pending" })];
     renderListView({ tasks });
@@ -1268,12 +1272,12 @@ describe("ListView Hide Done Tasks", () => {
     fireEvent.click(hideDoneButton);
 
     // Verify localStorage was updated
-    expect(localStorage.getItem("kb-dashboard-hide-done")).toBe("true");
+    expect(localStorage.getItem(scopedStorageKey("kb-dashboard-hide-done"))).toBe("true");
   });
 
   it("initializes hide done state from localStorage", () => {
     // Set up localStorage with hide done enabled
-    localStorage.setItem("kb-dashboard-hide-done", "true");
+    localStorage.setItem(scopedStorageKey("kb-dashboard-hide-done"), "true");
 
     const tasks = [
       createMockTask({ id: "FN-001", column: "done" }),
@@ -1689,7 +1693,7 @@ describe("ListView Collapsible Sections", () => {
     fireEvent.click(triageHeader!);
 
     // Verify localStorage was updated
-    const saved = localStorage.getItem("kb-dashboard-list-collapsed");
+    const saved = localStorage.getItem(scopedStorageKey("kb-dashboard-list-collapsed"));
     expect(saved).toBeTruthy();
     const parsed = JSON.parse(saved!);
     expect(parsed).toContain("triage");
@@ -1697,7 +1701,7 @@ describe("ListView Collapsible Sections", () => {
 
   it("collapse state initializes from localStorage on mount", () => {
     // Set up localStorage with triage section collapsed
-    localStorage.setItem("kb-dashboard-list-collapsed", JSON.stringify(["triage"]));
+    localStorage.setItem(scopedStorageKey("kb-dashboard-list-collapsed"), JSON.stringify(["triage"]));
 
     const tasks = [
       createMockTask({ id: "FN-001", column: "triage", title: "Triage Task" }),
@@ -1753,7 +1757,7 @@ describe("ListView Collapsible Sections", () => {
     expect(todoHeader?.className).toContain("list-section-header--collapsed");
 
     // Verify localStorage has both columns
-    const saved = localStorage.getItem("kb-dashboard-list-collapsed");
+    const saved = localStorage.getItem(scopedStorageKey("kb-dashboard-list-collapsed"));
     const parsed = JSON.parse(saved!);
     expect(parsed).toContain("triage");
     expect(parsed).toContain("todo");
@@ -1889,7 +1893,7 @@ describe("ListView - Bulk Selection", () => {
 
   it("shows selection checkbox in header", () => {
     const tasks = [createMockTask({ id: "FN-001" })];
-    render(<ListView tasks={tasks} onMoveTask={vi.fn()} onOpenDetail={vi.fn()} addToast={mockAddToast} />);
+    render(<ListView tasks={tasks} onMoveTask={vi.fn()} onOpenDetail={vi.fn()} addToast={mockAddToast} projectId={TEST_PROJECT_ID} />);
 
     const headerCheckbox = screen.getByLabelText("Select all visible tasks");
     expect(headerCheckbox).toBeDefined();
@@ -1900,7 +1904,7 @@ describe("ListView - Bulk Selection", () => {
       createMockTask({ id: "FN-001" }),
       createMockTask({ id: "FN-002" }),
     ];
-    render(<ListView tasks={tasks} onMoveTask={vi.fn()} onOpenDetail={vi.fn()} addToast={mockAddToast} />);
+    render(<ListView tasks={tasks} onMoveTask={vi.fn()} onOpenDetail={vi.fn()} addToast={mockAddToast} projectId={TEST_PROJECT_ID} />);
 
     const checkboxes = screen.getAllByLabelText(/Select FN-/);
     expect(checkboxes).toHaveLength(2);
@@ -1910,7 +1914,7 @@ describe("ListView - Bulk Selection", () => {
     const tasks = [
       createMockTask({ id: "FN-001", column: "archived" }),
     ];
-    render(<ListView tasks={tasks} onMoveTask={vi.fn()} onOpenDetail={vi.fn()} addToast={mockAddToast} />);
+    render(<ListView tasks={tasks} onMoveTask={vi.fn()} onOpenDetail={vi.fn()} addToast={mockAddToast} projectId={TEST_PROJECT_ID} />);
 
     const checkbox = screen.getByLabelText("Select FN-001");
     expect(checkbox).toBeDisabled();
@@ -1921,7 +1925,7 @@ describe("ListView - Bulk Selection", () => {
       createMockTask({ id: "FN-001" }),
       createMockTask({ id: "FN-002" }),
     ];
-    render(<ListView tasks={tasks} onMoveTask={vi.fn()} onOpenDetail={vi.fn()} addToast={mockAddToast} />);
+    render(<ListView tasks={tasks} onMoveTask={vi.fn()} onOpenDetail={vi.fn()} addToast={mockAddToast} projectId={TEST_PROJECT_ID} />);
 
     const checkbox = screen.getByLabelText("Select FN-001");
     fireEvent.click(checkbox);
@@ -1933,7 +1937,7 @@ describe("ListView - Bulk Selection", () => {
     const tasks = [
       createMockTask({ id: "FN-001" }),
     ];
-    render(<ListView tasks={tasks} onMoveTask={vi.fn()} onOpenDetail={vi.fn()} addToast={mockAddToast} />);
+    render(<ListView tasks={tasks} onMoveTask={vi.fn()} onOpenDetail={vi.fn()} addToast={mockAddToast} projectId={TEST_PROJECT_ID} />);
 
     const checkbox = screen.getByLabelText("Select FN-001");
     fireEvent.click(checkbox);
@@ -1950,7 +1954,7 @@ describe("ListView - Bulk Selection", () => {
       createMockTask({ id: "FN-001" }),
       createMockTask({ id: "FN-002" }),
     ];
-    render(<ListView tasks={tasks} onMoveTask={vi.fn()} onOpenDetail={vi.fn()} addToast={mockAddToast} />);
+    render(<ListView tasks={tasks} onMoveTask={vi.fn()} onOpenDetail={vi.fn()} addToast={mockAddToast} projectId={TEST_PROJECT_ID} />);
 
     const selectAllCheckbox = screen.getByLabelText("Select all visible tasks");
     fireEvent.click(selectAllCheckbox);
@@ -1971,7 +1975,7 @@ describe("ListView - Bulk Selection", () => {
         tasks={tasks}
         onMoveTask={vi.fn()}
         onOpenDetail={vi.fn()}
-        addToast={mockAddToast}
+        addToast={mockAddToast} projectId={TEST_PROJECT_ID}
         availableModels={availableModels}
         favoriteProviders={["openai"]}
         favoriteModels={["openai/gpt-4o"]}
@@ -1998,7 +2002,7 @@ describe("ListView - Bulk Selection", () => {
         tasks={tasks}
         onMoveTask={vi.fn()}
         onOpenDetail={vi.fn()}
-        addToast={mockAddToast}
+        addToast={mockAddToast} projectId={TEST_PROJECT_ID}
         availableModels={availableModels}
       />
     );
@@ -2020,7 +2024,7 @@ describe("ListView - Bulk Selection", () => {
         tasks={tasks}
         onMoveTask={vi.fn()}
         onOpenDetail={vi.fn()}
-        addToast={mockAddToast}
+        addToast={mockAddToast} projectId={TEST_PROJECT_ID}
         availableModels={availableModels}
       />
     );
@@ -2034,12 +2038,12 @@ describe("ListView - Bulk Selection", () => {
 
   it("persists selection to localStorage", () => {
     const tasks = [createMockTask({ id: "FN-001" })];
-    render(<ListView tasks={tasks} onMoveTask={vi.fn()} onOpenDetail={vi.fn()} addToast={mockAddToast} />);
+    render(<ListView tasks={tasks} onMoveTask={vi.fn()} onOpenDetail={vi.fn()} addToast={mockAddToast} projectId={TEST_PROJECT_ID} />);
 
     const checkbox = screen.getByLabelText("Select FN-001");
     fireEvent.click(checkbox);
 
-    expect(localStorage.getItem("kb-dashboard-selected-tasks")).toBe('["FN-001"]');
+    expect(localStorage.getItem(scopedStorageKey("kb-dashboard-selected-tasks"))).toBe('["FN-001"]');
   });
 
   it("shows header checkbox in indeterminate state when some tasks selected", () => {
@@ -2047,7 +2051,7 @@ describe("ListView - Bulk Selection", () => {
       createMockTask({ id: "FN-001" }),
       createMockTask({ id: "FN-002" }),
     ];
-    render(<ListView tasks={tasks} onMoveTask={vi.fn()} onOpenDetail={vi.fn()} addToast={mockAddToast} />);
+    render(<ListView tasks={tasks} onMoveTask={vi.fn()} onOpenDetail={vi.fn()} addToast={mockAddToast} projectId={TEST_PROJECT_ID} />);
 
     const checkboxes = screen.getAllByLabelText(/Select FN-/);
     // Select only first task
@@ -2071,7 +2075,7 @@ describe("ListView - Bulk Selection", () => {
         tasks={tasks}
         onMoveTask={vi.fn()}
         onOpenDetail={vi.fn()}
-        addToast={mockAddToast}
+        addToast={mockAddToast} projectId={TEST_PROJECT_ID}
         availableModels={availableModels}
       />
     );
@@ -2101,7 +2105,7 @@ describe("ListView - Bulk Selection", () => {
         tasks={tasks}
         onMoveTask={vi.fn()}
         onOpenDetail={vi.fn()}
-        addToast={mockAddToast}
+        addToast={mockAddToast} projectId={TEST_PROJECT_ID}
         onQuickCreate={vi.fn().mockResolvedValue(undefined)}
         availableModels={availableModels}
         favoriteProviders={["anthropic"]}
@@ -2134,7 +2138,7 @@ describe("ListView - Bulk Selection", () => {
     afterEach(() => {
       const maybeMock = window.matchMedia as unknown as { mockRestore?: () => void };
       maybeMock.mockRestore?.();
-      localStorage.removeItem("kb-dashboard-selected-tasks");
+      localStorage.removeItem(scopedStorageKey("kb-dashboard-selected-tasks"));
     });
 
     it("renders card layout instead of table on mobile", () => {
@@ -2232,7 +2236,7 @@ describe("ListView - Bulk Selection", () => {
       fireEvent.click(container.querySelector('.list-card[data-id="FN-001"]') as HTMLElement);
 
       await waitFor(() => {
-        expect(fetchTaskDetail).toHaveBeenCalledWith("FN-001", undefined);
+        expect(fetchTaskDetail).toHaveBeenCalledWith("FN-001", TEST_PROJECT_ID);
       });
       expect(mockOnOpenDetail).toHaveBeenCalledWith(detail);
     });
@@ -2256,7 +2260,7 @@ describe("ListView - Bulk Selection", () => {
 
     it("supports selection mode from mobile card checkboxes", () => {
       mockMobileViewport();
-      localStorage.setItem("kb-dashboard-selected-tasks", JSON.stringify(["FN-001"]));
+      localStorage.setItem(scopedStorageKey("kb-dashboard-selected-tasks"), JSON.stringify(["FN-001"]));
 
       renderListView({
         tasks: [

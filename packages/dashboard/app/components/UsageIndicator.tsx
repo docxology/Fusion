@@ -3,10 +3,12 @@ import { X, RefreshCw, Activity, TrendingUp, CheckCircle, AlertTriangle } from "
 import type { ProviderUsage, UsageWindow } from "../api";
 import { useUsageData } from "../hooks/useUsageData";
 import { ProviderIcon } from "./ProviderIcon";
+import { getScopedItem, setScopedItem } from "../utils/projectStorage";
 
 interface UsageIndicatorProps {
   isOpen: boolean;
   onClose: () => void;
+  projectId?: string;
 }
 
 /**
@@ -324,7 +326,7 @@ function UsageSkeleton() {
  * Shows hourly and weekly usage windows with percentage bars,
  * reset timers, and pace indicators.
  */
-export function UsageIndicator({ isOpen, onClose }: UsageIndicatorProps) {
+export function UsageIndicator({ isOpen, onClose, projectId }: UsageIndicatorProps) {
   const { providers, loading, error, lastUpdated, refresh } = useUsageData({
     autoRefresh: isOpen, // Only poll when modal is open
   });
@@ -365,17 +367,19 @@ export function UsageIndicator({ isOpen, onClose }: UsageIndicatorProps) {
 
   // Load view mode preference from localStorage on mount
   useEffect(() => {
-    const savedMode = localStorage.getItem('kb-usage-view-mode');
-    if (savedMode === 'used' || savedMode === 'remaining') {
+    const savedMode = getScopedItem("kb-usage-view-mode", projectId);
+    if (savedMode === "used" || savedMode === "remaining") {
       setViewMode(savedMode);
+      return;
     }
-  }, []);
+    setViewMode("used");
+  }, [projectId]);
 
   // Persist view mode to localStorage when it changes
-  const handleViewModeChange = useCallback((mode: 'used' | 'remaining') => {
+  const handleViewModeChange = useCallback((mode: "used" | "remaining") => {
     setViewMode(mode);
-    localStorage.setItem('kb-usage-view-mode', mode);
-  }, []);
+    setScopedItem("kb-usage-view-mode", mode, projectId);
+  }, [projectId]);
 
   // Handle manual refresh
   const handleRefresh = useCallback(async () => {

@@ -7,6 +7,7 @@ import { fetchModels, uploadAttachment, fetchSettings, updateGlobalSettings, fet
 import type { ModelInfo, Agent } from "../api";
 import { ModelSelectionModal } from "./ModelSelectionModal";
 import { applyPresetToSelection } from "../utils/modelPresets";
+import { getScopedItem, removeScopedItem, setScopedItem } from "../utils/projectStorage";
 
 const ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
 const STORAGE_KEY = "kb-inline-create-text";
@@ -70,7 +71,7 @@ export function InlineCreateCard({
 }: InlineCreateCardProps) {
   const [description, setDescription] = useState(() => {
     if (typeof window !== "undefined") {
-      return localStorage.getItem(STORAGE_KEY) || "";
+      return getScopedItem(STORAGE_KEY, projectId) || "";
     }
     return "";
   });
@@ -103,12 +104,16 @@ export function InlineCreateCard({
   const cardRef = useRef<HTMLDivElement>(null);
   const agentPickerRef = useRef<HTMLDivElement>(null);
 
+  useEffect(() => {
+    setDescription(getScopedItem(STORAGE_KEY, projectId) || "");
+  }, [projectId]);
+
   // Persist description to localStorage whenever it changes
   useEffect(() => {
     if (typeof window !== "undefined") {
-      localStorage.setItem(STORAGE_KEY, description);
+      setScopedItem(STORAGE_KEY, description, projectId);
     }
-  }, [description]);
+  }, [description, projectId]);
 
   const loadModels = useCallback(async () => {
     if (availableModels) {
@@ -245,14 +250,14 @@ export function InlineCreateCard({
 
       // Clear localStorage on unmount if there's no description (user abandoned)
       if (typeof window !== "undefined") {
-        const current = localStorage.getItem(STORAGE_KEY);
+        const current = getScopedItem(STORAGE_KEY, projectId);
         if (current && current.trim() === "") {
-          localStorage.removeItem(STORAGE_KEY);
+          removeScopedItem(STORAGE_KEY, projectId);
         }
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- cleanup only on unmount
-  }, []);
+  }, [projectId]);
 
   /**
    * Handles paste events on the textarea. Extracts image files from the
@@ -345,7 +350,7 @@ export function InlineCreateCard({
       setIsExpanded(false);
       justResetRef.current = true;
       if (typeof window !== "undefined") {
-        localStorage.removeItem(STORAGE_KEY);
+        removeScopedItem(STORAGE_KEY, projectId);
       }
     } catch (err: any) {
       addToast(err.message, "error");
@@ -367,6 +372,7 @@ export function InlineCreateCard({
     pendingImages,
     onSubmit,
     addToast,
+    projectId,
     selectedPresetId,
   ]);
 
@@ -391,7 +397,7 @@ export function InlineCreateCard({
           }
           // Clear localStorage when user explicitly clears input
           if (typeof window !== "undefined") {
-            localStorage.removeItem(STORAGE_KEY);
+            removeScopedItem(STORAGE_KEY, projectId);
           }
         }
         // Collapse and cancel on escape
@@ -404,7 +410,16 @@ export function InlineCreateCard({
         handleSubmit();
       }
     },
-    [handleSubmit, onCancel, description, showDeps, showAgentPicker, isModelModalOpen, showPresets],
+    [
+      handleSubmit,
+      onCancel,
+      description,
+      showDeps,
+      showAgentPicker,
+      isModelModalOpen,
+      showPresets,
+      projectId,
+    ],
   );
 
   const toggleDep = useCallback((id: string) => {

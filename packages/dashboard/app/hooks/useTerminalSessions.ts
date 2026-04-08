@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { createTerminalSession, killPtyTerminalSession, listTerminalSessions } from "../api";
+import { getScopedItem, setScopedItem } from "../utils/projectStorage";
 
 const STORAGE_KEY = "kb-terminal-tabs";
 
@@ -67,6 +68,21 @@ function generateTabId(): string {
   return `tab-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 }
 
+function readTabsFromStorage(projectId?: string): TerminalTab[] {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const stored = getScopedItem(STORAGE_KEY, projectId);
+    if (stored) {
+      return JSON.parse(stored) as TerminalTab[];
+    }
+  } catch {
+    // Ignore localStorage errors
+  }
+
+  return [];
+}
+
 function isRelativeUrlFetchError(error: unknown): boolean {
   const message =
     error instanceof Error ? error.message : typeof error === "string" ? error : "";
@@ -100,20 +116,9 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
  * const { tabs, activeTab, isReady, createTab, closeTab, setActiveTab, updateTabTitle, restartActiveTab } = useTerminalSessions();
  * ```
  */
-export function useTerminalSessions(): UseTerminalSessionsReturn {
+export function useTerminalSessions(projectId?: string): UseTerminalSessionsReturn {
   // Initialize state synchronously from localStorage (no async here)
-  const [tabs, setTabs] = useState<TerminalTab[]>(() => {
-    if (typeof window === "undefined") return [];
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        return JSON.parse(stored) as TerminalTab[];
-      }
-    } catch {
-      // Ignore localStorage errors
-    }
-    return [];
-  });
+  const [tabs, setTabs] = useState<TerminalTab[]>(() => readTabsFromStorage(projectId));
 
   // Track whether validation has completed
   const [isReady, setIsReady] = useState(false);
@@ -126,14 +131,22 @@ export function useTerminalSessions(): UseTerminalSessionsReturn {
   // bootstrap attempts. Only the current generation may mutate state.
   const generationRef = useRef(0);
 
+  useEffect(() => {
+    generationRef.current += 1;
+    setTabs(readTabsFromStorage(projectId));
+    setIsReady(false);
+    setServerAvailable(true);
+    setBootstrapError(null);
+  }, [projectId]);
+
   // Persist tabs to localStorage whenever they change
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(tabs));
+      setScopedItem(STORAGE_KEY, JSON.stringify(tabs), projectId);
     } catch {
       // Ignore localStorage errors
     }
-  }, [tabs]);
+  }, [projectId, tabs]);
 
   // Validate and restore tabs from server on mount
   useEffect(() => {
@@ -208,7 +221,7 @@ export function useTerminalSessions(): UseTerminalSessionsReturn {
     return () => {
       cancelled = true;
     };
-  }, []); // Only run once on mount
+  }, [projectId]); // Re-run when project scope changes
 
   // Auto-create first tab if no tabs exist after validation
   useEffect(() => {

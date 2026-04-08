@@ -43,6 +43,7 @@ import { useAppSettings } from "./hooks/useAppSettings";
 import { useDeepLink } from "./hooks/useDeepLink";
 import { useFavorites } from "./hooks/useFavorites";
 import { useAuthOnboarding } from "./hooks/useAuthOnboarding";
+import { getScopedItem, setScopedItem } from "./utils/projectStorage";
 
 type ViewMode = "overview" | "project";
 type TaskView = "board" | "list" | "agents";
@@ -77,10 +78,8 @@ function AppInner() {
   });
   
   const [taskView, setTaskView] = useState<TaskView>(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("kb-dashboard-task-view");
-      if (saved === "board" || saved === "list" || saved === "agents") return saved;
-    }
+    const saved = getScopedItem("kb-dashboard-task-view");
+    if (saved === "board" || saved === "list" || saved === "agents") return saved;
     return "board";
   });
 
@@ -206,10 +205,20 @@ function AppInner() {
     localStorage.setItem("kb-dashboard-view-mode", viewMode);
   }, [viewMode]);
 
+  // Load project-scoped task view when project context changes
+  useEffect(() => {
+    const saved = getScopedItem("kb-dashboard-task-view", currentProject?.id);
+    if (saved === "board" || saved === "list" || saved === "agents") {
+      setTaskView(saved);
+      return;
+    }
+    setTaskView("board");
+  }, [currentProject?.id]);
+
   // Persist task view
   useEffect(() => {
-    localStorage.setItem("kb-dashboard-task-view", taskView);
-  }, [taskView]);
+    setScopedItem("kb-dashboard-task-view", taskView, currentProject?.id);
+  }, [currentProject?.id, taskView]);
 
   // Sync view mode when current project is restored from localStorage
   useEffect(() => {
@@ -696,6 +705,7 @@ function AppInner() {
         isOpen={terminalOpen}
         onClose={handleTerminalClose}
         initialCommand={terminalInitialCommand}
+        projectId={currentProject?.id}
       />
       <ScriptsModal
         isOpen={scriptsOpen}
@@ -715,6 +725,7 @@ function AppInner() {
       <UsageIndicator
         isOpen={usageOpen}
         onClose={handleCloseUsage}
+        projectId={currentProject?.id}
       />
       {schedulesOpen && (
         <ScheduledTasksModal
