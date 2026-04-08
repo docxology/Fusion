@@ -75,6 +75,11 @@ export default function kbExtension(pi: ExtensionAPI) {
           description: "Task IDs this depends on (e.g. ['KB-001', 'KB-002'])",
         }),
       ),
+      agentId: Type.Optional(
+        Type.String({
+          description: "Agent ID to assign this task to (e.g. 'agent-abc123')",
+        }),
+      ),
     }),
 
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
@@ -82,6 +87,7 @@ export default function kbExtension(pi: ExtensionAPI) {
       const task = await store.createTask({
         description: params.description.trim(),
         dependencies: params.depends,
+        assignedAgentId: params.agentId,
       });
 
       const label =
@@ -99,10 +105,18 @@ export default function kbExtension(pi: ExtensionAPI) {
               (task.dependencies.length
                 ? `Dependencies: ${task.dependencies.join(", ")}\n`
                 : "") +
+              (task.assignedAgentId
+                ? `Assigned to: ${task.assignedAgentId}\n`
+                : "") +
               `Path: .fusion/tasks/${task.id}/`,
           },
         ],
-        details: { taskId: task.id, column: task.column, dependencies: task.dependencies },
+        details: {
+          taskId: task.id,
+          column: task.column,
+          dependencies: task.dependencies,
+          assignedAgentId: task.assignedAgentId,
+        },
       };
     },
   });
@@ -114,10 +128,10 @@ export default function kbExtension(pi: ExtensionAPI) {
     label: "KB: Update Task",
     description:
       "Update fields on an existing task. Supports modifying the title, " +
-      "description, and dependencies after task creation.",
+      "description, dependencies, and assigned agent after task creation.",
     promptSnippet: "Update fields on an existing Fusion task",
     promptGuidelines: [
-      "Use kb_task_update to modify task title, description, or dependencies after creation.",
+      "Use kb_task_update to modify task title, description, dependencies, or assigned agent after creation.",
       "At least one field must be provided to update.",
     ],
     parameters: Type.Object({
@@ -127,6 +141,14 @@ export default function kbExtension(pi: ExtensionAPI) {
       depends: Type.Optional(
         Type.Array(Type.String(), {
           description: "New dependency list — replaces existing dependencies (e.g. ['KB-001', 'KB-002'])",
+        }),
+      ),
+      agentId: Type.Optional(
+        Type.Union([
+          Type.String(),
+          Type.Null(),
+        ], {
+          description: "Agent ID to assign this task to, or null to clear (e.g. 'agent-abc123')",
         }),
       ),
     }),
@@ -162,10 +184,14 @@ export default function kbExtension(pi: ExtensionAPI) {
         updates.dependencies = params.depends;
         updatedFields.push("dependencies");
       }
+      if (params.agentId !== undefined) {
+        updates.assignedAgentId = params.agentId;
+        updatedFields.push("agentId");
+      }
 
       if (updatedFields.length === 0) {
         return {
-          content: [{ type: "text", text: "No fields to update. Provide at least one of: title, description, depends." }],
+          content: [{ type: "text", text: "No fields to update. Provide at least one of: title, description, depends, agentId." }],
           isError: true,
           details: { error: "No fields provided" },
         };

@@ -169,6 +169,41 @@ describe("kb pi extension", () => {
       expect(result.details.dependencies).toEqual(["FN-001"]);
       expect(result.content[0].text).toContain("Dependencies: FN-001");
     });
+
+    it("creates a task with assigned agent ID", async () => {
+      const tool = api.tools.get("kb_task_create")!;
+      const result = await tool.execute(
+        "call-1",
+        { description: "Task with assignee", agentId: "agent-abc123" },
+        undefined,
+        undefined,
+        makeCtx(tmpDir),
+      );
+
+      expect(result.details.taskId).toBe("FN-001");
+      expect(result.details.assignedAgentId).toBe("agent-abc123");
+      expect(result.content[0].text).toContain("Assigned to: agent-abc123");
+
+      // Verify persistence via show
+      const showTool = api.tools.get("kb_task_show")!;
+      const show = await showTool.execute("s1", { id: "FN-001" }, undefined, undefined, makeCtx(tmpDir));
+      expect(show.details.task.assignedAgentId).toBe("agent-abc123");
+    });
+
+    it("creates a task without assigned agent ID by default", async () => {
+      const tool = api.tools.get("kb_task_create")!;
+      const result = await tool.execute(
+        "call-1",
+        { description: "Task without assignee" },
+        undefined,
+        undefined,
+        makeCtx(tmpDir),
+      );
+
+      expect(result.details.taskId).toBe("FN-001");
+      expect(result.details.assignedAgentId).toBeUndefined();
+      expect(result.content[0].text).not.toContain("Assigned to:");
+    });
   });
 
   describe("kb_task_update", () => {
@@ -244,6 +279,56 @@ describe("kb pi extension", () => {
       );
 
       expect(result.details.updatedFields).toEqual(["title", "description", "dependencies"]);
+    });
+
+    it("updates task assigned agent ID", async () => {
+      const createTool = api.tools.get("kb_task_create")!;
+      await createTool.execute("c1", { description: "Original" }, undefined, undefined, makeCtx(tmpDir));
+
+      const updateTool = api.tools.get("kb_task_update")!;
+      const result = await updateTool.execute(
+        "u1",
+        { id: "FN-001", agentId: "agent-abc123" },
+        undefined,
+        undefined,
+        makeCtx(tmpDir),
+      );
+
+      expect(result.content[0].text).toContain("Updated FN-001");
+      expect(result.content[0].text).toContain("agentId");
+      expect(result.details.updatedFields).toEqual(["agentId"]);
+
+      const showTool = api.tools.get("kb_task_show")!;
+      const show = await showTool.execute("s1", { id: "FN-001" }, undefined, undefined, makeCtx(tmpDir));
+      expect(show.details.task.assignedAgentId).toBe("agent-abc123");
+    });
+
+    it("clears task assigned agent ID with null", async () => {
+      const createTool = api.tools.get("kb_task_create")!;
+      await createTool.execute(
+        "c1",
+        { description: "Original", agentId: "agent-abc123" },
+        undefined,
+        undefined,
+        makeCtx(tmpDir),
+      );
+
+      const updateTool = api.tools.get("kb_task_update")!;
+      const result = await updateTool.execute(
+        "u1",
+        { id: "FN-001", agentId: null },
+        undefined,
+        undefined,
+        makeCtx(tmpDir),
+      );
+
+      expect(result.content[0].text).toContain("Updated FN-001");
+      expect(result.content[0].text).toContain("agentId");
+      expect(result.details.updatedFields).toEqual(["agentId"]);
+
+      const showTool = api.tools.get("kb_task_show")!;
+      const show = await showTool.execute("s1", { id: "FN-001" }, undefined, undefined, makeCtx(tmpDir));
+      expect(show.details.task.assignedAgentId).toBeUndefined();
     });
 
     it("returns error when task not found", async () => {
