@@ -215,22 +215,7 @@ export function AgentLogViewer({ entries, loading, executorModel, validatorModel
           ? isBlockLevel || i === 0 || (prev && (prev.agent !== entry.agent || prev.type !== entry.type))
           : false;
 
-        const agentBadge = showBadge ? (
-          <span
-            className="agent-log-agent-badge"
-            style={{
-              color: "var(--text-muted, #888)",
-              fontSize: "11px",
-              marginRight: "6px",
-              fontWeight: 600,
-              textTransform: "uppercase" as const,
-            }}
-          >
-            [{entry.agent}]
-          </span>
-        ) : null;
-
-        const timestampSpan = (
+        const timestampSpan = showBadge ? (
           <span
             className="agent-log-timestamp"
             data-testid="agent-log-timestamp"
@@ -243,7 +228,30 @@ export function AgentLogViewer({ entries, loading, executorModel, validatorModel
           >
             {formatTimestamp(entry.timestamp)}
           </span>
-        );
+        ) : null;
+
+        const agentBadge = showBadge ? (
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+            }}
+          >
+            <span
+              className="agent-log-agent-badge"
+              style={{
+                color: "var(--text-muted, #888)",
+                fontSize: "11px",
+                marginRight: "6px",
+                fontWeight: 600,
+                textTransform: "uppercase" as const,
+              }}
+            >
+              [{entry.agent}]
+            </span>
+            {timestampSpan}
+          </span>
+        ) : null;
 
         if (entry.type === "tool") {
           return (
@@ -258,7 +266,7 @@ export function AgentLogViewer({ entries, loading, executorModel, validatorModel
                 background: "var(--log-tool-bg)",
               }}
             >
-              {agentBadge}{timestampSpan}⚡ {entry.text}
+              {agentBadge}⚡ {entry.text}
               {entry.detail && (
                 <span
                   className="agent-log-tool-detail"
@@ -286,7 +294,7 @@ export function AgentLogViewer({ entries, loading, executorModel, validatorModel
                 opacity: 0.7,
               }}
             >
-              {agentBadge}{timestampSpan}
+              {agentBadge}
               {renderMarkdown ? (
                 <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
                   {entry.text}
@@ -312,7 +320,7 @@ export function AgentLogViewer({ entries, loading, executorModel, validatorModel
                 fontSize: "12px",
               }}
             >
-              {agentBadge}{timestampSpan}✓ {entry.text}
+              {agentBadge}✓ {entry.text}
               {entry.detail && (
                 <span
                   className="agent-log-tool-detail"
@@ -342,7 +350,7 @@ export function AgentLogViewer({ entries, loading, executorModel, validatorModel
                 fontSize: "12px",
               }}
             >
-              {agentBadge}{timestampSpan}✗ {entry.text}
+              {agentBadge}✗ {entry.text}
               {entry.detail && (
                 <span
                   className="agent-log-tool-detail"
@@ -361,7 +369,7 @@ export function AgentLogViewer({ entries, loading, executorModel, validatorModel
         // Default: text entries
         return (
           <span key={i} className="agent-log-text">
-            {agentBadge}{timestampSpan}
+            {agentBadge}
             {renderMarkdown ? (
               <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
                 {entry.text}

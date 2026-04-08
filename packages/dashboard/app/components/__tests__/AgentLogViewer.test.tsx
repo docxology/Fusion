@@ -33,7 +33,6 @@ describe("AgentLogViewer", () => {
     const textSpans = container.querySelectorAll(".agent-log-text");
     expect(textSpans).toHaveLength(2);
     // Reversed order: second chunk first, then first chunk
-    // Each entry includes a timestamp span before the text content
     expect(textSpans[0].textContent).toContain("second chunk");
     expect(textSpans[1].textContent).toContain("first chunk");
   });
@@ -412,31 +411,35 @@ describe("AgentLogViewer", () => {
   });
 
   describe("timestamp display", () => {
-    it("renders a timestamp span for each log entry", () => {
+    it("renders no timestamps for entries without agent field", () => {
       const entries = [
-        makeEntry({ text: "hello", type: "text" }),
-        makeEntry({ text: "Read", type: "tool" }),
+        makeEntry({ text: "legacy 1", type: "text" }),
+        makeEntry({ text: "legacy 2", type: "text" }),
       ];
       const { container } = render(<AgentLogViewer entries={entries} loading={false} />);
       const timestamps = container.querySelectorAll(".agent-log-timestamp");
-      expect(timestamps).toHaveLength(2);
+      expect(timestamps).toHaveLength(0);
     });
 
-    it("renders relative timestamps for recent entries", () => {
+    it("renders relative timestamps for recent entries next to the badge", () => {
       const recentTimestamp = new Date(Date.now() - 5 * 60 * 1000).toISOString();
       const entries = [
-        makeEntry({ text: "hello", type: "text", timestamp: recentTimestamp }),
+        makeEntry({ text: "hello", type: "text", agent: "executor", timestamp: recentTimestamp }),
       ];
       const { container } = render(<AgentLogViewer entries={entries} loading={false} />);
       const timestamp = container.querySelector(".agent-log-timestamp");
       expect(timestamp).toBeTruthy();
       expect(timestamp!.textContent).toBe("5m ago");
+
+      const badge = container.querySelector(".agent-log-agent-badge") as HTMLElement;
+      expect(badge).toBeTruthy();
+      expect(badge.parentElement?.querySelector(".agent-log-timestamp")).toBeTruthy();
     });
 
     it("renders 'just now' for entries less than a minute old", () => {
       const recentTimestamp = new Date(Date.now() - 30 * 1000).toISOString();
       const entries = [
-        makeEntry({ text: "hello", type: "text", timestamp: recentTimestamp }),
+        makeEntry({ text: "hello", type: "text", agent: "executor", timestamp: recentTimestamp }),
       ];
       const { container } = render(<AgentLogViewer entries={entries} loading={false} />);
       const timestamp = container.querySelector(".agent-log-timestamp");
@@ -446,7 +449,7 @@ describe("AgentLogViewer", () => {
     it("renders hours ago for older entries", () => {
       const olderTimestamp = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
       const entries = [
-        makeEntry({ text: "hello", type: "text", timestamp: olderTimestamp }),
+        makeEntry({ text: "hello", type: "text", agent: "executor", timestamp: olderTimestamp }),
       ];
       const { container } = render(<AgentLogViewer entries={entries} loading={false} />);
       const timestamp = container.querySelector(".agent-log-timestamp");
@@ -456,7 +459,7 @@ describe("AgentLogViewer", () => {
     it("renders days ago for entries older than a day", () => {
       const oldTimestamp = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString();
       const entries = [
-        makeEntry({ text: "hello", type: "text", timestamp: oldTimestamp }),
+        makeEntry({ text: "hello", type: "text", agent: "executor", timestamp: oldTimestamp }),
       ];
       const { container } = render(<AgentLogViewer entries={entries} loading={false} />);
       const timestamp = container.querySelector(".agent-log-timestamp");
@@ -466,7 +469,7 @@ describe("AgentLogViewer", () => {
     it("renders locale date for entries older than 7 days", () => {
       const veryOldTimestamp = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
       const entries = [
-        makeEntry({ text: "hello", type: "text", timestamp: veryOldTimestamp }),
+        makeEntry({ text: "hello", type: "text", agent: "executor", timestamp: veryOldTimestamp }),
       ];
       const { container } = render(<AgentLogViewer entries={entries} loading={false} />);
       const timestamp = container.querySelector(".agent-log-timestamp");
@@ -475,45 +478,94 @@ describe("AgentLogViewer", () => {
       expect(timestamp!.textContent).not.toBe("just now");
     });
 
-    it("styles timestamps with muted color and small font", () => {
-      const entries = [makeEntry({ text: "hello", type: "text" })];
+    it("styles timestamps with muted color and small font inside the badge row", () => {
+      const entries = [makeEntry({ text: "hello", type: "text", agent: "executor" })];
       const { container } = render(<AgentLogViewer entries={entries} loading={false} />);
-      const timestamp = container.querySelector(".agent-log-timestamp") as HTMLElement;
+      const badge = container.querySelector(".agent-log-agent-badge") as HTMLElement;
+      expect(badge).toBeTruthy();
+      const timestamp = badge.parentElement?.querySelector(".agent-log-timestamp") as HTMLElement;
       expect(timestamp).toBeTruthy();
       expect(timestamp.style.fontSize).toBe("10px");
       expect(timestamp.style.opacity).toBe("0.7");
     });
 
-    it("includes timestamp on tool entries", () => {
-      const entries = [makeEntry({ text: "Bash", type: "tool" })];
+    it("includes timestamp in the badge container for tool entries", () => {
+      const entries = [makeEntry({ text: "Bash", type: "tool", agent: "executor" })];
       const { container } = render(<AgentLogViewer entries={entries} loading={false} />);
       const toolDiv = container.querySelector(".agent-log-tool");
       expect(toolDiv).toBeTruthy();
-      expect(toolDiv!.querySelector(".agent-log-timestamp")).toBeTruthy();
+      const badge = toolDiv!.querySelector(".agent-log-agent-badge") as HTMLElement;
+      expect(badge).toBeTruthy();
+      expect(badge.parentElement?.querySelector(".agent-log-timestamp")).toBeTruthy();
     });
 
-    it("includes timestamp on tool_result entries", () => {
-      const entries = [makeEntry({ text: "ok", type: "tool_result" })];
+    it("includes timestamp in the badge container for tool_result entries", () => {
+      const entries = [makeEntry({ text: "ok", type: "tool_result", agent: "executor" })];
       const { container } = render(<AgentLogViewer entries={entries} loading={false} />);
       const resultDiv = container.querySelector(".agent-log-tool-result");
       expect(resultDiv).toBeTruthy();
-      expect(resultDiv!.querySelector(".agent-log-timestamp")).toBeTruthy();
+      const badge = resultDiv!.querySelector(".agent-log-agent-badge") as HTMLElement;
+      expect(badge).toBeTruthy();
+      expect(badge.parentElement?.querySelector(".agent-log-timestamp")).toBeTruthy();
     });
 
-    it("includes timestamp on tool_error entries", () => {
-      const entries = [makeEntry({ text: "fail", type: "tool_error" })];
+    it("includes timestamp in the badge container for tool_error entries", () => {
+      const entries = [makeEntry({ text: "fail", type: "tool_error", agent: "executor" })];
       const { container } = render(<AgentLogViewer entries={entries} loading={false} />);
       const errorDiv = container.querySelector(".agent-log-tool-error");
       expect(errorDiv).toBeTruthy();
-      expect(errorDiv!.querySelector(".agent-log-timestamp")).toBeTruthy();
+      const badge = errorDiv!.querySelector(".agent-log-agent-badge") as HTMLElement;
+      expect(badge).toBeTruthy();
+      expect(badge.parentElement?.querySelector(".agent-log-timestamp")).toBeTruthy();
     });
 
-    it("includes timestamp on thinking entries", () => {
-      const entries = [makeEntry({ text: "hmm", type: "thinking" })];
+    it("includes timestamp in the badge container for thinking entries", () => {
+      const entries = [makeEntry({ text: "hmm", type: "thinking", agent: "executor" })];
       const { container } = render(<AgentLogViewer entries={entries} loading={false} />);
       const thinkingSpan = container.querySelector(".agent-log-thinking");
       expect(thinkingSpan).toBeTruthy();
-      expect(thinkingSpan!.querySelector(".agent-log-timestamp")).toBeTruthy();
+      const badge = thinkingSpan!.querySelector(".agent-log-agent-badge") as HTMLElement;
+      expect(badge).toBeTruthy();
+      expect(badge.parentElement?.querySelector(".agent-log-timestamp")).toBeTruthy();
+    });
+
+    it("shows exactly one timestamp for consecutive text entries from the same agent", () => {
+      const entries = [
+        makeEntry({ text: "chunk 1", type: "text", agent: "executor" }),
+        makeEntry({ text: "chunk 2", type: "text", agent: "executor" }),
+      ];
+      const { container } = render(<AgentLogViewer entries={entries} loading={false} />);
+      const timestamps = container.querySelectorAll(".agent-log-timestamp");
+      expect(timestamps).toHaveLength(1);
+    });
+
+    it("renders timestamps at each agent transition", () => {
+      const entries = [
+        makeEntry({ text: "triage output", type: "text", agent: "triage" }),
+        makeEntry({ text: "executor output", type: "text", agent: "executor" }),
+        makeEntry({ text: "review notes", type: "text", agent: "reviewer" }),
+      ];
+      const { container } = render(<AgentLogViewer entries={entries} loading={false} />);
+      const badges = Array.from(container.querySelectorAll(".agent-log-agent-badge"));
+      const timestamps = container.querySelectorAll(".agent-log-timestamp");
+
+      expect(badges).toHaveLength(3);
+      expect(timestamps).toHaveLength(3);
+      expect(badges.map((badge) => badge.textContent)).toEqual(["[reviewer]", "[executor]", "[triage]"]);
+    });
+
+    it("badge container includes both badge text and timestamp text", () => {
+      const recentTimestamp = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+      const entries = [
+        makeEntry({ text: "hello", type: "text", agent: "executor", timestamp: recentTimestamp }),
+      ];
+      const { container } = render(<AgentLogViewer entries={entries} loading={false} />);
+      const badge = container.querySelector(".agent-log-agent-badge") as HTMLElement;
+      expect(badge).toBeTruthy();
+
+      const badgeContainer = badge.parentElement as HTMLElement;
+      expect(badgeContainer.textContent).toContain("[executor]");
+      expect(badgeContainer.textContent).toContain("5m ago");
     });
   });
 
@@ -623,9 +675,7 @@ describe("AgentLogViewer", () => {
       const { container } = render(<AgentLogViewer entries={entries} loading={false} />);
       const textSpans = container.querySelectorAll(".agent-log-text");
       expect(textSpans).toHaveLength(1);
-      // Timestamp is included as a separate span before the text
       expect(textSpans[0].textContent).toContain(longText);
-      expect(textSpans[0].querySelector(".agent-log-timestamp")).toBeTruthy();
     });
 
     it("renders very long detail text without truncation", () => {
