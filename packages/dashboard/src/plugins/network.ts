@@ -1,10 +1,41 @@
-import { Network, type ConnectionType } from "@capacitor/network";
 import type {
   PluginManager,
   NetworkStatus,
   NetworkStatusCallback,
   PluginNetworkListenerHandle,
 } from "./types.js";
+
+type NativeConnectionType = "wifi" | "cellular" | "none" | "unknown";
+
+interface NativeNetworkStatus {
+  connected: boolean;
+  connectionType: NativeConnectionType;
+}
+
+interface NativeNetworkPlugin {
+  getStatus: () => Promise<NativeNetworkStatus>;
+  addListener: (
+    eventName: "networkStatusChange",
+    callback: (status: NativeNetworkStatus) => void,
+  ) => PluginNetworkListenerHandle | Promise<PluginNetworkListenerHandle>;
+}
+
+interface CapacitorGlobal {
+  Capacitor?: {
+    Plugins?: Record<string, unknown>;
+  };
+}
+
+function getNativeNetworkPlugin(): NativeNetworkPlugin | null {
+  const plugins = (globalThis as CapacitorGlobal).Capacitor?.Plugins;
+  const candidate = plugins?.Network as Partial<NativeNetworkPlugin> | undefined;
+
+  if (!candidate || typeof candidate.getStatus !== "function" || typeof candidate.addListener !== "function") {
+    return null;
+  }
+
+  return candidate as NativeNetworkPlugin;
+}
 
 export class NetworkManager implements PluginManager {
   private status: NetworkStatus;
@@ -22,9 +53,15 @@ export class NetworkManager implements PluginManager {
       return;
     }
 
+    const networkPlugin = getNativeNetworkPlugin();
+
     try {
-      const currentStatus = await Network.getStatus();
-      this.status = this.toNetworkStatus(currentStatus.connected, currentStatus.connectionType);
+      if (networkPlugin) {
+        const currentStatus = await networkPlugin.getStatus();
+        this.status = this.toNetworkStatus(currentStatus.connected, currentStatus.connectionType);
+      } else {
+        this.status = { connected: true, connectionType: "unknown" };
+      }
     } catch {
       // Network plugin may not be available in browser context
       this.status = { connected: true, connectionType: "unknown" };
@@ -39,10 +76,17 @@ export class NetworkManager implements PluginManager {
       return;
     }
 
+    const networkPlugin = getNativeNetworkPlugin();
+    if (!networkPlugin) {
+      this.networkListenerHandle = null;
+      this.monitoring = false;
+      return;
+    }
+
     try {
-      this.networkListenerHandle = await Network.addListener(
+      const listenerHandle = networkPlugin.addListener(
         "networkStatusChange",
-        (status) => {
+        (status: NativeNetworkStatus) => {
           const nextStatus = this.toNetworkStatus(status.connected, status.connectionType);
           const previousConnected = this.status.connected;
           this.status = nextStatus;
@@ -58,6 +102,8 @@ export class NetworkManager implements PluginManager {
           this.emit("network:change", nextStatus);
         },
       );
+
+      this.networkListenerHandle = await Promise.resolve(listenerHandle);
       this.monitoring = true;
     } catch {
       // Network plugin may not be available in browser context
@@ -108,7 +154,7 @@ export class NetworkManager implements PluginManager {
     }
   }
 
-  private toNetworkStatus(connected: boolean, connectionType: ConnectionType): NetworkStatus {
+  private toNetworkStatus(connected: boolean, connectionType: NativeConnectionType): NetworkStatus {
     return {
       connected,
       connectionType: connectionType as NetworkStatus["connectionType"],

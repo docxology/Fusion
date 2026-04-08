@@ -1,5 +1,26 @@
-import { SplashScreen } from "@capacitor/splash-screen";
 import type { PluginManager } from "./types.js";
+
+interface NativeSplashScreenPlugin {
+  hide: (options: { fadeOutDuration: number }) => Promise<void>;
+  show: (options: { autoHide: boolean }) => Promise<void>;
+}
+
+interface CapacitorGlobal {
+  Capacitor?: {
+    Plugins?: Record<string, unknown>;
+  };
+}
+
+function getNativeSplashScreenPlugin(): NativeSplashScreenPlugin | null {
+  const plugins = (globalThis as CapacitorGlobal).Capacitor?.Plugins;
+  const candidate = plugins?.SplashScreen as Partial<NativeSplashScreenPlugin> | undefined;
+
+  if (!candidate || typeof candidate.hide !== "function" || typeof candidate.show !== "function") {
+    return null;
+  }
+
+  return candidate as NativeSplashScreenPlugin;
+}
 
 export interface SplashScreenOptions {
   autoHide?: boolean;
@@ -34,16 +55,26 @@ export class SplashScreenManager implements PluginManager {
   }
 
   async hide(): Promise<void> {
+    const splashScreenPlugin = getNativeSplashScreenPlugin();
+    if (!splashScreenPlugin) {
+      return;
+    }
+
     try {
-      await SplashScreen.hide({ fadeOutDuration: 300 });
+      await splashScreenPlugin.hide({ fadeOutDuration: 300 });
     } catch {
       // Ignore errors — splash screen may not be available in browser/web context
     }
   }
 
   async show(): Promise<void> {
+    const splashScreenPlugin = getNativeSplashScreenPlugin();
+    if (!splashScreenPlugin) {
+      return;
+    }
+
     try {
-      await SplashScreen.show({ autoHide: false });
+      await splashScreenPlugin.show({ autoHide: false });
     } catch {
       // Ignore errors — splash screen may not be available in browser/web context
     }

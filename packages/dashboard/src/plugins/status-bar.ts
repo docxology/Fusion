@@ -1,9 +1,29 @@
-import { StatusBar, Style } from "@capacitor/status-bar";
 import type {
   PluginManager,
   ThemeMode,
   ThemeChangeCallback,
 } from "./types.js";
+
+interface NativeStatusBarPlugin {
+  setStyle: (options: { style: "DARK" | "LIGHT" }) => Promise<void>;
+}
+
+interface CapacitorGlobal {
+  Capacitor?: {
+    Plugins?: Record<string, unknown>;
+  };
+}
+
+function getNativeStatusBarPlugin(): NativeStatusBarPlugin | null {
+  const plugins = (globalThis as CapacitorGlobal).Capacitor?.Plugins;
+  const candidate = plugins?.StatusBar as Partial<NativeStatusBarPlugin> | undefined;
+
+  if (!candidate || typeof candidate.setStyle !== "function") {
+    return null;
+  }
+
+  return candidate as NativeStatusBarPlugin;
+}
 
 export interface StatusBarOptions {
   themeMode?: ThemeMode;
@@ -50,11 +70,16 @@ export class StatusBarManager implements PluginManager {
   }
 
   private async applyTheme(mode: ThemeMode): Promise<void> {
+    const statusBarPlugin = getNativeStatusBarPlugin();
+    if (!statusBarPlugin) {
+      return;
+    }
+
     const isDark = mode === "dark" || (mode === "system" && this.isSystemDark());
 
     try {
-      await StatusBar.setStyle({
-        style: isDark ? Style.Dark : Style.Light,
+      await statusBarPlugin.setStyle({
+        style: isDark ? "DARK" : "LIGHT",
       });
     } catch {
       // StatusBar plugin may not be available in browser context

@@ -1,26 +1,27 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { StatusBar, Style } from "@capacitor/status-bar";
 import { StatusBarManager } from "../plugins/status-bar.js";
 
-vi.mock("@capacitor/status-bar", () => ({
-  StatusBar: {
-    setStyle: vi.fn(),
-  },
-  Style: {
-    Dark: "DARK",
-    Light: "LIGHT",
-  },
-}));
+const setStyleMock = vi.fn();
 
 describe("StatusBarManager", () => {
   const originalMatchMedia = globalThis.window?.matchMedia;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(StatusBar.setStyle).mockResolvedValue(undefined);
+    setStyleMock.mockResolvedValue(undefined);
+
+    vi.stubGlobal("Capacitor", {
+      Plugins: {
+        StatusBar: {
+          setStyle: setStyleMock,
+        },
+      },
+    });
   });
 
   afterEach(() => {
+    vi.unstubAllGlobals();
+
     if (globalThis.window) {
       Object.defineProperty(globalThis.window, "matchMedia", {
         configurable: true,
@@ -35,8 +36,8 @@ describe("StatusBarManager", () => {
 
     await manager.initialize();
 
-    expect(StatusBar.setStyle).toHaveBeenCalledTimes(1);
-    expect(StatusBar.setStyle).toHaveBeenCalledWith({ style: Style.Dark });
+    expect(setStyleMock).toHaveBeenCalledTimes(1);
+    expect(setStyleMock).toHaveBeenCalledWith({ style: "DARK" });
   });
 
   it("setTheme('dark') sets dark style", async () => {
@@ -44,7 +45,7 @@ describe("StatusBarManager", () => {
 
     await manager.setTheme("dark");
 
-    expect(StatusBar.setStyle).toHaveBeenCalledWith({ style: Style.Dark });
+    expect(setStyleMock).toHaveBeenCalledWith({ style: "DARK" });
     expect(manager.getTheme()).toBe("dark");
   });
 
@@ -53,7 +54,7 @@ describe("StatusBarManager", () => {
 
     await manager.setTheme("light");
 
-    expect(StatusBar.setStyle).toHaveBeenCalledWith({ style: Style.Light });
+    expect(setStyleMock).toHaveBeenCalledWith({ style: "LIGHT" });
     expect(manager.getTheme()).toBe("light");
   });
 
@@ -68,7 +69,7 @@ describe("StatusBarManager", () => {
 
     await manager.setTheme("system");
 
-    expect(StatusBar.setStyle).toHaveBeenLastCalledWith({ style: Style.Dark });
+    expect(setStyleMock).toHaveBeenLastCalledWith({ style: "DARK" });
 
     Object.defineProperty(window, "matchMedia", {
       configurable: true,
@@ -78,7 +79,7 @@ describe("StatusBarManager", () => {
 
     await manager.setTheme("system");
 
-    expect(StatusBar.setStyle).toHaveBeenLastCalledWith({ style: Style.Light });
+    expect(setStyleMock).toHaveBeenLastCalledWith({ style: "LIGHT" });
   });
 
   it("onThemeChange callback fires on theme change", async () => {
@@ -105,7 +106,7 @@ describe("StatusBarManager", () => {
   });
 
   it("initialize() swallows errors", async () => {
-    vi.mocked(StatusBar.setStyle).mockRejectedValue(new Error("not available"));
+    setStyleMock.mockRejectedValue(new Error("not available"));
     const manager = new StatusBarManager({ themeMode: "dark" });
 
     await expect(manager.initialize()).resolves.toBeUndefined();

@@ -1,5 +1,3 @@
-import type { PluginListenerHandle } from "@capacitor/core";
-
 /** Network connectivity status */
 export interface NetworkStatus {
   connected: boolean;
@@ -36,6 +34,11 @@ export interface PluginManager {
   initialize(): Promise<void>;
   /** Clean up listeners and resources */
   destroy(): Promise<void>;
+}
+
+/** Minimal listener handle contract used by network plugin adapters. */
+export interface PluginListenerHandle {
+  remove: () => void | Promise<void>;
 }
 
 /** Shared network listener handle type for manager implementations. */

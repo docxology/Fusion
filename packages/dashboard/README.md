@@ -479,50 +479,14 @@ The dashboard includes several runtime safeguards to stay responsive during long
 
 ## Mobile Development (Capacitor)
 
-Capacitor wraps the existing Fusion dashboard web build into native iOS and Android shells, so mobile uses the same React UI and API surface as desktop web.
+Mobile builds use the dedicated `@fusion/mobile` package. See [`../../MOBILE.md`](../../MOBILE.md) for the full workflow.
 
-### Prerequisites
-
-- **iOS**: Xcode + CocoaPods installed
-- **Android**: Android Studio + Android SDK installed
-
-### Setup
+Quick start:
 
 ```bash
-pnpm install
 pnpm mobile:build
+pnpm mobile:ios      # or pnpm mobile:android
 ```
-
-`mobile:build` builds `@fusion/dashboard` and syncs web assets into the `@fusion/mobile` Capacitor project.
-
-### Running / Opening Native Projects
-
-```bash
-pnpm mobile:ios
-pnpm mobile:android
-```
-
-### Development with Live Reload
-
-```bash
-pnpm mobile:dev:ios
-pnpm mobile:dev:android
-```
-
-The live-reload helper sets `FUSION_LIVE_RELOAD=true` automatically and defaults `FUSION_SERVER_URL` to `http://localhost:5173`.
-
-For the full workflow (CI pipeline, PWA details, troubleshooting), see [`../../MOBILE.md`](../../MOBILE.md).
-
-### Mobile Scripts
-
-Workspace (`package.json`):
-
-- `mobile:build`
-- `mobile:ios`
-- `mobile:android`
-- `mobile:dev:ios`
-- `mobile:dev:android`
-- `mobile:sync`
 
 ## Development
 

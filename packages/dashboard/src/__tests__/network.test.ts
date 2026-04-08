@@ -1,23 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { Network } from "@capacitor/network";
 import { NetworkManager } from "../plugins/network.js";
 
-const { getStatusMock, addListenerMock, removeListenerMock } = vi.hoisted(() => ({
-  getStatusMock: vi.fn(),
-  addListenerMock: vi.fn(),
-  removeListenerMock: vi.fn(),
-}));
+const getStatusMock = vi.fn();
+const addListenerMock = vi.fn();
+const removeListenerMock = vi.fn();
 
 let networkStatusChangeHandler:
   | ((status: { connected: boolean; connectionType: "wifi" | "cellular" | "none" | "unknown" }) => void)
   | null = null;
-
-vi.mock("@capacitor/network", () => ({
-  Network: {
-    getStatus: getStatusMock,
-    addListener: addListenerMock,
-  },
-}));
 
 describe("NetworkManager", () => {
   beforeEach(() => {
@@ -40,6 +30,15 @@ describe("NetworkManager", () => {
       }
       return { remove: removeListenerMock };
     });
+
+    vi.stubGlobal("Capacitor", {
+      Plugins: {
+        Network: {
+          getStatus: getStatusMock,
+          addListener: addListenerMock,
+        },
+      },
+    });
   });
 
   it("initialize() queries current network status", async () => {
@@ -47,7 +46,7 @@ describe("NetworkManager", () => {
 
     await manager.initialize();
 
-    expect(Network.getStatus).toHaveBeenCalledTimes(1);
+    expect(getStatusMock).toHaveBeenCalledTimes(1);
     expect(manager.getStatus()).toEqual({ connected: true, connectionType: "wifi" });
   });
 
@@ -56,8 +55,8 @@ describe("NetworkManager", () => {
 
     await manager.startMonitoring();
 
-    expect(Network.addListener).toHaveBeenCalledTimes(1);
-    expect(Network.addListener).toHaveBeenCalledWith("networkStatusChange", expect.any(Function));
+    expect(addListenerMock).toHaveBeenCalledTimes(1);
+    expect(addListenerMock).toHaveBeenCalledWith("networkStatusChange", expect.any(Function));
     expect(manager.isMonitoring).toBe(true);
   });
 
