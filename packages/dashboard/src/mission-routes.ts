@@ -360,7 +360,8 @@ export function createMissionRouter(
           InvalidSessionStateError,
         } = await import("./mission-interview.js");
 
-        const result = await submitMissionInterviewResponse(sessionId, responses);
+        const rootDir = await getRootDirForRequest(req);
+        const result = await submitMissionInterviewResponse(sessionId, responses, rootDir);
         res.json(result);
       } catch (err: any) {
         if (err.name === "SessionNotFoundError") {

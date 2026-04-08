@@ -5735,7 +5735,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
       }
 
       const { submitResponse, SessionNotFoundError, InvalidSessionStateError } = await import("./planning.js");
-      const result = await submitResponse(sessionId, responses);
+      const result = await submitResponse(sessionId, responses, store.getRootDir());
       res.json(result);
     } catch (err: any) {
       if (err.name === "SessionNotFoundError") {
@@ -8486,24 +8486,26 @@ Output ONLY the prompt text (no markdown, no explanations).`;
       return;
     }
 
-    // Clean up the in-memory agent based on session type
+    aiSessionStore.delete(id);
+
     try {
-      switch (session.type) {
-        case "planning":
-          if (getPlanningSession(id)) cleanupPlanningSession(id);
-          break;
-        case "subtask":
-          if (getSubtaskSession(id)) cleanupSubtaskSession(id);
-          break;
-        case "mission_interview":
-          if (getMissionInterviewSession(id)) cleanupMissionInterviewSession(id);
-          break;
-      }
+      if (getPlanningSession(id)) cleanupPlanningSession(id);
     } catch {
-      // Agent may already be cleaned up — that's fine
+      // Session may not belong to planning or may already be cleaned up.
     }
 
-    aiSessionStore.delete(id);
+    try {
+      if (getSubtaskSession(id)) cleanupSubtaskSession(id);
+    } catch {
+      // Session may not belong to subtask breakdown or may already be cleaned up.
+    }
+
+    try {
+      if (getMissionInterviewSession(id)) cleanupMissionInterviewSession(id);
+    } catch {
+      // Session may not belong to mission interview or may already be cleaned up.
+    }
+
     res.json({ ok: true });
   });
 

@@ -17,9 +17,18 @@ import { WebSocketManager, type BadgeSnapshot } from "./websocket.js";
 import type { BadgePubSub } from "./badge-pubsub.js";
 import { createBadgePubSub, type BadgePubSubMessage } from "./badge-pubsub.js";
 import { AiSessionStore } from "./ai-session-store.js";
-import { setAiSessionStore as setPlanningAiSessionStore } from "./planning.js";
-import { setAiSessionStore as setSubtaskAiSessionStore } from "./subtask-breakdown.js";
-import { setAiSessionStore as setMissionAiSessionStore } from "./mission-interview.js";
+import {
+  setAiSessionStore as setPlanningAiSessionStore,
+  rehydrateFromStore as rehydratePlanningSessions,
+} from "./planning.js";
+import {
+  setAiSessionStore as setSubtaskAiSessionStore,
+  rehydrateFromStore as rehydrateSubtaskSessions,
+} from "./subtask-breakdown.js";
+import {
+  setAiSessionStore as setMissionAiSessionStore,
+  rehydrateFromStore as rehydrateMissionSessions,
+} from "./mission-interview.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -321,6 +330,17 @@ export function createServer(store: TaskStore, options?: ServerOptions): ReturnT
   setPlanningAiSessionStore(aiSessionStore);
   setSubtaskAiSessionStore(aiSessionStore);
   setMissionAiSessionStore(aiSessionStore);
+
+  const planningRehydratedCount = rehydratePlanningSessions(aiSessionStore);
+  const subtaskRehydratedCount = rehydrateSubtaskSessions(aiSessionStore);
+  const missionRehydratedCount = rehydrateMissionSessions(aiSessionStore);
+  const totalRehydrated =
+    planningRehydratedCount + subtaskRehydratedCount + missionRehydratedCount;
+  if (totalRehydrated > 0) {
+    console.log(
+      `[server] Rehydrated ${planningRehydratedCount} planning, ${subtaskRehydratedCount} subtask, ${missionRehydratedCount} mission sessions from SQLite`,
+    );
+  }
 
   const loadSettings = (store as { getSettings?: () => Promise<{ aiSessionTtlMs?: number; aiSessionCleanupIntervalMs?: number }> }).getSettings;
   if (typeof loadSettings === "function") {

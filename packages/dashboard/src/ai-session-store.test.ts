@@ -204,4 +204,63 @@ describe("AiSessionStore", () => {
     expect(projectA.map((session) => session.id).sort()).toEqual(["S-a1", "S-a2"]);
     expect(projectA.every((session) => session.projectId === "project-a")).toBe(true);
   });
+
+  it("listRecoverable returns awaiting_input and generating sessions", () => {
+    seedSession({ id: "S-generating", status: "generating", ageMs: 3_000 });
+    seedSession({ id: "S-awaiting", status: "awaiting_input", ageMs: 1_000 });
+    seedSession({ id: "S-complete", status: "complete" });
+
+    const recoverable = store.listRecoverable();
+
+    expect(recoverable.map((session) => session.id)).toEqual(["S-awaiting", "S-generating"]);
+    expect(recoverable.map((session) => session.status).sort()).toEqual(["awaiting_input", "generating"]);
+  });
+
+  it("listRecoverable excludes complete and error sessions", () => {
+    seedSession({ id: "S-complete", status: "complete" });
+    seedSession({ id: "S-error", status: "error" });
+
+    const recoverable = store.listRecoverable();
+
+    expect(recoverable).toEqual([]);
+  });
+
+  it("listRecoverable filters by projectId", () => {
+    seedSession({ id: "S-a1", status: "generating", projectId: "project-a" });
+    seedSession({ id: "S-a2", status: "awaiting_input", projectId: "project-a" });
+    seedSession({ id: "S-b1", status: "awaiting_input", projectId: "project-b" });
+
+    const projectA = store.listRecoverable("project-a");
+
+    expect(projectA).toHaveLength(2);
+    expect(projectA.map((session) => session.id).sort()).toEqual(["S-a1", "S-a2"]);
+    expect(projectA.every((session) => session.projectId === "project-a")).toBe(true);
+  });
+
+  it("listRecoverable returns full AiSessionRow objects", () => {
+    seedSession({
+      id: "S-full",
+      status: "awaiting_input",
+      projectId: "project-a",
+      currentQuestion: { id: "q-1", type: "text", question: "Next?" },
+    });
+
+    const [row] = store.listRecoverable();
+
+    expect(row).toMatchObject({
+      id: "S-full",
+      type: "planning",
+      status: "awaiting_input",
+      title: "Session S-full",
+      inputPayload: expect.any(String),
+      conversationHistory: expect.any(String),
+      currentQuestion: expect.any(String),
+      result: null,
+      thinkingOutput: expect.any(String),
+      error: null,
+      projectId: "project-a",
+      createdAt: expect.any(String),
+      updatedAt: expect.any(String),
+    });
+  });
 });

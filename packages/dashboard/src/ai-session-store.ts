@@ -169,6 +169,30 @@ export class AiSessionStore extends EventEmitter<AiSessionStoreEvents> {
   }
 
   /**
+   * List recoverable sessions for in-memory rehydration.
+   * Returns full rows for sessions still in progress.
+   */
+  listRecoverable(projectId?: string): AiSessionRow[] {
+    if (projectId) {
+      return this.db
+        .prepare(
+          `SELECT * FROM ai_sessions
+           WHERE status IN ('generating', 'awaiting_input') AND projectId = ?
+           ORDER BY updatedAt DESC`,
+        )
+        .all(projectId) as unknown as AiSessionRow[];
+    }
+
+    return this.db
+      .prepare(
+        `SELECT * FROM ai_sessions
+         WHERE status IN ('generating', 'awaiting_input')
+         ORDER BY updatedAt DESC`,
+      )
+      .all() as unknown as AiSessionRow[];
+  }
+
+  /**
    * Delete a session by ID. Emits `ai_session:deleted`.
    */
   delete(id: string): void {

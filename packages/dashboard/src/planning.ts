@@ -156,6 +156,26 @@ const rateLimits = new Map<string, RateLimitEntry>();
 let _aiSessionStore: AiSessionStore | undefined;
 let _aiSessionDeletedListener: ((sessionId: string) => void) | undefined;
 
+function safeParseJson<T>(
+  text: string | null,
+  fallback: T,
+  options?: { throwOnError?: boolean; fieldName?: string },
+): T {
+  if (!text) {
+    return fallback;
+  }
+
+  try {
+    return JSON.parse(text) as T;
+  } catch (error) {
+    if (options?.throwOnError) {
+      const fieldSuffix = options.fieldName ? ` in ${options.fieldName}` : "";
+      throw new Error(`Invalid JSON${fieldSuffix}: ${(error as Error).message}`);
+    }
+    return fallback;
+  }
+}
+
 /** Wire up the AI session persistence store. Called once from server.ts. */
 export function setAiSessionStore(store: AiSessionStore): void {
   if (_aiSessionStore && _aiSessionDeletedListener) {
@@ -197,7 +217,7 @@ function persistSession(session: Session, status: "generating" | "awaiting_input
     type: "planning",
     status,
     title: session.initialPlan.slice(0, 120),
-    inputPayload: JSON.stringify({ initialPlan: session.initialPlan }),
+    inputPayload: JSON.stringify({ ip: session.ip, initialPlan: session.initialPlan }),
     conversationHistory: JSON.stringify(session.history),
     currentQuestion: session.currentQuestion ? JSON.stringify(session.currentQuestion) : null,
     result: session.summary ? JSON.stringify(session.summary) : null,
@@ -220,6 +240,72 @@ function persistThinking(sessionId: string, thinkingOutput: string): void {
 function unpersistSession(sessionId: string): void {
   if (!_aiSessionStore) return;
   _aiSessionStore.delete(sessionId);
+}
+
+function buildSessionFromRow(row: AiSessionRow): Session {
+  const payload = safeParseJson<{ ip?: string; initialPlan?: string }>(
+    row.inputPayload,
+    {},
+    { throwOnError: true, fieldName: "inputPayload" },
+  );
+
+  const createdAt = new Date(row.createdAt);
+  const updatedAt = new Date(row.updatedAt);
+
+  if (Number.isNaN(createdAt.getTime()) || Number.isNaN(updatedAt.getTime())) {
+    throw new Error("Invalid session timestamps");
+  }
+
+  return {
+    id: row.id,
+    ip: payload.ip ?? "",
+    initialPlan: payload.initialPlan ?? row.title,
+    history: safeParseJson<Array<{ question: PlanningQuestion; response: unknown }>>(
+      row.conversationHistory,
+      [],
+      { throwOnError: true, fieldName: "conversationHistory" },
+    ),
+    currentQuestion: row.currentQuestion
+      ? (safeParseJson<PlanningQuestion | null>(row.currentQuestion, null, {
+          throwOnError: true,
+          fieldName: "currentQuestion",
+        }) ?? undefined)
+      : undefined,
+    summary: row.result
+      ? (safeParseJson<PlanningSummary | null>(row.result, null, {
+          throwOnError: true,
+          fieldName: "result",
+        }) ?? undefined)
+      : undefined,
+    thinkingOutput: row.thinkingOutput,
+    createdAt,
+    updatedAt,
+    agent: undefined,
+  };
+}
+
+export function rehydrateFromStore(store: AiSessionStore): number {
+  let rows: AiSessionRow[] = [];
+
+  try {
+    rows = store.listRecoverable().filter((row) => row.type === "planning");
+  } catch (error) {
+    console.error("[planning] Failed to list recoverable sessions:", error);
+    return 0;
+  }
+
+  let rehydrated = 0;
+  for (const row of rows) {
+    try {
+      const session = buildSessionFromRow(row);
+      sessions.set(session.id, session);
+      rehydrated += 1;
+    } catch (error) {
+      console.error(`[planning] Failed to rehydrate session ${row.id}:`, error);
+    }
+  }
+
+  return rehydrated;
 }
 
 // ── Cleanup Interval ────────────────────────────────────────────────────────
@@ -664,34 +750,7 @@ async function initializeAgent(
   modelId?: string,
 ): Promise<void> {
   try {
-    // Ensure engine is loaded before using createKbAgent
-    await engineReady;
-    
-    const agentResult = await createKbAgent({
-      cwd: rootDir,
-      systemPrompt: PLANNING_SYSTEM_PROMPT,
-      tools: "readonly",
-      ...(modelProvider && modelId
-        ? {
-            defaultProvider: modelProvider,
-            defaultModelId: modelId,
-          }
-        : {}),
-      onThinking: (delta: string) => {
-        session.thinkingOutput += delta;
-        persistThinking(session.id, session.thinkingOutput);
-        planningStreamManager.broadcast(session.id, {
-          type: "thinking",
-          data: delta,
-        });
-      },
-      onText: (delta: string) => {
-        // Capture AI response text - will be parsed at end of turn
-        session.thinkingOutput += delta;
-      },
-    });
-
-    session.agent = agentResult;
+    session.agent = await createPlanningAgent(session, rootDir, modelProvider, modelId);
     session.updatedAt = new Date();
 
     // Send initial message to get first question
@@ -703,6 +762,80 @@ async function initializeAgent(
       data: err instanceof Error ? err.message : "Failed to initialize AI agent",
     });
   }
+}
+
+async function createPlanningAgent(
+  session: Session,
+  rootDir: string,
+  modelProvider?: string,
+  modelId?: string,
+): Promise<AgentResult> {
+  // Ensure engine is loaded before using createKbAgent
+  await engineReady;
+
+  return createKbAgent({
+    cwd: rootDir,
+    systemPrompt: PLANNING_SYSTEM_PROMPT,
+    tools: "readonly",
+    ...(modelProvider && modelId
+      ? {
+          defaultProvider: modelProvider,
+          defaultModelId: modelId,
+        }
+      : {}),
+    onThinking: (delta: string) => {
+      session.thinkingOutput += delta;
+      persistThinking(session.id, session.thinkingOutput);
+      planningStreamManager.broadcast(session.id, {
+        type: "thinking",
+        data: delta,
+      });
+    },
+    onText: (delta: string) => {
+      // Capture AI response text - will be parsed at end of turn
+      session.thinkingOutput += delta;
+    },
+  });
+}
+
+function buildHistoryReplayPrompt(
+  history: Array<{ question: PlanningQuestion; response: unknown }>,
+): string {
+  const interviewSummary = formatInterviewQA(history);
+  if (!interviewSummary) {
+    return "No prior planning interview context is available.";
+  }
+
+  return [
+    "Previous conversation summary:",
+    interviewSummary,
+    "Use this as context for the next response. Do not repeat prior questions unless necessary.",
+  ].join("\n\n");
+}
+
+async function ensureSessionAgent(
+  session: Session,
+  rootDir: string | undefined,
+  historyForReplay: Array<{ question: PlanningQuestion; response: unknown }>,
+): Promise<void> {
+  if (session.agent) {
+    return;
+  }
+
+  if (!rootDir) {
+    throw new InvalidSessionStateError(
+      "Planning session has no AI agent and cannot be resumed without project context",
+    );
+  }
+
+  session.agent = await createPlanningAgent(session, rootDir);
+
+  if (historyForReplay.length === 0) {
+    return;
+  }
+
+  const contextMessage = buildHistoryReplayPrompt(historyForReplay);
+  await session.agent.session.prompt(contextMessage);
 }
 
 /** Max number of retry attempts when AI returns unparseable output */
@@ -1039,9 +1172,10 @@ export function parseAgentResponse(text: string): PlanningResponse {
  */
 export async function submitResponse(
   sessionId: string,
-  responses: Record<string, unknown>
+  responses: Record<string, unknown>,
+  rootDir?: string,
 ): Promise<PlanningResponse> {
-  const session = sessions.get(sessionId);
+  const session = getSession(sessionId);
   if (!session) {
     throw new SessionNotFoundError(`Planning session ${sessionId} not found or expired`);
   }
@@ -1057,9 +1191,9 @@ export async function submitResponse(
   });
   persistSession(session, "generating");
 
-  // If AI agent is active, use it for next question
   if (!session.agent) {
-    throw new InvalidSessionStateError("Planning session has no AI agent");
+    const replayHistory = session.history.slice(0, -1);
+    await ensureSessionAgent(session, rootDir, replayHistory);
   }
 
   const message = formatResponseForAgent(session.currentQuestion, responses);
@@ -1186,7 +1320,28 @@ export async function cancelSession(sessionId: string): Promise<void> {
  * Get session details.
  */
 export function getSession(sessionId: string): Session | undefined {
-  return sessions.get(sessionId);
+  const inMemory = sessions.get(sessionId);
+  if (inMemory) {
+    return inMemory;
+  }
+
+  if (!_aiSessionStore) {
+    return undefined;
+  }
+
+  const row = _aiSessionStore.get(sessionId);
+  if (!row || row.type !== "planning") {
+    return undefined;
+  }
+
+  try {
+    const restored = buildSessionFromRow(row);
+    sessions.set(restored.id, restored);
+    return restored;
+  } catch (error) {
+    console.error(`[planning] Failed to restore session ${sessionId} from SQLite:`, error);
+    return undefined;
+  }
 }
 
 /**

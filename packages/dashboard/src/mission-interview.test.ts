@@ -22,10 +22,14 @@ import {
   InvalidSessionStateError,
   missionInterviewStreamManager,
   parseMissionAgentResponse,
+  rehydrateFromStore,
+  setAiSessionStore,
   RateLimitError,
   SessionNotFoundError,
   submitMissionInterviewResponse,
 } from "./mission-interview.js";
+import { EventEmitter } from "node:events";
+import type { AiSessionRow } from "./ai-session-store.js";
 
 function createQuestionJson(id = "q-1"): string {
   return JSON.stringify({
@@ -88,6 +92,85 @@ async function waitForCurrentQuestion(sessionId: string): Promise<void> {
   throw new Error("Timed out waiting for currentQuestion");
 }
 
+class MockAiSessionStore extends EventEmitter {
+  rows = new Map<string, AiSessionRow>();
+
+  upsert(row: AiSessionRow): void {
+    this.rows.set(row.id, row);
+  }
+
+  updateThinking(id: string, thinkingOutput: string): void {
+    const row = this.rows.get(id);
+    if (!row) return;
+    this.rows.set(id, { ...row, thinkingOutput, updatedAt: new Date().toISOString() });
+  }
+
+  delete(id: string): void {
+    this.rows.delete(id);
+    this.emit("ai_session:deleted", id);
+  }
+
+  get(id: string): AiSessionRow | null {
+    return this.rows.get(id) ?? null;
+  }
+
+  listRecoverable(): AiSessionRow[] {
+    return [...this.rows.values()].filter(
+      (row) => row.status === "awaiting_input" || row.status === "generating",
+    );
+  }
+
+  on(event: "ai_session:deleted", listener: (sessionId: string) => void): this {
+    return super.on(event, listener);
+  }
+
+  off(event: "ai_session:deleted", listener: (sessionId: string) => void): this {
+    return super.off(event, listener);
+  }
+}
+
+function buildMissionRow(
+  overrides: Partial<AiSessionRow> & Pick<AiSessionRow, "id" | "status">,
+): AiSessionRow {
+  const now = new Date().toISOString();
+  return {
+    id: overrides.id,
+    type: overrides.type ?? "mission_interview",
+    status: overrides.status,
+    title: overrides.title ?? "Mission planning",
+    inputPayload:
+      overrides.inputPayload ??
+      JSON.stringify({ ip: "127.0.0.1", missionId: "mission-123", missionTitle: "Mission planning" }),
+    conversationHistory:
+      overrides.conversationHistory ??
+      JSON.stringify([
+        {
+          question: {
+            id: "q-1",
+            type: "text",
+            question: "What is your goal?",
+            description: "scope",
+          },
+          response: { "q-1": "Ship a dashboard" },
+        },
+      ]),
+    currentQuestion:
+      overrides.currentQuestion ??
+      JSON.stringify({
+        id: "q-2",
+        type: "text",
+        question: "Any constraints?",
+        description: "details",
+      }),
+    result: overrides.result ?? null,
+    thinkingOutput: overrides.thinkingOutput ?? "thinking",
+    error: overrides.error ?? null,
+    projectId: overrides.projectId ?? null,
+    createdAt: overrides.createdAt ?? now,
+    updatedAt: overrides.updatedAt ?? now,
+  };
+}
+
 describe("mission-interview module", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -139,6 +222,96 @@ describe("mission-interview module", () => {
     });
   });
 
+  describe("rehydration and session lookup", () => {
+    it("rehydrates mission interview sessions from recoverable rows", () => {
+      const store = new MockAiSessionStore();
+      const missionRow = buildMissionRow({ id: "mission-rehydrate-1", status: "awaiting_input" });
+      const planningRow = buildMissionRow({ id: "planning-rehydrate-1", status: "awaiting_input", type: "planning" });
+      store.rows.set(missionRow.id, missionRow);
+      store.rows.set(planningRow.id, planningRow);
+
+      const rehydrated = rehydrateFromStore(store as any);
+
+      expect(rehydrated).toBe(1);
+      const session = getMissionInterviewSession(missionRow.id);
+      expect(session).toBeDefined();
+      expect(session?.id).toBe(missionRow.id);
+      expect(session?.ip).toBe("127.0.0.1");
+      expect(session?.missionId).toBe("mission-123");
+      expect(session?.currentQuestion?.id).toBe("q-2");
+      expect(session?.agent).toBeUndefined();
+      expect(getMissionInterviewSession(planningRow.id)).toBeUndefined();
+    });
+
+    it("skips corrupted rows and continues with valid rows", () => {
+      const store = new MockAiSessionStore();
+      const goodRow = buildMissionRow({ id: "mission-good", status: "awaiting_input" });
+      const badRow = buildMissionRow({
+        id: "mission-bad",
+        status: "awaiting_input",
+        conversationHistory: "{bad-json",
+      });
+      store.rows.set(goodRow.id, goodRow);
+      store.rows.set(badRow.id, badRow);
+
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+      const rehydrated = rehydrateFromStore(store as any);
+
+      expect(rehydrated).toBe(1);
+      expect(getMissionInterviewSession(goodRow.id)).toBeDefined();
+      expect(getMissionInterviewSession(badRow.id)).toBeUndefined();
+      expect(errorSpy).toHaveBeenCalledWith(
+        `[mission-interview] Failed to rehydrate session ${badRow.id}:`,
+        expect.any(Error),
+      );
+      errorSpy.mockRestore();
+    });
+
+    it("falls through to SQLite when in-memory session is missing", () => {
+      const store = new MockAiSessionStore();
+      const row = buildMissionRow({ id: "mission-fallthrough", status: "awaiting_input" });
+      store.rows.set(row.id, row);
+      setAiSessionStore(store as any);
+
+      const session = getMissionInterviewSession(row.id);
+
+      expect(session).toBeDefined();
+      expect(session?.missionTitle).toBe("Mission planning");
+      expect(session?.agent).toBeUndefined();
+    });
+
+    it("returns in-memory session before SQLite fallback", () => {
+      const store = new MockAiSessionStore();
+      const row = buildMissionRow({ id: "mission-memory-first", status: "awaiting_input" });
+      store.rows.set(row.id, row);
+      setAiSessionStore(store as any);
+      rehydrateFromStore(store as any);
+
+      store.rows.set(
+        row.id,
+        buildMissionRow({
+          id: row.id,
+          status: "awaiting_input",
+          inputPayload: JSON.stringify({ ip: "10.0.0.5", missionId: "mission-xyz", missionTitle: "SQLite title" }),
+        }),
+      );
+
+      const getSpy = vi.spyOn(store, "get");
+      const session = getMissionInterviewSession(row.id);
+
+      expect(session?.missionTitle).toBe("Mission planning");
+      expect(getSpy).not.toHaveBeenCalled();
+    });
+
+    it("returns undefined when session exists nowhere", () => {
+      const store = new MockAiSessionStore();
+      setAiSessionStore(store as any);
+
+      expect(getMissionInterviewSession("missing-session")).toBeUndefined();
+    });
+  });
+
   describe("submitMissionInterviewResponse", () => {
     it("processes response and returns completed summary", async () => {
       mockCreateKbAgent.mockImplementationOnce(async () =>
@@ -160,6 +333,51 @@ describe("mission-interview module", () => {
       expect(getMissionInterviewSummary(sessionId)?.missionTitle).toBe("Mission Ready");
     });
 
+    it("reconstructs agent for a rehydrated session and continues conversation", async () => {
+      const store = new MockAiSessionStore();
+      const row = buildMissionRow({ id: "mission-rehydrated-1", status: "awaiting_input" });
+      store.rows.set(row.id, row);
+
+      setAiSessionStore(store as any);
+      expect(rehydrateFromStore(store as any)).toBe(1);
+
+      const resumedAgent = createMockAgent([
+        createQuestionJson("q-context"),
+        JSON.stringify({
+          type: "question",
+          data: {
+            id: "q-3",
+            type: "text",
+            question: "What timeline do you have?",
+            description: "delivery",
+          },
+        }),
+      ]);
+      const createKbAgentSpy = vi.fn(async () => resumedAgent);
+      mockCreateKbAgent.mockImplementation(createKbAgentSpy);
+
+      const result = await submitMissionInterviewResponse(
+        row.id,
+        { "q-2": "Need launch in 4 weeks" },
+        "/tmp/project",
+      );
+
+      expect(result.type).toBe("question");
+      if (result.type === "question") {
+        expect(result.data.id).toBe("q-3");
+      }
+      expect(createKbAgentSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          cwd: "/tmp/project",
+          systemPrompt: expect.stringContaining("mission planning assistant"),
+        }),
+      );
+      expect(resumedAgent.session.prompt).toHaveBeenCalledTimes(2);
+      expect(resumedAgent.session.prompt.mock.calls[0]?.[0]).toContain("Previous conversation summary");
+      expect(resumedAgent.session.prompt.mock.calls[1]?.[0]).toContain("Any constraints?");
+      expect(getMissionInterviewSession(row.id)?.agent).toBeDefined();
+    });
+
     it("throws SessionNotFoundError for unknown session", async () => {
       await expect(submitMissionInterviewResponse("missing", {})).rejects.toBeInstanceOf(SessionNotFoundError);
     });
@@ -173,6 +391,18 @@ describe("mission-interview module", () => {
       session.currentQuestion = undefined;
 
       await expect(submitMissionInterviewResponse(sessionId, {})).rejects.toBeInstanceOf(InvalidSessionStateError);
+    });
+
+    it("throws InvalidSessionStateError when rootDir is missing for a rehydrated session", async () => {
+      const store = new MockAiSessionStore();
+      const row = buildMissionRow({ id: "mission-rehydrated-2", status: "awaiting_input" });
+      store.rows.set(row.id, row);
+      setAiSessionStore(store as any);
+      rehydrateFromStore(store as any);
+
+      await expect(submitMissionInterviewResponse(row.id, { "q-2": "answer" })).rejects.toThrow(
+        "cannot be resumed without project context",
+      );
     });
   });
 

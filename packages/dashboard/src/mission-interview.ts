@@ -184,6 +184,26 @@ const rateLimits = new Map<string, RateLimitEntry>();
 let _aiSessionStore: AiSessionStore | undefined;
 let _aiSessionDeletedListener: ((sessionId: string) => void) | undefined;
 
+function safeParseJson<T>(
+  text: string | null,
+  fallback: T,
+  options?: { throwOnError?: boolean; fieldName?: string },
+): T {
+  if (!text) {
+    return fallback;
+  }
+
+  try {
+    return JSON.parse(text) as T;
+  } catch (error) {
+    if (options?.throwOnError) {
+      const fieldSuffix = options.fieldName ? ` in ${options.fieldName}` : "";
+      throw new Error(`Invalid JSON${fieldSuffix}: ${(error as Error).message}`);
+    }
+    return fallback;
+  }
+}
+
 export function setAiSessionStore(store: AiSessionStore): void {
   if (_aiSessionStore && _aiSessionDeletedListener) {
     _aiSessionStore.off("ai_session:deleted", _aiSessionDeletedListener);
@@ -219,7 +239,11 @@ function persistMissionSession(session: MissionInterviewSession, status: "genera
     type: "mission_interview",
     status,
     title: session.missionTitle.slice(0, 120),
-    inputPayload: JSON.stringify({ missionTitle: session.missionTitle }),
+    inputPayload: JSON.stringify({
+      ip: session.ip,
+      missionTitle: session.missionTitle,
+      missionId: session.missionId,
+    }),
     conversationHistory: JSON.stringify(session.history),
     currentQuestion: session.currentQuestion ? JSON.stringify(session.currentQuestion) : null,
     result: session.summary ? JSON.stringify(session.summary) : null,
@@ -240,6 +264,73 @@ function persistMissionThinking(sessionId: string, thinkingOutput: string): void
 function unpersistMissionSession(sessionId: string): void {
   if (!_aiSessionStore) return;
   _aiSessionStore.delete(sessionId);
+}
+
+function buildMissionInterviewSessionFromRow(row: AiSessionRow): MissionInterviewSession {
+  const payload = safeParseJson<{ ip?: string; missionId?: string; missionTitle?: string }>(
+    row.inputPayload,
+    {},
+    { throwOnError: true, fieldName: "inputPayload" },
+  );
+
+  const createdAt = new Date(row.createdAt);
+  const updatedAt = new Date(row.updatedAt);
+
+  if (Number.isNaN(createdAt.getTime()) || Number.isNaN(updatedAt.getTime())) {
+    throw new Error("Invalid session timestamps");
+  }
+
+  return {
+    id: row.id,
+    ip: payload.ip ?? "",
+    missionId: payload.missionId ?? "",
+    missionTitle: payload.missionTitle ?? row.title,
+    history: safeParseJson<Array<{ question: PlanningQuestion; response: unknown }>>(
+      row.conversationHistory,
+      [],
+      { throwOnError: true, fieldName: "conversationHistory" },
+    ),
+    currentQuestion: row.currentQuestion
+      ? (safeParseJson<PlanningQuestion | null>(row.currentQuestion, null, {
+          throwOnError: true,
+          fieldName: "currentQuestion",
+        }) ?? undefined)
+      : undefined,
+    summary: row.result
+      ? (safeParseJson<MissionPlanSummary | null>(row.result, null, {
+          throwOnError: true,
+          fieldName: "result",
+        }) ?? undefined)
+      : undefined,
+    thinkingOutput: row.thinkingOutput,
+    createdAt,
+    updatedAt,
+    agent: undefined,
+  };
+}
+
+export function rehydrateFromStore(store: AiSessionStore): number {
+  let rows: AiSessionRow[] = [];
+
+  try {
+    rows = store.listRecoverable().filter((row) => row.type === "mission_interview");
+  } catch (error) {
+    console.error("[mission-interview] Failed to list recoverable sessions:", error);
+    return 0;
+  }
+
+  let rehydrated = 0;
+  for (const row of rows) {
+    try {
+      const session = buildMissionInterviewSessionFromRow(row);
+      sessions.set(session.id, session);
+      rehydrated += 1;
+    } catch (error) {
+      console.error(`[mission-interview] Failed to rehydrate session ${row.id}:`, error);
+    }
+  }
+
+  return rehydrated;
 }
 
 // ── Cleanup Interval ────────────────────────────────────────────────────────
@@ -561,32 +652,13 @@ function formatResponseForAgent(
  */
 async function initializeAgent(session: MissionInterviewSession, rootDir: string): Promise<void> {
   try {
-    await engineReady;
-
-    const agentResult = await createKbAgent({
-      cwd: rootDir,
-      systemPrompt: MISSION_INTERVIEW_SYSTEM_PROMPT,
-      tools: "readonly",
-      onThinking: (delta: string) => {
-        session.thinkingOutput += delta;
-        persistMissionThinking(session.id, session.thinkingOutput);
-        missionInterviewStreamManager.broadcast(session.id, {
-          type: "thinking",
-          data: delta,
-        });
-      },
-      onText: (delta: string) => {
-        session.thinkingOutput += delta;
-      },
-    });
-
-    session.agent = agentResult;
+    session.agent = await createMissionInterviewAgent(session, rootDir);
     session.updatedAt = new Date();
 
     // Send initial message to get first question
     await continueAgentConversation(
       session,
-      `I want to plan a mission: "${session.missionTitle}". Interview me to understand what I need, then produce a structured plan.`
+      `I want to plan a mission: "${session.missionTitle}". Interview me to understand what I need, then produce a structured plan.`,
     );
   } catch (err) {
     console.error(`[mission-interview] Agent initialization error for session ${session.id}:`, err);
@@ -595,6 +667,87 @@ async function initializeAgent(session: MissionInterviewSession, rootDir: string
       data: err instanceof Error ? err.message : "Failed to initialize AI agent",
     });
   }
+}
+
+async function createMissionInterviewAgent(
+  session: MissionInterviewSession,
+  rootDir: string,
+): Promise<AgentResult> {
+  await engineReady;
+
+  return createKbAgent({
+    cwd: rootDir,
+    systemPrompt: MISSION_INTERVIEW_SYSTEM_PROMPT,
+    tools: "readonly",
+    onThinking: (delta: string) => {
+      session.thinkingOutput += delta;
+      persistMissionThinking(session.id, session.thinkingOutput);
+      missionInterviewStreamManager.broadcast(session.id, {
+        type: "thinking",
+        data: delta,
+      });
+    },
+    onText: (delta: string) => {
+      session.thinkingOutput += delta;
+    },
+  });
+}
+
+function formatMissionInterviewHistory(
+  history: Array<{ question: PlanningQuestion; response: unknown }>,
+): string {
+  if (history.length === 0) {
+    return "";
+  }
+
+  return history
+    .map(({ question, response }) => {
+      const responseValue =
+        response && typeof response === "object" && !Array.isArray(response)
+          ? (response as Record<string, unknown>)[question.id]
+          : response;
+
+      return [
+        `Q: ${question.question}`,
+        `A: ${typeof responseValue === "string" ? responseValue : JSON.stringify(responseValue ?? null)}`,
+      ].join("\n");
+    })
+    .join("\n\n");
+}
+
+async function ensureMissionInterviewAgent(
+  session: MissionInterviewSession,
+  rootDir: string | undefined,
+  historyForReplay: Array<{ question: PlanningQuestion; response: unknown }>,
+): Promise<void> {
+  if (session.agent) {
+    return;
+  }
+
+  if (!rootDir) {
+    throw new InvalidSessionStateError(
+      "AI agent not available for this session and cannot be resumed without project context",
+    );
+  }
+
+  session.agent = await createMissionInterviewAgent(session, rootDir);
+
+  if (historyForReplay.length === 0) {
+    return;
+  }
+
+  const historySummary = formatMissionInterviewHistory(historyForReplay);
+  if (!historySummary) {
+    return;
+  }
+
+  await session.agent.session.prompt(
+    [
+      "Previous conversation summary:",
+      historySummary,
+      "Use this context when handling the next user response.",
+    ].join("\n\n"),
+  );
 }
 
 /**
@@ -773,9 +926,10 @@ export async function createMissionInterviewSession(
  */
 export async function submitMissionInterviewResponse(
   sessionId: string,
-  responses: Record<string, unknown>
+  responses: Record<string, unknown>,
+  rootDir?: string,
 ): Promise<MissionInterviewResponse> {
-  const session = sessions.get(sessionId);
+  const session = getMissionInterviewSession(sessionId);
   if (!session) {
     throw new SessionNotFoundError(`Mission interview session ${sessionId} not found or expired`);
   }
@@ -791,31 +945,30 @@ export async function submitMissionInterviewResponse(
   });
   persistMissionSession(session, "generating");
 
-  // If AI agent is active, use it for next question
-  if (session.agent) {
-    const message = formatResponseForAgent(session.currentQuestion, responses);
-    await continueAgentConversation(session, message);
-
-    if (session.summary) {
-      return { type: "complete", data: session.summary };
-    }
-    if (session.currentQuestion) {
-      return { type: "question", data: session.currentQuestion };
-    }
-    // Fallback — should not happen with a working agent
-    return {
-      type: "question",
-      data: {
-        id: "q-fallback",
-        type: "text",
-        question: "Could you tell me more about what you want to build?",
-        description: "The AI is processing your response. Please provide more details.",
-      },
-    };
+  if (!session.agent) {
+    const replayHistory = session.history.slice(0, -1);
+    await ensureMissionInterviewAgent(session, rootDir, replayHistory);
   }
 
-  // No agent — should not happen in normal flow
-  throw new InvalidSessionStateError("AI agent not available for this session");
+  const message = formatResponseForAgent(session.currentQuestion, responses);
+  await continueAgentConversation(session, message);
+
+  if (session.summary) {
+    return { type: "complete", data: session.summary };
+  }
+  if (session.currentQuestion) {
+    return { type: "question", data: session.currentQuestion };
+  }
+  // Fallback — should not happen with a working agent
+  return {
+    type: "question",
+    data: {
+      id: "q-fallback",
+      type: "text",
+      question: "Could you tell me more about what you want to build?",
+      description: "The AI is processing your response. Please provide more details.",
+    },
+  };
 }
 
 export async function cancelMissionInterviewSession(sessionId: string): Promise<void> {
@@ -828,11 +981,32 @@ export async function cancelMissionInterviewSession(sessionId: string): Promise<
 }
 
 export function getMissionInterviewSession(sessionId: string): MissionInterviewSession | undefined {
-  return sessions.get(sessionId);
+  const inMemory = sessions.get(sessionId);
+  if (inMemory) {
+    return inMemory;
+  }
+
+  if (!_aiSessionStore) {
+    return undefined;
+  }
+
+  const row = _aiSessionStore.get(sessionId);
+  if (!row || row.type !== "mission_interview") {
+    return undefined;
+  }
+
+  try {
+    const restored = buildMissionInterviewSessionFromRow(row);
+    sessions.set(restored.id, restored);
+    return restored;
+  } catch (error) {
+    console.error(`[mission-interview] Failed to restore session ${sessionId} from SQLite:`, error);
+    return undefined;
+  }
 }
 
 export function getMissionInterviewSummary(sessionId: string): MissionPlanSummary | undefined {
-  return sessions.get(sessionId)?.summary;
+  return getMissionInterviewSession(sessionId)?.summary;
 }
 
 export function cleanupMissionInterviewSession(sessionId: string): void {

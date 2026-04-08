@@ -70,6 +70,99 @@ export function setAiSessionStore(store: AiSessionStore): void {
 
 type SubtaskInternalSession = SubtaskSession & { updatedAt: Date; agent?: any; thinkingOutput: string };
 
+function safeParseJson<T>(
+  text: string | null,
+  fallback: T,
+  options?: { throwOnError?: boolean; fieldName?: string },
+): T {
+  if (!text) {
+    return fallback;
+  }
+
+  try {
+    return JSON.parse(text) as T;
+  } catch (error) {
+    if (options?.throwOnError) {
+      const fieldSuffix = options.fieldName ? ` in ${options.fieldName}` : "";
+      throw new Error(`Invalid JSON${fieldSuffix}: ${(error as Error).message}`);
+    }
+    return fallback;
+  }
+}
+
+function buildSubtaskSessionFromRow(row: AiSessionRow): SubtaskInternalSession {
+  const payload = safeParseJson<{ initialDescription?: string }>(
+    row.inputPayload,
+    {},
+    { throwOnError: true, fieldName: "inputPayload" },
+  );
+
+  const createdAt = new Date(row.createdAt);
+  const updatedAt = new Date(row.updatedAt);
+
+  if (Number.isNaN(createdAt.getTime()) || Number.isNaN(updatedAt.getTime())) {
+    throw new Error("Invalid session timestamps");
+  }
+
+  const rawStatus = row.status === "awaiting_input" ? "generating" : row.status;
+  const status: SubtaskSession["status"] =
+    rawStatus === "generating" || rawStatus === "complete" || rawStatus === "error"
+      ? rawStatus
+      : "error";
+
+  return {
+    sessionId: row.id,
+    initialDescription: payload.initialDescription ?? row.title,
+    subtasks: row.result
+      ? safeParseJson<SubtaskItem[]>(row.result, [], {
+          throwOnError: true,
+          fieldName: "result",
+        })
+      : [],
+    status,
+    error: row.error ?? undefined,
+    thinkingOutput: row.thinkingOutput,
+    createdAt,
+    updatedAt,
+    agent: undefined,
+  };
+}
+
+function toPublicSubtaskSession(session: SubtaskInternalSession): SubtaskSession {
+  return {
+    sessionId: session.sessionId,
+    initialDescription: session.initialDescription,
+    subtasks: session.subtasks,
+    status: session.status,
+    error: session.error,
+    createdAt: session.createdAt,
+  };
+}
+
+export function rehydrateFromStore(store: AiSessionStore): number {
+  let rows: AiSessionRow[] = [];
+
+  try {
+    rows = store.listRecoverable().filter((row) => row.type === "subtask");
+  } catch (error) {
+    console.error("[subtask-breakdown] Failed to list recoverable sessions:", error);
+    return 0;
+  }
+
+  let rehydrated = 0;
+  for (const row of rows) {
+    try {
+      const session = buildSubtaskSessionFromRow(row);
+      sessions.set(session.sessionId, session);
+      rehydrated += 1;
+    } catch (error) {
+      console.error(`[subtask-breakdown] Failed to rehydrate session ${row.id}:`, error);
+    }
+  }
+
+  return rehydrated;
+}
+
 function cleanupInMemorySubtaskSession(sessionId: string): boolean {
   const session = sessions.get(sessionId);
   if (!session) {
@@ -374,16 +467,28 @@ function completeSession(sessionId: string, subtasks: SubtaskItem[]): void {
 }
 
 export function getSubtaskSession(sessionId: string): SubtaskSession | undefined {
-  const session = sessions.get(sessionId);
-  if (!session) return undefined;
-  return {
-    sessionId: session.sessionId,
-    initialDescription: session.initialDescription,
-    subtasks: session.subtasks,
-    status: session.status,
-    error: session.error,
-    createdAt: session.createdAt,
-  };
+  const inMemory = sessions.get(sessionId);
+  if (inMemory) {
+    return toPublicSubtaskSession(inMemory);
+  }
+
+  if (!_aiSessionStore) {
+    return undefined;
+  }
+
+  const row = _aiSessionStore.get(sessionId);
+  if (!row || row.type !== "subtask") {
+    return undefined;
+  }
+
+  try {
+    const restored = buildSubtaskSessionFromRow(row);
+    sessions.set(restored.sessionId, restored);
+    return toPublicSubtaskSession(restored);
+  } catch (error) {
+    console.error(`[subtask-breakdown] Failed to restore session ${sessionId} from SQLite:`, error);
+    return undefined;
+  }
 }
 
 export async function cancelSubtaskSession(sessionId: string): Promise<void> {

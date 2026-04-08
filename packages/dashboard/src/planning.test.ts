@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
+import { EventEmitter } from "node:events";
 import {
   createSession,
   createSessionWithAgent,
@@ -13,6 +14,8 @@ import {
   getRateLimitResetTime,
   __resetPlanningState,
   __setCreateKbAgent,
+  rehydrateFromStore,
+  setAiSessionStore,
   RateLimitError,
   SessionNotFoundError,
   InvalidSessionStateError,
@@ -22,6 +25,7 @@ import {
   SESSION_TTL_MS,
 } from "./planning.js";
 import type { PlanningQuestion, PlanningSummary } from "@fusion/core";
+import type { AiSessionRow } from "./ai-session-store.js";
 
 // ── Mock Agent Factory ──────────────────────────────────────────────────────
 
@@ -109,6 +113,92 @@ function setupMockAgent(responses?: string[]) {
   const agent = createMockAgent(responses ?? STANDARD_QUESTION_RESPONSES);
   __setCreateKbAgent(async () => agent);
   return agent;
+}
+
+class MockAiSessionStore extends EventEmitter {
+  rows = new Map<string, AiSessionRow>();
+
+  upsert(row: AiSessionRow): void {
+    this.rows.set(row.id, row);
+  }
+
+  updateThinking(id: string, thinkingOutput: string): void {
+    const row = this.rows.get(id);
+    if (!row) {
+      return;
+    }
+
+    this.rows.set(id, {
+      ...row,
+      thinkingOutput,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
+  delete(id: string): void {
+    this.rows.delete(id);
+    this.emit("ai_session:deleted", id);
+  }
+
+  get(id: string): AiSessionRow | null {
+    return this.rows.get(id) ?? null;
+  }
+
+  listRecoverable(): AiSessionRow[] {
+    return [...this.rows.values()].filter(
+      (row) => row.status === "awaiting_input" || row.status === "generating",
+    );
+  }
+
+  on(event: "ai_session:deleted", listener: (sessionId: string) => void): this {
+    return super.on(event, listener);
+  }
+
+  off(event: "ai_session:deleted", listener: (sessionId: string) => void): this {
+    return super.off(event, listener);
+  }
+}
+
+function buildPlanningRow(
+  overrides: Partial<AiSessionRow> & Pick<AiSessionRow, "id" | "status">,
+): AiSessionRow {
+  const now = new Date().toISOString();
+  return {
+    id: overrides.id,
+    type: "planning",
+    status: overrides.status,
+    title: overrides.title ?? "Recovered planning session",
+    inputPayload:
+      overrides.inputPayload ??
+      JSON.stringify({ ip: "127.0.0.1", initialPlan: "Recovered planning session" }),
+    conversationHistory:
+      overrides.conversationHistory ??
+      JSON.stringify([
+        {
+          question: {
+            id: "q-existing",
+            type: "text",
+            question: "What should we build?",
+            description: "baseline",
+          },
+          response: { "q-existing": "A useful feature" },
+        },
+      ]),
+    currentQuestion:
+      overrides.currentQuestion ??
+      JSON.stringify({
+        id: "q-next",
+        type: "text",
+        question: "Any constraints?",
+        description: "detail",
+      }),
+    result: overrides.result ?? null,
+    thinkingOutput: overrides.thinkingOutput ?? "thinking",
+    error: overrides.error ?? null,
+    projectId: overrides.projectId ?? null,
+    createdAt: overrides.createdAt ?? now,
+    updatedAt: overrides.updatedAt ?? now,
+  };
 }
 
 describe("planning module", () => {
@@ -343,26 +433,80 @@ describe("planning module", () => {
       await expect(submitResponse(sessionId, {})).rejects.toThrow(InvalidSessionStateError);
     });
 
-    it("throws InvalidSessionStateError if session has no AI agent", async () => {
-      // Create a session without an agent by directly manipulating state
-      const mockIp = getUniqueIp();
-      const { sessionId } = await createSession(mockIp, initialPlan, undefined, TEST_ROOT_DIR);
+    it("reconstructs agent for a rehydrated session and continues conversation", async () => {
+      const store = new MockAiSessionStore();
+      const row = buildPlanningRow({
+        id: "planning-rehydrated-1",
+        status: "awaiting_input",
+        conversationHistory: JSON.stringify([
+          {
+            question: {
+              id: "q-1",
+              type: "text",
+              question: "What should we build?",
+              description: "scope",
+            },
+            response: { "q-1": "Authentication" },
+          },
+        ]),
+        currentQuestion: JSON.stringify({
+          id: "q-2",
+          type: "text",
+          question: "Any constraints?",
+          description: "details",
+        }),
+      });
+      store.rows.set(row.id, row);
 
-      // Manually remove the agent to simulate a corrupted session
-      const session = getSession(sessionId);
-      expect(session).toBeDefined();
-      if (session) {
-        session.agent = undefined;
-      }
+      setAiSessionStore(store as any);
+      expect(rehydrateFromStore(store as any)).toBe(1);
 
-      await expect(submitResponse(sessionId, { answer: "test" })).rejects.toThrow(
-        InvalidSessionStateError
+      const resumedAgent = createMockAgent([
+        JSON.stringify({
+          type: "question",
+          data: {
+            id: "q-3",
+            type: "text",
+            question: "Do you need tests?",
+            description: "quality",
+          },
+        }),
+      ]);
+      const createKbAgentSpy = vi.fn(async () => resumedAgent);
+      __setCreateKbAgent(createKbAgentSpy as any);
+
+      const response = await submitResponse(
+        row.id,
+        { "q-2": "Must run on mobile" },
+        TEST_ROOT_DIR,
       );
-      try {
-        await submitResponse(sessionId, { answer: "test" });
-      } catch (err) {
-        expect((err as Error).message).toBe("Planning session has no AI agent");
+
+      expect(response.type).toBe("question");
+      if (response.type === "question") {
+        expect(response.data.id).toBe("q-3");
       }
+      expect(createKbAgentSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          cwd: TEST_ROOT_DIR,
+          systemPrompt: expect.stringContaining("planning assistant"),
+        }),
+      );
+      expect(resumedAgent.session.prompt).toHaveBeenCalledTimes(2);
+      expect(resumedAgent.session.prompt.mock.calls[0]?.[0]).toContain("Previous conversation summary");
+      expect(resumedAgent.session.prompt.mock.calls[1]?.[0]).toContain("Any constraints?");
+      expect(getSession(row.id)?.agent).toBeDefined();
+    });
+
+    it("throws InvalidSessionStateError when resuming without project context", async () => {
+      const store = new MockAiSessionStore();
+      const row = buildPlanningRow({ id: "planning-rehydrated-2", status: "awaiting_input" });
+      store.rows.set(row.id, row);
+      setAiSessionStore(store as any);
+      rehydrateFromStore(store as any);
+
+      await expect(submitResponse(row.id, { "q-next": "answer" })).rejects.toThrow(
+        "cannot be resumed without project context",
+      );
     });
   });
 
@@ -382,6 +526,54 @@ describe("planning module", () => {
     });
   });
 
+  describe("rehydrateFromStore", () => {
+    it("rehydrates planning sessions from SQLite rows", () => {
+      const store = new MockAiSessionStore();
+      const planningRow = buildPlanningRow({ id: "planning-row-1", status: "awaiting_input" });
+      const subtaskRow: AiSessionRow = {
+        ...buildPlanningRow({ id: "subtask-row-1", status: "awaiting_input" }),
+        type: "subtask",
+      };
+      store.rows.set(planningRow.id, planningRow);
+      store.rows.set(subtaskRow.id, subtaskRow);
+
+      const rehydrated = rehydrateFromStore(store as any);
+
+      expect(rehydrated).toBe(1);
+      const session = getSession(planningRow.id);
+      expect(session).toBeDefined();
+      expect(session?.id).toBe(planningRow.id);
+      expect(session?.ip).toBe("127.0.0.1");
+      expect(session?.currentQuestion?.id).toBe("q-next");
+      expect(session?.thinkingOutput).toBe("thinking");
+    });
+
+    it("skips corrupted rows and continues rehydrating valid sessions", () => {
+      const store = new MockAiSessionStore();
+      const goodRow = buildPlanningRow({ id: "planning-good", status: "awaiting_input" });
+      const badRow = buildPlanningRow({
+        id: "planning-bad",
+        status: "awaiting_input",
+        conversationHistory: "{bad-json",
+      });
+      store.rows.set(goodRow.id, goodRow);
+      store.rows.set(badRow.id, badRow);
+
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+      const rehydrated = rehydrateFromStore(store as any);
+
+      expect(rehydrated).toBe(1);
+      expect(getSession(goodRow.id)).toBeDefined();
+      expect(getSession(badRow.id)).toBeUndefined();
+      expect(errorSpy).toHaveBeenCalledWith(
+        `[planning] Failed to rehydrate session ${badRow.id}:`,
+        expect.any(Error),
+      );
+      errorSpy.mockRestore();
+    });
+  });
+
   describe("getSession", () => {
     it("returns session for valid ID", async () => {
       const mockIp = getUniqueIp();
@@ -394,7 +586,47 @@ describe("planning module", () => {
       expect(session?.ip).toBe(mockIp);
     });
 
-    it("returns undefined for invalid ID", () => {
+    it("returns session from memory before SQLite", async () => {
+      const store = new MockAiSessionStore();
+      const getSpy = vi.spyOn(store, "get");
+      const mockIp = getUniqueIp();
+      const { sessionId } = await createSession(mockIp, initialPlan, undefined, TEST_ROOT_DIR);
+
+      store.rows.set(
+        sessionId,
+        buildPlanningRow({
+          id: sessionId,
+          status: "awaiting_input",
+          inputPayload: JSON.stringify({ ip: "10.0.0.1", initialPlan: "sqlite-plan" }),
+        }),
+      );
+      setAiSessionStore(store as any);
+
+      const session = getSession(sessionId);
+
+      expect(session?.initialPlan).toBe(initialPlan);
+      expect(session?.ip).toBe(mockIp);
+      expect(getSpy).not.toHaveBeenCalled();
+    });
+
+    it("falls through to SQLite when session is missing in memory", () => {
+      const store = new MockAiSessionStore();
+      const row = buildPlanningRow({ id: "planning-fallthrough", status: "awaiting_input" });
+      store.rows.set(row.id, row);
+      setAiSessionStore(store as any);
+
+      const session = getSession(row.id);
+
+      expect(session).toBeDefined();
+      expect(session?.id).toBe(row.id);
+      expect(session?.initialPlan).toBe("Recovered planning session");
+      expect(session?.agent).toBeUndefined();
+    });
+
+    it("returns undefined when session exists nowhere", () => {
+      const store = new MockAiSessionStore();
+      setAiSessionStore(store as any);
+
       expect(getSession("invalid-id")).toBeUndefined();
     });
   });
