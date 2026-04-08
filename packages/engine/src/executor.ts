@@ -23,7 +23,14 @@ import type { StuckTaskDetector, StuckTaskEvent } from "./stuck-task-detector.js
 import { isContextLimitError } from "./context-limit-detector.js";
 import { StepSessionExecutor, type StepSessionExecutorOptions, type StepResult } from "./step-session-executor.js";
 import { resolveAgentInstructions, buildSystemPromptWithInstructions } from "./agent-instructions.js";
-import { createTaskCreateTool as sharedCreateTaskCreateTool, createTaskLogTool as sharedCreateTaskLogTool, taskCreateParams, taskLogParams } from "./agent-tools.js";
+import type { AgentReflectionService } from "./agent-reflection.js";
+import {
+  createReflectOnPerformanceTool,
+  createTaskCreateTool as sharedCreateTaskCreateTool,
+  createTaskLogTool as sharedCreateTaskLogTool,
+  taskCreateParams,
+  taskLogParams,
+} from "./agent-tools.js";
 
 // Re-export for backward compatibility (tests import from executor.ts)
 export { summarizeToolArgs } from "./agent-logger.js";
@@ -225,6 +232,8 @@ export interface TaskExecutorOptions {
   stuckTaskDetector?: StuckTaskDetector;
   /** AgentStore for tracking spawned child agents. If not provided, spawning is disabled. */
   agentStore?: import("@fusion/core").AgentStore;
+  /** Reflection service used to generate self-reflection insights for agents. */
+  reflectionService?: AgentReflectionService;
   missionStore?: MissionStore;
   onSliceComplete?: (slice: Slice) => void;
   onStart?: (task: Task, worktreePath: string) => void;
@@ -1012,6 +1021,10 @@ export class TaskExecutor {
       const stepCheckpoints = new Map<number, string>();
 
       const stuckDetector = this.options.stuckTaskDetector;
+      const assignedAgentId = detail.assignedAgentId?.trim();
+      const reflectionTools = this.options.reflectionService && settings.reflectionEnabled && assignedAgentId
+        ? [createReflectOnPerformanceTool(this.options.reflectionService, assignedAgentId)]
+        : [];
 
       const customTools = [
         this.createTaskUpdateTool(task.id, codeReviewVerdicts, sessionRef, stepCheckpoints, stuckDetector),
@@ -1021,6 +1034,8 @@ export class TaskExecutor {
         this.createTaskDoneTool(task.id, () => { taskDone = true; }),
         this.createReviewStepTool(task.id, worktreePath, detail.prompt, codeReviewVerdicts, sessionRef, stepCheckpoints, detail, stuckDetector),
         this.createSpawnAgentTool(task.id, worktreePath, settings),
+        // Conditionally add agent self-reflection when enabled and task has an assigned agent.
+        ...reflectionTools,
       ];
 
       const agentLogger = new AgentLogger({

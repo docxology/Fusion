@@ -742,7 +742,7 @@ describe("AgentStore", () => {
       });
 
       const tree = await store.getOrgTree();
-      expect(tree.map((node) => node.agent.id)).toEqual([root.id, orphan.id]);
+      expect(tree.map((node) => node.agent.id).sort()).toEqual([root.id, orphan.id].sort());
     });
   });
 

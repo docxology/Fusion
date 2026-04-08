@@ -7,6 +7,7 @@ export { MissionAutopilot, type MissionAutopilotOptions } from "./mission-autopi
 export { aiMergeTask, type MergerOptions } from "./merger.js";
 export { reviewStep, type ReviewType, type ReviewVerdict, type ReviewResult, type ReviewOptions } from "./reviewer.js";
 export { createKbAgent, type AgentOptions, type AgentResult } from "./pi.js";
+export { AgentReflectionService, type AgentReflectionServiceOptions } from "./agent-reflection.js";
 export { WorktreePool, scanIdleWorktrees, cleanupOrphanedWorktrees } from "./worktree-pool.js";
 export { createLogger, type Logger } from "./logger.js";
 export { isUsageLimitError, UsageLimitPauser } from "./usage-limit-detector.js";

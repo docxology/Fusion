@@ -962,6 +962,12 @@ export interface ProjectSettings {
    *  When set, allows per-project customization of system prompts
    *  for different agent roles (executor, triage, reviewer, merger). */
   agentPrompts?: AgentPromptsConfig;
+  /** Enable/disable agent self-reflection workflows. Default: false. */
+  reflectionEnabled?: boolean;
+  /** How often periodic reflections occur in milliseconds. Default: 3_600_000 (1 hour). */
+  reflectionIntervalMs?: number;
+  /** When true, automatically trigger reflection after task completion. Default: true. */
+  reflectionAfterTask?: boolean;
 }
 
 /**
@@ -1055,6 +1061,9 @@ export const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
   runStepsInNewSessions: false,
   maxParallelSteps: 2,
   agentPrompts: undefined,
+  reflectionEnabled: false,
+  reflectionIntervalMs: 3_600_000,
+  reflectionAfterTask: true,
 };
 
 /**
@@ -1139,6 +1148,9 @@ export const PROJECT_SETTINGS_KEYS: ReadonlyArray<keyof ProjectSettings> = [
   "runStepsInNewSessions",
   "maxParallelSteps",
   "agentPrompts",
+  "reflectionEnabled",
+  "reflectionIntervalMs",
+  "reflectionAfterTask",
 ] as const;
 
 export interface BoardConfig {

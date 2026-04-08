@@ -10,6 +10,7 @@
 import type { TaskStore } from "@fusion/core";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import { Type, type Static } from "@mariozechner/pi-ai";
+import type { AgentReflectionService } from "./agent-reflection.js";
 
 // ── Tool parameter schemas (canonical definitions) ────────────────────────
 
@@ -23,6 +24,12 @@ export const taskCreateParams = Type.Object({
 export const taskLogParams = Type.Object({
   message: Type.String({ description: "What happened" }),
   outcome: Type.Optional(Type.String({ description: "Result or consequence (optional)" })),
+});
+
+export const reflectOnPerformanceParams = Type.Object({
+  focus_area: Type.Optional(
+    Type.String({ description: "Optional focus area for reflection (e.g., 'code quality', 'speed', 'testing')" }),
+  ),
 });
 
 // ── Tool factory functions ────────────────────────────────────────────────
@@ -80,6 +87,54 @@ export function createTaskLogTool(store: TaskStore, taskId: string): ToolDefinit
       await store.logEntry(taskId, params.message, params.outcome);
       return {
         content: [{ type: "text" as const, text: `Logged: ${params.message}` }],
+        details: {},
+      };
+    },
+  };
+}
+
+/**
+ * Create a `reflect_on_performance` tool that asks the reflection service to
+ * analyze recent agent performance and return actionable insights.
+ */
+export function createReflectOnPerformanceTool(
+  reflectionService: AgentReflectionService,
+  agentId: string,
+): ToolDefinition {
+  return {
+    name: "reflect_on_performance",
+    label: "Reflect on Performance",
+    description:
+      'Review your past task performance and generate insights for improvement. Optionally focus on a specific area like "code quality", "speed", or "testing".',
+    parameters: reflectOnPerformanceParams,
+    execute: async (_id: string, params: Static<typeof reflectOnPerformanceParams>) => {
+      const triggerDetail = params.focus_area
+        ? `Agent-initiated reflection focused on: ${params.focus_area}`
+        : "Agent-initiated reflection";
+
+      const reflection = await reflectionService.generateReflection(agentId, "manual", {
+        triggerDetail,
+      });
+
+      if (!reflection) {
+        return {
+          content: [{ type: "text" as const, text: "No reflection data available — not enough history yet." }],
+          details: {},
+        };
+      }
+
+      const formattedText = [
+        `Summary: ${reflection.summary}`,
+        "",
+        "Insights:",
+        ...reflection.insights.map((insight, index) => `${index + 1}. ${insight}`),
+        "",
+        "Suggested Improvements:",
+        ...reflection.suggestedImprovements.map((improvement, index) => `${index + 1}. ${improvement}`),
+      ].join("\n");
+
+      return {
+        content: [{ type: "text" as const, text: formattedText }],
         details: {},
       };
     },
