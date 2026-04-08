@@ -7,7 +7,7 @@
  * The parameter schemas are canonical here — executor.ts imports and reuses them.
  */
 
-import type { TaskStore } from "@fusion/core";
+import type { TaskDocument, TaskDocumentCreateInput, TaskStore } from "@fusion/core";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import { Type, type Static } from "@mariozechner/pi-ai";
 import type { AgentReflectionService } from "./agent-reflection.js";
@@ -24,6 +24,20 @@ export const taskCreateParams = Type.Object({
 export const taskLogParams = Type.Object({
   message: Type.String({ description: "What happened" }),
   outcome: Type.Optional(Type.String({ description: "Result or consequence (optional)" })),
+});
+
+export const taskDocumentWriteParams = Type.Object({
+  key: Type.String({
+    description: "Document key (e.g., 'plan', 'notes', 'research'). Alphanumeric, hyphens, underscores, 1-64 chars.",
+  }),
+  content: Type.String({ description: "Document content to store" }),
+  author: Type.Optional(Type.String({ description: "Who is writing (default: 'agent')" })),
+});
+
+export const taskDocumentReadParams = Type.Object({
+  key: Type.Optional(
+    Type.String({ description: "Document key to read. Omit to list all documents for this task." }),
+  ),
 });
 
 export const reflectOnPerformanceParams = Type.Object({
@@ -89,6 +103,117 @@ export function createTaskLogTool(store: TaskStore, taskId: string): ToolDefinit
         content: [{ type: "text" as const, text: `Logged: ${params.message}` }],
         details: {},
       };
+    },
+  };
+}
+
+/**
+ * Create a `task_document_write` tool that stores a named task document.
+ *
+ * @param store - TaskStore for task document persistence
+ * @param taskId - The task ID to write documents against
+ * @returns ToolDefinition for the `task_document_write` tool
+ */
+export function createTaskDocumentWriteTool(store: TaskStore, taskId: string): ToolDefinition {
+  return {
+    name: "task_document_write",
+    label: "Write Document",
+    description:
+      "Save a named document for this task (for example plan, notes, or research). " +
+      "Each write creates a new revision so you can update documents over time.",
+    parameters: taskDocumentWriteParams,
+    execute: async (_id: string, params: Static<typeof taskDocumentWriteParams>) => {
+      const input: TaskDocumentCreateInput = {
+        key: params.key,
+        content: params.content,
+        author: params.author || "agent",
+      };
+
+      try {
+        const document: TaskDocument = await store.upsertTaskDocument(taskId, input);
+        return {
+          content: [{
+            type: "text" as const,
+            text: `Saved document "${document.key}" (revision ${document.revision}).`,
+          }],
+          details: {},
+        };
+      } catch (err: any) {
+        return {
+          content: [{
+            type: "text" as const,
+            text: `ERROR: Failed to save document "${params.key}": ${err.message}`,
+          }],
+          details: {},
+        };
+      }
+    },
+  };
+}
+
+/**
+ * Create a `task_document_read` tool that reads task-scoped documents.
+ *
+ * @param store - TaskStore for task document reads
+ * @param taskId - The task ID to read documents from
+ * @returns ToolDefinition for the `task_document_read` tool
+ */
+export function createTaskDocumentReadTool(store: TaskStore, taskId: string): ToolDefinition {
+  return {
+    name: "task_document_read",
+    label: "Read Document",
+    description:
+      "Read a named document for this task, or list all documents when no key is provided.",
+    parameters: taskDocumentReadParams,
+    execute: async (_id: string, params: Static<typeof taskDocumentReadParams>) => {
+      try {
+        if (params.key) {
+          const document: TaskDocument | null = await store.getTaskDocument(taskId, params.key);
+          if (!document) {
+            return {
+              content: [{ type: "text" as const, text: `Document "${params.key}" not found.` }],
+              details: {},
+            };
+          }
+
+          return {
+            content: [{
+              type: "text" as const,
+              text:
+                `Document: ${document.key}\n` +
+                `Revision: ${document.revision}\n` +
+                `Updated: ${document.updatedAt}\n\n` +
+                document.content,
+            }],
+            details: {},
+          };
+        }
+
+        const documents: TaskDocument[] = await store.getTaskDocuments(taskId);
+        if (documents.length === 0) {
+          return {
+            content: [{ type: "text" as const, text: "No documents found for this task." }],
+            details: {},
+          };
+        }
+
+        const lines = documents.map((doc) => `- ${doc.key} (revision ${doc.revision}, updated ${doc.updatedAt})`);
+        return {
+          content: [{
+            type: "text" as const,
+            text: `Task documents:\n${lines.join("\n")}`,
+          }],
+          details: {},
+        };
+      } catch (err: any) {
+        return {
+          content: [{
+            type: "text" as const,
+            text: `ERROR: Failed to read task documents: ${err.message}`,
+          }],
+          details: {},
+        };
+      }
     },
   };
 }

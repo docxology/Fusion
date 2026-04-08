@@ -1,4 +1,14 @@
 export { AgentLogger, type AgentLoggerOptions, summarizeToolArgs } from "./agent-logger.js";
+export {
+  createTaskCreateTool,
+  createTaskDocumentReadTool,
+  createTaskDocumentWriteTool,
+  createTaskLogTool,
+  taskCreateParams,
+  taskDocumentReadParams,
+  taskDocumentWriteParams,
+  taskLogParams,
+} from "./agent-tools.js";
 export { AgentSemaphore, PRIORITY_MERGE, PRIORITY_EXECUTE, PRIORITY_SPECIFY } from "./concurrency.js";
 export { TriageProcessor, type TriageProcessorOptions } from "./triage.js";
 export { TaskExecutor, type TaskExecutorOptions } from "./executor.js";

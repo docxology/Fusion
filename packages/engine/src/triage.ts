@@ -29,6 +29,10 @@ import { computeRecoveryDecision, formatDelay, MAX_RECOVERY_RETRIES } from "./re
 import type { StuckTaskDetector } from "./stuck-task-detector.js";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import {
+  createTaskDocumentReadTool,
+  createTaskDocumentWriteTool,
+} from "./agent-tools.js";
 
 export const TRIAGE_SYSTEM_PROMPT = `You are a task specification agent for "kb", an AI-orchestrated task board.
 
@@ -201,6 +205,10 @@ You have these extra tools during triage:
 - \`task_list\` — list existing active tasks
 - \`task_get\` — inspect a task and its PROMPT.md
 - \`task_create\` — create a child/follow-up task while triaging
+- \`task_document_write\` — save a planning document (e.g., key="plan")
+- \`task_document_read\` — read back a previously saved document
+
+When the planning conversation produces a structured plan, save it as a document with \`task_document_write(key='plan', content='...')\` so the executor can reference it during implementation.
 
 ## Guidelines
 - Read the project structure and relevant source files to understand context BEFORE writing
@@ -544,6 +552,8 @@ export class TriageProcessor {
             allowTaskCreate: true,
             createdSubtasksRef,
           }),
+          createTaskDocumentWriteTool(this.store, task.id),
+          createTaskDocumentReadTool(this.store, task.id),
           this.createReviewSpecTool(
             task.id,
             promptPath,

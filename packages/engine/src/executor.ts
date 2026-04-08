@@ -27,6 +27,8 @@ import type { AgentReflectionService } from "./agent-reflection.js";
 import {
   createReflectOnPerformanceTool,
   createTaskCreateTool as sharedCreateTaskCreateTool,
+  createTaskDocumentReadTool as sharedCreateTaskDocumentReadTool,
+  createTaskDocumentWriteTool as sharedCreateTaskDocumentWriteTool,
   createTaskLogTool as sharedCreateTaskLogTool,
   taskCreateParams,
   taskLogParams,
@@ -34,7 +36,14 @@ import {
 
 // Re-export for backward compatibility (tests import from executor.ts)
 export { summarizeToolArgs } from "./agent-logger.js";
-export { createTaskCreateTool, createTaskLogTool, taskCreateParams, taskLogParams } from "./agent-tools.js";
+export {
+  createTaskCreateTool,
+  createTaskDocumentReadTool,
+  createTaskDocumentWriteTool,
+  createTaskLogTool,
+  taskCreateParams,
+  taskLogParams,
+} from "./agent-tools.js";
 
 const STEP_STATUSES: StepStatus[] = ["pending", "in-progress", "done", "skipped"];
 
@@ -154,6 +163,16 @@ model, read-only access) to independently assess your work.
   and proceed with implementation. No re-review is required.
 - **RETHINK (code review)** → your code changes have been reverted and conversation rewound. Read the feedback carefully and take a fundamentally different approach. Do NOT repeat the rejected strategy.
 - **RETHINK (plan review)** → conversation rewound to before the step (no git reset since no code was written). Read the feedback and take a fundamentally different approach to planning this step.
+
+## Task Documents
+
+You can save and retrieve named documents for this task. Use these to store planning notes, research findings, or any persistent data that should survive across sessions.
+
+- **Save a document:** \`task_document_write(key="plan", content="...")\`
+- **Read a document:** \`task_document_read(key="plan")\`
+- **List all documents:** \`task_document_read()\` (no key)
+
+Documents are versioned — each write creates a new revision. Use meaningful keys like "plan", "notes", "research", "architecture".
 
 ## Git discipline
 - Commit after completing each step (not after every file change)
@@ -1047,6 +1066,8 @@ export class TaskExecutor {
         this.createTaskDoneTool(task.id, () => { taskDone = true; }),
         this.createReviewStepTool(task.id, worktreePath, detail.prompt, codeReviewVerdicts, sessionRef, stepCheckpoints, detail, stuckDetector),
         this.createSpawnAgentTool(task.id, worktreePath, settings),
+        this.createTaskDocumentWriteTool(task.id),
+        this.createTaskDocumentReadTool(task.id),
         // Conditionally add agent self-reflection when enabled and task has an assigned agent.
         ...reflectionTools,
       ];
@@ -1647,6 +1668,14 @@ export class TaskExecutor {
 
   private createTaskCreateTool(): ToolDefinition {
     return sharedCreateTaskCreateTool(this.store);
+  }
+
+  private createTaskDocumentWriteTool(taskId: string): ToolDefinition {
+    return sharedCreateTaskDocumentWriteTool(this.store, taskId);
+  }
+
+  private createTaskDocumentReadTool(taskId: string): ToolDefinition {
+    return sharedCreateTaskDocumentReadTool(this.store, taskId);
   }
 
   private createTaskAddDepTool(taskId: string): ToolDefinition {
