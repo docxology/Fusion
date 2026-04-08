@@ -726,7 +726,7 @@ Both components provide the same task creation experience with the following opt
 - Both Plan and Subtask buttons are disabled when no description is entered.
 - Clicking either button clears the input after triggering the action.
 - Regular task creation (Enter key) works as before without AI assistance.
-- The actions dropdown closes on Escape or outside click. Escape dismisses in order: model submenu → model menu → dependency picker → actions dropdown → input clear/collapse.
+- The actions dropdown closes on Escape or outside click. Escape dismisses in order: actions dropdown → model submenu → model menu → dependency picker → input clear/collapse.
 
 ### Subtask Breakdown Dialog
 

@@ -1452,37 +1452,37 @@ describe("ListView Quick Entry", () => {
     expect(tableContainer?.contains(quickEntry)).toBe(true);
   });
 
-  it("shows model selector button when QuickEntryBox is expanded and actions dropdown is open", async () => {
+  it("shows model selector action when QuickEntryBox is expanded and actions dropdown is open", async () => {
     const mockOnQuickCreate = vi.fn().mockResolvedValue(undefined);
     renderListView({ onQuickCreate: mockOnQuickCreate });
 
-    // Controls should start hidden (collapsed by default)
     expect(document.getElementById("quick-entry-controls")?.hasAttribute("hidden")).toBe(true);
 
-    // Click the disclosure toggle to expand the QuickEntryBox controls
     const toggleButton = screen.getByTestId("quick-entry-toggle");
     fireEvent.click(toggleButton);
 
-    // Model selector button should be visible (controls are shown directly after toggle)
-    const modelButton = await screen.findByTestId("quick-entry-models-button");
-    expect(modelButton).toBeDefined();
+    const actionsTrigger = await screen.findByTestId("quick-entry-actions-trigger");
+    fireEvent.click(actionsTrigger);
+
+    const modelAction = await screen.findByTestId("quick-entry-actions-models");
+    expect(modelAction).toBeDefined();
     expect(document.getElementById("quick-entry-controls")?.hasAttribute("hidden")).toBe(false);
   });
 
-  it("shows dependency selector button when QuickEntryBox is expanded and actions dropdown is open", async () => {
+  it("shows dependency selector action when QuickEntryBox is expanded and actions dropdown is open", async () => {
     const mockOnQuickCreate = vi.fn().mockResolvedValue(undefined);
     renderListView({ onQuickCreate: mockOnQuickCreate });
 
-    // Controls should start hidden (collapsed by default)
     expect(document.getElementById("quick-entry-controls")?.hasAttribute("hidden")).toBe(true);
 
-    // Click the disclosure toggle to expand the QuickEntryBox controls
     const toggleButton = screen.getByTestId("quick-entry-toggle");
     fireEvent.click(toggleButton);
 
-    // Dependency selector button should be visible (controls are shown directly after toggle)
-    const depsButton = await screen.findByTestId("quick-entry-deps-button");
-    expect(depsButton).toBeDefined();
+    const actionsTrigger = await screen.findByTestId("quick-entry-actions-trigger");
+    fireEvent.click(actionsTrigger);
+
+    const depsAction = await screen.findByTestId("quick-entry-actions-deps");
+    expect(depsAction).toBeDefined();
     expect(document.getElementById("quick-entry-controls")?.hasAttribute("hidden")).toBe(false);
   });
 
@@ -2072,15 +2072,16 @@ describe("ListView - Bulk Selection", () => {
       />
     );
 
-    // Expand the QuickEntryBox and open the model menu
+    // Expand the QuickEntryBox and open the model menu through actions
     const toggleButton = screen.getByTestId("quick-entry-toggle");
     fireEvent.click(toggleButton);
 
-    // Controls are shown directly after toggle (no actions dropdown)
-    const modelButton = await screen.findByTestId("quick-entry-models-button");
-    fireEvent.click(modelButton);
+    const actionsTrigger = await screen.findByTestId("quick-entry-actions-trigger");
+    fireEvent.click(actionsTrigger);
 
-    // The nested model menu should render with data-testid
+    const modelsAction = await screen.findByTestId("quick-entry-actions-models");
+    fireEvent.click(modelsAction);
+
     const menu = await screen.findByTestId("model-nested-menu");
     expect(menu).toBeDefined();
 
