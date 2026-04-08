@@ -47,6 +47,7 @@ const { runGitStatus, runGitFetch, runGitPull, runGitPush } = await import("./co
 const { runBackupCreate, runBackupList, runBackupRestore, runBackupCleanup } = await import("./commands/backup.js");
 const { runMissionCreate, runMissionList, runMissionShow, runMissionDelete, runMissionActivateSlice } = await import("./commands/mission.js");
 const { runProjectList, runProjectAdd, runProjectRemove, runProjectShow, runProjectInfo, runProjectSetDefault, runProjectDetect } = await import("./commands/project.js");
+const { runNodeList, runNodeAdd, runNodeRemove, runNodeShow, runNodeHealth } = await import("./commands/node.js");
 const { runInit } = await import("./commands/init.js");
 const { runAgentStop, runAgentStart } = await import("./commands/agent.js");
 const { runAgentImport } = await import("./commands/agent-import.js");
@@ -100,6 +101,13 @@ Usage:
   fn project set-default | default <name>
                                       Set default project
   fn project detect                    Detect project from current directory
+  fn node list | ls [--json]          List all nodes
+  fn node add <name> [--url <url>] [--api-key <key>] [--max-concurrent <n>]
+                                      Register a new node
+  fn node remove | rm <name> [--force]
+                                      Unregister a node
+  fn node show | info [name]          Show node details
+  fn node health <name>               Check node health
   fn settings                          Show current Fusion configuration
   fn settings set <key> <value>        Update a configuration setting
   fn settings export [opts]              Export settings to a JSON file
@@ -168,6 +176,30 @@ function extractGlobalProjectFlag(argv: string[]): { cleanedArgs: string[]; proj
   }
 
   return { cleanedArgs, projectName };
+}
+
+function getFlagValue(args: string[], flag: string): string | undefined {
+  const index = args.indexOf(flag);
+  if (index === -1 || index + 1 >= args.length) {
+    return undefined;
+  }
+
+  const value = args[index + 1];
+  if (!value || value.startsWith("-")) {
+    return undefined;
+  }
+
+  return value;
+}
+
+function getFlagValueNumber(args: string[], flag: string): number | undefined {
+  const value = getFlagValue(args, flag);
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 /**
@@ -314,6 +346,46 @@ async function main() {
           default:
             console.error(`Unknown subcommand: project ${subcommand || ""}`);
             console.log("Try: fn project list | add | remove | show | info | set-default | detect");
+            process.exit(1);
+        }
+        break;
+      }
+
+      case "node": {
+        const subcommand = args[1];
+        switch (subcommand) {
+          case "list":
+          case "ls": {
+            await runNodeList({ json: args.includes("--json") });
+            break;
+          }
+          case "add": {
+            const name = args[2];
+            await runNodeAdd(name, {
+              url: getFlagValue(args, "--url"),
+              apiKey: getFlagValue(args, "--api-key"),
+              maxConcurrent: getFlagValueNumber(args, "--max-concurrent"),
+            });
+            break;
+          }
+          case "remove":
+          case "rm": {
+            const name = args[2];
+            await runNodeRemove(name, { force: args.includes("--force") });
+            break;
+          }
+          case "show":
+          case "info": {
+            await runNodeShow(args[2]);
+            break;
+          }
+          case "health": {
+            await runNodeHealth(args[2]);
+            break;
+          }
+          default:
+            console.error(`Unknown subcommand: node ${subcommand || ""}`);
+            console.log("Try: fn node list | add | remove | show | health");
             process.exit(1);
         }
         break;

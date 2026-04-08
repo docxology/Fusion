@@ -17,6 +17,11 @@ const runProjectShow = vi.fn();
 const runProjectInfo = vi.fn();
 const runProjectSetDefault = vi.fn();
 const runProjectDetect = vi.fn();
+const runNodeList = vi.fn();
+const runNodeAdd = vi.fn();
+const runNodeRemove = vi.fn();
+const runNodeShow = vi.fn();
+const runNodeHealth = vi.fn();
 
 vi.mock("../commands/dashboard.js", () => ({
   runDashboard: vi.fn(),
@@ -79,6 +84,14 @@ vi.mock("../commands/project.js", () => ({
   runProjectInfo,
   runProjectSetDefault,
   runProjectDetect,
+}));
+
+vi.mock("../commands/node.js", () => ({
+  runNodeList,
+  runNodeAdd,
+  runNodeRemove,
+  runNodeShow,
+  runNodeHealth,
 }));
 
 describe("bin", () => {
@@ -188,6 +201,36 @@ describe("bin", () => {
     expect(errorSpy).toHaveBeenCalledWith("Unknown subcommand: project wat");
   });
 
+  it("routes node subcommands and aliases", async () => {
+    await runBin(["node", "list"]);
+    await runBin(["node", "ls", "--json"]);
+    expect(runNodeList).toHaveBeenNthCalledWith(1, { json: false });
+    expect(runNodeList).toHaveBeenNthCalledWith(2, { json: true });
+
+    await runBin(["node", "add", "my-node", "--url", "https://node.example.com", "--api-key", "abc", "--max-concurrent", "3"]);
+    expect(runNodeAdd).toHaveBeenCalledWith("my-node", {
+      url: "https://node.example.com",
+      apiKey: "abc",
+      maxConcurrent: 3,
+    });
+
+    await runBin(["node", "remove", "my-node", "--force"]);
+    await runBin(["node", "rm", "my-node", "--force"]);
+    expect(runNodeRemove).toHaveBeenCalledWith("my-node", { force: true });
+
+    await runBin(["node", "show", "my-node"]);
+    await runBin(["node", "info", "my-node"]);
+    expect(runNodeShow).toHaveBeenCalledWith("my-node");
+
+    await runBin(["node", "health", "my-node"]);
+    expect(runNodeHealth).toHaveBeenCalledWith("my-node");
+  });
+
+  it("rejects unknown node subcommands", async () => {
+    await expect(runBin(["node", "wat"])).rejects.toThrow("process.exit:1");
+    expect(errorSpy).toHaveBeenCalledWith("Unknown subcommand: node wat");
+  });
+
   it("rejects duplicate --project flags", async () => {
     await expect(runBin(["task", "list", "--project", "one", "-P", "two"]))
       .rejects.toThrow("Duplicate --project flag. Specify a project only once.");
@@ -204,6 +247,7 @@ describe("bin", () => {
 
     const help = logSpy.mock.calls.map((call) => String(call[0])).join("\n");
     expect(help).toContain("fn project list | ls");
+    expect(help).toContain("fn node list | ls");
     expect(runTaskList).not.toHaveBeenCalled();
   });
 
@@ -222,6 +266,7 @@ describe("bin", () => {
 
     const help = logSpy.mock.calls.map((call) => String(call[0])).join("\n");
     expect(help).toContain("fn project list | ls");
+    expect(help).toContain("fn node list | ls");
     expect(help).toContain("fn task comments <id>");
     expect(help).toContain("--project, -P <name>");
   });

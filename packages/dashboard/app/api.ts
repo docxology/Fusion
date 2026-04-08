@@ -2115,6 +2115,7 @@ export interface ProjectInfo {
   path: string;
   status: "active" | "paused" | "errored" | "initializing";
   isolationMode: "in-process" | "child-process";
+  nodeId?: string;
   createdAt: string;
   updatedAt: string;
   lastActivityAt?: string;
@@ -2190,6 +2191,28 @@ export interface ProjectCreateInput {
   isolationMode?: "in-process" | "child-process";
 }
 
+/** Node information returned by node endpoints */
+export interface NodeInfo {
+  id: string;
+  name: string;
+  type: "local" | "remote";
+  url?: string;
+  status: "online" | "offline" | "connecting" | "error";
+  capabilities?: string[];
+  maxConcurrent: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Input for creating a new node */
+export interface NodeCreateInput {
+  name: string;
+  type: "local" | "remote";
+  url?: string;
+  apiKey?: string;
+  maxConcurrent?: number;
+}
+
 /** Options for fetching activity feed */
 export interface FeedOptions {
   limit?: number;
@@ -2251,6 +2274,51 @@ export interface CompleteSetupResult {
 /** Fetch all registered projects */
 export function fetchProjects(): Promise<ProjectInfo[]> {
   return api<ProjectInfo[]>("/projects");
+}
+
+/** Fetch all registered nodes */
+export function fetchNodes(): Promise<NodeInfo[]> {
+  return api<NodeInfo[]>("/nodes");
+}
+
+/** Register a new node */
+export function registerNode(input: NodeCreateInput): Promise<NodeInfo> {
+  return api<NodeInfo>("/nodes", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+/** Fetch a single node by ID */
+export function fetchNode(id: string): Promise<NodeInfo> {
+  return api<NodeInfo>(`/nodes/${encodeURIComponent(id)}`);
+}
+
+/** Update an existing node */
+export function updateNode(id: string, updates: Partial<NodeInfo>): Promise<NodeInfo> {
+  return api<NodeInfo>(`/nodes/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(updates),
+  });
+}
+
+/** Unregister a node */
+export function unregisterNode(id: string): Promise<void> {
+  return api<void>(`/nodes/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}
+
+/** Trigger a node health check */
+export function checkNodeHealth(id: string): Promise<{ status: string }> {
+  return api<{ status: string }>(`/nodes/${encodeURIComponent(id)}/health-check`, {
+    method: "POST",
+  });
+}
+
+/** Fetch runtime metrics for a node */
+export function fetchNodeMetrics(id: string): Promise<Record<string, unknown>> {
+  return api<Record<string, unknown>>(`/nodes/${encodeURIComponent(id)}/metrics`);
 }
 
 /** Browse directory entries for the directory picker */

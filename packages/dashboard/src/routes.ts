@@ -7880,7 +7880,7 @@ Output ONLY the prompt text (no markdown, no explanations).`;
    */
   router.patch("/projects/:id", async (req, res) => {
     try {
-      const { name, status, isolationMode } = req.body;
+      const { name, status, isolationMode, nodeId } = req.body;
       
       const updates: Partial<import("@fusion/core").RegisteredProject> = {};
       if (name !== undefined) updates.name = name;
@@ -7892,16 +7892,31 @@ Output ONLY the prompt text (no markdown, no explanations).`;
       await central.init();
       
       const project = await central.updateProject(req.params.id, updates);
-      await central.close();
-      
       if (!project) {
+        await central.close();
         res.status(404).json({ error: "Project not found" });
         return;
       }
+
+      let resultProject = project;
+      if (nodeId !== undefined) {
+        if (nodeId === null) {
+          resultProject = await central.unassignProjectFromNode(req.params.id);
+        } else if (typeof nodeId === "string" && nodeId.trim()) {
+          resultProject = await central.assignProjectToNode(req.params.id, nodeId.trim());
+        } else {
+          await central.close();
+          res.status(400).json({ error: "nodeId must be a non-empty string or null" });
+          return;
+        }
+      }
+
+      await central.close();
       
-      res.json(project);
+      res.json(resultProject);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      const status = err.message?.includes("not found") ? 404 : 500;
+      res.status(status).json({ error: err.message });
     }
   });
 
@@ -8050,6 +8065,223 @@ Output ONLY the prompt text (no markdown, no explanations).`;
     } catch (err: any) {
       const status = err.message?.includes("not found") ? 404 : 500;
       res.status(status).json({ error: err.message });
+    }
+  });
+
+  // ── Node Management Routes (Multi-Node Support) ───────────────────────────
+
+  /**
+   * GET /api/nodes
+   * List all registered nodes.
+   * Returns: NodeConfig[]
+   */
+  router.get("/nodes", async (_req, res) => {
+    try {
+      const { CentralCore } = await import("@fusion/core");
+      const central = new CentralCore();
+      await central.init();
+
+      const nodes = await central.listNodes();
+      await central.close();
+
+      nodes.sort((a, b) => a.name.localeCompare(b.name));
+      res.json(nodes);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  /**
+   * POST /api/nodes
+   * Register a new node.
+   * Body: { name, type, url?, apiKey?, maxConcurrent?, capabilities? }
+   */
+  router.post("/nodes", async (req, res) => {
+    try {
+      const { name, type, url, apiKey, maxConcurrent, capabilities } = req.body;
+
+      if (!name || typeof name !== "string" || !name.trim()) {
+        res.status(400).json({ error: "name is required and must be a non-empty string" });
+        return;
+      }
+
+      if (type !== "local" && type !== "remote") {
+        res.status(400).json({ error: "type must be 'local' or 'remote'" });
+        return;
+      }
+
+      if (type === "remote" && (!url || typeof url !== "string" || !url.trim())) {
+        res.status(400).json({ error: "url is required for remote nodes" });
+        return;
+      }
+
+      if (
+        maxConcurrent !== undefined
+        && (typeof maxConcurrent !== "number" || !Number.isFinite(maxConcurrent) || maxConcurrent < 1)
+      ) {
+        res.status(400).json({ error: "maxConcurrent must be a number >= 1" });
+        return;
+      }
+
+      if (
+        capabilities !== undefined
+        && (!Array.isArray(capabilities) || capabilities.some((capability) => typeof capability !== "string"))
+      ) {
+        res.status(400).json({ error: "capabilities must be an array of strings" });
+        return;
+      }
+
+      const { CentralCore } = await import("@fusion/core");
+      const central = new CentralCore();
+      await central.init();
+
+      const node = await central.registerNode({
+        name: name.trim(),
+        type,
+        url: typeof url === "string" ? url.trim() : undefined,
+        apiKey: typeof apiKey === "string" ? apiKey : undefined,
+        maxConcurrent,
+        capabilities,
+      });
+
+      await central.close();
+      res.status(201).json(node);
+    } catch (err: any) {
+      const status = err.message?.includes("already exists") ? 409 : err.message?.includes("must") ? 400 : 500;
+      res.status(status).json({ error: err.message });
+    }
+  });
+
+  /**
+   * GET /api/nodes/:id
+   * Get node details by ID.
+   */
+  router.get("/nodes/:id", async (req, res) => {
+    try {
+      const { CentralCore } = await import("@fusion/core");
+      const central = new CentralCore();
+      await central.init();
+
+      const node = await central.getNode(req.params.id);
+      await central.close();
+
+      if (!node) {
+        res.status(404).json({ error: "Node not found" });
+        return;
+      }
+
+      res.json(node);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  /**
+   * PATCH /api/nodes/:id
+   * Update node config.
+   */
+  router.patch("/nodes/:id", async (req, res) => {
+    try {
+      const { name, url, apiKey, maxConcurrent, status, capabilities } = req.body;
+
+      const updates: Partial<Omit<import("@fusion/core").NodeConfig, "id" | "createdAt">> = {};
+      if (name !== undefined) updates.name = name;
+      if (url !== undefined) updates.url = url;
+      if (apiKey !== undefined) updates.apiKey = apiKey;
+      if (maxConcurrent !== undefined) updates.maxConcurrent = maxConcurrent;
+      if (status !== undefined) updates.status = status as import("@fusion/core").NodeStatus;
+      if (capabilities !== undefined) updates.capabilities = capabilities;
+
+      const { CentralCore } = await import("@fusion/core");
+      const central = new CentralCore();
+      await central.init();
+
+      const node = await central.updateNode(req.params.id, updates);
+      await central.close();
+
+      res.json(node);
+    } catch (err: any) {
+      const status = err.message?.includes("not found") ? 404 : err.message?.includes("must") ? 400 : 500;
+      res.status(status).json({ error: err.message });
+    }
+  });
+
+  /**
+   * DELETE /api/nodes/:id
+   * Unregister a node.
+   */
+  router.delete("/nodes/:id", async (req, res) => {
+    try {
+      const { CentralCore } = await import("@fusion/core");
+      const central = new CentralCore();
+      await central.init();
+
+      const existing = await central.getNode(req.params.id);
+      if (!existing) {
+        await central.close();
+        res.status(404).json({ error: "Node not found" });
+        return;
+      }
+
+      await central.unregisterNode(req.params.id);
+      await central.close();
+
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  /**
+   * POST /api/nodes/:id/health-check
+   * Trigger health check for a node.
+   */
+  router.post("/nodes/:id/health-check", async (req, res) => {
+    try {
+      const { CentralCore } = await import("@fusion/core");
+      const central = new CentralCore();
+      await central.init();
+
+      const healthStatus = await central.checkNodeHealth(req.params.id);
+      await central.close();
+
+      res.json({ status: healthStatus });
+    } catch (err: any) {
+      const status = err.message?.includes("not found") ? 404 : 500;
+      res.status(status).json({ error: err.message });
+    }
+  });
+
+  /**
+   * GET /api/nodes/:id/metrics
+   * Get node runtime metrics.
+   */
+  router.get("/nodes/:id/metrics", async (req, res) => {
+    try {
+      const { CentralCore } = await import("@fusion/core");
+      const central = new CentralCore();
+      await central.init();
+
+      const node = await central.getNode(req.params.id);
+      await central.close();
+
+      if (!node) {
+        res.status(404).json({ error: "Node not found" });
+        return;
+      }
+
+      if (node.type === "local") {
+        res.json({
+          status: "online",
+          activeTasks: 0,
+          maxConcurrent: node.maxConcurrent,
+        });
+        return;
+      }
+
+      res.json({ error: "Remote node metrics not yet implemented" });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
     }
   });
 
