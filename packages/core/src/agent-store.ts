@@ -13,9 +13,9 @@
  * - agents/{agentId}-revisions.jsonl: Config revision history
  */
 
-import { mkdir, readFile, writeFile, readdir, unlink } from "node:fs/promises";
+import { mkdir, readFile, writeFile, readdir, unlink, rename } from "node:fs/promises";
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { randomUUID, randomBytes, createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
 import type {
@@ -34,6 +34,7 @@ import type {
   AgentConfigSnapshot,
   AgentAccessState,
   OrgTreeNode,
+  InstructionsBundleConfig,
 } from "./types.js";
 import { AGENT_VALID_TRANSITIONS, agentToConfigSnapshot, diffConfigSnapshots } from "./types.js";
 import { computeAccessState } from "./agent-permissions.js";
@@ -93,6 +94,7 @@ interface AgentData {
   lastError?: string;
   instructionsPath?: string;
   instructionsText?: string;
+  bundleConfig?: InstructionsBundleConfig;
 }
 interface AgentLock {
   promise: Promise<unknown>;
@@ -153,6 +155,7 @@ export class AgentStore extends EventEmitter {
       ...(input.permissions && { permissions: input.permissions }),
       ...(input.instructionsPath && { instructionsPath: input.instructionsPath }),
       ...(input.instructionsText && { instructionsText: input.instructionsText }),
+      ...(input.bundleConfig && { bundleConfig: input.bundleConfig }),
     };
 
     await this.writeAgent(agent);
@@ -217,6 +220,165 @@ export class AgentStore extends EventEmitter {
   }
 
   /**
+   * Get the managed instructions directory path for an agent.
+   * Does not create the directory.
+   */
+  getInstructionsDir(agentId: string): string {
+    return this.getBundleDir(agentId);
+  }
+
+  /**
+   * List markdown files in an agent's managed instructions bundle.
+   * Returns [] when the bundle directory does not exist.
+   */
+  async listBundleFiles(agentId: string): Promise<string[]> {
+    const bundleDir = this.getBundleDir(agentId);
+
+    try {
+      const entries = await readdir(bundleDir, { withFileTypes: true });
+      return entries
+        .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
+        .map((entry) => entry.name)
+        .sort((a, b) => a.localeCompare(b));
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+        return [];
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Read a markdown file from an agent's managed instructions bundle.
+   */
+  async readBundleFile(agentId: string, filePath: string): Promise<string> {
+    this.validateBundleFilePath(filePath);
+    const resolvedPath = join(this.getBundleDir(agentId), filePath);
+    return readFile(resolvedPath, "utf-8");
+  }
+
+  /**
+   * Write a markdown file to an agent's managed instructions bundle.
+   */
+  async writeBundleFile(agentId: string, filePath: string, content: string): Promise<void> {
+    return this.withLock(agentId, async () => {
+      this.validateBundleFilePath(filePath);
+
+      const bundleDir = this.getBundleDir(agentId);
+      await mkdir(bundleDir, { recursive: true });
+
+      const existingFiles = await this.listBundleFiles(agentId);
+      const isOverwrite = existingFiles.includes(filePath);
+      if (!isOverwrite && existingFiles.length >= 10) {
+        throw new Error("Instruction bundles are limited to 10 markdown files");
+      }
+
+      const resolvedPath = join(bundleDir, filePath);
+      const tempPath = `${resolvedPath}.tmp.${Date.now()}`;
+      await writeFile(tempPath, content, "utf-8");
+      await rename(tempPath, resolvedPath);
+    });
+  }
+
+  /**
+   * Delete a markdown file from an agent's managed instructions bundle.
+   */
+  async deleteBundleFile(agentId: string, filePath: string): Promise<void> {
+    return this.withLock(agentId, async () => {
+      this.validateBundleFilePath(filePath);
+      await unlink(join(this.getBundleDir(agentId), filePath));
+    });
+  }
+
+  /**
+   * Set an agent's instructions bundle configuration.
+   */
+  async setBundleConfig(agentId: string, config: InstructionsBundleConfig): Promise<Agent> {
+    const entryFile = config.entryFile?.trim();
+    if (!entryFile) {
+      throw new Error("Bundle config entryFile is required");
+    }
+
+    if (config.mode === "external" && !config.externalPath?.trim()) {
+      throw new Error("Bundle config externalPath is required when mode is 'external'");
+    }
+
+    const normalizedConfig: InstructionsBundleConfig = {
+      ...config,
+      entryFile,
+      files: [...(config.files ?? [])],
+      ...(config.externalPath !== undefined ? { externalPath: config.externalPath } : {}),
+    };
+
+    const updated = await this.updateAgent(agentId, { bundleConfig: normalizedConfig });
+
+    if (normalizedConfig.mode === "managed") {
+      await mkdir(this.getBundleDir(agentId), { recursive: true });
+    }
+
+    return updated;
+  }
+
+  /**
+   * Migrate legacy instructionsText/instructionsPath fields into bundleConfig.
+   */
+  async migrateLegacyInstructions(agentId: string): Promise<Agent> {
+    const agent = await this.getAgent(agentId);
+    if (!agent) {
+      throw new Error(`Agent ${agentId} not found`);
+    }
+
+    if (agent.bundleConfig) {
+      return agent;
+    }
+
+    const entryFile = "AGENTS.md";
+    const hasInstructionsText = typeof agent.instructionsText === "string" && agent.instructionsText.length > 0;
+    const hasInstructionsPath = typeof agent.instructionsPath === "string" && agent.instructionsPath.length > 0;
+
+    if (!hasInstructionsText && !hasInstructionsPath) {
+      return this.updateAgent(agentId, {
+        bundleConfig: { mode: "managed", entryFile, files: [] },
+      });
+    }
+
+    await mkdir(this.getBundleDir(agentId), { recursive: true });
+
+    const files: string[] = [];
+
+    if (hasInstructionsText) {
+      await this.writeBundleFile(agentId, entryFile, agent.instructionsText ?? "");
+      files.push(entryFile);
+    }
+
+    if (hasInstructionsPath) {
+      const sourcePath = join(this.rootDir, agent.instructionsPath ?? "");
+      const sourceContent = await readFile(sourcePath, "utf-8");
+
+      if (hasInstructionsText) {
+        const secondaryFile = basename(agent.instructionsPath ?? "");
+        await this.writeBundleFile(agentId, secondaryFile, sourceContent);
+        if (!files.includes(secondaryFile)) {
+          files.push(secondaryFile);
+        }
+      } else {
+        await this.writeBundleFile(agentId, entryFile, sourceContent);
+        files.push(entryFile);
+      }
+    }
+
+    return this.updateAgent(agentId, {
+      instructionsPath: undefined,
+      instructionsText: undefined,
+      bundleConfig: {
+        mode: "managed",
+        entryFile,
+        files,
+      },
+    });
+  }
+
+  /**
    * Update an agent with partial updates.
    * @param agentId - The agent ID
    * @param updates - Fields to update
@@ -255,6 +417,7 @@ export class AgentStore extends EventEmitter {
         ...("totalOutputTokens" in updates && { totalOutputTokens: updates.totalOutputTokens }),
         ...("instructionsPath" in updates && { instructionsPath: updates.instructionsPath }),
         ...("instructionsText" in updates && { instructionsText: updates.instructionsText }),
+        ...("bundleConfig" in updates && { bundleConfig: updates.bundleConfig }),
       };
 
       await this.writeAgent(updated);
@@ -1141,6 +1304,7 @@ export class AgentStore extends EventEmitter {
     | "permissions"
     | "instructionsPath"
     | "instructionsText"
+    | "bundleConfig"
     | "metadata"
   > {
     return {
@@ -1153,6 +1317,12 @@ export class AgentStore extends EventEmitter {
       permissions: snapshot.permissions ? { ...snapshot.permissions } : undefined,
       instructionsPath: snapshot.instructionsPath,
       instructionsText: snapshot.instructionsText,
+      bundleConfig: snapshot.bundleConfig
+        ? {
+            ...snapshot.bundleConfig,
+            files: [...snapshot.bundleConfig.files],
+          }
+        : undefined,
       metadata: { ...snapshot.metadata },
     };
   }
@@ -1171,6 +1341,44 @@ export class AgentStore extends EventEmitter {
     }
 
     return null;
+  }
+
+  private getBundleDir(agentId: string): string {
+    return join(this.agentsDir, `${agentId}-instructions`);
+  }
+
+  private validateBundleFilePath(filePath: string): void {
+    if (typeof filePath !== "string") {
+      throw new Error("Bundle file path must be a string");
+    }
+
+    const trimmedPath = filePath.trim();
+    if (!trimmedPath) {
+      throw new Error("Bundle file path cannot be empty");
+    }
+
+    const normalizedPath = trimmedPath.replace(/\\/g, "/");
+    if (normalizedPath.startsWith("/")) {
+      throw new Error("Bundle file path must be relative (absolute paths are not allowed)");
+    }
+
+    const segments = normalizedPath.split("/");
+    if (segments.some((segment) => segment === "..")) {
+      throw new Error("Bundle file path cannot include '..' path traversal segments");
+    }
+
+    if (!normalizedPath.endsWith(".md")) {
+      throw new Error("Bundle file path must end with .md");
+    }
+
+    const filename = basename(normalizedPath);
+    if (!filename) {
+      throw new Error("Bundle file name cannot be empty");
+    }
+
+    if (filename.length > 500) {
+      throw new Error("Bundle file name cannot exceed 500 characters");
+    }
   }
 
   private getApiKeysPath(agentId: string): string {
@@ -1253,6 +1461,7 @@ export class AgentStore extends EventEmitter {
       lastError: data.lastError,
       instructionsPath: data.instructionsPath,
       instructionsText: data.instructionsText,
+      bundleConfig: data.bundleConfig,
     };
   }
 
@@ -1279,14 +1488,14 @@ export class AgentStore extends EventEmitter {
       lastError: agent.lastError,
       instructionsPath: agent.instructionsPath,
       instructionsText: agent.instructionsText,
+      bundleConfig: agent.bundleConfig,
     };
 
     // Write atomically using temp file
     const tempPath = `${path}.tmp.${Date.now()}`;
     await writeFile(tempPath, JSON.stringify(data, null, 2));
-    
+
     // Rename temp file to final path (atomic on most filesystems)
-    const { rename } = await import("node:fs/promises");
     await rename(tempPath, path);
   }
 

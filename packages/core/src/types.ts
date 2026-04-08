@@ -1601,6 +1601,8 @@ export interface Agent {
   instructionsPath?: string;
   /** Inline custom instructions appended to the agent's system prompt at execution time. Max 50,000 chars. */
   instructionsText?: string;
+  /** Structured instruction bundle configuration for managed/external markdown files. */
+  bundleConfig?: InstructionsBundleConfig;
 }
 
 /** Recursive node in the agent org tree. */
@@ -1629,6 +1631,19 @@ export interface AgentHeartbeatConfig {
   messageResponseMode?: MessageResponseMode;
 }
 
+/** Configuration for an agent's instruction bundle — a collection of markdown files
+ *  that together form the agent's custom instructions. */
+export interface InstructionsBundleConfig {
+  /** Bundle mode — "managed" = system-managed directory, "external" = user-specified path */
+  mode: "managed" | "external";
+  /** Primary instructions file name (default: "AGENTS.md") */
+  entryFile: string;
+  /** List of all file names in the bundle directory */
+  files: string[];
+  /** User-specified directory path for external mode (required when mode is "external") */
+  externalPath?: string;
+}
+
 /** Extended agent information including heartbeat history */
 export interface AgentDetail extends Agent {
   /** Recent heartbeat events (last N events) */
@@ -1651,6 +1666,7 @@ export interface AgentCreateInput {
   permissions?: Record<string, boolean>;
   instructionsPath?: string;
   instructionsText?: string;
+  bundleConfig?: InstructionsBundleConfig;
 }
 
 /** Input for updating an existing agent */
@@ -1669,6 +1685,7 @@ export interface AgentUpdateInput {
   totalOutputTokens?: number;
   instructionsPath?: string;
   instructionsText?: string;
+  bundleConfig?: InstructionsBundleConfig;
 }
 
 /** An API key associated with an agent for bearer token authentication. */
@@ -1723,6 +1740,7 @@ export interface AgentConfigSnapshot {
   permissions?: Record<string, boolean>;
   instructionsPath?: string;
   instructionsText?: string;
+  bundleConfig?: InstructionsBundleConfig;
   metadata: Record<string, unknown>;
 }
 
@@ -1767,6 +1785,12 @@ export function agentToConfigSnapshot(agent: Agent): AgentConfigSnapshot {
     permissions: agent.permissions ? { ...agent.permissions } : undefined,
     instructionsPath: agent.instructionsPath,
     instructionsText: agent.instructionsText,
+    bundleConfig: agent.bundleConfig
+      ? {
+          ...agent.bundleConfig,
+          files: [...agent.bundleConfig.files],
+        }
+      : undefined,
     metadata: { ...agent.metadata },
   };
 }
@@ -1786,6 +1810,7 @@ export function diffConfigSnapshots(
     "permissions",
     "instructionsPath",
     "instructionsText",
+    "bundleConfig",
     "metadata",
   ];
 
