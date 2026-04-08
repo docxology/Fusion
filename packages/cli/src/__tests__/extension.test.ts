@@ -74,36 +74,36 @@ describe("fn pi extension", () => {
   describe("registration", () => {
     it("registers all expected tools", () => {
       const expected = [
-        "kb_task_create",
-        "kb_task_update",
-        "kb_task_list",
-        "kb_task_show",
-        "kb_task_attach",
-        "kb_task_pause",
-        "kb_task_unpause",
-        "kb_task_retry",
-        "kb_task_duplicate",
-        "kb_task_refine",
-        "kb_task_import_github",
-        "kb_task_import_github_issue",
-        "kb_task_browse_github_issues",
-        "kb_task_archive",
-        "kb_task_unarchive",
-        "kb_task_delete",
-        "kb_task_plan",
+        "fn_task_create",
+        "fn_task_update",
+        "fn_task_list",
+        "fn_task_show",
+        "fn_task_attach",
+        "fn_task_pause",
+        "fn_task_unpause",
+        "fn_task_retry",
+        "fn_task_duplicate",
+        "fn_task_refine",
+        "fn_task_import_github",
+        "fn_task_import_github_issue",
+        "fn_task_browse_github_issues",
+        "fn_task_archive",
+        "fn_task_unarchive",
+        "fn_task_delete",
+        "fn_task_plan",
         // Mission tools
-        "kb_mission_create",
-        "kb_mission_list",
-        "kb_mission_show",
-        "kb_mission_delete",
-        "kb_milestone_add",
-        "kb_slice_add",
-        "kb_feature_add",
-        "kb_slice_activate",
-        "kb_feature_link_task",
+        "fn_mission_create",
+        "fn_mission_list",
+        "fn_mission_show",
+        "fn_mission_delete",
+        "fn_milestone_add",
+        "fn_slice_add",
+        "fn_feature_add",
+        "fn_slice_activate",
+        "fn_feature_link_task",
         // Agent tools
-        "kb_agent_stop",
-        "kb_agent_start",
+        "fn_agent_stop",
+        "fn_agent_start",
       ];
 
       for (const name of expected) {
@@ -113,10 +113,10 @@ describe("fn pi extension", () => {
     });
 
     it("does not register engine-internal tools", () => {
-      expect(api.tools.has("kb_task_move")).toBe(false);
-      expect(api.tools.has("kb_task_update_step")).toBe(false);
-      expect(api.tools.has("kb_task_log")).toBe(false);
-      expect(api.tools.has("kb_task_merge")).toBe(false);
+      expect(api.tools.has("fn_task_move")).toBe(false);
+      expect(api.tools.has("fn_task_update_step")).toBe(false);
+      expect(api.tools.has("fn_task_log")).toBe(false);
+      expect(api.tools.has("fn_task_merge")).toBe(false);
     });
 
     it("registers the /fn command", () => {
@@ -129,9 +129,9 @@ describe("fn pi extension", () => {
     });
   });
 
-  describe("kb_task_create", () => {
+  describe("fn_task_create", () => {
     it("creates a task and returns its ID", async () => {
-      const tool = api.tools.get("kb_task_create")!;
+      const tool = api.tools.get("fn_task_create")!;
       const result = await tool.execute(
         "call-1",
         { description: "Fix the login button" },
@@ -148,7 +148,7 @@ describe("fn pi extension", () => {
     });
 
     it("creates a task with dependencies", async () => {
-      const tool = api.tools.get("kb_task_create")!;
+      const tool = api.tools.get("fn_task_create")!;
       await tool.execute(
         "call-1",
         { description: "First task" },
@@ -171,7 +171,7 @@ describe("fn pi extension", () => {
     });
 
     it("creates a task with assigned agent ID", async () => {
-      const tool = api.tools.get("kb_task_create")!;
+      const tool = api.tools.get("fn_task_create")!;
       const result = await tool.execute(
         "call-1",
         { description: "Task with assignee", agentId: "agent-abc123" },
@@ -185,13 +185,13 @@ describe("fn pi extension", () => {
       expect(result.content[0].text).toContain("Assigned to: agent-abc123");
 
       // Verify persistence via show
-      const showTool = api.tools.get("kb_task_show")!;
+      const showTool = api.tools.get("fn_task_show")!;
       const show = await showTool.execute("s1", { id: "FN-001" }, undefined, undefined, makeCtx(tmpDir));
       expect(show.details.task.assignedAgentId).toBe("agent-abc123");
     });
 
     it("creates a task without assigned agent ID by default", async () => {
-      const tool = api.tools.get("kb_task_create")!;
+      const tool = api.tools.get("fn_task_create")!;
       const result = await tool.execute(
         "call-1",
         { description: "Task without assignee" },
@@ -206,12 +206,12 @@ describe("fn pi extension", () => {
     });
   });
 
-  describe("kb_task_update", () => {
+  describe("fn_task_update", () => {
     it("updates task title", async () => {
-      const createTool = api.tools.get("kb_task_create")!;
+      const createTool = api.tools.get("fn_task_create")!;
       await createTool.execute("c1", { description: "Original" }, undefined, undefined, makeCtx(tmpDir));
 
-      const updateTool = api.tools.get("kb_task_update")!;
+      const updateTool = api.tools.get("fn_task_update")!;
       const result = await updateTool.execute(
         "u1",
         { id: "FN-001", title: "New Title" },
@@ -225,16 +225,16 @@ describe("fn pi extension", () => {
       expect(result.details.updatedFields).toEqual(["title"]);
 
       // Verify via show
-      const showTool = api.tools.get("kb_task_show")!;
+      const showTool = api.tools.get("fn_task_show")!;
       const show = await showTool.execute("s1", { id: "FN-001" }, undefined, undefined, makeCtx(tmpDir));
       expect(show.content[0].text).toContain("New Title");
     });
 
     it("updates task description", async () => {
-      const createTool = api.tools.get("kb_task_create")!;
+      const createTool = api.tools.get("fn_task_create")!;
       await createTool.execute("c1", { description: "Original desc" }, undefined, undefined, makeCtx(tmpDir));
 
-      const updateTool = api.tools.get("kb_task_update")!;
+      const updateTool = api.tools.get("fn_task_update")!;
       const result = await updateTool.execute(
         "u1",
         { id: "FN-001", description: "Updated description" },
@@ -248,11 +248,11 @@ describe("fn pi extension", () => {
     });
 
     it("updates task dependencies", async () => {
-      const createTool = api.tools.get("kb_task_create")!;
+      const createTool = api.tools.get("fn_task_create")!;
       await createTool.execute("c1", { description: "First" }, undefined, undefined, makeCtx(tmpDir));
       await createTool.execute("c2", { description: "Second" }, undefined, undefined, makeCtx(tmpDir));
 
-      const updateTool = api.tools.get("kb_task_update")!;
+      const updateTool = api.tools.get("fn_task_update")!;
       const result = await updateTool.execute(
         "u1",
         { id: "FN-002", depends: ["FN-001"] },
@@ -266,10 +266,10 @@ describe("fn pi extension", () => {
     });
 
     it("updates multiple fields at once", async () => {
-      const createTool = api.tools.get("kb_task_create")!;
+      const createTool = api.tools.get("fn_task_create")!;
       await createTool.execute("c1", { description: "Original" }, undefined, undefined, makeCtx(tmpDir));
 
-      const updateTool = api.tools.get("kb_task_update")!;
+      const updateTool = api.tools.get("fn_task_update")!;
       const result = await updateTool.execute(
         "u1",
         { id: "FN-001", title: "New Title", description: "New desc", depends: [] },
@@ -282,10 +282,10 @@ describe("fn pi extension", () => {
     });
 
     it("updates task assigned agent ID", async () => {
-      const createTool = api.tools.get("kb_task_create")!;
+      const createTool = api.tools.get("fn_task_create")!;
       await createTool.execute("c1", { description: "Original" }, undefined, undefined, makeCtx(tmpDir));
 
-      const updateTool = api.tools.get("kb_task_update")!;
+      const updateTool = api.tools.get("fn_task_update")!;
       const result = await updateTool.execute(
         "u1",
         { id: "FN-001", agentId: "agent-abc123" },
@@ -298,13 +298,13 @@ describe("fn pi extension", () => {
       expect(result.content[0].text).toContain("agentId");
       expect(result.details.updatedFields).toEqual(["agentId"]);
 
-      const showTool = api.tools.get("kb_task_show")!;
+      const showTool = api.tools.get("fn_task_show")!;
       const show = await showTool.execute("s1", { id: "FN-001" }, undefined, undefined, makeCtx(tmpDir));
       expect(show.details.task.assignedAgentId).toBe("agent-abc123");
     });
 
     it("clears task assigned agent ID with null", async () => {
-      const createTool = api.tools.get("kb_task_create")!;
+      const createTool = api.tools.get("fn_task_create")!;
       await createTool.execute(
         "c1",
         { description: "Original", agentId: "agent-abc123" },
@@ -313,7 +313,7 @@ describe("fn pi extension", () => {
         makeCtx(tmpDir),
       );
 
-      const updateTool = api.tools.get("kb_task_update")!;
+      const updateTool = api.tools.get("fn_task_update")!;
       const result = await updateTool.execute(
         "u1",
         { id: "FN-001", agentId: null },
@@ -326,13 +326,13 @@ describe("fn pi extension", () => {
       expect(result.content[0].text).toContain("agentId");
       expect(result.details.updatedFields).toEqual(["agentId"]);
 
-      const showTool = api.tools.get("kb_task_show")!;
+      const showTool = api.tools.get("fn_task_show")!;
       const show = await showTool.execute("s1", { id: "FN-001" }, undefined, undefined, makeCtx(tmpDir));
       expect(show.details.task.assignedAgentId).toBeUndefined();
     });
 
     it("returns error when task not found", async () => {
-      const updateTool = api.tools.get("kb_task_update")!;
+      const updateTool = api.tools.get("fn_task_update")!;
       const result = await updateTool.execute(
         "u1",
         { id: "FN-999", title: "Nope" },
@@ -346,9 +346,9 @@ describe("fn pi extension", () => {
     });
   });
 
-  describe("kb_task_list", () => {
+  describe("fn_task_list", () => {
     it("returns empty message when no tasks", async () => {
-      const tool = api.tools.get("kb_task_list")!;
+      const tool = api.tools.get("fn_task_list")!;
       const result = await tool.execute(
         "call-1",
         {},
@@ -362,7 +362,7 @@ describe("fn pi extension", () => {
     });
 
     it("lists tasks grouped by column", async () => {
-      const createTool = api.tools.get("kb_task_create")!;
+      const createTool = api.tools.get("fn_task_create")!;
       await createTool.execute(
         "c1",
         { description: "Task A" },
@@ -378,7 +378,7 @@ describe("fn pi extension", () => {
         makeCtx(tmpDir),
       );
 
-      const listTool = api.tools.get("kb_task_list")!;
+      const listTool = api.tools.get("fn_task_list")!;
       const result = await listTool.execute(
         "call-1",
         {},
@@ -394,7 +394,7 @@ describe("fn pi extension", () => {
     });
 
     it("filters by column", async () => {
-      const createTool = api.tools.get("kb_task_create")!;
+      const createTool = api.tools.get("fn_task_create")!;
       await createTool.execute(
         "c1",
         { description: "Task A" },
@@ -403,7 +403,7 @@ describe("fn pi extension", () => {
         makeCtx(tmpDir),
       );
 
-      const listTool = api.tools.get("kb_task_list")!;
+      const listTool = api.tools.get("fn_task_list")!;
       const triageResult = await listTool.execute(
         "call-1",
         { column: "triage" },
@@ -425,7 +425,7 @@ describe("fn pi extension", () => {
     });
 
     it("respects per-column limit", async () => {
-      const createTool = api.tools.get("kb_task_create")!;
+      const createTool = api.tools.get("fn_task_create")!;
       for (let i = 0; i < 5; i++) {
         await createTool.execute(
           `c${i}`,
@@ -436,7 +436,7 @@ describe("fn pi extension", () => {
         );
       }
 
-      const listTool = api.tools.get("kb_task_list")!;
+      const listTool = api.tools.get("fn_task_list")!;
       const result = await listTool.execute(
         "call-1",
         { limit: 2 },
@@ -453,9 +453,9 @@ describe("fn pi extension", () => {
     });
   });
 
-  describe("kb_task_show", () => {
+  describe("fn_task_show", () => {
     it("shows task details", async () => {
-      const createTool = api.tools.get("kb_task_create")!;
+      const createTool = api.tools.get("fn_task_create")!;
       await createTool.execute(
         "c1",
         { description: "Implement caching layer" },
@@ -464,7 +464,7 @@ describe("fn pi extension", () => {
         makeCtx(tmpDir),
       );
 
-      const showTool = api.tools.get("kb_task_show")!;
+      const showTool = api.tools.get("fn_task_show")!;
       const result = await showTool.execute(
         "call-1",
         { id: "FN-001" },
@@ -481,9 +481,9 @@ describe("fn pi extension", () => {
     });
   });
 
-  describe("kb_task_attach", () => {
+  describe("fn_task_attach", () => {
     it("attaches a file to a task", async () => {
-      const createTool = api.tools.get("kb_task_create")!;
+      const createTool = api.tools.get("fn_task_create")!;
       await createTool.execute(
         "c1",
         { description: "A task" },
@@ -495,7 +495,7 @@ describe("fn pi extension", () => {
       const testFile = join(tmpDir, "test.txt");
       await writeFile(testFile, "hello world");
 
-      const attachTool = api.tools.get("kb_task_attach")!;
+      const attachTool = api.tools.get("fn_task_attach")!;
       const result = await attachTool.execute(
         "call-1",
         { id: "FN-001", path: "test.txt" },
@@ -511,7 +511,7 @@ describe("fn pi extension", () => {
     });
 
     it("rejects unsupported file types", async () => {
-      const createTool = api.tools.get("kb_task_create")!;
+      const createTool = api.tools.get("fn_task_create")!;
       await createTool.execute(
         "c1",
         { description: "A task" },
@@ -523,7 +523,7 @@ describe("fn pi extension", () => {
       const testFile = join(tmpDir, "file.exe");
       await writeFile(testFile, "binary");
 
-      const attachTool = api.tools.get("kb_task_attach")!;
+      const attachTool = api.tools.get("fn_task_attach")!;
       await expect(
         attachTool.execute(
           "call-1",
@@ -536,9 +536,9 @@ describe("fn pi extension", () => {
     });
   });
 
-  describe("kb_task_pause / unpause", () => {
+  describe("fn_task_pause / unpause", () => {
     it("pauses and unpauses a task", async () => {
-      const createTool = api.tools.get("kb_task_create")!;
+      const createTool = api.tools.get("fn_task_create")!;
       await createTool.execute(
         "c1",
         { description: "A task" },
@@ -547,7 +547,7 @@ describe("fn pi extension", () => {
         makeCtx(tmpDir),
       );
 
-      const pauseTool = api.tools.get("kb_task_pause")!;
+      const pauseTool = api.tools.get("fn_task_pause")!;
       const pauseResult = await pauseTool.execute(
         "call-1",
         { id: "FN-001" },
@@ -558,7 +558,7 @@ describe("fn pi extension", () => {
       expect(pauseResult.content[0].text).toContain("Paused FN-001");
 
       // Verify it's paused
-      const showTool = api.tools.get("kb_task_show")!;
+      const showTool = api.tools.get("fn_task_show")!;
       const show = await showTool.execute(
         "call-2",
         { id: "FN-001" },
@@ -569,7 +569,7 @@ describe("fn pi extension", () => {
       expect(show.content[0].text).toContain("PAUSED");
 
       // Unpause
-      const unpauseTool = api.tools.get("kb_task_unpause")!;
+      const unpauseTool = api.tools.get("fn_task_unpause")!;
       const unpauseResult = await unpauseTool.execute(
         "call-3",
         { id: "FN-001" },
@@ -581,9 +581,9 @@ describe("fn pi extension", () => {
     });
   });
 
-  describe("kb_mission_create", () => {
+  describe("fn_mission_create", () => {
     it("creates mission and returns mission data", async () => {
-      const tool = api.tools.get("kb_mission_create")!;
+      const tool = api.tools.get("fn_mission_create")!;
       const result = await tool.execute(
         "call-1",
         { title: "Test Mission", description: "Test description", autoAdvance: true },
@@ -601,10 +601,10 @@ describe("fn pi extension", () => {
     });
   });
 
-  describe("kb_mission_list", () => {
+  describe("fn_mission_list", () => {
     it("returns formatted list of missions", async () => {
       // First create a mission
-      const createTool = api.tools.get("kb_mission_create")!;
+      const createTool = api.tools.get("fn_mission_create")!;
       await createTool.execute(
         "c1",
         { title: "Mission A" },
@@ -613,7 +613,7 @@ describe("fn pi extension", () => {
         makeCtx(tmpDir),
       );
 
-      const listTool = api.tools.get("kb_mission_list")!;
+      const listTool = api.tools.get("fn_mission_list")!;
       const result = await listTool.execute(
         "call-1",
         {},
@@ -628,10 +628,10 @@ describe("fn pi extension", () => {
     });
   });
 
-  describe("kb_mission_show", () => {
+  describe("fn_mission_show", () => {
     it("returns mission with hierarchy", async () => {
       // Create mission
-      const createTool = api.tools.get("kb_mission_create")!;
+      const createTool = api.tools.get("fn_mission_create")!;
       const created = await createTool.execute(
         "c1",
         { title: "Test Mission" },
@@ -640,7 +640,7 @@ describe("fn pi extension", () => {
         makeCtx(tmpDir),
       );
 
-      const showTool = api.tools.get("kb_mission_show")!;
+      const showTool = api.tools.get("fn_mission_show")!;
       const result = await showTool.execute(
         "call-1",
         { id: created.details.missionId },
@@ -654,7 +654,7 @@ describe("fn pi extension", () => {
     });
 
     it("returns error when mission not found", async () => {
-      const showTool = api.tools.get("kb_mission_show")!;
+      const showTool = api.tools.get("fn_mission_show")!;
       const result = await showTool.execute(
         "call-1",
         { id: "M-999" },
@@ -668,10 +668,10 @@ describe("fn pi extension", () => {
     });
   });
 
-  describe("kb_mission_delete", () => {
+  describe("fn_mission_delete", () => {
     it("deletes mission and confirms", async () => {
       // Create mission
-      const createTool = api.tools.get("kb_mission_create")!;
+      const createTool = api.tools.get("fn_mission_create")!;
       const created = await createTool.execute(
         "c1",
         { title: "Mission to Delete" },
@@ -680,7 +680,7 @@ describe("fn pi extension", () => {
         makeCtx(tmpDir),
       );
 
-      const deleteTool = api.tools.get("kb_mission_delete")!;
+      const deleteTool = api.tools.get("fn_mission_delete")!;
       const result = await deleteTool.execute(
         "call-1",
         { id: created.details.missionId },
@@ -694,10 +694,10 @@ describe("fn pi extension", () => {
     });
   });
 
-  describe("kb_milestone_add", () => {
+  describe("fn_milestone_add", () => {
     it("creates a milestone in the mission store", async () => {
-      const missionTool = api.tools.get("kb_mission_create")!;
-      const milestoneTool = api.tools.get("kb_milestone_add")!;
+      const missionTool = api.tools.get("fn_mission_create")!;
+      const milestoneTool = api.tools.get("fn_milestone_add")!;
       const mission = await missionTool.execute("m1", { title: "Mission" }, undefined, undefined, makeCtx(tmpDir));
 
       const result = await milestoneTool.execute(
@@ -718,11 +718,11 @@ describe("fn pi extension", () => {
     });
   });
 
-  describe("kb_slice_add", () => {
+  describe("fn_slice_add", () => {
     it("creates a slice in the mission store", async () => {
-      const missionTool = api.tools.get("kb_mission_create")!;
-      const milestoneTool = api.tools.get("kb_milestone_add")!;
-      const sliceTool = api.tools.get("kb_slice_add")!;
+      const missionTool = api.tools.get("fn_mission_create")!;
+      const milestoneTool = api.tools.get("fn_milestone_add")!;
+      const sliceTool = api.tools.get("fn_slice_add")!;
       const mission = await missionTool.execute("m1", { title: "Mission" }, undefined, undefined, makeCtx(tmpDir));
       const milestone = await milestoneTool.execute(
         "ms1",
@@ -750,12 +750,12 @@ describe("fn pi extension", () => {
     });
   });
 
-  describe("kb_feature_add", () => {
+  describe("fn_feature_add", () => {
     it("creates a feature in the mission store", async () => {
-      const missionTool = api.tools.get("kb_mission_create")!;
-      const milestoneTool = api.tools.get("kb_milestone_add")!;
-      const sliceTool = api.tools.get("kb_slice_add")!;
-      const featureTool = api.tools.get("kb_feature_add")!;
+      const missionTool = api.tools.get("fn_mission_create")!;
+      const milestoneTool = api.tools.get("fn_milestone_add")!;
+      const sliceTool = api.tools.get("fn_slice_add")!;
+      const featureTool = api.tools.get("fn_feature_add")!;
       const mission = await missionTool.execute("m1", { title: "Mission" }, undefined, undefined, makeCtx(tmpDir));
       const milestone = await milestoneTool.execute(
         "ms1",
@@ -790,12 +790,12 @@ describe("fn pi extension", () => {
     });
   });
 
-  describe("kb_slice_activate", () => {
+  describe("fn_slice_activate", () => {
     it("returns error when slice is already active", async () => {
-      const missionTool = api.tools.get("kb_mission_create")!;
-      const milestoneTool = api.tools.get("kb_milestone_add")!;
-      const sliceTool = api.tools.get("kb_slice_add")!;
-      const activateTool = api.tools.get("kb_slice_activate")!;
+      const missionTool = api.tools.get("fn_mission_create")!;
+      const milestoneTool = api.tools.get("fn_milestone_add")!;
+      const sliceTool = api.tools.get("fn_slice_add")!;
+      const activateTool = api.tools.get("fn_slice_activate")!;
 
       const mission = await missionTool.execute("m1", { title: "Mission" }, undefined, undefined, makeCtx(tmpDir));
       const milestone = await milestoneTool.execute(
@@ -821,10 +821,10 @@ describe("fn pi extension", () => {
     });
 
     it("activates slice and updates status", async () => {
-      const missionTool = api.tools.get("kb_mission_create")!;
-      const milestoneTool = api.tools.get("kb_milestone_add")!;
-      const sliceTool = api.tools.get("kb_slice_add")!;
-      const activateTool = api.tools.get("kb_slice_activate")!;
+      const missionTool = api.tools.get("fn_mission_create")!;
+      const milestoneTool = api.tools.get("fn_milestone_add")!;
+      const sliceTool = api.tools.get("fn_slice_add")!;
+      const activateTool = api.tools.get("fn_slice_activate")!;
 
       const mission = await missionTool.execute("m1", { title: "Mission" }, undefined, undefined, makeCtx(tmpDir));
       const milestone = await milestoneTool.execute(
@@ -860,13 +860,13 @@ describe("fn pi extension", () => {
     });
   });
 
-  describe("kb_feature_link_task", () => {
+  describe("fn_feature_link_task", () => {
     it("returns error when task is missing", async () => {
-      const missionTool = api.tools.get("kb_mission_create")!;
-      const milestoneTool = api.tools.get("kb_milestone_add")!;
-      const sliceTool = api.tools.get("kb_slice_add")!;
-      const featureTool = api.tools.get("kb_feature_add")!;
-      const linkTool = api.tools.get("kb_feature_link_task")!;
+      const missionTool = api.tools.get("fn_mission_create")!;
+      const milestoneTool = api.tools.get("fn_milestone_add")!;
+      const sliceTool = api.tools.get("fn_slice_add")!;
+      const featureTool = api.tools.get("fn_feature_add")!;
+      const linkTool = api.tools.get("fn_feature_link_task")!;
 
       const mission = await missionTool.execute("m1", { title: "Mission" }, undefined, undefined, makeCtx(tmpDir));
       const milestone = await milestoneTool.execute(
@@ -904,12 +904,12 @@ describe("fn pi extension", () => {
     });
 
     it("links feature to task", async () => {
-      const missionTool = api.tools.get("kb_mission_create")!;
-      const milestoneTool = api.tools.get("kb_milestone_add")!;
-      const sliceTool = api.tools.get("kb_slice_add")!;
-      const featureTool = api.tools.get("kb_feature_add")!;
-      const createTaskTool = api.tools.get("kb_task_create")!;
-      const linkTool = api.tools.get("kb_feature_link_task")!;
+      const missionTool = api.tools.get("fn_mission_create")!;
+      const milestoneTool = api.tools.get("fn_milestone_add")!;
+      const sliceTool = api.tools.get("fn_slice_add")!;
+      const featureTool = api.tools.get("fn_feature_add")!;
+      const createTaskTool = api.tools.get("fn_task_create")!;
+      const linkTool = api.tools.get("fn_feature_link_task")!;
 
       const mission = await missionTool.execute("m1", { title: "Mission" }, undefined, undefined, makeCtx(tmpDir));
       const milestone = await milestoneTool.execute(

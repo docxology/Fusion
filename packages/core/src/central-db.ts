@@ -1,5 +1,5 @@
 /**
- * Central SQLite database module for kb's multi-project architecture.
+ * Central SQLite database module for fn's multi-project architecture.
  *
  * Uses Node.js built-in `node:sqlite` (DatabaseSync) for simplified
  * synchronous transaction handling. The database runs in WAL mode

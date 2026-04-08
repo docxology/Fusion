@@ -1582,7 +1582,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
   /**
    * PUT /api/settings/global
    * Update global (user-level) settings in ~/.pi/fusion/settings.json.
-   * These settings persist across all kb projects for the current user.
+   * These settings persist across all fn projects for the current user.
    */
   router.put("/settings/global", async (req, res) => {
     try {
@@ -3770,7 +3770,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
 
   /**
    * POST /api/github/issues/import
-   * Import a specific GitHub issue as a kb task.
+   * Import a specific GitHub issue as a fn task.
    * Body: { owner: string, repo: string, issueNumber: number }
    * Returns: Created Task object
    */
@@ -3865,7 +3865,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
 
   /**
    * POST /api/github/issues/batch-import
-   * Import multiple GitHub issues as kb tasks with throttling.
+   * Import multiple GitHub issues as fn tasks with throttling.
    * Body: { owner: string, repo: string, issueNumbers: number[], delayMs?: number }
    * Returns: { results: BatchImportResult[] }
    */
@@ -4096,7 +4096,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
 
   /**
    * POST /api/github/pulls/import
-   * Import a specific GitHub pull request as a kb review task.
+   * Import a specific GitHub pull request as a fn review task.
    * Body: { owner: string, repo: string, prNumber: number }
    * Returns: Created Task object
    */
@@ -9140,7 +9140,7 @@ Output ONLY the prompt text (no markdown, no explanations).`;
 
   /**
    * POST /api/projects/detect
-   * Auto-detect kb projects in a directory.
+   * Auto-detect fn projects in a directory.
    * Body: { basePath?: string }
    * Returns: { projects: DetectedProject[] }
    */
@@ -9167,7 +9167,7 @@ Output ONLY the prompt text (no markdown, no explanations).`;
       
       const existingPaths = new Set(existingProjects.map((p: { path: string }) => p.path));
       
-      // Scan for .fusion/fusion.db or .fusion/fusion.db files (indicating kb projects)
+      // Scan for .fusion/fusion.db or .fusion/fusion.db files (indicating fn projects)
       const detected: Array<{ path: string; suggestedName: string; existing: boolean }> = [];
       
       try {

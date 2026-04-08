@@ -4,7 +4,7 @@ All tools are registered via the pi extension. They are available in any pi agen
 
 ## Task Tools
 
-### kb_task_create
+### fn_task_create
 
 Create a new task on the Fusion board. Enters triage for AI specification.
 
@@ -15,7 +15,7 @@ Create a new task on the Fusion board. Enters triage for AI specification.
 
 Returns: task ID, column, dependencies, path
 
-### kb_task_update
+### fn_task_update
 
 Update fields on an existing task (title, description, dependencies).
 
@@ -28,7 +28,7 @@ Update fields on an existing task (title, description, dependencies).
 
 Returns: task ID, list of updated fields
 
-### kb_task_list
+### fn_task_list
 
 List all tasks grouped by column.
 
@@ -39,7 +39,7 @@ List all tasks grouped by column.
 
 Returns: formatted task list grouped by column
 
-### kb_task_show
+### fn_task_show
 
 Show full task details including steps, progress, prompt preview, and log.
 
@@ -49,7 +49,7 @@ Show full task details including steps, progress, prompt preview, and log.
 
 Returns: task details with steps, prompt preview (500 chars), last 5 log entries
 
-### kb_task_attach
+### fn_task_attach
 
 Attach a file to a task. Copies file to task's attachments directory.
 
@@ -60,7 +60,7 @@ Attach a file to a task. Copies file to task's attachments directory.
 
 Supported formats: png, jpg, jpeg, gif, webp, txt, log, json, yaml, yml, toml, csv, xml
 
-### kb_task_pause
+### fn_task_pause
 
 Pause automation for a task. Scheduler and executor will skip this task.
 
@@ -68,7 +68,7 @@ Pause automation for a task. Scheduler and executor will skip this task.
 |-----------|------|----------|-------------|
 | `id` | string | ✓ | Task ID |
 
-### kb_task_unpause
+### fn_task_unpause
 
 Resume automation for a paused task.
 
@@ -76,7 +76,7 @@ Resume automation for a paused task.
 |-----------|------|----------|-------------|
 | `id` | string | ✓ | Task ID |
 
-### kb_task_retry
+### fn_task_retry
 
 Retry a failed task. Clears error state, moves to todo for re-execution.
 
@@ -84,7 +84,7 @@ Retry a failed task. Clears error state, moves to todo for re-execution.
 |-----------|------|----------|-------------|
 | `id` | string | ✓ | Task ID (must be in failed state) |
 
-### kb_task_duplicate
+### fn_task_duplicate
 
 Duplicate a task. Creates a fresh copy in triage with same title and description.
 
@@ -92,7 +92,7 @@ Duplicate a task. Creates a fresh copy in triage with same title and description
 |-----------|------|----------|-------------|
 | `id` | string | ✓ | Source task ID to duplicate |
 
-### kb_task_refine
+### fn_task_refine
 
 Create a follow-up task for a completed task. New task depends on the original.
 
@@ -101,7 +101,7 @@ Create a follow-up task for a completed task. New task depends on the original.
 | `id` | string | ✓ | Task ID (must be done or in-review) |
 | `feedback` | string | ✓ | What needs to be refined (1-2000 chars) |
 
-### kb_task_archive
+### fn_task_archive
 
 Archive a done task. Moves from done → archived.
 
@@ -109,7 +109,7 @@ Archive a done task. Moves from done → archived.
 |-----------|------|----------|-------------|
 | `id` | string | ✓ | Task ID (must be in done column) |
 
-### kb_task_unarchive
+### fn_task_unarchive
 
 Restore an archived task. Moves from archived → done.
 
@@ -117,7 +117,7 @@ Restore an archived task. Moves from archived → done.
 |-----------|------|----------|-------------|
 | `id` | string | ✓ | Task ID (must be in archived column) |
 
-### kb_task_delete
+### fn_task_delete
 
 Permanently delete a task. Cannot be undone.
 
@@ -125,7 +125,7 @@ Permanently delete a task. Cannot be undone.
 |-----------|------|----------|-------------|
 | `id` | string | ✓ | Task ID |
 
-### kb_task_plan
+### fn_task_plan
 
 Create a task via AI-guided planning mode. Non-interactive when called from extension.
 
@@ -135,7 +135,7 @@ Create a task via AI-guided planning mode. Non-interactive when called from exte
 
 ## GitHub Tools
 
-### kb_task_import_github
+### fn_task_import_github
 
 Batch import GitHub issues as Fusion tasks.
 
@@ -145,7 +145,7 @@ Batch import GitHub issues as Fusion tasks.
 | `limit` | number | — | Max issues (default: 30, max: 100) |
 | `labels` | string[] | — | Label names to filter by |
 
-### kb_task_import_github_issue
+### fn_task_import_github_issue
 
 Import a single GitHub issue by number.
 
@@ -155,7 +155,7 @@ Import a single GitHub issue by number.
 | `repo` | string | ✓ | Repository name |
 | `issueNumber` | number | ✓ | GitHub issue number |
 
-### kb_task_browse_github_issues
+### fn_task_browse_github_issues
 
 Browse open issues from a repository before importing.
 
@@ -168,7 +168,7 @@ Browse open issues from a repository before importing.
 
 ## Mission Tools
 
-### kb_mission_create
+### fn_mission_create
 
 Create a new mission — a high-level objective spanning multiple milestones.
 
@@ -178,11 +178,11 @@ Create a new mission — a high-level objective spanning multiple milestones.
 | `description` | string | — | Detailed objectives and context |
 | `autoAdvance` | boolean | — | Auto-activate next slice on completion |
 
-### kb_mission_list
+### fn_mission_list
 
 List all missions with current status. No parameters.
 
-### kb_mission_show
+### fn_mission_show
 
 Show mission details with full hierarchy.
 
@@ -190,7 +190,7 @@ Show mission details with full hierarchy.
 |-----------|------|----------|-------------|
 | `id` | string | ✓ | Mission ID (e.g., M-001) |
 
-### kb_mission_delete
+### fn_mission_delete
 
 Delete a mission and all children. Tasks are NOT deleted.
 
@@ -198,7 +198,7 @@ Delete a mission and all children. Tasks are NOT deleted.
 |-----------|------|----------|-------------|
 | `id` | string | ✓ | Mission ID |
 
-### kb_milestone_add
+### fn_milestone_add
 
 Add a milestone to a mission.
 
@@ -208,7 +208,7 @@ Add a milestone to a mission.
 | `title` | string | ✓ | Milestone title |
 | `description` | string | — | Milestone description |
 
-### kb_slice_add
+### fn_slice_add
 
 Add a slice to a milestone.
 
@@ -218,7 +218,7 @@ Add a slice to a milestone.
 | `title` | string | ✓ | Slice title |
 | `description` | string | — | Slice description |
 
-### kb_feature_add
+### fn_feature_add
 
 Add a feature to a slice.
 
@@ -229,7 +229,7 @@ Add a feature to a slice.
 | `description` | string | — | Feature description |
 | `acceptanceCriteria` | string | — | Acceptance criteria |
 
-### kb_slice_activate
+### fn_slice_activate
 
 Activate a pending slice for implementation.
 
@@ -237,7 +237,7 @@ Activate a pending slice for implementation.
 |-----------|------|----------|-------------|
 | `id` | string | ✓ | Slice ID (must be pending) |
 
-### kb_feature_link_task
+### fn_feature_link_task
 
 Link a feature to a kb task. Updates feature status to triaged.
 
@@ -246,7 +246,7 @@ Link a feature to a kb task. Updates feature status to triaged.
 | `featureId` | string | ✓ | Feature ID (e.g., F-001) |
 | `taskId` | string | ✓ | Task ID (e.g., KB-001) |
 
-### kb_agent_stop
+### fn_agent_stop
 
 Stop (pause) a running agent. Transitions the agent from running/active to paused state.
 
@@ -254,7 +254,7 @@ Stop (pause) a running agent. Transitions the agent from running/active to pause
 |-----------|------|----------|-------------|
 | `id` | string | ✓ | Agent ID to stop (e.g., agent-abc123) |
 
-### kb_agent_start
+### fn_agent_start
 
 Start (resume) a stopped agent. Transitions the agent from paused to active state.
 

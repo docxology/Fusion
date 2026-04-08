@@ -1,10 +1,10 @@
 /**
- * Mission hierarchy types for kb project planning.
+ * Mission hierarchy types for fn project planning.
  *
  * A Mission represents a high-level objective that can span multiple milestones.
  * Each Milestone represents a phase of work within a mission.
  * Each Slice represents a work unit within a milestone that can be activated for implementation.
- * Each Feature represents a deliverable within a slice that can be linked to a kb Task.
+ * Each Feature represents a deliverable within a slice that can be linked to a fn Task.
  *
  * The hierarchy: Mission → Milestone → Slice → Feature → (optional) Task
  */
@@ -153,7 +153,7 @@ export interface Milestone {
 
 /**
  * A Slice represents a work unit within a milestone.
- * Slices can be activated for implementation, linking to kb tasks.
+ * Slices can be activated for implementation, linking to fn tasks.
  */
 export interface Slice {
   /** Unique identifier (e.g., "SL-P4T2WX-D5E8") */
@@ -178,7 +178,7 @@ export interface Slice {
 
 /**
  * A MissionFeature represents a deliverable within a slice.
- * Features can be linked to kb Tasks for implementation.
+ * Features can be linked to fn Tasks for implementation.
  */
 export interface MissionFeature {
   /** Unique identifier (e.g., "F-J6K9AB-G7H3") */

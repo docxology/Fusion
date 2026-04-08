@@ -1,5 +1,5 @@
 /**
- * SQLite database module for kb task board storage.
+ * SQLite database module for fn task board storage.
  *
  * Uses Node.js built-in `node:sqlite` (DatabaseSync) for simplified
  * synchronous transaction handling. The database runs in WAL mode

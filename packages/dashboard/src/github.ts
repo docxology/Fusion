@@ -1416,7 +1416,7 @@ export class GitHubClient {
     const headers: Record<string, string> = {
       Accept: "application/vnd.github+json",
       "X-GitHub-Api-Version": "2022-11-28",
-      "User-Agent": "kb-dashboard/1.0",
+      "User-Agent": "fn/1.0",
     };
 
     if (this.token) {
@@ -2006,7 +2006,7 @@ export class GitHubClient {
             Accept: "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28",
             Authorization: `Bearer ${jwt}`,
-            "User-Agent": "kb-dashboard/1.0",
+            "User-Agent": "fn/1.0",
           },
         },
       );
@@ -2040,7 +2040,7 @@ export class GitHubClient {
             Accept: "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28",
             Authorization: `Bearer ${installationToken}`,
-            "User-Agent": "kb-dashboard/1.0",
+            "User-Agent": "fn/1.0",
           },
         },
       );
@@ -2093,7 +2093,7 @@ export class GitHubClient {
             Accept: "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28",
             Authorization: `Bearer ${installationToken}`,
-            "User-Agent": "kb-dashboard/1.0",
+            "User-Agent": "fn/1.0",
           },
         },
       );

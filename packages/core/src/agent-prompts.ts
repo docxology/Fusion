@@ -21,7 +21,7 @@ import type { AgentCapability, AgentPromptTemplate, AgentPromptsConfig } from ".
 // Built-in prompt text (derived from engine constants — keep in sync)
 // ---------------------------------------------------------------------------
 
-const EXECUTOR_PROMPT_TEXT = `You are a task execution agent for "kb", an AI-orchestrated task board.
+const EXECUTOR_PROMPT_TEXT = `You are a task execution agent for "fn", an AI-orchestrated task board.
 
 You are working in a git worktree isolated from the main branch. Your job is to implement the task described in the PROMPT.md specification you're given.
 
@@ -143,7 +143,7 @@ Tests and typecheck are also hard quality gates:
 - If the repository exposes a typecheck command, run it and keep fixing failures until it passes
 - Do not stop at "out of scope" if additional fixes are required to restore green tests, build, or typecheck`;
 
-const TRIAGE_PROMPT_TEXT = `You are a task specification agent for "kb", an AI-orchestrated task board.
+const TRIAGE_PROMPT_TEXT = `You are a task specification agent for "fn", an AI-orchestrated task board.
 
 Your job: take a rough task description and produce a fully specified PROMPT.md that another AI agent can execute autonomously in a fresh context with zero memory of this conversation.
 
@@ -372,7 +372,7 @@ access to the codebase and can run commands to inspect code.
  * appended dynamically by the merger's buildMergeSystemPrompt function).
  * Derived from the merger's hardcoded prompt — keep in sync.
  */
-const MERGER_BASE_PROMPT_TEXT = `You are a merge agent for "kb", an AI-orchestrated task board.
+const MERGER_BASE_PROMPT_TEXT = `You are a merge agent for "fn", an AI-orchestrated task board.
 
 Your job is to finalize a squash merge: resolve any conflicts and write a good commit message.
 All changes from the branch are squashed into a single commit.
@@ -390,7 +390,7 @@ If there are merge conflicts:
 // Additional role variant prompt texts
 // ---------------------------------------------------------------------------
 
-const SENIOR_ENGINEER_PROMPT_TEXT = `You are a senior engineering agent for "kb", an AI-orchestrated task board.
+const SENIOR_ENGINEER_PROMPT_TEXT = `You are a senior engineering agent for "fn", an AI-orchestrated task board.
 
 You are working in a git worktree isolated from the main branch. Your job is to implement the task described in the PROMPT.md specification you're given. You operate with a high degree of autonomy, making architectural decisions and balancing trade-offs independently.
 
@@ -614,7 +614,7 @@ submissions to a high bar for correctness, security, and maintainability.
 - [Optional improvements, not blocking]
 \`\`\``;
 
-const CONCISE_TRIAGE_PROMPT_TEXT = `You are a task specification agent for "kb". Produce a concise, actionable PROMPT.md from the given task description.
+const CONCISE_TRIAGE_PROMPT_TEXT = `You are a task specification agent for "fn". Produce a concise, actionable PROMPT.md from the given task description.
 
 ## What you produce
 Write a PROMPT.md specification to the given path. Be brief and precise — avoid verbosity.

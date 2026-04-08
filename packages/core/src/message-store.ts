@@ -37,7 +37,7 @@ export interface MessageStoreEvents {
 
 /** Options for MessageStore constructor */
 export interface MessageStoreOptions {
-  /** Root directory for kb data (default: .fusion) */
+  /** Root directory for fn data (default: .fusion) */
   rootDir?: string;
   /** Optional hook invoked when a message is addressed to an agent */
   onMessageToAgent?: (message: Message) => void;

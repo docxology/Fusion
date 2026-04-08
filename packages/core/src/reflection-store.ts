@@ -20,7 +20,7 @@ export interface ReflectionStoreEvents {
 
 /** Constructor options for ReflectionStore. */
 export interface ReflectionStoreOptions {
-  /** Root kb data directory (default: .fusion). */
+  /** Root fn data directory (default: .fusion). */
   rootDir?: string;
 }
 

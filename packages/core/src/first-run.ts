@@ -3,7 +3,7 @@
  *
  * Handles the transition from single-project to multi-project mode:
  * - Detects if this is a fresh installation (no projects registered)
- * - Auto-detects existing kb projects from current working directory
+ * - Auto-detects existing fn projects from current working directory
  * - Guides users through initial project registration
  * - Provides setup state for dashboard wizard UI
  *
@@ -87,7 +87,7 @@ export class FirstRunExperience {
    * Detect or create the initial project.
    *
    * Tries the following in order:
-   * 1. Detect existing kb project from `process.cwd()`
+   * 1. Detect existing fn project from `process.cwd()`
    * 2. If found, auto-register it and return
    * 3. If not found, return guidance for manual setup
    *

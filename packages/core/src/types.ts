@@ -566,8 +566,8 @@ export interface Task {
    *  dependency's branch instead of HEAD. Cleared after worktree creation. */
   baseBranch?: string;
   /** Actual git branch name used for this task's worktree. May differ from
-   *  the conventional `kb/{task-id}` when conflict recovery generated a
-   *  unique suffixed name (e.g., `kb/fn-042-2`). The merger and PR systems
+   *  the conventional `fn/{task-id}` when conflict recovery generated a
+   *  unique suffixed name (e.g., `fn/fn-042-2`). The merger and PR systems
    *  read this field instead of deriving the branch from the task ID. */
   branch?: string;
   /** Base commit SHA for creating this task's worktree. Used with baseBranch
@@ -709,7 +709,7 @@ export interface TaskCreateInput {
 // Settings are split into two scopes:
 //
 // 1. **GlobalSettings** — User preferences stored in `~/.pi/fusion/settings.json`.
-//    These persist across all kb projects for the current user (theme, default
+//    These persist across all fn projects for the current user (theme, default
 //    AI models, notification preferences).
 //
 // 2. **ProjectSettings** — Project-specific workflow and resource settings stored
@@ -729,7 +729,7 @@ export type SettingsScope = "global" | "project";
 /**
  * Global (user-level) settings stored in `~/.pi/fusion/settings.json`.
  *
- * These are user preferences that persist across all kb projects.
+ * These are user preferences that persist across all fn projects.
  * The dashboard UI shows these under a "Global" section.
  */
 export interface GlobalSettings {
@@ -777,7 +777,7 @@ export interface GlobalSettings {
   ntfyDashboardHost?: string;
   /** The default project ID for CLI operations when --project flag is not provided.
    *  Used to determine which project to operate on when not in a project directory.
-   *  Set via `kb project set-default <name>`. */
+   *  Set via `fn project set-default <name>`. */
   defaultProjectId?: string;
   /** Whether the first-run setup wizard has been completed.
    *  Set to true when the user completes the multi-project setup process.
@@ -854,7 +854,7 @@ export interface ProjectSettings {
   /** Controls how worktree directory names are generated when creating fresh worktrees.
    *  Only applies when recycleWorktrees is NOT enabled (pooled worktrees retain their existing names).
    *  - "random": Human-friendly adjective-noun names (e.g., swift-falcon) — default
-   *  - "task-id": Use the task ID (e.g., kb-042)
+   *  - "task-id": Use the task ID (e.g., fn-042)
    *  - "task-title": Use a slugified version of the task title (e.g., fix-login-bug)
    *  Default: "random". */
   worktreeNaming?: "random" | "task-id" | "task-title";

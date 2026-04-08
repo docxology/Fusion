@@ -19,13 +19,13 @@ Fusion (kb) is an AI-orchestrated task board. You throw in rough ideas; AI speci
 **Missions** provide hierarchical planning above tasks:
 Mission → Milestone → Slice → Feature → Task
 
-**Available tools:** Fusion registers tools via the pi extension (prefixed `kb_*`). No CLI commands or Bash needed — use the registered tools directly.
+**Available tools:** Fusion registers tools via the pi extension (prefixed `fn_*`). No CLI commands or Bash needed — use the registered tools directly.
 
 **Tool categories:**
-- **Task tools** — `kb_task_create`, `kb_task_update`, `kb_task_list`, `kb_task_show`, `kb_task_attach`, `kb_task_pause`, `kb_task_unpause`, `kb_task_retry`, `kb_task_duplicate`, `kb_task_refine`, `kb_task_archive`, `kb_task_unarchive`, `kb_task_delete`, `kb_task_plan`
-- **GitHub tools** — `kb_task_import_github`, `kb_task_import_github_issue`, `kb_task_browse_github_issues`
-- **Mission tools** — `kb_mission_create`, `kb_mission_list`, `kb_mission_show`, `kb_mission_delete`, `kb_milestone_add`, `kb_slice_add`, `kb_feature_add`, `kb_slice_activate`, `kb_feature_link_task`
-- **Agent tools** — `kb_agent_stop`, `kb_agent_start`
+- **Task tools** — `fn_task_create`, `fn_task_update`, `fn_task_list`, `fn_task_show`, `fn_task_attach`, `fn_task_pause`, `fn_task_unpause`, `fn_task_retry`, `fn_task_duplicate`, `fn_task_refine`, `fn_task_archive`, `fn_task_unarchive`, `fn_task_delete`, `fn_task_plan`
+- **GitHub tools** — `fn_task_import_github`, `fn_task_import_github_issue`, `fn_task_browse_github_issues`
+- **Mission tools** — `fn_mission_create`, `fn_mission_list`, `fn_mission_show`, `fn_mission_delete`, `fn_milestone_add`, `fn_slice_add`, `fn_feature_add`, `fn_slice_activate`, `fn_feature_link_task`
+- **Agent tools** — `fn_agent_stop`, `fn_agent_start`
 - **Dashboard** — Use `/fn` command to start/stop the dashboard
 
 </essential_principles>
@@ -45,32 +45,32 @@ Based on the user's request, route to the appropriate workflow:
 **Dashboard and CLI:**
 - Start dashboard, use CLI commands, settings → workflows/dashboard-cli.md
 
-**If the intent is simple and clear** (e.g., "create a task to fix the login bug"), execute directly using the appropriate `kb_*` tool without loading a workflow file. Only load workflows for guidance on complex operations or when the user needs help understanding Fusion concepts.
+**If the intent is simple and clear** (e.g., "create a task to fix the login bug"), execute directly using the appropriate `fn_*` tool without loading a workflow file. Only load workflows for guidance on complex operations or when the user needs help understanding Fusion concepts.
 
 </routing>
 
 <quick_reference>
 
 **Create a task:**
-Use `kb_task_create` with a descriptive message. Include the problem AND desired outcome.
+Use `fn_task_create` with a descriptive message. Include the problem AND desired outcome.
 
 **List tasks:**
-Use `kb_task_list` to see all tasks grouped by column. Use `column` param to filter.
+Use `fn_task_list` to see all tasks grouped by column. Use `column` param to filter.
 
 **Show task details:**
-Use `kb_task_show` with the task ID (e.g., KB-001) to see steps, progress, and log.
+Use `fn_task_show` with the task ID (e.g., KB-001) to see steps, progress, and log.
 
 **Plan complex work:**
-Use `kb_task_plan` for AI-guided planning that interviews you before creating the task.
+Use `fn_task_plan` for AI-guided planning that interviews you before creating the task.
 
 **Import GitHub issues:**
-Use `kb_task_browse_github_issues` to preview, then `kb_task_import_github_issue` for specific issues.
+Use `fn_task_browse_github_issues` to preview, then `fn_task_import_github_issue` for specific issues.
 
 **Start dashboard:**
 Use `/fn` command. `/fn stop` to stop. `/fn status` to check.
 
 **Mission planning:**
-Use `kb_mission_create` for high-level objectives, then add milestones, slices, and features.
+Use `fn_mission_create` for high-level objectives, then add milestones, slices, and features.
 
 </quick_reference>
 

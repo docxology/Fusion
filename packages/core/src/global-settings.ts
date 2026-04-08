@@ -1,7 +1,7 @@
 /**
  * Global settings store — manages user-level settings in `~/.pi/fusion/settings.json`.
  *
- * Global settings persist across all kb projects for the current user.
+ * Global settings persist across all fn projects for the current user.
  * They include UI theme preferences, default AI model selection, and
  * notification configuration.
  *
@@ -34,7 +34,7 @@ export function defaultGlobalDir(): string {
  * Resolve the active global directory.
  *
  * If the new `~/.pi/fusion` directory does not exist but the legacy
- * `~/.pi/kb` directory does, move the legacy directory into place so
+ * `~/.pi/fusion` directory does, move the legacy directory into place so
  * existing settings and central metadata continue to work after upgrade.
  */
 export function resolveGlobalDir(dir?: string): string {

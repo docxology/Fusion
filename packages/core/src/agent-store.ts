@@ -76,7 +76,7 @@ type TypedEventEmitter<Events extends Record<string, unknown[]>> = {
 
 /** Options for AgentStore constructor */
 export interface AgentStoreOptions {
-  /** Root directory for kb data (default: .fusion) */
+  /** Root directory for fn data (default: .fusion) */
   rootDir?: string;
 }
 

@@ -39,7 +39,7 @@ export function detectLegacyData(kbDir: string): boolean {
 }
 
 /**
- * Get the migration status of a kb directory.
+ * Get the migration status of a fn directory.
  */
 export function getMigrationStatus(kbDir: string): {
   hasLegacy: boolean;

@@ -9,34 +9,34 @@ Triage → Todo → In Progress → In Review → Done → Archived
 
 | Tool | Purpose |
 |------|---------|
-| `kb_task_create` | Create a new task in triage |
-| `kb_task_update` | Update task title, description, or dependencies |
-| `kb_task_list` | List all tasks grouped by column |
-| `kb_task_show` | Show full task details, steps, log |
-| `kb_task_attach` | Attach a file to a task |
-| `kb_task_pause` | Pause automation for a task |
-| `kb_task_unpause` | Resume automation for a task |
-| `kb_task_retry` | Retry a failed task (clears error, moves to todo) |
-| `kb_task_duplicate` | Duplicate a task (copy to triage) |
-| `kb_task_refine` | Create refinement task for follow-up work |
-| `kb_task_archive` | Archive a done task |
-| `kb_task_unarchive` | Restore an archived task |
-| `kb_task_delete` | Permanently delete a task |
-| `kb_task_import_github` | Batch import GitHub issues as tasks |
-| `kb_task_import_github_issue` | Import a single GitHub issue |
-| `kb_task_browse_github_issues` | Browse GitHub issues before importing |
-| `kb_task_plan` | Create task via AI-guided planning mode |
-| `kb_mission_create` | Create a new mission |
-| `kb_mission_list` | List all missions |
-| `kb_mission_show` | Show mission hierarchy |
-| `kb_mission_delete` | Delete a mission |
-| `kb_milestone_add` | Add a milestone to a mission |
-| `kb_slice_add` | Add a slice to a milestone |
-| `kb_feature_add` | Add a feature to a slice |
-| `kb_slice_activate` | Activate a pending slice |
-| `kb_feature_link_task` | Link a feature to a task |
-| `kb_agent_stop` | Stop (pause) a running agent |
-| `kb_agent_start` | Start (resume) a stopped agent |
+| `fn_task_create` | Create a new task in triage |
+| `fn_task_update` | Update task title, description, or dependencies |
+| `fn_task_list` | List all tasks grouped by column |
+| `fn_task_show` | Show full task details, steps, log |
+| `fn_task_attach` | Attach a file to a task |
+| `fn_task_pause` | Pause automation for a task |
+| `fn_task_unpause` | Resume automation for a task |
+| `fn_task_retry` | Retry a failed task (clears error, moves to todo) |
+| `fn_task_duplicate` | Duplicate a task (copy to triage) |
+| `fn_task_refine` | Create refinement task for follow-up work |
+| `fn_task_archive` | Archive a done task |
+| `fn_task_unarchive` | Restore an archived task |
+| `fn_task_delete` | Permanently delete a task |
+| `fn_task_import_github` | Batch import GitHub issues as tasks |
+| `fn_task_import_github_issue` | Import a single GitHub issue |
+| `fn_task_browse_github_issues` | Browse GitHub issues before importing |
+| `fn_task_plan` | Create task via AI-guided planning mode |
+| `fn_mission_create` | Create a new mission |
+| `fn_mission_list` | List all missions |
+| `fn_mission_show` | Show mission hierarchy |
+| `fn_mission_delete` | Delete a mission |
+| `fn_milestone_add` | Add a milestone to a mission |
+| `fn_slice_add` | Add a slice to a milestone |
+| `fn_feature_add` | Add a feature to a slice |
+| `fn_slice_activate` | Activate a pending slice |
+| `fn_feature_link_task` | Link a feature to a task |
+| `fn_agent_stop` | Stop (pause) a running agent |
+| `fn_agent_start` | Start (resume) a stopped agent |
 
 ## CLI Commands (fn)
 

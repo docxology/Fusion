@@ -695,7 +695,7 @@ export async function runTaskImportGitHubInteractive(
   const match = ownerRepo.match(/^([^/]+)\/([^/]+)$/);
   if (!match) {
     console.error(`Invalid owner/repo format: ${ownerRepo}`);
-    console.error(`Expected format: owner/repo (e.g., dustinbyrne/kb)`);
+    console.error(`Expected format: owner/repo (e.g., dustinbyrne/fusion)`);
     process.exit(1);
   }
 
@@ -861,7 +861,7 @@ export async function fetchGitHubIssues(
   const headers: Record<string, string> = {
     Accept: "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",
-    "User-Agent": "kb-cli/1.0",
+    "User-Agent": "fn/1.0",
   };
 
   if (token) {
@@ -913,7 +913,7 @@ export async function runTaskImportFromGitHub(
   const match = ownerRepo.match(/^([^/]+)\/([^/]+)$/);
   if (!match) {
     console.error(`Invalid owner/repo format: ${ownerRepo}`);
-    console.error(`Expected format: owner/repo (e.g., dustinbyrne/kb)`);
+    console.error(`Expected format: owner/repo (e.g., dustinbyrne/fusion)`);
     process.exit(1);
   }
 

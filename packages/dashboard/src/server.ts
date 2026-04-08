@@ -150,7 +150,7 @@ export function createServer(store: TaskStore, options?: ServerOptions): ReturnT
   // Serve built React app
   // Resolution order:
   //   1. FUSION_CLIENT_DIR env override (explicit)
-  //   2. Next to process.execPath (bun-compiled binary: dist/kb + dist/client/)
+  //   2. Next to process.execPath (bun-compiled binary: dist/fn + dist/client/)
   //   3. __dirname/../dist/client  (running from src/ via tsx/ts-node)
   //   4. __dirname/../client        (running from dist/ after tsc)
   const execDir = dirname(process.execPath);

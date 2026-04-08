@@ -14,19 +14,19 @@ const extensionPath = resolve(cliRoot, "src/extension.ts");
  */
 function getExtensionToolNames(): string[] {
   const src = readFileSync(extensionPath, "utf-8");
-  const matches = [...src.matchAll(/name:\s*"(kb_[a-z_]+)"/g)];
+  const matches = [...src.matchAll(/name:\s*"(fn_[a-z_]+)"/g)];
   return matches.map((m) => m[1]).sort();
 }
 
 /**
- * Extract tool names documented in extension-tools.md (### kb_* headings).
+ * Extract tool names documented in extension-tools.md (### fn_* headings).
  */
 function getDocumentedToolNames(): string[] {
   const doc = readFileSync(
     resolve(skillDir, "references/extension-tools.md"),
     "utf-8",
   );
-  const matches = [...doc.matchAll(/^### (kb_[a-z_]+)/gm)];
+  const matches = [...doc.matchAll(/^### (fn_[a-z_]+)/gm)];
   return matches.map((m) => m[1]).sort();
 }
 
@@ -35,7 +35,7 @@ function getDocumentedToolNames(): string[] {
  */
 function getSkillMdToolNames(): string[] {
   const doc = readFileSync(resolve(skillDir, "SKILL.md"), "utf-8");
-  const matches = [...doc.matchAll(/`(kb_[a-z_]+)`/g)];
+  const matches = [...doc.matchAll(/`(fn_[a-z_]+)`/g)];
   // Deduplicate
   return [...new Set(matches.map((m) => m[1]))].sort();
 }
@@ -48,7 +48,7 @@ function getCapabilitiesToolNames(): string[] {
     resolve(skillDir, "references/fusion-capabilities.md"),
     "utf-8",
   );
-  const matches = [...doc.matchAll(/\| `(kb_[a-z_]+)` \|/g)];
+  const matches = [...doc.matchAll(/\| `(fn_[a-z_]+)` \|/g)];
   return matches.map((m) => m[1]).sort();
 }
 

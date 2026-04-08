@@ -48,9 +48,9 @@ The executor agent follows this specification step by step.
 
 **Using AI-guided planning:**
 
-For complex or vague ideas, use `kb_task_plan`:
+For complex or vague ideas, use `fn_task_plan`:
 ```
-kb_task_plan({ description: "Build a notification system for the app" })
+fn_task_plan({ description: "Build a notification system for the app" })
 ```
 
 The planning mode will:
@@ -65,38 +65,38 @@ For large-scale projects spanning multiple tasks, use the mission hierarchy:
 
 1. **Create a mission** — The high-level objective
    ```
-   kb_mission_create({ title: "Build Authentication System", description: "Complete auth with login, signup, password reset, and OAuth" })
+   fn_mission_create({ title: "Build Authentication System", description: "Complete auth with login, signup, password reset, and OAuth" })
    ```
 
 2. **Add milestones** — Major phases
    ```
-   kb_milestone_add({ missionId: "M-001", title: "Database Schema" })
-   kb_milestone_add({ missionId: "M-001", title: "API Endpoints" })
-   kb_milestone_add({ missionId: "M-001", title: "UI Integration" })
+   fn_milestone_add({ missionId: "M-001", title: "Database Schema" })
+   fn_milestone_add({ missionId: "M-001", title: "API Endpoints" })
+   fn_milestone_add({ missionId: "M-001", title: "UI Integration" })
    ```
 
 3. **Add slices** — Parallel work units within milestones
    ```
-   kb_slice_add({ milestoneId: "MS-001", title: "User Tables" })
-   kb_slice_add({ milestoneId: "MS-001", title: "Token Storage" })
+   fn_slice_add({ milestoneId: "MS-001", title: "User Tables" })
+   fn_slice_add({ milestoneId: "MS-001", title: "Token Storage" })
    ```
 
 4. **Add features** — Individual deliverables
    ```
-   kb_feature_add({ sliceId: "SL-001", title: "User model", description: "Create user table with email, password hash, timestamps" })
-   kb_feature_add({ sliceId: "SL-001", title: "Session table", description: "Create session table with token, expiry, user FK" })
+   fn_feature_add({ sliceId: "SL-001", title: "User model", description: "Create user table with email, password hash, timestamps" })
+   fn_feature_add({ sliceId: "SL-001", title: "Session table", description: "Create session table with token, expiry, user FK" })
    ```
 
 5. **Activate a slice** — Enable it for implementation
    ```
-   kb_slice_activate({ id: "SL-001" })
+   fn_slice_activate({ id: "SL-001" })
    ```
 
 6. **Link features to tasks** — Connect features to kb tasks
    ```
-   kb_task_create({ description: "Create user model with email, password hash, and timestamps" })
+   fn_task_create({ description: "Create user model with email, password hash, and timestamps" })
    # → Created KB-101
-   kb_feature_link_task({ featureId: "F-001", taskId: "KB-101" })
+   fn_feature_link_task({ featureId: "F-001", taskId: "KB-101" })
    ```
 
 **Mission status flows automatically:**
@@ -109,7 +109,7 @@ For large-scale projects spanning multiple tasks, use the mission hierarchy:
 
 **Viewing mission progress:**
 ```
-kb_mission_show({ id: "M-001" })
+fn_mission_show({ id: "M-001" })
 ```
 Shows the full hierarchy with status icons:
 - `●` active, `○` pending, `✓` complete, `⚠` blocked

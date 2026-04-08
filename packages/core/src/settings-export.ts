@@ -1,7 +1,7 @@
 /**
  * Settings export and import functionality.
  *
- * This module provides utilities for exporting and importing kb settings,
+ * This module provides utilities for exporting and importing fn settings,
  * supporting both global (~/.pi/fusion/settings.json) and project-level (.fusion/config.json)
  * settings for backup, migration, and sharing.
  */

@@ -13,7 +13,7 @@
 - Write one-liner descriptions like "fix the bug"
 - Include implementation details the AI should figure out
 - Create tasks that are too large (break into smaller tasks or use missions)
-- Duplicate existing tasks — check `kb_task_list` first
+- Duplicate existing tasks — check `fn_task_list` first
 
 ## Task Size Guidelines
 
@@ -29,14 +29,14 @@ For work larger than L, use missions to break it into phases.
 
 | Scenario | Tool |
 |----------|------|
-| Quick task with clear scope | `kb_task_create` |
-| Vague idea needing refinement | `kb_task_plan` |
-| Large project with phases | `kb_mission_create` + hierarchy |
-| Task failed, needs retry | `kb_task_retry` |
-| Task needs manual intervention | `kb_task_pause` |
-| Completed task needs follow-up | `kb_task_refine` |
-| Clean up done tasks | `kb_task_archive` |
-| Import external work | `kb_task_import_github*` |
+| Quick task with clear scope | `fn_task_create` |
+| Vague idea needing refinement | `fn_task_plan` |
+| Large project with phases | `fn_mission_create` + hierarchy |
+| Task failed, needs retry | `fn_task_retry` |
+| Task needs manual intervention | `fn_task_pause` |
+| Completed task needs follow-up | `fn_task_refine` |
+| Clean up done tasks | `fn_task_archive` |
+| Import external work | `fn_task_import_github*` |
 
 ## Dependency Management
 
@@ -49,10 +49,10 @@ For work larger than L, use missions to break it into phases.
 ## Working with the AI Engine
 
 - **Don't fight the automation** — let triage, scheduler, and executor do their jobs
-- **Pause if needed** — use `kb_task_pause` when you want manual control
+- **Pause if needed** — use `fn_task_pause` when you want manual control
 - **Steer don't micromanage** — use steering comments (via CLI `fn task steer`) to guide the AI without rewriting the spec
-- **Check progress** — use `kb_task_show` to monitor step completion
-- **Let it fail and retry** — if a task fails, check the log, then `kb_task_retry`
+- **Check progress** — use `fn_task_show` to monitor step completion
+- **Let it fail and retry** — if a task fails, check the log, then `fn_task_retry`
 
 ## Mission Planning Tips
 
@@ -66,18 +66,18 @@ For work larger than L, use missions to break it into phases.
 ## Common Patterns
 
 **Bug fix flow:**
-1. `kb_task_create` with bug description (current vs expected behavior)
+1. `fn_task_create` with bug description (current vs expected behavior)
 2. Wait for triage to generate specification
-3. Monitor with `kb_task_show` until done
+3. Monitor with `fn_task_show` until done
 
 **Feature development flow:**
-1. `kb_task_plan` to refine requirements
+1. `fn_task_plan` to refine requirements
 2. Check the task in triage → todo → in-progress
-3. Review in `kb_task_show` when in-review
+3. Review in `fn_task_show` when in-review
 4. Task auto-merges to main
 
 **Large project flow:**
-1. `kb_mission_create` with project overview
+1. `fn_mission_create` with project overview
 2. Add milestones for each phase
 3. Add slices and features for the first milestone
 4. Activate first slice, create and link tasks
@@ -85,7 +85,7 @@ For work larger than L, use missions to break it into phases.
 6. Activate next slice (or use auto-advance)
 
 **GitHub issue triage flow:**
-1. `kb_task_browse_github_issues` to see what's open
-2. `kb_task_import_github_issue` for high-priority issues
+1. `fn_task_browse_github_issues` to see what's open
+2. `fn_task_import_github_issue` for high-priority issues
 3. Tasks enter triage and get AI-specified
 4. Monitor board as AI works through them

@@ -1,5 +1,5 @@
 /**
- * CentralCore — Main API for kb's multi-project central infrastructure.
+ * CentralCore — Main API for fn's multi-project central infrastructure.
  *
  * Provides project registry, health tracking, unified activity feed,
  * and global concurrency management across all registered projects.
@@ -1560,7 +1560,7 @@ export class CentralCore extends EventEmitter<CentralCoreEvents> {
   /**
    * Get the global directory path.
    *
-   * @returns Absolute path to global kb directory
+   * @returns Absolute path to global fn directory
    */
   getGlobalDir(): string {
     return this.globalDir;

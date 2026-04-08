@@ -1337,7 +1337,7 @@ export class MissionStore extends EventEmitter<MissionStoreEvents> {
   /**
    * Triage a feature by creating a new task and linking it.
    *
-   * Creates a kb task from the feature's title and description, then links
+   * Creates a fn task from the feature's title and description, then links
    * the feature to the newly created task using `linkFeatureToTask()`.
    * The feature status transitions from "defined" to "triaged".
    *

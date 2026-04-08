@@ -17,7 +17,7 @@ Triage → Todo → In Progress → In Review → Done → Archived
 Each column transition is driven by the AI engine or user action:
 
 **Triage (specification)**
-- Task enters triage when created via `kb_task_create`
+- Task enters triage when created via `fn_task_create`
 - The **TriageProcessor** reads the project context and writes a full PROMPT.md specification
 - Specification includes: steps, file scope, acceptance criteria, review level, size estimate
 - If `requirePlanApproval` is enabled, task stays in triage as "awaiting-approval" until manually approved
@@ -49,12 +49,12 @@ Each column transition is driven by the AI engine or user action:
 
 **Done**
 - Work is merged to main branch
-- Task is available for archival via `kb_task_archive`
-- Can be refined with `kb_task_refine` to create follow-up work
+- Task is available for archival via `fn_task_archive`
+- Can be refined with `fn_task_refine` to create follow-up work
 
 **Archived**
 - Removed from active board view
-- Can be restored with `kb_task_unarchive`
+- Can be restored with `fn_task_unarchive`
 - Can be cleaned up to free disk space (removes task directory, keeps metadata)
 
 **Task statuses (within any column):**
@@ -63,7 +63,7 @@ Each column transition is driven by the AI engine or user action:
 |--------|---------|
 | (none) | Normal state |
 | `paused` | Automation suspended — scheduler/executor skip this task |
-| `failed` | Execution error — use `kb_task_retry` to reset |
+| `failed` | Execution error — use `fn_task_retry` to reset |
 | `awaiting-approval` | Spec complete, waiting for manual approval (triage only) |
 
 **Review levels:**
@@ -82,9 +82,9 @@ The AI triage agent sets the review level based on task complexity and risk asse
 - Tasks can depend on other tasks (by task ID)
 - Dependent tasks wait in todo until all dependencies are in **done** or **archived**
 - Circular dependencies are prevented
-- Use `depends` parameter on `kb_task_create` to declare dependencies
+- Use `depends` parameter on `fn_task_create` to declare dependencies
 
-**Interpreting `kb_task_show` output:**
+**Interpreting `fn_task_show` output:**
 
 ```
 KB-042: Fix login validation
