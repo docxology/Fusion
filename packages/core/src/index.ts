@@ -259,3 +259,17 @@ export {
   convertAgentCompanies,
   AgentCompaniesParseError,
 } from "./agent-companies-parser.js";
+
+// ── Agent Companies Exporter ──────────────────────────────
+
+export {
+  slugify,
+  agentToCompaniesManifest,
+  generateCompanyMd,
+  generateAgentMd,
+  exportAgentsToDirectory,
+} from "./agent-companies-exporter.js";
+export type {
+  ExportOptions,
+  ExportResult,
+} from "./agent-companies-exporter.js";

@@ -1,8 +1,10 @@
 import { Router, type Request, type Response, type NextFunction } from "express";
 import multer from "multer";
 import { createReadStream, existsSync } from "node:fs";
+import { mkdtemp } from "node:fs/promises";
 import { execSync } from "node:child_process";
 import { resolve, sep, join } from "node:path";
+import { tmpdir } from "node:os";
 import * as nodeFs from "node:fs";
 import * as nodeChildProcess from "node:child_process";
 import type { TaskStore, Column, MergeResult, ScheduleType, ActivityEventType, ModelPreset, AutomationStep, MessageType, ParticipantType, MessageCreateInput } from "@fusion/core";
@@ -7524,6 +7526,75 @@ Output ONLY the prompt text (no markdown, no explanations).`;
       } else {
         rethrowAsApiError(err);
       }
+    }
+  });
+
+  /**
+   * POST /api/agents/export
+   * Export agents to an Agent Companies package directory.
+   *
+   * Body:
+   *  - { agentIds?: string[]; companyName?: string; companySlug?: string; outputDir?: string }
+   */
+  router.post("/agents/export", async (req, res) => {
+    try {
+      const { agentIds, companyName, companySlug, outputDir } = req.body ?? {};
+
+      if (agentIds !== undefined) {
+        if (!Array.isArray(agentIds)) {
+          throw badRequest("agentIds must be an array of strings");
+        }
+        if (agentIds.some((id: unknown) => typeof id !== "string" || id.trim().length === 0)) {
+          throw badRequest("agentIds must contain non-empty strings");
+        }
+      }
+
+      if (companyName !== undefined && typeof companyName !== "string") {
+        throw badRequest("companyName must be a string");
+      }
+      if (companySlug !== undefined && typeof companySlug !== "string") {
+        throw badRequest("companySlug must be a string");
+      }
+      if (outputDir !== undefined && typeof outputDir !== "string") {
+        throw badRequest("outputDir must be a string");
+      }
+
+      const scopedStore = await getScopedStore(req);
+      const { AgentStore, exportAgentsToDirectory } = await import("@fusion/core");
+
+      const agentStore = new AgentStore({ rootDir: scopedStore.getFusionDir() });
+      await agentStore.init();
+
+      const allAgents = await agentStore.listAgents();
+      const requestedIds = Array.isArray(agentIds) ? [...new Set(agentIds.map((id) => id.trim()))] : [];
+      const agentsToExport = requestedIds.length > 0
+        ? allAgents.filter((agent: any) => requestedIds.includes(agent.id))
+        : allAgents;
+
+      if (agentsToExport.length === 0) {
+        throw badRequest("No agents found to export");
+      }
+
+      let resolvedOutputDir: string;
+      if (typeof outputDir === "string" && outputDir.trim().length > 0) {
+        resolvedOutputDir = resolve(outputDir.trim());
+      } else if (typeof outputDir === "string") {
+        throw badRequest("outputDir cannot be empty");
+      } else {
+        resolvedOutputDir = await mkdtemp(join(tmpdir(), "fusion-agent-export-"));
+      }
+
+      const result = await exportAgentsToDirectory(agentsToExport, resolvedOutputDir, {
+        companyName: typeof companyName === "string" ? companyName : undefined,
+        companySlug: typeof companySlug === "string" ? companySlug : undefined,
+      });
+
+      res.json(result);
+    } catch (err: any) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      rethrowAsApiError(err);
     }
   });
 

@@ -52,6 +52,8 @@ export interface TeamManifest extends AgentCompaniesFrontmatter {
 
 export interface AgentManifest extends AgentCompaniesFrontmatter {
   title?: string;
+  icon?: string;
+  role?: string;
   reportsTo?: string | null;
   skills?: string[];
   instructionBody?: string;

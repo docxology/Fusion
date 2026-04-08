@@ -53,6 +53,7 @@ const { runNodeList, runNodeAdd, runNodeRemove, runNodeShow, runNodeHealth } = a
 const { runInit } = await import("./commands/init.js");
 const { runAgentStop, runAgentStart } = await import("./commands/agent.js");
 const { runAgentImport } = await import("./commands/agent-import.js");
+const { runAgentExport } = await import("./commands/agent-export.js");
 const { runMessageInbox, runMessageOutbox, runMessageSend, runMessageRead, runMessageDelete, runAgentMailbox } = await import("./commands/message.js");
 
 const HELP = `
@@ -128,6 +129,8 @@ Usage:
   fn agent start <id>               Start a stopped agent (resume execution)
   fn agent import <path> [--dry-run] [--skip-existing]
                                       Import agents from an Agent Companies package (directory, archive, or AGENTS.md file)
+  fn agent export <dir> [--company-name <name>] [--company-slug <slug>]
+                                      Export Fusion agents to an Agent Companies package directory
   fn agent mailbox <id>             View an agent's mailbox
   fn message inbox                  List inbox messages
   fn message outbox                 List sent messages
@@ -872,9 +875,22 @@ async function main() {
             await runAgentImport(source, { dryRun, skipExisting, project: projectName });
             break;
           }
+          case "export": {
+            const outputDir = args[2];
+            if (!outputDir) {
+              console.error("Usage: fn agent export <dir> [--company-name <name>] [--company-slug <slug>]");
+              process.exit(1);
+            }
+
+            const exportArgs = args.slice(3);
+            const companyName = getFlagValue(exportArgs, "--company-name");
+            const companySlug = getFlagValue(exportArgs, "--company-slug");
+            await runAgentExport(outputDir, { project: projectName, companyName, companySlug });
+            break;
+          }
           default:
             console.error(`Unknown subcommand: agent ${subcommand || ""}`);
-            console.log("Try: fn agent stop <id> | fn agent start <id> | fn agent mailbox <id> | fn agent import <path>");
+            console.log("Try: fn agent stop <id> | fn agent start <id> | fn agent mailbox <id> | fn agent import <path> | fn agent export <dir>");
             process.exit(1);
         }
         break;
