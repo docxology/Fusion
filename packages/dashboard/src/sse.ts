@@ -102,6 +102,9 @@ export function createSSE(store: TaskStore, missionStore?: MissionStore, aiSessi
     const onFeatureLinked = (data: any) => {
       send(`event: feature:linked\ndata: ${JSON.stringify(data)}\n\n`);
     };
+    const onMissionEvent = (data: any) => {
+      send(`event: mission:event\ndata: ${JSON.stringify(data)}\n\n`);
+    };
 
     const onAiSessionUpdated = (data: any) => {
       send(`event: ai_session:updated\ndata: ${JSON.stringify(data)}\n\n`);
@@ -138,6 +141,7 @@ export function createSSE(store: TaskStore, missionStore?: MissionStore, aiSessi
         missionStore.off("feature:updated", onFeatureUpdated);
         missionStore.off("feature:deleted", onFeatureDeleted);
         missionStore.off("feature:linked", onFeatureLinked);
+        missionStore.off("mission:event", onMissionEvent);
       }
       if (aiSessionStore) {
         aiSessionStore.off("ai_session:updated", onAiSessionUpdated);
@@ -168,6 +172,7 @@ export function createSSE(store: TaskStore, missionStore?: MissionStore, aiSessi
       missionStore.on("feature:updated", onFeatureUpdated);
       missionStore.on("feature:deleted", onFeatureDeleted);
       missionStore.on("feature:linked", onFeatureLinked);
+      missionStore.on("mission:event", onMissionEvent);
     }
 
     if (aiSessionStore) {

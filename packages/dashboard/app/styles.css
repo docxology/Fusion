@@ -21036,6 +21036,62 @@ body[data-color-theme="terminal"][data-theme="light"]::before {
   transition: width 0.3s ease;
 }
 
+.mission-health-badge {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.mission-health-badge--healthy {
+  background: var(--color-success, #22c55e);
+}
+
+.mission-health-badge--warning {
+  background: var(--color-warning, #eab308);
+}
+
+.mission-health-badge--error {
+  background: var(--color-error, #ef4444);
+}
+
+.mission-list__item-progress--healthy .mission-list__item-progress-bar {
+  background: var(--color-success, #22c55e);
+}
+
+.mission-list__item-progress--warning .mission-list__item-progress-bar {
+  background: var(--color-warning, #eab308);
+}
+
+.mission-list__item-progress--error .mission-list__item-progress-bar {
+  background: var(--color-error, #ef4444);
+}
+
+.mission-list__item-failed {
+  border: 0;
+  background: transparent;
+  color: var(--color-error, #ef4444);
+  font-size: 11px;
+  padding: 0;
+  cursor: pointer;
+}
+
+.mission-list__item-failed:hover {
+  text-decoration: underline;
+}
+
+.mission-relative-time {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.mission-list__item-active-slice {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
 /* ================================================================
    Mission Detail View
    ================================================================ */
@@ -21132,6 +21188,11 @@ body[data-color-theme="terminal"][data-theme="light"]::before {
   color: var(--text-muted);
 }
 
+.mission-detail__autopilot-next-check {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
 .mission-detail__autopilot-actions {
   display: flex;
   align-items: center;
@@ -21164,8 +21225,68 @@ body[data-color-theme="terminal"][data-theme="light"]::before {
   gap: 6px;
 }
 
-.mission-checkbox--autopilot {
-  font-weight: 500;
+.mission-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  min-height: 44px;
+}
+
+.mission-toggle input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.mission-toggle__track {
+  position: relative;
+  width: 38px;
+  height: 22px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.mission-toggle__thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  transition: transform var(--transition-fast), background var(--transition-fast);
+}
+
+.mission-toggle input[type="checkbox"]:checked + .mission-toggle__track {
+  background: rgba(34, 197, 94, 0.2);
+  border-color: var(--color-success, #22c55e);
+}
+
+.mission-toggle input[type="checkbox"]:checked + .mission-toggle__track .mission-toggle__thumb {
+  transform: translateX(16px);
+  background: var(--color-success, #22c55e);
+}
+
+.mission-toggle input[type="checkbox"]:focus-visible + .mission-toggle__track {
+  box-shadow: var(--focus-ring);
+}
+
+.mission-toggle input[type="checkbox"]:disabled + .mission-toggle__track {
+  opacity: 0.6;
+}
+
+.mission-toggle__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
 }
 
 .mission-btn--sm {
@@ -21180,6 +21301,168 @@ body[data-color-theme="terminal"][data-theme="light"]::before {
 .mission-list__item-autopilot-icon {
   color: #eab308;
   flex-shrink: 0;
+}
+
+.mission-detail__tabs {
+  display: flex;
+  gap: var(--space-xs);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: var(--space-sm);
+}
+
+.mission-detail__tab {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  border-radius: var(--radius-pill);
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.mission-detail__tab:hover {
+  color: var(--text);
+  border-color: var(--text-dim);
+}
+
+.mission-detail__tab--active {
+  background: var(--button-primary-bg);
+  color: var(--button-primary-text);
+  border-color: var(--button-primary-bg);
+}
+
+.mission-detail__activity {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.mission-detail__activity-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+.mission-detail__activity-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.mission-detail__activity-filter select {
+  min-width: 220px;
+}
+
+.mission-detail__activity-count {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.mission-detail__activity-loading {
+  min-height: 120px;
+}
+
+.mission-events {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  max-height: min(52vh, 420px);
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.mission-event {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mission-event__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+.mission-event__type {
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--radius-pill);
+  padding: 2px 8px;
+  font-size: 11px;
+  text-transform: capitalize;
+  background: var(--surface);
+  color: var(--text-muted);
+}
+
+.mission-event__type--error {
+  background: rgba(239, 68, 68, 0.15);
+  color: #fca5a5;
+}
+
+.mission-event__type--state {
+  background: rgba(59, 130, 246, 0.15);
+  color: #93c5fd;
+}
+
+.mission-event__type--task {
+  background: rgba(16, 185, 129, 0.15);
+  color: #6ee7b7;
+}
+
+.mission-event__type--slice {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fcd34d;
+}
+
+.mission-event__type--autopilot {
+  background: rgba(168, 85, 247, 0.15);
+  color: #d8b4fe;
+}
+
+.mission-event__description {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.mission-event__time,
+.mission-event__timestamp {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.mission-event__metadata {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mission-event__metadata-content {
+  margin: 0;
+  padding: var(--space-sm);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 11px;
+  overflow-x: auto;
+}
+
+.mission-detail__activity-load-more {
+  display: flex;
+  justify-content: center;
 }
 
 @keyframes autopilot-pulse {
@@ -21577,6 +21860,74 @@ body[data-color-theme="terminal"][data-theme="light"]::before {
   /* Detail view safe area bottom padding */
   .mission-detail {
     padding-bottom: calc(var(--space-lg) + env(safe-area-inset-bottom, 0px));
+  }
+
+  .mission-detail__autopilot {
+    align-items: flex-start;
+    gap: var(--space-xs);
+  }
+
+  .mission-detail__autopilot-actions {
+    width: 100%;
+    flex-wrap: wrap;
+    gap: var(--space-xs);
+  }
+
+  .mission-detail__autopilot-actions .mission-btn {
+    min-height: 36px;
+  }
+
+  .mission-detail__tabs {
+    overflow-x: auto;
+    padding-bottom: var(--space-xs);
+    scrollbar-width: thin;
+  }
+
+  .mission-detail__tab {
+    flex: 0 0 auto;
+    min-height: 34px;
+    white-space: nowrap;
+  }
+
+  .mission-detail__activity-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .mission-detail__activity-filter,
+  .mission-detail__activity-filter select {
+    width: 100%;
+  }
+
+  .mission-detail__activity-count {
+    align-self: flex-end;
+  }
+
+  .mission-events {
+    max-height: min(46vh, 360px);
+  }
+
+  .mission-event {
+    padding: var(--space-sm);
+  }
+
+  .mission-event__header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .mission-event__description,
+  .mission-event__metadata-content {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .mission-list__item-summary {
+    gap: var(--space-xs);
+  }
+
+  .mission-list__item-failed {
+    width: fit-content;
   }
 
   /* Feature actions wrap on narrow screens */

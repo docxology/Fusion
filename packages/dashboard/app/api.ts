@@ -24,6 +24,9 @@ import type {
   NodeConfig,
   NodeStatus,
   DiscoveryConfig,
+  MissionEvent,
+  MissionHealth,
+  MissionEventType,
 } from "@fusion/core";
 import type { PlanningQuestion, PlanningSummary, PlanningResponse } from "@fusion/core";
 import type { ScheduledTask, ScheduledTaskCreateInput, ScheduledTaskUpdateInput, AutomationRunResult, AutomationStep } from "@fusion/core";
@@ -3032,6 +3035,43 @@ export function deleteMission(missionId: string, projectId?: string): Promise<vo
 /** Get mission computed status */
 export function fetchMissionStatus(missionId: string, projectId?: string): Promise<{ status: string }> {
   return api<{ status: string }>(withProjectId(`/missions/${encodeURIComponent(missionId)}/status`, projectId));
+}
+
+/** Query options for paginated mission event logs. */
+export interface MissionEventQueryOptions {
+  limit?: number;
+  offset?: number;
+  eventType?: MissionEventType;
+}
+
+/** Paginated mission event log response. */
+export interface MissionEventsResponse {
+  events: MissionEvent[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+/** Fetch paginated mission observability events. */
+export function fetchMissionEvents(
+  missionId: string,
+  options?: MissionEventQueryOptions,
+  projectId?: string,
+): Promise<MissionEventsResponse> {
+  const query = new URLSearchParams();
+  if (options?.limit !== undefined) query.set("limit", String(options.limit));
+  if (options?.offset !== undefined) query.set("offset", String(options.offset));
+  if (options?.eventType !== undefined) query.set("eventType", options.eventType);
+
+  const suffix = query.size > 0 ? `?${query.toString()}` : "";
+  return api<MissionEventsResponse>(
+    withProjectId(`/missions/${encodeURIComponent(missionId)}/events${suffix}`, projectId),
+  );
+}
+
+/** Fetch computed mission health metrics. */
+export function fetchMissionHealth(missionId: string, projectId?: string): Promise<MissionHealth> {
+  return api<MissionHealth>(withProjectId(`/missions/${encodeURIComponent(missionId)}/health`, projectId));
 }
 
 /** Add milestone to mission */

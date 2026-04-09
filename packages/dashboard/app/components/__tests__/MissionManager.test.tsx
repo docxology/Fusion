@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { MissionManager } from "../MissionManager";
 
 const mockFetchAiSession = vi.fn();
@@ -89,6 +89,56 @@ const mockMissionDetail = {
   updatedAt: "2026-01-01T00:00:00.000Z",
 };
 
+const mockAutopilotStatus = {
+  enabled: false,
+  state: "inactive",
+  watched: false,
+};
+
+const mockMissionEvents = [
+  {
+    id: "E-001",
+    missionId: "M-001",
+    eventType: "mission_started",
+    description: "Mission started",
+    metadata: null,
+    timestamp: "2026-01-03T10:00:00.000Z",
+  },
+  {
+    id: "E-002",
+    missionId: "M-001",
+    eventType: "warning",
+    description: "Task queue is delayed",
+    metadata: { queueDepth: 4 },
+    timestamp: "2026-01-03T10:10:00.000Z",
+  },
+  {
+    id: "E-003",
+    missionId: "M-001",
+    eventType: "feature_completed",
+    description: "Feature F-001 completed",
+    metadata: { featureId: "F-001" },
+    timestamp: "2026-01-03T10:20:00.000Z",
+  },
+  {
+    id: "E-004",
+    missionId: "M-001",
+    eventType: "autopilot_state_changed",
+    description: "Autopilot moved to watching",
+    metadata: { previous: "inactive", next: "watching" },
+    timestamp: "2026-01-03T10:30:00.000Z",
+  },
+];
+
+const mockMissionEventsPaged = Array.from({ length: 65 }, (_, index) => ({
+  id: `E-${String(index + 1).padStart(3, "0")}`,
+  missionId: "M-001",
+  eventType: index % 2 === 0 ? "feature_completed" : "slice_activated",
+  description: `Mission event ${index + 1}`,
+  metadata: { index: index + 1 },
+  timestamp: new Date(Date.UTC(2026, 0, 3, 10, index)).toISOString(),
+}));
+
 /** Create a mock Response that matches the real api() function's expectations (text + content-type headers) */
 function mockApiResponse(data: unknown) {
   return {
@@ -98,31 +148,204 @@ function mockApiResponse(data: unknown) {
   };
 }
 
-/** Fetch mock that returns missions list for /missions and detail for /missions/M-001 */
+const mockMissionHealthById: Record<string, unknown> = {
+  "M-001": {
+    missionId: "M-001",
+    status: "planning",
+    tasksCompleted: 0,
+    tasksFailed: 0,
+    tasksInFlight: 0,
+    totalTasks: 0,
+    currentSliceId: undefined,
+    currentMilestoneId: undefined,
+    estimatedCompletionPercent: 0,
+    lastErrorAt: undefined,
+    lastErrorDescription: undefined,
+    autopilotState: "inactive",
+    autopilotEnabled: false,
+    lastActivityAt: undefined,
+  },
+  "M-002": {
+    missionId: "M-002",
+    status: "active",
+    tasksCompleted: 3,
+    tasksFailed: 0,
+    tasksInFlight: 1,
+    totalTasks: 5,
+    currentSliceId: "SL-API-1",
+    currentMilestoneId: "MS-API-1",
+    estimatedCompletionPercent: 60,
+    lastErrorAt: undefined,
+    lastErrorDescription: undefined,
+    autopilotState: "watching",
+    autopilotEnabled: true,
+    lastActivityAt: "2026-01-02T00:00:00.000Z",
+  },
+};
+
+function getMockMissionHealth(missionId: string) {
+  return (
+    mockMissionHealthById[missionId] ?? {
+      missionId,
+      status: "planning",
+      tasksCompleted: 0,
+      tasksFailed: 0,
+      tasksInFlight: 0,
+      totalTasks: 0,
+      currentSliceId: undefined,
+      currentMilestoneId: undefined,
+      estimatedCompletionPercent: 0,
+      lastErrorAt: undefined,
+      lastErrorDescription: undefined,
+      autopilotState: "inactive",
+      autopilotEnabled: false,
+      lastActivityAt: undefined,
+    }
+  );
+}
+
+function extractMissionId(url: string): string | null {
+  const match = url.match(/\/api\/missions\/([^/?]+)/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+function parseMissionEventsResponse(url: string, events = mockMissionEvents) {
+  const parsed = new URL(url, "http://localhost");
+  const offset = Number(parsed.searchParams.get("offset") ?? "0");
+  const limit = Number(parsed.searchParams.get("limit") ?? "25");
+  const eventType = parsed.searchParams.get("eventType");
+
+  const filtered = eventType
+    ? events.filter((event) => event.eventType === eventType)
+    : events;
+
+  return {
+    events: filtered.slice(offset, offset + limit),
+    total: filtered.length,
+    limit,
+    offset,
+  };
+}
+
+class MockEventSource {
+  static instances: MockEventSource[] = [];
+
+  private readonly listeners = new Map<string, Set<(event: MessageEvent<string>) => void>>();
+
+  constructor(public readonly url: string) {
+    MockEventSource.instances.push(this);
+  }
+
+  addEventListener(type: string, callback: (event: MessageEvent<string>) => void) {
+    const existing = this.listeners.get(type) ?? new Set();
+    existing.add(callback);
+    this.listeners.set(type, existing);
+  }
+
+  removeEventListener(type: string, callback: (event: MessageEvent<string>) => void) {
+    this.listeners.get(type)?.delete(callback);
+  }
+
+  close() {
+    this.listeners.clear();
+  }
+
+  emit(type: string, payload: unknown) {
+    const event = { data: JSON.stringify(payload) } as MessageEvent<string>;
+    for (const callback of this.listeners.get(type) ?? []) {
+      callback(event);
+    }
+  }
+
+  static reset() {
+    MockEventSource.instances = [];
+  }
+}
+
+/** Fetch mock that returns mission list, detail, health, autopilot, and events endpoints. */
 function createFetchMock() {
-  return vi.fn().mockImplementation((_url: string) => {
+  return vi.fn().mockImplementation((url: string) => {
+    if (url.includes("/events")) {
+      return Promise.resolve(mockApiResponse(parseMissionEventsResponse(url)));
+    }
+
+    if (url.includes("/health")) {
+      const missionId = extractMissionId(url) ?? "M-001";
+      return Promise.resolve(mockApiResponse(getMockMissionHealth(missionId)));
+    }
+
+    if (url.includes("/autopilot")) {
+      return Promise.resolve(mockApiResponse(mockAutopilotStatus));
+    }
+
+    if (url.includes("/api/missions/") && !url.includes("/milestones") && !url.includes("/status")) {
+      return Promise.resolve(mockApiResponse(mockMissionDetail));
+    }
+
     return Promise.resolve(mockApiResponse(mockMissions));
   });
 }
 
 /** Fetch mock for navigating into a mission detail */
-function createDetailFetchMock() {
-  let callCount = 0;
-  return vi.fn().mockImplementation((_url: string) => {
-    callCount++;
-    // First call: list, subsequent: detail
-    if (callCount === 1) {
-      return Promise.resolve(mockApiResponse(mockMissions));
+function createDetailFetchMock(events = mockMissionEvents) {
+  return vi.fn().mockImplementation((url: string) => {
+    if (url.includes("/events")) {
+      return Promise.resolve(mockApiResponse(parseMissionEventsResponse(url, events)));
     }
-    return Promise.resolve(mockApiResponse(mockMissionDetail));
+
+    if (url.includes("/health")) {
+      const missionId = extractMissionId(url) ?? "M-001";
+      return Promise.resolve(mockApiResponse(getMockMissionHealth(missionId)));
+    }
+
+    if (url.includes("/autopilot")) {
+      return Promise.resolve(mockApiResponse(mockAutopilotStatus));
+    }
+
+    if (url.includes("/api/missions/") && !url.includes("/milestones") && !url.includes("/status")) {
+      const missionId = extractMissionId(url);
+      if (missionId === "M-001") {
+        return Promise.resolve(mockApiResponse(mockMissionDetail));
+      }
+    }
+
+    return Promise.resolve(mockApiResponse(mockMissions));
+  });
+}
+
+function createFetchMockWithHealth(
+  missions: Array<Record<string, unknown>>,
+  healthByMissionId: Record<string, unknown>,
+) {
+  return vi.fn().mockImplementation((url: string) => {
+    if (url.includes("/events")) {
+      return Promise.resolve(mockApiResponse(parseMissionEventsResponse(url)));
+    }
+
+    if (url.includes("/health")) {
+      const missionId = extractMissionId(url) ?? "";
+      return Promise.resolve(mockApiResponse(healthByMissionId[missionId] ?? getMockMissionHealth(missionId)));
+    }
+
+    if (url.includes("/autopilot")) {
+      return Promise.resolve(mockApiResponse(mockAutopilotStatus));
+    }
+
+    if (url.includes("/api/missions/") && !url.includes("/milestones") && !url.includes("/status")) {
+      return Promise.resolve(mockApiResponse(mockMissionDetail));
+    }
+
+    return Promise.resolve(mockApiResponse(missions));
   });
 }
 
 describe("MissionManager", () => {
   let originalFetch: typeof globalThis.fetch;
+  let originalEventSource: typeof globalThis.EventSource | undefined;
 
   beforeEach(() => {
     originalFetch = globalThis.fetch;
+    originalEventSource = globalThis.EventSource;
     mockFetchAiSession.mockReset();
     mockCancelMissionInterview.mockReset();
     mockConnectMissionInterviewStream.mockReset();
@@ -132,10 +355,12 @@ describe("MissionManager", () => {
       close: vi.fn(),
       isConnected: () => true,
     });
+    MockEventSource.reset();
   });
 
   afterEach(() => {
     globalThis.fetch = originalFetch;
+    globalThis.EventSource = originalEventSource as typeof globalThis.EventSource;
     vi.restoreAllMocks();
   });
 
@@ -233,6 +458,310 @@ describe("MissionManager", () => {
     });
   });
 
+  it("renders healthy, warning, and error health badges based on mission health", async () => {
+    const missions = [
+      { id: "M-H1", title: "Healthy Mission", status: "planning", milestones: [], createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" },
+      { id: "M-H2", title: "Warning Mission", status: "active", milestones: [], createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" },
+      { id: "M-H3", title: "Error Mission", status: "active", milestones: [], createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" },
+    ];
+
+    globalThis.fetch = createFetchMockWithHealth(missions as Array<Record<string, unknown>>, {
+      "M-H1": {
+        missionId: "M-H1",
+        status: "planning",
+        tasksCompleted: 2,
+        tasksFailed: 0,
+        tasksInFlight: 0,
+        totalTasks: 2,
+        estimatedCompletionPercent: 100,
+        autopilotState: "inactive",
+        autopilotEnabled: false,
+      },
+      "M-H2": {
+        missionId: "M-H2",
+        status: "active",
+        tasksCompleted: 1,
+        tasksFailed: 1,
+        tasksInFlight: 1,
+        totalTasks: 4,
+        estimatedCompletionPercent: 25,
+        autopilotState: "watching",
+        autopilotEnabled: true,
+      },
+      "M-H3": {
+        missionId: "M-H3",
+        status: "active",
+        tasksCompleted: 3,
+        tasksFailed: 4,
+        tasksInFlight: 0,
+        totalTasks: 10,
+        estimatedCompletionPercent: 30,
+        lastErrorAt: new Date().toISOString(),
+        autopilotState: "activating",
+        autopilotEnabled: true,
+      },
+    });
+
+    render(<MissionManager isOpen={true} onClose={vi.fn()} addToast={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("mission-health-badge-M-H1").className).toContain("mission-health-badge--healthy");
+      expect(screen.getByTestId("mission-health-badge-M-H2").className).toContain("mission-health-badge--warning");
+      expect(screen.getByTestId("mission-health-badge-M-H3").className).toContain("mission-health-badge--error");
+    });
+  });
+
+  it("shows task progress stats and failed-task indicator", async () => {
+    const missions = [
+      {
+        id: "M-TASKS",
+        title: "Task Stats Mission",
+        status: "active",
+        summary: {
+          totalMilestones: 2,
+          completedMilestones: 1,
+          totalFeatures: 5,
+          completedFeatures: 2,
+          progressPercent: 40,
+        },
+        milestones: [],
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ];
+
+    globalThis.fetch = createFetchMockWithHealth(missions as Array<Record<string, unknown>>, {
+      "M-TASKS": {
+        missionId: "M-TASKS",
+        status: "active",
+        tasksCompleted: 3,
+        tasksFailed: 1,
+        tasksInFlight: 1,
+        totalTasks: 5,
+        estimatedCompletionPercent: 60,
+        autopilotState: "watching",
+        autopilotEnabled: true,
+        lastActivityAt: new Date().toISOString(),
+      },
+    });
+
+    render(<MissionManager isOpen={true} onClose={vi.fn()} addToast={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("mission-task-stats-M-TASKS")).toHaveTextContent("3/5 tasks");
+      expect(screen.getByTestId("mission-failed-M-TASKS")).toHaveTextContent("1 failed");
+    });
+  });
+
+  it("formats mission relative activity time", async () => {
+    const missions = [
+      { id: "M-TIME", title: "Relative Time Mission", status: "active", milestones: [], createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" },
+    ];
+
+    globalThis.fetch = createFetchMockWithHealth(missions as Array<Record<string, unknown>>, {
+      "M-TIME": {
+        missionId: "M-TIME",
+        status: "active",
+        tasksCompleted: 0,
+        tasksFailed: 0,
+        tasksInFlight: 0,
+        totalTasks: 1,
+        estimatedCompletionPercent: 0,
+        autopilotState: "inactive",
+        autopilotEnabled: false,
+        lastActivityAt: new Date(Date.now() - 2 * 60 * 1000).toISOString(),
+      },
+    });
+
+    render(<MissionManager isOpen={true} onClose={vi.fn()} addToast={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("mission-last-activity-M-TIME").textContent).toMatch(/Activity\s+\d+m ago|Activity just now/);
+    });
+  });
+
+  it("renders mission activity tab with filter and metadata toggle", async () => {
+    globalThis.fetch = createDetailFetchMock(mockMissionEvents);
+    render(<MissionManager isOpen={true} onClose={vi.fn()} addToast={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Build Auth System")).toBeDefined();
+    });
+    fireEvent.click(screen.getByText("Build Auth System"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("mission-tab-activity")).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByTestId("mission-tab-activity"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("mission-activity-events")).toBeDefined();
+      expect(screen.getByText("Mission started")).toBeDefined();
+      expect(screen.getByText("Task queue is delayed")).toBeDefined();
+    });
+
+    fireEvent.change(screen.getByTestId("mission-activity-filter"), {
+      target: { value: "tasks" },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Feature F-001 completed")).toBeDefined();
+      expect(screen.queryByText("Mission started")).toBeNull();
+    });
+
+    fireEvent.change(screen.getByTestId("mission-activity-filter"), {
+      target: { value: "errors" },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Task queue is delayed")).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByTestId("mission-event-metadata-E-002"));
+    expect(screen.getByText(/"queueDepth": 4/)).toBeDefined();
+    fireEvent.click(screen.getByTestId("mission-event-metadata-E-002"));
+    expect(screen.queryByText(/"queueDepth": 4/)).toBeNull();
+  });
+
+  it("loads more mission activity events", async () => {
+    globalThis.fetch = createDetailFetchMock(mockMissionEventsPaged);
+    render(<MissionManager isOpen={true} onClose={vi.fn()} addToast={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Build Auth System")).toBeDefined();
+    });
+    fireEvent.click(screen.getByText("Build Auth System"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("mission-tab-activity")).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByTestId("mission-tab-activity"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Mission event 50")).toBeDefined();
+      expect(screen.queryByText("Mission event 51")).toBeNull();
+      expect(screen.getByTestId("mission-activity-load-more")).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByTestId("mission-activity-load-more"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Mission event 65")).toBeDefined();
+      expect(screen.queryByTestId("mission-activity-load-more")).toBeNull();
+    });
+  });
+
+  it("auto-scrolls to latest mission activity on initial load", async () => {
+    globalThis.fetch = createDetailFetchMock(mockMissionEvents);
+    globalThis.EventSource = MockEventSource as unknown as typeof globalThis.EventSource;
+
+    const scrollIntoViewSpy = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrollIntoViewSpy,
+    });
+
+    render(<MissionManager isOpen={true} onClose={vi.fn()} addToast={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Build Auth System")).toBeDefined();
+    });
+    fireEvent.click(screen.getByText("Build Auth System"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("mission-tab-activity")).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByTestId("mission-tab-activity"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Mission started")).toBeDefined();
+      expect(scrollIntoViewSpy).toHaveBeenCalled();
+    });
+  });
+
+  it("prepends real-time mission events and scrolls to top when near bottom", async () => {
+    globalThis.fetch = createDetailFetchMock(mockMissionEvents);
+    globalThis.EventSource = MockEventSource as unknown as typeof globalThis.EventSource;
+
+    render(<MissionManager isOpen={true} onClose={vi.fn()} addToast={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Build Auth System")).toBeDefined();
+    });
+    fireEvent.click(screen.getByText("Build Auth System"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("mission-tab-activity")).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByTestId("mission-tab-activity"));
+
+    const eventsContainer = await screen.findByTestId("mission-activity-events");
+    Object.defineProperty(eventsContainer, "scrollHeight", { configurable: true, value: 1000 });
+    Object.defineProperty(eventsContainer, "clientHeight", { configurable: true, value: 300 });
+    Object.defineProperty(eventsContainer, "scrollTop", { configurable: true, value: 650, writable: true });
+
+    await act(async () => {
+      for (const source of MockEventSource.instances) {
+        source.emit("mission:event", {
+          id: "E-REALTIME",
+          missionId: "M-001",
+          eventType: "warning",
+          description: "Real-time warning event",
+          metadata: { source: "sse" },
+          timestamp: "2026-01-03T11:00:00.000Z",
+        });
+      }
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Real-time warning event")).toBeDefined();
+      expect(eventsContainer.scrollTop).toBe(0);
+    });
+
+    const eventDescriptions = Array.from(eventsContainer.querySelectorAll(".mission-event__description"));
+    expect(eventDescriptions[0]?.textContent).toBe("Real-time warning event");
+  });
+
+  it("ignores real-time mission events for non-selected missions", async () => {
+    globalThis.fetch = createDetailFetchMock(mockMissionEvents);
+    globalThis.EventSource = MockEventSource as unknown as typeof globalThis.EventSource;
+
+    render(<MissionManager isOpen={true} onClose={vi.fn()} addToast={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Build Auth System")).toBeDefined();
+    });
+    fireEvent.click(screen.getByText("Build Auth System"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("mission-tab-activity")).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByTestId("mission-tab-activity"));
+    await screen.findByTestId("mission-activity-events");
+
+    await act(async () => {
+      for (const source of MockEventSource.instances) {
+        source.emit("mission:event", {
+          id: "E-OTHER",
+          missionId: "M-999",
+          eventType: "warning",
+          description: "Other mission warning",
+          metadata: null,
+          timestamp: "2026-01-03T11:00:00.000Z",
+        });
+      }
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText("Other mission warning")).toBeNull();
+    });
+  });
+
   it("shows empty state when no missions exist", async () => {
     globalThis.fetch = vi.fn().mockResolvedValue(mockApiResponse([]));
     render(<MissionManager isOpen={true} onClose={vi.fn()} addToast={vi.fn()} />);
@@ -291,15 +820,7 @@ describe("MissionManager", () => {
   });
 
   it("navigates back to list view when back button is clicked", async () => {
-    // call 1: list load, call 2: detail load, call 3: re-list load after back
-    let callCount = 0;
-    globalThis.fetch = vi.fn().mockImplementation(() => {
-      callCount++;
-      if (callCount === 2) {
-        return Promise.resolve(mockApiResponse(mockMissionDetail));
-      }
-      return Promise.resolve(mockApiResponse(mockMissions));
-    });
+    globalThis.fetch = createDetailFetchMock();
 
     render(<MissionManager isOpen={true} onClose={vi.fn()} addToast={vi.fn()} />);
 
@@ -531,7 +1052,10 @@ describe("MissionManager", () => {
 
     it("navigates to detail view for a mission with generated ID", async () => {
       let callCount = 0;
-      globalThis.fetch = vi.fn().mockImplementation(() => {
+      globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+        if (url.includes("/health")) {
+          return Promise.resolve(mockApiResponse(getMockMissionHealth(generatedMissionId)));
+        }
         callCount++;
         if (callCount === 1) {
           return Promise.resolve(mockApiResponse(generatedMockMissions));
@@ -557,6 +1081,9 @@ describe("MissionManager", () => {
       const addToast = vi.fn();
       let callCount = 0;
       globalThis.fetch = vi.fn().mockImplementation((_url: string) => {
+        if (_url.includes("/health")) {
+          return Promise.resolve(mockApiResponse(getMockMissionHealth(generatedMissionId)));
+        }
         callCount++;
         if (callCount <= 1) {
           // Initial list load
@@ -594,6 +1121,9 @@ describe("MissionManager", () => {
       const addToast = vi.fn();
       let callCount = 0;
       globalThis.fetch = vi.fn().mockImplementation((_url: string, options?: RequestInit) => {
+        if (_url.includes("/health")) {
+          return Promise.resolve(mockApiResponse(getMockMissionHealth(generatedMissionId)));
+        }
         callCount++;
         // DELETE request — return 204 empty
         if (options?.method === "DELETE") {
@@ -684,7 +1214,11 @@ describe("MissionManager", () => {
 
     it("opens inline edit form when edit mission is clicked in detail view", async () => {
       let callCount = 0;
-      globalThis.fetch = vi.fn().mockImplementation(() => {
+      globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+        if (url.includes("/health")) {
+          const missionId = extractMissionId(url) ?? "M-001";
+          return Promise.resolve(mockApiResponse(getMockMissionHealth(missionId)));
+        }
         callCount++;
         if (callCount === 1) return Promise.resolve(mockApiResponse(mockMissions));
         return Promise.resolve(mockApiResponse(mockMissionDetail));
@@ -858,21 +1392,37 @@ describe("MissionManager", () => {
     };
 
     function createAutopilotFetchMock() {
-      let callCount = 0;
-      return vi.fn().mockImplementation((_url: string) => {
-        callCount++;
-        if (callCount === 1) {
-          return Promise.resolve(mockApiResponse(autopilotMockMissions));
+      return vi.fn().mockImplementation((url: string, options?: RequestInit) => {
+        if (url.includes("/health")) {
+          const missionId = extractMissionId(url) ?? "M-AUTO1";
+          return Promise.resolve(mockApiResponse(getMockMissionHealth(missionId)));
         }
-        if (_url.includes("/autopilot")) {
+
+        if (url.includes("/autopilot")) {
+          if (options?.method === "PATCH") {
+            return Promise.resolve(mockApiResponse({
+              enabled: true,
+              state: "watching",
+              watched: true,
+              lastActivityAt: "2026-01-01T12:00:00.000Z",
+              nextScheduledCheck: "2026-01-01T12:05:00.000Z",
+            }));
+          }
+
           return Promise.resolve(mockApiResponse({
             enabled: true,
             state: "watching",
             watched: true,
             lastActivityAt: "2026-01-01T12:00:00.000Z",
+            nextScheduledCheck: "2026-01-01T12:05:00.000Z",
           }));
         }
-        return Promise.resolve(mockApiResponse(autopilotMockDetail));
+
+        if (url.includes("/api/missions/M-AUTO1") && !url.includes("/milestones") && !url.includes("/status")) {
+          return Promise.resolve(mockApiResponse(autopilotMockDetail));
+        }
+
+        return Promise.resolve(mockApiResponse(autopilotMockMissions));
       });
     }
 
@@ -915,6 +1465,70 @@ describe("MissionManager", () => {
         expect(screen.getByText("Autopilot")).toBeDefined();
         // Should show status badge with "watching" state
         expect(screen.getByTestId("autopilot-state-badge")).toBeDefined();
+      });
+    });
+
+    it("shows enhanced autopilot controls with expected button states", async () => {
+      globalThis.fetch = createAutopilotFetchMock();
+      render(<MissionManager isOpen={true} onClose={vi.fn()} addToast={vi.fn()} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Autopilot Mission")).toBeDefined();
+      });
+      fireEvent.click(screen.getByText("Autopilot Mission"));
+
+      await waitFor(() => {
+        expect(screen.getByTestId("mission-autopilot-start")).toBeDefined();
+        expect(screen.getByTestId("mission-autopilot-stop")).toBeDefined();
+        expect(screen.getByTestId("mission-autopilot-refresh")).toBeDefined();
+      });
+
+      const startButton = screen.getByTestId("mission-autopilot-start") as HTMLButtonElement;
+      const stopButton = screen.getByTestId("mission-autopilot-stop") as HTMLButtonElement;
+      const refreshButton = screen.getByTestId("mission-autopilot-refresh") as HTMLButtonElement;
+
+      expect(startButton.disabled).toBe(true);
+      expect(stopButton.disabled).toBe(false);
+      expect(refreshButton.disabled).toBe(false);
+      expect(screen.getByText(/Watching since/)).toBeDefined();
+      expect(screen.getByText(/Next check:/)).toBeDefined();
+    });
+
+    it("toggles autopilot with a PATCH request", async () => {
+      const fetchMock = createAutopilotFetchMock();
+      globalThis.fetch = fetchMock;
+      render(<MissionManager isOpen={true} onClose={vi.fn()} addToast={vi.fn()} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Autopilot Mission")).toBeDefined();
+      });
+      fireEvent.click(screen.getByText("Autopilot Mission"));
+
+      const toggle = await screen.findByLabelText("Autopilot");
+      fireEvent.click(toggle);
+
+      await waitFor(() => {
+        const patchCall = fetchMock.mock.calls.find((call) => {
+          const [url, options] = call as [string, RequestInit | undefined];
+          return url.includes("/api/missions/M-AUTO1/autopilot") && options?.method === "PATCH";
+        });
+        expect(patchCall).toBeDefined();
+        expect((patchCall?.[1] as RequestInit | undefined)?.body).toContain('"enabled":false');
+      });
+    });
+
+    it("shows pulse indicator in the autopilot state badge for active states", async () => {
+      globalThis.fetch = createAutopilotFetchMock();
+      render(<MissionManager isOpen={true} onClose={vi.fn()} addToast={vi.fn()} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Autopilot Mission")).toBeDefined();
+      });
+      fireEvent.click(screen.getByText("Autopilot Mission"));
+
+      await waitFor(() => {
+        const badge = screen.getByTestId("autopilot-state-badge");
+        expect(badge.querySelector(".mission-detail__autopilot-pulse")).not.toBeNull();
       });
     });
 

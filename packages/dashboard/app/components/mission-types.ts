@@ -1,5 +1,11 @@
 // Mission types for MissionManager - local copy to avoid module resolution issues
 
+import type {
+  MissionEvent as CoreMissionEvent,
+  MissionEventType as CoreMissionEventType,
+  MissionHealth as CoreMissionHealth,
+} from "@fusion/core";
+
 export type MissionStatus = "planning" | "active" | "blocked" | "complete" | "archived";
 export type MilestoneStatus = "planning" | "active" | "blocked" | "complete";
 export type SliceStatus = "pending" | "active" | "complete";
@@ -89,3 +95,13 @@ export type MissionWithSummary = Mission & { summary?: MissionSummary };
 export interface MissionWithHierarchy extends Mission {
   milestones: Milestone[];
 }
+
+/** Mission event categories emitted by mission observability APIs. */
+export type MissionEventType = CoreMissionEventType;
+
+/** Mission lifecycle event persisted in the mission event log. */
+export interface MissionEvent extends CoreMissionEvent {}
+
+/** Computed mission health snapshot returned by observability APIs. */
+export interface MissionHealth extends CoreMissionHealth {}
+

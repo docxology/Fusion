@@ -158,6 +158,41 @@ describe("createSSE", () => {
     expect(store.listenerCount("task:created")).toBe(0);
   });
 
+  it("relays mission:event events as SSE messages when missionStore is provided", () => {
+    const missionStore = createMockStore();
+    const req = createMockRequest();
+    const { res, chunks } = createMockResponse();
+    createSSE(store, missionStore)(req, res);
+
+    const missionEvent = {
+      id: "ME-001",
+      missionId: "M-001",
+      eventType: "mission_started",
+      description: "Mission started",
+      metadata: null,
+      timestamp: new Date().toISOString(),
+    };
+
+    missionStore.emit("mission:event", missionEvent);
+
+    const sseMsg = chunks.find((c) => c.includes("mission:event"));
+    expect(sseMsg).toBeDefined();
+    expect(sseMsg).toContain(JSON.stringify(missionEvent));
+  });
+
+  it("cleans up mission:event listener when client disconnects", () => {
+    const missionStore = createMockStore();
+    const req = createMockRequest();
+    const { res } = createMockResponse();
+    createSSE(store, missionStore)(req, res);
+
+    expect(missionStore.listenerCount("mission:event")).toBe(1);
+
+    req.emit("close");
+
+    expect(missionStore.listenerCount("mission:event")).toBe(0);
+  });
+
   it("tracks active connection count", () => {
     const req1 = createMockRequest();
     const { res: res1 } = createMockResponse();

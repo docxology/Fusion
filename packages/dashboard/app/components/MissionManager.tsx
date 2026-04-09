@@ -21,6 +21,7 @@ import {
   RefreshCw,
   Sparkles,
   Zap,
+  Activity,
 } from "lucide-react";
 import type { ToastType } from "../hooks/useToast";
 import { MissionInterviewModal } from "./MissionInterviewModal";
@@ -37,6 +38,9 @@ import type {
   FeatureStatus,
   MilestoneWithSlices,
   SliceWithFeatures,
+  MissionHealth,
+  MissionEvent,
+  MissionEventType,
 } from "./mission-types";
 import {
   fetchMissions,
@@ -66,6 +70,8 @@ import {
   updateMissionAutopilot,
   startMissionAutopilot,
   stopMissionAutopilot,
+  fetchMissionHealth,
+  fetchMissionEvents,
 } from "../api";
 import type { AutopilotStatus as AutopilotStatusType, AutopilotState } from "./mission-types";
 
@@ -175,6 +181,158 @@ const EMPTY_FEATURE_FORM: FeatureFormData = {
   status: "defined",
 };
 
+type MissionHealthState = "healthy" | "warning" | "error";
+
+const HOUR_MS = 60 * 60 * 1000;
+
+function getRelativeTime(timestamp?: string): string {
+  if (!timestamp) return "—";
+
+  const ts = new Date(timestamp).getTime();
+  if (Number.isNaN(ts)) return "—";
+
+  const diffMs = Date.now() - ts;
+  if (diffMs < 0) return "just now";
+
+  const diffMinutes = Math.floor(diffMs / (60 * 1000));
+  if (diffMinutes < 1) return "just now";
+  if (diffMinutes < 60) return `${diffMinutes}m ago`;
+
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+
+  const diffDays = Math.floor(diffHours / 24);
+  return `${diffDays}d ago`;
+}
+
+function getMissionHealthState(health?: MissionHealth): MissionHealthState {
+  if (!health) return "healthy";
+
+  const hasRecentError =
+    typeof health.lastErrorAt === "string" &&
+    Date.now() - new Date(health.lastErrorAt).getTime() <= HOUR_MS;
+
+  const failureRateThresholdExceeded =
+    health.totalTasks > 0 && health.tasksFailed > health.totalTasks * 0.3;
+
+  if (hasRecentError || failureRateThresholdExceeded) {
+    return "error";
+  }
+
+  if (health.tasksFailed > 0) {
+    return "warning";
+  }
+
+  if (health.tasksFailed === 0 && health.tasksInFlight <= health.totalTasks) {
+    return "healthy";
+  }
+
+  return "warning";
+}
+
+function isMissionHealth(value: unknown): value is MissionHealth {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<MissionHealth>;
+  return (
+    typeof candidate.missionId === "string" &&
+    typeof candidate.tasksCompleted === "number" &&
+    typeof candidate.tasksFailed === "number" &&
+    typeof candidate.tasksInFlight === "number" &&
+    typeof candidate.totalTasks === "number" &&
+    typeof candidate.estimatedCompletionPercent === "number"
+  );
+}
+
+function isMissionEvent(value: unknown): value is MissionEvent {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<MissionEvent>;
+  return (
+    typeof candidate.id === "string" &&
+    typeof candidate.missionId === "string" &&
+    typeof candidate.eventType === "string" &&
+    typeof candidate.description === "string" &&
+    typeof candidate.timestamp === "string"
+  );
+}
+
+const TASK_EVENT_TYPES: MissionEventType[] = ["feature_triaged", "feature_completed"];
+const SLICE_EVENT_TYPES: MissionEventType[] = ["slice_activated", "slice_completed", "milestone_completed"];
+const STATE_CHANGE_EVENT_TYPES: MissionEventType[] = [
+  "mission_started",
+  "mission_paused",
+  "mission_resumed",
+  "mission_completed",
+];
+const AUTOPILOT_EVENT_TYPES: MissionEventType[] = [
+  "autopilot_enabled",
+  "autopilot_disabled",
+  "autopilot_state_changed",
+  "autopilot_retry",
+  "autopilot_stale",
+];
+
+function matchesEventFilter(
+  eventType: MissionEventType,
+  filter: "all" | "errors" | "state_changes" | "tasks" | "slices" | "autopilot",
+): boolean {
+  switch (filter) {
+    case "errors":
+      return eventType === "error" || eventType === "warning";
+    case "state_changes":
+      return STATE_CHANGE_EVENT_TYPES.includes(eventType);
+    case "tasks":
+      return TASK_EVENT_TYPES.includes(eventType);
+    case "slices":
+      return SLICE_EVENT_TYPES.includes(eventType);
+    case "autopilot":
+      return AUTOPILOT_EVENT_TYPES.includes(eventType);
+    default:
+      return true;
+  }
+}
+
+function getEventTypeClassName(eventType: MissionEventType): string {
+  if (eventType === "error" || eventType === "warning") {
+    return "mission-event__type--error";
+  }
+  if (STATE_CHANGE_EVENT_TYPES.includes(eventType)) {
+    return "mission-event__type--state";
+  }
+  if (TASK_EVENT_TYPES.includes(eventType)) {
+    return "mission-event__type--task";
+  }
+  if (SLICE_EVENT_TYPES.includes(eventType)) {
+    return "mission-event__type--slice";
+  }
+  if (AUTOPILOT_EVENT_TYPES.includes(eventType)) {
+    return "mission-event__type--autopilot";
+  }
+  return "mission-event__type--default";
+}
+
+function getEventTypeLabel(eventType: MissionEventType): string {
+  return eventType.replace(/_/g, " ");
+}
+
+function getActivityQueryEventType(
+  _filter: "all" | "errors" | "state_changes" | "tasks" | "slices" | "autopilot",
+): MissionEventType | undefined {
+  // Keep query unfiltered to support grouped UI filters (e.g. errors + warnings).
+  return undefined;
+}
+
+function getAutopilotActivitySummary(state: AutopilotState, lastActivityAt?: string): string | null {
+  if (!lastActivityAt) {
+    return null;
+  }
+
+  if (state === "watching") {
+    return `Watching since ${getRelativeTime(lastActivityAt)}`;
+  }
+
+  return `Last activation ${getRelativeTime(lastActivityAt)}`;
+}
+
 export function MissionManager({ isOpen, isInline = false, onClose, addToast, projectId, onSelectTask, availableTasks = [], resumeSessionId, targetMissionId }: MissionManagerProps) {
   const isActive = isInline || isOpen;
   const [missions, setMissions] = useState<MissionWithSummary[]>([]);
@@ -227,17 +385,83 @@ export function MissionManager({ isOpen, isInline = false, onClose, addToast, pr
   const [autopilotStatus, setAutopilotStatus] = useState<AutopilotStatusType | null>(null);
   const [autopilotLoading, setAutopilotLoading] = useState(false);
 
+  const [missionHealthById, setMissionHealthById] = useState<Map<string, MissionHealth>>(new Map());
+
+  const [activeTab, setActiveTab] = useState<"structure" | "activity">("structure");
+  const [missionEvents, setMissionEvents] = useState<MissionEvent[]>([]);
+  const missionEventsRef = useRef<MissionEvent[]>([]);
+  const [eventsLoading, setEventsLoading] = useState(false);
+  const [eventsTotal, setEventsTotal] = useState(0);
+  const [eventsFilter, setEventsFilter] = useState<
+    "all" | "errors" | "state_changes" | "tasks" | "slices" | "autopilot"
+  >("all");
+  const [expandedEventMetadata, setExpandedEventMetadata] = useState<Set<string>>(new Set());
+
+  const activityEventsContainerRef = useRef<HTMLDivElement>(null);
+  const activityEventsEndRef = useRef<HTMLDivElement>(null);
+
+  const scrollActivityToLatest = useCallback((behavior: ScrollBehavior = "auto") => {
+    const endNode = activityEventsEndRef.current;
+    if (endNode && typeof endNode.scrollIntoView === "function") {
+      endNode.scrollIntoView({ block: "end", behavior });
+      return;
+    }
+
+    const container = activityEventsContainerRef.current;
+    if (container) {
+      container.scrollTop = container.scrollHeight;
+    }
+  }, []);
+
+  const isActivityScrolledNearBottom = useCallback(() => {
+    const container = activityEventsContainerRef.current;
+    if (!container) {
+      return true;
+    }
+
+    const distanceToBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    return distanceToBottom <= 100;
+  }, []);
+
+  const loadMissionHealth = useCallback(async (missionList: MissionWithSummary[]) => {
+    if (missionList.length === 0) {
+      setMissionHealthById(new Map());
+      return;
+    }
+
+    const healthResults = await Promise.allSettled(
+      missionList.map(async (mission) => {
+        const health = await fetchMissionHealth(mission.id, projectId);
+        return [mission.id, health] as const;
+      }),
+    );
+
+    setMissionHealthById((prev) => {
+      const next = new Map(prev);
+      for (const result of healthResults) {
+        if (result.status === "fulfilled") {
+          const [missionId, health] = result.value;
+          if (isMissionHealth(health)) {
+            next.set(missionId, health);
+          }
+        }
+      }
+      return next;
+    });
+  }, [projectId]);
+
   const loadMissions = useCallback(async () => {
     try {
       setLoading(true);
       const data = await fetchMissions(projectId);
       setMissions(data);
+      void loadMissionHealth(data);
     } catch (err: any) {
       addToast(err.message || "Failed to load missions", "error");
     } finally {
       setLoading(false);
     }
-  }, [addToast, projectId]);
+  }, [addToast, projectId, loadMissionHealth]);
 
   const loadMissionDetail = useCallback(async (missionId: string) => {
     try {
@@ -258,10 +482,75 @@ export function MissionManager({ isOpen, isInline = false, onClose, addToast, pr
     }
   }, [addToast, projectId]);
 
+  const loadMissionEvents = useCallback(async (
+    missionId: string,
+    options?: { append?: boolean },
+  ) => {
+    const append = options?.append ?? false;
+    const offset = append ? missionEventsRef.current.length : 0;
+
+    if (!append) {
+      setEventsLoading(true);
+      setExpandedEventMetadata(new Set());
+    }
+
+    try {
+      const response = await fetchMissionEvents(
+        missionId,
+        {
+          limit: 50,
+          offset,
+          eventType: getActivityQueryEventType(eventsFilter),
+        },
+        projectId,
+      );
+
+      const incomingEvents = response.events.filter((event) => matchesEventFilter(event.eventType, eventsFilter));
+
+      setMissionEvents((prev) => {
+        if (!append) {
+          return incomingEvents;
+        }
+
+        const existing = new Set(prev.map((event) => event.id));
+        const merged = [...prev];
+        for (const event of incomingEvents) {
+          if (!existing.has(event.id)) {
+            merged.push(event);
+          }
+        }
+        return merged;
+      });
+
+      setEventsTotal(response.total);
+
+      if (!append) {
+        requestAnimationFrame(() => {
+          scrollActivityToLatest("auto");
+        });
+      }
+    } catch (err: any) {
+      addToast(err.message || "Failed to load mission activity", "error");
+    } finally {
+      if (!append) {
+        setEventsLoading(false);
+      }
+    }
+  }, [addToast, eventsFilter, projectId, scrollActivityToLatest]);
+
+  useEffect(() => {
+    missionEventsRef.current = missionEvents;
+  }, [missionEvents]);
+
   useEffect(() => {
     if (isActive) {
       loadMissions();
       setSelectedMission(null);
+      setMissionEvents([]);
+      setEventsTotal(0);
+      setActiveTab("structure");
+      setEventsFilter("all");
+      setExpandedEventMetadata(new Set());
     }
   }, [isActive, loadMissions]);
 
@@ -280,6 +569,98 @@ export function MissionManager({ isOpen, isInline = false, onClose, addToast, pr
       targetLoadedRef.current = null;
     }
   }, [isActive]);
+
+  useEffect(() => {
+    if (!isActive || !selectedMission || activeTab !== "activity") {
+      return;
+    }
+
+    void loadMissionEvents(selectedMission.id);
+  }, [activeTab, isActive, loadMissionEvents, selectedMission, eventsFilter]);
+
+  useEffect(() => {
+    if (!isActive || missions.length === 0 || typeof EventSource === "undefined") {
+      return;
+    }
+
+    const search = new URLSearchParams();
+    if (projectId) {
+      search.set("projectId", projectId);
+    }
+    const eventUrl = `/api/events${search.size > 0 ? `?${search.toString()}` : ""}`;
+    const eventSource = new EventSource(eventUrl);
+
+    const refreshHealth = () => {
+      void loadMissionHealth(missions);
+    };
+
+    const handleMissionEvent = (rawEvent: Event) => {
+      refreshHealth();
+
+      if (!selectedMission || activeTab !== "activity") {
+        return;
+      }
+
+      const shouldAutoScroll = isActivityScrolledNearBottom();
+      const messageEvent = rawEvent as MessageEvent<string>;
+      if (!messageEvent.data) {
+        return;
+      }
+
+      try {
+        const payload = JSON.parse(messageEvent.data);
+        if (!isMissionEvent(payload)) {
+          return;
+        }
+        if (payload.missionId !== selectedMission.id) {
+          return;
+        }
+        if (!matchesEventFilter(payload.eventType, eventsFilter)) {
+          return;
+        }
+
+        setMissionEvents((prev) => {
+          const withoutExisting = prev.filter((event) => event.id !== payload.id);
+          return [payload, ...withoutExisting].slice(0, 100);
+        });
+        setEventsTotal((prev) => prev + 1);
+
+        if (shouldAutoScroll) {
+          requestAnimationFrame(() => {
+            const container = activityEventsContainerRef.current;
+            if (container) {
+              container.scrollTop = 0;
+            }
+          });
+        }
+      } catch {
+        // ignore invalid payloads
+      }
+    };
+
+    eventSource.addEventListener("mission:updated", refreshHealth);
+    eventSource.addEventListener("slice:updated", refreshHealth);
+    eventSource.addEventListener("feature:updated", refreshHealth);
+    eventSource.addEventListener("mission:event", handleMissionEvent);
+
+    return () => {
+      eventSource.removeEventListener("mission:updated", refreshHealth);
+      eventSource.removeEventListener("slice:updated", refreshHealth);
+      eventSource.removeEventListener("feature:updated", refreshHealth);
+      eventSource.removeEventListener("mission:event", handleMissionEvent);
+      eventSource.close();
+    };
+  }, [
+    activeTab,
+    eventsFilter,
+    isActive,
+    isActivityScrolledNearBottom,
+    loadMissionHealth,
+    missions,
+    projectId,
+    scrollActivityToLatest,
+    selectedMission,
+  ]);
 
   // Mission handlers
   const handleCreateMission = useCallback(() => {
@@ -759,6 +1140,11 @@ export function MissionManager({ isOpen, isInline = false, onClose, addToast, pr
   }, [addToast, loadMissionDetail, loadMissions, projectId]);
 
   const handleSelectMission = useCallback((mission: Mission) => {
+    setActiveTab("structure");
+    setMissionEvents([]);
+    setEventsTotal(0);
+    setEventsFilter("all");
+    setExpandedEventMetadata(new Set());
     loadMissionDetail(mission.id);
     loadAutopilotStatus(mission.id);
   }, [loadMissionDetail, loadAutopilotStatus]);
@@ -766,8 +1152,41 @@ export function MissionManager({ isOpen, isInline = false, onClose, addToast, pr
   const handleBackToList = useCallback(() => {
     setSelectedMission(null);
     setAutopilotStatus(null);
+    setActiveTab("structure");
+    setMissionEvents([]);
+    setEventsTotal(0);
+    setEventsFilter("all");
+    setExpandedEventMetadata(new Set());
     loadMissions();
   }, [loadMissions]);
+
+  const hasMoreEvents = missionEvents.length < eventsTotal;
+  const autopilotState = (autopilotStatus?.state ?? selectedMission?.autopilotState ?? "inactive") as AutopilotState;
+  const autopilotPulseActive = autopilotState === "watching" || autopilotState === "activating";
+  const autopilotActivitySummary = getAutopilotActivitySummary(
+    autopilotState,
+    autopilotStatus?.lastActivityAt ?? selectedMission?.lastAutopilotActivityAt,
+  );
+
+  const handleLoadMoreEvents = useCallback(() => {
+    if (!selectedMission || eventsLoading || !hasMoreEvents) {
+      return;
+    }
+
+    void loadMissionEvents(selectedMission.id, { append: true });
+  }, [eventsLoading, hasMoreEvents, loadMissionEvents, selectedMission]);
+
+  const toggleEventMetadata = useCallback((eventId: string) => {
+    setExpandedEventMetadata((prev) => {
+      const next = new Set(prev);
+      if (next.has(eventId)) {
+        next.delete(eventId);
+      } else {
+        next.add(eventId);
+      }
+      return next;
+    });
+  }, []);
 
   // Keyboard handler for mission form
   const handleMissionFormKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -872,7 +1291,7 @@ export function MissionManager({ isOpen, isInline = false, onClose, addToast, pr
               <div className="mission-detail__header">
                 <div className="mission-detail__title-row">
                   <div className="mission-detail__title-text">
-                    {(autopilotStatus?.watched || selectedMission.autopilotState === "watching" || selectedMission.autopilotState === "activating") && (
+                    {autopilotPulseActive && (
                       <span className="mission-detail__autopilot-dot" title="Autopilot watching" />
                     )}
                     <h3 className="mission-detail__title">{selectedMission.title}</h3>
@@ -880,8 +1299,8 @@ export function MissionManager({ isOpen, isInline = false, onClose, addToast, pr
                   <span
                     className="mission-status-badge"
                     style={{
-                      backgroundColor: missionStatusColors[selectedMission.status].bg,
-                      color: missionStatusColors[selectedMission.status].text,
+                      backgroundColor: (missionStatusColors[selectedMission.status] || missionStatusColors.planning).bg,
+                      color: (missionStatusColors[selectedMission.status] || missionStatusColors.planning).text,
                     }}
                   >
                     {selectedMission.status}
@@ -904,58 +1323,75 @@ export function MissionManager({ isOpen, isInline = false, onClose, addToast, pr
                 {/* ── Autopilot section ── */}
                 <div className="mission-detail__autopilot">
                   <div className="mission-detail__autopilot-toggle">
-                    <label className="mission-checkbox mission-checkbox--autopilot">
+                    <label className="mission-toggle" data-testid="mission-autopilot-toggle">
                       <input
                         type="checkbox"
                         checked={selectedMission.autopilotEnabled ?? false}
                         onChange={(e) => handleToggleAutopilot(selectedMission.id, e.target.checked)}
                         disabled={autopilotLoading}
+                        aria-label="Autopilot"
                       />
-                      <Zap size={14} className="mission-detail__autopilot-icon" />
-                      Autopilot
-                    </label>
-                    {(selectedMission.autopilotState || autopilotStatus?.state) && (
-                      <span
-                        className="mission-status-badge mission-status-badge--sm"
-                        style={{
-                          backgroundColor: (autopilotStateColors[(autopilotStatus?.state ?? selectedMission.autopilotState) as AutopilotState] || autopilotStateColors.inactive).bg,
-                          color: (autopilotStateColors[(autopilotStatus?.state ?? selectedMission.autopilotState) as AutopilotState] || autopilotStateColors.inactive).text,
-                        }}
-                        data-testid="autopilot-state-badge"
-                      >
-                        {(autopilotStatus?.watched || selectedMission.autopilotState === "watching" || selectedMission.autopilotState === "activating") && (
-                          <span className="mission-detail__autopilot-pulse" />
-                        )}
-                        {autopilotStatus?.state ?? selectedMission.autopilotState ?? "inactive"}
+                      <span className="mission-toggle__track" aria-hidden="true">
+                        <span className="mission-toggle__thumb" />
                       </span>
-                    )}
+                      <span className="mission-toggle__label">
+                        <Zap size={14} className="mission-detail__autopilot-icon" />
+                        Autopilot
+                      </span>
+                    </label>
+                    <span
+                      className="mission-status-badge mission-status-badge--sm"
+                      style={{
+                        backgroundColor: (autopilotStateColors[autopilotState] || autopilotStateColors.inactive).bg,
+                        color: (autopilotStateColors[autopilotState] || autopilotStateColors.inactive).text,
+                      }}
+                      data-testid="autopilot-state-badge"
+                    >
+                      {autopilotPulseActive && <span className="mission-detail__autopilot-pulse" />}
+                      {autopilotState}
+                    </span>
                   </div>
-                  {autopilotStatus?.lastActivityAt && (
-                    <span className="mission-detail__autopilot-activity">
-                      Last activity: {new Date(autopilotStatus.lastActivityAt).toLocaleTimeString()}
+                  {autopilotActivitySummary && (
+                    <span className="mission-detail__autopilot-activity mission-relative-time">
+                      {autopilotActivitySummary}
+                    </span>
+                  )}
+                  {autopilotStatus?.nextScheduledCheck && (
+                    <span className="mission-detail__autopilot-next-check">
+                      Next check: {new Date(autopilotStatus.nextScheduledCheck).toLocaleTimeString()}
                     </span>
                   )}
                   <div className="mission-detail__autopilot-actions">
-                    {selectedMission.autopilotEnabled && !autopilotStatus?.watched && (
-                      <button
-                        className="mission-btn mission-btn--ghost mission-btn--sm"
-                        onClick={() => handleStartAutopilot(selectedMission.id)}
-                        disabled={autopilotLoading}
-                        title="Start autopilot watching"
-                      >
-                        <Play size={12} /> Start
-                      </button>
-                    )}
-                    {autopilotStatus?.watched && (
-                      <button
-                        className="mission-btn mission-btn--ghost mission-btn--sm"
-                        onClick={() => handleStopAutopilot(selectedMission.id)}
-                        disabled={autopilotLoading}
-                        title="Stop autopilot watching"
-                      >
-                        <Square size={12} /> Stop
-                      </button>
-                    )}
+                    <button
+                      className="mission-btn mission-btn--primary mission-btn--sm"
+                      onClick={() => handleStartAutopilot(selectedMission.id)}
+                      disabled={autopilotLoading || !selectedMission.autopilotEnabled || Boolean(autopilotStatus?.watched)}
+                      title="Start autopilot watching"
+                      aria-label="Start autopilot watching"
+                      data-testid="mission-autopilot-start"
+                    >
+                      <Play size={12} /> Start
+                    </button>
+                    <button
+                      className="mission-btn mission-btn--danger mission-btn--sm"
+                      onClick={() => handleStopAutopilot(selectedMission.id)}
+                      disabled={autopilotLoading || !autopilotStatus?.watched}
+                      title="Stop autopilot watching"
+                      aria-label="Stop autopilot watching"
+                      data-testid="mission-autopilot-stop"
+                    >
+                      <Square size={12} /> Stop
+                    </button>
+                    <button
+                      className="mission-btn mission-btn--ghost mission-btn--sm"
+                      onClick={() => loadAutopilotStatus(selectedMission.id)}
+                      disabled={autopilotLoading}
+                      title="Refresh autopilot status"
+                      aria-label="Refresh autopilot status"
+                      data-testid="mission-autopilot-refresh"
+                    >
+                      <RefreshCw size={12} /> Refresh
+                    </button>
                   </div>
                 </div>
 
@@ -1076,7 +1512,29 @@ export function MissionManager({ isOpen, isInline = false, onClose, addToast, pr
                 </div>
               )}
 
-              <div className="mission-detail__milestones">
+              <div className="mission-detail__tabs" role="tablist" aria-label="Mission detail tabs">
+                <button
+                  className={`mission-btn ${activeTab === "structure" ? "mission-btn--primary" : "mission-btn--ghost"} mission-btn--sm mission-detail__tab`}
+                  onClick={() => setActiveTab("structure")}
+                  role="tab"
+                  aria-selected={activeTab === "structure"}
+                  data-testid="mission-tab-structure"
+                >
+                  Structure
+                </button>
+                <button
+                  className={`mission-btn ${activeTab === "activity" ? "mission-btn--primary" : "mission-btn--ghost"} mission-btn--sm mission-detail__tab`}
+                  onClick={() => setActiveTab("activity")}
+                  role="tab"
+                  aria-selected={activeTab === "activity"}
+                  data-testid="mission-tab-activity"
+                >
+                  Activity ({eventsTotal})
+                </button>
+              </div>
+
+              {activeTab === "structure" ? (
+                <div className="mission-detail__milestones">
                 {selectedMission.milestones.map((milestone) => (
                   <div key={milestone.id} className="mission-milestone">
                     <div className="mission-milestone__header" onClick={() => toggleMilestoneExpanded(milestone.id)}>
@@ -1503,7 +1961,99 @@ export function MissionManager({ isOpen, isInline = false, onClose, addToast, pr
                     <span>No milestones yet. Add one to get started.</span>
                   </div>
                 )}
-              </div>
+                </div>
+              ) : (
+                <div className="mission-detail__activity" data-testid="mission-activity-tab">
+                  <div className="mission-detail__activity-controls">
+                    <label className="mission-detail__activity-filter">
+                      <span>Filter</span>
+                      <select
+                        value={eventsFilter}
+                        onChange={(event) => setEventsFilter(event.target.value as typeof eventsFilter)}
+                        data-testid="mission-activity-filter"
+                      >
+                        <option value="all">All events</option>
+                        <option value="errors">Errors &amp; warnings</option>
+                        <option value="state_changes">State changes</option>
+                        <option value="tasks">Task events</option>
+                        <option value="slices">Slice &amp; milestone events</option>
+                        <option value="autopilot">Autopilot events</option>
+                      </select>
+                    </label>
+                    <span className="mission-detail__activity-count">
+                      {missionEvents.length} of {eventsTotal}
+                    </span>
+                  </div>
+
+                  {!eventsLoading && hasMoreEvents && (
+                    <div className="mission-detail__activity-load-more mission-detail__activity-load-more--top">
+                      <button
+                        className="mission-btn mission-btn--ghost"
+                        onClick={handleLoadMoreEvents}
+                        data-testid="mission-activity-load-more"
+                      >
+                        Load more
+                      </button>
+                    </div>
+                  )}
+
+                  {eventsLoading ? (
+                    <div className="mission-manager__loading mission-detail__activity-loading">
+                      <Loader2 size={18} className="spinner" />
+                      <span>Loading mission activity...</span>
+                    </div>
+                  ) : missionEvents.length === 0 ? (
+                    <div className="mission-manager__empty">
+                      <Activity size={18} />
+                      <span>No events yet.</span>
+                    </div>
+                  ) : (
+                    <div
+                      ref={activityEventsContainerRef}
+                      className="mission-events"
+                      data-testid="mission-activity-events"
+                    >
+                      {missionEvents.map((event) => {
+                        const hasMetadata = Boolean(event.metadata && Object.keys(event.metadata).length > 0);
+                        const metadataExpanded = expandedEventMetadata.has(event.id);
+
+                        return (
+                          <div key={event.id} className="mission-event">
+                            <div className="mission-event__header">
+                              <span className={`mission-event__type ${getEventTypeClassName(event.eventType)}`}>
+                                {getEventTypeLabel(event.eventType)}
+                              </span>
+                              <span className="mission-event__time">{getRelativeTime(event.timestamp)}</span>
+                            </div>
+                            <p className="mission-event__description">{event.description}</p>
+                            <span className="mission-event__timestamp">
+                              {new Date(event.timestamp).toLocaleString()}
+                            </span>
+                            {hasMetadata && (
+                              <div className="mission-event__metadata">
+                                <button
+                                  className="mission-btn mission-btn--ghost mission-btn--sm"
+                                  onClick={() => toggleEventMetadata(event.id)}
+                                  data-testid={`mission-event-metadata-${event.id}`}
+                                >
+                                  {metadataExpanded ? "Hide" : "Show"} metadata
+                                </button>
+                                {metadataExpanded && (
+                                  <pre className="mission-event__metadata-content">
+                                    {JSON.stringify(event.metadata, null, 2)}
+                                  </pre>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                      <div ref={activityEventsEndRef} />
+                    </div>
+                  )}
+
+                </div>
+              )}
             </div>
           ) : (
             /* ── List View ── */
@@ -1545,7 +2095,19 @@ export function MissionManager({ isOpen, isInline = false, onClose, addToast, pr
                 const isSelected = selId && selId.id === m.id;
                 const statusColors = missionStatusColors[m.status as MissionStatus] || { bg: "", text: "" };
                 const summary = m.summary;
-                const hasContent = summary && (summary.totalMilestones > 0 || summary.totalFeatures > 0);
+                const health = missionHealthById.get(m.id);
+                const healthState = getMissionHealthState(health);
+                const hasContent = Boolean(summary && (summary.totalMilestones > 0 || summary.totalFeatures > 0));
+                const totalTasks = health?.totalTasks ?? 0;
+                const tasksCompleted = health?.tasksCompleted ?? 0;
+                const tasksFailed = health?.tasksFailed ?? 0;
+                const progressPercent = health?.estimatedCompletionPercent ?? summary?.progressPercent ?? 0;
+                const showSummaryBlock = hasContent || totalTasks > 0 || tasksFailed > 0 || Boolean(health?.lastActivityAt);
+
+                const activeSliceLabel = m.status === "active" && (health?.currentMilestoneId || health?.currentSliceId)
+                  ? "Current milestone/slice in progress"
+                  : null;
+
                 return (
                 <div
                   key={m.id}
@@ -1560,6 +2122,11 @@ export function MissionManager({ isOpen, isInline = false, onClose, addToast, pr
                         <span title="Autopilot enabled"><Zap size={12} className="mission-list__item-autopilot-icon" /></span>
                       )}
                       <span
+                        className={`mission-health-badge mission-health-badge--${healthState}`}
+                        data-testid={`mission-health-badge-${m.id}`}
+                        aria-label={`Mission health: ${healthState}`}
+                      />
+                      <span
                         className="mission-status-badge mission-status-badge--sm"
                         style={{
                           backgroundColor: statusColors.bg,
@@ -1572,18 +2139,44 @@ export function MissionManager({ isOpen, isInline = false, onClose, addToast, pr
                     {m.description && (
                       <p className="mission-list__item-description">{m.description}</p>
                     )}
-                    {hasContent && (
+                    {activeSliceLabel && (
+                      <p className="mission-list__item-active-slice">Active: {activeSliceLabel}</p>
+                    )}
+                    {showSummaryBlock && (
                       <div className="mission-list__item-summary">
-                        <span className="mission-list__item-stat">
-                          {summary.completedMilestones}/{summary.totalMilestones} milestones
+                        {hasContent && (
+                          <>
+                            <span className="mission-list__item-stat">
+                              {summary!.completedMilestones}/{summary!.totalMilestones} milestones
+                            </span>
+                            <span className="mission-list__item-stat">
+                              {summary!.completedFeatures}/{summary!.totalFeatures} features
+                            </span>
+                          </>
+                        )}
+                        <span className="mission-list__item-stat" data-testid={`mission-task-stats-${m.id}`}>
+                          {tasksCompleted}/{totalTasks} tasks
                         </span>
-                        <span className="mission-list__item-stat">
-                          {summary.completedFeatures}/{summary.totalFeatures} features
+                        {tasksFailed > 0 && (
+                          <button
+                            className="mission-list__item-failed"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleSelectMission(mission);
+                            }}
+                            data-testid={`mission-failed-${m.id}`}
+                            title="View mission failures"
+                          >
+                            {tasksFailed} failed
+                          </button>
+                        )}
+                        <span className="mission-relative-time" data-testid={`mission-last-activity-${m.id}`}>
+                          Activity {getRelativeTime(health?.lastActivityAt)}
                         </span>
-                        <div className="mission-list__item-progress">
+                        <div className={`mission-list__item-progress mission-list__item-progress--${healthState}`}>
                           <div
                             className="mission-list__item-progress-bar"
-                            style={{ width: `${summary.progressPercent}%` }}
+                            style={{ width: `${progressPercent}%` }}
                           />
                         </div>
                       </div>
