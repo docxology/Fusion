@@ -584,13 +584,22 @@ export function AgentListModal({ isOpen, onClose, addToast, projectId }: AgentLi
                         </>
                       )}
                       {agent.state === "terminated" && (
-                        <button
-                          className="btn btn--sm btn--danger"
-                          onClick={() => void handleDelete(agent.id, agent.name)}
-                          title="Delete"
-                        >
-                          <Trash2 size={14} /> Delete
-                        </button>
+                        <>
+                          <button
+                            className="btn btn--sm btn--primary"
+                            onClick={() => void handleStateChange(agent.id, "active")}
+                            title="Start"
+                          >
+                            <Play size={14} /> Start
+                          </button>
+                          <button
+                            className="btn btn--sm btn--danger"
+                            onClick={() => void handleDelete(agent.id, agent.name)}
+                            title="Delete"
+                          >
+                            <Trash2 size={14} /> Delete
+                          </button>
+                        </>
                       )}
                     </div>
                   </div>
