@@ -59,7 +59,7 @@ export function fromJson<T>(json: string | null | undefined): T | undefined {
 
 // ── Schema Definition ────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 24;
+const SCHEMA_VERSION = 25;
 
 function normalizeTaskComments(
   steeringComments: SteeringComment[] | undefined,
@@ -902,6 +902,36 @@ export class Database {
             createdAt TEXT NOT NULL,
             updatedAt TEXT NOT NULL
           )
+        `);
+      });
+    }
+
+    if (version < 25) {
+      this.applyMigration(25, () => {
+        this.db.exec(`
+          CREATE TABLE IF NOT EXISTS runAuditEvents (
+            id TEXT PRIMARY KEY,
+            timestamp TEXT NOT NULL,
+            taskId TEXT,
+            agentId TEXT NOT NULL,
+            runId TEXT NOT NULL,
+            domain TEXT NOT NULL,
+            mutationType TEXT NOT NULL,
+            target TEXT NOT NULL,
+            metadata TEXT
+          )
+        `);
+        this.db.exec(`
+          CREATE INDEX IF NOT EXISTS idxRunAuditEventsRunIdTimestamp
+            ON runAuditEvents(runId, timestamp)
+        `);
+        this.db.exec(`
+          CREATE INDEX IF NOT EXISTS idxRunAuditEventsTaskIdTimestamp
+            ON runAuditEvents(taskId, timestamp)
+        `);
+        this.db.exec(`
+          CREATE INDEX IF NOT EXISTS idxRunAuditEventsTimestamp
+            ON runAuditEvents(timestamp)
         `);
       });
     }

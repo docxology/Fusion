@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { appendFile, mkdir, readFile, writeFile, rename, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { existsSync, watch, type FSWatcher } from "node:fs";
-import type { Task, TaskDetail, TaskCreateInput, TaskAttachment, AgentLogEntry, BoardConfig, Column, MergeResult, Settings, GlobalSettings, ProjectSettings, ActivityLogEntry, ActivityEventType, TaskDocument, TaskDocumentRevision, TaskDocumentCreateInput, InboxTask, TaskLogEntry, RunMutationContext } from "./types.js";
+import type { Task, TaskDetail, TaskCreateInput, TaskAttachment, AgentLogEntry, BoardConfig, Column, MergeResult, Settings, GlobalSettings, ProjectSettings, ActivityLogEntry, ActivityEventType, TaskDocument, TaskDocumentRevision, TaskDocumentCreateInput, InboxTask, TaskLogEntry, RunMutationContext, RunAuditEvent, RunAuditEventInput, RunAuditEventFilter } from "./types.js";
 import { VALID_TRANSITIONS, DEFAULT_SETTINGS, GLOBAL_SETTINGS_KEYS, WORKFLOW_STEP_TEMPLATES, validateDocumentKey } from "./types.js";
 import { GlobalSettingsStore } from "./global-settings.js";
 import { Database, toJson, toJsonNullable, fromJson } from "./db.js";
@@ -533,6 +533,54 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
     const tmpPath = join(dir, "task.json.tmp");
     this.suppressWatcher(taskJsonPath);
     await mkdir(dir, { recursive: true }); // Ensure directory exists
+    await writeFile(tmpPath, JSON.stringify(task, null, 2));
+    await rename(tmpPath, taskJsonPath);
+  }
+
+  /**
+   * Write a task to SQLite and optionally record a run-audit event, all in a single
+   * SQLite transaction. If the audit insert fails, the task mutation is rolled back.
+   *
+   * @param dir - Task directory path
+   * @param task - Task to write
+   * @param auditInput - Optional audit event input to record atomically with the task write
+   */
+  private async atomicWriteTaskJsonWithAudit(
+    dir: string,
+    task: Task,
+    auditInput?: RunAuditEventInput,
+  ): Promise<void> {
+    this.db.transaction(() => {
+      // Upsert the task
+      this.upsertTask(task);
+
+      // Optionally record the audit event in the same transaction
+      if (auditInput) {
+        const eventId = randomUUID();
+        const timestamp = auditInput.timestamp ?? new Date().toISOString();
+        this.db.prepare(`
+          INSERT INTO runAuditEvents (
+            id, timestamp, taskId, agentId, runId, domain, mutationType, target, metadata
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          eventId,
+          timestamp,
+          auditInput.taskId ?? null,
+          auditInput.agentId,
+          auditInput.runId,
+          auditInput.domain,
+          auditInput.mutationType,
+          auditInput.target,
+          toJsonNullable(auditInput.metadata),
+        );
+      }
+    });
+
+    // File writes are not part of the SQLite transaction
+    const taskJsonPath = join(dir, "task.json");
+    const tmpPath = join(dir, "task.json.tmp");
+    this.suppressWatcher(taskJsonPath);
+    await mkdir(dir, { recursive: true });
     await writeFile(tmpPath, JSON.stringify(task, null, 2));
     await rename(tmpPath, taskJsonPath);
   }
@@ -1579,7 +1627,20 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       }
       task.updatedAt = new Date().toISOString();
 
-      await this.atomicWriteTaskJson(dir, task);
+      // When runContext is provided, record audit event atomically with task mutation
+      if (runContext) {
+        await this.atomicWriteTaskJsonWithAudit(dir, task, {
+          taskId: task.id,
+          agentId: runContext.agentId,
+          runId: runContext.runId,
+          domain: "database",
+          mutationType: "task:update",
+          target: task.id,
+          metadata: { updatedFields: Object.keys(updates).filter((k) => (updates as any)[k] !== undefined) },
+        });
+      } else {
+        await this.atomicWriteTaskJson(dir, task);
+      }
 
       // Update cache if watcher is active
       if (this.isWatching) this.taskCache.set(id, { ...task });
@@ -1648,7 +1709,19 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       }
       task.log.push(logEntry);
 
-      await this.atomicWriteTaskJson(dir, task);
+      // When runContext is provided, record audit event atomically with task mutation
+      if (runContext) {
+        await this.atomicWriteTaskJsonWithAudit(dir, task, {
+          taskId: task.id,
+          agentId: runContext.agentId,
+          runId: runContext.runId,
+          domain: "database",
+          mutationType: paused ? "task:pause" : "task:unpause",
+          target: task.id,
+        });
+      } else {
+        await this.atomicWriteTaskJson(dir, task);
+      }
       if (this.isWatching) this.taskCache.set(id, { ...task });
 
       this.emit("task:updated", task);
@@ -1737,7 +1810,20 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       task.log.push(entry);
       task.updatedAt = new Date().toISOString();
 
-      await this.atomicWriteTaskJson(dir, task);
+      // When runContext is provided, record audit event atomically with task mutation
+      if (runContext) {
+        await this.atomicWriteTaskJsonWithAudit(dir, task, {
+          taskId: task.id,
+          agentId: runContext.agentId,
+          runId: runContext.runId,
+          domain: "database",
+          mutationType: "task:log",
+          target: task.id,
+          metadata: { action, outcome },
+        });
+      } else {
+        await this.atomicWriteTaskJson(dir, task);
+      }
       if (this.isWatching) this.taskCache.set(id, { ...task });
 
       this.emit("task:updated", task);
@@ -1763,6 +1849,143 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
     // Sort by timestamp ascending
     return mutations.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
   }
+
+  // ── Run Audit APIs ───────────────────────────────────────────────────
+
+  /**
+   * Convert a database row to a RunAuditEvent object.
+   */
+  private rowToRunAuditEvent(row: any): RunAuditEvent {
+    return {
+      id: row.id,
+      timestamp: row.timestamp,
+      taskId: row.taskId || undefined,
+      agentId: row.agentId,
+      runId: row.runId,
+      domain: row.domain as RunAuditEvent["domain"],
+      mutationType: row.mutationType,
+      target: row.target,
+      metadata: fromJson<Record<string, unknown>>(row.metadata),
+    };
+  }
+
+  /**
+   * Record a run-audit event.
+   *
+   * Persists a structured audit trail entry correlating a mutation to the
+   * heartbeat run that caused it. Use this to track database mutations,
+   * git operations, and filesystem changes initiated by agent runs.
+   *
+   * @param input - The audit event input (runId, agentId, domain, mutationType, target, optional metadata)
+   * @returns The persisted RunAuditEvent with generated id and timestamp
+   */
+  recordRunAuditEvent(input: RunAuditEventInput): RunAuditEvent {
+    const id = randomUUID();
+    const timestamp = input.timestamp ?? new Date().toISOString();
+
+    const event: RunAuditEvent = {
+      id,
+      timestamp,
+      taskId: input.taskId,
+      agentId: input.agentId,
+      runId: input.runId,
+      domain: input.domain,
+      mutationType: input.mutationType,
+      target: input.target,
+      metadata: input.metadata,
+    };
+
+    this.db.prepare(`
+      INSERT INTO runAuditEvents (
+        id, timestamp, taskId, agentId, runId, domain, mutationType, target, metadata
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      event.id,
+      event.timestamp,
+      event.taskId ?? null,
+      event.agentId,
+      event.runId,
+      event.domain,
+      event.mutationType,
+      event.target,
+      toJsonNullable(event.metadata),
+    );
+
+    return event;
+  }
+
+  /**
+   * Query run-audit events with optional filters.
+   *
+   * @param options - Filter options (runId, taskId, startTime, endTime, domain, mutationType, limit)
+   * @returns Array of matching RunAuditEvent records, ordered by timestamp DESC, rowid DESC
+   *
+   * @remarks
+   * Time-range filtering uses **inclusive bounds**: `timestamp >= startTime` and `timestamp <= endTime`.
+   * When no time range is specified, all matching records are returned.
+   *
+   * Query results are ordered by timestamp descending with a stable rowid tiebreaker:
+   * `ORDER BY timestamp DESC, rowid DESC`. This ensures deterministic ordering
+   * when multiple events share the same millisecond timestamp.
+   */
+  getRunAuditEvents(options: RunAuditEventFilter = {}): RunAuditEvent[] {
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+
+    if (options.runId) {
+      conditions.push("runId = ?");
+      params.push(options.runId);
+    }
+
+    if (options.taskId) {
+      conditions.push("taskId = ?");
+      params.push(options.taskId);
+    }
+
+    if (options.agentId) {
+      conditions.push("agentId = ?");
+      params.push(options.agentId);
+    }
+
+    if (options.domain) {
+      conditions.push("domain = ?");
+      params.push(options.domain);
+    }
+
+    if (options.mutationType) {
+      conditions.push("mutationType = ?");
+      params.push(options.mutationType);
+    }
+
+    // Inclusive time range: timestamp >= startTime AND timestamp <= endTime
+    if (options.startTime) {
+      conditions.push("timestamp >= ?");
+      params.push(options.startTime);
+    }
+
+    if (options.endTime) {
+      conditions.push("timestamp <= ?");
+      params.push(options.endTime);
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+    const limitClause = options.limit ? `LIMIT ${Math.max(1, options.limit)}` : "";
+    const orderClause = "ORDER BY timestamp DESC, rowid DESC";
+
+    // Cast params to the expected SQLite input type
+    const sqlParams = params as (string | number | null)[];
+
+    const rows = this.db.prepare(`
+      SELECT * FROM runAuditEvents
+      ${whereClause}
+      ${orderClause}
+      ${limitClause}
+    `).all(...sqlParams) as any[];
+
+    return rows.map((row) => this.rowToRunAuditEvent(row));
+  }
+
+  // ── End Run Audit APIs ───────────────────────────────────────────────
 
   /**
    * Sync steps from PROMPT.md into task.json (called when steps are empty).
@@ -2741,7 +2964,20 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       }
       task.log.push(logEntry);
 
-      await this.atomicWriteTaskJson(dir, task);
+      // When runContext is provided, record audit event atomically with task mutation
+      if (runContext) {
+        await this.atomicWriteTaskJsonWithAudit(dir, task, {
+          taskId: task.id,
+          agentId: runContext.agentId,
+          runId: runContext.runId,
+          domain: "database",
+          mutationType: "task:comment",
+          target: task.id,
+          metadata: { author, commentId },
+        });
+      } else {
+        await this.atomicWriteTaskJson(dir, task);
+      }
       if (this.isWatching) this.taskCache.set(id, { ...task });
 
       this.emit("task:updated", task);

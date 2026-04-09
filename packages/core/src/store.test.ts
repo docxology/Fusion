@@ -6273,10 +6273,13 @@ describe("RunMutationContext", () => {
       await localStore.logEntry(task.id, "Test action", "Test outcome", runContext);
 
       const updatedTask = await localStore.getTask(task.id);
-      expect(updatedTask.log).toHaveLength(1);
-      expect(updatedTask.log[0].runContext).toEqual(runContext);
-      expect(updatedTask.log[0].action).toBe("Test action");
-      expect(updatedTask.log[0].outcome).toBe("Test outcome");
+      // Task creation adds 1 entry ("Task created"), logEntry adds 1 more
+      expect(updatedTask.log).toHaveLength(2);
+      // The last entry is the one we just added
+      const lastEntry = updatedTask.log[updatedTask.log.length - 1];
+      expect(lastEntry.runContext).toEqual(runContext);
+      expect(lastEntry.action).toBe("Test action");
+      expect(lastEntry.outcome).toBe("Test outcome");
 
       localStore.stopWatching();
     } finally {
@@ -6296,9 +6299,12 @@ describe("RunMutationContext", () => {
       await localStore.logEntry(task.id, "Test action", "Test outcome");
 
       const updatedTask = await localStore.getTask(task.id);
-      expect(updatedTask.log).toHaveLength(1);
-      expect(updatedTask.log[0].runContext).toBeUndefined();
-      expect(updatedTask.log[0].action).toBe("Test action");
+      // Task creation adds 1 entry ("Task created"), logEntry adds 1 more
+      expect(updatedTask.log).toHaveLength(2);
+      // The last entry is the one we just added
+      const lastEntry = updatedTask.log[updatedTask.log.length - 1];
+      expect(lastEntry.runContext).toBeUndefined();
+      expect(lastEntry.action).toBe("Test action");
 
       localStore.stopWatching();
     } finally {
@@ -6322,8 +6328,11 @@ describe("RunMutationContext", () => {
       const updatedTask = await localStore.getTask(task.id);
       expect(updatedTask.comments).toHaveLength(1);
       expect(updatedTask.comments![0].text).toBe("Test comment");
-      expect(updatedTask.log).toHaveLength(1);
-      expect(updatedTask.log[0].runContext).toEqual(runContext);
+      // Task creation adds 1 entry ("Task created"), addComment adds 1 more
+      expect(updatedTask.log).toHaveLength(2);
+      // The last entry is the one we just added
+      const lastEntry = updatedTask.log[updatedTask.log.length - 1];
+      expect(lastEntry.runContext).toEqual(runContext);
 
       localStore.stopWatching();
     } finally {
@@ -6347,8 +6356,11 @@ describe("RunMutationContext", () => {
       const updatedTask = await localStore.getTask(task.id);
       expect(updatedTask.steeringComments).toHaveLength(1);
       expect(updatedTask.steeringComments![0].text).toBe("Steering comment");
-      expect(updatedTask.log).toHaveLength(1);
-      expect(updatedTask.log[0].runContext).toEqual(runContext);
+      // Task creation adds 1 entry ("Task created"), addComment adds 1 more
+      expect(updatedTask.log).toHaveLength(2);
+      // The last entry is the one we just added
+      const lastEntry = updatedTask.log[updatedTask.log.length - 1];
+      expect(lastEntry.runContext).toEqual(runContext);
 
       localStore.stopWatching();
     } finally {
