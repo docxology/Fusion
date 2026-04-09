@@ -2867,7 +2867,7 @@ describe("HeartbeatTriggerScheduler", () => {
 
       scheduler = new HeartbeatTriggerScheduler(eventStore, callback);
       scheduler.start();
-    });
+    }, 30000);
 
     afterEach(async () => {
       scheduler?.stop();

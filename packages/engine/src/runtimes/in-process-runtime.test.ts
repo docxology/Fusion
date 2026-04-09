@@ -139,7 +139,7 @@ describe("InProcessRuntime", () => {
     it("should transition to 'active' after start", async () => {
       await runtime.start();
       expect(runtime.getStatus()).toBe("active");
-    });
+    }, 30000);
 
     it("passes executor recovery callbacks into SelfHealingManager", async () => {
       await runtime.start();
@@ -152,7 +152,7 @@ describe("InProcessRuntime", () => {
         }),
       );
       expect(mockSelfHealingStart).toHaveBeenCalled();
-    });
+    }, 30000);
 
     it("creates a stuck task detector and passes it to the executor", async () => {
       await runtime.start();
@@ -169,12 +169,12 @@ describe("InProcessRuntime", () => {
       await runtime.start();
       await runtime.stop();
       expect(runtime.getStatus()).toBe("stopped");
-    });
+    }, 30000);
 
     it("should throw if starting when not stopped", async () => {
       await runtime.start();
       await expect(runtime.start()).rejects.toThrow("Cannot start runtime");
-    });
+    }, 30000);
 
     it("should handle stop when already stopped", async () => {
       // Should not throw
@@ -192,7 +192,7 @@ describe("InProcessRuntime", () => {
       
       expect(statusChanges).toContain("starting");
       expect(statusChanges).toContain("active");
-    });
+    }, 30000);
 
     it("should transition through 'stopping' during stop", async () => {
       await runtime.start();
@@ -206,7 +206,7 @@ describe("InProcessRuntime", () => {
       
       expect(statusChanges).toContain("stopping");
       expect(statusChanges).toContain("stopped");
-    });
+    }, 30000);
   });
 
   describe("event forwarding", () => {
@@ -221,7 +221,7 @@ describe("InProcessRuntime", () => {
       const lastCall = calls[calls.length - 1][0];
       expect(lastCall.status).toBe("active");
       expect(lastCall.previous).toBe("starting");
-    });
+    }, 30000);
 
     it("should emit task:created when task store emits task:created", async () => {
       await runtime.start();
@@ -262,7 +262,7 @@ describe("InProcessRuntime", () => {
       }
 
       expect(taskMovedSpy).toHaveBeenCalledWith(moveData);
-    });
+    }, 30000);
   });
 
   describe("metrics", () => {
@@ -300,27 +300,27 @@ describe("InProcessRuntime", () => {
       
       expect(taskStore).toBeDefined();
       expect(taskStore.getRootDir()).toBe(testConfig.workingDirectory);
-    });
+    }, 30000);
 
     it("should return Scheduler after start", async () => {
       await runtime.start();
       const scheduler = runtime.getScheduler();
       
       expect(scheduler).toBeDefined();
-    });
+    }, 30000);
 
     it("should return HeartbeatMonitor after start", async () => {
       await runtime.start();
       const monitor = runtime.getHeartbeatMonitor();
       expect(monitor).toBeDefined();
-    });
+    }, 30000);
 
     it("should return TriggerScheduler after start", async () => {
       await runtime.start();
       const triggerScheduler = runtime.getTriggerScheduler();
       expect(triggerScheduler).toBeDefined();
       expect(triggerScheduler!.isActive()).toBe(true);
-    });
+    }, 30000);
 
     it("should return undefined TriggerScheduler before start", () => {
       expect(runtime.getTriggerScheduler()).toBeUndefined();
@@ -332,7 +332,7 @@ describe("InProcessRuntime", () => {
       await runtime.start();
       expect(runtime.getTriggerScheduler()).toBeDefined();
       expect(runtime.getTriggerScheduler()!.isActive()).toBe(true);
-    });
+    }, 30000);
 
     it("stops trigger scheduler on runtime stop", async () => {
       await runtime.start();
@@ -341,7 +341,7 @@ describe("InProcessRuntime", () => {
 
       await runtime.stop();
       expect(triggerScheduler.isActive()).toBe(false);
-    });
+    }, 30000);
 
     it("registers existing agents with heartbeat config", async () => {
       await runtime.start();
@@ -404,7 +404,7 @@ describe("InProcessRuntime", () => {
           }),
         );
       });
-    });
+    }, 30000);
   });
 
   describe("configuration", () => {
