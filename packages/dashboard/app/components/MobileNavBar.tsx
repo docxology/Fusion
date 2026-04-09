@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Activity,
   Bot,
@@ -92,11 +92,6 @@ export function MobileNavBar({
   const mode = useViewportMode();
   const [isMoreOpen, setIsMoreOpen] = useState(false);
 
-  const combinedCount = useMemo(
-    () => activePlanningSessionCount + mailboxUnreadCount,
-    [activePlanningSessionCount, mailboxUnreadCount],
-  );
-
   const closeMore = useCallback(() => setIsMoreOpen(false), []);
 
   const handleMoreAction = useCallback(
@@ -133,30 +128,28 @@ export function MobileNavBar({
         role="tablist"
         aria-label="Primary navigation"
       >
-        <div className="mobile-nav-view-toggle">
-          <button
-            type="button"
-            className={`mobile-nav-view-toggle-btn${view === "board" ? " mobile-nav-view-toggle-btn--active" : ""}`}
-            data-testid="mobile-nav-tab-board"
-            role="tab"
-            aria-selected={view === "board"}
-            onClick={() => onChangeView("board")}
-          >
-            <LayoutGrid />
-            <span>Board</span>
-          </button>
-          <button
-            type="button"
-            className={`mobile-nav-view-toggle-btn${view === "list" ? " mobile-nav-view-toggle-btn--active" : ""}`}
-            data-testid="mobile-nav-tab-list"
-            role="tab"
-            aria-selected={view === "list"}
-            onClick={() => onChangeView("list")}
-          >
-            <List />
-            <span>List</span>
-          </button>
-        </div>
+        <button
+          type="button"
+          className={`mobile-nav-tab${view === "board" ? " mobile-nav-tab--active" : ""}`}
+          data-testid="mobile-nav-tab-board"
+          role="tab"
+          aria-selected={view === "board"}
+          onClick={() => onChangeView("board")}
+        >
+          <LayoutGrid />
+          <span className="mobile-nav-tab-label">Board</span>
+        </button>
+        <button
+          type="button"
+          className={`mobile-nav-tab${view === "list" ? " mobile-nav-tab--active" : ""}`}
+          data-testid="mobile-nav-tab-list"
+          role="tab"
+          aria-selected={view === "list"}
+          onClick={() => onChangeView("list")}
+        >
+          <List />
+          <span className="mobile-nav-tab-label">List</span>
+        </button>
 
         <button
           type="button"
@@ -168,19 +161,6 @@ export function MobileNavBar({
         >
           <Bot />
           <span className="mobile-nav-tab-label">Agents</span>
-        </button>
-
-        <button
-          type="button"
-          className="mobile-nav-tab"
-          data-testid="mobile-nav-tab-activity"
-          role="tab"
-          aria-selected={false}
-          onClick={() => onOpenActivityLog?.()}
-        >
-          <Activity />
-          <span className="mobile-nav-tab-label">Activity</span>
-          {combinedCount > 0 && <span className="mobile-nav-badge">{formatCount(combinedCount)}</span>}
         </button>
 
         <button
@@ -217,6 +197,16 @@ export function MobileNavBar({
               {mailboxUnreadCount > 0 && (
                 <span className="mobile-more-item-badge">{formatCount(mailboxUnreadCount)}</span>
               )}
+            </button>
+
+            <button
+              type="button"
+              className="mobile-more-item"
+              data-testid="mobile-more-item-activity"
+              onClick={() => handleMoreAction(onOpenActivityLog)}
+            >
+              <Activity />
+              <span>Activity Log</span>
             </button>
 
             <button

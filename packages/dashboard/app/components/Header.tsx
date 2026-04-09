@@ -307,8 +307,8 @@ export function Header({
           </div>
         )}
 
-        {/* Mobile Search Trigger - only show in board view on mobile */}
-        {onSearchChange && view === "board" && isMobile && (
+        {/* Mobile Search Trigger - show in board and list views when mobile nav is hidden (hideFullNav) or in board view when mobile nav is visible */}
+        {onSearchChange && isMobile && (hideFullNav || view === "board") && (
           <>
             {!shouldShowMobileSearch ? (
               <button
@@ -317,6 +317,7 @@ export function Header({
                 title="Open search"
                 aria-label="Open search"
                 aria-expanded={false}
+                data-testid="mobile-header-search-btn"
               >
                 <Search size={16} />
               </button>
@@ -345,6 +346,18 @@ export function Header({
               </div>
             )}
           </>
+        )}
+
+        {/* Usage button on mobile when mobile bottom nav is active */}
+        {isMobile && hideFullNav && onOpenUsage && (
+          <button
+            className="btn-icon"
+            onClick={onOpenUsage}
+            title="View usage"
+            data-testid="mobile-header-usage-btn"
+          >
+            <Activity size={16} />
+          </button>
         )}
 
         {/* View Toggle - always inline, even on mobile */}

@@ -50,13 +50,12 @@ describe("MobileNavBar", () => {
     mockViewport("mobile");
   });
 
-  it("renders five tab buttons (board + list + agents + activity + more)", () => {
+  it("renders four tab buttons (board + list + agents + more)", () => {
     render(<MobileNavBar {...createDefaultProps()} />);
 
     expect(screen.getByTestId("mobile-nav-tab-board")).toBeDefined();
     expect(screen.getByTestId("mobile-nav-tab-list")).toBeDefined();
     expect(screen.getByTestId("mobile-nav-tab-agents")).toBeDefined();
-    expect(screen.getByTestId("mobile-nav-tab-activity")).toBeDefined();
     expect(screen.getByTestId("mobile-nav-tab-more")).toBeDefined();
   });
 
@@ -66,7 +65,7 @@ describe("MobileNavBar", () => {
     expect(screen.getByTestId("mobile-nav-tab-agents").className).toContain("mobile-nav-tab--active");
   });
 
-  it("board sub-button calls onChangeView with 'board'", () => {
+  it("board tab calls onChangeView with 'board'", () => {
     const props = createDefaultProps();
     render(<MobileNavBar {...props} view="list" />);
 
@@ -74,7 +73,7 @@ describe("MobileNavBar", () => {
     expect(props.onChangeView).toHaveBeenCalledWith("board");
   });
 
-  it("list sub-button calls onChangeView with 'list'", () => {
+  it("list tab calls onChangeView with 'list'", () => {
     const props = createDefaultProps();
     render(<MobileNavBar {...props} view="board" />);
 
@@ -82,48 +81,22 @@ describe("MobileNavBar", () => {
     expect(props.onChangeView).toHaveBeenCalledWith("list");
   });
 
-  it("board sub-button is active when view is 'board'", () => {
+  it("board tab is active when view is 'board'", () => {
     render(<MobileNavBar {...createDefaultProps()} view="board" />);
-    expect(screen.getByTestId("mobile-nav-tab-board").className).toContain("mobile-nav-view-toggle-btn--active");
-    expect(screen.getByTestId("mobile-nav-tab-list").className).not.toContain("mobile-nav-view-toggle-btn--active");
+    expect(screen.getByTestId("mobile-nav-tab-board").className).toContain("mobile-nav-tab--active");
+    expect(screen.getByTestId("mobile-nav-tab-list").className).not.toContain("mobile-nav-tab--active");
   });
 
-  it("list sub-button is active when view is 'list'", () => {
+  it("list tab is active when view is 'list'", () => {
     render(<MobileNavBar {...createDefaultProps()} view="list" />);
-    expect(screen.getByTestId("mobile-nav-tab-list").className).toContain("mobile-nav-view-toggle-btn--active");
-    expect(screen.getByTestId("mobile-nav-tab-board").className).not.toContain("mobile-nav-view-toggle-btn--active");
+    expect(screen.getByTestId("mobile-nav-tab-list").className).toContain("mobile-nav-tab--active");
+    expect(screen.getByTestId("mobile-nav-tab-board").className).not.toContain("mobile-nav-tab--active");
   });
 
-  it("board sub-button is not active when view is 'agents'", () => {
+  it("board and list tabs are not active when view is 'agents'", () => {
     render(<MobileNavBar {...createDefaultProps()} view="agents" />);
-    expect(screen.getByTestId("mobile-nav-tab-board").className).not.toContain("mobile-nav-view-toggle-btn--active");
-    expect(screen.getByTestId("mobile-nav-tab-list").className).not.toContain("mobile-nav-view-toggle-btn--active");
-  });
-
-  it("shows activity badge with combined planning + mailbox count", () => {
-    const { container } = render(
-      <MobileNavBar
-        {...createDefaultProps()}
-        activePlanningSessionCount={2}
-        mailboxUnreadCount={3}
-      />,
-    );
-
-    const activityTab = screen.getByTestId("mobile-nav-tab-activity");
-    const badge = activityTab.querySelector(".mobile-nav-badge");
-    expect(badge).not.toBeNull();
-    expect(badge?.textContent).toBe("5");
-    expect(container.querySelectorAll(".mobile-nav-badge")).toHaveLength(1);
-  });
-
-  it("hides badge when combined count is zero", () => {
-    const { container } = render(<MobileNavBar {...createDefaultProps()} mailboxUnreadCount={0} activePlanningSessionCount={0} />);
-    expect(container.querySelector(".mobile-nav-badge")).toBeNull();
-  });
-
-  it("caps badge at 99+", () => {
-    render(<MobileNavBar {...createDefaultProps()} mailboxUnreadCount={75} activePlanningSessionCount={75} />);
-    expect(screen.getByText("99+")).toBeDefined();
+    expect(screen.getByTestId("mobile-nav-tab-board").className).not.toContain("mobile-nav-tab--active");
+    expect(screen.getByTestId("mobile-nav-tab-list").className).not.toContain("mobile-nav-tab--active");
   });
 
   it("opens and toggles the more sheet", () => {
@@ -137,11 +110,12 @@ describe("MobileNavBar", () => {
     expect(container.querySelector(".mobile-more-sheet")).toBeNull();
   });
 
-  it("sheet contains expected navigation items", () => {
+  it("sheet contains expected navigation items including activity log", () => {
     render(<MobileNavBar {...createDefaultProps()} />);
     fireEvent.click(screen.getByTestId("mobile-nav-tab-more"));
 
     expect(screen.getByTestId("mobile-more-item-mailbox")).toBeDefined();
+    expect(screen.getByTestId("mobile-more-item-activity")).toBeDefined();
     expect(screen.getByTestId("mobile-more-item-missions")).toBeDefined();
     expect(screen.getByTestId("mobile-more-item-git")).toBeDefined();
     expect(screen.getByTestId("mobile-more-item-terminal")).toBeDefined();
@@ -153,6 +127,17 @@ describe("MobileNavBar", () => {
     expect(screen.getByTestId("mobile-more-item-usage")).toBeDefined();
     expect(screen.getByTestId("mobile-more-item-projects")).toBeDefined();
     expect(screen.getByTestId("mobile-more-item-settings")).toBeDefined();
+  });
+
+  it("activity log item in more sheet calls onOpenActivityLog", () => {
+    const props = createDefaultProps();
+    const { container } = render(<MobileNavBar {...props} />);
+
+    fireEvent.click(screen.getByTestId("mobile-nav-tab-more"));
+    fireEvent.click(screen.getByTestId("mobile-more-item-activity"));
+
+    expect(container.querySelector(".mobile-more-sheet")).toBeNull();
+    expect(props.onOpenActivityLog).toHaveBeenCalledOnce();
   });
 
   it("closes sheet and calls handler when item is clicked", () => {
