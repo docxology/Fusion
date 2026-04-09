@@ -5214,6 +5214,11 @@ body {
   overflow: hidden;
   line-height: 1.4;
 }
+.inline-create-input:focus {
+  border-bottom: 1px solid var(--todo);
+  box-shadow: 0 1px 0 0 var(--todo);
+}
+
 .inline-create-input::placeholder {
   color: var(--text-dim);
 }
@@ -16291,6 +16296,10 @@ body[data-color-theme="terminal"][data-theme="light"]::before {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   margin-bottom: var(--space-sm);
+}
+
+.quick-entry-box:focus-within {
+  border-color: var(--todo);
 }
 
 .quick-entry-input {
