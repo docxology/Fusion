@@ -7,6 +7,7 @@ import { ProjectOverview } from "./components/ProjectOverview";
 import { AgentsView } from "./components/AgentsView";
 import { MissionManager } from "./components/MissionManager";
 import { NodesView } from "./components/NodesView";
+import { PageErrorBoundary } from "./components/ErrorBoundary";
 import { AppModals } from "./components/AppModals";
 import { DashboardLoader, type DashboardLoaderStage } from "./components/DashboardLoader";
 import { ExecutorStatusBar } from "./components/ExecutorStatusBar";
@@ -244,107 +245,121 @@ function AppInner() {
           <div className="nodes-management-overlay__header">
             <button className="btn btn-sm" onClick={() => setNodesOpen(false)}>Close Nodes</button>
           </div>
-          <NodesView addToast={addToast} />
+          <PageErrorBoundary>
+            <NodesView addToast={addToast} />
+          </PageErrorBoundary>
         </div>
       );
     }
 
     if (viewMode === "overview") {
       return (
-        <ProjectOverview
-          projects={projects}
-          loading={projectsLoading}
-          onSelectProject={handleSelectProject}
-          onAddProject={handleAddProject}
-          onPauseProject={handlePauseProject}
-          onResumeProject={handleResumeProject}
-          onRemoveProject={handleRemoveProject}
-          nodes={nodes}
-        />
+        <PageErrorBoundary>
+          <ProjectOverview
+            projects={projects}
+            loading={projectsLoading}
+            onSelectProject={handleSelectProject}
+            onAddProject={handleAddProject}
+            onPauseProject={handlePauseProject}
+            onResumeProject={handleResumeProject}
+            onRemoveProject={handleRemoveProject}
+            nodes={nodes}
+          />
+        </PageErrorBoundary>
       );
     }
 
     // Project view
     if (taskView === "missions") {
       return (
-        <MissionManager
-          isInline={true}
-          isOpen={true}
-          onClose={() => {
-            setMissionTargetId(undefined);
-            setMissionResumeSessionId(undefined);
-            handleChangeTaskView("board");
-          }}
-          addToast={addToast}
-          projectId={currentProject?.id}
-          onSelectTask={(taskId) => {
-            const task = tasks.find((t) => t.id === taskId);
-            if (task) modalManager.openDetailTask(task as TaskDetail);
-          }}
-          availableTasks={tasks.map((t) => ({ id: t.id, title: t.title }))}
-          resumeSessionId={missionResumeSessionId}
-          targetMissionId={missionTargetId}
-        />
+        <PageErrorBoundary>
+          <MissionManager
+            isInline={true}
+            isOpen={true}
+            onClose={() => {
+              setMissionTargetId(undefined);
+              setMissionResumeSessionId(undefined);
+              handleChangeTaskView("board");
+            }}
+            addToast={addToast}
+            projectId={currentProject?.id}
+            onSelectTask={(taskId) => {
+              const task = tasks.find((t) => t.id === taskId);
+              if (task) modalManager.openDetailTask(task as TaskDetail);
+            }}
+            availableTasks={tasks.map((t) => ({ id: t.id, title: t.title }))}
+            resumeSessionId={missionResumeSessionId}
+            targetMissionId={missionTargetId}
+          />
+        </PageErrorBoundary>
       );
     }
 
     if (taskView === "agents") {
-      return <AgentsView addToast={addToast} projectId={currentProject?.id} />;
+      return (
+        <PageErrorBoundary>
+          <AgentsView addToast={addToast} projectId={currentProject?.id} />
+        </PageErrorBoundary>
+      );
     }
 
     if (taskView === "board") {
       return (
-        <Board
-          tasks={tasks}
-          projectId={currentProject?.id}
-          maxConcurrent={maxConcurrent}
-          onMoveTask={moveTask}
-          onOpenDetail={modalManager.openDetailTask}
-          addToast={addToast}
-          onQuickCreate={handleBoardQuickCreate}
-          onNewTask={modalManager.openNewTask}
-          onPlanningMode={modalManager.openPlanningWithInitialPlan}
-          onSubtaskBreakdown={modalManager.openSubtaskBreakdown}
-          autoMerge={autoMerge}
-          onToggleAutoMerge={toggleAutoMerge}
-          globalPaused={globalPaused}
-          onUpdateTask={updateTask}
-          onArchiveTask={archiveTask}
-          onUnarchiveTask={unarchiveTask}
-          onArchiveAllDone={archiveAllDone}
-          searchQuery={searchQuery}
-          availableModels={availableModels}
-          onOpenDetailWithTab={handleOpenDetailWithTab}
-          favoriteProviders={favoriteProviders}
-          favoriteModels={favoriteModels}
-          onToggleFavorite={handleToggleFavorite}
-          onToggleModelFavorite={handleToggleModelFavorite}
-          taskStuckTimeoutMs={taskStuckTimeoutMs}
-          onOpenMission={handleOpenMission}
-        />
+        <PageErrorBoundary>
+          <Board
+            tasks={tasks}
+            projectId={currentProject?.id}
+            maxConcurrent={maxConcurrent}
+            onMoveTask={moveTask}
+            onOpenDetail={modalManager.openDetailTask}
+            addToast={addToast}
+            onQuickCreate={handleBoardQuickCreate}
+            onNewTask={modalManager.openNewTask}
+            onPlanningMode={modalManager.openPlanningWithInitialPlan}
+            onSubtaskBreakdown={modalManager.openSubtaskBreakdown}
+            autoMerge={autoMerge}
+            onToggleAutoMerge={toggleAutoMerge}
+            globalPaused={globalPaused}
+            onUpdateTask={updateTask}
+            onArchiveTask={archiveTask}
+            onUnarchiveTask={unarchiveTask}
+            onArchiveAllDone={archiveAllDone}
+            searchQuery={searchQuery}
+            availableModels={availableModels}
+            onOpenDetailWithTab={handleOpenDetailWithTab}
+            favoriteProviders={favoriteProviders}
+            favoriteModels={favoriteModels}
+            onToggleFavorite={handleToggleFavorite}
+            onToggleModelFavorite={handleToggleModelFavorite}
+            taskStuckTimeoutMs={taskStuckTimeoutMs}
+            onOpenMission={handleOpenMission}
+          />
+        </PageErrorBoundary>
       );
     }
 
     // List view
     return (
-      <ListView
-        tasks={tasks}
-        projectId={currentProject?.id}
-        onMoveTask={moveTask}
-        onOpenDetail={modalManager.openDetailTask}
-        addToast={addToast}
-        globalPaused={globalPaused}
-        onNewTask={modalManager.openNewTask}
-        onQuickCreate={handleBoardQuickCreate}
-        onPlanningMode={modalManager.openPlanningWithInitialPlan}
-        onSubtaskBreakdown={modalManager.openSubtaskBreakdown}
-        availableModels={availableModels}
-        favoriteProviders={favoriteProviders}
-        favoriteModels={favoriteModels}
-        onToggleFavorite={handleToggleFavorite}
-        onToggleModelFavorite={handleToggleModelFavorite}
-        taskStuckTimeoutMs={taskStuckTimeoutMs}
-      />
+      <PageErrorBoundary>
+        <ListView
+          tasks={tasks}
+          projectId={currentProject?.id}
+          onMoveTask={moveTask}
+          onOpenDetail={modalManager.openDetailTask}
+          addToast={addToast}
+          globalPaused={globalPaused}
+          onNewTask={modalManager.openNewTask}
+          onQuickCreate={handleBoardQuickCreate}
+          onPlanningMode={modalManager.openPlanningWithInitialPlan}
+          onSubtaskBreakdown={modalManager.openSubtaskBreakdown}
+          availableModels={availableModels}
+          favoriteProviders={favoriteProviders}
+          favoriteModels={favoriteModels}
+          onToggleFavorite={handleToggleFavorite}
+          onToggleModelFavorite={handleToggleModelFavorite}
+          taskStuckTimeoutMs={taskStuckTimeoutMs}
+        />
+      </PageErrorBoundary>
     );
   };
 

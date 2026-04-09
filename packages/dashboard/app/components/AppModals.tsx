@@ -4,6 +4,7 @@ import type { UseProjectActionsResult } from "../hooks/useProjectActions";
 import type { ModalManager } from "../hooks/useModalManager";
 import type { UseTaskHandlersResult } from "../hooks/useTaskHandlers";
 import type { Toast, ToastType } from "../hooks/useToast";
+import { ModalErrorBoundary } from "./ErrorBoundary";
 import { TaskDetailModal } from "./TaskDetailModal";
 import { SettingsModal } from "./SettingsModal";
 import { GitHubImportModal } from "./GitHubImportModal";
@@ -72,35 +73,39 @@ export function AppModals({
   return (
     <>
       {modalManager.detailTask && (
-        <TaskDetailModal
-          task={modalManager.detailTask}
-          projectId={projectId}
-          tasks={tasks}
-          onClose={deepLink.handleDetailClose}
-          onOpenDetail={modalManager.openDetailTask}
-          onMoveTask={taskOperations.moveTask}
-          onDeleteTask={taskOperations.deleteTask}
-          onMergeTask={taskOperations.mergeTask}
-          onRetryTask={taskOperations.retryTask}
-          onDuplicateTask={taskOperations.duplicateTask}
-          onTaskUpdated={modalManager.updateDetailTask}
-          addToast={addToast}
-          githubTokenConfigured={settings.githubTokenConfigured}
-          initialTab={modalManager.detailTaskInitialTab}
-        />
+        <ModalErrorBoundary>
+          <TaskDetailModal
+            task={modalManager.detailTask}
+            projectId={projectId}
+            tasks={tasks}
+            onClose={deepLink.handleDetailClose}
+            onOpenDetail={modalManager.openDetailTask}
+            onMoveTask={taskOperations.moveTask}
+            onDeleteTask={taskOperations.deleteTask}
+            onMergeTask={taskOperations.mergeTask}
+            onRetryTask={taskOperations.retryTask}
+            onDuplicateTask={taskOperations.duplicateTask}
+            onTaskUpdated={modalManager.updateDetailTask}
+            addToast={addToast}
+            githubTokenConfigured={settings.githubTokenConfigured}
+            initialTab={modalManager.detailTaskInitialTab}
+          />
+        </ModalErrorBoundary>
       )}
 
       {modalManager.settingsOpen && (
-        <SettingsModal
-          onClose={modalManager.closeSettings}
-          addToast={addToast}
-          initialSection={modalManager.settingsInitialSection}
-          projectId={projectId}
-          themeMode={settings.themeMode}
-          colorTheme={settings.colorTheme}
-          onThemeModeChange={settings.setThemeMode}
-          onColorThemeChange={settings.setColorTheme}
-        />
+        <ModalErrorBoundary>
+          <SettingsModal
+            onClose={modalManager.closeSettings}
+            addToast={addToast}
+            initialSection={modalManager.settingsInitialSection}
+            projectId={projectId}
+            themeMode={settings.themeMode}
+            colorTheme={settings.colorTheme}
+            onThemeModeChange={settings.setThemeMode}
+            onColorThemeChange={settings.setColorTheme}
+          />
+        </ModalErrorBoundary>
       )}
 
       <GitHubImportModal
@@ -110,25 +115,29 @@ export function AppModals({
         tasks={tasks}
       />
 
-      <PlanningModeModal
-        isOpen={modalManager.isPlanningOpen}
-        onClose={modalManager.closePlanning}
-        onTaskCreated={taskHandlers.handlePlanningTaskCreated}
-        onTasksCreated={taskHandlers.handlePlanningTasksCreated}
-        tasks={tasks}
-        initialPlan={modalManager.planningInitialPlan ?? undefined}
-        projectId={projectId}
-        resumeSessionId={modalManager.planningResumeSessionId}
-      />
+      <ModalErrorBoundary>
+        <PlanningModeModal
+          isOpen={modalManager.isPlanningOpen}
+          onClose={modalManager.closePlanning}
+          onTaskCreated={taskHandlers.handlePlanningTaskCreated}
+          onTasksCreated={taskHandlers.handlePlanningTasksCreated}
+          tasks={tasks}
+          initialPlan={modalManager.planningInitialPlan ?? undefined}
+          projectId={projectId}
+          resumeSessionId={modalManager.planningResumeSessionId}
+        />
+      </ModalErrorBoundary>
 
-      <SubtaskBreakdownModal
-        isOpen={modalManager.isSubtaskOpen}
-        onClose={modalManager.closeSubtask}
-        initialDescription={modalManager.subtaskInitialDescription ?? ""}
-        onTasksCreated={taskHandlers.handleSubtaskTasksCreated}
-        projectId={projectId}
-        resumeSessionId={modalManager.subtaskResumeSessionId}
-      />
+      <ModalErrorBoundary>
+        <SubtaskBreakdownModal
+          isOpen={modalManager.isSubtaskOpen}
+          onClose={modalManager.closeSubtask}
+          initialDescription={modalManager.subtaskInitialDescription ?? ""}
+          onTasksCreated={taskHandlers.handleSubtaskTasksCreated}
+          projectId={projectId}
+          resumeSessionId={modalManager.subtaskResumeSessionId}
+        />
+      </ModalErrorBoundary>
 
       <TerminalModal
         isOpen={modalManager.terminalOpen}
@@ -167,16 +176,18 @@ export function AppModals({
         />
       )}
 
-      <NewTaskModal
-        isOpen={modalManager.newTaskModalOpen}
-        onClose={modalManager.closeNewTask}
-        tasks={tasks}
-        onCreateTask={taskHandlers.handleModalCreate}
-        addToast={addToast}
-        projectId={projectId}
-        onPlanningMode={modalManager.openPlanningWithInitialPlan}
-        onSubtaskBreakdown={modalManager.openSubtaskBreakdown}
-      />
+      <ModalErrorBoundary>
+        <NewTaskModal
+          isOpen={modalManager.newTaskModalOpen}
+          onClose={modalManager.closeNewTask}
+          tasks={tasks}
+          onCreateTask={taskHandlers.handleModalCreate}
+          addToast={addToast}
+          projectId={projectId}
+          onPlanningMode={modalManager.openPlanningWithInitialPlan}
+          onSubtaskBreakdown={modalManager.openSubtaskBreakdown}
+        />
+      </ModalErrorBoundary>
 
       <ActivityLogModal
         isOpen={modalManager.activityLogOpen}
@@ -193,19 +204,23 @@ export function AppModals({
         }}
       />
 
-      <GitManagerModal
-        isOpen={modalManager.gitManagerOpen}
-        onClose={modalManager.closeGitManager}
-        tasks={tasks}
-        addToast={addToast}
-      />
+      <ModalErrorBoundary>
+        <GitManagerModal
+          isOpen={modalManager.gitManagerOpen}
+          onClose={modalManager.closeGitManager}
+          tasks={tasks}
+          addToast={addToast}
+        />
+      </ModalErrorBoundary>
 
-      <WorkflowStepManager
-        isOpen={modalManager.workflowStepsOpen}
-        onClose={modalManager.closeWorkflowSteps}
-        addToast={addToast}
-        projectId={projectId}
-      />
+      <ModalErrorBoundary>
+        <WorkflowStepManager
+          isOpen={modalManager.workflowStepsOpen}
+          onClose={modalManager.closeWorkflowSteps}
+          addToast={addToast}
+          projectId={projectId}
+        />
+      </ModalErrorBoundary>
 
       <AgentListModal
         isOpen={modalManager.agentsOpen}
