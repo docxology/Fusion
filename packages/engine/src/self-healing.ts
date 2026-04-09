@@ -265,6 +265,7 @@ export class SelfHealingManager {
       this.checkpointWal();
       await this.enforceWorktreeCap();
       await this.recoverCompletedTasks();
+      await this.recoverMisclassifiedFailures();
       await this.recoverOrphanedExecutions();
       await this.recoverApprovedTriageTasks();
 
@@ -320,6 +321,62 @@ export class SelfHealingManager {
       return recovered;
     } catch (err: any) {
       log.error(`Completed task recovery failed: ${err.message}`);
+      return 0;
+    }
+  }
+
+  // ── Misclassified failure recovery ───────────────────────────────
+
+  /**
+   * Recover tasks in `in-review` marked as `failed` where all steps are
+   * actually done. This catches the case where an agent completed all work
+   * but the session ended without calling `task_done` (e.g., context
+   * overflow, compaction losing tool awareness). The executor marks these
+   * as failed, but the work is complete — clear the error so the normal
+   * review flow can proceed.
+   *
+   * @returns Number of tasks recovered
+   */
+  async recoverMisclassifiedFailures(): Promise<number> {
+    try {
+      const tasks = await this.store.listTasks();
+
+      const misclassified = tasks.filter((t) =>
+        t.column === "in-review" &&
+        t.status === "failed" &&
+        t.error?.includes("without calling task_done") &&
+        t.steps.length > 0 &&
+        t.steps.every((s) => s.status === "done" || s.status === "skipped"),
+      );
+
+      if (misclassified.length === 0) return 0;
+
+      log.warn(`Found ${misclassified.length} misclassified failure(s) with all steps done`);
+
+      let recovered = 0;
+      for (const task of misclassified) {
+        try {
+          await this.store.updateTask(task.id, {
+            status: null,
+            error: null,
+          });
+          await this.store.logEntry(
+            task.id,
+            "Auto-recovered: all steps complete despite 'no task_done' failure — cleared error for normal review",
+          );
+          log.log(`Recovered misclassified failure ${task.id}: ${task.title || task.description?.slice(0, 60) || "(untitled)"}`);
+          recovered++;
+        } catch (err: any) {
+          log.error(`Failed to recover misclassified failure ${task.id}: ${err.message}`);
+        }
+      }
+
+      if (recovered > 0) {
+        log.log(`Recovered ${recovered} misclassified failure(s) → cleared for review`);
+      }
+      return recovered;
+    } catch (err: any) {
+      log.error(`Misclassified failure recovery failed: ${err.message}`);
       return 0;
     }
   }

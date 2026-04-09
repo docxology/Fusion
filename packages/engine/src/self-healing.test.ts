@@ -596,6 +596,86 @@ describe("SelfHealingManager", () => {
     });
   });
 
+  describe("recoverMisclassifiedFailures", () => {
+    it("clears failed status when all steps are done and error is no-task_done", async () => {
+      const managerWithRecovery = new SelfHealingManager(store, {
+        rootDir: "/tmp/test-project",
+      });
+
+      (store.listTasks as ReturnType<typeof vi.fn>).mockResolvedValue([
+        {
+          id: "FN-300",
+          column: "in-review",
+          status: "failed",
+          error: "Agent finished without calling task_done (after retry)",
+          steps: [{ status: "done" }, { status: "done" }, { status: "skipped" }],
+          log: [],
+        },
+      ]);
+
+      const result = await managerWithRecovery.recoverMisclassifiedFailures();
+
+      expect(result).toBe(1);
+      expect(store.updateTask).toHaveBeenCalledWith("FN-300", {
+        status: null,
+        error: null,
+      });
+      expect(store.logEntry).toHaveBeenCalledWith(
+        "FN-300",
+        expect.stringContaining("Auto-recovered"),
+      );
+
+      managerWithRecovery.stop();
+    });
+
+    it("skips tasks where steps are not all done", async () => {
+      const managerWithRecovery = new SelfHealingManager(store, {
+        rootDir: "/tmp/test-project",
+      });
+
+      (store.listTasks as ReturnType<typeof vi.fn>).mockResolvedValue([
+        {
+          id: "FN-301",
+          column: "in-review",
+          status: "failed",
+          error: "Agent finished without calling task_done (after retry)",
+          steps: [{ status: "done" }, { status: "in-progress" }],
+          log: [],
+        },
+      ]);
+
+      const result = await managerWithRecovery.recoverMisclassifiedFailures();
+
+      expect(result).toBe(0);
+      expect(store.updateTask).not.toHaveBeenCalled();
+
+      managerWithRecovery.stop();
+    });
+
+    it("skips tasks with different error messages", async () => {
+      const managerWithRecovery = new SelfHealingManager(store, {
+        rootDir: "/tmp/test-project",
+      });
+
+      (store.listTasks as ReturnType<typeof vi.fn>).mockResolvedValue([
+        {
+          id: "FN-302",
+          column: "in-review",
+          status: "failed",
+          error: "Workflow step failed",
+          steps: [{ status: "done" }, { status: "done" }],
+          log: [],
+        },
+      ]);
+
+      const result = await managerWithRecovery.recoverMisclassifiedFailures();
+
+      expect(result).toBe(0);
+
+      managerWithRecovery.stop();
+    });
+  });
+
   describe("recoverOrphanedExecutions", () => {
     it("requeues in-progress tasks whose reserved worktree is missing", async () => {
       const getExecuting = vi.fn().mockReturnValue(new Set<string>());

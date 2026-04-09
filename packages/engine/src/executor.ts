@@ -1279,6 +1279,19 @@ export class TaskExecutor {
             return;
           }
 
+          // If the agent didn't explicitly call task_done, check whether
+          // all steps are already complete — treat as implicit done to avoid
+          // unnecessary retry sessions for context-overflow / compaction cases.
+          if (!taskDone) {
+            const implicitCheck = await this.store.getTask(task.id);
+            if (implicitCheck.steps.length > 0 &&
+                implicitCheck.steps.every((s) => s.status === "done" || s.status === "skipped")) {
+              taskDone = true;
+              executorLog.log(`${task.id} all steps done — treating as implicit task_done`);
+              await this.store.logEntry(task.id, "All steps complete — implicit task_done (agent did not call tool explicitly)");
+            }
+          }
+
           if (taskDone) {
             // Capture modified files before running workflow steps
             const updatedTask = await this.store.getTask(task.id);
@@ -1356,6 +1369,20 @@ export class TaskExecutor {
             stuckDetector?.recordActivity(task.id);
             await promptWithFallback(retrySession, retryPrompt);
             checkSessionError(retrySession);
+
+            // If the agent didn't explicitly call task_done, check whether
+            // all steps are already complete — if so, treat as implicit done.
+            // This handles context-overflow / compaction scenarios where the
+            // agent lost awareness of the task_done tool but finished the work.
+            if (!taskDone) {
+              const implicitCheck = await this.store.getTask(task.id);
+              if (implicitCheck.steps.length > 0 &&
+                  implicitCheck.steps.every((s) => s.status === "done" || s.status === "skipped")) {
+                taskDone = true;
+                executorLog.log(`${task.id} all steps done — treating as implicit task_done`);
+                await this.store.logEntry(task.id, "All steps complete — implicit task_done (agent did not call tool explicitly)");
+              }
+            }
 
             if (taskDone) {
               const updatedTask = await this.store.getTask(task.id);
