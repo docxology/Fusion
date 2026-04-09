@@ -258,6 +258,25 @@ describe("TaskForm", () => {
     expect(textarea.getAttribute("rows")).toBe("8");
   });
 
+  it("uses 5 rows for description textarea in create mode", () => {
+    renderTaskForm({
+      mode: "create",
+      description: "Create mode description",
+    });
+
+    const textarea = screen.getByRole("textbox", { name: /Description/i }) as HTMLTextAreaElement;
+    expect(textarea.getAttribute("rows")).toBe("5");
+  });
+
+  it("does not render expand button in create mode", () => {
+    renderTaskForm({
+      mode: "create",
+      description: "Some description",
+    });
+
+    expect(screen.queryByRole("button", { name: "Expand description" })).toBeNull();
+  });
+
   it("debounces auto-save in edit mode and calls onAutoSaveDescription after 1.5s", async () => {
     vi.useFakeTimers();
     try {
