@@ -263,6 +263,113 @@ describe("CSS modifier classes for status colors", () => {
   });
 });
 
+describe("Accent color per color theme", () => {
+  const stylesPath = path.resolve(__dirname, "../styles.css");
+  let css: string;
+
+  beforeAll(() => {
+    css = fs.readFileSync(stylesPath, "utf-8");
+  });
+
+  /**
+   * Extract every dark color-theme block [data-color-theme="<name>"] { … }
+   * (excludes light variants and compound selectors with spaces/dots).
+   */
+  function getDarkColorThemeBlocks(): Map<string, string> {
+    const blocks = new Map<string, string>();
+    const regex = /^\[data-color-theme="([^"]+)"\]\s*\{/gm;
+    let match: RegExpExecArray | null;
+
+    while ((match = regex.exec(css)) !== null) {
+      const themeName = match[1];
+      // Skip if this is actually a light variant or compound selector
+      const fullLine = css.slice(match.index, css.indexOf("\n", match.index));
+      if (fullLine.includes("[data-theme=") || fullLine.includes(".") || fullLine.includes(",")) {
+        continue;
+      }
+
+      const openBraceIdx = match.index + match[0].length - 1;
+      let depth = 1;
+      let end = openBraceIdx;
+      for (let i = openBraceIdx + 1; i < css.length; i++) {
+        if (css[i] === "{") depth++;
+        if (css[i] === "}") depth--;
+        if (depth === 0) {
+          end = i;
+          break;
+        }
+      }
+      blocks.set(themeName, css.slice(match.index, end + 1));
+    }
+    return blocks;
+  }
+
+  /**
+   * Extract every light color-theme block [data-color-theme="<name>"][data-theme="light"] { … }
+   */
+  function getLightColorThemeBlocks(): Map<string, string> {
+    const blocks = new Map<string, string>();
+    const regex = /^\[data-color-theme="([^"]+)"\]\[data-theme="light"\]\s*\{/gm;
+    let match: RegExpExecArray | null;
+
+    while ((match = regex.exec(css)) !== null) {
+      const themeName = match[1];
+      const openBraceIdx = match.index + match[0].length - 1;
+      let depth = 1;
+      let end = openBraceIdx;
+      for (let i = openBraceIdx + 1; i < css.length; i++) {
+        if (css[i] === "{") depth++;
+        if (css[i] === "}") depth--;
+        if (depth === 0) {
+          end = i;
+          break;
+        }
+      }
+      blocks.set(themeName, css.slice(match.index, end + 1));
+    }
+    return blocks;
+  }
+
+  it("every dark color theme block defines --accent", () => {
+    const blocks = getDarkColorThemeBlocks();
+    expect(blocks.size).toBeGreaterThanOrEqual(34);
+
+    const missing: string[] = [];
+    for (const [theme, block] of blocks) {
+      if (!block.includes("--accent:")) {
+        missing.push(theme);
+      }
+    }
+
+    expect(missing, `Dark themes missing --accent: ${missing.join(", ")}`).toEqual([]);
+  });
+
+  it("every light color theme block defines --accent", () => {
+    const blocks = getLightColorThemeBlocks();
+    expect(blocks.size).toBeGreaterThanOrEqual(34);
+
+    const missing: string[] = [];
+    for (const [theme, block] of blocks) {
+      if (!block.includes("--accent:")) {
+        missing.push(theme);
+      }
+    }
+
+    expect(missing, `Light themes missing --accent: ${missing.join(", ")}`).toEqual([]);
+  });
+
+  it("dark and light accent counts match color theme counts", () => {
+    const darkBlocks = getDarkColorThemeBlocks();
+    const lightBlocks = getLightColorThemeBlocks();
+
+    const darkAccentCount = Array.from(darkBlocks.values()).filter(b => b.includes("--accent:")).length;
+    const lightAccentCount = Array.from(lightBlocks.values()).filter(b => b.includes("--accent:")).length;
+
+    expect(darkAccentCount).toBe(darkBlocks.size);
+    expect(lightAccentCount).toBe(lightBlocks.size);
+  });
+});
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 function extractRootBlock(css: string): string {

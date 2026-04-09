@@ -9473,6 +9473,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(0, 200, 83, 0.3);
   --logo-accent: var(--todo);
   --color-info: #0288d1;
+  --accent: #00b8d4;
 }
 
 [data-color-theme="ocean"][data-theme="light"] {
@@ -9493,6 +9494,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(0, 137, 123, 0.3);
   --logo-accent: var(--todo);
   --color-info: #0277bd;
+  --accent: #0097a7;
 }
 
 /* FOREST - Deep greens and emeralds */
@@ -9514,6 +9516,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(34, 197, 94, 0.3);
   --logo-accent: var(--todo);
   --color-info: #29b6f6;
+  --accent: #16a34a;
 }
 
 [data-color-theme="forest"][data-theme="light"] {
@@ -9534,6 +9537,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(22, 163, 74, 0.3);
   --logo-accent: var(--todo);
   --color-info: #0288d1;
+  --accent: #15803d;
 }
 
 /* SUNSET - Warm oranges and reds */
@@ -9555,6 +9559,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(255, 109, 0, 0.3);
   --logo-accent: var(--todo);
   --color-info: #2196f3;
+  --accent: #ff6d00;
 }
 
 [data-color-theme="sunset"][data-theme="light"] {
@@ -9575,6 +9580,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(230, 81, 0, 0.3);
   --logo-accent: var(--todo);
   --color-info: #1565c0;
+  --accent: #e65100;
 }
 
 /* BERRY - Purple/pink tones */
@@ -9596,6 +9602,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(179, 136, 255, 0.3);
   --logo-accent: var(--todo);
   --color-info: #7c4dff;
+  --accent: #9c27b0;
 }
 
 [data-color-theme="berry"][data-theme="light"] {
@@ -9616,6 +9623,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(156, 39, 176, 0.3);
   --logo-accent: var(--todo);
   --color-info: #6200ea;
+  --accent: #7b1fa2;
 }
 
 /* MONOCHROME - Pure grays */
@@ -9637,6 +9645,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(158, 158, 158, 0.3);
   --logo-accent: var(--todo);
   --color-info: #64b5f6;
+  --accent: #b0b0b0;
 }
 
 [data-color-theme="monochrome"][data-theme="light"] {
@@ -9657,6 +9666,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(117, 117, 117, 0.3);
   --logo-accent: var(--todo);
   --color-info: #1976d2;
+  --accent: #616161;
 }
 
 /* SLATE - Cool blue-gray tones */
@@ -9677,6 +9687,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(148, 163, 184, 0.3);
   --logo-accent: var(--todo);
   --color-info: #60a5fa;
+  --accent: #64748b;
 }
 
 [data-color-theme="slate"][data-theme="light"] {
@@ -9696,6 +9707,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(71, 85, 105, 0.3);
   --logo-accent: var(--todo);
   --color-info: #3b82f6;
+  --accent: #475569;
 }
 
 /* ASH - Warm medium grays */
@@ -9716,6 +9728,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(168, 162, 158, 0.3);
   --logo-accent: var(--todo);
   --color-info: #93c5fd;
+  --accent: #a1887f;
 }
 
 [data-color-theme="ash"][data-theme="light"] {
@@ -9735,6 +9748,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(87, 83, 78, 0.3);
   --logo-accent: var(--todo);
   --color-info: #3b82f6;
+  --accent: #6d5d53;
 }
 
 /* GRAPHITE - Dark graphite blacks */
@@ -9755,6 +9769,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(184, 184, 184, 0.3);
   --logo-accent: var(--todo);
   --color-info: #7ab8ff;
+  --accent: #a0a0a0;
 }
 
 [data-color-theme="graphite"][data-theme="light"] {
@@ -9774,6 +9789,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(64, 64, 64, 0.3);
   --logo-accent: var(--todo);
   --color-info: #2563eb;
+  --accent: #606060;
 }
 
 /* SILVER - Light silvery grays */
@@ -9794,6 +9810,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(192, 192, 192, 0.3);
   --logo-accent: var(--todo);
   --color-info: #90c0ff;
+  --accent: #b8b8b8;
 }
 
 [data-color-theme="silver"][data-theme="light"] {
@@ -9813,6 +9830,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(82, 82, 82, 0.3);
   --logo-accent: var(--todo);
   --color-info: #2563eb;
+  --accent: #707070;
 }
 
 /* ZEN - Minimal, clean monochrome with subtle accents */
@@ -9851,6 +9869,7 @@ html .column.drag-over * {
   --glow-warning: none;
   --glow-danger: none;
   --focus-ring: 0 0 0 1px var(--border);
+  --accent: #7da88e;
 }
 
 [data-color-theme="zen"][data-theme="light"] {
@@ -9888,6 +9907,7 @@ html .column.drag-over * {
   --glow-warning: none;
   --glow-danger: none;
   --focus-ring: 0 0 0 1px var(--border);
+  --accent: #4a6b56;
 }
 
 /* HIGH CONTRAST - Extreme contrast for accessibility */
@@ -9918,6 +9938,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(0, 255, 0, 0.4);
   --logo-accent: var(--todo);
   --color-info: #00ccff;
+  --accent: #00ff00;
 }
 
 [data-color-theme="high-contrast"][data-theme="light"] {
@@ -9947,6 +9968,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(0, 153, 0, 0.3);
   --logo-accent: var(--todo);
   --color-info: #0055cc;
+  --accent: #00cc00;
 }
 
 /* INDUSTRIAL - Technical engineering spec sheet aesthetic */
@@ -9977,6 +9999,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(255, 107, 0, 0.3);
   --logo-accent: var(--todo);
   --color-info: #42a5f5;
+  --accent: #ff6d00;
 }
 
 [data-color-theme="industrial"][data-theme="light"] {
@@ -10006,6 +10029,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(230, 81, 0, 0.3);
   --logo-accent: var(--todo);
   --color-info: #1565c0;
+  --accent: #bf360c;
 }
 
 /* SOLARIZED - Classic solarized palette */
@@ -10036,6 +10060,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(133, 153, 0, 0.3);
   --logo-accent: var(--todo);
   --color-info: #2aa198;
+  --accent: #859900;
 }
 
 [data-color-theme="solarized"][data-theme="light"] {
@@ -10065,6 +10090,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(133, 153, 0, 0.3);
   --logo-accent: var(--todo);
   --color-info: #2aa198;
+  --accent: #637b00;
 }
 
 /* FACTORY - Industrial Mission Control Theme
@@ -10141,6 +10167,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(245, 158, 11, 0.4);
   --logo-accent: var(--todo);
   --color-info: #2563eb;
+  --accent: #d97706;
 }
 
 [data-color-theme="factory"][data-theme="light"] {
@@ -10184,6 +10211,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(217, 119, 6, 0.3);
   --logo-accent: var(--todo);
   --color-info: #1d4ed8;
+  --accent: #b45309;
 }
 
 [data-color-theme="factory"] .card.agent-active {
@@ -10297,6 +10325,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(126, 231, 135, 0.3);
   --logo-accent: var(--todo);
   --color-info: #39bae6;
+  --accent: #5cb85c;
 }
 
 [data-color-theme="ayu"][data-theme="light"] {
@@ -10328,6 +10357,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(134, 179, 0, 0.3);
   --logo-accent: var(--todo);
   --color-info: #007acc;
+  --accent: #3a8a3a;
 }
 
 /* ONE DARK - Atom's iconic dark theme */
@@ -10360,6 +10390,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(152, 195, 121, 0.3);
   --logo-accent: var(--todo);
   --color-info: #61afef;
+  --accent: #7ec77a;
 }
 
 /* ONE DARK - Light variant */
@@ -10392,6 +10423,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(80, 161, 79, 0.3);
   --logo-accent: var(--todo);
   --color-info: #4078f2;
+  --accent: #4a9e46;
 }
 
 /* NORD - Arctic blue palette inspired by the Nord color scheme */
@@ -10424,6 +10456,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(163, 190, 140, 0.3);
   --logo-accent: var(--todo);
   --color-info: #81a1c1;
+  --accent: #88c0d0;
 }
 
 [data-color-theme="nord"][data-theme="light"] {
@@ -10455,6 +10488,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(124, 163, 115, 0.3);
   --logo-accent: var(--todo);
   --color-info: #5e81ac;
+  --accent: #5e81ac;
 }
 
 /* DRACULA - Popular dark theme with deep purples and vivid accents */
@@ -10487,6 +10521,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(80, 250, 123, 0.3);
   --logo-accent: var(--todo);
   --color-info: #8be9fd;
+  --accent: #bd93f9;
 }
 
 [data-color-theme="dracula"][data-theme="light"] {
@@ -10518,6 +10553,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(46, 139, 87, 0.3);
   --logo-accent: var(--todo);
   --color-info: #00838f;
+  --accent: #8662c7;
 }
 
 /* GRUVBOX - Warm, retro earth-tone palette */
@@ -10550,6 +10586,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(184, 187, 38, 0.3);
   --logo-accent: var(--todo);
   --color-info: #83a598;
+  --accent: #d4a017;
 }
 
 [data-color-theme="gruvbox"][data-theme="light"] {
@@ -10581,6 +10618,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(66, 123, 88, 0.3);
   --logo-accent: var(--todo);
   --color-info: #076678;
+  --accent: #a08010;
 }
 
 /* TOKYO NIGHT - Deep blues and soft purples inspired by the VS Code theme */
@@ -10613,6 +10651,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(158, 206, 106, 0.3);
   --logo-accent: var(--todo);
   --color-info: #7aa2f7;
+  --accent: #7aa2f7;
 }
 
 [data-color-theme="tokyo-night"][data-theme="light"] {
@@ -10644,6 +10683,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(72, 112, 62, 0.3);
   --logo-accent: var(--todo);
   --color-info: #3b5ea5;
+  --accent: #5b7ec7;
 }
 
 /* CATPPUCCIN MOCHA - Popular pastel dark theme */
@@ -10676,6 +10716,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(166, 227, 161, 0.3);
   --logo-accent: var(--todo);
   --color-info: #89b4fa;
+  --accent: #cba6f7;
 }
 
 [data-color-theme="catppuccin-mocha"][data-theme="light"] {
@@ -10707,6 +10748,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(64, 160, 43, 0.3);
   --logo-accent: var(--todo);
   --color-info: #1e66f5;
+  --accent: #9a6fd9;
 }
 
 /* GITHUB DARK - GitHub's dark theme */
@@ -10739,6 +10781,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(63, 185, 80, 0.3);
   --logo-accent: var(--todo);
   --color-info: #58a6ff;
+  --accent: #58a6ff;
 }
 
 [data-color-theme="github-dark"][data-theme="light"] {
@@ -10770,6 +10813,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(26, 127, 55, 0.3);
   --logo-accent: var(--todo);
   --color-info: #0969da;
+  --accent: #0969da;
 }
 
 /* EVERFOREST - Green-focused dark theme */
@@ -10802,6 +10846,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(167, 192, 128, 0.3);
   --logo-accent: var(--todo);
   --color-info: #7fbbb3;
+  --accent: #a7c080;
 }
 
 [data-color-theme="everforest"][data-theme="light"] {
@@ -10833,6 +10878,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(109, 155, 58, 0.3);
   --logo-accent: var(--todo);
   --color-info: #3a94a5;
+  --accent: #6b8f55;
 }
 
 /* ROSÉ PINE - Soft purple/pink tones */
@@ -10865,6 +10911,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(156, 207, 216, 0.3);
   --logo-accent: var(--todo);
   --color-info: #c4a7e7;
+  --accent: #c4a7e7;
 }
 
 [data-color-theme="rose-pine"][data-theme="light"] {
@@ -10896,6 +10943,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(86, 148, 159, 0.3);
   --logo-accent: var(--todo);
   --color-info: #907aa9;
+  --accent: #907aac;
 }
 
 /* KANAGAWA - Japanese-inspired wave theme */
@@ -10928,6 +10976,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(152, 187, 108, 0.3);
   --logo-accent: var(--todo);
   --color-info: #7e9cd8;
+  --accent: #957fb8;
 }
 
 [data-color-theme="kanagawa"][data-theme="light"] {
@@ -10959,6 +11008,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(90, 130, 73, 0.3);
   --logo-accent: var(--todo);
   --color-info: #4e76b5;
+  --accent: #7560a0;
 }
 
 /* NIGHT OWL - Blue/cyan with warm yellow accents (Sarah Drasner) */
@@ -10991,6 +11041,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(78, 201, 176, 0.3);
   --logo-accent: var(--todo);
   --color-info: #82aaff;
+  --accent: #82aaff;
 }
 
 [data-color-theme="night-owl"][data-theme="light"] {
@@ -11022,6 +11073,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(43, 138, 115, 0.3);
   --logo-accent: var(--todo);
   --color-info: #2563eb;
+  --accent: #5a7fd4;
 }
 
 /* PALENIGHT - Warm purple-free dark blue palette */
@@ -11054,6 +11106,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(195, 232, 141, 0.3);
   --logo-accent: var(--todo);
   --color-info: #82aaff;
+  --accent: #c792ea;
 }
 
 [data-color-theme="palenight"][data-theme="light"] {
@@ -11085,6 +11138,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(90, 158, 47, 0.3);
   --logo-accent: var(--todo);
   --color-info: #3b6fcf;
+  --accent: #9a60c0;
 }
 
 /* MONOKAI PRO - Warm oranges and greens */
@@ -11117,6 +11171,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(169, 220, 118, 0.3);
   --logo-accent: var(--todo);
   --color-info: #78dce8;
+  --accent: #ffd866;
 }
 
 [data-color-theme="monokai-pro"][data-theme="light"] {
@@ -11148,6 +11203,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(90, 144, 48, 0.3);
   --logo-accent: var(--todo);
   --color-info: #2d8fa0;
+  --accent: #d4a830;
 }
 
 /* SLIME - Retro lime green theme */
@@ -11180,6 +11236,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(160, 255, 96, 0.3);
   --logo-accent: var(--todo);
   --color-info: #60d8a0;
+  --accent: #78d840;
 }
 
 [data-color-theme="slime"][data-theme="light"] {
@@ -11211,6 +11268,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(74, 138, 32, 0.3);
   --logo-accent: var(--todo);
   --color-info: #1a7a5a;
+  --accent: #5ab030;
 }
 
 /* BRUTALIST - Concrete and signage inspired harsh UI */
@@ -11279,6 +11337,7 @@ html .column.drag-over * {
   --cta-glow: none;
   --logo-accent: var(--todo);
   --color-info: #ffd100;
+  --accent: #ff6a00;
 }
 
 [data-color-theme="brutalist"][data-theme="light"] {
@@ -11310,6 +11369,7 @@ html .column.drag-over * {
   --cta-border-hover: #ea580c;
   --logo-accent: var(--todo);
   --color-info: #b8860b;
+  --accent: #c2410c;
 }
 
 [data-color-theme="brutalist"] .btn {
@@ -11417,6 +11477,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 12px rgba(255, 45, 149, 0.45);
   --logo-accent: var(--todo);
   --color-info: #00f0ff;
+  --accent: #ff2d95;
 }
 
 [data-color-theme="neon-city"][data-theme="light"] {
@@ -11455,6 +11516,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 10px rgba(177, 20, 95, 0.26);
   --logo-accent: var(--todo);
   --color-info: #008e9b;
+  --accent: #d63384;
 }
 
 [data-color-theme="neon-city"] .btn {
@@ -11589,6 +11651,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 10px rgba(208, 138, 75, 0.25);
   --logo-accent: var(--todo);
   --color-info: #d08a4b;
+  --accent: #d08a4b;
 }
 
 [data-color-theme="parchment"][data-theme="light"] {
@@ -11625,6 +11688,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(168, 86, 47, 0.2);
   --logo-accent: var(--todo);
   --color-info: #8f4e2a;
+  --accent: #a66b35;
 }
 
 [data-color-theme="parchment"] .btn {
@@ -11725,6 +11789,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 10px rgba(51, 255, 0, 0.35);
   --logo-accent: var(--todo);
   --color-info: #8fff38;
+  --accent: #33ff00;
 }
 
 [data-color-theme="terminal"][data-theme="light"] {
@@ -11761,6 +11826,7 @@ html .column.drag-over * {
   --cta-glow: 0 0 8px rgba(45, 107, 20, 0.2);
   --logo-accent: var(--todo);
   --color-info: #4c8f25;
+  --accent: #2d6b14;
 }
 
 [data-color-theme="terminal"] .btn,
@@ -11894,6 +11960,7 @@ body[data-color-theme="terminal"][data-theme="light"]::before {
   --cta-glow: 0 0 12px rgba(200, 107, 255, 0.24);
   --logo-accent: var(--todo);
   --color-info: #ff7aa8;
+  --accent: #c86bff;
 }
 
 [data-color-theme="glass"][data-theme="light"] {
@@ -11930,6 +11997,7 @@ body[data-color-theme="terminal"][data-theme="light"]::before {
   --cta-glow: 0 0 10px rgba(157, 64, 207, 0.22);
   --logo-accent: var(--todo);
   --color-info: #c74b7a;
+  --accent: #9d40cf;
 }
 
 [data-color-theme="glass"] .card,
