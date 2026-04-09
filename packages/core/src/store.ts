@@ -595,6 +595,17 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
 
     return this.withConfigLock(async () => {
       const config = await this.readConfig();
+
+      // Handle null values as "delete this key from settings"
+      // This allows the frontend to explicitly clear a setting by sending null
+      // (since JSON.stringify drops undefined keys, we use null as a sentinel)
+      for (const key of Object.keys(projectPatch)) {
+        if ((projectPatch as Record<string, unknown>)[key] === null) {
+          delete (config.settings as unknown as Record<string, unknown>)[key];
+          delete (projectPatch as Record<string, unknown>)[key];
+        }
+      }
+
       const globalSettings = await this.globalSettingsStore.getSettings();
       const previousMerged: Settings = { ...DEFAULT_SETTINGS, ...globalSettings, ...config.settings } as Settings;
       const updatedProjectSettings = { ...config.settings, ...projectPatch };

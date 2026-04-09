@@ -746,17 +746,30 @@ export function SettingsModal({
 
             <div className="form-group">
               <label htmlFor="tokenCap">Token Cap</label>
-              <input
-                id="tokenCap"
-                type="number"
-                placeholder="100000"
-                value={(form as any).tokenCap ?? ""}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setForm((f) => ({ ...f, tokenCap: val ? parseInt(val, 10) : undefined } as any));
-                }}
-              />
-              <small>Automatically compact context when approaching this token count. Leave empty to use default behavior (compact only on overflow errors).</small>
+              <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                <input
+                  id="tokenCap"
+                  type="number"
+                  placeholder="No cap"
+                  value={(form as any).tokenCap ?? ""}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setForm((f) => ({ ...f, tokenCap: val ? parseInt(val, 10) : null } as any));
+                  }}
+                />
+                {(form as any).tokenCap != null && (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    title="Reset to default (no cap)"
+                    onClick={() => setForm((f) => ({ ...f, tokenCap: null } as any))}
+                    style={{ whiteSpace: "nowrap" }}
+                  >
+                    Reset
+                  </button>
+                )}
+              </div>
+              <small>Automatically compact context when approaching this token count. Leave empty for no cap (compact only on overflow errors). Set a number to proactively compact when reaching this token count.</small>
             </div>
 
             {/* --- Planning & Validation --- */}

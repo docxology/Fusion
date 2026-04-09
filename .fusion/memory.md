@@ -27,6 +27,7 @@
 - Browser directory pickers (`webkitdirectory`) cannot provide a server filesystem path; for dashboard import flows, parse selected `AGENTS.md` files client-side and send `{ agents }` payloads instead of trying to submit a directory `source` path.
 - For conditionally rendered mobile inputs in dashboard components, prefer React `autoFocus` on the input over effect+`setTimeout` focus logic keyed to open-state booleans; mount timing is more reliable and simpler.
 - Checkout leasing is explicit: use `checkoutTask`/`releaseTask` (or `/api/tasks/:id/checkout` + `/release`) for ownership, treat 409 conflicts as non-retryable contention, and let `HeartbeatMonitor.executeHeartbeat()` only validate `checkedOutBy` (never auto-acquire leases).
+- The null-as-delete pattern for settings: In `TaskStore.updateSettings()`, `null` values in the settings patch are treated as "delete this key from settings" (since `JSON.stringify` drops `undefined` keys). This allows the frontend to explicitly clear a setting by sending `null`. The key is deleted from both `config.settings` and `projectPatch` before merging, so cleared settings fall back to `DEFAULT_SETTINGS`.
 
 ## Color Theme System
 
