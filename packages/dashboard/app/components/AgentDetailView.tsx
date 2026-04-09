@@ -1887,6 +1887,28 @@ function ConfigTab({
     return initial;
   });
 
+  // Budget config state initialised from agent.runtimeConfig.budgetConfig
+  const [budgetValues, setBudgetValues] = useState<Record<string, string>>(() => {
+    const bc = (agent.runtimeConfig ?? {}).budgetConfig as Record<string, unknown> | undefined;
+    const initial: Record<string, string> = {};
+    if (bc !== undefined && bc !== null) {
+      if (bc.tokenBudget !== undefined && bc.tokenBudget !== null) {
+        initial.tokenBudget = String(bc.tokenBudget);
+      }
+      if (bc.usageThreshold !== undefined && bc.usageThreshold !== null) {
+        // Convert fraction (0-1) to percentage (0-100) for display
+        initial.usageThreshold = String(Number(bc.usageThreshold) * 100);
+      }
+      if (bc.budgetPeriod !== undefined && bc.budgetPeriod !== null) {
+        initial.budgetPeriod = String(bc.budgetPeriod);
+      }
+      if (bc.resetDay !== undefined && bc.resetDay !== null) {
+        initial.resetDay = String(bc.resetDay);
+      }
+    }
+    return initial;
+  });
+
   const [isSaving, setIsSaving] = useState(false);
   const [isSavingInstructions, setIsSavingInstructions] = useState(false);
   const [errors, setErrors] = useState<ValidationErrors>({});
@@ -1913,6 +1935,22 @@ function ConfigTab({
       const persisted = rc[key] !== undefined && rc[key] !== null ? String(rc[key]) : "";
       if (current !== persisted) return true;
     }
+    // Check budget config values
+    const persistedBc = rc.budgetConfig as Record<string, unknown> | undefined;
+    for (const key of ["tokenBudget", "budgetPeriod", "resetDay"] as const) {
+      const current = budgetValues[key]?.trim() ?? "";
+      const persisted = persistedBc?.[key] !== undefined && persistedBc?.[key] !== null
+        ? String(persistedBc[key])
+        : "";
+      if (current !== persisted) return true;
+    }
+    // usageThreshold: compare percentage (UI) against fraction * 100 (persisted)
+    const currentThreshold = budgetValues.usageThreshold?.trim() ?? "";
+    const persistedThreshold = persistedBc?.usageThreshold !== undefined && persistedBc?.usageThreshold !== null
+      ? String(Number(persistedBc.usageThreshold) * 100)
+      : "";
+    if (currentThreshold !== persistedThreshold) return true;
+
     return false;
   })();
 
@@ -1949,6 +1987,18 @@ function ConfigTab({
     }
   };
 
+  const handleBudgetFieldChange = (key: string, value: string) => {
+    setBudgetValues((prev) => ({ ...prev, [key]: value }));
+    setJustSaved(false);
+    if (errors[key]) {
+      setErrors((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+    }
+  };
+
   const handleSave = async () => {
     // Validate advanced settings
     const validationErrors = validateAdvancedSettings(formValues);
@@ -1972,6 +2022,49 @@ function ConfigTab({
     const messageResponseModeForValidation = heartbeatValues.messageResponseMode?.trim();
     if (messageResponseModeForValidation && !["immediate", "on-heartbeat"].includes(messageResponseModeForValidation)) {
       validationErrors.messageResponseMode = "\"Message Response Mode\" must be either immediate or on-heartbeat";
+    }
+
+    // Validate budget settings
+    const tokenBudgetRaw = budgetValues.tokenBudget?.trim();
+    if (tokenBudgetRaw) {
+      const num = Number(tokenBudgetRaw);
+      if (Number.isNaN(num) || !Number.isFinite(num)) {
+        validationErrors.tokenBudget = "\"Token Budget\" must be a valid number";
+      } else if (num <= 0) {
+        validationErrors.tokenBudget = "\"Token Budget\" must be greater than 0";
+      }
+    }
+
+    const usageThresholdRaw = budgetValues.usageThreshold?.trim();
+    if (usageThresholdRaw) {
+      const num = Number(usageThresholdRaw);
+      if (Number.isNaN(num) || !Number.isFinite(num)) {
+        validationErrors.usageThreshold = "\"Usage Threshold\" must be a valid number";
+      } else if (num < 1 || num > 100) {
+        validationErrors.usageThreshold = "\"Usage Threshold\" must be between 1 and 100";
+      }
+    }
+
+    const budgetPeriodRaw = budgetValues.budgetPeriod?.trim();
+    if (budgetPeriodRaw && !["daily", "weekly", "monthly", "lifetime"].includes(budgetPeriodRaw)) {
+      validationErrors.budgetPeriod = "\"Budget Period\" must be one of: daily, weekly, monthly, lifetime";
+    }
+
+    const resetDayRaw = budgetValues.resetDay?.trim();
+    const periodForResetDay = budgetPeriodRaw || "lifetime";
+    if (resetDayRaw) {
+      const num = Number(resetDayRaw);
+      if (Number.isNaN(num) || !Number.isFinite(num)) {
+        validationErrors.resetDay = "\"Reset Day\" must be a valid number";
+      } else if (periodForResetDay === "weekly") {
+        if (num < 0 || num > 6 || !Number.isInteger(num)) {
+          validationErrors.resetDay = "\"Reset Day\" must be between 0 (Sunday) and 6 (Saturday) for weekly period";
+        }
+      } else if (periodForResetDay === "monthly") {
+        if (num < 1 || num > 31 || !Number.isInteger(num)) {
+          validationErrors.resetDay = "\"Reset Day\" must be between 1 and 31 for monthly period";
+        }
+      }
     }
 
     if (Object.keys(validationErrors).length > 0) {
@@ -2010,6 +2103,34 @@ function ConfigTab({
       delete newRuntimeConfig.messageResponseMode;
     } else {
       newRuntimeConfig.messageResponseMode = messageResponseMode;
+    }
+
+    // Build budgetConfig payload — only include non-empty values
+    const newBudgetConfig: Record<string, unknown> = {};
+    const tokenBudget = budgetValues.tokenBudget?.trim();
+    const usageThreshold = budgetValues.usageThreshold?.trim();
+    const budgetPeriod = budgetValues.budgetPeriod?.trim();
+    const resetDay = budgetValues.resetDay?.trim();
+
+    if (tokenBudget) {
+      newBudgetConfig.tokenBudget = Number(tokenBudget);
+    }
+    if (usageThreshold) {
+      // Convert percentage (UI) to fraction (storage)
+      newBudgetConfig.usageThreshold = Number(usageThreshold) / 100;
+    }
+    if (budgetPeriod) {
+      newBudgetConfig.budgetPeriod = budgetPeriod;
+    }
+    if (resetDay) {
+      newBudgetConfig.resetDay = Number(resetDay);
+    }
+
+    // Only persist budgetConfig if it has any values
+    if (Object.keys(newBudgetConfig).length > 0) {
+      newRuntimeConfig.budgetConfig = newBudgetConfig;
+    } else {
+      delete newRuntimeConfig.budgetConfig;
     }
 
     setIsSaving(true);
@@ -2161,6 +2282,95 @@ function ConfigTab({
               <span className="config-error">{errors.messageResponseMode}</span>
             ) : (
               <span className="config-hint">How this agent responds to incoming messages. &apos;Immediate&apos; wakes the agent as soon as a message arrives. &apos;On Heartbeat&apos; defers processing to the next scheduled heartbeat.</span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="config-section">
+        <h3>Budget Settings</h3>
+        <p className="config-description">
+          Configure token budget limits for this agent. Leave all fields empty to disable budget tracking.
+        </p>
+
+        <div className="config-fields">
+          <div className="config-field">
+            <label htmlFor="budget-tokenBudget">Token Budget</label>
+            <input
+              id="budget-tokenBudget"
+              type="text"
+              inputMode="numeric"
+              className={cn("input", !!errors.tokenBudget && "input--error")}
+              placeholder="No limit"
+              value={budgetValues.tokenBudget ?? ""}
+              onChange={(e) => handleBudgetFieldChange("tokenBudget", e.target.value)}
+            />
+            {errors.tokenBudget ? (
+              <span className="config-error">{errors.tokenBudget}</span>
+            ) : (
+              <span className="config-hint">Total token cap (input + output) for this agent. Leave empty for no limit.</span>
+            )}
+          </div>
+
+          <div className="config-field">
+            <label htmlFor="budget-usageThreshold">Usage Threshold (%)</label>
+            <input
+              id="budget-usageThreshold"
+              type="text"
+              inputMode="numeric"
+              className={cn("input", !!errors.usageThreshold && "input--error")}
+              placeholder="80"
+              value={budgetValues.usageThreshold ?? ""}
+              onChange={(e) => handleBudgetFieldChange("usageThreshold", e.target.value)}
+            />
+            {errors.usageThreshold ? (
+              <span className="config-error">{errors.usageThreshold}</span>
+            ) : (
+              <span className="config-hint">Warning threshold as a percentage. Agent warns when usage reaches this level. Default: 80%.</span>
+            )}
+          </div>
+
+          <div className="config-field">
+            <label htmlFor="budget-budgetPeriod">Budget Period</label>
+            <select
+              id="budget-budgetPeriod"
+              className={cn("select", !!errors.budgetPeriod && "input--error")}
+              value={budgetValues.budgetPeriod ?? ""}
+              onChange={(e) => handleBudgetFieldChange("budgetPeriod", e.target.value)}
+            >
+              <option value="">No reset (lifetime)</option>
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+            </select>
+            {errors.budgetPeriod ? (
+              <span className="config-error">{errors.budgetPeriod}</span>
+            ) : (
+              <span className="config-hint">How often the budget counter resets. Leave empty for lifetime budget.</span>
+            )}
+          </div>
+
+          <div className="config-field">
+            <label htmlFor="budget-resetDay">Reset Day</label>
+            <input
+              id="budget-resetDay"
+              type="text"
+              inputMode="numeric"
+              className={cn("input", !!errors.resetDay && "input--error")}
+              placeholder="Auto"
+              value={budgetValues.resetDay ?? ""}
+              onChange={(e) => handleBudgetFieldChange("resetDay", e.target.value)}
+            />
+            {errors.resetDay ? (
+              <span className="config-error">{errors.resetDay}</span>
+            ) : (
+              <span className="config-hint">
+                {budgetValues.budgetPeriod === "weekly"
+                  ? "Day of week (0=Sunday to 6=Saturday) for reset."
+                  : budgetValues.budgetPeriod === "monthly"
+                    ? "Day of month (1-31) for reset."
+                    : "Day for reset (weekly: 0-6, monthly: 1-31). Leave empty for automatic."}
+              </span>
             )}
           </div>
         </div>

@@ -1204,6 +1204,408 @@ describe("AgentDetailView", () => {
     });
   });
 
+  // ── Budget Settings ──────────────────────────────────────────────────────
+
+  describe("Budget Settings", () => {
+    const navigateToSettings = async (user: ReturnType<typeof userEvent.setup>) => {
+      await waitFor(() => {
+        expect(screen.getByText("Settings")).toBeInTheDocument();
+      });
+      await user.click(screen.getByText("Settings"));
+    };
+
+    it("renders Budget Settings section with all fields", async () => {
+      const user = userEvent.setup();
+      render(
+        <AgentDetailView
+          agentId="agent-001"
+          onClose={vi.fn()}
+          addToast={vi.fn()}
+        />
+      );
+
+      await navigateToSettings(user);
+
+      await waitFor(() => {
+        expect(screen.getByLabelText("Token Budget")).toBeInTheDocument();
+        expect(screen.getByLabelText("Usage Threshold (%)")).toBeInTheDocument();
+        expect(screen.getByLabelText("Budget Period")).toBeInTheDocument();
+        expect(screen.getByLabelText("Reset Day")).toBeInTheDocument();
+      });
+    });
+
+    it("pre-fills budget fields from existing runtimeConfig.budgetConfig", async () => {
+      mockFetchAgent.mockResolvedValue(createMockAgent({
+        runtimeConfig: {
+          budgetConfig: {
+            tokenBudget: 1000000,
+            usageThreshold: 0.8, // fraction stored, should display as 80%
+            budgetPeriod: "monthly",
+            resetDay: 15,
+          },
+        },
+      }));
+
+      const user = userEvent.setup();
+      render(
+        <AgentDetailView
+          agentId="agent-001"
+          onClose={vi.fn()}
+          addToast={vi.fn()}
+        />
+      );
+
+      await navigateToSettings(user);
+
+      await waitFor(() => {
+        const tokenBudgetInput = screen.getByLabelText("Token Budget") as HTMLInputElement;
+        expect(tokenBudgetInput.value).toBe("1000000");
+
+        const thresholdInput = screen.getByLabelText("Usage Threshold (%)") as HTMLInputElement;
+        expect(thresholdInput.value).toBe("80"); // Converted from 0.8 to 80
+
+        const periodSelect = screen.getByLabelText("Budget Period") as HTMLSelectElement;
+        expect(periodSelect.value).toBe("monthly");
+
+        const resetDayInput = screen.getByLabelText("Reset Day") as HTMLInputElement;
+        expect(resetDayInput.value).toBe("15");
+      });
+    });
+
+    it("shows empty fields when budgetConfig is not set", async () => {
+      mockFetchAgent.mockResolvedValue(createMockAgent({
+        runtimeConfig: {},
+      }));
+
+      const user = userEvent.setup();
+      render(
+        <AgentDetailView
+          agentId="agent-001"
+          onClose={vi.fn()}
+          addToast={vi.fn()}
+        />
+      );
+
+      await navigateToSettings(user);
+
+      await waitFor(() => {
+        const tokenBudgetInput = screen.getByLabelText("Token Budget") as HTMLInputElement;
+        expect(tokenBudgetInput.value).toBe("");
+
+        const thresholdInput = screen.getByLabelText("Usage Threshold (%)") as HTMLInputElement;
+        expect(thresholdInput.value).toBe("");
+
+        const periodSelect = screen.getByLabelText("Budget Period") as HTMLSelectElement;
+        expect(periodSelect.value).toBe("");
+      });
+    });
+
+    it("calls updateAgent with correct budgetConfig in runtimeConfig on save", async () => {
+      mockUpdateAgent.mockResolvedValue(createMockAgent() as any);
+
+      const user = userEvent.setup();
+      render(
+        <AgentDetailView
+          agentId="agent-001"
+          onClose={vi.fn()}
+          addToast={vi.fn()}
+        />
+      );
+
+      await navigateToSettings(user);
+
+      const tokenBudgetInput = await screen.findByLabelText("Token Budget");
+      await user.clear(tokenBudgetInput);
+      await user.type(tokenBudgetInput, "500000");
+
+      const thresholdInput = await screen.findByLabelText("Usage Threshold (%)");
+      await user.clear(thresholdInput);
+      await user.type(thresholdInput, "75");
+
+      await user.click(screen.getByText("Save Settings"));
+
+      await waitFor(() => {
+        expect(mockUpdateAgent).toHaveBeenCalledWith(
+          "agent-001",
+          expect.objectContaining({
+            runtimeConfig: expect.objectContaining({
+              budgetConfig: {
+                tokenBudget: 500000,
+                usageThreshold: 0.75, // Converted from 75% to 0.75 fraction
+              },
+            }),
+          }),
+          undefined,
+        );
+      });
+    });
+
+    it("converts usage threshold percentage to fraction when saving", async () => {
+      mockUpdateAgent.mockResolvedValue(createMockAgent() as any);
+
+      const user = userEvent.setup();
+      render(
+        <AgentDetailView
+          agentId="agent-001"
+          onClose={vi.fn()}
+          addToast={vi.fn()}
+        />
+      );
+
+      await navigateToSettings(user);
+
+      const thresholdInput = await screen.findByLabelText("Usage Threshold (%)");
+      await user.clear(thresholdInput);
+      await user.type(thresholdInput, "90");
+
+      await user.click(screen.getByText("Save Settings"));
+
+      await waitFor(() => {
+        const call = mockUpdateAgent.mock.calls[0];
+        const payload = (call as any)[1];
+        expect(payload.runtimeConfig.budgetConfig.usageThreshold).toBe(0.9);
+      });
+    });
+
+    it("removes budgetConfig when all budget fields are cleared", async () => {
+      mockFetchAgent.mockResolvedValue(createMockAgent({
+        runtimeConfig: {
+          budgetConfig: {
+            tokenBudget: 1000000,
+            usageThreshold: 0.8,
+          },
+          heartbeatIntervalMs: 30000,
+        },
+      }));
+      mockUpdateAgent.mockResolvedValue(createMockAgent() as any);
+
+      const user = userEvent.setup();
+      render(
+        <AgentDetailView
+          agentId="agent-001"
+          onClose={vi.fn()}
+          addToast={vi.fn()}
+        />
+      );
+
+      await navigateToSettings(user);
+
+      // Clear all budget fields
+      const tokenBudgetInput = await screen.findByLabelText("Token Budget");
+      await user.clear(tokenBudgetInput);
+
+      const thresholdInput = await screen.findByLabelText("Usage Threshold (%)");
+      await user.clear(thresholdInput);
+
+      await user.click(screen.getByText("Save Settings"));
+
+      await waitFor(() => {
+        expect(mockUpdateAgent).toHaveBeenCalledWith(
+          "agent-001",
+          expect.objectContaining({
+            runtimeConfig: expect.not.objectContaining({ budgetConfig: expect.anything() }),
+          }),
+          undefined,
+        );
+      });
+    });
+
+    it("preserves unrelated runtimeConfig keys when saving budget config", async () => {
+      mockFetchAgent.mockResolvedValue(createMockAgent({
+        runtimeConfig: {
+          heartbeatIntervalMs: 30000,
+          heartbeatTimeoutMs: 60000,
+        },
+      }));
+      mockUpdateAgent.mockResolvedValue(createMockAgent() as any);
+
+      const user = userEvent.setup();
+      render(
+        <AgentDetailView
+          agentId="agent-001"
+          onClose={vi.fn()}
+          addToast={vi.fn()}
+        />
+      );
+
+      await navigateToSettings(user);
+
+      const tokenBudgetInput = await screen.findByLabelText("Token Budget");
+      await user.clear(tokenBudgetInput);
+      await user.type(tokenBudgetInput, "200000");
+
+      await user.click(screen.getByText("Save Settings"));
+
+      await waitFor(() => {
+        const call = mockUpdateAgent.mock.calls[0];
+        const payload = (call as any)[1];
+        expect(payload.runtimeConfig.heartbeatIntervalMs).toBe(30000);
+        expect(payload.runtimeConfig.heartbeatTimeoutMs).toBe(60000);
+        expect(payload.runtimeConfig.budgetConfig.tokenBudget).toBe(200000);
+      });
+    });
+
+    it("shows validation error for non-numeric token budget", async () => {
+      const user = userEvent.setup();
+      render(
+        <AgentDetailView
+          agentId="agent-001"
+          onClose={vi.fn()}
+          addToast={vi.fn()}
+        />
+      );
+
+      await navigateToSettings(user);
+
+      const tokenBudgetInput = await screen.findByLabelText("Token Budget");
+      await user.clear(tokenBudgetInput);
+      await user.type(tokenBudgetInput, "abc");
+
+      await user.click(screen.getByText("Save Settings"));
+
+      await waitFor(() => {
+        expect(screen.getByText(/Token Budget.*must be a valid number/)).toBeInTheDocument();
+      });
+    });
+
+    it("shows validation error for token budget <= 0", async () => {
+      const user = userEvent.setup();
+      render(
+        <AgentDetailView
+          agentId="agent-001"
+          onClose={vi.fn()}
+          addToast={vi.fn()}
+        />
+      );
+
+      await navigateToSettings(user);
+
+      const tokenBudgetInput = await screen.findByLabelText("Token Budget");
+      await user.clear(tokenBudgetInput);
+      await user.type(tokenBudgetInput, "0");
+
+      await user.click(screen.getByText("Save Settings"));
+
+      await waitFor(() => {
+        expect(screen.getByText(/Token Budget.*must be greater than 0/)).toBeInTheDocument();
+      });
+    });
+
+    it("shows validation error for usage threshold outside 1-100 range", async () => {
+      const user = userEvent.setup();
+      render(
+        <AgentDetailView
+          agentId="agent-001"
+          onClose={vi.fn()}
+          addToast={vi.fn()}
+        />
+      );
+
+      await navigateToSettings(user);
+
+      const thresholdInput = await screen.findByLabelText("Usage Threshold (%)");
+      await user.clear(thresholdInput);
+      await user.type(thresholdInput, "150");
+
+      await user.click(screen.getByText("Save Settings"));
+
+      await waitFor(() => {
+        expect(screen.getByText(/Usage Threshold.*must be between 1 and 100/)).toBeInTheDocument();
+      });
+    });
+
+    it("shows validation error for invalid reset day with weekly period", async () => {
+      mockFetchAgent.mockResolvedValue(createMockAgent({
+        runtimeConfig: {
+          budgetConfig: {
+            budgetPeriod: "weekly",
+          },
+        },
+      }));
+
+      const user = userEvent.setup();
+      render(
+        <AgentDetailView
+          agentId="agent-001"
+          onClose={vi.fn()}
+          addToast={vi.fn()}
+        />
+      );
+
+      await navigateToSettings(user);
+
+      // Change period to weekly
+      const periodSelect = await screen.findByLabelText("Budget Period");
+      await user.selectOptions(periodSelect, "weekly");
+
+      const resetDayInput = await screen.findByLabelText("Reset Day");
+      await user.clear(resetDayInput);
+      await user.type(resetDayInput, "7"); // Invalid: 7 is not in 0-6 range
+
+      await user.click(screen.getByText("Save Settings"));
+
+      await waitFor(() => {
+        expect(screen.getByText(/Reset Day.*must be between 0.*6.*for weekly/)).toBeInTheDocument();
+      });
+    });
+
+    it("shows validation error for invalid reset day with monthly period", async () => {
+      mockFetchAgent.mockResolvedValue(createMockAgent({
+        runtimeConfig: {
+          budgetConfig: {
+            budgetPeriod: "monthly",
+          },
+        },
+      }));
+
+      const user = userEvent.setup();
+      render(
+        <AgentDetailView
+          agentId="agent-001"
+          onClose={vi.fn()}
+          addToast={vi.fn()}
+        />
+      );
+
+      await navigateToSettings(user);
+
+      // Change period to monthly
+      const periodSelect = await screen.findByLabelText("Budget Period");
+      await user.selectOptions(periodSelect, "monthly");
+
+      const resetDayInput = await screen.findByLabelText("Reset Day");
+      await user.clear(resetDayInput);
+      await user.type(resetDayInput, "32"); // Invalid: 32 is not in 1-31 range
+
+      await user.click(screen.getByText("Save Settings"));
+
+      await waitFor(() => {
+        expect(screen.getByText(/Reset Day.*must be between 1 and 31.*for monthly/)).toBeInTheDocument();
+      });
+    });
+
+    it("enables Save Settings button when budget field is changed", async () => {
+      const user = userEvent.setup();
+      render(
+        <AgentDetailView
+          agentId="agent-001"
+          onClose={vi.fn()}
+          addToast={vi.fn()}
+        />
+      );
+
+      await navigateToSettings(user);
+
+      const tokenBudgetInput = await screen.findByLabelText("Token Budget");
+      await user.clear(tokenBudgetInput);
+      await user.type(tokenBudgetInput, "100000");
+
+      await waitFor(() => {
+        expect(screen.getByText("Save Settings")).not.toBeDisabled();
+      });
+    });
+  });
+
   // ── Runs Tab — Click to show logs ──────────────────────────────────
 
   describe("Runs Tab — click to show logs", () => {

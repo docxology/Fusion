@@ -697,6 +697,15 @@ Each agent can override the global heartbeat monitoring settings via `runtimeCon
 
 The agent detail ConfigTab includes a "Heartbeat Settings" section where users can configure interval and timeout per agent. Values are stored in `agent.runtimeConfig` and persisted via `PATCH /api/agents/:id` with `runtimeConfig` in the request body.
 
+The ConfigTab also includes a "Budget Settings" section for per-agent token budget configuration:
+
+- **Token Budget** — Total token cap (input + output). Leave empty for no limit.
+- **Usage Threshold (%)** — Warning threshold percentage. Triggers warning when usage reaches this level. Stored as fraction (0-1), displayed as percentage (0-100).
+- **Budget Period** — How often the budget counter resets: lifetime, daily, weekly, or monthly.
+- **Reset Day** — Day for reset (weekly: 0=Sunday to 6=Saturday, monthly: 1-31). Optional.
+
+Values are stored in `agent.runtimeConfig.budgetConfig` and persisted via `PATCH /api/agents/:id`.
+
 ### API
 
 - `HeartbeatMonitor.getAgentHeartbeatConfig(agentId)` — Returns the resolved config for an agent
