@@ -576,6 +576,27 @@ Polls CI status for branches and provides custom API endpoints.
 - Demonstrates: Custom routes, periodic background work, route handlers
 - Features: `onLoad`/`onUnload` lifecycle, `setInterval` polling, REST API
 
+### [Settings Demo Plugin](../../plugins/examples/fusion-plugin-settings-demo/)
+
+Example plugin demonstrating settings schema and runtime configuration with all four setting types.
+
+- Demonstrates: Settings schema (string, number, boolean, enum), hooks that read settings, tools with settings-driven output
+- Features: Configurable greeting message, tag limit, logging toggle, log level selector
+- **Install from Settings**: Designed to be installed via the dashboard Settings → Plugins UI
+
+### Installing Example Plugins from Settings
+
+All example plugins can be installed via the dashboard Settings → Plugins UI:
+
+1. Open Fusion dashboard and navigate to **Settings** (gear icon in header)
+2. Click **Plugins** in the sidebar
+3. Click the **Install** button
+4. Enter the absolute path to the plugin directory (e.g., `/path/to/fusion/plugins/examples/fusion-plugin-settings-demo`)
+5. Click **Install** to register the plugin
+6. Enable the plugin using the toggle switch
+7. Configure settings via the settings (gear) icon
+8. The plugin will reload automatically with new settings
+
 ---
 
 ## Quick Reference
