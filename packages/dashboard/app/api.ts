@@ -3512,6 +3512,326 @@ export function connectMissionInterviewStream(
   return connection;
 }
 
+// ── Milestone/Slice Interview API ─────────────────────────────────────────
+
+/** Summary type for milestone/slice interview responses */
+export interface TargetInterviewSummary {
+  title?: string;
+  description?: string;
+  planningNotes?: string;
+  verification?: string;
+}
+
+/** Response from milestone/slice interview: either a question or a completed plan */
+export type TargetInterviewResponse =
+  | { type: "question"; data: PlanningQuestion }
+  | { type: "complete"; data: TargetInterviewSummary };
+
+// Helper functions for URL construction
+function buildMilestoneInterviewUrl(milestoneId: string, path: string, projectId?: string): string {
+  return withProjectId(
+    `/missions/milestones/${encodeURIComponent(milestoneId)}/interview${path}`,
+    projectId
+  );
+}
+
+function buildSliceInterviewUrl(sliceId: string, path: string, projectId?: string): string {
+  return withProjectId(
+    `/missions/slices/${encodeURIComponent(sliceId)}/interview${path}`,
+    projectId
+  );
+}
+
+/** Start a milestone interview session */
+export function startMilestoneInterview(
+  milestoneId: string,
+  projectId?: string,
+): Promise<{ sessionId: string }> {
+  return api<{ sessionId: string }>(buildMilestoneInterviewUrl(milestoneId, "/start", projectId), {
+    method: "POST",
+  });
+}
+
+/** Submit a response to a milestone interview question */
+export function respondToMilestoneInterview(
+  sessionId: string,
+  responses: Record<string, unknown>,
+  projectId?: string,
+  tabId?: string,
+): Promise<TargetInterviewResponse> {
+  return api<TargetInterviewResponse>(buildMilestoneInterviewUrl(sessionId, "/respond", projectId), {
+    method: "POST",
+    body: JSON.stringify({ sessionId, responses, tabId }),
+  });
+}
+
+/** Connect to milestone interview SSE stream and handle events */
+export function connectMilestoneInterviewStream(
+  sessionId: string,
+  projectId: string | undefined,
+  handlers: {
+    onThinking?: (data: string) => void;
+    onQuestion?: (data: PlanningQuestion) => void;
+    onSummary?: (data: TargetInterviewSummary) => void;
+    onError?: (data: string) => void;
+    onComplete?: () => void;
+    onConnectionStateChange?: (state: StreamConnectionState) => void;
+  },
+  options?: { maxReconnectAttempts?: number },
+): { close: () => void; isConnected: () => boolean } {
+  const url = buildApiUrl(buildMilestoneInterviewUrl(sessionId, `/${encodeURIComponent(sessionId)}/stream`, projectId));
+  let keepAlive: { stop: () => void } | null = null;
+  let connection: { close: () => void; isConnected: () => boolean } | null = null;
+
+  const stopKeepAlive = () => {
+    keepAlive?.stop();
+    keepAlive = null;
+  };
+
+  const resilient = createResilientEventSource(
+    url,
+    {
+      onOpen: () => {
+        stopKeepAlive();
+        keepAlive = startKeepAlive(sessionId, projectId);
+      },
+      onMessage: (event) => {
+        if (event.data.startsWith(":")) return;
+      },
+      events: {
+        thinking: (event) => {
+          try {
+            handlers.onThinking?.(JSON.parse(event.data));
+          } catch {
+            handlers.onThinking?.(event.data);
+          }
+        },
+        question: (event) => {
+          try {
+            handlers.onQuestion?.(JSON.parse(event.data) as PlanningQuestion);
+          } catch (err) {
+            console.error("[milestone-interview] Failed to parse question event:", err);
+          }
+        },
+        summary: (event) => {
+          try {
+            handlers.onSummary?.(JSON.parse(event.data) as TargetInterviewSummary);
+          } catch (err) {
+            console.error("[milestone-interview] Failed to parse summary event:", err);
+          }
+        },
+        error: (event) => {
+          try {
+            const parsed = JSON.parse(event.data);
+            handlers.onError?.(parsed.message || parsed);
+          } catch {
+            handlers.onError?.(event.data || "Stream error");
+          }
+          connection?.close();
+        },
+        complete: () => {
+          handlers.onComplete?.();
+          connection?.close();
+        },
+      },
+    },
+    {
+      maxReconnectAttempts: options?.maxReconnectAttempts,
+      onConnectionStateChange: handlers.onConnectionStateChange,
+      onFatalError: (message) => {
+        stopKeepAlive();
+        handlers.onError?.(message);
+      },
+    },
+  );
+
+  connection = {
+    close: () => {
+      stopKeepAlive();
+      resilient.close();
+    },
+    isConnected: resilient.isConnected,
+  };
+
+  return connection;
+}
+
+/** Apply milestone interview results to the milestone */
+export function applyMilestoneInterview(
+  sessionId: string,
+  summary?: TargetInterviewSummary,
+  projectId?: string,
+): Promise<Milestone> {
+  return api<Milestone>(buildMilestoneInterviewUrl(sessionId, "/apply", projectId), {
+    method: "POST",
+    body: JSON.stringify({ sessionId, summary }),
+  });
+}
+
+/** Skip milestone interview and use mission context */
+export function skipMilestoneInterview(
+  milestoneId: string,
+  projectId?: string,
+): Promise<Milestone> {
+  return api<Milestone>(buildMilestoneInterviewUrl(milestoneId, "/skip", projectId), {
+    method: "POST",
+  });
+}
+
+/** Start a slice interview session */
+export function startSliceInterview(
+  sliceId: string,
+  projectId?: string,
+): Promise<{ sessionId: string }> {
+  return api<{ sessionId: string }>(buildSliceInterviewUrl(sliceId, "/start", projectId), {
+    method: "POST",
+  });
+}
+
+/** Submit a response to a slice interview question */
+export function respondToSliceInterview(
+  sessionId: string,
+  responses: Record<string, unknown>,
+  projectId?: string,
+  tabId?: string,
+): Promise<TargetInterviewResponse> {
+  return api<TargetInterviewResponse>(buildSliceInterviewUrl(sessionId, "/respond", projectId), {
+    method: "POST",
+    body: JSON.stringify({ sessionId, responses, tabId }),
+  });
+}
+
+/** Connect to slice interview SSE stream and handle events */
+export function connectSliceInterviewStream(
+  sessionId: string,
+  projectId: string | undefined,
+  handlers: {
+    onThinking?: (data: string) => void;
+    onQuestion?: (data: PlanningQuestion) => void;
+    onSummary?: (data: TargetInterviewSummary) => void;
+    onError?: (data: string) => void;
+    onComplete?: () => void;
+    onConnectionStateChange?: (state: StreamConnectionState) => void;
+  },
+  options?: { maxReconnectAttempts?: number },
+): { close: () => void; isConnected: () => boolean } {
+  const url = buildApiUrl(buildSliceInterviewUrl(sessionId, `/${encodeURIComponent(sessionId)}/stream`, projectId));
+  let keepAlive: { stop: () => void } | null = null;
+  let connection: { close: () => void; isConnected: () => boolean } | null = null;
+
+  const stopKeepAlive = () => {
+    keepAlive?.stop();
+    keepAlive = null;
+  };
+
+  const resilient = createResilientEventSource(
+    url,
+    {
+      onOpen: () => {
+        stopKeepAlive();
+        keepAlive = startKeepAlive(sessionId, projectId);
+      },
+      onMessage: (event) => {
+        if (event.data.startsWith(":")) return;
+      },
+      events: {
+        thinking: (event) => {
+          try {
+            handlers.onThinking?.(JSON.parse(event.data));
+          } catch {
+            handlers.onThinking?.(event.data);
+          }
+        },
+        question: (event) => {
+          try {
+            handlers.onQuestion?.(JSON.parse(event.data) as PlanningQuestion);
+          } catch (err) {
+            console.error("[slice-interview] Failed to parse question event:", err);
+          }
+        },
+        summary: (event) => {
+          try {
+            handlers.onSummary?.(JSON.parse(event.data) as TargetInterviewSummary);
+          } catch (err) {
+            console.error("[slice-interview] Failed to parse summary event:", err);
+          }
+        },
+        error: (event) => {
+          try {
+            const parsed = JSON.parse(event.data);
+            handlers.onError?.(parsed.message || parsed);
+          } catch {
+            handlers.onError?.(event.data || "Stream error");
+          }
+          connection?.close();
+        },
+        complete: () => {
+          handlers.onComplete?.();
+          connection?.close();
+        },
+      },
+    },
+    {
+      maxReconnectAttempts: options?.maxReconnectAttempts,
+      onConnectionStateChange: handlers.onConnectionStateChange,
+      onFatalError: (message) => {
+        stopKeepAlive();
+        handlers.onError?.(message);
+      },
+    },
+  );
+
+  connection = {
+    close: () => {
+      stopKeepAlive();
+      resilient.close();
+    },
+    isConnected: resilient.isConnected,
+  };
+
+  return connection;
+}
+
+/** Apply slice interview results to the slice */
+export function applySliceInterview(
+  sessionId: string,
+  summary?: TargetInterviewSummary,
+  projectId?: string,
+): Promise<Slice> {
+  return api<Slice>(buildSliceInterviewUrl(sessionId, "/apply", projectId), {
+    method: "POST",
+    body: JSON.stringify({ sessionId, summary }),
+  });
+}
+
+/** Skip slice interview and use mission context */
+export function skipSliceInterview(
+  sliceId: string,
+  projectId?: string,
+): Promise<Slice> {
+  return api<Slice>(buildSliceInterviewUrl(sliceId, "/skip", projectId), {
+    method: "POST",
+  });
+}
+
+/** Preview enriched description for a feature before triage */
+export async function previewEnrichedDescription(
+  featureId: string,
+  projectId?: string,
+): Promise<{ description: string }> {
+  try {
+    return await api<{ description: string }>(
+      withProjectId(`/missions/features/${encodeURIComponent(featureId)}/preview-description`, projectId),
+      {
+        method: "POST",
+      }
+    );
+  } catch {
+    // If endpoint doesn't exist, throw to trigger fallback
+    throw new Error("Preview endpoint not available");
+  }
+}
+
 // ── AI Sessions (Background Tasks) ─────────────────────────────────────────
 
 export interface AiSessionSummary {
