@@ -26,6 +26,7 @@ import {
   type BadgeUrlComponents,
 } from "./github-webhooks.js";
 import { createMissionRouter } from "./mission-routes.js";
+import { createPluginRouter } from "./plugin-routes.js";
 import { getOrCreateProjectStore } from "./project-store-resolver.js";
 import { AiSessionStore, SESSION_CLEANUP_DEFAULT_MAX_AGE_MS } from "./ai-session-store.js";
 import { getSession as getPlanningSession, cleanupSession as cleanupPlanningSession } from "./planning.js";
@@ -9789,6 +9790,12 @@ Output ONLY the prompt text (no markdown, no explanations).`;
   // ── Mission Routes ─────────────────────────────────────────────────────────
   // Mount mission routes at /api/missions
   router.use("/missions", createMissionRouter(store, options?.missionAutopilot, aiSessionStore));
+
+  // ── Plugin Routes ─────────────────────────────────────────────────────────
+  // Mount plugin routes at /api/plugins
+  if (options?.pluginStore && options?.pluginLoader) {
+    router.use("/plugins", createPluginRouter(options.pluginStore, options.pluginLoader, options.pluginRunner));
+  }
 
   // ── AI Session Routes (Background Tasks) ─────────────────────────────────
 

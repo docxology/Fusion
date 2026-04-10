@@ -103,6 +103,14 @@ export interface ServerOptions {
     }): Promise<import("@fusion/core").AgentHeartbeatRun>;
     stopRun(agentId: string): Promise<void>;
   };
+  /** Optional PluginStore for plugin management routes */
+  pluginStore?: import("@fusion/core").PluginStore;
+  /** Optional PluginLoader for plugin lifecycle management */
+  pluginLoader?: import("@fusion/core").PluginLoader;
+  /** Optional PluginRunner for plugin hooks and tools */
+  pluginRunner?: {
+    getPluginRoutes(): Array<{ pluginId: string; route: import("@fusion/core").PluginRouteDefinition }>;
+  };
 }
 
 type DashboardExpressApp = ReturnType<typeof express> & {
