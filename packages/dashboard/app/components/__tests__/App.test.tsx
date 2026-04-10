@@ -166,6 +166,7 @@ vi.mock("../../hooks/useNodes", () => ({
 
 import { App } from "../../App";
 import { fetchAuthStatus, fetchSettings, fetchGlobalSettings, fetchTaskDetail, updateSettings, runScript, fetchScripts } from "../../api";
+import * as apiNodeModule from "../../hooks/useRemoteNodeData";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -1732,6 +1733,162 @@ describe("App node mode switching", () => {
         createdAt: "",
         updatedAt: "",
       });
+    });
+  });
+});
+
+describe("App search query propagation to remote mode", () => {
+  // Mock useRemoteNodeData to capture searchQuery parameter
+  let capturedSearchQuery: string | undefined;
+
+  beforeEach(() => {
+    capturedSearchQuery = undefined;
+    
+    // Get the mocked useRemoteNodeData and capture the searchQuery
+    vi.mocked(apiNodeModule.useRemoteNodeData).mockImplementation((nodeId, options) => {
+      capturedSearchQuery = options?.searchQuery;
+      return {
+        projects: [],
+        tasks: [],
+        health: null,
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+      };
+    });
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+    localStorage.removeItem("fusion-dashboard-current-node");
+  });
+
+  it("passes searchQuery to useRemoteNodeData when in remote mode", async () => {
+    // Set up mock with remote node
+    const { useNodes } = await import("../../hooks/useNodes");
+    vi.mocked(useNodes).mockReturnValue({
+      nodes: [
+        {
+          id: "node_remote_1",
+          name: "Remote Node 1",
+          type: "remote" as const,
+          url: "http://remote:4040",
+          status: "online" as const,
+          maxConcurrent: 2,
+          createdAt: "",
+          updatedAt: "",
+        },
+      ],
+      loading: false,
+      error: null,
+      refresh: vi.fn(),
+      register: vi.fn(),
+      update: vi.fn(),
+      unregister: vi.fn(),
+      healthCheck: vi.fn(),
+    });
+
+    // Mock node context to return remote node
+    mockNodeContextValue.currentNode = {
+      id: "node_remote_1",
+      name: "Remote Node 1",
+      type: "remote",
+      url: "http://remote:4040",
+      status: "online",
+      maxConcurrent: 2,
+      createdAt: "",
+      updatedAt: "",
+    };
+    mockNodeContextValue.currentNodeId = "node_remote_1";
+    mockNodeContextValue.isRemote = true;
+
+    // Set project mode
+    localStorage.setItem("kb-dashboard-view-mode", "project");
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(fetchSettings).toHaveBeenCalled();
+    });
+
+    // Wait for initial load to complete
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    });
+
+    // At this point, searchQuery should be passed to useRemoteNodeData
+    // capturedSearchQuery should be undefined (empty search initially)
+    expect(capturedSearchQuery).toBeUndefined();
+  });
+
+  it("updates searchQuery in useRemoteNodeData when header search changes", async () => {
+    // Set up mock with remote node
+    const { useNodes } = await import("../../hooks/useNodes");
+    vi.mocked(useNodes).mockReturnValue({
+      nodes: [
+        {
+          id: "node_remote_1",
+          name: "Remote Node 1",
+          type: "remote" as const,
+          url: "http://remote:4040",
+          status: "online" as const,
+          maxConcurrent: 2,
+          createdAt: "",
+          updatedAt: "",
+        },
+      ],
+      loading: false,
+      error: null,
+      refresh: vi.fn(),
+      register: vi.fn(),
+      update: vi.fn(),
+      unregister: vi.fn(),
+      healthCheck: vi.fn(),
+    });
+
+    // Mock node context to return remote node
+    mockNodeContextValue.currentNode = {
+      id: "node_remote_1",
+      name: "Remote Node 1",
+      type: "remote",
+      url: "http://remote:4040",
+      status: "online",
+      maxConcurrent: 2,
+      createdAt: "",
+      updatedAt: "",
+    };
+    mockNodeContextValue.currentNodeId = "node_remote_1";
+    mockNodeContextValue.isRemote = true;
+
+    // Set project mode
+    localStorage.setItem("kb-dashboard-view-mode", "project");
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(fetchSettings).toHaveBeenCalled();
+    });
+
+    // Wait for initial load to complete
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    });
+
+    // Click the search toggle button to open search
+    const searchToggleBtn = screen.getByTestId("desktop-header-search-btn");
+    expect(searchToggleBtn).toBeInTheDocument();
+    fireEvent.click(searchToggleBtn);
+
+    // Now the search input should be visible
+    const searchInput = await screen.findByPlaceholderText("Search tasks...");
+    expect(searchInput).toBeInTheDocument();
+
+    // Type in the search input
+    fireEvent.change(searchInput, { target: { value: "test search" } });
+
+    // Wait for the search query to propagate
+    await waitFor(() => {
+      expect(capturedSearchQuery).toBe("test search");
     });
   });
 });

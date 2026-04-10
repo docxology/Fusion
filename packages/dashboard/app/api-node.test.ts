@@ -113,6 +113,68 @@ describe("api-node", () => {
         { nodeId: "node_abc" },
       );
     });
+
+    it("forwards search query parameter (q) when provided", async () => {
+      const mockTasks = [
+        {
+          id: "FN-001",
+          title: "Searchable Task",
+          description: "Test description",
+          column: "todo" as const,
+          dependencies: [],
+          steps: [],
+          currentStep: 0,
+          size: "M" as const,
+          reviewLevel: 1,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+          columnMovedAt: "2026-01-01T00:00:00.000Z",
+        },
+      ];
+      mockProxyApi.mockResolvedValueOnce(mockTasks);
+
+      const result = await fetchRemoteNodeTasks("node_abc", "proj_001", "searchable");
+
+      expect(mockProxyApi).toHaveBeenCalledTimes(1);
+      expect(mockProxyApi).toHaveBeenCalledWith(
+        "/tasks?projectId=proj_001&q=searchable",
+        { nodeId: "node_abc" },
+      );
+      expect(result).toEqual(mockTasks);
+    });
+
+    it("properly encodes search query with special characters", async () => {
+      mockProxyApi.mockResolvedValueOnce([]);
+
+      await fetchRemoteNodeTasks("node_abc", "proj_001", "search+query&test");
+
+      expect(mockProxyApi).toHaveBeenCalledWith(
+        "/tasks?projectId=proj_001&q=search%2Bquery%26test",
+        { nodeId: "node_abc" },
+      );
+    });
+
+    it("omits q parameter when searchQuery is undefined", async () => {
+      mockProxyApi.mockResolvedValueOnce([]);
+
+      await fetchRemoteNodeTasks("node_abc", "proj_001");
+
+      expect(mockProxyApi).toHaveBeenCalledWith(
+        "/tasks?projectId=proj_001",
+        { nodeId: "node_abc" },
+      );
+    });
+
+    it("omits q parameter when searchQuery is empty string", async () => {
+      mockProxyApi.mockResolvedValueOnce([]);
+
+      await fetchRemoteNodeTasks("node_abc", "proj_001", "");
+
+      expect(mockProxyApi).toHaveBeenCalledWith(
+        "/tasks?projectId=proj_001",
+        { nodeId: "node_abc" },
+      );
+    });
   });
 
   describe("fetchRemoteNodeProjectHealth", () => {

@@ -59,16 +59,16 @@ function AppInner() {
     }
   }, [currentNodeId, nodes, clearCurrentNode]);
   
-  // Remote node data and events when in remote mode
-  const remoteData = useRemoteNodeData(currentNodeId, { projectId: currentProject?.id });
+  // Search query state - must be defined before useTasks
+  const [searchQuery, setSearchQuery] = useState("");
+  
+  // Remote node data and events when in remote mode (pass searchQuery for server-side filtering)
+  const remoteData = useRemoteNodeData(currentNodeId, { projectId: currentProject?.id, searchQuery: searchQuery || undefined });
   const remoteEvents = useRemoteNodeEvents(currentNodeId);
   
   // Use remote data when in remote mode, local data otherwise
   const effectiveProjects = isRemote && remoteData.projects.length > 0 ? remoteData.projects : projects;
   const effectiveTasks = isRemote && remoteData.tasks.length > 0 ? remoteData.tasks : [];
-  
-  // Search query state - must be defined before useTasks
-  const [searchQuery, setSearchQuery] = useState("");
   
   // Tasks hook with project context and search query
   const { tasks, createTask, moveTask, deleteTask, mergeTask, retryTask, updateTask, duplicateTask, archiveTask, unarchiveTask, archiveAllDone } = useTasks(

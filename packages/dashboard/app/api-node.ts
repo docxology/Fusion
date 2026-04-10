@@ -25,8 +25,16 @@ export async function fetchRemoteNodeProjects(nodeId: string): Promise<ProjectIn
 }
 
 /** Fetch tasks from a specific project on a remote node */
-export async function fetchRemoteNodeTasks(nodeId: string, projectId: string): Promise<Task[]> {
-  return proxyApi<Task[]>(`/tasks?projectId=${encodeURIComponent(projectId)}`, { nodeId });
+export async function fetchRemoteNodeTasks(
+  nodeId: string,
+  projectId: string,
+  searchQuery?: string,
+): Promise<Task[]> {
+  const params = new URLSearchParams({ projectId });
+  if (searchQuery && searchQuery.trim()) {
+    params.set("q", searchQuery.trim());
+  }
+  return proxyApi<Task[]>(`/tasks?${params.toString()}`, { nodeId });
 }
 
 /** Fetch project health from a remote node */

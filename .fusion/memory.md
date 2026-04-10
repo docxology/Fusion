@@ -140,6 +140,15 @@ The `PluginRunner` bridges the plugin core system with the Fusion engine runtime
 - `.form-error` and similar error-state selectors should use `color-mix(in srgb, var(--color-error) 10%, transparent)` instead of hardcoded `rgba(248, 81, 73, 0.1)` for theme adaptability.
 - When styling `input[type="radio"]` elements in `.imported` items, the selector must match `.issue-item.imported input[type="radio"]` (classes on the same element, not nested), because the HTML structure is `<div class="issue-item imported"><input type="radio">`.
 
+## FN-1529: Search Query Propagation in Multi-Path Scenarios
+
+When the dashboard supports multiple data paths (local vs remote node mode), ensure UI state like `searchQuery` is propagated to ALL data hooks that fetch the displayed data:
+- Local mode uses `useTasks({ searchQuery })` which forwards to `fetchTasks` with `q` param
+- Remote mode uses `useRemoteNodeData({ searchQuery })` which forwards to `fetchRemoteNodeTasks` with `q` param
+- The `searchQuery` state must be defined BEFORE calling both hooks, and both must receive the same query value
+- Missing propagation causes the "silent regression" where local search works but remote search fails without errors
+- Add regression tests that mock the API layer and verify query propagation for both paths
+
 ## FN-1522: Task State Reconciliation Pattern
 
 Tasks can get into contradictory states (e.g., `column: "done"` with `status: "blocked"` in summary/log). This happens when agents mark tasks done without verifying actual completion. Reconciliation steps:

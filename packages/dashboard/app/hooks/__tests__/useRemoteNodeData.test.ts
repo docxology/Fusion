@@ -15,6 +15,260 @@ const mockFetchRemoteNodeProjects = vi.mocked(apiNodeModule.fetchRemoteNodeProje
 const mockFetchRemoteNodeTasks = vi.mocked(apiNodeModule.fetchRemoteNodeTasks);
 const mockFetchRemoteNodeProjectHealth = vi.mocked(apiNodeModule.fetchRemoteNodeProjectHealth);
 
+describe("useRemoteNodeData search query propagation", () => {
+  beforeEach(() => {
+    mockFetchRemoteNodeHealth.mockReset();
+    mockFetchRemoteNodeProjects.mockReset();
+    mockFetchRemoteNodeTasks.mockReset();
+    mockFetchRemoteNodeProjectHealth.mockReset();
+    
+    // Default mock setup for successful fetch
+    mockFetchRemoteNodeHealth.mockResolvedValueOnce({
+      status: "online",
+      version: "1.0.0",
+      nodeId: "node_abc",
+    });
+    mockFetchRemoteNodeProjects.mockResolvedValueOnce([]);
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("forwards searchQuery to fetchRemoteNodeTasks when provided", async () => {
+    const mockTasks = [
+      {
+        id: "FN-001",
+        title: "Test Task",
+        description: "Test description",
+        column: "todo" as const,
+        dependencies: [],
+        steps: [],
+        currentStep: 0,
+        size: "M" as const,
+        reviewLevel: 1,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        columnMovedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ];
+    mockFetchRemoteNodeTasks.mockResolvedValueOnce(mockTasks);
+
+    const { result } = renderHook(() =>
+      useRemoteNodeData("node_abc", { projectId: "proj_001", searchQuery: "test" }),
+    );
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    expect(mockFetchRemoteNodeTasks).toHaveBeenCalledTimes(1);
+    expect(mockFetchRemoteNodeTasks).toHaveBeenCalledWith("node_abc", "proj_001", "test");
+    expect(result.current.tasks).toEqual(mockTasks);
+  });
+
+  it("does not forward searchQuery when undefined", async () => {
+    mockFetchRemoteNodeTasks.mockResolvedValueOnce([]);
+
+    const { result } = renderHook(() =>
+      useRemoteNodeData("node_abc", { projectId: "proj_001" }),
+    );
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    expect(mockFetchRemoteNodeTasks).toHaveBeenCalledTimes(1);
+    expect(mockFetchRemoteNodeTasks).toHaveBeenCalledWith("node_abc", "proj_001", undefined);
+  });
+
+  it("refetches tasks when searchQuery changes", async () => {
+    const initialTasks = [
+      {
+        id: "FN-001",
+        title: "Initial Task",
+        description: "Initial description",
+        column: "todo" as const,
+        dependencies: [],
+        steps: [],
+        currentStep: 0,
+        size: "M" as const,
+        reviewLevel: 1,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        columnMovedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ];
+    const filteredTasks = [
+      {
+        id: "FN-002",
+        title: "Filtered Task",
+        description: "Filtered description",
+        column: "todo" as const,
+        dependencies: [],
+        steps: [],
+        currentStep: 0,
+        size: "M" as const,
+        reviewLevel: 1,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        columnMovedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ];
+
+    mockFetchRemoteNodeTasks
+      .mockResolvedValueOnce(initialTasks)
+      .mockResolvedValueOnce(filteredTasks);
+
+    const { result, rerender } = renderHook(
+      ({ searchQuery }: { searchQuery?: string }) =>
+        useRemoteNodeData("node_abc", { projectId: "proj_001", searchQuery }),
+      { initialProps: { searchQuery: undefined } },
+    );
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    expect(mockFetchRemoteNodeTasks).toHaveBeenCalledTimes(1);
+    expect(mockFetchRemoteNodeTasks).toHaveBeenLastCalledWith("node_abc", "proj_001", undefined);
+    expect(result.current.tasks).toEqual(initialTasks);
+
+    // Update searchQuery
+    rerender({ searchQuery: "filtered" });
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    expect(mockFetchRemoteNodeTasks).toHaveBeenCalledTimes(2);
+    expect(mockFetchRemoteNodeTasks).toHaveBeenLastCalledWith("node_abc", "proj_001", "filtered");
+    expect(result.current.tasks).toEqual(filteredTasks);
+  });
+
+  it("refetches tasks when searchQuery is cleared", async () => {
+    const filteredTasks = [
+      {
+        id: "FN-001",
+        title: "Filtered Task",
+        description: "Filtered description",
+        column: "todo" as const,
+        dependencies: [],
+        steps: [],
+        currentStep: 0,
+        size: "M" as const,
+        reviewLevel: 1,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        columnMovedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ];
+    const allTasks = [
+      {
+        id: "FN-001",
+        title: "Filtered Task",
+        description: "Filtered description",
+        column: "todo" as const,
+        dependencies: [],
+        steps: [],
+        currentStep: 0,
+        size: "M" as const,
+        reviewLevel: 1,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        columnMovedAt: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        id: "FN-002",
+        title: "Other Task",
+        description: "Other description",
+        column: "todo" as const,
+        dependencies: [],
+        steps: [],
+        currentStep: 0,
+        size: "M" as const,
+        reviewLevel: 1,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        columnMovedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ];
+
+    mockFetchRemoteNodeTasks
+      .mockResolvedValueOnce(filteredTasks)
+      .mockResolvedValueOnce(allTasks);
+
+    const { result, rerender } = renderHook(
+      ({ searchQuery }: { searchQuery?: string }) =>
+        useRemoteNodeData("node_abc", { projectId: "proj_001", searchQuery }),
+      { initialProps: { searchQuery: "filtered" } },
+    );
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    expect(mockFetchRemoteNodeTasks).toHaveBeenCalledTimes(1);
+    expect(mockFetchRemoteNodeTasks).toHaveBeenLastCalledWith("node_abc", "proj_001", "filtered");
+    expect(result.current.tasks).toEqual(filteredTasks);
+
+    // Clear searchQuery
+    rerender({ searchQuery: "" });
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    expect(mockFetchRemoteNodeTasks).toHaveBeenCalledTimes(2);
+    expect(mockFetchRemoteNodeTasks).toHaveBeenLastCalledWith("node_abc", "proj_001", "");
+    expect(result.current.tasks).toEqual(allTasks);
+  });
+
+  it("refresh function re-fetches with current searchQuery", async () => {
+    const mockTasks = [
+      {
+        id: "FN-001",
+        title: "Test Task",
+        description: "Test description",
+        column: "todo" as const,
+        dependencies: [],
+        steps: [],
+        currentStep: 0,
+        size: "M" as const,
+        reviewLevel: 1,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        columnMovedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ];
+
+    mockFetchRemoteNodeTasks
+      .mockResolvedValueOnce(mockTasks)
+      .mockResolvedValueOnce(mockTasks);
+
+    const { result } = renderHook(() =>
+      useRemoteNodeData("node_abc", { projectId: "proj_001", searchQuery: "test" }),
+    );
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    expect(mockFetchRemoteNodeTasks).toHaveBeenCalledTimes(1);
+    expect(mockFetchRemoteNodeTasks).toHaveBeenLastCalledWith("node_abc", "proj_001", "test");
+
+    // Call refresh
+    result.current.refresh();
+
+    await waitFor(() => {
+      expect(result.current.loading).toBe(false);
+    });
+
+    expect(mockFetchRemoteNodeTasks).toHaveBeenCalledTimes(2);
+    expect(mockFetchRemoteNodeTasks).toHaveBeenLastCalledWith("node_abc", "proj_001", "test");
+  });
+});
+
 describe("useRemoteNodeData", () => {
   beforeEach(() => {
     mockFetchRemoteNodeHealth.mockReset();
@@ -137,7 +391,7 @@ describe("useRemoteNodeData", () => {
       });
 
       expect(mockFetchRemoteNodeTasks).toHaveBeenCalledTimes(1);
-      expect(mockFetchRemoteNodeTasks).toHaveBeenCalledWith("node_abc", "proj_001");
+      expect(mockFetchRemoteNodeTasks).toHaveBeenCalledWith("node_abc", "proj_001", undefined);
       expect(mockFetchRemoteNodeProjectHealth).toHaveBeenCalledTimes(1);
       expect(mockFetchRemoteNodeProjectHealth).toHaveBeenCalledWith("node_abc", "proj_001");
       expect(result.current.tasks).toEqual(mockTasks);

@@ -16,6 +16,8 @@ import {
 export interface UseRemoteNodeDataOptions {
   /** Project ID to fetch tasks for */
   projectId?: string;
+  /** Search query to filter tasks */
+  searchQuery?: string;
 }
 
 export interface UseRemoteNodeDataResult {
@@ -42,7 +44,7 @@ export function useRemoteNodeData(
   nodeId: string | null,
   options?: UseRemoteNodeDataOptions,
 ): UseRemoteNodeDataResult {
-  const { projectId } = options ?? {};
+  const { projectId, searchQuery } = options ?? {};
 
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -81,7 +83,7 @@ export function useRemoteNodeData(
 
       // Add tasks and project health fetches if projectId is provided
       if (projectId) {
-        promises.push(fetchRemoteNodeTasks(nodeId, projectId));
+        promises.push(fetchRemoteNodeTasks(nodeId, projectId, searchQuery));
         promises.push(fetchRemoteNodeProjectHealth(nodeId, projectId));
       }
 
@@ -130,7 +132,7 @@ export function useRemoteNodeData(
         setLoading(false);
       }
     }
-  }, [nodeId, projectId]);
+  }, [nodeId, projectId, searchQuery]);
 
   // Fetch on mount and when nodeId changes
   useEffect(() => {
