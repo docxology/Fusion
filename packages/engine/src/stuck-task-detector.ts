@@ -33,6 +33,13 @@ interface TrackedTask {
   lastProgressAt: number;
   /** Number of activity heartbeats since the last progress event. */
   activitySinceProgress: number;
+  /**
+   * The canonical task ID used for all external callbacks (beforeRequeue,
+   * onStuck, onLoopDetected).  In step-session mode the map key is a compound
+   * string like "FN-1452-step-1"; this field always holds the bare task ID
+   * ("FN-1452") so callbacks can look up the right task record.
+   */
+  canonicalTaskId: string;
 }
 
 /** Payload emitted when a stuck task is detected. */
@@ -128,16 +135,24 @@ export class StuckTaskDetector {
   /**
    * Register an active agent session for monitoring.
    * Sets initial timestamps and counters to now.
+   *
+   * @param trackingKey  The key used internally to identify this session.
+   *   In step-session mode this is a compound string like "FN-1452-step-1".
+   * @param session      The disposable agent session.
+   * @param canonicalTaskId  The bare task ID ("FN-1452") used for all external
+   *   callbacks (beforeRequeue, onStuck, onLoopDetected).  When omitted the
+   *   trackingKey is used as-is (single-session mode where they are identical).
    */
-  trackTask(taskId: string, session: DisposableSession): void {
+  trackTask(trackingKey: string, session: DisposableSession, canonicalTaskId?: string): void {
     const now = Date.now();
-    this.tracked.set(taskId, {
+    this.tracked.set(trackingKey, {
       session,
       lastActivity: now,
       lastProgressAt: now,
       activitySinceProgress: 0,
+      canonicalTaskId: canonicalTaskId ?? trackingKey,
     });
-    stuckLog.log(`Tracking task ${taskId} (total tracked: ${this.tracked.size})`);
+    stuckLog.log(`Tracking task ${trackingKey} (canonical=${canonicalTaskId ?? trackingKey}, total tracked: ${this.tracked.size})`);
   }
 
   /**
@@ -246,6 +261,12 @@ export class StuckTaskDetector {
     const entry = this.tracked.get(taskId);
     if (!entry) return;
 
+    // In step-session mode the map key is a compound string like "FN-1452-step-1".
+    // All external callbacks (beforeRequeue, onStuck, onLoopDetected) must use
+    // the canonical task ID so they can look up the right task record and signal
+    // the right executor entry.
+    const canonicalId = entry.canonicalTaskId;
+
     const now = Date.now();
     const inactivityMs = now - entry.lastActivity;
     const noProgressMs = now - entry.lastProgressAt;
@@ -258,23 +279,24 @@ export class StuckTaskDetector {
     const noProgressMin = Math.round(noProgressMs / 60_000);
 
     stuckLog.log(
-      `Killing stuck task ${taskId} (reason=${reason}, ` +
+      `Killing stuck task ${taskId} (canonical=${canonicalId}, reason=${reason}, ` +
       `no progress for ~${noProgressMin}min, ` +
       `no activity for ~${elapsedMin}min, ` +
       `${activitySinceProgress} events since last progress)`,
     );
 
-    // Log the event to the task log
+    // Log the event to the task log using the canonical task ID so it
+    // appears in the correct task's log (not a phantom step-key task).
     try {
       await this.store.logEntry(
-        taskId,
+        canonicalId,
         `Task terminated due to stuck agent session (reason=${reason}, ` +
         `no progress for ~${noProgressMin}min, ` +
         `no activity for ~${elapsedMin}min, ` +
         `${activitySinceProgress} events since last progress)`,
       );
     } catch (err) {
-      stuckLog.error(`Failed to log stuck event for ${taskId}:`, err);
+      stuckLog.error(`Failed to log stuck event for ${canonicalId}:`, err);
     }
 
     // Check stuck kill budget BEFORE disposing the session so the result
@@ -282,19 +304,20 @@ export class StuckTaskDetector {
     let shouldRequeue = true;
     if (this.beforeRequeue) {
       try {
-        shouldRequeue = await this.beforeRequeue(taskId);
+        shouldRequeue = await this.beforeRequeue(canonicalId);
         if (!shouldRequeue) {
-          stuckLog.log(`${taskId} exceeded stuck kill budget — not re-queuing`);
+          stuckLog.log(`${canonicalId} exceeded stuck kill budget — not re-queuing`);
         }
       } catch (err) {
-        stuckLog.error(`beforeRequeue check failed for ${taskId}:`, err);
+        stuckLog.error(`beforeRequeue check failed for ${canonicalId}:`, err);
         // Fall through with shouldRequeue=true — safer than dropping the task
       }
     }
 
-    // Build the event payload (includes requeue decision for executor)
+    // Build the event payload using the canonical task ID so executor callbacks
+    // can look up the right entry in stuckAborted / activeStepExecutors.
     const event: StuckTaskEvent = {
-      taskId,
+      taskId: canonicalId,
       reason,
       noProgressMs,
       inactivityMs,
@@ -314,7 +337,7 @@ export class StuckTaskDetector {
         const handled = await this.onLoopDetected(event);
         if (handled) {
           stuckLog.log(
-            `${taskId} loop recovery accepted by onLoopDetected callback — ` +
+            `${canonicalId} loop recovery accepted by onLoopDetected callback — ` +
             `skipping kill/requeue (caller owns recovery)`,
           );
           // The caller is now responsible for the task; remove from tracking
@@ -323,7 +346,7 @@ export class StuckTaskDetector {
           return;
         }
       } catch (err) {
-        stuckLog.error(`onLoopDetected callback failed for ${taskId}:`, err);
+        stuckLog.error(`onLoopDetected callback failed for ${canonicalId}:`, err);
         // Fall through to normal kill path
       }
     }

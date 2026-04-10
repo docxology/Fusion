@@ -726,10 +726,13 @@ export class StepSessionExecutor {
           });
           session = createResult.session;
 
-          // Track session for termination and stuck-task detection
+          // Track session for termination and stuck-task detection.
+          // Pass the canonical task ID (e.g. "FN-1452") as the third argument so
+          // that stuck-kill callbacks (beforeRequeue, onStuck) operate on the real
+          // task rather than the compound step key ("FN-1452-step-1").
           const handle: SessionHandle = { dispose: () => session?.dispose() };
           this.activeSessions.set(stepIndex, handle);
-          stuckTaskDetector?.trackTask(trackingKey, { dispose: () => session?.dispose() });
+          stuckTaskDetector?.trackTask(trackingKey, { dispose: () => session?.dispose() }, taskDetail.id);
 
           stepExecLog.log(
             `Step ${stepIndex} attempt ${attempt + 1} session created ` +
