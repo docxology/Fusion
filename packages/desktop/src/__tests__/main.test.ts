@@ -1,5 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+// Mock renderer module - must be hoisted before importing main
+const rendererMocks = vi.hoisted(() => {
+  const getRendererUrl = vi.fn(() => "file:///path/to/dist/client/index.html");
+  return {
+    isDevelopmentMode: vi.fn(() => false),
+    getRendererUrl,
+    getRendererFilePath: vi.fn(() => "/path/to/dist/client/index.html"),
+    isUrlRenderer: vi.fn(() => false),
+    IS_DEVELOPMENT: false,
+    // DASHBOARD_URL is re-exported as getRendererUrl
+    DASHBOARD_URL: getRendererUrl,
+  };
+});
+
+vi.mock("../renderer.ts", () => rendererMocks);
+
 const mocks = vi.hoisted(() => {
   const browserWindowInstance = {
     loadURL: vi.fn(),
@@ -84,16 +100,6 @@ vi.mock("electron", () => ({
   shell: mocks.shell,
 }));
 
-// Mock renderer module
-vi.mock("../renderer.js", () => ({
-  isDevelopmentMode: mocks.isDevelopmentMode,
-  getRendererUrl: mocks.getRendererUrl,
-  getRendererFilePath: mocks.getRendererFilePath,
-  isUrlRenderer: mocks.isUrlRenderer,
-  IS_DEVELOPMENT: false,
-  DASHBOARD_URL: mocks.getRendererUrl,
-}));
-
 async function importMainModule() {
   return import("../main.ts");
 }
@@ -116,10 +122,10 @@ describe("main process", () => {
       process.env.NODE_ENV = originalNodeEnv;
     }
     // Ensure we're in production mode for these tests
-    mocks.isDevelopmentMode.mockReturnValue(false);
-    mocks.getRendererUrl.mockReturnValue("file:///path/to/dist/client/index.html");
-    mocks.getRendererFilePath.mockReturnValue("/path/to/dist/client/index.html");
-    mocks.isUrlRenderer.mockReturnValue(false);
+    rendererMocks.isDevelopmentMode.mockReturnValue(false);
+    rendererMocks.getRendererUrl.mockReturnValue("file:///path/to/dist/client/index.html");
+    rendererMocks.getRendererFilePath.mockReturnValue("/path/to/dist/client/index.html");
+    rendererMocks.isUrlRenderer.mockReturnValue(false);
   });
 
   it("DASHBOARD_URL defaults to local file URL in production mode", async () => {
@@ -127,17 +133,16 @@ describe("main process", () => {
 
     const { DASHBOARD_URL } = await importMainModule();
 
-    expect(DASHBOARD_URL()).toMatch(/^file:\/\//);
-    expect(DASHBOARD_URL()).toContain("/client/index.html");
+    expect(DASHBOARD_URL()).toMatch(/^file:\/\/.*\/client\/index\.html$/);
   });
 
   it("DASHBOARD_URL uses env override in development mode", async () => {
     process.env.FUSION_DASHBOARD_URL = "http://localhost:5050";
     // Mock development mode to use the env var
-    mocks.isDevelopmentMode.mockReturnValue(true);
-    mocks.getRendererUrl.mockReturnValue("http://localhost:5050");
-    mocks.getRendererFilePath.mockReturnValue("");
-    mocks.isUrlRenderer.mockReturnValue(true);
+    rendererMocks.isDevelopmentMode.mockReturnValue(true);
+    rendererMocks.getRendererUrl.mockReturnValue("http://localhost:5050");
+    rendererMocks.getRendererFilePath.mockReturnValue("");
+    rendererMocks.isUrlRenderer.mockReturnValue(true);
 
     const { DASHBOARD_URL } = await importMainModule();
 
@@ -166,9 +171,9 @@ describe("main process", () => {
   });
 
   it("createMainWindow loads the renderer URL in URL mode", async () => {
-    mocks.isUrlRenderer.mockReturnValue(true);
-    mocks.getRendererUrl.mockReturnValue("http://localhost:3000/index.html");
-    mocks.getRendererFilePath.mockReturnValue("");
+    rendererMocks.isUrlRenderer.mockReturnValue(true);
+    rendererMocks.getRendererUrl.mockReturnValue("http://localhost:3000/index.html");
+    rendererMocks.getRendererFilePath.mockReturnValue("");
 
     const { createMainWindow } = await importMainModule();
 
@@ -179,9 +184,9 @@ describe("main process", () => {
   });
 
   it("createMainWindow loads the renderer file in file mode (production)", async () => {
-    mocks.isUrlRenderer.mockReturnValue(false);
-    mocks.getRendererUrl.mockReturnValue("file:///path/to/dist/client/index.html");
-    mocks.getRendererFilePath.mockReturnValue("/path/to/dist/client/index.html");
+    rendererMocks.isUrlRenderer.mockReturnValue(false);
+    rendererMocks.getRendererUrl.mockReturnValue("file:///path/to/dist/client/index.html");
+    rendererMocks.getRendererFilePath.mockReturnValue("/path/to/dist/client/index.html");
 
     const { createMainWindow } = await importMainModule();
 

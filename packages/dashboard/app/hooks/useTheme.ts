@@ -28,16 +28,10 @@ function getThemeDataUrl(): string {
     return `/${THEME_DATA_FILENAME}`;
   }
 
-  // Handle file:// URLs specially - derive path relative to HTML file directory
+  // Handle file:// URLs - derive path relative to HTML file directory
+  // Replace the filename at the end of the path with theme-data.css
+  // This produces correct paths like: file:///path/to/app/theme-data.css
   if (base.startsWith("file://")) {
-    // Extract directory from file:// path (e.g., file:///path/to/app/index.html → /path/to/app/)
-    const pathMatch = base.match(/^file:\/\/[^\/]*(\/.*?)?\/[^\/]*$/);
-    if (pathMatch && pathMatch[1]) {
-      // base ends with filename, use the directory portion
-      const dirPath = pathMatch[1];
-      return `${base.substring(0, 7)}${dirPath}${THEME_DATA_FILENAME}`;
-    }
-    // Fallback: just use the base without the filename
     return base.replace(/\/[^\/]+$/, `/${THEME_DATA_FILENAME}`);
   }
 

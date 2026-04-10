@@ -625,6 +625,123 @@ describe("useTheme", () => {
       // Clean up
       existingLink.remove();
     });
+
+    it("resolves concrete path for deep nested file:// URL", () => {
+      // Simulate a deeply nested Electron production path
+      Object.defineProperty(document, "baseURI", {
+        value: "file:///Users/me/Projects/kb/packages/dashboard/dist/client/index.html",
+        configurable: true,
+      });
+
+      const { result } = renderHook(() => useTheme());
+
+      act(() => {
+        result.current.setColorTheme("ocean");
+      });
+
+      const link = document.getElementById("theme-data");
+      expect(link).not.toBeNull();
+      const href = link?.getAttribute("href");
+      // Must have concrete path ending with theme-data.css
+      expect(href).toBe("file:///Users/me/Projects/kb/packages/dashboard/dist/client/theme-data.css");
+      // Regression: ensure no malformed concatenation (missing slash before filename)
+      expect(href).not.toMatch(/clienttheme-data/);
+
+      // Clean up
+      Object.defineProperty(document, "baseURI", {
+        value: "http://localhost:3000/",
+        configurable: true,
+      });
+    });
+
+    it("resolves concrete path for shallow file:// URL", () => {
+      // Simulate a shallow Electron production path
+      Object.defineProperty(document, "baseURI", {
+        value: "file:///app/index.html",
+        configurable: true,
+      });
+
+      const { result } = renderHook(() => useTheme());
+
+      act(() => {
+        result.current.setColorTheme("factory");
+      });
+
+      const link = document.getElementById("theme-data");
+      expect(link).not.toBeNull();
+      const href = link?.getAttribute("href");
+      // Must resolve to the correct path with proper slash separator
+      expect(href).toBe("file:///app/theme-data.css");
+      // Regression: ensure no malformed concatenation (missing slash before filename)
+      expect(href).not.toMatch(/apptheme-data/);
+
+      // Clean up
+      Object.defineProperty(document, "baseURI", {
+        value: "http://localhost:3000/",
+        configurable: true,
+      });
+    });
+
+    it("resolves concrete path for medium nested file:// URL", () => {
+      // Simulate Electron path with medium nesting
+      Object.defineProperty(document, "baseURI", {
+        value: "file:///app/fusion/node/dashboard/dist/index.html",
+        configurable: true,
+      });
+
+      const { result } = renderHook(() => useTheme());
+
+      act(() => {
+        result.current.setColorTheme("nord");
+      });
+
+      const link = document.getElementById("theme-data");
+      expect(link).not.toBeNull();
+      const href = link?.getAttribute("href");
+      // Must resolve to the correct path with proper slash separator
+      expect(href).toBe("file:///app/fusion/node/dashboard/dist/theme-data.css");
+      // Regression: ensure no malformed concatenation (missing slash before filename)
+      expect(href).not.toMatch(/disttheme-data/);
+
+      // Clean up
+      Object.defineProperty(document, "baseURI", {
+        value: "http://localhost:3000/",
+        configurable: true,
+      });
+    });
+
+    it("rejects malformed file:// URL with missing slash before filename", () => {
+      // This test documents the bug that was fixed: URLs like file:///apptheme-data.css
+      // should never be produced. The fix ensures directory and filename are always
+      // separated by a slash.
+      Object.defineProperty(document, "baseURI", {
+        value: "file:///app/index.html",
+        configurable: true,
+      });
+
+      const { result } = renderHook(() => useTheme());
+
+      act(() => {
+        result.current.setColorTheme("dracula");
+      });
+
+      const link = document.getElementById("theme-data");
+      expect(link).not.toBeNull();
+      const href = link?.getAttribute("href");
+      // The buggy implementation would produce file:///apptheme-data.css
+      // The correct implementation produces file:///app/theme-data.css
+      // These regexes catch the malformed pattern
+      expect(href).not.toMatch(/apptheme-data\.css$/);
+      expect(href).not.toMatch(/theme-data\.css$/ && !/\/theme-data\.css$/.test(href || ""));
+      // Verify it's actually a valid file URL
+      expect(href).toMatch(/^file:\/\/.*\/theme-data\.css$/);
+
+      // Clean up
+      Object.defineProperty(document, "baseURI", {
+        value: "http://localhost:3000/",
+        configurable: true,
+      });
+    });
   });
 });
 
@@ -670,5 +787,19 @@ describe("getThemeInitScript", () => {
     expect(script).toContain("prefers-color-scheme");
     expect(script).toContain("systemDark");
     expect(script).toContain("effectiveMode");
+  });
+
+  it("index.html uses correct file:// URL replacement pattern", () => {
+    // Verify that the inline script in index.html uses the correct URL replacement
+    // pattern (replace filename with theme-data.css) rather than buggy concatenation
+    const indexHtml = readFileSync("app/index.html", "utf8");
+
+    // The correct pattern: base.replace(/\/[^\/]+$/, '/theme-data.css')
+    // The buggy pattern: base.substring(0, 7) + dirPath + 'theme-data.css'
+    expect(indexHtml).toContain("base.replace(/\\/[^\\/]+$/, '/theme-data.css')");
+
+    // Ensure the buggy pattern is NOT present
+    expect(indexHtml).not.toContain("base.substring(0, 7)");
+    expect(indexHtml).not.toContain("pathMatch");
   });
 });

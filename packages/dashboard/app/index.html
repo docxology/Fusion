@@ -32,13 +32,9 @@
             var base = document.baseURI || (document.location && document.location.href) || '';
             if (base.indexOf('file://') === 0) {
               // For file:// URLs, derive path relative to the HTML file directory
-              var pathMatch = base.match(/^file:\/\/[^\/]*(\/.*?)?\/[^\/]*$/);
-              if (pathMatch && pathMatch[1]) {
-                var dirPath = pathMatch[1];
-                themeDataUrl = base.substring(0, 7) + dirPath + 'theme-data.css';
-              } else {
-                themeDataUrl = base.replace(/\/[^\/]+$/, '/theme-data.css');
-              }
+              // Replace the filename at the end of the path with theme-data.css
+              // This produces correct paths like: file:///path/to/app/theme-data.css
+              themeDataUrl = base.replace(/\/[^\/]+$/, '/theme-data.css');
             } else {
               // For HTTP/HTTPS URLs, use URL resolution
               themeDataUrl = new URL('/theme-data.css', base).href;
