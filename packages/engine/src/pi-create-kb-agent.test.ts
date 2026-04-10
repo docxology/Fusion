@@ -63,6 +63,219 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
   },
 }));
 
+describe("worktree path boundary helpers", () => {
+  // Test helper functions directly by importing them
+  // Note: These tests verify the boundary logic without needing a full agent session
+
+  describe("path boundary logic for worktree sessions", () => {
+    it("wraps file tools with boundary validation when cwd is a worktree", async () => {
+      const mockReadTool = {
+        name: "read",
+        label: "Read",
+        description: "Read a file",
+        parameters: {},
+        execute: vi.fn().mockResolvedValue({ ok: true, content: [{ type: "text", text: "file content" }] }),
+      };
+
+      // Import the wrapping function
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const tools = [mockReadTool as any];
+
+      // Simulate wrapping (normally done inside createKbAgent)
+      const { wrapToolsWithBoundary } = await import("./pi.js");
+      const wrapped = wrapToolsWithBoundary(
+        tools,
+        "/project/.worktrees/fn-001", // worktree path
+        "/project", // project root
+      );
+
+      // Read inside worktree should work
+      const insideResult = await (wrapped[0] as any).execute("call-1", { path: "/project/.worktrees/fn-001/src/file.ts" });
+      expect(insideResult).toEqual({ ok: true, content: [{ type: "text", text: "file content" }] });
+      expect(mockReadTool.execute).toHaveBeenCalled();
+
+      // Reset mock
+      mockReadTool.execute.mockClear();
+
+      // Read outside worktree should be rejected
+      const outsideResult = await (wrapped[0] as any).execute("call-2", { path: "/other/project/file.ts" });
+      expect(outsideResult).toEqual({
+        ok: false,
+        error: expect.stringContaining("outside the worktree boundary"),
+      });
+      expect(mockReadTool.execute).not.toHaveBeenCalled();
+    });
+
+    it("allows project root .fusion/memory.md from worktree session", async () => {
+      const mockReadTool = {
+        name: "read",
+        label: "Read",
+        description: "Read a file",
+        parameters: {},
+        execute: vi.fn().mockResolvedValue({ ok: true, content: [{ type: "text", text: "memory content" }] }),
+      };
+
+      const { wrapToolsWithBoundary } = await import("./pi.js");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const wrapped = wrapToolsWithBoundary(
+        [mockReadTool as any],
+        "/project/.worktrees/fn-001",
+        "/project",
+      );
+
+      // Reading project root .fusion/memory.md should be allowed
+      const result = await (wrapped[0] as any).execute("call-1", { path: "/project/.fusion/memory.md" });
+      expect(mockReadTool.execute).toHaveBeenCalled();
+      expect(result).toEqual({ ok: true, content: [{ type: "text", text: "memory content" }] });
+    });
+
+    it("allows task attachments from worktree session", async () => {
+      const mockReadTool = {
+        name: "read",
+        label: "Read",
+        description: "Read a file",
+        parameters: {},
+        execute: vi.fn().mockResolvedValue({ ok: true, content: [{ type: "text", text: "attachment content" }] }),
+      };
+
+      const { wrapToolsWithBoundary } = await import("./pi.js");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const wrapped = wrapToolsWithBoundary(
+        [mockReadTool as any],
+        "/project/.worktrees/fn-001",
+        "/project",
+      );
+
+      // Reading task attachment should be allowed
+      const result = await (wrapped[0] as any).execute("call-1", { path: "/project/.fusion/tasks/FN-001/attachments/screenshot.png" });
+      expect(mockReadTool.execute).toHaveBeenCalled();
+      expect(result).toEqual({ ok: true, content: [{ type: "text", text: "attachment content" }] });
+    });
+
+    it("does not wrap tools when cwd is not a worktree", async () => {
+      const mockTool = {
+        name: "read",
+        label: "Read",
+        description: "Read a file",
+        parameters: {},
+        execute: vi.fn().mockResolvedValue({ ok: true, content: [] }),
+      };
+
+      const { wrapToolsWithBoundary } = await import("./pi.js");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const wrapped = wrapToolsWithBoundary([mockTool as any], null, null);
+
+      // Should be the same tool, not wrapped
+      expect(wrapped[0]).toBe(mockTool);
+
+      // Any path should work
+      await (wrapped[0] as any).execute("call-1", { path: "/any/path/file.ts" });
+      expect(mockTool.execute).toHaveBeenCalled();
+    });
+
+    it("wraps only file tools, not other tools", async () => {
+      const mockTaskTool = {
+        name: "task_create",
+        label: "Create Task",
+        description: "Create a task",
+        parameters: {},
+        execute: vi.fn().mockResolvedValue({ ok: true, content: [] }),
+      };
+
+      const { wrapToolsWithBoundary } = await import("./pi.js");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const wrapped = wrapToolsWithBoundary(
+        [mockTaskTool as any],
+        "/project/.worktrees/fn-001",
+        "/project",
+      );
+
+      // task_create should be unchanged (not wrapped)
+      expect(wrapped[0]).toBe(mockTaskTool);
+    });
+
+    it("rejects write to paths outside worktree", async () => {
+      const mockWriteTool = {
+        name: "write",
+        label: "Write",
+        description: "Write a file",
+        parameters: {},
+        execute: vi.fn().mockResolvedValue({ ok: true, content: [] }),
+      };
+
+      const { wrapToolsWithBoundary } = await import("./pi.js");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const wrapped = wrapToolsWithBoundary(
+        [mockWriteTool as any],
+        "/project/.worktrees/fn-001",
+        "/project",
+      );
+
+      // Writing outside worktree should be rejected
+      const result = await (wrapped[0] as any).execute("call-1", { path: "/another/project/file.ts" });
+      expect(result).toEqual({
+        ok: false,
+        error: expect.stringContaining("outside the worktree boundary"),
+      });
+      expect(mockWriteTool.execute).not.toHaveBeenCalled();
+    });
+
+    it("rejects bash commands with cwd outside worktree", async () => {
+      const mockBashTool = {
+        name: "bash",
+        label: "Bash",
+        description: "Run a command",
+        parameters: {},
+        execute: vi.fn().mockResolvedValue({ ok: true, content: [] }),
+      };
+
+      const { wrapToolsWithBoundary } = await import("./pi.js");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const wrapped = wrapToolsWithBoundary(
+        [mockBashTool as any],
+        "/project/.worktrees/fn-001",
+        "/project",
+      );
+
+      // Bash with cwd outside worktree should be rejected
+      const result = await (wrapped[0] as any).execute("call-1", { command: "ls -la", cwd: "/another/project" });
+      expect(result).toEqual({
+        ok: false,
+        error: expect.stringContaining("outside the worktree boundary"),
+      });
+      expect(mockBashTool.execute).not.toHaveBeenCalled();
+    });
+
+    it("allows bash commands without cwd or with cwd inside worktree", async () => {
+      const mockBashTool = {
+        name: "bash",
+        label: "Bash",
+        description: "Run a command",
+        parameters: {},
+        execute: vi.fn().mockResolvedValue({ ok: true, content: [{ type: "text", text: "ls result" }] }),
+      };
+
+      const { wrapToolsWithBoundary } = await import("./pi.js");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const wrapped = wrapToolsWithBoundary(
+        [mockBashTool as any],
+        "/project/.worktrees/fn-001",
+        "/project",
+      );
+
+      // Bash without cwd should work
+      let result = await (wrapped[0] as any).execute("call-1", { command: "ls -la" });
+      expect(mockBashTool.execute).toHaveBeenCalled();
+
+      mockBashTool.execute.mockClear();
+
+      // Bash with cwd inside worktree should work
+      result = await (wrapped[0] as any).execute("call-2", { command: "ls -la", cwd: "/project/.worktrees/fn-001" });
+      expect(mockBashTool.execute).toHaveBeenCalled();
+    });
+  });
+});
+
 describe("createKbAgent", () => {
   beforeEach(() => {
     vi.clearAllMocks();

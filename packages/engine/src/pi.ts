@@ -6,7 +6,7 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative, isAbsolute, resolve } from "node:path";
 import {
   AuthStorage,
   createAgentSession,
@@ -253,6 +253,133 @@ async function registerExtensionProviders(cwd: string, modelRegistry: ModelRegis
   }
 }
 
+// ── Worktree Path Boundary Helpers ──────────────────────────────────────────
+
+/**
+ * Detect if a path is a task worktree under `.worktrees/`.
+ * Returns the project root if the path is a worktree, otherwise null.
+ *
+ * Examples:
+ *   `/project/.worktrees/fn-001` → `/project`
+ *   `/project/.worktrees/fn-001/src/file.ts` → `/project`
+ *   `/project` → null (not a worktree)
+ */
+function getProjectRootFromWorktree(cwd: string): string | null {
+  // Match paths like /project/.worktrees/task-id or /project/.worktrees/task-id/...
+  const match = cwd.match(/^(.+?)\/\.worktrees\/[^/]+/);
+  if (match) {
+    return match[1]!;
+  }
+  return null;
+}
+
+/**
+ * Check if a path is allowed to be accessed from a worktree session.
+ * Rules:
+ * - Paths inside the worktree are always allowed
+ * - Project root .fusion/memory.md is allowed (for durable project learnings)
+ * - Task attachments under .fusion/tasks/N/attachments/ are allowed (for reading context files)
+ * - All other paths outside the worktree are rejected
+ *
+ * @param worktreePath - Absolute path to the worktree directory
+ * @param projectRoot - Absolute path to the project root (derived from worktree)
+ * @param requestedPath - The path being accessed
+ * @returns true if allowed, false if rejected
+ */
+function isWorktreeAllowedPath(worktreePath: string, projectRoot: string, requestedPath: string): boolean {
+  // Normalize paths
+  const worktreeResolved = resolve(worktreePath);
+  const projectRootResolved = resolve(projectRoot);
+  const requestedResolved = isAbsolute(requestedPath) ? resolve(requestedPath) : resolve(worktreeResolved, requestedPath);
+
+  // Check if path is inside the worktree
+  const relToWorktree = relative(worktreeResolved, requestedResolved);
+  if (!relToWorktree.startsWith("..") && !isAbsolute(relToWorktree)) {
+    return true; // Path is inside the worktree
+  }
+
+  // Exception: project root `.fusion/memory.md` for durable project learnings
+  const relToProjectRoot = relative(projectRootResolved, requestedResolved);
+  if (relToProjectRoot === ".fusion/memory.md") {
+    return true;
+  }
+
+  // Exception: task attachments under `.fusion/tasks/*/attachments/*`
+  if (relToProjectRoot.match(/^\.fusion\/tasks\/[^/]+\/attachments\//)) {
+    return true;
+  }
+
+  // All other paths outside the worktree are rejected
+  return false;
+}
+
+/**
+ * Wrap tools with worktree boundary validation.
+ * When cwd is a worktree path, file operations are validated against worktree boundaries.
+ *
+ * @param tools - Array of tool definitions to wrap
+ * @param worktreePath - Absolute path to the worktree directory (if applicable)
+ * @param projectRoot - Absolute path to the project root (if applicable)
+ * @returns Wrapped tools with boundary validation
+ */
+export function wrapToolsWithBoundary(
+  tools: ToolDefinition[],
+  worktreePath: string | null,
+  projectRoot: string | null,
+): ToolDefinition[] {
+  if (!worktreePath || !projectRoot) {
+    return tools; // Not a worktree session, no wrapping needed
+  }
+
+  return tools.map((tool) => {
+    // Only wrap tools that access the filesystem
+    const fileToolNames = new Set(["read", "write", "edit", "glob", "grep", "bash"]);
+    if (!fileToolNames.has(tool.name)) {
+      return tool;
+    }
+
+    // Store the original execute function
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const originalExecute = tool.execute as any;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return {
+      ...tool,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      execute: async (...args: any[]) => {
+        const toolCallId = args[0] as string;
+        const params = args[1] as Record<string, unknown>;
+        const signal = args[2] as AbortSignal | undefined;
+
+        // Check path argument for file operations
+        const pathArg = params.path as string | undefined;
+        if (pathArg && !isWorktreeAllowedPath(worktreePath, projectRoot, pathArg)) {
+          const relToProject = relative(projectRoot, pathArg);
+          return {
+            ok: false,
+            error: `Path "${relToProject}" is outside the worktree boundary. ` +
+              `Coding agents can only modify files inside the current worktree. ` +
+              `Exception: .fusion/memory.md (project root) and .fusion/tasks/*/attachments/* are permitted for reading.`,
+          };
+        }
+
+        // For bash, also check the working directory if specified
+        const cwdArg = params.cwd as string | undefined;
+        if (tool.name === "bash" && cwdArg && !isWorktreeAllowedPath(worktreePath, projectRoot, cwdArg)) {
+          return {
+            ok: false,
+            error: `Working directory is outside the worktree boundary. ` +
+              `Commands must run inside the worktree.`,
+          };
+        }
+
+        // Call the original tool implementation with all arguments passed through
+        return originalExecute(...args);
+      },
+    };
+  });
+}
+
 /**
  * Create a pi agent session configured for fn.
  * Reuses the user's existing pi auth and model configuration.
@@ -267,6 +394,11 @@ export async function createKbAgent(options: AgentOptions): Promise<AgentResult>
     options.tools === "readonly"
       ? createReadOnlyTools(options.cwd)
       : createCodingTools(options.cwd);
+
+  // Detect if this is a worktree session and apply path boundaries
+  const worktreePath = options.cwd;
+  const projectRoot = getProjectRootFromWorktree(worktreePath);
+  const wrappedTools = wrapToolsWithBoundary(tools, worktreePath, projectRoot);
 
   // Compaction is explicitly enabled to prevent context-window overflow during
   // long-running agent conversations (triage, execution, review, merge).
@@ -308,7 +440,8 @@ export async function createKbAgent(options: AgentOptions): Promise<AgentResult>
       authStorage,
       modelRegistry,
       resourceLoader,
-      tools,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      tools: wrappedTools as any,
       customTools: options.customTools,
       sessionManager,
       settingsManager,

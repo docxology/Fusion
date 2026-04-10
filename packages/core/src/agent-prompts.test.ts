@@ -144,6 +144,58 @@ describe("resolveAgentPrompt", () => {
     expect(result).toContain("even if they appear unrelated or pre-existing");
     expect(result).toContain("do not defer them to a separate task");
   });
+
+  it("built-in executor prompt includes worktree boundary guidance", () => {
+    const result = resolveAgentPrompt("executor");
+    expect(result).toContain("## Worktree Boundaries");
+    expect(result).toContain("isolated git worktree");
+    expect(result).toContain("inside the current worktree directory");
+  });
+
+  it("built-in executor prompt mentions memory exception", () => {
+    const result = resolveAgentPrompt("executor");
+    expect(result).toContain(".fusion/memory.md");
+  });
+
+  it("built-in executor prompt mentions attachments exception", () => {
+    const result = resolveAgentPrompt("executor");
+    expect(result).toContain("attachments");
+  });
+
+  it("senior-engineer prompt includes worktree boundary guidance", () => {
+    const config: AgentPromptsConfig = {
+      roleAssignments: {
+        executor: "senior-engineer",
+      },
+    };
+
+    const result = resolveAgentPrompt("executor", config);
+    expect(result).toContain("## Worktree Boundaries");
+    expect(result).toContain("isolated git worktree");
+    expect(result).toContain("inside the current worktree directory");
+  });
+
+  it("senior-engineer prompt mentions memory exception", () => {
+    const config: AgentPromptsConfig = {
+      roleAssignments: {
+        executor: "senior-engineer",
+      },
+    };
+
+    const result = resolveAgentPrompt("executor", config);
+    expect(result).toContain(".fusion/memory.md");
+  });
+
+  it("senior-engineer prompt mentions attachments exception", () => {
+    const config: AgentPromptsConfig = {
+      roleAssignments: {
+        executor: "senior-engineer",
+      },
+    };
+
+    const result = resolveAgentPrompt("executor", config);
+    expect(result).toContain("attachments");
+  });
 });
 
 // ---------------------------------------------------------------------------

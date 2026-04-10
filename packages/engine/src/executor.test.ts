@@ -9265,3 +9265,74 @@ describe("detectReviewHandoffIntent", () => {
     expect(detectReviewHandoffIntent("")).toBe(false);
   });
 });
+
+describe("buildExecutionPrompt", () => {
+  it("includes worktree boundary guidance in the execution prompt", () => {
+    const task: any = {
+      id: "FN-TEST",
+      title: "Test task",
+      dependencies: [],
+      prompt: "# Test task\n## Steps\n- Step 1",
+      steps: [],
+      currentStep: 0,
+      attachments: [],
+    };
+
+    const prompt = buildExecutionPrompt(task, "/project");
+
+    expect(prompt).toContain("## Worktree Boundaries");
+    expect(prompt).toContain("isolated git worktree");
+    expect(prompt).toContain("All code changes must be made inside the current worktree directory");
+  });
+
+  it("mentions project memory exception in worktree boundary guidance", () => {
+    const task: any = {
+      id: "FN-TEST",
+      title: "Test task",
+      dependencies: [],
+      prompt: "# Test task\n## Steps\n- Step 1",
+      steps: [],
+      currentStep: 0,
+      attachments: [],
+    };
+
+    const prompt = buildExecutionPrompt(task, "/project");
+
+    expect(prompt).toContain(".fusion/memory.md");
+    expect(prompt).toContain("memory");
+    expect(prompt).toContain("durable");
+  });
+
+  it("mentions task attachments exception in worktree boundary guidance", () => {
+    const task: any = {
+      id: "FN-TEST",
+      title: "Test task",
+      dependencies: [],
+      prompt: "# Test task\n## Steps\n- Step 1",
+      steps: [],
+      currentStep: 0,
+      attachments: [],
+    };
+
+    const prompt = buildExecutionPrompt(task, "/project");
+
+    expect(prompt).toContain("attachments");
+    expect(prompt).toContain("context");
+  });
+
+  it("includes worktree boundary guidance regardless of review level", () => {
+    const task: any = {
+      id: "FN-TEST",
+      title: "Test task",
+      dependencies: [],
+      prompt: "# Test task\n## Review Level: 0\n## Steps\n- Step 1",
+      steps: [],
+      currentStep: 0,
+      attachments: [],
+    };
+
+    const prompt = buildExecutionPrompt(task, "/project");
+
+    expect(prompt).toContain("## Worktree Boundaries");
+  });
+});

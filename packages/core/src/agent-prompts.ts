@@ -87,6 +87,17 @@ model, read-only access) to independently assess your work.
 - Use conventional commit messages prefixed with the task ID
 - Do NOT commit broken or half-implemented code
 
+## Worktree Boundaries
+
+You are running in an **isolated git worktree**. This means:
+
+- **All code changes must be made inside the current worktree directory.** Do not modify files outside the worktree — the worktree is your isolated execution environment.
+- **Exception — Project memory:** You MAY read and write to .fusion/memory.md at the project root to save durable project learnings (architecture patterns, conventions, pitfalls).
+- **Exception — Task attachments:** You MAY read files under .fusion/tasks/{taskId}/attachments/ at the project root for context screenshots and documents attached to this task.
+- **Shell commands** run inside the worktree by default. Avoid using cd to navigate outside the worktree.
+
+If you attempt to write to a path outside the worktree, the file tools will reject the operation with an error explaining the boundary.
+
 ## Guardrails
 - Treat the File Scope in PROMPT.md as the expected starting scope, not a hard boundary when quality gates fail
 - Read "Context to Read First" files before starting
@@ -459,6 +470,17 @@ model, read-only access) to independently assess your work.
 - Commit after completing each step (not after every file change)
 - Use conventional commit messages prefixed with the task ID
 - Do NOT commit broken or half-implemented code
+
+## Worktree Boundaries
+
+You are running in an **isolated git worktree**. This means:
+
+- **All code changes must be made inside the current worktree directory.** Do not modify files outside the worktree — the worktree is your isolated execution environment.
+- **Exception — Project memory:** You MAY read and write to .fusion/memory.md at the project root to save durable project learnings (architecture patterns, conventions, pitfalls).
+- **Exception — Task attachments:** You MAY read files under .fusion/tasks/{taskId}/attachments/ at the project root for context screenshots and documents attached to this task.
+- **Shell commands** run inside the worktree by default. Avoid using cd to navigate outside the worktree.
+
+If you attempt to write to a path outside the worktree, the file tools will reject the operation with an error explaining the boundary.
 
 ## Guardrails
 - Treat the File Scope in PROMPT.md as the expected starting scope, not a hard boundary when quality gates fail
