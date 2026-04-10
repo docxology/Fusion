@@ -9,6 +9,7 @@ import type {
 export type MissionStatus = "planning" | "active" | "blocked" | "complete" | "archived";
 export type MilestoneStatus = "planning" | "active" | "blocked" | "complete";
 export type SliceStatus = "pending" | "active" | "complete";
+export type SlicePlanState = "not_started" | "planned" | "needs_update";
 export type FeatureStatus = "defined" | "triaged" | "in-progress" | "done";
 
 /** Autopilot state values for mission autonomous progression */
@@ -57,6 +58,10 @@ export interface Slice {
   status: SliceStatus;
   orderIndex: number;
   activatedAt?: string;
+  planState?: SlicePlanState;
+  interviewState?: "not_started" | "in_progress" | "completed" | "needs_update";
+  planningNotes?: string;
+  verification?: string;
   createdAt: string;
   updatedAt: string;
   features: MissionFeature[];
@@ -73,6 +78,8 @@ export interface Milestone {
   orderIndex: number;
   interviewState: "not_started" | "in_progress" | "completed" | "needs_update";
   dependencies: string[];
+  planningNotes?: string;
+  verification?: string;
   createdAt: string;
   updatedAt: string;
   slices: Slice[];
