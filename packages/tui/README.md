@@ -6,6 +6,22 @@ Terminal UI components for fn, built with [Ink](https://github.com/vadimdemedes/
 
 This package is under active development and not yet published.
 
+## Terminal Compatibility
+
+This package is designed for terminals with a minimum size of **80×24** characters:
+- **Minimum width**: 80 columns
+- **Minimum height**: 24 rows
+
+When the terminal is smaller than these minimums, the UI enforces these bounds for layout calculations, ensuring consistent rendering across different terminal sizes.
+
+## Responsive Layout
+
+The TUI provides responsive layout utilities that adapt to terminal dimensions:
+
+- **Minimum bounds**: Layouts always respect the 80×24 minimum, ensuring readability
+- **Dynamic column widths**: Tables and lists compute column widths based on available space
+- **Truncation with ellipsis**: Long content is automatically truncated with `…` (U+2026) when it exceeds the available width
+
 ## Installation
 
 This package is part of the fn workspace and is not installed separately. It is available as a private workspace package.
@@ -270,26 +286,11 @@ The following are exported from `@fusion/tui`:
 
 ```tsx
 import React, { useState } from "react";
-import { render, Box, Text } from "ink";
-import { FusionProvider, useFusion, ScreenRouter, useGlobalShortcuts, HelpOverlay } from "@fusion/tui";
-
-function ProjectInfo() {
-  const { store, projectPath } = useFusion();
-  const [tasks, setTasks] = React.useState<Task[]>([]);
-
-  React.useEffect(() => {
-    store.listTasks().then(setTasks);
-  }, [store]);
-
-  return (
-    <Box flexDirection="column">
-      <Text>Project: {projectPath}</Text>
-      <Text>Tasks: {tasks.length}</Text>
-    </Box>
-  );
-}
+import { render, Box } from "ink";
+import { FusionProvider, useFusion, ScreenRouter, useGlobalShortcuts, HelpOverlay, ResponsiveHeader, ResponsiveTable, ResponsiveStatusBar } from "@fusion/tui";
 
 function App() {
+  const { projectPath } = useFusion();
   const [activeScreen, setActiveScreen] = useState("board");
 
   // Global keyboard shortcuts
@@ -306,9 +307,8 @@ function App() {
         </Box>
       )}
 
-      {/* Header */}
-      <Text bold>Fusion TUI</Text>
-      <Text dimColor>(Press ? for help)</Text>
+      {/* Responsive header */}
+      <ResponsiveHeader title={`Fusion TUI | Project: ${projectPath}`} />
 
       {/* Screen router */}
       <ScreenRouter
@@ -318,9 +318,17 @@ function App() {
         {({ activeScreen }) => (
           <Box flexDirection="column">
             {activeScreen === "board" && (
-              <Box>
-                <Text>Board Screen</Text>
-              </Box>
+              <ResponsiveTable
+                columns={[
+                  { header: "ID", minWidth: 10 },
+                  { header: "Description", minWidth: 30, canGrow: true },
+                  { header: "Status", minWidth: 12 },
+                ]}
+                rows={[
+                  ["FN-001", "Implement feature", "todo"],
+                  ["FN-002", "Fix bug in auth", "done"],
+                ]}
+              />
             )}
             {activeScreen === "detail" && (
               <Box>
@@ -330,6 +338,9 @@ function App() {
           </Box>
         )}
       </ScreenRouter>
+
+      {/* Responsive status bar */}
+      <ResponsiveStatusBar />
     </Box>
   );
 }
@@ -340,3 +351,137 @@ render(
   </FusionProvider>
 );
 ```
+
+## Responsive Layout Utilities
+
+The TUI provides utilities for building responsive layouts that adapt to terminal dimensions.
+
+### useTerminalDimensions
+
+Hook to read live terminal dimensions from Ink's `useStdout()` with minimum bounds applied.
+
+```tsx
+import { useTerminalDimensions } from "@fusion/tui";
+
+function MyComponent() {
+  const { columns, rows, isMinimumSize, extraColumns } = useTerminalDimensions();
+
+  return (
+    <Box>
+      <Text>Terminal: {columns}x{rows}</Text>
+      {!isMinimumSize && <Text dimColor> (wider than minimum)</Text>}
+    </Box>
+  );
+}
+```
+
+#### Returns
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `columns` | `number` | Effective column count (minimum 80) |
+| `rows` | `number` | Effective row count (minimum 24) |
+| `isMinimumSize` | `boolean` | Whether terminal meets minimum size |
+| `extraColumns` | `number` | Extra columns beyond the 80-column minimum |
+
+### computeColumnLayout
+
+Calculate column widths based on terminal dimensions and column definitions.
+
+```tsx
+import { computeColumnLayout } from "@fusion/tui";
+
+const layout = computeColumnLayout(120, [
+  { minWidth: 10, canGrow: false },                    // Fixed-width ID column
+  { minWidth: 30, canGrow: true, growWeight: 2 },     // Description (grows 2x)
+  { minWidth: 15, canGrow: true },                     // Status (grows 1x)
+]);
+
+console.log(layout.widths); // e.g., [10, 63, 47]
+console.log(layout.totalWidth); // 120
+```
+
+#### Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `columns` | `number` | Available terminal columns |
+| `definitions` | `ColumnDefinition[]` | Column definitions with minWidth, preferredWidth, canGrow, growWeight |
+| `strategy` | `ColumnStrategy` | Allocation strategy: `"equal"`, `"fixed"`, `"proportional"`, `"content-heavy"` |
+
+#### Returns
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `widths` | `number[]` | Calculated width for each column |
+| `totalWidth` | `number` | Total width used by all columns |
+| `remainingColumns` | `number` | Leftover columns after minimum allocations |
+
+### truncateText
+
+Truncate text to a maximum width with ellipsis.
+
+```tsx
+import { truncateText } from "@fusion/tui";
+
+truncateText("Hello World", 8);     // "Hello W…"
+truncateText("Hi", 10);            // "Hi" (fits)
+truncateText("Hello", 2);          // "…" (too short)
+truncateText("Hello World", 10, "~~"); // "Hello Wo~~" (custom ellipsis)
+```
+
+### Responsive Components
+
+#### ResponsiveHeader
+
+A header component that adapts to terminal width.
+
+```tsx
+import { ResponsiveHeader } from "@fusion/tui";
+
+<ResponsiveHeader title="My App" />
+```
+
+#### ResponsiveTable
+
+A table component with responsive column widths and truncation.
+
+```tsx
+import { ResponsiveTable } from "@fusion/tui";
+
+<ResponsiveTable
+  columns={[
+    { header: "ID", minWidth: 10 },
+    { header: "Description", minWidth: 30, canGrow: true },
+    { header: "Status", minWidth: 12 },
+  ]}
+  rows={[
+    ["FN-001", "Implement feature", "todo"],
+    ["FN-002", "Fix bug in auth", "done"],
+  ]}
+/>
+```
+
+#### ResponsiveStatusBar
+
+A status bar showing current terminal dimensions.
+
+```tsx
+import { ResponsiveStatusBar } from "@fusion/tui";
+
+<ResponsiveStatusBar />
+// Displays: "Terminal: 120x40 | Minimum: 80x24"
+```
+
+### Exports
+
+The following are exported from `@fusion/tui`:
+- `useTerminalDimensions` — Hook for reading terminal dimensions
+- `computeColumnLayout` — Function for calculating column widths
+- `truncateText` — Function for truncating text with ellipsis
+- `ResponsiveHeader` — Header component with responsive content
+- `ResponsiveTable` — Table component with responsive columns
+- `ResponsiveTaskRow` — Task row with truncation
+- `ResponsiveStatusBar` — Status bar showing terminal info
+- `MIN_TERMINAL_COLUMNS` — Minimum supported terminal width (80)
+- `MIN_TERMINAL_ROWS` — Minimum supported terminal height (24)

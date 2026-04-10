@@ -24,6 +24,16 @@ export {
   type ScreenComponentProps,
 } from "./components/screen-router.js";
 
+export {
+  ResponsiveHeader,
+  ResponsiveTable,
+  ResponsiveTaskRow,
+  ResponsiveStatusBar,
+  type TableColumn,
+  type ResponsiveTableProps,
+  type ResponsiveTaskRowProps,
+} from "./components/responsive-layout.js";
+
 // Re-export global shortcuts hooks
 export {
   useGlobalShortcuts,
@@ -39,6 +49,7 @@ import { render, Box, Text } from "ink";
 import { FusionProvider, useFusion } from "./fusion-context.js";
 import { ScreenRouter, type ScreenId } from "./components/screen-router.js";
 import { useGlobalShortcuts, HelpOverlay } from "./hooks/use-global-shortcuts.js";
+import { ResponsiveHeader, ResponsiveTable, ResponsiveTaskRow, ResponsiveStatusBar } from "./components/responsive-layout.js";
 import { fileURLToPath } from "url";
 
 /**
@@ -64,12 +75,8 @@ function DemoApp() {
         </Box>
       )}
 
-      {/* Header */}
-      <Box paddingBottom={1}>
-        <Text bold>Fusion TUI</Text>
-        <Text> | Project: {projectPath}</Text>
-        <Text dimColor> (Press ? for help)</Text>
-      </Box>
+      {/* Responsive Header */}
+      <ResponsiveHeader title={`Fusion TUI | Project: ${projectPath}`} />
 
       {/* Screen Router */}
       <ScreenRouter
@@ -82,6 +89,24 @@ function DemoApp() {
               <Box flexDirection="column" paddingY={1}>
                 <Text bold>Board Screen</Text>
                 <Text dimColor>View and manage tasks on the kanban board</Text>
+
+                {/* Demo: Responsive Task Table */}
+                <Box marginTop={1}>
+                  <ResponsiveTable
+                    columns={[
+                      { header: "ID", minWidth: 10 },
+                      { header: "Description", minWidth: 30, canGrow: true, preferredWidth: 60 },
+                      { header: "Status", minWidth: 12 },
+                      { header: "Size", minWidth: 6 },
+                    ]}
+                    rows={[
+                      ["FN-001", "Implement user authentication with OAuth 2.0 integration", "todo", "M"],
+                      ["FN-002", "Fix memory leak in data processing pipeline caused by missing cleanup handlers", "in-progress", "L"],
+                      ["FN-003", "Update documentation", "done", "S"],
+                      ["FN-004", "Refactor API endpoints to use REST conventions and add proper error handling with retry logic", "review", "M"],
+                    ]}
+                  />
+                </Box>
               </Box>
             )}
             {activeScreen === "detail" && (
@@ -111,6 +136,9 @@ function DemoApp() {
           </Box>
         )}
       </ScreenRouter>
+
+      {/* Responsive Status Bar */}
+      <ResponsiveStatusBar />
     </Box>
   );
 }
