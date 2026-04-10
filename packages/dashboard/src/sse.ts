@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import type { TaskStore, MissionStore } from "@fusion/core";
+import type { TaskStore, MissionStore, PluginStore } from "@fusion/core";
 import type { AiSessionStore } from "./ai-session-store.js";
 
 let activeConnections = 0;
@@ -24,7 +24,7 @@ function safeWrite(res: Response, data: string): boolean {
   }
 }
 
-export function createSSE(store: TaskStore, missionStore?: MissionStore, aiSessionStore?: AiSessionStore) {
+export function createSSE(store: TaskStore, missionStore?: MissionStore, aiSessionStore?: AiSessionStore, pluginStore?: PluginStore) {
   return (_req: Request, res: Response) => {
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
@@ -113,6 +113,26 @@ export function createSSE(store: TaskStore, missionStore?: MissionStore, aiSessi
       send(`event: ai_session:deleted\ndata: ${JSON.stringify(data)}\n\n`);
     };
 
+    // Plugin event handlers
+    const onPluginRegistered = (data: any) => {
+      send(`event: plugin:registered\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+    const onPluginUnregistered = (data: any) => {
+      send(`event: plugin:unregistered\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+    const onPluginUpdated = (data: any) => {
+      send(`event: plugin:updated\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+    const onPluginEnabled = (data: any) => {
+      send(`event: plugin:enabled\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+    const onPluginDisabled = (data: any) => {
+      send(`event: plugin:disabled\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+    const onPluginStateChanged = (data: any) => {
+      send(`event: plugin:stateChanged\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+
     // --- Cleanup (all handlers are defined above, safe to reference) ---
 
     let cleaned = false;
@@ -147,6 +167,14 @@ export function createSSE(store: TaskStore, missionStore?: MissionStore, aiSessi
         aiSessionStore.off("ai_session:updated", onAiSessionUpdated);
         aiSessionStore.off("ai_session:deleted", onAiSessionDeleted);
       }
+      if (pluginStore) {
+        pluginStore.off("plugin:registered", onPluginRegistered);
+        pluginStore.off("plugin:unregistered", onPluginUnregistered);
+        pluginStore.off("plugin:updated", onPluginUpdated);
+        pluginStore.off("plugin:enabled", onPluginEnabled);
+        pluginStore.off("plugin:disabled", onPluginDisabled);
+        pluginStore.off("plugin:stateChanged", onPluginStateChanged);
+      }
     };
 
     // --- Subscribe ---
@@ -178,6 +206,15 @@ export function createSSE(store: TaskStore, missionStore?: MissionStore, aiSessi
     if (aiSessionStore) {
       aiSessionStore.on("ai_session:updated", onAiSessionUpdated);
       aiSessionStore.on("ai_session:deleted", onAiSessionDeleted);
+    }
+
+    if (pluginStore) {
+      pluginStore.on("plugin:registered", onPluginRegistered);
+      pluginStore.on("plugin:unregistered", onPluginUnregistered);
+      pluginStore.on("plugin:updated", onPluginUpdated);
+      pluginStore.on("plugin:enabled", onPluginEnabled);
+      pluginStore.on("plugin:disabled", onPluginDisabled);
+      pluginStore.on("plugin:stateChanged", onPluginStateChanged);
     }
 
     // Heartbeat every 30s to keep connection alive.
