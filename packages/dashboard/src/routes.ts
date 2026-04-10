@@ -247,6 +247,309 @@ function validateModelPresets(value: unknown): ModelPreset[] | undefined {
   });
 }
 
+// ── Run-Audit Timeline Types & Helpers ─────────────────────────────────────
+
+/** Valid domain filters for run-audit queries. */
+export type RunAuditDomainFilter = "database" | "git" | "filesystem";
+
+/** Filter options for run-audit queries. */
+export interface RunAuditQueryFilters {
+  /** Filter by task ID */
+  taskId?: string;
+  /** Filter by domain category */
+  domain?: RunAuditDomainFilter;
+  /** Start of time range (inclusive, ISO-8601) */
+  startTime?: string;
+  /** End of time range (inclusive, ISO-8601) */
+  endTime?: string;
+  /** Maximum number of events to return */
+  limit?: number;
+}
+
+/**
+ * Normalized run-audit event for UI consumption.
+ * Provides stable, user-friendly field names.
+ */
+export interface NormalizedRunAuditEvent {
+  /** Unique event identifier */
+  id: string;
+  /** ISO-8601 timestamp when the event occurred */
+  timestamp: string;
+  /** Task ID associated with this event (if applicable) */
+  taskId?: string;
+  /** Domain category: database, git, or filesystem */
+  domain: "database" | "git" | "filesystem";
+  /** Type of mutation (e.g., "task:update", "git:commit", "file:write") */
+  mutationType: string;
+  /** Target of the mutation (e.g., task ID, file path, branch name) */
+  target: string;
+  /** Human-readable summary of the mutation */
+  summary: string;
+  /** Structured metadata about the mutation */
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Unified timeline entry that can represent either an audit event or an agent log entry.
+ * Used for correlated timeline views.
+ */
+export interface TimelineEntry {
+  /** ISO-8601 timestamp when the entry occurred */
+  timestamp: string;
+  /** Entry type discriminator */
+  type: "audit" | "log";
+  /** Stable sort key to ensure deterministic ordering for identical timestamps */
+  sortKey: string;
+  /** Normalized audit event (when type is "audit") */
+  audit?: NormalizedRunAuditEvent;
+  /** Agent log entry (when type is "log") */
+  log?: import("@fusion/core").AgentLogEntry;
+}
+
+/**
+ * Response shape for GET /api/agents/:id/runs/:runId/audit
+ */
+export interface RunAuditResponse {
+  /** The run ID these events belong to */
+  runId: string;
+  /** Normalized audit events */
+  events: NormalizedRunAuditEvent[];
+  /** Filter metadata */
+  filters: {
+    taskId?: string;
+    domain?: RunAuditDomainFilter;
+    startTime?: string;
+    endTime?: string;
+  };
+  /** Total count of events matching filters */
+  totalCount: number;
+  /** Whether there are more events (when limit was applied) */
+  hasMore: boolean;
+}
+
+/**
+ * Response shape for GET /api/agents/:id/runs/:runId/timeline
+ */
+export interface RunTimelineResponse {
+  /** Run metadata */
+  run: {
+    id: string;
+    agentId: string;
+    startedAt: string;
+    endedAt?: string;
+    status: string;
+    taskId?: string;
+  };
+  /** Grouped audit events by domain */
+  auditByDomain: {
+    database: NormalizedRunAuditEvent[];
+    git: NormalizedRunAuditEvent[];
+    filesystem: NormalizedRunAuditEvent[];
+  };
+  /** Count metadata */
+  counts: {
+    auditEvents: number;
+    logEntries: number;
+  };
+  /** Merged and deterministically sorted timeline */
+  timeline: TimelineEntry[];
+}
+
+/**
+ * Parse and validate run-audit query filters from request query params.
+ * Throws ApiError with 400 for invalid values.
+ */
+function parseRunAuditFilters(query: Record<string, unknown>): RunAuditQueryFilters {
+  const filters: RunAuditQueryFilters = {};
+
+  // Parse taskId
+  if (query.taskId !== undefined) {
+    if (typeof query.taskId !== "string" || !query.taskId.trim()) {
+      throw new ApiError(400, "taskId must be a non-empty string");
+    }
+    filters.taskId = query.taskId.trim();
+  }
+
+  // Parse domain
+  if (query.domain !== undefined) {
+    if (typeof query.domain !== "string") {
+      throw new ApiError(400, "domain must be a string");
+    }
+    const domain = query.domain.toLowerCase();
+    if (domain !== "database" && domain !== "git" && domain !== "filesystem") {
+      throw new ApiError(400, "domain must be one of: database, git, filesystem");
+    }
+    filters.domain = domain as RunAuditDomainFilter;
+  }
+
+  // Parse startTime
+  if (query.startTime !== undefined) {
+    if (typeof query.startTime !== "string" || !query.startTime.trim()) {
+      throw new ApiError(400, "startTime must be a non-empty ISO-8601 string");
+    }
+    const date = new Date(query.startTime);
+    if (isNaN(date.getTime())) {
+      throw new ApiError(400, "startTime must be a valid ISO-8601 date string");
+    }
+    filters.startTime = query.startTime.trim();
+  }
+
+  // Parse endTime
+  if (query.endTime !== undefined) {
+    if (typeof query.endTime !== "string" || !query.endTime.trim()) {
+      throw new ApiError(400, "endTime must be a non-empty ISO-8601 string");
+    }
+    const date = new Date(query.endTime);
+    if (isNaN(date.getTime())) {
+      throw new ApiError(400, "endTime must be a valid ISO-8601 date string");
+    }
+    filters.endTime = query.endTime.trim();
+  }
+
+  // Validate time range consistency
+  if (filters.startTime && filters.endTime) {
+    const start = new Date(filters.startTime);
+    const end = new Date(filters.endTime);
+    if (start > end) {
+      throw new ApiError(400, "startTime must be before or equal to endTime");
+    }
+  }
+
+  // Parse limit
+  if (query.limit !== undefined) {
+    const limitStr = typeof query.limit === "string" ? query.limit : String(query.limit);
+    const limit = parseInt(limitStr, 10);
+    if (!Number.isFinite(limit) || limit < 1) {
+      throw new ApiError(400, "limit must be a positive integer");
+    }
+    filters.limit = Math.min(limit, 1000); // Cap at 1000
+  }
+
+  return filters;
+}
+
+/**
+ * Normalize a raw RunAuditEvent to a NormalizedRunAuditEvent for UI consumption.
+ */
+function normalizeRunAuditEvent(event: import("@fusion/core").RunAuditEvent): NormalizedRunAuditEvent {
+  // Generate a human-readable summary based on domain and mutation type
+  let summary = generateAuditSummary(event.domain, event.mutationType, event.target, event.metadata);
+
+  return {
+    id: event.id,
+    timestamp: event.timestamp,
+    taskId: event.taskId,
+    domain: event.domain,
+    mutationType: event.mutationType,
+    target: event.target,
+    summary,
+    metadata: event.metadata,
+  };
+}
+
+/**
+ * Generate a human-readable summary for an audit event.
+ */
+function generateAuditSummary(
+  domain: string,
+  mutationType: string,
+  target: string,
+  metadata?: Record<string, unknown>,
+): string {
+  const parts: string[] = [];
+
+  // Add domain prefix
+  switch (domain) {
+    case "database":
+      parts.push("DB");
+      break;
+    case "git":
+      parts.push("Git");
+      break;
+    case "filesystem":
+      parts.push("FS");
+      break;
+    default:
+      parts.push(domain);
+  }
+
+  // Add mutation action
+  const action = mutationType.split(":").pop() ?? mutationType;
+  parts.push(action);
+
+  // Add target context
+  if (target) {
+    // Truncate long targets for readability
+    const displayTarget = target.length > 50 ? `${target.slice(0, 47)}...` : target;
+    parts.push(`(${displayTarget})`);
+  }
+
+  return parts.join(" ");
+}
+
+/**
+ * Sort comparator for timeline entries with deterministic tie-breaking.
+ * Primary sort: timestamp ascending
+ * Tie-breaker: sortKey ascending (which incorporates type and event ID)
+ */
+function compareTimelineEntries(a: TimelineEntry, b: TimelineEntry): number {
+  const timeA = new Date(a.timestamp).getTime();
+  const timeB = new Date(b.timestamp).getTime();
+
+  if (timeA !== timeB) {
+    return timeA - timeB;
+  }
+
+  // Deterministic tie-breaker: sortKey ascending
+  // This ensures consistent ordering when timestamps are identical
+  return a.sortKey.localeCompare(b.sortKey);
+}
+
+/**
+ * Create a stable sort key for a timeline entry.
+ * Format: "{type_prefix}_{timestamp_ms}_{entry_id}"
+ * The type prefix ensures audit events and log entries don't conflict.
+ * The timestamp in ms ensures microsecond precision.
+ * The entry ID provides final tie-breaking.
+ */
+function createTimelineSortKey(
+  type: "audit" | "log",
+  timestamp: string,
+  id: string,
+): string {
+  const ms = new Date(timestamp).getTime();
+  const typePrefix = type === "audit" ? "A" : "L";
+  // Use a sanitized ID that won't interfere with sorting
+  const sanitizedId = id.replace(/[^a-zA-Z0-9_-]/g, "_");
+  return `${typePrefix}_${String(ms).padStart(16, "0")}_${sanitizedId}`;
+}
+
+/**
+ * Convert an audit event to a timeline entry.
+ */
+function auditEventToTimelineEntry(event: import("@fusion/core").RunAuditEvent): TimelineEntry {
+  const normalized = normalizeRunAuditEvent(event);
+  return {
+    timestamp: event.timestamp,
+    type: "audit",
+    sortKey: createTimelineSortKey("audit", event.timestamp, event.id),
+    audit: normalized,
+  };
+}
+
+/**
+ * Convert an agent log entry to a timeline entry.
+ */
+function logEntryToTimelineEntry(entry: import("@fusion/core").AgentLogEntry): TimelineEntry {
+  // Use timestamp as the unique sort key for log entries (AgentLogEntry has no id field)
+  return {
+    timestamp: entry.timestamp,
+    type: "log",
+    sortKey: createTimelineSortKey("log", entry.timestamp, entry.timestamp),
+    log: entry,
+  };
+}
+
 // ── Git Remote Detection ──────────────────────────────────────────
 
 /** Git remote info returned by the remotes endpoint */
@@ -10087,6 +10390,221 @@ Output ONLY the prompt text (no markdown, no explanations).`;
       // Query mutation trail
       const mutations = await scopedStore.getMutationsForRun(req.params.runId);
       res.json({ runId: req.params.runId, mutations });
+    } catch (err: any) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      if (err.message?.includes("not found")) {
+        throw notFound(err.message);
+      } else {
+        rethrowAsApiError(err);
+      }
+    }
+  });
+
+  /**
+   * GET /api/agents/:id/runs/:runId/audit
+   * Get normalized run-audit events for a specific agent run.
+   *
+   * Query params:
+   *   - taskId: Filter by task ID
+   *   - domain: Filter by domain (database, git, filesystem)
+   *   - startTime: Start of time range (ISO-8601)
+   *   - endTime: End of time range (ISO-8601)
+   *   - limit: Maximum events to return (default 100, max 1000)
+   *
+   * Response: RunAuditResponse with normalized events and filter metadata
+   */
+  router.get("/agents/:id/runs/:runId/audit", async (req, res) => {
+    try {
+      const scopedStore = await getScopedStore(req);
+      const { AgentStore } = await import("@fusion/core");
+      const agentStore = new AgentStore({ rootDir: scopedStore.getFusionDir() });
+      await agentStore.init();
+
+      // Verify the run exists
+      const run = await agentStore.getRunDetail(req.params.id, req.params.runId);
+      if (!run) {
+        throw notFound("Run not found");
+      }
+
+      // Parse and validate query filters
+      const filters = parseRunAuditFilters(req.query as Record<string, unknown>);
+
+      // Query run-audit events with runId as the primary filter
+      const auditEvents = scopedStore.getRunAuditEvents({
+        runId: req.params.runId,
+        taskId: filters.taskId,
+        domain: filters.domain,
+        startTime: filters.startTime,
+        endTime: filters.endTime,
+        limit: filters.limit,
+      });
+
+      // Normalize events for UI consumption
+      const normalizedEvents = auditEvents.map(normalizeRunAuditEvent);
+
+      // Get total count (without limit) for pagination metadata
+      const totalEvents = scopedStore.getRunAuditEvents({
+        runId: req.params.runId,
+        taskId: filters.taskId,
+        domain: filters.domain,
+        startTime: filters.startTime,
+        endTime: filters.endTime,
+      });
+
+      const response: RunAuditResponse = {
+        runId: req.params.runId,
+        events: normalizedEvents,
+        filters: {
+          taskId: filters.taskId,
+          domain: filters.domain,
+          startTime: filters.startTime,
+          endTime: filters.endTime,
+        },
+        totalCount: totalEvents.length,
+        hasMore: filters.limit !== undefined && totalEvents.length > filters.limit,
+      };
+
+      res.json(response);
+    } catch (err: any) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      if (err.message?.includes("not found")) {
+        throw notFound(err.message);
+      } else {
+        rethrowAsApiError(err);
+      }
+    }
+  });
+
+  /**
+   * GET /api/agents/:id/runs/:runId/timeline
+   * Get a correlated timeline combining run-audit events and agent logs for a specific run.
+   *
+   * Query params:
+   *   - taskId: Override task ID for audit filtering (defaults to run's contextSnapshot.taskId)
+   *   - domain: Filter audit events by domain (database, git, filesystem)
+   *   - startTime: Start of time range (ISO-8601)
+   *   - endTime: End of time range (ISO-8601)
+   *   - includeLogs: Whether to include agent logs (default true)
+   *   - limit: Maximum audit events to return (default 100, max 1000)
+   *
+   * Response: RunTimelineResponse with run metadata, grouped audit events, and merged timeline
+   */
+  router.get("/agents/:id/runs/:runId/timeline", async (req, res) => {
+    try {
+      const scopedStore = await getScopedStore(req);
+      const { AgentStore } = await import("@fusion/core");
+      const agentStore = new AgentStore({ rootDir: scopedStore.getFusionDir() });
+      await agentStore.init();
+
+      // Verify the run exists
+      const run = await agentStore.getRunDetail(req.params.id, req.params.runId);
+      if (!run) {
+        throw notFound("Run not found");
+      }
+
+      // Parse and validate query filters
+      const filters = parseRunAuditFilters(req.query as Record<string, unknown>);
+
+      // Check includeLogs flag (default true)
+      const includeLogs = (() => {
+        if (req.query.includeLogs === undefined) return true;
+        if (typeof req.query.includeLogs === "string") {
+          const val = req.query.includeLogs.toLowerCase();
+          return val === "true" || val === "1";
+        }
+        if (typeof req.query.includeLogs === "boolean") {
+          return req.query.includeLogs;
+        }
+        return true;
+      })();
+
+      // Determine the task ID for audit filtering
+      // Use explicit taskId filter if provided, otherwise fall back to run's contextSnapshot.taskId
+      const auditTaskId = (filters.taskId ?? run.contextSnapshot?.taskId ?? undefined) as string | undefined;
+
+      // Query run-audit events
+      const auditEvents = scopedStore.getRunAuditEvents({
+        runId: req.params.runId,
+        taskId: auditTaskId,
+        domain: filters.domain,
+        startTime: filters.startTime,
+        endTime: filters.endTime,
+        limit: filters.limit,
+      });
+
+      // Normalize events
+      const normalizedAuditEvents = auditEvents.map(normalizeRunAuditEvent);
+
+      // Group audit events by domain
+      const auditByDomain: RunTimelineResponse["auditByDomain"] = {
+        database: [],
+        git: [],
+        filesystem: [],
+      };
+
+      for (const event of normalizedAuditEvents) {
+        if (event.domain === "database") {
+          auditByDomain.database.push(event);
+        } else if (event.domain === "git") {
+          auditByDomain.git.push(event);
+        } else if (event.domain === "filesystem") {
+          auditByDomain.filesystem.push(event);
+        }
+      }
+
+      // Build timeline entries
+      const timelineEntries: TimelineEntry[] = [];
+
+      // Add audit events to timeline
+      for (const event of auditEvents) {
+        timelineEntries.push(auditEventToTimelineEntry(event));
+      }
+
+      // Add agent logs to timeline if requested and we have a task ID
+      if (includeLogs && run.startedAt) {
+        const taskId = auditTaskId;
+        if (taskId) {
+          const logs = await scopedStore.getAgentLogsByTimeRange(
+            taskId,
+            run.startedAt,
+            run.endedAt,
+          );
+
+          for (const log of logs) {
+            timelineEntries.push(logEntryToTimelineEntry(log));
+          }
+        }
+      }
+
+      // Sort timeline deterministically
+      timelineEntries.sort(compareTimelineEntries);
+
+      const response: RunTimelineResponse = {
+        run: {
+          id: run.id,
+          agentId: run.agentId,
+          startedAt: run.startedAt,
+          endedAt: run.endedAt ?? undefined,
+          status: run.status,
+          taskId: (auditTaskId ?? undefined) as string | undefined,
+        },
+        auditByDomain,
+        counts: {
+          auditEvents: normalizedAuditEvents.length,
+          logEntries: includeLogs && auditTaskId ? (await scopedStore.getAgentLogsByTimeRange(
+            auditTaskId,
+            run.startedAt,
+            run.endedAt,
+          )).length : 0,
+        },
+        timeline: timelineEntries,
+      };
+
+      res.json(response);
     } catch (err: any) {
       if (err instanceof ApiError) {
         throw err;

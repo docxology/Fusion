@@ -37,6 +37,7 @@ import type {
   AgentRatingInput,
   ChatSession,
   ChatMessage,
+  RunAuditEvent,
 } from "@fusion/core";
 import type { PlanningQuestion, PlanningSummary, PlanningResponse } from "@fusion/core";
 import type { ScheduledTask, ScheduledTaskCreateInput, ScheduledTaskUpdateInput, AutomationRunResult, AutomationStep, Routine, RoutineCreateInput, RoutineUpdateInput, RoutineExecutionResult } from "@fusion/core";
@@ -2219,6 +2220,150 @@ export function stopAgentRun(
     {
       method: "POST",
     },
+  );
+}
+
+// ── Run-Audit & Timeline API ────────────────────────────────────────────────
+
+/** Valid domain filters for run-audit queries. */
+export type RunAuditDomainFilter = "database" | "git" | "filesystem";
+
+/** Filter options for run-audit queries. */
+export interface RunAuditFilters {
+  /** Filter by task ID */
+  taskId?: string;
+  /** Filter by domain category */
+  domain?: RunAuditDomainFilter;
+  /** Start of time range (inclusive, ISO-8601) */
+  startTime?: string;
+  /** End of time range (inclusive, ISO-8601) */
+  endTime?: string;
+  /** Maximum number of events to return */
+  limit?: number;
+}
+
+/** Normalized run-audit event for UI consumption. */
+export interface NormalizedRunAuditEvent {
+  id: string;
+  timestamp: string;
+  taskId?: string;
+  domain: "database" | "git" | "filesystem";
+  mutationType: string;
+  target: string;
+  summary: string;
+  metadata?: Record<string, unknown>;
+}
+
+/** Response shape for run-audit endpoint. */
+export interface RunAuditResponse {
+  runId: string;
+  events: NormalizedRunAuditEvent[];
+  filters: {
+    taskId?: string;
+    domain?: RunAuditDomainFilter;
+    startTime?: string;
+    endTime?: string;
+  };
+  totalCount: number;
+  hasMore: boolean;
+}
+
+/** Unified timeline entry that can represent either an audit event or an agent log entry. */
+export interface TimelineEntry {
+  timestamp: string;
+  type: "audit" | "log";
+  sortKey: string;
+  audit?: NormalizedRunAuditEvent;
+  log?: AgentLogEntry;
+}
+
+/** Response shape for run-timeline endpoint. */
+export interface RunTimelineResponse {
+  run: {
+    id: string;
+    agentId: string;
+    startedAt: string;
+    endedAt?: string;
+    status: string;
+    taskId?: string;
+  };
+  auditByDomain: {
+    database: NormalizedRunAuditEvent[];
+    git: NormalizedRunAuditEvent[];
+    filesystem: NormalizedRunAuditEvent[];
+  };
+  counts: {
+    auditEvents: number;
+    logEntries: number;
+  };
+  timeline: TimelineEntry[];
+}
+
+/**
+ * Fetch normalized run-audit events for a specific agent run.
+ *
+ * @param agentId - The agent ID
+ * @param runId - The run ID
+ * @param filters - Optional filter parameters
+ * @param projectId - Optional project ID for multi-project workspaces
+ * @returns Promise resolving to RunAuditResponse with normalized events
+ */
+export function fetchAgentRunAudit(
+  agentId: string,
+  runId: string,
+  filters?: RunAuditFilters,
+  projectId?: string,
+): Promise<RunAuditResponse> {
+  const params = new URLSearchParams();
+  if (filters?.taskId) params.set("taskId", filters.taskId);
+  if (filters?.domain) params.set("domain", filters.domain);
+  if (filters?.startTime) params.set("startTime", filters.startTime);
+  if (filters?.endTime) params.set("endTime", filters.endTime);
+  if (filters?.limit !== undefined) params.set("limit", String(filters.limit));
+  const query = params.size > 0 ? `?${params.toString()}` : "";
+  return api<RunAuditResponse>(
+    withProjectId(`/agents/${encodeURIComponent(agentId)}/runs/${encodeURIComponent(runId)}/audit${query}`, projectId),
+  );
+}
+
+/**
+ * Fetch a correlated timeline combining run-audit events and agent logs for a specific run.
+ *
+ * @param agentId - The agent ID
+ * @param runId - The run ID
+ * @param options - Optional parameters
+ * @param options.taskId - Override task ID for audit filtering (defaults to run's contextSnapshot.taskId)
+ * @param options.domain - Filter audit events by domain
+ * @param options.startTime - Start of time range (ISO-8601)
+ * @param options.endTime - End of time range (ISO-8601)
+ * @param options.includeLogs - Whether to include agent logs (default true)
+ * @param options.limit - Maximum audit events to return
+ * @param projectId - Optional project ID for multi-project workspaces
+ * @returns Promise resolving to RunTimelineResponse with merged timeline
+ */
+export function fetchAgentRunTimeline(
+  agentId: string,
+  runId: string,
+  options?: {
+    taskId?: string;
+    domain?: RunAuditDomainFilter;
+    startTime?: string;
+    endTime?: string;
+    includeLogs?: boolean;
+    limit?: number;
+  },
+  projectId?: string,
+): Promise<RunTimelineResponse> {
+  const params = new URLSearchParams();
+  if (options?.taskId) params.set("taskId", options.taskId);
+  if (options?.domain) params.set("domain", options.domain);
+  if (options?.startTime) params.set("startTime", options.startTime);
+  if (options?.endTime) params.set("endTime", options.endTime);
+  if (options?.includeLogs !== undefined) params.set("includeLogs", String(options.includeLogs));
+  if (options?.limit !== undefined) params.set("limit", String(options.limit));
+  const query = params.size > 0 ? `?${params.toString()}` : "";
+  return api<RunTimelineResponse>(
+    withProjectId(`/agents/${encodeURIComponent(agentId)}/runs/${encodeURIComponent(runId)}/timeline${query}`, projectId),
   );
 }
 

@@ -681,6 +681,45 @@ When `FUSION_BADGE_PUBSUB_REDIS_URL` is not set, the dashboard uses an in-memory
 - `GET /api/messages/conversation/:participantType/:participantId` - Get conversation thread
 - `GET /api/agents/:id/mailbox` - View agent mailbox (admin read-only)
 
+### Agent Run Audit APIs
+
+The dashboard exposes run-audit retrieval and correlation endpoints for inspecting agent run mutations and timelines:
+
+#### Run Audit Events
+
+- `GET /api/agents/:id/runs/:runId/audit` - Get normalized audit events for a specific run
+  - **Query parameters:**
+    - `taskId` (optional): Filter by task ID
+    - `domain` (optional): Filter by domain (`database`, `git`, `filesystem`)
+    - `startTime` (optional): ISO-8601 start of time range (inclusive)
+    - `endTime` (optional): ISO-8601 end of time range (inclusive)
+    - `limit` (optional): Maximum events to return (1-1000, default 100)
+  - **Response:** Array of normalized audit events with stable UI-friendly field names
+  - **Error codes:** `400` for invalid filters, `404` for unknown run
+
+#### Run Timeline
+
+- `GET /api/agents/:id/runs/:runId/timeline` - Get correlated timeline combining audit events and agent logs
+  - **Query parameters:**
+    - `taskId` (optional): Filter by task ID (defaults to run's contextSnapshot.taskId)
+    - `domain` (optional): Filter by domain (`database`, `git`, `filesystem`)
+    - `startTime` (optional): ISO-8601 start of time range (inclusive)
+    - `endTime` (optional): ISO-8601 end of time range (inclusive)
+    - `includeLogs` (optional): Include agent logs (default `true`)
+  - **Response:**
+    - `run`: Run metadata (id, agentId, startedAt, endedAt, status, taskId)
+    - `auditByDomain`: Audit events grouped by domain (database, git, filesystem)
+    - `counts`: Metadata counts (auditEvents, logEntries)
+    - `timeline`: Merged and deterministically sorted timeline entries
+  - **Error codes:** `400` for invalid filters, `404` for unknown run
+
+**Timeline Sorting:** Entries are sorted by timestamp with a stable tie-breaker (entry type + domain) to ensure deterministic ordering when timestamps collide.
+
+**Audit Event Domains:**
+- `database`: Database mutations (task updates, status changes)
+- `git`: Git mutations (commits, branch operations)
+- `filesystem`: Filesystem mutations (file reads, writes, deletes)
+
 ### Configuration
 - `GET /api/config` - Server configuration
 - `GET /api/settings` - Merged settings (project overrides global)

@@ -16,6 +16,12 @@ const mockEndHeartbeatRun = vi.fn();
 const mockListAgents = vi.fn().mockResolvedValue([]);
 const mockGetActiveHeartbeatRun = vi.fn().mockResolvedValue(null);
 
+// Mock ChatStore methods
+const mockChatStoreInit = vi.fn().mockResolvedValue(undefined);
+
+// Mock getRunAuditEvents
+const mockGetRunAuditEvents = vi.fn().mockReturnValue([]);
+
 vi.mock("@fusion/core", () => {
   return {
     AgentStore: class MockAgentStore {
@@ -31,12 +37,31 @@ vi.mock("@fusion/core", () => {
       listAgents = mockListAgents;
       getActiveHeartbeatRun = mockGetActiveHeartbeatRun;
     },
+    ChatStore: class MockChatStore {
+      init = mockChatStoreInit;
+    },
   };
 });
 
+// ── Mock project-store-resolver ─────────────────────────────────────
+
+const mockGetOrCreateProjectStore = vi.fn();
+
+vi.mock("../project-store-resolver.js", () => ({
+  getOrCreateProjectStore: mockGetOrCreateProjectStore,
+}));
+
 // ── Mock Store ────────────────────────────────────────────────────────
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type TaskStore = any;
+
 class MockStore extends EventEmitter {
+  // Mock methods for run-audit and mutations
+  getRunAuditEvents = mockGetRunAuditEvents;
+  getMutationsForRun = vi.fn().mockResolvedValue([]);
+  getAgentLogsByTimeRange = vi.fn().mockResolvedValue([]);
+
   getRootDir(): string {
     return "/tmp/fn-1059-test";
   }
@@ -483,22 +508,16 @@ describe("Agent runs routes (with HeartbeatMonitor)", () => {
   });
 
   describe("GET /api/agents/:id/runs/:runId/mutations", () => {
-    beforeEach(() => {
-      // Reset scoped store mock
-      mockScopedStore = createMockScopedStore();
-      (createScopedStore as any).mockReturnValue(mockScopedStore);
-    });
-
     it("returns mutation trail for a valid run", async () => {
       const mockRun = createMockRun();
       mockGetRunDetail.mockResolvedValue(mockRun);
 
-      // Mock getMutationsForRun on the scoped store
+      // Mock getMutationsForRun on the store
       const mockMutations = [
         { timestamp: "2026-01-01T00:01:00.000Z", action: "Action 1", runContext: { runId: "run-123", agentId: "agent-001" } },
         { timestamp: "2026-01-01T00:02:00.000Z", action: "Action 2", runContext: { runId: "run-123", agentId: "agent-001" } },
       ];
-      mockScopedStore.getMutationsForRun = vi.fn().mockResolvedValue(mockMutations);
+      store.getMutationsForRun = vi.fn().mockResolvedValue(mockMutations);
 
       const response = await request(app, "GET", "/api/agents/agent-001/runs/run-123/mutations");
 
@@ -507,7 +526,7 @@ describe("Agent runs routes (with HeartbeatMonitor)", () => {
         runId: "run-123",
         mutations: mockMutations,
       });
-      expect(mockScopedStore.getMutationsForRun).toHaveBeenCalledWith("run-123");
+      expect(store.getMutationsForRun).toHaveBeenCalledWith("run-123");
     });
 
     it("returns 404 for unknown run", async () => {
@@ -524,7 +543,7 @@ describe("Agent runs routes (with HeartbeatMonitor)", () => {
       mockGetRunDetail.mockResolvedValue(mockRun);
 
       // Mock getMutationsForRun returning empty array
-      mockScopedStore.getMutationsForRun = vi.fn().mockResolvedValue([]);
+      store.getMutationsForRun = vi.fn().mockResolvedValue([]);
 
       const response = await request(app, "GET", "/api/agents/agent-001/runs/run-empty/mutations");
 
@@ -533,6 +552,242 @@ describe("Agent runs routes (with HeartbeatMonitor)", () => {
         runId: "run-empty",
         mutations: [],
       });
+    });
+  });
+
+  describe("GET /api/agents/:id/runs/:runId/audit", () => {
+    it("returns normalized audit events for a valid run", async () => {
+      const mockRun = createMockRun();
+      mockGetRunDetail.mockResolvedValue(mockRun);
+
+      // Mock getRunAuditEvents
+      const mockAuditEvents = [
+        {
+          id: "audit-1",
+          timestamp: "2026-01-01T00:01:00.000Z",
+          agentId: "agent-001",
+          runId: "run-001",
+          domain: "database",
+          mutationType: "task:update",
+          target: "FN-001",
+          taskId: "FN-001",
+        },
+        {
+          id: "audit-2",
+          timestamp: "2026-01-01T00:02:00.000Z",
+          agentId: "agent-001",
+          runId: "run-001",
+          domain: "git",
+          mutationType: "git:commit",
+          target: "fusion/FN-001",
+        },
+      ];
+      mockGetRunAuditEvents.mockReturnValue(mockAuditEvents);
+
+      const response = await request(app, "GET", "/api/agents/agent-001/runs/run-001/audit");
+
+      expect(response.status).toBe(200);
+      expect(response.body.runId).toBe("run-001");
+      expect(Array.isArray(response.body.events)).toBe(true);
+      expect(response.body.events.length).toBe(2);
+      expect(response.body.totalCount).toBe(2);
+      expect(response.body.hasMore).toBe(false);
+      // Check normalized fields
+      expect(response.body.events[0].summary).toBe("DB update (FN-001)");
+      expect(response.body.events[1].summary).toBe("Git commit (fusion/FN-001)");
+    });
+
+    it("returns 404 for unknown run", async () => {
+      mockGetRunDetail.mockResolvedValue(null);
+
+      const response = await request(app, "GET", "/api/agents/agent-001/runs/run-unknown/audit");
+
+      expect(response.status).toBe(404);
+      expect(response.body).toHaveProperty("error");
+    });
+
+    it("returns empty events array when no audit events exist", async () => {
+      const mockRun = createMockRun();
+      mockGetRunDetail.mockResolvedValue(mockRun);
+      mockGetRunAuditEvents.mockReturnValue([]);
+
+      const response = await request(app, "GET", "/api/agents/agent-001/runs/run-001/audit");
+
+      expect(response.status).toBe(200);
+      expect(response.body.events).toEqual([]);
+      expect(response.body.totalCount).toBe(0);
+    });
+
+    it("applies domain filter correctly", async () => {
+      const mockRun = createMockRun();
+      mockGetRunDetail.mockResolvedValue(mockRun);
+      mockGetRunAuditEvents.mockReturnValue([]);
+
+      const response = await request(app, "GET", "/api/agents/agent-001/runs/run-001/audit?domain=git");
+
+      expect(response.status).toBe(200);
+      expect(mockGetRunAuditEvents).toHaveBeenCalledWith(
+        expect.objectContaining({ domain: "git" }),
+      );
+    });
+
+    it("returns 400 for invalid domain filter", async () => {
+      const mockRun = createMockRun();
+      mockGetRunDetail.mockResolvedValue(mockRun);
+
+      const response = await request(app, "GET", "/api/agents/agent-001/runs/run-001/audit?domain=invalid");
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toContain("domain must be one of");
+    });
+
+    it("returns 400 for invalid limit", async () => {
+      const mockRun = createMockRun();
+      mockGetRunDetail.mockResolvedValue(mockRun);
+
+      const response = await request(app, "GET", "/api/agents/agent-001/runs/run-001/audit?limit=-1");
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toContain("limit must be a positive integer");
+    });
+  });
+
+  describe("GET /api/agents/:id/runs/:runId/timeline", () => {
+    it("returns correlated timeline with audit events and logs", async () => {
+      const mockRun = createMockRun({
+        status: "completed",
+        endedAt: "2026-01-01T00:10:00.000Z",
+        contextSnapshot: { taskId: "FN-001" },
+      });
+      mockGetRunDetail.mockResolvedValue(mockRun);
+
+      // Mock audit events
+      const mockAuditEvents = [
+        {
+          id: "audit-1",
+          timestamp: "2026-01-01T00:01:00.000Z",
+          agentId: "agent-001",
+          runId: "run-001",
+          domain: "database",
+          mutationType: "task:update",
+          target: "FN-001",
+          taskId: "FN-001",
+        },
+      ];
+      mockGetRunAuditEvents.mockReturnValue(mockAuditEvents);
+
+      // Mock logs
+      const mockLogs = [
+        { id: "log-1", timestamp: "2026-01-01T00:00:30.000Z", type: "info", message: "Starting task" },
+        { id: "log-2", timestamp: "2026-01-01T00:01:30.000Z", type: "info", message: "Task completed" },
+      ];
+      store.getAgentLogsByTimeRange = vi.fn().mockResolvedValue(mockLogs);
+
+      const response = await request(app, "GET", "/api/agents/agent-001/runs/run-001/timeline");
+
+      expect(response.status).toBe(200);
+      expect(response.body.run.id).toBe("run-001");
+      expect(response.body.run.taskId).toBe("FN-001");
+      expect(Array.isArray(response.body.auditByDomain.database)).toBe(true);
+      expect(Array.isArray(response.body.auditByDomain.git)).toBe(true);
+      expect(Array.isArray(response.body.auditByDomain.filesystem)).toBe(true);
+      expect(response.body.auditByDomain.database.length).toBe(1);
+      expect(response.body.counts.auditEvents).toBe(1);
+      expect(response.body.counts.logEntries).toBe(2);
+      expect(Array.isArray(response.body.timeline)).toBe(true);
+      expect(response.body.timeline.length).toBe(3); // 1 audit + 2 logs
+      // Timeline should be sorted by timestamp
+      expect(response.body.timeline[0].type).toBe("log"); // Earlier log
+      expect(response.body.timeline[1].type).toBe("audit"); // Audit event
+      expect(response.body.timeline[2].type).toBe("log"); // Later log
+    });
+
+    it("returns 404 for unknown run", async () => {
+      mockGetRunDetail.mockResolvedValue(null);
+
+      const response = await request(app, "GET", "/api/agents/agent-001/runs/run-unknown/timeline");
+
+      expect(response.status).toBe(404);
+      expect(response.body).toHaveProperty("error");
+    });
+
+    it("respects includeLogs=false parameter", async () => {
+      const mockRun = createMockRun({
+        contextSnapshot: { taskId: "FN-001" },
+      });
+      mockGetRunDetail.mockResolvedValue(mockRun);
+      mockGetRunAuditEvents.mockReturnValue([]);
+
+      const response = await request(app, "GET", "/api/agents/agent-001/runs/run-001/timeline?includeLogs=false");
+
+      expect(response.status).toBe(200);
+      expect(response.body.counts.logEntries).toBe(0);
+    });
+
+    it("handles empty audit and log results gracefully", async () => {
+      const mockRun = createMockRun({
+        status: "completed",
+        endedAt: "2026-01-01T00:10:00.000Z",
+        contextSnapshot: { taskId: "FN-001" },
+      });
+      mockGetRunDetail.mockResolvedValue(mockRun);
+      mockGetRunAuditEvents.mockReturnValue([]);
+      store.getAgentLogsByTimeRange = vi.fn().mockResolvedValue([]);
+
+      const response = await request(app, "GET", "/api/agents/agent-001/runs/run-001/timeline");
+
+      expect(response.status).toBe(200);
+      expect(response.body.auditByDomain.database).toEqual([]);
+      expect(response.body.auditByDomain.git).toEqual([]);
+      expect(response.body.auditByDomain.filesystem).toEqual([]);
+      expect(response.body.counts.auditEvents).toBe(0);
+      expect(response.body.counts.logEntries).toBe(0);
+      expect(response.body.timeline).toEqual([]);
+    });
+
+    it("groups audit events by domain correctly", async () => {
+      const mockRun = createMockRun();
+      mockGetRunDetail.mockResolvedValue(mockRun);
+
+      const mockAuditEvents = [
+        {
+          id: "audit-db",
+          timestamp: "2026-01-01T00:01:00.000Z",
+          agentId: "agent-001",
+          runId: "run-001",
+          domain: "database",
+          mutationType: "task:update",
+          target: "FN-001",
+        },
+        {
+          id: "audit-git",
+          timestamp: "2026-01-01T00:02:00.000Z",
+          agentId: "agent-001",
+          runId: "run-001",
+          domain: "git",
+          mutationType: "git:commit",
+          target: "branch",
+        },
+        {
+          id: "audit-fs",
+          timestamp: "2026-01-01T00:03:00.000Z",
+          agentId: "agent-001",
+          runId: "run-001",
+          domain: "filesystem",
+          mutationType: "file:write",
+          target: "src/main.ts",
+        },
+      ];
+      mockGetRunAuditEvents.mockReturnValue(mockAuditEvents);
+      store.getAgentLogsByTimeRange = vi.fn().mockResolvedValue([]);
+
+      const response = await request(app, "GET", "/api/agents/agent-001/runs/run-001/timeline");
+
+      expect(response.status).toBe(200);
+      expect(response.body.auditByDomain.database.length).toBe(1);
+      expect(response.body.auditByDomain.git.length).toBe(1);
+      expect(response.body.auditByDomain.filesystem.length).toBe(1);
+      expect(response.body.counts.auditEvents).toBe(3);
     });
   });
 });
