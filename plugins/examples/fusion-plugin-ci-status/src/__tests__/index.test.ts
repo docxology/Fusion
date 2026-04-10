@@ -243,7 +243,7 @@ describe("ci-status plugin", () => {
           (r) => r.method === "GET" && r.path === "/status",
         )!;
 
-        const result = await route.handler(req as any, ctx as any);
+        const result = await route.handler(req as any, ctx as any) as { branches?: unknown[] };
 
         expect(result).toHaveProperty("branches");
         expect(Array.isArray(result.branches)).toBe(true);
@@ -281,7 +281,7 @@ describe("ci-status plugin", () => {
           (r) => r.method === "GET" && r.path === "/status/:branch",
         )!;
 
-        const result = await route.handler(req as any, ctx as any);
+        const result = await route.handler(req as any, ctx as any) as { branch?: string; status?: string };
 
         expect(result).toHaveProperty("branch", "fusion/fn-001");
         expect(result).toHaveProperty("status", "pending");
@@ -313,7 +313,7 @@ describe("ci-status plugin", () => {
           (r) => r.method === "POST" && r.path === "/refresh",
         )!;
 
-        const result = await route.handler(req as any, ctx as any);
+        const result = await route.handler(req as any, ctx as any) as { refreshed?: boolean; branches?: unknown[] };
 
         expect(result).toHaveProperty("refreshed", true);
         expect(result).toHaveProperty("branches");

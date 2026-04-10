@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "type": "module",
   "description": "Example Fusion plugin that sends webhook notifications on task lifecycle events",
-  "keywords": ["fusion-plugin"],
+  "keywords": [
+    "fusion-plugin"
+  ],
   "exports": {
     ".": {
       "types": "./src/index.ts",
@@ -17,5 +19,9 @@
   },
   "dependencies": {
     "@fusion/plugin-sdk": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.2",
+    "vitest": "^3.2.4"
   }
 }
