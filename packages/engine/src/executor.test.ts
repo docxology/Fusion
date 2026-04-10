@@ -364,6 +364,7 @@ describe("TaskExecutor worktreeInitCommand", () => {
       "FN-010",
       "Worktree init command completed",
       "pnpm install",
+      expect.objectContaining({ agentId: "executor" }),
     );
   });
 
@@ -410,6 +411,8 @@ describe("TaskExecutor worktreeInitCommand", () => {
     expect(store.logEntry).toHaveBeenCalledWith(
       "FN-010",
       expect.stringContaining("Worktree init command failed"),
+      undefined,
+      expect.objectContaining({ agentId: "executor" }),
     );
 
     // The init command failure itself does not abort execution, but the mocked
@@ -669,6 +672,8 @@ describe("TaskExecutor worktree naming", () => {
       expect(store.logEntry).toHaveBeenCalledWith(
         "FN-047",
         expect.stringContaining("Acquired worktree from pool"),
+        undefined,
+        expect.objectContaining({ agentId: "executor" }),
       );
     });
   });
@@ -715,6 +720,8 @@ describe("TaskExecutor worktree recovery", () => {
     expect(store.logEntry).toHaveBeenCalledWith(
       "FN-050",
       expect.stringContaining("Worktree created at"),
+      undefined,
+      expect.objectContaining({ agentId: "executor" }),
     );
     // execSync should be called for worktree creation
     expect(mockedExecSync).toHaveBeenCalledWith(
@@ -1393,6 +1400,8 @@ describe("TaskExecutor dependency-based worktree creation", () => {
     expect(store.logEntry).toHaveBeenCalledWith(
       "FN-062",
       expect.stringContaining("based on fusion/fn-061"),
+      undefined,
+      expect.objectContaining({ agentId: "executor" }),
     );
   });
 
@@ -1450,6 +1459,8 @@ describe("TaskExecutor dependency-based worktree creation", () => {
     expect(store.logEntry).toHaveBeenCalledWith(
       "FN-064",
       expect.stringContaining("Worktree created at /tmp/test/.worktrees/swift-falcon"),
+      undefined,
+      expect.objectContaining({ agentId: "executor" }),
     );
   });
 
@@ -1642,6 +1653,8 @@ describe("TaskExecutor worktree pool integration", () => {
     expect(store.logEntry).toHaveBeenCalledWith(
       "FN-020",
       expect.stringContaining("Acquired worktree from pool"),
+      undefined,
+      expect.objectContaining({ agentId: "executor" }),
     );
 
     // Pool should be empty after acquire
@@ -1717,6 +1730,8 @@ describe("TaskExecutor worktree pool integration", () => {
     expect(store.logEntry).toHaveBeenCalledWith(
       "FN-020",
       expect.stringContaining("Worktree created at"),
+      undefined,
+      expect.objectContaining({ agentId: "executor" }),
     );
   });
 
@@ -1808,6 +1823,8 @@ describe("TaskExecutor worktree pool integration", () => {
     expect(store.logEntry).toHaveBeenCalledWith(
       "FN-020",
       expect.stringContaining("Pool worktree preparation failed"),
+      undefined,
+      expect.objectContaining({ agentId: "executor" }),
     );
   });
 });
@@ -2490,7 +2507,7 @@ describe("TaskExecutor pause behavior", () => {
 
     // Agent created twice: initial resume + retry when agent finishes without task_done
     expect(mockedCreateHaiAgent).toHaveBeenCalledTimes(2);
-    expect(store.logEntry).toHaveBeenCalledWith("FN-001", "Resuming execution after unpause");
+    expect(store.logEntry).toHaveBeenCalledWith("FN-001", "Resuming execution after unpause", undefined, undefined);
   });
 
   it("clears stale failed state before resuming unpaused in-progress task", async () => {
@@ -2524,7 +2541,7 @@ describe("TaskExecutor pause behavior", () => {
     await new Promise((r) => setTimeout(r, 30));
 
     expect(store.updateTask).toHaveBeenCalledWith("FN-001", { status: null, error: null });
-    expect(store.logEntry).toHaveBeenCalledWith("FN-001", "Resuming execution after unpause");
+    expect(store.logEntry).toHaveBeenCalledWith("FN-001", "Resuming execution after unpause", undefined, undefined);
   });
 
   it("clears stale failed state before resuming orphaned in-progress task", async () => {
@@ -2742,6 +2759,8 @@ describe("TaskExecutor pause behavior", () => {
     expect(store.logEntry).toHaveBeenCalledWith(
       "FN-001",
       expect.stringContaining("Resumed agent session after unpause"),
+      undefined,
+      expect.objectContaining({ agentId: "executor" }),
     );
   });
 
@@ -2876,7 +2895,7 @@ describe("TaskExecutor executor model hot-swap", () => {
       provider: expect.objectContaining({ name: "openai" }),
       id: "gpt-4o",
     }));
-    expect(store.logEntry).toHaveBeenCalledWith("FN-001", "Model changed to openai/gpt-4o");
+    expect(store.logEntry).toHaveBeenCalledWith("FN-001", "Model changed to openai/gpt-4o", undefined, undefined);
   });
 
   it("does not attempt hot-swap when no active session exists", async () => {
@@ -2979,7 +2998,7 @@ describe("TaskExecutor executor model hot-swap", () => {
 
     await flushTaskUpdated();
 
-    expect(store.logEntry).toHaveBeenCalledWith("FN-001", "Model change failed: API key not found");
+    expect(store.logEntry).toHaveBeenCalledWith("FN-001", "Model change failed: API key not found", undefined, undefined);
     expect((executor as any).activeSessions.has("FN-001")).toBe(true);
   });
 
@@ -4772,7 +4791,7 @@ describe("TaskExecutor usage limit detection", () => {
 
     expect(onUsageLimitHitSpy).not.toHaveBeenCalled();
     // Recovery policy: first transient error → retry 1/3 with backoff
-    expect(store.logEntry).toHaveBeenCalledWith("FN-001", expect.stringContaining("Transient error (retry 1/3"));
+    expect(store.logEntry).toHaveBeenCalledWith("FN-001", expect.stringContaining("Transient error (retry 1/3"), undefined, expect.objectContaining({ agentId: "executor" }));
     expect(store.updateTask).toHaveBeenCalledWith("FN-001", expect.objectContaining({
       recoveryRetryCount: 1,
       nextRecoveryAt: expect.any(String),
@@ -5573,6 +5592,7 @@ describe("Invalid transition error handling", () => {
       "FN-001",
       "Task already moved from 'done' — skipping transition to 'in-review'",
       expect.stringContaining("Invalid transition"),
+      expect.objectContaining({ agentId: "executor" }),
     );
   });
 
@@ -5804,6 +5824,8 @@ describe("Workflow Steps Execution", () => {
     expect(store.logEntry).toHaveBeenCalledWith(
       "FN-001",
       "Agent finished without calling task_done (after retry) — moved to in-review for inspection",
+      undefined,
+      expect.objectContaining({ agentId: "executor" }),
     );
     expect(onError).toHaveBeenCalledWith(
       expect.objectContaining({ id: "FN-001" }),

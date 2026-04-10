@@ -943,6 +943,8 @@ describe("Worktree pool restart with recycleWorktrees=true", () => {
     expect(store.logEntry).toHaveBeenCalledWith(
       "FN-110",
       expect.stringContaining("Acquired worktree from pool"),
+      undefined,
+      expect.objectContaining({ agentId: "executor" }),
     );
   });
 

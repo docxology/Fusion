@@ -1367,7 +1367,7 @@ describe("HeartbeatMonitor", () => {
         await monitor.executeHeartbeat({ agentId: "agent-001", source: "on_demand" });
 
         expect(selectNextTaskForAgent).toHaveBeenCalledWith("agent-001");
-        expect(store.assignTask).toHaveBeenCalledWith("agent-001", "FN-INBOX");
+        expect(store.assignTask).toHaveBeenCalledWith("agent-001", "FN-INBOX", expect.objectContaining({ agentId: "agent-001" }));
         expect(mockTaskStore.getTask).toHaveBeenCalledWith("FN-INBOX");
       });
 
@@ -1495,7 +1495,7 @@ describe("HeartbeatMonitor", () => {
         const result = await monitor.executeHeartbeat({ agentId: "agent-001", source: "on_demand" });
 
         expect(selectNextTaskForAgent).toHaveBeenCalledWith("agent-001");
-        expect(checkoutTask).toHaveBeenCalledWith("FN-CHECKOUT", "agent-001");
+        expect(checkoutTask).toHaveBeenCalledWith("FN-CHECKOUT", "agent-001", expect.objectContaining({ agentId: "agent-001" }));
         expect(result.resultJson).toEqual({ reason: "no_assignment" });
         expect(mockedCreateKbAgent).not.toHaveBeenCalled();
       });
@@ -2248,6 +2248,8 @@ describe("HeartbeatMonitor", () => {
       expect(mockTaskStore.logEntry).toHaveBeenCalledWith(
         "FN-100",
         "Created by agent agent-001 during heartbeat run",
+        undefined,
+        undefined,
       );
     });
 
@@ -3075,7 +3077,7 @@ describe("HeartbeatTriggerScheduler", () => {
     it("createHeartbeatTools tracks task creations with runContext", async () => {
       // Create a minimal mock TaskStore
       const mockTaskStore = {
-        createTask: vi.fn().mockResolvedValue({ id: "FN-NEW", description: "New task created" }),
+        createTask: vi.fn().mockResolvedValue({ id: "FN-200", description: "New task created", dependencies: [] }),
         logEntry: vi.fn().mockResolvedValue({}),
         getTask: vi.fn().mockResolvedValue({
           id: "FN-001",
@@ -3104,7 +3106,7 @@ describe("HeartbeatTriggerScheduler", () => {
 
       // Verify logEntry was called with runContext for the created task
       expect(mockTaskStore.logEntry).toHaveBeenCalledWith(
-        "FN-NEW",
+        "FN-200",
         "Created by agent agent-abc during heartbeat run",
         undefined,
         runContext,

@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { existsSync } from "node:fs";
 import type { TaskStore, Task, TaskDetail, StepStatus, Settings, WorkflowStep, MissionStore, Slice, AgentState, AgentCapability, RunMutationContext } from "@fusion/core";
 import type { AgentStore } from "@fusion/core";
+import type { PluginRunner } from "@fusion/core";
 import { buildExecutionMemoryInstructions, resolveAgentPrompt } from "@fusion/core";
 import { findWorktreeUser } from "./merger.js";
 import { generateWorktreeName, slugify } from "./worktree-names.js";
@@ -253,6 +254,8 @@ export interface TaskExecutorOptions {
   agentStore?: import("@fusion/core").AgentStore;
   /** Reflection service used to generate self-reflection insights for agents. */
   reflectionService?: AgentReflectionService;
+  /** Plugin runner for invoking plugin hooks and providing plugin tools. */
+  pluginRunner?: PluginRunner;
   missionStore?: MissionStore;
   onSliceComplete?: (slice: Slice) => void;
   onStart?: (task: Task, worktreePath: string) => void;
@@ -1106,6 +1109,8 @@ export class TaskExecutor {
         this.createTaskDocumentReadTool(task.id),
         // Conditionally add agent self-reflection when enabled and task has an assigned agent.
         ...reflectionTools,
+        // Add plugin tools from PluginRunner
+        ...(this.options.pluginRunner?.getPluginTools() ?? []),
       ];
 
       const agentLogger = new AgentLogger({
