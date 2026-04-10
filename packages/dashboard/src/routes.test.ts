@@ -8,10 +8,11 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
+import { createHmac } from "node:crypto";
 import { createApiRoutes } from "./routes.js";
 import { GitHubClient } from "./github.js";
 import { githubRateLimiter } from "./github-poll.js";
-import type { TaskStore, TaskAttachment } from "@fusion/core";
+import type { TaskStore, TaskAttachment, Routine, RoutineCreateInput, RoutineUpdateInput, RoutineExecutionResult } from "@fusion/core";
 import type { TaskDetail } from "@fusion/core";
 import type { AuthStorageLike, ModelRegistryLike } from "./routes.js";
 import { __resetBatchImportRateLimiter, __setCreateKbAgentForRefine } from "./routes.js";
@@ -8110,6 +8111,463 @@ describe("Automation routes", () => {
       const res = await REQUEST(app, "POST", "/api/automations/sched-001/toggle");
       expect(res.status).toBe(200);
       expect(mockStore.updateSchedule).toHaveBeenCalledWith("sched-001", { enabled: false });
+    });
+  });
+});
+
+describe("Routine routes", () => {
+  const FAKE_ROUTINE = {
+    id: "routine-001",
+    name: "Test Routine",
+    description: "A test routine",
+    trigger: { type: "cron" as const, cronExpression: "0 * * * *" },
+    catchUpPolicy: "skip" as const,
+    executionPolicy: "queue" as const,
+    enabled: true,
+    runCount: 0,
+    runHistory: [] as RoutineExecutionResult[],
+    nextRunAt: "2026-04-01T00:00:00.000Z",
+    createdAt: "2026-03-30T00:00:00.000Z",
+    updatedAt: "2026-03-30T00:00:00.000Z",
+  };
+
+  function createMockRoutineStore() {
+    return {
+      listRoutines: vi.fn().mockResolvedValue([FAKE_ROUTINE]),
+      createRoutine: vi.fn().mockResolvedValue(FAKE_ROUTINE),
+      getRoutine: vi.fn().mockResolvedValue(FAKE_ROUTINE),
+      updateRoutine: vi.fn().mockResolvedValue(FAKE_ROUTINE),
+      deleteRoutine: vi.fn().mockResolvedValue(FAKE_ROUTINE),
+      recordRun: vi.fn().mockResolvedValue(FAKE_ROUTINE),
+      isValidCron: (expr: string) => expr === "0 * * * *",
+    };
+  }
+
+  function buildRoutineApp(routineStoreOverride?: ReturnType<typeof createMockRoutineStore>) {
+    const store = createMockStore();
+    const routineStore = routineStoreOverride ?? createMockRoutineStore();
+    const app = express();
+    app.use(express.json());
+    app.use("/api", createApiRoutes(store, { routineStore: routineStore as any }));
+    return { app, routineStore };
+  }
+
+  describe("GET /routines", () => {
+    it("returns all routines", async () => {
+      const { app, routineStore } = buildRoutineApp();
+      const res = await GET(app, "/api/routines");
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveLength(1);
+      expect(routineStore.listRoutines).toHaveBeenCalledTimes(1);
+    });
+
+    it("returns empty array when no routineStore provided", async () => {
+      const store = createMockStore();
+      const app = express();
+      app.use(express.json());
+      app.use("/api", createApiRoutes(store));
+      const res = await GET(app, "/api/routines");
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual([]);
+    });
+  });
+
+  describe("POST /routines", () => {
+    it("creates a routine with cron trigger", async () => {
+      const { app, routineStore } = buildRoutineApp();
+      const res = await REQUEST(app, "POST", "/api/routines", JSON.stringify({
+        name: "Test",
+        trigger: { type: "cron", cronExpression: "0 * * * *" },
+      }), { "Content-Type": "application/json" });
+      expect(res.status).toBe(201);
+      expect(routineStore.createRoutine).toHaveBeenCalledTimes(1);
+      expect(routineStore.createRoutine).toHaveBeenCalledWith(expect.objectContaining({
+        name: "Test",
+        trigger: { type: "cron", cronExpression: "0 * * * *" },
+      }));
+    });
+
+    it("creates a routine with webhook trigger", async () => {
+      const { app, routineStore } = buildRoutineApp();
+      const res = await REQUEST(app, "POST", "/api/routines", JSON.stringify({
+        name: "Webhook Routine",
+        trigger: { type: "webhook", webhookPath: "/trigger/test" },
+      }), { "Content-Type": "application/json" });
+      expect(res.status).toBe(201);
+      expect(routineStore.createRoutine).toHaveBeenCalledWith(expect.objectContaining({
+        trigger: { type: "webhook", webhookPath: "/trigger/test" },
+      }));
+    });
+
+    it("creates a routine with api trigger", async () => {
+      const { app, routineStore } = buildRoutineApp();
+      const res = await REQUEST(app, "POST", "/api/routines", JSON.stringify({
+        name: "API Routine",
+        trigger: { type: "api", endpoint: "/api/my-routine" },
+      }), { "Content-Type": "application/json" });
+      expect(res.status).toBe(201);
+      expect(routineStore.createRoutine).toHaveBeenCalledWith(expect.objectContaining({
+        trigger: { type: "api", endpoint: "/api/my-routine" },
+      }));
+    });
+
+    it("returns 400 for missing name", async () => {
+      const { app } = buildRoutineApp();
+      const res = await REQUEST(app, "POST", "/api/routines", JSON.stringify({
+        trigger: { type: "cron", cronExpression: "0 * * * *" },
+      }), { "Content-Type": "application/json" });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain("Name is required");
+    });
+
+    it("returns 400 for missing trigger", async () => {
+      const { app } = buildRoutineApp();
+      const res = await REQUEST(app, "POST", "/api/routines", JSON.stringify({
+        name: "Test",
+      }), { "Content-Type": "application/json" });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain("Trigger is required");
+    });
+
+    it("returns 400 for invalid trigger type", async () => {
+      const { app } = buildRoutineApp();
+      const res = await REQUEST(app, "POST", "/api/routines", JSON.stringify({
+        name: "Test",
+        trigger: { type: "invalid" },
+      }), { "Content-Type": "application/json" });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain("Invalid trigger type");
+    });
+
+    it("returns 400 for cron trigger without cronExpression", async () => {
+      const { app } = buildRoutineApp();
+      const res = await REQUEST(app, "POST", "/api/routines", JSON.stringify({
+        name: "Test",
+        trigger: { type: "cron" },
+      }), { "Content-Type": "application/json" });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain("Cron expression is required");
+    });
+
+    it("returns 400 for invalid cron expression", async () => {
+      const { app } = buildRoutineApp();
+      const res = await REQUEST(app, "POST", "/api/routines", JSON.stringify({
+        name: "Test",
+        trigger: { type: "cron", cronExpression: "not-a-cron" },
+      }), { "Content-Type": "application/json" });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain("Invalid cron expression");
+    });
+
+    it("returns 400 for invalid catchUpPolicy", async () => {
+      const { app } = buildRoutineApp();
+      const res = await REQUEST(app, "POST", "/api/routines", JSON.stringify({
+        name: "Test",
+        trigger: { type: "manual" },
+        catchUpPolicy: "bad",
+      }), { "Content-Type": "application/json" });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain("Invalid catchUpPolicy");
+    });
+
+    it("returns 400 for invalid executionPolicy", async () => {
+      const { app } = buildRoutineApp();
+      const res = await REQUEST(app, "POST", "/api/routines", JSON.stringify({
+        name: "Test",
+        trigger: { type: "manual" },
+        executionPolicy: "bad",
+      }), { "Content-Type": "application/json" });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain("Invalid executionPolicy");
+    });
+
+    it("returns 503 when routineStore not available", async () => {
+      const store = createMockStore();
+      const app = express();
+      app.use(express.json());
+      app.use("/api", createApiRoutes(store));
+      const res = await REQUEST(app, "POST", "/api/routines", JSON.stringify({
+        name: "Test",
+        trigger: { type: "manual" },
+      }), { "Content-Type": "application/json" });
+      expect(res.status).toBe(503);
+    });
+  });
+
+  describe("GET /routines/:id", () => {
+    it("returns a routine by id", async () => {
+      const { app } = buildRoutineApp();
+      const res = await GET(app, "/api/routines/routine-001");
+      expect(res.status).toBe(200);
+      expect(res.body.id).toBe("routine-001");
+    });
+
+    it("returns 404 for missing routine", async () => {
+      const mockStore = createMockRoutineStore();
+      mockStore.getRoutine.mockRejectedValue(Object.assign(new Error("not found"), { code: "ENOENT" }));
+      const { app } = buildRoutineApp(mockStore);
+      const res = await GET(app, "/api/routines/missing");
+      expect(res.status).toBe(404);
+    });
+
+    it("returns 503 when routineStore not available", async () => {
+      const store = createMockStore();
+      const app = express();
+      app.use(express.json());
+      app.use("/api", createApiRoutes(store));
+      const res = await GET(app, "/api/routines/routine-001");
+      expect(res.status).toBe(503);
+    });
+  });
+
+  describe("PATCH /routines/:id", () => {
+    it("updates a routine", async () => {
+      const { app, routineStore } = buildRoutineApp();
+      const res = await REQUEST(app, "PATCH", "/api/routines/routine-001", JSON.stringify({
+        name: "Updated",
+      }), { "Content-Type": "application/json" });
+      expect(res.status).toBe(200);
+      expect(routineStore.updateRoutine).toHaveBeenCalledWith("routine-001", expect.objectContaining({ name: "Updated" }));
+    });
+
+    it("returns 404 for missing routine", async () => {
+      const mockStore = createMockRoutineStore();
+      mockStore.updateRoutine.mockRejectedValue(Object.assign(new Error("not found"), { code: "ENOENT" }));
+      const { app } = buildRoutineApp(mockStore);
+      const res = await REQUEST(app, "PATCH", "/api/routines/missing", JSON.stringify({
+        name: "Updated",
+      }), { "Content-Type": "application/json" });
+      expect(res.status).toBe(404);
+    });
+
+    it("returns 400 for invalid trigger type in update", async () => {
+      const { app } = buildRoutineApp();
+      const res = await REQUEST(app, "PATCH", "/api/routines/routine-001", JSON.stringify({
+        trigger: { type: "bad" },
+      }), { "Content-Type": "application/json" });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain("Invalid trigger type");
+    });
+
+    it("returns 400 for empty name in update", async () => {
+      const { app } = buildRoutineApp();
+      const res = await REQUEST(app, "PATCH", "/api/routines/routine-001", JSON.stringify({
+        name: "",
+      }), { "Content-Type": "application/json" });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain("Name cannot be empty");
+    });
+
+    it("returns 503 when routineStore not available", async () => {
+      const store = createMockStore();
+      const app = express();
+      app.use(express.json());
+      app.use("/api", createApiRoutes(store));
+      const res = await REQUEST(app, "PATCH", "/api/routines/routine-001", JSON.stringify({
+        name: "Updated",
+      }), { "Content-Type": "application/json" });
+      expect(res.status).toBe(503);
+    });
+  });
+
+  describe("DELETE /routines/:id", () => {
+    it("deletes a routine", async () => {
+      const { app, routineStore } = buildRoutineApp();
+      const res = await REQUEST(app, "DELETE", "/api/routines/routine-001");
+      expect(res.status).toBe(200);
+      expect(routineStore.deleteRoutine).toHaveBeenCalledWith("routine-001");
+    });
+
+    it("returns 404 for missing routine", async () => {
+      const mockStore = createMockRoutineStore();
+      mockStore.deleteRoutine.mockRejectedValue(Object.assign(new Error("not found"), { code: "ENOENT" }));
+      const { app } = buildRoutineApp(mockStore);
+      const res = await REQUEST(app, "DELETE", "/api/routines/missing");
+      expect(res.status).toBe(404);
+    });
+
+    it("returns 503 when routineStore not available", async () => {
+      const store = createMockStore();
+      const app = express();
+      app.use(express.json());
+      app.use("/api", createApiRoutes(store));
+      const res = await REQUEST(app, "DELETE", "/api/routines/routine-001");
+      expect(res.status).toBe(503);
+    });
+  });
+
+  describe("POST /routines/:id/run", () => {
+    it("runs a routine and records the result", async () => {
+      const mockStore = createMockRoutineStore();
+      const { app } = buildRoutineApp(mockStore);
+      const res = await REQUEST(app, "POST", "/api/routines/routine-001/run");
+      expect(res.status).toBe(200);
+      expect(res.body.result).toBeDefined();
+      expect(res.body.result.triggerType).toBe("cron");
+      expect(mockStore.recordRun).toHaveBeenCalledWith(
+        "routine-001",
+        expect.objectContaining({
+          success: true,
+          startedAt: expect.any(String),
+          completedAt: expect.any(String),
+        }),
+      );
+    });
+
+    it("returns 404 for missing routine", async () => {
+      const mockStore = createMockRoutineStore();
+      mockStore.getRoutine.mockRejectedValue(Object.assign(new Error("not found"), { code: "ENOENT" }));
+      const { app } = buildRoutineApp(mockStore);
+      const res = await REQUEST(app, "POST", "/api/routines/missing/run");
+      expect(res.status).toBe(404);
+    });
+
+    it("returns 503 when routineStore not available", async () => {
+      const store = createMockStore();
+      const app = express();
+      app.use(express.json());
+      app.use("/api", createApiRoutes(store));
+      const res = await REQUEST(app, "POST", "/api/routines/routine-001/run");
+      expect(res.status).toBe(503);
+    });
+  });
+
+  describe("GET /routines/:id/runs", () => {
+    it("returns run history", async () => {
+      const mockStore = createMockRoutineStore();
+      mockStore.getRoutine.mockResolvedValue({
+        ...FAKE_ROUTINE,
+        runHistory: [
+          { routineId: "routine-001", startedAt: "2026-03-30T00:00:00.000Z", completedAt: "2026-03-30T00:01:00.000Z", success: true, output: "Test" },
+        ],
+      });
+      const { app } = buildRoutineApp(mockStore);
+      const res = await GET(app, "/api/routines/routine-001/runs");
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveLength(1);
+    });
+
+    it("returns 404 for missing routine", async () => {
+      const mockStore = createMockRoutineStore();
+      mockStore.getRoutine.mockRejectedValue(Object.assign(new Error("not found"), { code: "ENOENT" }));
+      const { app } = buildRoutineApp(mockStore);
+      const res = await GET(app, "/api/routines/missing/runs");
+      expect(res.status).toBe(404);
+    });
+
+    it("returns 503 when routineStore not available", async () => {
+      const store = createMockStore();
+      const app = express();
+      app.use(express.json());
+      app.use("/api", createApiRoutes(store));
+      const res = await GET(app, "/api/routines/routine-001/runs");
+      expect(res.status).toBe(503);
+    });
+  });
+
+  describe("POST /routines/:id/webhook", () => {
+    function buildRoutineApp(routineStoreOverride?: ReturnType<typeof createMockRoutineStore>) {
+      const store = createMockStore();
+      const routineStore = routineStoreOverride ?? createMockRoutineStore();
+      const app = express();
+      app.use(express.json());
+      app.use("/api", createApiRoutes(store, { routineStore: routineStore as any }));
+      return { app, routineStore };
+    }
+
+    it("triggers a webhook routine without secret", async () => {
+      const mockStore = createMockRoutineStore();
+      mockStore.getRoutine.mockResolvedValue({
+        ...FAKE_ROUTINE,
+        trigger: { type: "webhook" as const, webhookPath: "/trigger/test" },
+      });
+      const { app } = buildRoutineApp(mockStore);
+      const res = await REQUEST(app, "POST", "/api/routines/routine-001/webhook", JSON.stringify({}), { "Content-Type": "application/json" });
+      expect(res.status).toBe(200);
+      expect(res.body.result).toBeDefined();
+      expect(res.body.result.triggerType).toBe("webhook");
+      expect(mockStore.recordRun).toHaveBeenCalled();
+    });
+
+    it("returns 400 when routine is not a webhook type", async () => {
+      const mockStore = createMockRoutineStore();
+      mockStore.getRoutine.mockResolvedValue({
+        ...FAKE_ROUTINE,
+        trigger: { type: "cron" as const, cronExpression: "0 * * * *" },
+      });
+      const { app } = buildRoutineApp(mockStore);
+      const res = await REQUEST(app, "POST", "/api/routines/routine-001/webhook", JSON.stringify({}), { "Content-Type": "application/json" });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain("webhook triggers");
+    });
+
+    it("returns 400 when routine is disabled", async () => {
+      const mockStore = createMockRoutineStore();
+      mockStore.getRoutine.mockResolvedValue({
+        ...FAKE_ROUTINE,
+        enabled: false,
+        trigger: { type: "webhook" as const, webhookPath: "/trigger/test" },
+      });
+      const { app } = buildRoutineApp(mockStore);
+      const res = await REQUEST(app, "POST", "/api/routines/routine-001/webhook", JSON.stringify({}), { "Content-Type": "application/json" });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain("disabled");
+    });
+
+    it("returns 404 for missing routine", async () => {
+      const mockStore = createMockRoutineStore();
+      mockStore.getRoutine.mockRejectedValue(Object.assign(new Error("not found"), { code: "ENOENT" }));
+      const { app } = buildRoutineApp(mockStore);
+      const res = await REQUEST(app, "POST", "/api/routines/missing/webhook", JSON.stringify({}), { "Content-Type": "application/json" });
+      expect(res.status).toBe(404);
+    });
+
+    it("returns 503 when routineStore not available", async () => {
+      const store = createMockStore();
+      const app = express();
+      app.use(express.json());
+      app.use("/api", createApiRoutes(store));
+      const res = await REQUEST(app, "POST", "/api/routines/routine-001/webhook", JSON.stringify({}), { "Content-Type": "application/json" });
+      expect(res.status).toBe(503);
+    });
+
+    it("accepts webhook when no secret is configured", async () => {
+      const mockStore = createMockRoutineStore();
+      mockStore.getRoutine.mockResolvedValue({
+        ...FAKE_ROUTINE,
+        trigger: { type: "webhook" as const, webhookPath: "/trigger/test" },
+      });
+      const { app } = buildRoutineApp(mockStore);
+      const res = await REQUEST(app, "POST", "/api/routines/routine-001/webhook", JSON.stringify({}), { "Content-Type": "application/json" });
+      expect(res.status).toBe(200);
+    });
+  });
+
+  describe("Webhook HMAC verification", () => {
+    // These tests verify the verifyWebhookSignature function directly
+    // since testing through HTTP requires complex middleware setup
+    it("verifyWebhookSignature rejects missing signature header", async () => {
+      const { verifyWebhookSignature } = await import("./github-webhooks.js");
+      const result = verifyWebhookSignature(Buffer.from("{}"), undefined, "secret");
+      expect(result.valid).toBe(false);
+      expect(result.error).toBe("Missing signature header");
+    });
+
+    it("verifyWebhookSignature rejects wrong signature", async () => {
+      const { verifyWebhookSignature } = await import("./github-webhooks.js");
+      const body = Buffer.from('{"test":true}');
+      const result = verifyWebhookSignature(body, "sha256=deadbeef", "secret");
+      expect(result.valid).toBe(false);
+      expect(result.error).toBe("Signature mismatch");
+    });
+
+    it("verifyWebhookSignature accepts valid HMAC", async () => {
+      const { verifyWebhookSignature } = await import("./github-webhooks.js");
+      const secret = "test-secret";
+      const body = Buffer.from('{"test":true}');
+      const sig = `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`;
+      const result = verifyWebhookSignature(body, sig, secret);
+      expect(result.valid).toBe(true);
     });
   });
 });

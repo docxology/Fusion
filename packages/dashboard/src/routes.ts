@@ -1,5 +1,6 @@
 import { Router, type Request, type Response, type NextFunction } from "express";
 import multer from "multer";
+import { randomUUID } from "node:crypto";
 import { createReadStream, existsSync } from "node:fs";
 import { mkdtemp } from "node:fs/promises";
 import { execSync } from "node:child_process";
@@ -7,8 +8,8 @@ import { resolve, sep, join } from "node:path";
 import { tmpdir } from "node:os";
 import * as nodeFs from "node:fs";
 import * as nodeChildProcess from "node:child_process";
-import type { TaskStore, Column, MergeResult, ScheduleType, ActivityEventType, ModelPreset, AutomationStep, MessageType, ParticipantType, MessageCreateInput } from "@fusion/core";
-import { COLUMNS, VALID_TRANSITIONS, GLOBAL_SETTINGS_KEYS, type BatchStatusEntry, type BatchStatusResponse, type BatchStatusResult, type IssueInfo, type PrInfo, type Task, getCurrentRepo, isGhAuthenticated, AUTOMATION_PRESETS, AutomationStore, validateBackupSchedule, validateBackupRetention, validateBackupDir, syncBackupAutomation, exportSettings, importSettings, validateImportData, MessageStore, MEMORY_FILE_PATH } from "@fusion/core";
+import type { TaskStore, Column, MergeResult, ScheduleType, ActivityEventType, ModelPreset, AutomationStep, MessageType, ParticipantType, MessageCreateInput, Routine, RoutineCreateInput, RoutineUpdateInput, RoutineExecutionResult, RoutineTriggerType } from "@fusion/core";
+import { COLUMNS, VALID_TRANSITIONS, GLOBAL_SETTINGS_KEYS, type BatchStatusEntry, type BatchStatusResponse, type BatchStatusResult, type IssueInfo, type PrInfo, type Task, getCurrentRepo, isGhAuthenticated, AUTOMATION_PRESETS, AutomationStore, validateBackupSchedule, validateBackupRetention, validateBackupDir, syncBackupAutomation, exportSettings, importSettings, validateImportData, MessageStore, MEMORY_FILE_PATH, RoutineStore, isWebhookTrigger } from "@fusion/core";
 import type { ChatStore, ChatSessionCreateInput, ChatSessionUpdateInput } from "@fusion/core";
 import type { ServerOptions } from "./server.js";
 import { GitHubClient, parseBadgeUrl } from "./github.js";
@@ -7704,6 +7705,292 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
       }
       if (err.message?.includes("mismatch") || err.message?.includes("Unknown step") || err.message?.includes("no steps")) {
         throw badRequest(err.message);
+      }
+      rethrowAsApiError(err);
+    }
+  });
+
+  // ── Routine Routes ──────────────────────────────────────────────────
+
+  const routineStore = options?.routineStore;
+
+  // GET /routines — list all routines
+  router.get("/routines", async (_req: Request, res: Response) => {
+    if (!routineStore) {
+      return res.json([]);
+    }
+    try {
+      const routines = await routineStore.listRoutines();
+      res.json(routines);
+    } catch (err: any) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      rethrowAsApiError(err);
+    }
+  });
+
+  // POST /routines — create a new routine
+  router.post("/routines", async (req: Request, res: Response) => {
+    if (!routineStore) {
+      throw new ApiError(503, "Routine store not available");
+    }
+    try {
+      const { name, description, trigger, catchUpPolicy, executionPolicy, enabled } = req.body;
+
+      // Validation
+      if (!name?.trim()) {
+        throw badRequest("Name is required");
+      }
+      if (!trigger) {
+        throw badRequest("Trigger is required");
+      }
+      if (!trigger.type) {
+        throw badRequest("Trigger must have a type field");
+      }
+      const validTriggerTypes: RoutineTriggerType[] = ["cron", "webhook", "api", "manual"];
+      if (!validTriggerTypes.includes(trigger.type)) {
+        throw badRequest(`Invalid trigger type. Must be one of: ${validTriggerTypes.join(", ")}`);
+      }
+      if (trigger.type === "cron") {
+        if (!trigger.cronExpression?.trim()) {
+          throw badRequest("Cron expression is required for cron trigger");
+        }
+        if (!RoutineStore.isValidCron(trigger.cronExpression)) {
+          throw badRequest(`Invalid cron expression: "${trigger.cronExpression}"`);
+        }
+      }
+      if (catchUpPolicy !== undefined) {
+        const validCatchUpPolicies: Array<"run" | "skip" | "run_one"> = ["run", "skip", "run_one"];
+        if (!validCatchUpPolicies.includes(catchUpPolicy)) {
+          throw badRequest(`Invalid catchUpPolicy. Must be one of: ${validCatchUpPolicies.join(", ")}`);
+        }
+      }
+      if (executionPolicy !== undefined) {
+        const validExecutionPolicies: Array<"parallel" | "queue" | "reject"> = ["parallel", "queue", "reject"];
+        if (!validExecutionPolicies.includes(executionPolicy)) {
+          throw badRequest(`Invalid executionPolicy. Must be one of: ${validExecutionPolicies.join(", ")}`);
+        }
+      }
+
+      const routine = await routineStore.createRoutine({
+        name: name.trim(),
+        description,
+        trigger,
+        catchUpPolicy,
+        executionPolicy,
+        enabled,
+      });
+      res.status(201).json(routine);
+    } catch (err: any) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      rethrowAsApiError(err);
+    }
+  });
+
+  // GET /routines/:id — get a single routine
+  router.get("/routines/:id", async (req: Request, res: Response) => {
+    if (!routineStore) {
+      throw new ApiError(503, "Routine store not available");
+    }
+    try {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const routine = await routineStore.getRoutine(id);
+      res.json(routine);
+    } catch (err: any) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      if (err.code === "ENOENT") {
+        throw notFound("Routine not found");
+      }
+      rethrowAsApiError(err);
+    }
+  });
+
+  // PATCH /routines/:id — update a routine
+  router.patch("/routines/:id", async (req: Request, res: Response) => {
+    if (!routineStore) {
+      throw new ApiError(503, "Routine store not available");
+    }
+    try {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const { name, description, trigger, catchUpPolicy, executionPolicy, enabled } = req.body;
+
+      // Validate name if provided
+      if (name !== undefined && !name.trim()) {
+        throw badRequest("Name cannot be empty");
+      }
+
+      // Validate trigger if provided
+      if (trigger !== undefined) {
+        if (trigger.type) {
+          const validTriggerTypes: RoutineTriggerType[] = ["cron", "webhook", "api", "manual"];
+          if (!validTriggerTypes.includes(trigger.type)) {
+            throw badRequest(`Invalid trigger type. Must be one of: ${validTriggerTypes.join(", ")}`);
+          }
+          if (trigger.type === "cron" && trigger.cronExpression) {
+            if (!RoutineStore.isValidCron(trigger.cronExpression)) {
+              throw badRequest(`Invalid cron expression: "${trigger.cronExpression}"`);
+            }
+          }
+        }
+      }
+
+      const routine = await routineStore.updateRoutine(id, {
+        name: name !== undefined ? name.trim() : undefined,
+        description,
+        trigger,
+        catchUpPolicy,
+        executionPolicy,
+        enabled,
+      });
+      res.json(routine);
+    } catch (err: any) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      if (err.code === "ENOENT") {
+        throw notFound("Routine not found");
+      }
+      if (err.message?.includes("cannot be empty") || err.message?.includes("Invalid cron")) {
+        throw badRequest(err.message);
+      }
+      rethrowAsApiError(err);
+    }
+  });
+
+  // DELETE /routines/:id — delete a routine
+  router.delete("/routines/:id", async (req: Request, res: Response) => {
+    if (!routineStore) {
+      throw new ApiError(503, "Routine store not available");
+    }
+    try {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const deleted = await routineStore.deleteRoutine(id);
+      res.json(deleted);
+    } catch (err: any) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      if (err.code === "ENOENT") {
+        throw notFound("Routine not found");
+      }
+      rethrowAsApiError(err);
+    }
+  });
+
+  // POST /routines/:id/run — manual trigger (record a manual run)
+  router.post("/routines/:id/run", async (req: Request, res: Response) => {
+    if (!routineStore) {
+      throw new ApiError(503, "Routine store not available");
+    }
+    try {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const routine = await routineStore.getRoutine(id);
+
+      // Create a placeholder result for now (actual execution in future task)
+      const startedAt = new Date().toISOString();
+      const result: RoutineExecutionResult = {
+        routineId: id,
+        startedAt,
+        triggerType: routine.trigger.type,
+        success: true,
+        output: "Manual run triggered",
+        completedAt: new Date().toISOString(),
+      };
+
+      const updated = await routineStore.recordRun(id, result);
+      res.json({ routine: updated, result });
+    } catch (err: any) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      if (err.code === "ENOENT") {
+        throw notFound("Routine not found");
+      }
+      rethrowAsApiError(err);
+    }
+  });
+
+  // GET /routines/:id/runs — get execution history
+  router.get("/routines/:id/runs", async (req: Request, res: Response) => {
+    if (!routineStore) {
+      throw new ApiError(503, "Routine store not available");
+    }
+    try {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const routine = await routineStore.getRoutine(id);
+      res.json(routine.runHistory);
+    } catch (err: any) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      if (err.code === "ENOENT") {
+        throw notFound("Routine not found");
+      }
+      rethrowAsApiError(err);
+    }
+  });
+
+  // POST /routines/:id/webhook — incoming webhook trigger
+  router.post("/routines/:id/webhook", async (req: Request, res: Response) => {
+    if (!routineStore) {
+      throw new ApiError(503, "Routine store not available");
+    }
+    try {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const routine = await routineStore.getRoutine(id);
+
+      // Validate this is a webhook-type routine
+      if (!isWebhookTrigger(routine.trigger)) {
+        throw badRequest("Routine is not configured for webhook triggers");
+      }
+
+      // Validate routine is enabled
+      if (!routine.enabled) {
+        throw badRequest("Routine is disabled");
+      }
+
+      // Get raw body for HMAC verification
+      const rawBody = (req as any).rawBody as Buffer | undefined;
+      const signatureHeader = req.headers["x-hub-signature-256"] as string | undefined;
+
+      // If webhook secret is configured, verify the signature
+      if (routine.trigger.secret) {
+        if (!rawBody) {
+          throw badRequest("Raw body not available for signature verification");
+        }
+        if (!signatureHeader) {
+          throw new ApiError(403, "Missing signature header");
+        }
+        const verification = verifyWebhookSignature(rawBody, signatureHeader, routine.trigger.secret);
+        if (!verification.valid) {
+          throw new ApiError(403, verification.error ?? "Invalid signature");
+        }
+      }
+
+      // Create a placeholder result for now (actual execution in future task)
+      const startedAt = new Date().toISOString();
+      const result: RoutineExecutionResult = {
+        routineId: id,
+        startedAt,
+        triggerType: "webhook",
+        success: true,
+        output: "Webhook trigger received",
+        completedAt: new Date().toISOString(),
+      };
+
+      const updated = await routineStore.recordRun(id, result);
+      res.json({ routine: updated, result });
+    } catch (err: any) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      if (err.code === "ENOENT") {
+        throw notFound("Routine not found");
       }
       rethrowAsApiError(err);
     }

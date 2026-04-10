@@ -39,7 +39,7 @@ import type {
   ChatMessage,
 } from "@fusion/core";
 import type { PlanningQuestion, PlanningSummary, PlanningResponse } from "@fusion/core";
-import type { ScheduledTask, ScheduledTaskCreateInput, ScheduledTaskUpdateInput, AutomationRunResult, AutomationStep } from "@fusion/core";
+import type { ScheduledTask, ScheduledTaskCreateInput, ScheduledTaskUpdateInput, AutomationRunResult, AutomationStep, Routine, RoutineCreateInput, RoutineUpdateInput, RoutineExecutionResult } from "@fusion/core";
 
 function looksLikeHtml(body: string): boolean {
   const trimmed = body.trim();
@@ -1633,6 +1633,58 @@ export function reorderAutomationSteps(id: string, stepIds: string[]): Promise<S
   return api<ScheduledTask>(`/automations/${id}/steps/reorder`, {
     method: "POST",
     body: JSON.stringify({ stepIds }),
+  });
+}
+
+// ── Routines API ────────────────────────────────────────────────
+
+export interface RoutineRunResponse {
+  routine: Routine;
+  result: RoutineExecutionResult;
+}
+
+export function fetchRoutines(): Promise<Routine[]> {
+  return api<Routine[]>("/routines");
+}
+
+export function fetchRoutine(id: string): Promise<Routine> {
+  return api<Routine>(`/routines/${id}`);
+}
+
+export function createRoutine(input: RoutineCreateInput): Promise<Routine> {
+  return api<Routine>("/routines", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function updateRoutine(id: string, updates: RoutineUpdateInput): Promise<Routine> {
+  return api<Routine>(`/routines/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(updates),
+  });
+}
+
+export async function deleteRoutine(id: string): Promise<void> {
+  await api(`/routines/${id}`, {
+    method: "DELETE",
+  });
+}
+
+export function runRoutine(id: string): Promise<RoutineRunResponse> {
+  return api<RoutineRunResponse>(`/routines/${id}/run`, {
+    method: "POST",
+  });
+}
+
+export function fetchRoutineRuns(id: string): Promise<RoutineExecutionResult[]> {
+  return api<RoutineExecutionResult[]>(`/routines/${id}/runs`);
+}
+
+export function triggerRoutineWebhook(id: string, payload?: Record<string, unknown>): Promise<RoutineRunResponse> {
+  return api<RoutineRunResponse>(`/routines/${id}/webhook`, {
+    method: "POST",
+    body: payload ? JSON.stringify(payload) : undefined,
   });
 }
 

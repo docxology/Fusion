@@ -105,6 +105,7 @@ The `PluginRunner` bridges the plugin core system with the Fusion engine runtime
 ## Pitfalls
 
 - When adding props to a React component interface that were previously declared but not destructured in the function body, remember to add them to the destructuring list too. TypeScript won't warn about unused interface fields, so `onOpenScripts` in `MobileNavBarProps` compiled fine but caused `ReferenceError: onOpenScripts is not defined` at runtime.
+- **Webhook HMAC testing**: The `REQUEST` test utility in `test-request.ts` doesn't handle stream-based middleware like `express.raw()` well. For webhook routes requiring HMAC verification (e.g., GitHub webhooks, routine webhooks), test the `verifyWebhookSignature` function directly using `await import()` rather than trying to set up raw body middleware through Express. See the routine webhook tests in `routes.test.ts` for the pattern.
 
 - `vi.fn<Parameters<SomeType>, ReturnType<SomeType>>()` works in Vitest runtime but causes TypeScript build errors (`TS2558: Expected 0-1 type arguments, but got 2`). Always use the cast pattern instead.
 - When adding new exports to `@fusion/engine`, update the mock in `packages/cli/src/commands/__tests__/dashboard.test.ts` AND `packages/cli/src/commands/__tests__/serve.test.ts` to include the new export, otherwise the test may fail with mysterious errors. Both test files need to be kept in sync.

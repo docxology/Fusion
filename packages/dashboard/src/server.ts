@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { join, dirname } from "node:path";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import type { Task, TaskStore, MergeResult, AutomationStore } from "@fusion/core";
+import type { Task, TaskStore, MergeResult, AutomationStore, RoutineStore } from "@fusion/core";
 import { ChatStore } from "@fusion/core";
 import type { AuthStorageLike, ModelRegistryLike } from "./routes.js";
 import { createApiRoutes } from "./routes.js";
@@ -82,6 +82,8 @@ export interface ServerOptions {
   badgePubSub?: BadgePubSub;
   /** Optional AutomationStore for scheduled task management */
   automationStore?: AutomationStore;
+  /** Optional RoutineStore for recurring task automation */
+  routineStore?: RoutineStore;
   /** Optional AiSessionStore — if not provided, one is created from the default store's database */
   aiSessionStore?: AiSessionStore;
   /** Optional MissionAutopilot for autonomous mission progression */
