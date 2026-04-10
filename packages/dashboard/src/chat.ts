@@ -1,0 +1,426 @@
+/**
+ * Chat System — Dashboard AI Integration
+ *
+ * Manages AI agent chat sessions with SSE streaming for real-time responses.
+ * Follows the PlanningStreamManager pattern for SSE broadcast.
+ *
+ * Features:
+ * - AI agent integration via createKbAgent for real-time chat responses
+ * - Streaming via SSE (sendMessage) with thinking/text/done/error events
+ * - Rate limiting per IP (30 messages per minute)
+ * - Message persistence through ChatStore
+ * - Session management for conversation history
+ */
+
+import type {
+  ChatStore,
+  ChatSession,
+  ChatSessionCreateInput,
+} from "@fusion/core";
+import { EventEmitter } from "node:events";
+import type { Response } from "express";
+import { SessionEventBuffer, writeSSEEvent, safeWriteSSE, formatSSEEvent } from "./sse-buffer.js";
+
+// Dynamic import for @fusion/engine to avoid resolution issues in test environment
+// eslint-disable-next-line @typescript-eslint/consistent-type-imports, @typescript-eslint/no-explicit-any
+type AgentResult = any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let createKbAgent: any;
+
+// Initialize the import (this runs in actual server, mocked in tests)
+async function initEngine() {
+  if (!createKbAgent) {
+    try {
+      // Use dynamic import with variable to prevent static analysis
+      const engineModule = "@fusion/engine";
+      const engine = await import(/* @vite-ignore */ engineModule);
+      if (!createKbAgent) {
+        createKbAgent = engine.createKbAgent;
+      }
+    } catch {
+      // Allow failure in test environments - agent functionality will be stubbed
+      if (!createKbAgent) {
+        createKbAgent = undefined;
+      }
+    }
+  }
+}
+
+// Initialize on module load (will be awaited in actual usage)
+const engineReady = initEngine();
+
+// ── Constants ───────────────────────────────────────────────────────────────
+
+/** Chat system prompt for the AI agent */
+const CHAT_SYSTEM_PROMPT = `You are a helpful AI assistant integrated into the fn task board system. You help users with questions about their project, code, architecture, and tasks. You have access to project files and can read them to provide informed responses. Be concise, accurate, and helpful. When referencing files or code, provide specific paths and line numbers when possible.`;
+
+/** Rate limiting window in milliseconds (1 minute) */
+const RATE_LIMIT_WINDOW_MS = 60 * 1000;
+
+/** Max messages per IP per minute */
+const MAX_MESSAGES_PER_IP_PER_MINUTE = 30;
+
+// ── Types ───────────────────────────────────────────────────────────────────
+
+/** SSE event types for chat streaming */
+export type ChatStreamEvent =
+  | { type: "thinking"; data: string }
+  | { type: "text"; data: string }
+  | { type: "done"; data: { messageId: string } }
+  | { type: "error"; data: string };
+
+/** Callback function for streaming events */
+export type ChatStreamCallback = (event: ChatStreamEvent, eventId?: number) => void;
+
+interface RateLimitEntry {
+  count: number;
+  firstRequestAt: Date;
+}
+
+// ── In-Memory Storage ───────────────────────────────────────────────────────
+
+/** Rate limiting state indexed by IP */
+const rateLimits = new Map<string, RateLimitEntry>();
+
+// ── Chat Stream Manager ─────────────────────────────────────────────────────
+
+/**
+ * Manages SSE connections for active chat sessions.
+ * Each session can have multiple connected clients receiving streaming updates.
+ * Follows the PlanningStreamManager pattern.
+ */
+export class ChatStreamManager extends EventEmitter {
+  private readonly sessions = new Map<string, Set<ChatStreamCallback>>();
+  private readonly buffers = new Map<string, SessionEventBuffer>();
+
+  constructor(private readonly bufferSize = 100) {
+    super();
+  }
+
+  /**
+   * Register a client callback for a chat session.
+   * Returns a function to unsubscribe.
+   */
+  subscribe(sessionId: string, callback: ChatStreamCallback): () => void {
+    if (!this.sessions.has(sessionId)) {
+      this.sessions.set(sessionId, new Set());
+    }
+
+    const callbacks = this.sessions.get(sessionId)!;
+    callbacks.add(callback);
+
+    return () => {
+      callbacks.delete(callback);
+      if (callbacks.size === 0) {
+        this.sessions.delete(sessionId);
+      }
+    };
+  }
+
+  private getBuffer(sessionId: string): SessionEventBuffer {
+    let buffer = this.buffers.get(sessionId);
+    if (!buffer) {
+      buffer = new SessionEventBuffer(this.bufferSize);
+      this.buffers.set(sessionId, buffer);
+    }
+    return buffer;
+  }
+
+  /**
+   * Broadcast an event to all clients subscribed to a session.
+   * Every event is buffered and assigned a monotonically increasing id.
+   */
+  broadcast(sessionId: string, event: ChatStreamEvent): number {
+    const serialized = JSON.stringify((event as { data?: unknown }).data ?? {});
+    const eventData = typeof serialized === "string" ? serialized : "{}";
+    const eventId = this.getBuffer(sessionId).push(event.type, eventData);
+
+    const callbacks = this.sessions.get(sessionId);
+    if (!callbacks) return eventId;
+
+    for (const callback of callbacks) {
+      try {
+        callback(event, eventId);
+      } catch (err) {
+        console.error(`[chat] Error broadcasting to client for session ${sessionId}:`, err);
+      }
+    }
+
+    return eventId;
+  }
+
+  /**
+   * Get buffered events with id > sinceId for the session.
+   */
+  getBufferedEvents(sessionId: string, sinceId: number): Array<{ id: number; event: string; data: string }> {
+    const buffer = this.buffers.get(sessionId);
+    if (!buffer) return [];
+    return buffer.getEventsSince(sinceId);
+  }
+
+  /**
+   * Check if a session has active subscribers.
+   */
+  hasSubscribers(sessionId: string): boolean {
+    const callbacks = this.sessions.get(sessionId);
+    return callbacks !== undefined && callbacks.size > 0;
+  }
+
+  /**
+   * Get the number of subscribers for a session.
+   */
+  getSubscriberCount(sessionId: string): number {
+    return this.sessions.get(sessionId)?.size ?? 0;
+  }
+
+  /**
+   * Clean up all subscriptions and buffered events for a session.
+   */
+  cleanupSession(sessionId: string): void {
+    this.sessions.delete(sessionId);
+    this.buffers.delete(sessionId);
+  }
+
+  /**
+   * Reset all subscriptions and buffers (test helper).
+   */
+  reset(): void {
+    this.sessions.clear();
+    this.buffers.clear();
+    this.removeAllListeners();
+  }
+}
+
+/** Singleton instance of the chat stream manager */
+export const chatStreamManager = new ChatStreamManager();
+
+// ── Rate Limiting ───────────────────────────────────────────────────────────
+
+/**
+ * Check if IP can send a new message.
+ * Returns true if allowed, false if rate limited.
+ */
+export function checkRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const entry = rateLimits.get(ip);
+
+  if (!entry) {
+    // First request from this IP
+    rateLimits.set(ip, {
+      count: 1,
+      firstRequestAt: new Date(),
+    });
+    return true;
+  }
+
+  // Check if window has expired
+  if (now - entry.firstRequestAt.getTime() > RATE_LIMIT_WINDOW_MS) {
+    // Reset window
+    rateLimits.set(ip, {
+      count: 1,
+      firstRequestAt: new Date(),
+    });
+    return true;
+  }
+
+  // Within window - check limit
+  if (entry.count >= MAX_MESSAGES_PER_IP_PER_MINUTE) {
+    return false;
+  }
+
+  // Increment count
+  entry.count++;
+  return true;
+}
+
+/**
+ * Get rate limit reset time for an IP.
+ * Returns null if no rate limit entry exists.
+ */
+export function getRateLimitResetTime(ip: string): Date | null {
+  const entry = rateLimits.get(ip);
+  if (!entry) return null;
+
+  return new Date(entry.firstRequestAt.getTime() + RATE_LIMIT_WINDOW_MS);
+}
+
+// ── Chat Manager ────────────────────────────────────────────────────────────
+
+/**
+ * Manages AI agent chat sessions.
+ * Creates sessions, sends messages, and streams AI responses via SSE.
+ */
+export class ChatManager {
+  constructor(
+    private chatStore: ChatStore,
+    private rootDir: string,
+  ) {}
+
+  /**
+   * Create a new chat session.
+   */
+  createSession(input: ChatSessionCreateInput): ChatSession {
+    return this.chatStore.createSession(input);
+  }
+
+  /**
+   * Send a message and stream AI response via SSE.
+   *
+   * This method:
+   * 1. Validates session exists
+   * 2. Persists user message
+   * 3. Creates AI agent session
+   * 4. Streams thinking/text via chatStreamManager
+   * 5. Persists assistant response
+   * 6. Broadcasts done/error event
+   *
+   * @param sessionId - The chat session ID
+   * @param content - User message content
+   * @param modelProvider - Optional model provider override
+   * @param modelId - Optional model ID override
+   */
+  async sendMessage(
+    sessionId: string,
+    content: string,
+    modelProvider?: string,
+    modelId?: string,
+  ): Promise<void> {
+    // Validate session exists
+    const session = this.chatStore.getSession(sessionId);
+    if (!session) {
+      chatStreamManager.broadcast(sessionId, {
+        type: "error",
+        data: `Chat session ${sessionId} not found`,
+      });
+      return;
+    }
+
+    // Persist user message
+    let userMessageId: string;
+    try {
+      const userMessage = this.chatStore.addMessage(sessionId, {
+        role: "user",
+        content,
+      });
+      userMessageId = userMessage.id;
+    } catch (err) {
+      chatStreamManager.broadcast(sessionId, {
+        type: "error",
+        data: `Failed to save message: ${err instanceof Error ? err.message : "Unknown error"}`,
+      });
+      return;
+    }
+
+    // Use model from session if not overridden
+    const effectiveModelProvider = modelProvider ?? session.modelProvider ?? undefined;
+    const effectiveModelId = modelId ?? session.modelId ?? undefined;
+
+    let agentResult: AgentResult | undefined;
+    let accumulatedThinking = "";
+
+    try {
+      // Ensure engine is loaded
+      await engineReady;
+
+      if (!createKbAgent) {
+        throw new Error("AI agent not available");
+      }
+
+      // Create AI agent session
+      agentResult = await createKbAgent({
+        cwd: this.rootDir,
+        systemPrompt: CHAT_SYSTEM_PROMPT,
+        tools: "readonly",
+        ...(effectiveModelProvider && effectiveModelId
+          ? {
+              defaultProvider: effectiveModelProvider,
+              defaultModelId: effectiveModelId,
+            }
+          : {}),
+        onThinking: (delta: string) => {
+          accumulatedThinking += delta;
+          chatStreamManager.broadcast(sessionId, {
+            type: "thinking",
+            data: delta,
+          });
+        },
+        onText: (delta: string) => {
+          chatStreamManager.broadcast(sessionId, {
+            type: "text",
+            data: delta,
+          });
+        },
+      });
+
+      // Send user message and get response
+      await agentResult.session.prompt(content);
+
+      // Extract response text from agent state
+      let responseText = "";
+      interface AgentMessage {
+        role: string;
+        content?: string | Array<{ type: string; text: string }>;
+      }
+      const lastMessage = (agentResult.session.state.messages as AgentMessage[])
+        .filter((m: AgentMessage) => m.role === "assistant")
+        .pop();
+
+      if (lastMessage?.content) {
+        if (typeof lastMessage.content === "string") {
+          responseText = lastMessage.content;
+        } else if (Array.isArray(lastMessage.content)) {
+          responseText = lastMessage.content
+            .filter((c: { type: string; text: string }): c is { type: "text"; text: string } => c.type === "text")
+            .map((c: { type: string; text: string }) => c.text)
+            .join("");
+        }
+      }
+
+      // Persist assistant message
+      const assistantMessage = this.chatStore.addMessage(sessionId, {
+        role: "assistant",
+        content: responseText,
+        thinkingOutput: accumulatedThinking || undefined,
+      });
+
+      // Broadcast done event
+      chatStreamManager.broadcast(sessionId, {
+        type: "done",
+        data: { messageId: assistantMessage.id },
+      });
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "AI processing failed";
+      console.error(`[chat] Error in sendMessage for session ${sessionId}:`, err);
+      chatStreamManager.broadcast(sessionId, {
+        type: "error",
+        data: errorMessage,
+      });
+    } finally {
+      // Always dispose agent session
+      if (agentResult) {
+        try {
+          agentResult.session.dispose?.();
+        } catch (err) {
+          console.error(`[chat] Error disposing agent session:`, err);
+        }
+      }
+    }
+  }
+}
+
+// ── Test Helpers ────────────────────────────────────────────────────────────
+
+/**
+ * Inject a mock createKbAgent function. Used for testing only.
+ */
+export function __setCreateKbAgent(mock: typeof createKbAgent): void {
+  createKbAgent = mock;
+}
+
+/**
+ * Reset all chat state. Used for testing only.
+ */
+export function __resetChatState(): void {
+  chatStreamManager.reset();
+  rateLimits.clear();
+}

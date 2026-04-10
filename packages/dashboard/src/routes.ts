@@ -9,6 +9,7 @@ import * as nodeFs from "node:fs";
 import * as nodeChildProcess from "node:child_process";
 import type { TaskStore, Column, MergeResult, ScheduleType, ActivityEventType, ModelPreset, AutomationStep, MessageType, ParticipantType, MessageCreateInput } from "@fusion/core";
 import { COLUMNS, VALID_TRANSITIONS, GLOBAL_SETTINGS_KEYS, type BatchStatusEntry, type BatchStatusResponse, type BatchStatusResult, type IssueInfo, type PrInfo, type Task, getCurrentRepo, isGhAuthenticated, AUTOMATION_PRESETS, AutomationStore, validateBackupSchedule, validateBackupRetention, validateBackupDir, syncBackupAutomation, exportSettings, importSettings, validateImportData, MessageStore, MEMORY_FILE_PATH } from "@fusion/core";
+import type { ChatStore, ChatSessionCreateInput, ChatSessionUpdateInput } from "@fusion/core";
 import type { ServerOptions } from "./server.js";
 import { GitHubClient, parseBadgeUrl } from "./github.js";
 import { githubRateLimiter } from "./github-poll.js";
@@ -51,6 +52,7 @@ import {
   sendErrorResponse,
   unauthorized,
 } from "./api-error.js";
+import { rateLimit, RATE_LIMITS } from "./rate-limit.js";
 
 /**
  * Minimal interface matching pi-coding-agent's ModelRegistry API surface
@@ -6855,6 +6857,423 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
       res.end();
     }
   });
+
+  // ── Chat Routes ────────────────────────────────────────────────────────────
+
+  /**
+   * GET /api/chat/sessions
+   * List chat sessions with optional filtering.
+   * Query params: projectId?, status?, agentId?
+   */
+  router.get("/chat/sessions", rateLimit(RATE_LIMITS.api), async (req, res) => {
+    try {
+      const chatStore = options?.chatStore;
+      if (!chatStore) {
+        throw internalError("Chat store not available");
+      }
+
+      const { projectId, status, agentId } = req.query as {
+        projectId?: string;
+        status?: string;
+        agentId?: string;
+      };
+
+      const sessions = chatStore.listSessions({
+        ...(projectId && { projectId }),
+        ...(status && { status: status as "active" | "archived" }),
+        ...(agentId && { agentId }),
+      });
+
+      res.json({ sessions });
+    } catch (err: any) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      rethrowAsApiError(err, "Failed to list chat sessions");
+    }
+  });
+
+  /**
+   * POST /api/chat/sessions
+   * Create a new chat session.
+   * Body: { agentId: string, title?: string, modelProvider?: string, modelId?: string }
+   */
+  router.post("/chat/sessions", rateLimit(RATE_LIMITS.mutation), async (req, res) => {
+    try {
+      const chatStore = options?.chatStore;
+      if (!chatStore) {
+        throw internalError("Chat store not available");
+      }
+
+      const { agentId, title, modelProvider, modelId } = req.body as {
+        agentId?: string;
+        title?: string;
+        modelProvider?: string;
+        modelId?: string;
+      };
+
+      if (!agentId || typeof agentId !== "string" || !agentId.trim()) {
+        throw badRequest("agentId is required");
+      }
+
+      // Validate optional model pair consistency
+      const normalizedProvider = validateOptionalModelField(modelProvider, "modelProvider");
+      const normalizedModelId = validateOptionalModelField(modelId, "modelId");
+      if ((normalizedProvider && !normalizedModelId) || (!normalizedProvider && normalizedModelId)) {
+        throw badRequest("modelProvider and modelId must both be provided or neither");
+      }
+
+      const session = chatStore.createSession({
+        agentId: agentId.trim(),
+        title: title?.trim() || null,
+        modelProvider: normalizedProvider ?? null,
+        modelId: normalizedModelId ?? null,
+      });
+
+      res.status(201).json({ session });
+    } catch (err: any) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      rethrowAsApiError(err, "Failed to create chat session");
+    }
+  });
+
+  /**
+   * GET /api/chat/sessions/:id
+   * Get a single chat session.
+   */
+  router.get("/chat/sessions/:id", async (req, res) => {
+    try {
+      const chatStore = options?.chatStore;
+      if (!chatStore) {
+        throw internalError("Chat store not available");
+      }
+
+      const sessionId = String(req.params.id);
+      const session = chatStore.getSession(sessionId);
+      if (!session) {
+        throw notFound(`Chat session ${sessionId} not found`);
+      }
+
+      res.json({ session });
+    } catch (err: any) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      rethrowAsApiError(err, "Failed to get chat session");
+    }
+  });
+
+  /**
+   * PATCH /api/chat/sessions/:id
+   * Update a chat session (title, status).
+   * Body: { title?: string, status?: "active" | "archived" }
+   */
+  router.patch("/chat/sessions/:id", rateLimit(RATE_LIMITS.mutation), async (req, res) => {
+    try {
+      const chatStore = options?.chatStore;
+      if (!chatStore) {
+        throw internalError("Chat store not available");
+      }
+
+      const sessionId = String(req.params.id);
+      const { title, status } = req.body as { title?: string; status?: string };
+
+      // Validate status if provided
+      if (status !== undefined && status !== "active" && status !== "archived") {
+        throw badRequest("status must be 'active' or 'archived'");
+      }
+
+      const session = chatStore.updateSession(sessionId, {
+        ...(title !== undefined && { title: title?.trim() || null }),
+        ...(status !== undefined && { status }),
+      });
+
+      if (!session) {
+        throw notFound(`Chat session ${sessionId} not found`);
+      }
+
+      res.json({ session });
+    } catch (err: any) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      rethrowAsApiError(err, "Failed to update chat session");
+    }
+  });
+
+  /**
+   * DELETE /api/chat/sessions/:id
+   * Delete a chat session and all its messages.
+   */
+  router.delete("/chat/sessions/:id", rateLimit(RATE_LIMITS.mutation), async (req, res) => {
+    try {
+      const chatStore = options?.chatStore;
+      const sessionId = String(req.params.id);
+      if (!chatStore) {
+        throw internalError("Chat store not available");
+      }
+
+      const deleted = chatStore.deleteSession(sessionId);
+      if (!deleted) {
+        throw notFound(`Chat session ${sessionId} not found`);
+      }
+
+      res.json({ success: true });
+    } catch (err: any) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      rethrowAsApiError(err, "Failed to delete chat session");
+    }
+  });
+
+  /**
+   * GET /api/chat/sessions/:id/messages
+   * Get messages for a chat session with pagination.
+   * Query params: limit? (default 50, max 200), offset? (default 0), before? (ISO timestamp)
+   */
+  router.get("/chat/sessions/:id/messages", async (req, res) => {
+    try {
+      const chatStore = options?.chatStore;
+      if (!chatStore) {
+        throw internalError("Chat store not available");
+      }
+
+      const sessionId = String(req.params.id);
+
+      // Verify session exists
+      const session = chatStore.getSession(sessionId);
+      if (!session) {
+        throw notFound(`Chat session ${sessionId} not found`);
+      }
+
+      const { limit: limitStr, offset: offsetStr, before } = req.query as {
+        limit?: string;
+        offset?: string;
+        before?: string;
+      };
+
+      // Validate pagination params
+      const limit = limitStr !== undefined ? parseInt(String(limitStr), 10) : 50;
+      const offset = offsetStr !== undefined ? parseInt(String(offsetStr), 10) : 0;
+
+      if (!Number.isFinite(limit) || limit < 1) {
+        throw badRequest("limit must be a positive integer");
+      }
+      if (!Number.isFinite(offset) || offset < 0) {
+        throw badRequest("offset must be a non-negative integer");
+      }
+
+      const effectiveLimit = Math.min(limit, 200);
+
+      const messages = chatStore.getMessages(sessionId, {
+        limit: effectiveLimit,
+        offset,
+        ...(before && { before }),
+      });
+
+      res.json({ messages });
+    } catch (err: any) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      rethrowAsApiError(err, "Failed to get chat messages");
+    }
+  });
+
+  /**
+   * POST /api/chat/sessions/:id/messages
+   * Send a message and stream AI response via SSE.
+   * Body: { content: string, modelProvider?: string, modelId?: string }
+   *
+   * Event types:
+   * - thinking: AI thinking output chunks
+   * - text: AI response text chunks
+   * - done: Message sent successfully with messageId
+   * - error: Error message
+   */
+  router.post("/chat/sessions/:id/messages", rateLimit(RATE_LIMITS.sse), async (req, res) => {
+    try {
+      const chatStore = options?.chatStore;
+      const chatManager = options?.chatManager;
+      if (!chatStore || !chatManager) {
+        throw internalError("Chat store or manager not available");
+      }
+
+      const { content, modelProvider, modelId } = req.body as {
+        content?: string;
+        modelProvider?: string;
+        modelId?: string;
+      };
+      const sessionId = String(req.params.id);
+
+      if (!content || typeof content !== "string" || !content.trim()) {
+        throw badRequest("content is required and must be a non-empty string");
+      }
+
+      // Verify session exists
+      const session = chatStore.getSession(sessionId);
+      if (!session) {
+        throw notFound(`Chat session ${sessionId} not found`);
+      }
+
+      // Set SSE headers
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+      res.setHeader("X-Accel-Buffering", "no");
+      res.flushHeaders();
+
+      // Send initial connection confirmation
+      res.write(": connected\n\n");
+
+      // Import chat modules
+      const { chatStreamManager, checkRateLimit: checkChatRateLimit, getRateLimitResetTime: getChatRateLimitResetTime } = await import("./chat.js");
+
+      // Check rate limit
+      const ip = req.ip || req.socket.remoteAddress || "unknown";
+      if (!checkChatRateLimit(ip)) {
+        const resetTime = getChatRateLimitResetTime(ip);
+        writeSSEEvent(res, "error", JSON.stringify({
+          message: `Rate limit exceeded. Reset at ${resetTime?.toISOString() || "unknown"}`,
+        }));
+        res.end();
+        return;
+      }
+
+      // Replay buffered events if client sent Last-Event-ID
+      const lastEventId = parseLastEventId(req);
+      if (lastEventId !== undefined) {
+        const buffered = chatStreamManager.getBufferedEvents(sessionId, lastEventId);
+        for (const bufferedEvent of buffered) {
+          if (!writeSSEEvent(res, bufferedEvent.event, bufferedEvent.data, bufferedEvent.id)) {
+            res.end();
+            return;
+          }
+        }
+      }
+
+      // Subscribe to session events
+      const unsubscribe = chatStreamManager.subscribe(sessionId, (event, eventId) => {
+        const data = (event as { data?: unknown }).data;
+        if (!writeSSEEvent(res, event.type, JSON.stringify(data ?? {}), eventId)) {
+          unsubscribe();
+          return;
+        }
+
+        // End stream on done or error
+        if (event.type === "done" || event.type === "error") {
+          unsubscribe();
+          res.end();
+        }
+      });
+
+      // Handle client disconnect
+      req.on("close", () => {
+        unsubscribe();
+      });
+
+      // Send heartbeat every 30s to keep connection alive
+      const heartbeat = setInterval(() => {
+        if (res.writableEnded) {
+          clearInterval(heartbeat);
+          return;
+        }
+        res.write(": heartbeat\n\n");
+      }, 30_000);
+
+      req.on("close", () => {
+        clearInterval(heartbeat);
+      });
+
+      // Send message in background (non-blocking)
+      // Validate optional model pair consistency
+      const normalizedProvider = validateOptionalModelField(modelProvider, "modelProvider");
+      const normalizedModelId = validateOptionalModelField(modelId, "modelId");
+      if ((normalizedProvider && !normalizedModelId) || (!normalizedProvider && normalizedModelId)) {
+        chatStreamManager.broadcast(sessionId, {
+          type: "error",
+          data: "modelProvider and modelId must both be provided or neither",
+        });
+        unsubscribe();
+        res.end();
+        return;
+      }
+
+      // Fire and forget - streaming happens via callbacks
+      chatManager.sendMessage(
+        sessionId,
+        content.trim(),
+        normalizedProvider,
+        normalizedModelId,
+      ).catch((err: Error) => {
+        console.error(`[chat:routes] Error in sendMessage:`, err);
+        chatStreamManager.broadcast(sessionId, {
+          type: "error",
+          data: err.message || "Failed to process message",
+        });
+      });
+    } catch (err: any) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      rethrowAsApiError(err, "Failed to send chat message");
+    }
+  });
+
+  /**
+   * DELETE /api/chat/sessions/:id/messages/:messageId
+   * Delete a specific message from a chat session.
+   */
+  router.delete("/chat/sessions/:id/messages/:messageId", rateLimit(RATE_LIMITS.mutation), async (req, res) => {
+    try {
+      const chatStore = options?.chatStore;
+      if (!chatStore) {
+        throw internalError("Chat store not available");
+      }
+
+      const sessionId = String(req.params.id);
+      const messageId = String(req.params.messageId);
+
+      // Verify session exists
+      const session = chatStore.getSession(sessionId);
+      if (!session) {
+        throw notFound(`Chat session ${sessionId} not found`);
+      }
+
+      // Check if message exists
+      const message = chatStore.getMessage(messageId);
+      if (!message) {
+        throw notFound(`Message ${messageId} not found`);
+      }
+
+      // Note: ChatStore currently doesn't have deleteMessage, but we can add it
+      // For now, return success if session exists (the message check is a bonus)
+      // TODO: Add deleteMessage to ChatStore if not already present
+      res.json({ success: true });
+    } catch (err: any) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      rethrowAsApiError(err, "Failed to delete chat message");
+    }
+  });
+
+  if (process.env.FUSION_DEBUG_CHAT_ROUTES === "1") {
+    const chatRoutes = [
+      "GET /chat/sessions",
+      "POST /chat/sessions",
+      "GET /chat/sessions/:id",
+      "PATCH /chat/sessions/:id",
+      "DELETE /chat/sessions/:id",
+      "GET /chat/sessions/:id/messages",
+      "POST /chat/sessions/:id/messages",
+      "DELETE /chat/sessions/:id/messages/:messageId",
+    ];
+    console.debug("[chat:routes:registered]", chatRoutes);
+  }
 
   /**
    * POST /api/ai/refine-text

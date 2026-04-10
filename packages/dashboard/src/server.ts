@@ -4,6 +4,7 @@ import { join, dirname } from "node:path";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { Task, TaskStore, MergeResult, AutomationStore } from "@fusion/core";
+import { ChatStore } from "@fusion/core";
 import type { AuthStorageLike, ModelRegistryLike } from "./routes.js";
 import { createApiRoutes } from "./routes.js";
 import { createSSE } from "./sse.js";
@@ -34,6 +35,7 @@ import {
   setAiSessionStore as setMissionAiSessionStore,
   rehydrateFromStore as rehydrateMissionSessions,
 } from "./mission-interview.js";
+import { ChatManager } from "./chat.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -111,6 +113,10 @@ export interface ServerOptions {
   pluginRunner?: {
     getPluginRoutes(): Array<{ pluginId: string; route: import("@fusion/core").PluginRouteDefinition }>;
   };
+  /** Optional ChatStore for chat session management */
+  chatStore?: import("@fusion/core").ChatStore;
+  /** Optional ChatManager for AI chat message handling */
+  chatManager?: import("./chat.js").ChatManager;
 }
 
 type DashboardExpressApp = ReturnType<typeof express> & {
@@ -385,6 +391,12 @@ export function createServer(store: TaskStore, options?: ServerOptions): ReturnT
     );
   }
 
+  // Create ChatStore for chat session management
+  const chatStore = options?.chatStore ?? new ChatStore(store.getFusionDir(), store.getDatabase());
+
+  // Create ChatManager for AI chat message handling
+  const chatManager = options?.chatManager ?? new ChatManager(chatStore, store.getRootDir());
+
   const runAiSessionCleanup = (maxAgeMs: number, source: "initial" | "scheduled") => {
     const result = aiSessionStore.cleanupStaleSessions(maxAgeMs);
     console.log(
@@ -467,7 +479,7 @@ export function createServer(store: TaskStore, options?: ServerOptions): ReturnT
   });
 
   // REST API
-  app.use("/api", createApiRoutes(store, { ...options, aiSessionStore }));
+  app.use("/api", createApiRoutes(store, { ...options, aiSessionStore, chatStore, chatManager }));
 
   // API 404 Handler - Return JSON for unmatched API routes (instead of falling through to SPA)
   app.use("/api", (_req: express.Request, res: express.Response) => {
