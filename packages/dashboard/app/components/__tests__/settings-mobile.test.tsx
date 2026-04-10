@@ -89,8 +89,12 @@ describe("SettingsModal mobile adaptations", () => {
   });
 
   it("renders form controls inside settings-content for 16px mobile targeting", async () => {
-    const { container } = render(<SettingsModal onClose={vi.fn()} addToast={vi.fn()} />);
+    const user = userEvent.setup();
+    const { container, getByText } = render(<SettingsModal onClose={vi.fn()} addToast={vi.fn()} />);
     await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
+
+    // Authentication is first by default, so click General to see form controls
+    await user.click(getByText("General"));
 
     const controls = container.querySelectorAll(".settings-content input, .settings-content select, .settings-content textarea");
     expect(controls.length).toBeGreaterThan(0);
@@ -98,10 +102,12 @@ describe("SettingsModal mobile adaptations", () => {
 
   it("shows scope indicators and updates scope banner across sections", async () => {
     const user = userEvent.setup();
-    const { container, getByText } = render(<SettingsModal onClose={vi.fn()} addToast={vi.fn()} />);
+    const { container, getByText, getAllByText } = render(<SettingsModal onClose={vi.fn()} addToast={vi.fn()} />);
     await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
 
+    // Authentication is first with no scope banner by default - click General to see project scope
     expect(container.querySelectorAll(".settings-scope-icon").length).toBeGreaterThan(0);
+    await user.click(getAllByText("General")[0]);
     expect(getByText("These settings only affect this project.")).toBeTruthy();
 
     await user.click(getByText("Appearance"));

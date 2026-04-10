@@ -37,22 +37,30 @@ import { applyPresetToSelection, generateUniquePresetId } from "../utils/modelPr
  *   - notifications: ntfy.sh notification settings (global)
  *   - authentication: OAuth provider status, login/logout (independent)
  */
-const SETTINGS_SECTIONS = [
-  { id: "general", label: "General", scope: "project" as const },
-  { id: "models", label: "Models", scope: "project" as const },
-  { id: "appearance", label: "Appearance", scope: "global" as const },
-  { id: "scheduling", label: "Scheduling", scope: "project" as const },
-  { id: "worktrees", label: "Worktrees", scope: "project" as const },
-  { id: "commands", label: "Commands", scope: "project" as const },
-  { id: "merge", label: "Merge", scope: "project" as const },
-  { id: "memory", label: "Memory", scope: "project" as const },
-  { id: "backups", label: "Backups", scope: "project" as const },
-  { id: "notifications", label: "Notifications", scope: "global" as const },
-  { id: "plugins", label: "Plugins", scope: "project" as const },
-  { id: "authentication", label: "Authentication", scope: undefined },
-] as const;
+/** Section entry type with optional icon */
+type SettingsSection = {
+  id: string;
+  label: string;
+  scope: "global" | "project" | undefined;
+  icon?: typeof Globe;
+};
 
-export type SectionId = (typeof SETTINGS_SECTIONS)[number]["id"];
+const SETTINGS_SECTIONS: SettingsSection[] = [
+  { id: "authentication", label: "Authentication", scope: undefined, icon: Globe },
+  { id: "appearance", label: "Appearance", scope: "global" },
+  { id: "notifications", label: "Notifications", scope: "global" },
+  { id: "general", label: "General", scope: "project" },
+  { id: "models", label: "Models", scope: "project" },
+  { id: "scheduling", label: "Scheduling", scope: "project" },
+  { id: "worktrees", label: "Worktrees", scope: "project" },
+  { id: "commands", label: "Commands", scope: "project" },
+  { id: "merge", label: "Merge", scope: "project" },
+  { id: "memory", label: "Memory", scope: "project" },
+  { id: "backups", label: "Backups", scope: "project" },
+  { id: "plugins", label: "Plugins", scope: "project" },
+];
+
+export type SectionId = SettingsSection["id"];
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -2006,6 +2014,7 @@ export function SettingsModal({
                 >
                   {section.scope === "global" && <Globe className="settings-scope-icon" aria-label="Global setting" size={16} />}
                   {section.scope === "project" && <Folder className="settings-scope-icon" aria-label="Project setting" size={16} />}
+                  {section.icon && section.scope !== "global" && section.scope !== "project" && <section.icon className="settings-scope-icon" aria-label="Global setting" size={16} />}
                   {section.label}
                 </button>
               ))}

@@ -72,9 +72,12 @@ describe("SettingsModal", () => {
     expect(screen.getAllByText("Merge").length).toBeGreaterThanOrEqual(1);
   });
 
-  it("shows General fields by default", async () => {
+  it("shows General fields when General section is selected", async () => {
     render(<SettingsModal onClose={onClose} addToast={addToast} />);
     await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
+
+    // Click on General (Authentication is now default, so we need to navigate)
+    fireEvent.click(screen.getAllByText("General")[0]);
 
     expect(screen.getByLabelText("Task Prefix")).toBeTruthy();
     // Fields from other sections should not be visible
@@ -102,7 +105,8 @@ describe("SettingsModal", () => {
     render(<SettingsModal onClose={onClose} addToast={addToast} />);
     await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
 
-    // General (default)
+    // General
+    fireEvent.click(screen.getAllByText("General")[0]);
     expect(screen.getByLabelText("Task Prefix")).toBeTruthy();
 
     // Scheduling
@@ -159,6 +163,7 @@ describe("SettingsModal", () => {
     render(<SettingsModal onClose={onClose} addToast={addToast} />);
     await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
 
+    fireEvent.click(screen.getAllByText("General")[0]);
     const input = screen.getByLabelText("Task Prefix") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "PROJ" } });
     expect(input.value).toBe("PROJ");
@@ -174,6 +179,7 @@ describe("SettingsModal", () => {
     render(<SettingsModal onClose={onClose} addToast={addToast} />);
     await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
 
+    fireEvent.click(screen.getAllByText("General")[0]);
     const input = screen.getByLabelText("Task Prefix") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "" } });
 
@@ -188,6 +194,7 @@ describe("SettingsModal", () => {
     render(<SettingsModal onClose={onClose} addToast={addToast} />);
     await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
 
+    fireEvent.click(screen.getAllByText("General")[0]);
     const input = screen.getByLabelText("Task Prefix") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "bad" } });
 
@@ -198,6 +205,7 @@ describe("SettingsModal", () => {
     render(<SettingsModal onClose={onClose} addToast={addToast} />);
     await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
 
+    fireEvent.click(screen.getAllByText("General")[0]);
     const input = screen.getByLabelText("Task Prefix") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "bad" } });
 
@@ -383,6 +391,9 @@ describe("SettingsModal", () => {
   it("saving in General section updates project settings with task prefix", async () => {
     render(<SettingsModal onClose={onClose} addToast={addToast} />);
     await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
+
+    // Click on General to navigate to General section
+    fireEvent.click(screen.getAllByText("General")[0]);
 
     // General section is project-scoped — change a project setting
     const input = screen.getByLabelText("Task Prefix") as HTMLInputElement;
@@ -743,11 +754,25 @@ describe("SettingsModal", () => {
     expect(screen.getAllByText("Authentication").length).toBeGreaterThanOrEqual(1);
   });
 
+  it("Authentication nav item has globe icon in sidebar", async () => {
+    const { container } = render(<SettingsModal onClose={onClose} addToast={addToast} />);
+    await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
+
+    // Find the Authentication nav item in the sidebar
+    const authNavItem = container.querySelector(".settings-nav-item");
+    expect(authNavItem).toBeTruthy();
+    expect(authNavItem?.textContent?.trim()).toBe("Authentication");
+
+    // Check that it has a globe icon (Globe icon component renders as SVG with specific aria-label)
+    const globeIcon = authNavItem?.querySelector('[aria-label="Global setting"]');
+    expect(globeIcon).toBeTruthy();
+  });
+
   it("shows provider auth status when Authentication section is selected", async () => {
     render(<SettingsModal onClose={onClose} addToast={addToast} />);
     await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
 
-    fireEvent.click(screen.getByText("Authentication"));
+    fireEvent.click(screen.getAllByText("Authentication")[0]);
     await waitFor(() => expect(fetchAuthStatus).toHaveBeenCalled());
 
     expect(screen.getByText("Anthropic")).toBeTruthy();
@@ -762,7 +787,7 @@ describe("SettingsModal", () => {
     render(<SettingsModal onClose={onClose} addToast={addToast} />);
     await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
 
-    fireEvent.click(screen.getByText("Authentication"));
+    fireEvent.click(screen.getAllByText("Authentication")[0]);
     await waitFor(() => expect(fetchAuthStatus).toHaveBeenCalled());
 
     expect(screen.getByText("✓ Authenticated")).toBeTruthy();
@@ -776,7 +801,7 @@ describe("SettingsModal", () => {
     render(<SettingsModal onClose={onClose} addToast={addToast} />);
     await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
 
-    fireEvent.click(screen.getByText("Authentication"));
+    fireEvent.click(screen.getAllByText("Authentication")[0]);
     await waitFor(() => expect(fetchAuthStatus).toHaveBeenCalled());
 
     fireEvent.click(screen.getByText("Login"));
@@ -795,7 +820,7 @@ describe("SettingsModal", () => {
     render(<SettingsModal onClose={onClose} addToast={addToast} />);
     await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
 
-    fireEvent.click(screen.getByText("Authentication"));
+    fireEvent.click(screen.getAllByText("Authentication")[0]);
     await waitFor(() => expect(fetchAuthStatus).toHaveBeenCalled());
 
     fireEvent.click(screen.getByText("Logout"));
@@ -817,7 +842,7 @@ describe("SettingsModal", () => {
     render(<SettingsModal onClose={onClose} addToast={addToast} />);
     await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
 
-    fireEvent.click(screen.getByText("Authentication"));
+    fireEvent.click(screen.getAllByText("Authentication")[0]);
     await waitFor(() => expect(fetchAuthStatus).toHaveBeenCalled());
 
     const authBadge = screen.getByTestId("auth-status-anthropic");
@@ -833,7 +858,7 @@ describe("SettingsModal", () => {
     render(<SettingsModal onClose={onClose} addToast={addToast} />);
     await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
 
-    fireEvent.click(screen.getByText("Authentication"));
+    fireEvent.click(screen.getAllByText("Authentication")[0]);
     await waitFor(() => expect(fetchAuthStatus).toHaveBeenCalled());
 
     const providerRow = screen.getByText("Anthropic").closest(".auth-provider-row");
@@ -933,7 +958,7 @@ describe("SettingsModal", () => {
     render(<SettingsModal onClose={onClose} addToast={addToast} />);
     await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
 
-    fireEvent.click(screen.getByText("Authentication"));
+    fireEvent.click(screen.getAllByText("Authentication")[0]);
     await waitFor(() => expect(fetchAuthStatus).toHaveBeenCalled());
 
     fireEvent.click(screen.getByText("Login"));
@@ -956,14 +981,15 @@ describe("SettingsModal", () => {
     expect(screen.queryByLabelText("Task Prefix")).toBeNull();
   });
 
-  it("defaults to General section when no initialSection is passed", async () => {
+  it("defaults to Authentication section when no initialSection is passed", async () => {
     render(<SettingsModal onClose={onClose} addToast={addToast} />);
     await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
+    await waitFor(() => expect(fetchAuthStatus).toHaveBeenCalled());
 
-    // General content should be visible
-    expect(screen.getByLabelText("Task Prefix")).toBeTruthy();
-    // Authentication content should NOT be visible
-    expect(screen.queryByText("✗ Not authenticated")).toBeNull();
+    // Authentication content should be visible (it's the default section now)
+    expect(screen.getByText("Anthropic")).toBeTruthy();
+    // General content should NOT be visible
+    expect(screen.queryByLabelText("Task Prefix")).toBeNull();
   });
 
   it("shows sign-in hint when no providers are authenticated", async () => {
@@ -977,7 +1003,7 @@ describe("SettingsModal", () => {
     render(<SettingsModal onClose={onClose} addToast={addToast} />);
     await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
 
-    fireEvent.click(screen.getByText("Authentication"));
+    fireEvent.click(screen.getAllByText("Authentication")[0]);
     await waitFor(() => expect(fetchAuthStatus).toHaveBeenCalled());
 
     expect(screen.getByText("Sign in to at least one provider to get started.")).toBeTruthy();
@@ -997,7 +1023,7 @@ describe("SettingsModal", () => {
     render(<SettingsModal onClose={onClose} addToast={addToast} />);
     await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
 
-    fireEvent.click(screen.getByText("Authentication"));
+    fireEvent.click(screen.getAllByText("Authentication")[0]);
     await waitFor(() => expect(fetchAuthStatus).toHaveBeenCalled());
 
     expect(screen.queryByText("Sign in to at least one provider to get started.")).toBeNull();
@@ -1018,7 +1044,7 @@ describe("SettingsModal", () => {
     const { container } = render(<SettingsModal onClose={onClose} addToast={addToast} />);
     await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
 
-    fireEvent.click(screen.getByText("Authentication"));
+    fireEvent.click(screen.getAllByText("Authentication")[0]);
     await waitFor(() => expect(fetchAuthStatus).toHaveBeenCalled());
 
     const input = screen.getByPlaceholderText("Enter API key") as HTMLInputElement;
@@ -1044,7 +1070,7 @@ describe("SettingsModal", () => {
     const { container } = render(<SettingsModal onClose={onClose} addToast={addToast} />);
     await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
 
-    fireEvent.click(screen.getByText("Authentication"));
+    fireEvent.click(screen.getAllByText("Authentication")[0]);
     await waitFor(() => expect(fetchAuthStatus).toHaveBeenCalled());
 
     // The Clear button should be inside the auth-apikey-section
@@ -1074,7 +1100,7 @@ describe("SettingsModal", () => {
     const { container } = render(<SettingsModal onClose={onClose} addToast={addToast} />);
     await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
 
-    fireEvent.click(screen.getByText("Authentication"));
+    fireEvent.click(screen.getAllByText("Authentication")[0]);
     await waitFor(() => expect(fetchAuthStatus).toHaveBeenCalled());
 
     const input = screen.getByPlaceholderText("Enter API key");
@@ -1097,7 +1123,7 @@ describe("SettingsModal", () => {
     const { container } = render(<SettingsModal onClose={onClose} addToast={addToast} />);
     await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
 
-    fireEvent.click(screen.getByText("Authentication"));
+    fireEvent.click(screen.getAllByText("Authentication")[0]);
     await waitFor(() => expect(fetchAuthStatus).toHaveBeenCalled());
 
     const apiKeySection = container.querySelector(".auth-apikey-section")!;
@@ -1124,7 +1150,7 @@ describe("SettingsModal", () => {
     const { container } = render(<SettingsModal onClose={onClose} addToast={addToast} />);
     await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
 
-    fireEvent.click(screen.getByText("Authentication"));
+    fireEvent.click(screen.getAllByText("Authentication")[0]);
     await waitFor(() => expect(fetchAuthStatus).toHaveBeenCalled());
 
     const apiKeySection = container.querySelector(".auth-apikey-section")!;
@@ -1147,7 +1173,7 @@ describe("SettingsModal", () => {
     const { container } = render(<SettingsModal onClose={onClose} addToast={addToast} />);
     await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
 
-    fireEvent.click(screen.getByText("Authentication"));
+    fireEvent.click(screen.getAllByText("Authentication")[0]);
     await waitFor(() => expect(fetchAuthStatus).toHaveBeenCalled());
 
     const input = screen.getByPlaceholderText("Enter API key");
@@ -1177,7 +1203,7 @@ describe("SettingsModal", () => {
     const { container } = render(<SettingsModal onClose={onClose} addToast={addToast} />);
     await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
 
-    fireEvent.click(screen.getByText("Authentication"));
+    fireEvent.click(screen.getAllByText("Authentication")[0]);
     await waitFor(() => expect(fetchAuthStatus).toHaveBeenCalled());
 
     // Initially should show "Clear" button (authenticated)
@@ -1210,7 +1236,7 @@ describe("SettingsModal", () => {
     const { container } = render(<SettingsModal onClose={onClose} addToast={addToast} />);
     await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
 
-    fireEvent.click(screen.getByText("Authentication"));
+    fireEvent.click(screen.getAllByText("Authentication")[0]);
     await waitFor(() => expect(fetchAuthStatus).toHaveBeenCalled());
 
     const apiKeySection = container.querySelector(".auth-apikey-section")!;
@@ -1231,7 +1257,7 @@ describe("SettingsModal", () => {
     render(<SettingsModal onClose={onClose} addToast={addToast} />);
     await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
 
-    fireEvent.click(screen.getByText("Authentication"));
+    fireEvent.click(screen.getAllByText("Authentication")[0]);
     await waitFor(() => expect(fetchAuthStatus).toHaveBeenCalled());
 
     // OAuth provider shows Login
@@ -1250,7 +1276,7 @@ describe("SettingsModal", () => {
     render(<SettingsModal onClose={onClose} addToast={addToast} />);
     await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
 
-    fireEvent.click(screen.getByText("Authentication"));
+    fireEvent.click(screen.getAllByText("Authentication")[0]);
     await waitFor(() => expect(fetchAuthStatus).toHaveBeenCalled());
 
     const input = screen.getByPlaceholderText("Enter API key") as HTMLInputElement;
@@ -1269,29 +1295,30 @@ describe("SettingsModal", () => {
     expect(layout!.querySelector(".settings-content")).toBeTruthy();
   });
 
-  it("has .settings-sidebar with 11 .settings-nav-item buttons for all sections", async () => {
+  it("has .settings-sidebar with 12 .settings-nav-item buttons for all sections", async () => {
     const { container } = render(<SettingsModal onClose={onClose} addToast={addToast} />);
     await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
 
     const sidebar = container.querySelector(".settings-sidebar");
     expect(sidebar).toBeTruthy();
     const navItems = sidebar!.querySelectorAll(".settings-nav-item");
-    expect(navItems.length).toBe(11);
+    expect(navItems.length).toBe(12);
 
     // Labels include scope icons (Globe for global, Folder for project)
-    const labels = Array.from(navItems).map((el) => el.textContent);
+    const labels = Array.from(navItems).map((el) => el.textContent?.trim());
     expect(labels).toEqual([
+      "Authentication",
+      "Appearance",
+      "Notifications",
       "General",
       "Models",
-      "Appearance",
       "Scheduling",
       "Worktrees",
       "Commands",
       "Merge",
       "Memory",
       "Backups",
-      "Notifications",
-      "Authentication",
+      "Plugins",
     ]);
   });
 
@@ -1311,16 +1338,16 @@ describe("SettingsModal", () => {
     const { container } = render(<SettingsModal onClose={onClose} addToast={addToast} />);
     await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
 
-    // Default active section is General
+    // Default active section is Authentication (first in sidebar order)
     const activeItems = container.querySelectorAll(".settings-nav-item.active");
     expect(activeItems.length).toBe(1);
-    expect(activeItems[0].textContent).toBe("General");
+    expect(activeItems[0].textContent?.trim()).toBe("Authentication");
 
-    // Switch to Scheduling
-    fireEvent.click(screen.getByText("Scheduling"));
+    // Switch to General
+    fireEvent.click(screen.getAllByText("General")[0]);
     const newActive = container.querySelectorAll(".settings-nav-item.active");
     expect(newActive.length).toBe(1);
-    expect(newActive[0].textContent).toBe("Scheduling");
+    expect(newActive[0].textContent?.trim()).toBe("General");
   });
 
   it("auth provider rows contain .auth-provider-info and action button", async () => {
@@ -1334,7 +1361,7 @@ describe("SettingsModal", () => {
     const { container } = render(<SettingsModal onClose={onClose} addToast={addToast} />);
     await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
 
-    fireEvent.click(screen.getByText("Authentication"));
+    fireEvent.click(screen.getAllByText("Authentication")[0]);
     await waitFor(() => expect(fetchAuthStatus).toHaveBeenCalled());
 
     const rows = container.querySelectorAll(".auth-provider-row");
@@ -2017,18 +2044,23 @@ describe("SettingsModal", () => {
     const { container } = render(<SettingsModal onClose={onClose} addToast={addToast} />);
     await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
 
-    // General section is project-scoped → should show project banner
-    expect(container.querySelector(".settings-scope-project")).toBeTruthy();
+    // Authentication is first (no scope banner) → should show no scope banner
+    expect(container.querySelector(".settings-scope-project")).toBeNull();
     expect(container.querySelector(".settings-scope-global")).toBeNull();
 
     // Switch to Appearance → should show global banner
-    fireEvent.click(screen.getByText("Appearance"));
+    fireEvent.click(screen.getAllByText("Appearance")[0]);
     expect(container.querySelector(".settings-scope-global")).toBeTruthy();
     expect(container.querySelector(".settings-scope-global")?.textContent).toContain("Fusion");
     expect(container.querySelector(".settings-scope-project")).toBeNull();
 
+    // Switch to General → should show project banner
+    fireEvent.click(screen.getAllByText("General")[0]);
+    expect(container.querySelector(".settings-scope-project")).toBeTruthy();
+    expect(container.querySelector(".settings-scope-global")).toBeNull();
+
     // Switch to Models → should show project banner
-    fireEvent.click(screen.getByText("Models"));
+    fireEvent.click(screen.getAllByText("Models")[0]);
     expect(container.querySelector(".settings-scope-project")).toBeTruthy();
     expect(container.querySelector(".settings-scope-global")).toBeNull();
   });

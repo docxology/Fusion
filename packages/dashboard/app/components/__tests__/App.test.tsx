@@ -650,7 +650,7 @@ describe("App auto-open Settings on unauthenticated", () => {
     expect(screen.queryByText("Set Up AI Provider")).toBeNull();
   });
 
-  it("re-opening Settings via gear icon defaults to General tab after closing onboarding", async () => {
+  it("re-opening Settings via gear icon defaults to Authentication tab after closing onboarding", async () => {
     // fetchGlobalSettings returns {} by default → onboarding opens
     render(<App />);
 
@@ -672,8 +672,15 @@ describe("App auto-open Settings on unauthenticated", () => {
     const settingsButton = screen.getByTitle("Settings");
     fireEvent.click(settingsButton);
 
-    // Now it should open to General section (default)
+    // Settings should open with Authentication section (first/default)
     await waitFor(() => expect(fetchSettings).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(fetchAuthStatus).toHaveBeenCalled());
+
+    // Authentication section content should be visible (providers listed)
+    expect(screen.getByText("Anthropic")).toBeTruthy();
+
+    // Click on General to verify General section has Task Prefix
+    fireEvent.click(screen.getAllByText("General")[0]);
     expect(screen.getByLabelText("Task Prefix")).toBeTruthy();
   });
 });
