@@ -235,7 +235,7 @@ function getProviderIconKey(providerName: string): string {
   if (normalized.includes('zai') || normalized.includes('zhipu')) {
     return 'zai';
   }
-  if (normalized.includes('kimi')) {
+  if (normalized.includes('kimi') || normalized.includes('moonshot')) {
     return 'kimi';
   }
   

@@ -591,6 +591,23 @@ describe("UsageIndicator", () => {
     expect(document.querySelector('[data-provider="kimi"]')).toBeInTheDocument();
   });
 
+  it("maps Moonshot provider to kimi icon (alias)", () => {
+    mockUseUsageData.mockReturnValue({
+      providers: [
+        { name: "Moonshot", icon: "🌙", status: "ok", windows: [] },
+      ],
+      loading: false,
+      error: null,
+      lastUpdated: new Date(),
+      refresh: mockRefresh,
+    });
+
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
+
+    expect(document.querySelector('[data-provider="kimi"]')).toBeInTheDocument();
+    expect(screen.getByText("Moonshot")).toBeInTheDocument();
+  });
+
   // Pace indicator tests
   it("renders pace marker for weekly windows with timing data", () => {
     mockUseUsageData.mockReturnValue({

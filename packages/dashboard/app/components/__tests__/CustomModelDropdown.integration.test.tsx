@@ -9,6 +9,8 @@ const MOCK_MODELS: ModelInfo[] = [
   { provider: "anthropic", id: "claude-opus-4", name: "Claude Opus 4", reasoning: true, contextWindow: 200000 },
   { provider: "openai", id: "gpt-4o", name: "GPT-4o", reasoning: false, contextWindow: 128000 },
   { provider: "ollama", id: "llama3", name: "Llama 3", reasoning: false, contextWindow: 4096 },
+  { provider: "kimi", id: "moonshot-v1-8k", name: "Moonshot V1 8K", reasoning: false, contextWindow: 8192 },
+  { provider: "moonshot", id: "moonshot-v1-32k", name: "Moonshot V1 32K", reasoning: false, contextWindow: 32768 },
 ];
 
 const defaultProps = {
@@ -118,5 +120,50 @@ describe("CustomModelDropdown ProviderIcon Integration", () => {
       expect(icon).toHaveAttribute("width", "16");
       expect(icon).toHaveAttribute("height", "16");
     });
+  });
+
+  it("renders Kimi brand icon for kimi provider model in dropdown", async () => {
+    const user = userEvent.setup();
+    render(<CustomModelDropdown {...defaultProps} />);
+
+    await user.click(screen.getByLabelText("Test Model"));
+
+    // Verify at least one Kimi icon is rendered in dropdown
+    const kimiIcons = screen.getAllByTestId("kimi-icon");
+    expect(kimiIcons.length).toBeGreaterThanOrEqual(1);
+    
+    // Verify the first one has correct attributes
+    const kimiIcon = kimiIcons[0];
+    expect(kimiIcon).toHaveAttribute("aria-label", "Kimi");
+    expect(kimiIcon.querySelector("path")).toHaveAttribute("fill", "#6C5CE7");
+  });
+
+  it("renders Kimi brand icon for moonshot provider model in dropdown (alias)", async () => {
+    const user = userEvent.setup();
+    render(<CustomModelDropdown {...defaultProps} />);
+
+    await user.click(screen.getByLabelText("Test Model"));
+
+    // Both kimi and moonshot providers should show the same Kimi icon
+    const kimiIcons = screen.getAllByTestId("kimi-icon");
+    expect(kimiIcons.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("renders Kimi icon in trigger when kimi model is selected", () => {
+    render(<CustomModelDropdown {...defaultProps} value="kimi/moonshot-v1-8k" />);
+
+    const kimiIcon = screen.getByTestId("kimi-icon");
+    expect(kimiIcon).toBeInTheDocument();
+    expect(kimiIcon).toHaveAttribute("aria-label", "Kimi");
+    expect(kimiIcon.querySelector("path")).toHaveAttribute("fill", "#6C5CE7");
+  });
+
+  it("renders Kimi icon in trigger when moonshot model is selected (alias)", () => {
+    render(<CustomModelDropdown {...defaultProps} value="moonshot/moonshot-v1-32k" />);
+
+    const kimiIcon = screen.getByTestId("kimi-icon");
+    expect(kimiIcon).toBeInTheDocument();
+    expect(kimiIcon).toHaveAttribute("aria-label", "Kimi");
+    expect(kimiIcon.querySelector("path")).toHaveAttribute("fill", "#6C5CE7");
   });
 });

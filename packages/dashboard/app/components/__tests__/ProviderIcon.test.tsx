@@ -263,4 +263,31 @@ describe("ProviderIcon", () => {
     const wrapper = screen.getByTestId("kimi-icon").parentElement;
     expect(wrapper).toHaveAttribute("data-provider", "kimi");
   });
+
+  it("renders Kimi brand icon for moonshot provider (alias)", () => {
+    render(<ProviderIcon provider="moonshot" />);
+    expect(screen.getByTestId("kimi-icon")).toBeInTheDocument();
+    expect(screen.getByLabelText("Kimi")).toBeInTheDocument();
+  });
+
+  it("applies provider-specific color for moonshot (alias)", () => {
+    render(<ProviderIcon provider="moonshot" />);
+    const icon = screen.getByTestId("kimi-icon").parentElement;
+    expect(icon).toHaveStyle({ color: "#6C5CE7" });
+  });
+
+  it("passes correct color to SVG fill for moonshot (alias)", () => {
+    render(<ProviderIcon provider="moonshot" />);
+    const svg = screen.getByTestId("kimi-icon");
+    const paths = svg.querySelectorAll("path");
+    expect(paths.length).toBeGreaterThan(0);
+    expect(paths[0]).toHaveAttribute("fill", "#6C5CE7");
+  });
+
+  it("normalizes Moonshot (capitalized) to moonshot", () => {
+    render(<ProviderIcon provider="Moonshot" />);
+    expect(screen.getByTestId("kimi-icon")).toBeInTheDocument();
+    const wrapper = screen.getByTestId("kimi-icon").parentElement;
+    expect(wrapper).toHaveAttribute("data-provider", "moonshot");
+  });
 });
