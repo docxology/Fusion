@@ -25,6 +25,7 @@ import { isContextLimitError } from "./context-limit-detector.js";
 import { StepSessionExecutor, type StepSessionExecutorOptions, type StepResult } from "./step-session-executor.js";
 import { resolveAgentInstructions, buildSystemPromptWithInstructions } from "./agent-instructions.js";
 import type { AgentReflectionService } from "./agent-reflection.js";
+import { createRunAuditor, generateSyntheticRunId, type EngineRunContext } from "./run-audit.js";
 import {
   createReflectOnPerformanceTool,
   createTaskCreateTool as sharedCreateTaskCreateTool,
@@ -803,10 +804,22 @@ export class TaskExecutor {
 
     // Construct run context for mutation correlation
     // Use a synthetic correlation ID: task ID + timestamp + random suffix
+    const syntheticRunId = generateSyntheticRunId("exec", task.id);
     this.currentRunContext = {
-      runId: `exec-${task.id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      runId: syntheticRunId,
       agentId: task.assignedAgentId ?? "executor",
     };
+
+    // Build engine run context for audit instrumentation (FN-1404)
+    const engineRunContext: EngineRunContext = {
+      runId: syntheticRunId,
+      agentId: task.assignedAgentId ?? "executor",
+      taskId: task.id,
+      phase: "execute",
+    };
+
+    // Create run auditor for TaskStore-backed audit emission (no-ops if store doesn't support it)
+    const audit = createRunAuditor(this.store, engineRunContext);
 
     // Hoist worktreePath so it's accessible in the catch block for dep-abort cleanup
     // Determine worktree name based on settings
@@ -873,6 +886,8 @@ export class TaskExecutor {
               acquiredFromPool = true;
               executorLog.log(`Acquired worktree from pool: ${pooled}`);
               await this.store.updateTask(task.id, { worktree: worktreePath, branch: actualBranch });
+              // Audit trail: record worktree reuse (FN-1404)
+              await audit.git({ type: "worktree:reuse", target: worktreePath, metadata: { branch: actualBranch } });
               if (actualBranch !== branchName) {
                 executorLog.log(`Branch conflict resolved: using ${actualBranch} instead of ${branchName}`);
                 await this.store.logEntry(task.id, `Acquired worktree from pool: ${worktreePath} (branch conflict: using ${actualBranch})`, undefined, this.currentRunContext);
@@ -899,6 +914,9 @@ export class TaskExecutor {
           const created = await this.createWorktree(branchName, worktreePath, task.id, baseBranch ?? undefined);
           worktreePath = created.path;
           await this.store.updateTask(task.id, { worktree: created.path, branch: created.branch });
+          // Audit trail: record worktree creation and branch creation (FN-1404)
+          await audit.git({ type: "worktree:create", target: created.path, metadata: { branch: created.branch } });
+          await audit.git({ type: "branch:create", target: created.branch });
           if (created.branch !== branchName) {
             executorLog.log(`Branch conflict resolved: using ${created.branch} instead of ${branchName}`);
             await this.store.logEntry(task.id, `Worktree created at ${worktreePath} (branch conflict: using ${created.branch})`, undefined, this.currentRunContext);
@@ -951,6 +969,9 @@ export class TaskExecutor {
         const created = await this.createWorktree(branchName, worktreePath, task.id);
         worktreePath = created.path;
         await this.store.updateTask(task.id, { worktree: created.path, branch: created.branch });
+        // Audit trail: record worktree creation and branch creation (FN-1404)
+        await audit.git({ type: "worktree:create", target: created.path, metadata: { branch: created.branch } });
+        await audit.git({ type: "branch:create", target: created.branch });
       }
 
       // Capture the base commit SHA for diff computation whenever a task
@@ -965,6 +986,8 @@ export class TaskExecutor {
           }).trim();
           await this.store.updateTask(task.id, { baseCommitSha });
           executorLog.log(`${task.id}: captured baseCommitSha ${baseCommitSha.slice(0, 7)}`);
+          // Audit trail: record base commit capture for later diff computation (FN-1404)
+          await audit.git({ type: "commit:create", target: baseCommitSha, metadata: { purpose: "base" } });
         } catch (err: any) {
           executorLog.log(`Failed to capture baseCommitSha for ${task.id}: ${err.message}`);
           // Non-fatal: task can continue without baseCommitSha
@@ -1055,18 +1078,24 @@ export class TaskExecutor {
             if (modifiedFiles.length > 0) {
               await this.store.updateTask(task.id, { modifiedFiles });
               executorLog.log(`${task.id}: captured ${modifiedFiles.length} modified files`);
+              // Audit trail: record filesystem mutation (FN-1404)
+              await audit.filesystem({ type: "file:capture-modified", target: task.id, metadata: { files: modifiedFiles } });
             }
 
             const workflowSuccess = await this.runWorkflowSteps(task, worktreePath, settings);
             if (!workflowSuccess) {
               await this.store.updateTask(task.id, { status: "failed", error: "Workflow step failed" });
               await this.store.moveTask(task.id, "in-review");
+              // Audit trail: record task move (FN-1404)
+              await audit.database({ type: "task:move", target: task.id, metadata: { to: "in-review" } });
               executorLog.log(`✗ ${task.id} workflow step failed → in-review`);
               this.options.onError?.(task, new Error("Workflow step failed"));
               return;
             }
 
             await this.store.moveTask(task.id, "in-review");
+            // Audit trail: record task move (FN-1404)
+            await audit.database({ type: "task:move", target: task.id, metadata: { to: "in-review" } });
             executorLog.log(`✓ ${task.id} completed (step-session) → in-review`);
             this.options.onComplete?.(task);
           } else {
@@ -1122,6 +1151,8 @@ export class TaskExecutor {
               if (worktreePath && existsSync(worktreePath)) {
                 try {
                   execSync(`git worktree remove "${worktreePath}" --force`, { cwd: this.rootDir, stdio: "pipe" });
+                  // Audit trail: record worktree removal (FN-1404)
+                  await audit.git({ type: "worktree:remove", target: worktreePath });
                 } catch {}
               }
               await this.store.updateTask(task.id, {
@@ -1643,6 +1674,8 @@ export class TaskExecutor {
             try {
               execSync(`git worktree remove "${worktreePath}" --force`, { cwd: this.rootDir, stdio: "pipe" });
               executorLog.log(`Removed old worktree for paused task: ${worktreePath}`);
+              // Audit trail: record worktree removal (FN-1404)
+              await audit.git({ type: "worktree:remove", target: worktreePath });
             } catch (cleanupErr: any) {
               executorLog.warn(`Failed to remove old worktree ${worktreePath}: ${cleanupErr.message}`);
             }
@@ -1725,6 +1758,8 @@ export class TaskExecutor {
               try {
                 execSync(`git worktree remove "${worktreePath}" --force`, { cwd: this.rootDir, stdio: "pipe" });
                 executorLog.log(`Removed old worktree for transient retry: ${worktreePath}`);
+                // Audit trail: record worktree removal (FN-1404)
+                await audit.git({ type: "worktree:remove", target: worktreePath });
               } catch (cleanupErr: any) {
                 executorLog.warn(`Failed to remove old worktree ${worktreePath}: ${cleanupErr.message}`);
               }
@@ -1785,6 +1820,8 @@ export class TaskExecutor {
             try {
               execSync(`git worktree remove "${worktreePath}" --force`, { cwd: this.rootDir, stdio: "pipe" });
               executorLog.log(`Removed old worktree for stuck-killed retry: ${worktreePath}`);
+              // Audit trail: record worktree removal (FN-1404)
+              await audit.git({ type: "worktree:remove", target: worktreePath });
             } catch (cleanupErr: any) {
               executorLog.warn(`Failed to remove old worktree ${worktreePath}: ${cleanupErr.message}`);
             }
@@ -1795,6 +1832,8 @@ export class TaskExecutor {
           // when execute() started (e.g., resumed orphan), we skip the redundant move.
           if (task.column !== "todo") {
             await this.store.moveTask(task.id, "todo");
+            // Audit trail: record task move (FN-1404)
+            await audit.database({ type: "task:move", target: task.id, metadata: { to: "todo" } });
             executorLog.log(`${task.id} moved to todo for retry after stuck kill`);
           } else {
             executorLog.log(`${task.id} already in todo — skipping redundant move`);

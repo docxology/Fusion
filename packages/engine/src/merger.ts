@@ -12,6 +12,7 @@ import { withRateLimitRetry } from "./rate-limit-retry.js";
 import { resolveAgentInstructions, buildSystemPromptWithInstructions } from "./agent-instructions.js";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
+import { createRunAuditor, generateSyntheticRunId, type EngineRunContext } from "./run-audit.js";
 
 /** Conflict type classification for merge conflict resolution */
 export type ConflictType =
@@ -709,6 +710,18 @@ export async function aiMergeTask(
     branchDeleted: false,
   };
 
+  // Build merge-run context for audit instrumentation (FN-1404)
+  const mergeRunId = generateSyntheticRunId("merge", taskId);
+  const engineRunContext: EngineRunContext = {
+    runId: mergeRunId,
+    agentId: "merger",
+    taskId,
+    phase: "merge",
+  };
+
+  // Create run auditor for TaskStore-backed audit emission (no-ops if store doesn't support it)
+  const audit = createRunAuditor(store, engineRunContext);
+
   if (!worktreePath) {
     mergerLog.warn(`${taskId}: no worktree path set — skipping worktree cleanup`);
   }
@@ -747,6 +760,8 @@ export async function aiMergeTask(
     } catch {
       // No commit SHA available — task will show summary fallback
     }
+    // Audit trail: record merge completion (FN-1404)
+    await audit.database({ type: "task:move", target: taskId, metadata: { to: "done", merged: false } });
     await completeTask(store, taskId, result);
     return result;
   }
@@ -771,11 +786,15 @@ export async function aiMergeTask(
         cwd: rootDir,
         stdio: "pipe",
       });
+      // Audit trail: record git checkout (FN-1404)
+      await audit.git({ type: "branch:checkout", target: mainBranch });
     }
   } catch {
     // Fallback: try checking out main directly
     try {
       execSync("git checkout main", { cwd: rootDir, stdio: "pipe" });
+      // Audit trail: record git checkout (FN-1404)
+      await audit.git({ type: "branch:checkout", target: "main" });
     } catch {
       mergerLog.warn(`${taskId}: unable to verify/checkout main branch — proceeding on current HEAD`);
     }
@@ -860,6 +879,8 @@ export async function aiMergeTask(
         mergerLog.log(`${taskId}: attempt ${attemptNum} failed, cleaning up for retry...`);
         try {
           execSync("git reset --merge", { cwd: rootDir, stdio: "pipe" });
+          // Audit trail: record git reset for merge cleanup (FN-1404)
+          await audit.git({ type: "reset:hard", target: branch, metadata: { purpose: "merge-cleanup", attempt: attemptNum } });
         } catch { /* ignore cleanup errors */ }
       }
 
@@ -875,6 +896,8 @@ export async function aiMergeTask(
           result._buildRetried = true;
           try {
             execSync("git reset --merge", { cwd: rootDir, stdio: "pipe" });
+            // Audit trail: record git reset for build retry (FN-1404)
+            await audit.git({ type: "reset:hard", target: branch, metadata: { purpose: "build-retry" } });
           } catch { /* ignore cleanup errors */ }
           return false; // Retry
         }
@@ -886,6 +909,8 @@ export async function aiMergeTask(
         mergerLog.log(`${taskId}: attempt ${attemptNum} error, cleaning up for retry...`);
         try {
           execSync("git reset --merge", { cwd: rootDir, stdio: "pipe" });
+          // Audit trail: record git reset for retry (FN-1404)
+          await audit.git({ type: "reset:hard", target: branch, metadata: { purpose: "merge-retry", attempt: attemptNum } });
         } catch { /* ignore cleanup errors */ }
         return false; // Allow retry
       }
@@ -972,10 +997,14 @@ export async function aiMergeTask(
   try {
     execSync(`git branch -d "${branch}"`, { cwd: rootDir, stdio: "pipe" });
     result.branchDeleted = true;
+    // Audit trail: record branch deletion (FN-1404)
+    await audit.git({ type: "branch:delete", target: branch });
   } catch {
     try {
       execSync(`git branch -D "${branch}"`, { cwd: rootDir, stdio: "pipe" });
       result.branchDeleted = true;
+      // Audit trail: record branch deletion (force) (FN-1404)
+      await audit.git({ type: "branch:delete", target: branch, metadata: { force: true } });
     } catch { /* non-fatal */ }
   }
 
@@ -994,6 +1023,8 @@ export async function aiMergeTask(
           cwd: rootDir,
           stdio: "pipe",
         });
+        // Audit trail: record worktree removal (FN-1404)
+        await audit.git({ type: "worktree:remove", target: worktreePath });
         result.worktreeRemoved = true;
       } catch { /* non-fatal */ }
     }
@@ -1008,6 +1039,18 @@ export async function aiMergeTask(
   }
 
   // 9. Move task to done
+  // Audit trail: record merge completion (FN-1404)
+  await audit.database({
+    type: "task:move",
+    target: taskId,
+    metadata: {
+      to: "done",
+      merged: true,
+      resolutionStrategy: result.resolutionStrategy,
+      resolutionMethod: result.resolutionMethod,
+      attemptsMade: result.attemptsMade,
+    },
+  });
   await completeTask(store, taskId, result);
   return result;
 }

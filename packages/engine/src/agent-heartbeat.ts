@@ -23,6 +23,7 @@ import { Type, type Static } from "@mariozechner/pi-ai";
 import { createTaskCreateTool, createTaskLogTool, createTaskLogToolWithContext, taskCreateParams } from "./agent-tools.js";
 import { AgentLogger } from "./agent-logger.js";
 import { heartbeatLog } from "./logger.js";
+import { createRunAuditor, type EngineRunContext } from "./run-audit.js";
 
 // Lazy import for pi — avoids pulling the pi SDK into the module graph
 // when heartbeat execution isn't needed.
@@ -646,6 +647,18 @@ export class HeartbeatMonitor {
         source,
       };
 
+      // Build engine run context for audit instrumentation
+      const engineRunContext: EngineRunContext = {
+        runId: run.id,
+        agentId,
+        source,
+        phase: "heartbeat",
+      };
+
+      // Create run auditor for audit trail (FN-1404)
+      // Uses TaskStore.recordRunAuditEvent when available; no-ops otherwise
+      const audit = createRunAuditor(taskStore, engineRunContext);
+
       let agentLogger: AgentLogger | null = null;
       const flushAgentLogger = async (): Promise<void> => {
         if (!agentLogger) {
@@ -709,6 +722,8 @@ export class HeartbeatMonitor {
             // Persist assignment to AgentStore so subsequent runs retain linkage.
             if (agent.taskId !== taskId) {
               await this.store.assignTask(agentId, taskId, runContext);
+              // Audit trail: record assignment mutation (FN-1404)
+              await audit.database({ type: "task:assign", target: taskId });
             }
 
             // FN-1253 compatibility: if checkout API is available on TaskStore,
@@ -719,6 +734,8 @@ export class HeartbeatMonitor {
             if (typeof checkoutTask === "function") {
               try {
                 await checkoutTask.call(taskStore, taskId, agentId, runContext);
+                // Audit trail: record checkout mutation (FN-1404)
+                await audit.database({ type: "task:checkout", target: taskId });
               } catch {
                 heartbeatLog.log(`Task ${taskId} already checked out — skipping`);
                 taskId = undefined;
@@ -737,6 +754,9 @@ export class HeartbeatMonitor {
             },
           };
           await this.store.saveRun(updatedRun);
+
+          // Update engine run context with resolved taskId for audit trail (FN-1404)
+          engineRunContext.taskId = taskId;
         }
 
         if (!taskId) {
@@ -824,6 +844,8 @@ export class HeartbeatMonitor {
 
           const blockedMessage = `Task is blocked by ${blockedBy}; waiting for dependency/context changes before retrying.`;
           await taskStore.addComment(taskId, blockedMessage, "agent", undefined, runContext);
+          // Audit trail: record comment mutation (FN-1404)
+          await audit.database({ type: "task:comment:add", target: taskId, metadata: { blockedBy } });
           await this.store.setLastBlockedState(agentId, currentBlockedState);
 
           heartbeatLog.log(`Task ${taskId} is blocked by ${blockedBy} — recorded blocked state`);
@@ -875,7 +897,7 @@ export class HeartbeatMonitor {
         const { createKbAgent, promptWithFallback } = await import("./pi.js");
 
         // Build tools with task creation tracking and run context for mutation correlation
-        const heartbeatTools = this.createHeartbeatTools(agentId, taskStore, taskId, runContext);
+        const heartbeatTools = this.createHeartbeatTools(agentId, taskStore, taskId, runContext, audit);
         heartbeatTools.push(heartbeatDoneTool);
 
         agentLogger = new AgentLogger({
@@ -1035,9 +1057,16 @@ export class HeartbeatMonitor {
    * @param taskStore - TaskStore for task creation and logging
    * @param taskId - The assigned task ID (for task_log context)
    * @param runContext - Optional run context for mutation correlation
+   * @param audit - Optional run auditor for audit trail (FN-1404)
    * @returns Array of ToolDefinitions for the heartbeat session
    */
-  createHeartbeatTools(agentId: string, taskStore: TaskStore, taskId: string, runContext?: RunMutationContext): ToolDefinition[] {
+  createHeartbeatTools(
+    agentId: string,
+    taskStore: TaskStore,
+    taskId: string,
+    runContext?: RunMutationContext,
+    audit?: ReturnType<typeof createRunAuditor>,
+  ): ToolDefinition[] {
     const tools: ToolDefinition[] = [];
 
     // Wrap createTaskCreateTool with tracking and agent-link logging
@@ -1059,6 +1088,9 @@ export class HeartbeatMonitor {
         } catch {
           // Non-critical — task was created, just the log failed
         }
+
+        // Audit trail: record task creation (FN-1404)
+        await audit?.database({ type: "task:create", target: createdTaskId });
 
         // Accumulate for inclusion in run resultJson
         if (!this.runCreatedTasks.has(agentId)) {
