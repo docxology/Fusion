@@ -310,4 +310,99 @@ describe("FileBrowserModal", () => {
     expect(screen.getByText(".github")).toBeInTheDocument();
     expect(screen.getByText("src")).toBeInTheDocument();
   });
+
+  describe("modal height constraint regression", () => {
+    it("max-height uses calc() to stay within viewport padding", async () => {
+      const fs = await import("fs");
+      const path = await import("path");
+      const cssPath = path.resolve(__dirname, "../styles.css");
+      const css = fs.readFileSync(cssPath, "utf-8");
+
+      // Extract the first .file-browser-modal block (desktop base styles)
+      // Match from ".file-browser-modal {" to its closing "}"
+      const blockMatch = css.match(
+        /\.file-browser-modal\s*\{[^}]*max-height:\s*([^;]+);/,
+      );
+      expect(blockMatch).toBeTruthy();
+      const maxHeightValue = blockMatch![1].trim();
+
+      // The max-height must use calc() with the overlay-padding-top variable
+      // so the modal fits within the visible viewport (100vh minus top+bottom padding)
+      expect(maxHeightValue).toContain("calc(");
+      expect(maxHeightValue).toContain("--overlay-padding-top");
+      expect(maxHeightValue).toContain("100vh");
+    });
+
+    it("height and max-height together do not exceed viewport on desktop", async () => {
+      const fs = await import("fs");
+      const path = await import("path");
+      const cssPath = path.resolve(__dirname, "../styles.css");
+      const css = fs.readFileSync(cssPath, "utf-8");
+
+      const blockMatch = css.match(
+        /\.file-browser-modal\s*\{([^}]*)\}/,
+      );
+      expect(blockMatch).toBeTruthy();
+      const block = blockMatch![1];
+
+      // Extract height value
+      const heightMatch = block.match(/height:\s*([^;]+);/);
+      expect(heightMatch).toBeTruthy();
+      const heightValue = heightMatch![1].trim();
+
+      // height should be a reasonable vh value (≤ 85vh for desktop)
+      const heightNum = parseFloat(heightValue);
+      expect(heightNum).toBeGreaterThan(0);
+      expect(heightNum).toBeLessThanOrEqual(85);
+
+      // max-height must be present and use calc()
+      const maxHeightMatch = block.match(/max-height:\s*([^;]+);/);
+      expect(maxHeightMatch).toBeTruthy();
+      expect(maxHeightMatch![1].trim()).toContain("calc(");
+    });
+
+    it("mobile styles use 100dvh for full-screen behavior", async () => {
+      const fs = await import("fs");
+      const path = await import("path");
+      const cssPath = path.resolve(__dirname, "../styles.css");
+      const css = fs.readFileSync(cssPath, "utf-8");
+
+      // Extract mobile media query blocks (similar to existing pattern)
+      function extractMobileMediaBlocks(content: string): string {
+        const blocks: string[] = [];
+        const regex = /@media\s*\(\s*max-width:\s*768px\s*\)\s*\{/g;
+        let match;
+
+        while ((match = regex.exec(content)) !== null) {
+          const startIdx = match.index + match[0].length;
+          let braceCount = 1;
+          let endIdx = startIdx;
+
+          while (braceCount > 0 && endIdx < content.length) {
+            if (content[endIdx] === "{") braceCount += 1;
+            if (content[endIdx] === "}") braceCount -= 1;
+            endIdx += 1;
+          }
+
+          if (braceCount === 0) {
+            blocks.push(content.slice(startIdx, endIdx - 1));
+          }
+        }
+
+        return blocks.join("\n");
+      }
+
+      const mobileBlock = extractMobileMediaBlocks(css);
+
+      // Find the file-browser-modal rule within mobile blocks
+      const modalMatch = mobileBlock.match(
+        /\.file-browser-modal\s*\{([^}]*)\}/,
+      );
+      expect(modalMatch).not.toBeNull();
+
+      const modalRules = modalMatch![1];
+      // Mobile should use 100dvh for height/max-height
+      expect(modalRules).toContain("100dvh");
+    });
+  });
 });
