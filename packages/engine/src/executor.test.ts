@@ -7138,6 +7138,220 @@ describe("Workflow Steps Execution", () => {
     // Task should still move to in-review
     expect(store.moveTask).toHaveBeenCalledWith("FN-001", "in-review");
   });
+
+  // ── Workflow Step Revision Request ──────────────────────────────────
+
+  it("workflow step agent returns revisionRequested when output starts with REQUEST REVISION", async () => {
+    const store = createMockStore();
+
+    store.getTask.mockResolvedValue({
+      id: "FN-001",
+      title: "Test",
+      description: "Test task",
+      column: "in-progress",
+      dependencies: [],
+      steps: [{ name: "Preflight", status: "pending" }],
+      currentStep: 0,
+      log: [],
+      enabledWorkflowSteps: ["WS-001"],
+      prompt: "# test\n## Steps\n### Step 0: Preflight\n- [ ] check",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+
+    store.getWorkflowStep.mockResolvedValue({
+      id: "WS-001",
+      name: "Security Audit",
+      description: "Check for vulnerabilities",
+      prompt: "Scan for security issues.",
+      enabled: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+
+    // First call: main agent with task_done
+    // Second call: workflow step agent that returns REQUEST REVISION
+    let callIdx = 0;
+    let subscribeHandler: any;
+    mockedCreateHaiAgent.mockImplementation((async (opts: any) => {
+      callIdx++;
+      if (callIdx === 1) {
+        // Main execution
+        const customTools = opts.customTools || [];
+        const session = {
+          prompt: vi.fn().mockImplementation(async () => {
+            const taskDoneTool = customTools.find((t: any) => t.name === "task_done");
+            if (taskDoneTool) await taskDoneTool.execute("tool-1", {});
+          }),
+          dispose: vi.fn(),
+          subscribe: vi.fn(),
+          on: vi.fn(),
+          sessionManager: { getLeafId: vi.fn().mockReturnValue("leaf-1") },
+          state: {},
+        };
+        return { session };
+      } else {
+        // Workflow step agent that requests revision
+        const session = {
+          prompt: vi.fn().mockImplementation(async () => {
+            // Call the subscribe handler to simulate agent outputting REQUEST REVISION
+            if (subscribeHandler) {
+              subscribeHandler({
+                type: "message_update",
+                assistantMessageEvent: { type: "text_delta", delta: "REQUEST REVISION\n\nFix the SQL injection vulnerability in src/auth.ts" },
+              });
+            }
+          }),
+          dispose: vi.fn(),
+          subscribe: vi.fn((handler: any) => {
+            subscribeHandler = handler;
+          }),
+          state: {},
+        };
+        return { session };
+      }
+    }) as any);
+
+    const onComplete = vi.fn();
+    const executor = new TaskExecutor(store, "/tmp/test", { onComplete });
+
+    await executor.execute({
+      id: "FN-001",
+      title: "Test",
+      description: "Test task",
+      column: "in-progress",
+      dependencies: [],
+      steps: [{ name: "Preflight", status: "pending" }],
+      currentStep: 0,
+      log: [],
+      enabledWorkflowSteps: ["WS-001"],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+
+    // Both agents should be called
+    expect(mockedCreateHaiAgent).toHaveBeenCalledTimes(2);
+
+    // Log should show revision was requested
+    expect(store.logEntry).toHaveBeenCalledWith(
+      "FN-001",
+      expect.stringContaining("requested revision"),
+      expect.stringContaining("SQL injection"),
+    );
+
+    // Workflow step result should be marked as failed
+    expect(store.updateTask).toHaveBeenCalledWith(
+      "FN-001",
+      expect.objectContaining({
+        workflowStepResults: expect.arrayContaining([
+          expect.objectContaining({
+            workflowStepId: "WS-001",
+            status: "failed",
+            output: expect.stringContaining("SQL injection"),
+          }),
+        ]),
+      }),
+    );
+
+    // Task should NOT be marked as failed (revision requested, not hard failure)
+    expect(store.updateTask).not.toHaveBeenCalledWith(
+      "FN-001",
+      expect.objectContaining({ status: "failed", error: "Workflow step failed" }),
+    );
+  });
+
+  it("hard failure workflow step moves task to in-review with failed status", async () => {
+    const store = createMockStore();
+
+    store.getTask.mockResolvedValue({
+      id: "FN-001",
+      title: "Test",
+      description: "Test task",
+      column: "in-progress",
+      dependencies: [],
+      steps: [{ name: "Preflight", status: "pending" }],
+      currentStep: 0,
+      log: [],
+      enabledWorkflowSteps: ["WS-001"],
+      prompt: "# test\n## Steps\n### Step 0: Preflight\n- [ ] check",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+
+    store.getWorkflowStep.mockResolvedValue({
+      id: "WS-001",
+      name: "QA Check",
+      description: "Run tests",
+      prompt: "Run the test suite.",
+      enabled: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+
+    let callIdx = 0;
+    mockedCreateHaiAgent.mockImplementation((async (opts: any) => {
+      callIdx++;
+      if (callIdx === 1) {
+        const customTools = opts.customTools || [];
+        const session = {
+          prompt: vi.fn().mockImplementation(async () => {
+            const taskDoneTool = customTools.find((t: any) => t.name === "task_done");
+            if (taskDoneTool) await taskDoneTool.execute("tool-1", {});
+          }),
+          dispose: vi.fn(),
+          subscribe: vi.fn(),
+          on: vi.fn(),
+          sessionManager: { getLeafId: vi.fn().mockReturnValue("leaf-1") },
+          state: {},
+        };
+        return { session };
+      } else {
+        // Workflow step agent that passes (no REQUEST REVISION)
+        return {
+          session: {
+            prompt: vi.fn().mockResolvedValue(undefined),
+            dispose: vi.fn(),
+            subscribe: vi.fn(),
+            state: {},
+          },
+        };
+      }
+    }) as any);
+
+    const onComplete = vi.fn();
+    const onError = vi.fn();
+    const executor = new TaskExecutor(store, "/tmp/test", { onComplete, onError });
+
+    await executor.execute({
+      id: "FN-001",
+      title: "Test",
+      description: "Test task",
+      column: "in-progress",
+      dependencies: [],
+      steps: [{ name: "Preflight", status: "pending" }],
+      currentStep: 0,
+      log: [],
+      enabledWorkflowSteps: ["WS-001"],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+
+    // Both agents called
+    expect(mockedCreateHaiAgent).toHaveBeenCalledTimes(2);
+
+    // Log should show workflow step passed
+    expect(store.logEntry).toHaveBeenCalledWith(
+      "FN-001",
+      expect.stringContaining("Workflow step completed"),
+    );
+
+    // Task should move to in-review (not revision loop)
+    expect(store.moveTask).toHaveBeenCalledWith("FN-001", "in-review");
+
+    // onComplete should be called
+    expect(onComplete).toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
+  });
 });
 
 describe("Real-time steering injection", () => {

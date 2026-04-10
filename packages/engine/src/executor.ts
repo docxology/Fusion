@@ -1,6 +1,7 @@
 import { execSync } from "node:child_process";
 import { join } from "node:path";
 import { existsSync } from "node:fs";
+import { readFile, writeFile } from "node:fs/promises";
 import type { TaskStore, Task, TaskDetail, StepStatus, Settings, WorkflowStep, MissionStore, Slice, AgentState, AgentCapability, RunMutationContext } from "@fusion/core";
 import type { AgentStore } from "@fusion/core";
 import { buildExecutionMemoryInstructions, getTaskMergeBlocker, resolveAgentPrompt } from "@fusion/core";
@@ -87,6 +88,27 @@ interface SpawnAgentResult {
   role: AgentCapability;
   message: string;
 }
+
+/**
+ * Outcome of a single workflow step execution.
+ * Supports three states: pass, hard failure, or revision requested with feedback.
+ */
+export interface WorkflowStepOutcome {
+  success: boolean;
+  revisionRequested?: boolean;
+  output?: string;
+  error?: string;
+}
+
+/**
+ * Result of running all pre-merge workflow steps.
+ * Returns true if all passed, false if any hard failure, or a structured
+ * revision result if a revision was requested.
+ */
+export type WorkflowStepResult =
+  | { allPassed: true }
+  | { allPassed: false; revisionRequested: false }
+  | { allPassed: false; revisionRequested: true; feedback: string; stepName: string };
 
 
 const reviewStepParams = Type.Object({
@@ -656,8 +678,9 @@ export class TaskExecutor {
         }
 
         // Run workflow steps before transitioning
-        const workflowSuccess = await this.runWorkflowSteps(task, task.worktree, settings);
-        if (!workflowSuccess) {
+        const workflowResult = await this.runWorkflowSteps(task, task.worktree, settings);
+        if (!workflowResult.allPassed) {
+          // For recovery path, treat any failure (including revision) as hard failure
           await this.store.updateTask(task.id, { status: "failed", error: "Workflow step failed during recovery" });
           await this.store.moveTask(task.id, "in-review");
           executorLog.log(`✗ ${task.id} workflow step failed during recovery → in-review`);
@@ -1082,8 +1105,14 @@ export class TaskExecutor {
               await audit.filesystem({ type: "file:capture-modified", target: task.id, metadata: { files: modifiedFiles } });
             }
 
-            const workflowSuccess = await this.runWorkflowSteps(task, worktreePath, settings);
-            if (!workflowSuccess) {
+            const workflowResult = await this.runWorkflowSteps(task, worktreePath, settings);
+            if (!workflowResult.allPassed) {
+              // Check if revision was requested
+              if (workflowResult.revisionRequested) {
+                await this.handleWorkflowRevisionRequest(task, worktreePath, workflowResult.feedback, workflowResult.stepName);
+                return;
+              }
+              // Hard failure - move to in-review
               await this.store.updateTask(task.id, { status: "failed", error: "Workflow step failed" });
               await this.store.moveTask(task.id, "in-review");
               // Audit trail: record task move (FN-1404)
@@ -1493,9 +1522,14 @@ export class TaskExecutor {
             }
 
             // Run workflow steps before moving to in-review
-            const workflowSuccess = await this.runWorkflowSteps(task, worktreePath, settings);
-            if (!workflowSuccess) {
-              // Move to in-review even when workflow steps fail so users can see the failure
+            const workflowResult = await this.runWorkflowSteps(task, worktreePath, settings);
+            if (!workflowResult.allPassed) {
+              // Check if revision was requested
+              if (workflowResult.revisionRequested) {
+                await this.handleWorkflowRevisionRequest(task, worktreePath, workflowResult.feedback, workflowResult.stepName);
+                return;
+              }
+              // Hard failure - move to in-review so users can see the failure
               await this.store.updateTask(task.id, { status: "failed", error: "Workflow step failed" });
               await this.store.moveTask(task.id, "in-review");
               executorLog.log(`✗ ${task.id} workflow step failed → in-review`);
@@ -1583,8 +1617,14 @@ export class TaskExecutor {
                 executorLog.log(`${task.id}: captured ${modifiedFiles.length} modified files`);
               }
 
-              const workflowSuccess = await this.runWorkflowSteps(task, worktreePath, settings);
-              if (!workflowSuccess) {
+              const workflowResult = await this.runWorkflowSteps(task, worktreePath, settings);
+              if (!workflowResult.allPassed) {
+                // Check if revision was requested
+                if (workflowResult.revisionRequested) {
+                  await this.handleWorkflowRevisionRequest(task, worktreePath, workflowResult.feedback, workflowResult.stepName);
+                  return;
+                }
+                // Hard failure
                 await this.store.updateTask(task.id, { status: "failed", error: "Workflow step failed" });
                 await this.store.moveTask(task.id, "in-review");
                 executorLog.log(`✗ ${task.id} workflow step failed on retry → in-review`);
@@ -2265,6 +2305,133 @@ export class TaskExecutor {
   }
 
   /**
+   * Handle a workflow step revision request.
+   * 
+   * This method:
+   * 1. Updates PROMPT.md with "Workflow Revision Instructions" section
+   * 2. Resets task execution state (all steps reset to pending)
+   * 3. Schedules fresh execution to run after current guard unwinds
+   * 
+   * The task stays in "in-progress" and is scheduled for a fresh executor pass.
+   */
+  private async handleWorkflowRevisionRequest(
+    task: Task,
+    worktreePath: string,
+    feedback: string,
+    stepName: string,
+  ): Promise<void> {
+    executorLog.log(`${task.id}: workflow revision requested by step "${stepName}"`);
+    await this.store.logEntry(
+      task.id,
+      `Workflow step "${stepName}" requested revision — resetting execution state`,
+      feedback,
+    );
+
+    // 1. Update PROMPT.md with revision instructions
+    await this.injectWorkflowRevisionInstructions(task, feedback);
+
+    // 2. Reset all steps to pending for fresh execution
+    const updatedTask = await this.store.getTask(task.id);
+    for (let i = 0; i < updatedTask.steps.length; i++) {
+      if (updatedTask.steps[i].status !== "pending") {
+        await this.store.updateStep(task.id, i, "pending");
+      }
+    }
+
+    // 3. Clear any session file so we get a fresh session
+    await this.store.updateTask(task.id, {
+      status: null,
+      sessionFile: null,
+    });
+
+    // 4. Schedule fresh execution after guard unwinds
+    // This prevents the race condition where the scheduler re-dispatches
+    // while the old execution guard is still set.
+    executorLog.log(`${task.id}: scheduling fresh execution after revision request`);
+    setTimeout(async () => {
+      try {
+        // Move task to todo briefly, then back to in-progress to trigger fresh execution
+        // The task is already in in-progress, so we need to:
+        // 1. Move to todo (this triggers the guard to clear)
+        // 2. Move back to in-progress (this triggers fresh execution)
+        await this.store.moveTask(task.id, "todo");
+        await this.store.moveTask(task.id, "in-progress");
+        executorLog.log(`${task.id}: revision rerun scheduled — moved to todo then in-progress`);
+      } catch (err: any) {
+        executorLog.error(`${task.id}: failed to schedule revision rerun: ${err.message}`);
+        // Fallback: log entry and let scheduler pick it up on next tick
+        await this.store.logEntry(
+          task.id,
+          "Workflow revision requested — executor ready for fresh execution",
+        );
+      }
+    }, 0);
+  }
+
+  /**
+   * Inject or update the "Workflow Revision Instructions" section in PROMPT.md.
+   * This section contains feedback from workflow steps that requested revisions.
+   * The section is replaced entirely to avoid accumulation of old feedback.
+   */
+  private async injectWorkflowRevisionInstructions(task: Task, feedback: string): Promise<void> {
+    const promptPath = join(this.store.getFusionDir(), "tasks", task.id, "PROMPT.md");
+    
+    // Read existing PROMPT.md
+    let content: string;
+    try {
+      content = await readFile(promptPath, "utf-8");
+    } catch {
+      executorLog.warn(`${task.id}: PROMPT.md not found at ${promptPath}, skipping revision injection`);
+      return;
+    }
+
+    // Check for existing Workflow Revision Instructions section
+    const revisionSectionHeader = "## Workflow Revision Instructions";
+    const revisionSectionContent = `${revisionSectionHeader}
+
+The following feedback was received from quality gates and requires implementation changes:
+
+${feedback}
+
+**Important:** This is a revision request — address the feedback above by making the necessary code changes, then mark all affected steps as done and call task_done() when complete.
+
+`;
+
+    let newContent: string;
+    if (content.includes(revisionSectionHeader)) {
+      // Replace existing section
+      const sectionRegex = new RegExp(
+        `${revisionSectionHeader}[\\s\\S]*?(?=\\n## |\\n# |$)`,
+        "i"
+      );
+      if (sectionRegex.test(content)) {
+        newContent = content.replace(sectionRegex, revisionSectionContent);
+      } else {
+        // Fallback: append at end
+        newContent = content + "\n" + revisionSectionContent;
+      }
+    } else {
+      // Append new section before any closing markers or at end
+      // Look for common markers like "## Acceptance Criteria" or just append
+      const acceptanceCriteriaMatch = content.match(/\n##\s+Acceptance Criteria\n/);
+      if (acceptanceCriteriaMatch) {
+        const insertIdx = acceptanceCriteriaMatch.index!;
+        newContent = content.slice(0, insertIdx) + "\n" + revisionSectionContent + content.slice(insertIdx);
+      } else {
+        newContent = content + "\n" + revisionSectionContent;
+      }
+    }
+
+    // Write updated content
+    try {
+      await writeFile(promptPath, newContent);
+      executorLog.log(`${task.id}: injected workflow revision instructions into PROMPT.md`);
+    } catch (err: any) {
+      executorLog.error(`${task.id}: failed to inject revision instructions: ${err.message}`);
+    }
+  }
+
+  /**
    * Capture the list of files modified during agent execution.
    * Uses git diff against the stored baseCommitSha to determine what changed.
    * Returns an empty array if no changes or if git commands fail.
@@ -2332,16 +2499,16 @@ export class TaskExecutor {
   /**
    * Run workflow step agents sequentially after main task execution completes.
    * Each workflow step spawns a separate agent with the step's prompt.
-   * Returns true if all steps pass, false if any fails.
+   * Returns structured result: all passed, all passed (true), failed (false), or revision requested.
    */
   private async runWorkflowSteps(
     task: Task,
     worktreePath: string,
     settings: Settings,
-  ): Promise<boolean> {
+  ): Promise<WorkflowStepResult> {
     // Check if task has enabled workflow steps
     const currentTask = await this.store.getTask(task.id);
-    if (!currentTask.enabledWorkflowSteps?.length) return true;
+    if (!currentTask.enabledWorkflowSteps?.length) return { allPassed: true };
 
     const workflowStepIds = currentTask.enabledWorkflowSteps;
     const results: import("@fusion/core").WorkflowStepResult[] = [];
@@ -2403,7 +2570,7 @@ export class TaskExecutor {
       const startedAt = new Date().toISOString();
 
       try {
-        const result = stepMode === "script"
+        const result: WorkflowStepOutcome = stepMode === "script"
           ? await this.executeScriptWorkflowStep(task, ws, worktreePath, settings)
           : await this.executeWorkflowStep(task, ws, worktreePath, settings);
         const completedAt = new Date().toISOString();
@@ -2421,7 +2588,32 @@ export class TaskExecutor {
             completedAt,
           });
           await this.store.updateTask(task.id, { workflowStepResults: results });
+        } else if (result.revisionRequested) {
+          // Revision requested — this is a structured outcome that routes back to executor
+          await this.store.logEntry(
+            task.id,
+            `[pre-merge] Workflow step requested revision: ${ws.name}`,
+            result.output,
+          );
+          executorLog.log(`${task.id} — [pre-merge] workflow step requested revision: ${ws.name}`);
+          results.push({
+            workflowStepId: ws.id,
+            workflowStepName: ws.name,
+            phase: stepPhase,
+            status: "failed",
+            output: result.output || "Revision requested",
+            startedAt,
+            completedAt,
+          });
+          await this.store.updateTask(task.id, { workflowStepResults: results });
+          return {
+            allPassed: false,
+            revisionRequested: true,
+            feedback: result.output || "Workflow step requested revision",
+            stepName: ws.name,
+          };
         } else {
+          // Hard failure
           await this.store.logEntry(
             task.id,
             `[pre-merge] Workflow step failed: ${ws.name}`,
@@ -2438,7 +2630,7 @@ export class TaskExecutor {
             completedAt,
           });
           await this.store.updateTask(task.id, { workflowStepResults: results });
-          return false;
+          return { allPassed: false, revisionRequested: false };
         }
       } catch (err: any) {
         const completedAt = new Date().toISOString();
@@ -2458,11 +2650,11 @@ export class TaskExecutor {
           completedAt,
         });
         await this.store.updateTask(task.id, { workflowStepResults: results });
-        return false;
+        return { allPassed: false, revisionRequested: false };
       }
     }
 
-    return true;
+    return { allPassed: true };
   }
 
   /**
@@ -2512,13 +2704,14 @@ export class TaskExecutor {
 
   /**
    * Execute a single workflow step by spawning an agent with the step's prompt.
+   * Returns structured outcome with support for revision requests.
    */
   private async executeWorkflowStep(
     task: Task,
     workflowStep: WorkflowStep,
     worktreePath: string,
     settings: Settings,
-  ): Promise<{ success: boolean; output?: string; error?: string }> {
+  ): Promise<WorkflowStepOutcome> {
     const toolMode: "coding" | "readonly" = workflowStep.toolMode || "readonly";
     const systemPrompt = `You are a workflow step agent executing: ${workflowStep.name}
 
@@ -2531,8 +2724,32 @@ Your Instructions:
 ${workflowStep.prompt}
 
 You have access to the file system to review changes.
-When your review is complete and everything looks good, simply state your findings.
-If issues are found that need attention, describe them clearly.`;
+
+## Feedback Format
+
+When your review is complete, you MUST use one of these exact formats:
+
+**For PASS (no issues found):**
+Simply state your findings and approval. No special formatting required.
+
+**For REVISION REQUESTED (issues found that require code changes):**
+Your response MUST start with the exact phrase:
+\`REQUEST REVISION\`
+
+Followed by a clear, actionable description of what needs to be fixed.
+Be specific: reference exact files, line numbers, or functions that need changes.
+
+Example:
+\`REQUEST REVISION
+
+The login function in src/auth.ts does not handle the case where the user
+account is locked. Add proper error handling for the LOCKED_ACCOUNT error code
+and show an appropriate message to the user.\`
+
+**Important:**
+- Only use "REQUEST REVISION" when the implementation needs code changes.
+- If the code is correct and no changes are needed, just state your findings.
+- Be constructive and actionable — vague feedback wastes the executor's time.`;
 
     const agentLogger = new AgentLogger({
       store: this.store,
@@ -2598,6 +2815,20 @@ If issues are found that need attention, describe them clearly.`;
       checkSessionError(session);
       session.dispose();
       await agentLogger.flush();
+
+      // Check if the output contains a revision request
+      const trimmedOutput = output.trim();
+      const revisionMatch = trimmedOutput.match(/^REQUEST REVISION\s*\n*/i);
+      if (revisionMatch) {
+        // Extract the feedback after "REQUEST REVISION"
+        const feedbackStart = revisionMatch[0].length;
+        const feedback = trimmedOutput.slice(feedbackStart).trim();
+        return {
+          success: false,
+          revisionRequested: true,
+          output: feedback,
+        };
+      }
 
       return { success: true, output };
     } catch (err: any) {

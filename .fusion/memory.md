@@ -3,6 +3,17 @@
 ## Architecture
 
 - `TaskExecutor` terminates active agent sessions (single and step) when tasks are moved away from `in-progress` via the `task:moved` event handler. This prevents zombie sessions when users manually send tasks back to todo/triage from the board UI.
+- **Workflow Step Revision Loop (FN-1499)**: Workflow steps can request implementation revisions via "REQUEST REVISION" output. The flow:
+  1. Workflow step agent outputs "REQUEST REVISION\n\n[feedback]" to signal that code changes are needed
+  2. `executeWorkflowStep()` detects this pattern and returns `WorkflowStepOutcome` with `revisionRequested: true`
+  3. `runWorkflowSteps()` propagates the structured outcome with `WorkflowStepResult.revisionRequested`
+  4. `handleWorkflowRevisionRequest()` is called, which:
+     - Injects "Workflow Revision Instructions" section into `PROMPT.md` (replacing any prior revision block)
+     - Resets all steps to `pending` for fresh execution
+     - Clears session file to get a fresh agent session
+     - Schedules fresh execution via `setTimeout` after current guard unwinds
+  5. Task stays in `in-progress` and the scheduler re-dispatches the task for a fresh executor pass
+  6. **Guard-unwind requirement**: The revision rerun MUST be scheduled after the current `execute()` guard clears (`this.executing.delete()`). Failure to observe this causes a race where the scheduler re-dispatches while the old execution guard is still set, silently no-oping the new dispatch and stranding the task in `in-progress` with no active session.
 - **Review Handoff (FN-1259)**: Agents can hand off tasks to users for human review via steering comments containing handoff phrases ("send it back to me", "hand off to user", etc.). When `reviewHandoffPolicy` is `"comment-triggered"`, the executor detects handoff intent in agent-authored steering comments and executes the handoff: sets `status: "awaiting-user-review"`, `assigneeUserId: "requesting-user"`, moves task to `in-review`, and disposes the agent session. The merger skips tasks with `"awaiting-user-review"` status (via `BLOCKING_TASK_STATUSES` in `task-merge.ts`). Users can accept review (clear status) or return to agent (move to todo). The `assigneeUserId` field stores the user ID who should review the task.
 - Agent preset templates in `NewAgentDialog.tsx` are a UI-only concept (`AgentPreset` interface), separate from the engine's `AgentPromptTemplate` type. Presets populate agent creation fields (name, icon, role, soul, instructionsText) but don't map to engine types.
 - `soul` and `instructionsText` are already supported in `AgentCreateInput` and `AgentUpdateInput` — no API changes needed when adding these to presets.

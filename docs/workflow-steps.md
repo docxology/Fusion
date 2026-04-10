@@ -59,6 +59,51 @@ Workflow step definitions support `defaultOn`.
 
 When `defaultOn: true`, the step is preselected automatically for newly created tasks (users can still deselect it).
 
+## Workflow Step Revision Loop
+
+Workflow steps can request implementation revisions instead of just blocking completion.
+
+### How It Works
+
+When a prompt-mode workflow step agent finishes its review, it can output a **revision request** to indicate that code changes are needed:
+
+```
+REQUEST REVISION
+
+Fix the SQL injection vulnerability in src/auth.ts. The login function does not
+handle the case where the user account is locked.
+```
+
+### Behavior
+
+When a revision is requested:
+
+1. The executor generates a **Workflow Revision Instructions** section in the task's `PROMPT.md`
+2. All step statuses are reset to `pending` for a fresh execution pass
+3. The task remains in `in-progress` and a fresh executor session is scheduled
+4. The agent receives the revision feedback at the start of its next session
+
+### Feedback Format
+
+Workflow step prompts should instruct agents to use this exact format for revision requests:
+
+```
+REQUEST REVISION
+
+[Clear, actionable description of what needs to be fixed]
+```
+
+The revision block replaces any prior revision instructions (no accumulation).
+
+### Hard Failures vs Revisions
+
+Not all workflow failures are revision requests:
+
+- **Revision requested**: Implementation needs changes → routes back to executor
+- **Hard failure**: Unrecoverable issue → moves to `in-review` with `failed` status
+
+Use revision requests when the implementation is wrong but fixable. Use hard failures only for genuine blockers (e.g., required files are missing, test infrastructure is broken).
+
 ## Viewing Results
 
 Task detail modal includes a **Workflow** tab when workflow data exists.

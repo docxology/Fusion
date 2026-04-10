@@ -541,6 +541,8 @@ Edit mode never auto-injects workflow steps — existing task selections are pre
 4. Post-merge steps run automatically after merge — results appear in the Workflow tab
 5. View results in the task detail modal's **Workflow** tab
 
+**Revision Loop:** If a pre-merge step identifies issues that need code changes, it can request a revision. The executor generates "Workflow Revision Instructions" in the task's PROMPT.md, resets all steps, and routes the task back to in-progress for a fresh implementation pass. Hard failures (e.g., broken test infrastructure) still move the task to in-review with a failed status.
+
 ## Architecture
 
 ### Storage
