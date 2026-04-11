@@ -1429,10 +1429,26 @@ async function fetchZaiUsage(): Promise<ProviderUsage> {
 
 // ── Kimi (Moonshot AI) fetcher ───────────────────────────────────────────
 
-// Kimi API endpoints (Moonshot domain)
-// NOTE: Underscore endpoint is first — this is the Codexbar-validated working endpoint.
-// Hyphen variant is kept as fallback for older accounts/API versions that may still use it.
-// Both endpoints are tried in order; any 404 on one triggers fallback to the next.
+// Kimi API endpoints (Moonshot domain).
+//
+// ENDPOINT ORDERING DECISION (FN-1578 research):
+// - Primary: `/v1/coding_plan/usage` (underscore) — Codexbar-validated working endpoint.
+//   This is the current canonical endpoint for the Kimi coding plan usage API.
+// - Fallback: `/v1/coding-plan/usage` (hyphen) — Legacy endpoint kept for older accounts
+//   or API versions that may still require the hyphenated path.
+//
+// FALLBACK TRIGGER RULES:
+// - ANY 404 response triggers fallback to the next endpoint (regardless of body content).
+// - Auth errors (401/403) short-circuit immediately — no fallback for authentication failures.
+// - Known 404 error shapes:
+//   - `{"code":5,"error":"url.not_found","message":"没找到对象",...}` — endpoint not
+//     available for this account (no coding plan active).
+//   - `{"error":"url_not_found"}` — alternative format of the same condition.
+//   When the last endpoint returns url.not_found, we show a user-friendly message instead
+//   of the raw JSON to avoid leaking provider error details.
+//
+// API AUTH: Uses `Authorization: Bearer <api_key>` header with the kimi-coding API key
+// stored in pi's auth storage (~/.pi/agent/auth.json).
 const KIMI_ENDPOINTS = [
   "https://api.moonshot.cn/v1/coding_plan/usage", // underscore (primary, Codexbar-validated)
   "https://api.moonshot.cn/v1/coding-plan/usage", // hyphen (legacy fallback)

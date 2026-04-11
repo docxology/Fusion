@@ -446,10 +446,18 @@ The `@fusion/tui` package provides Ink-based React components for terminal UI.
 - Use `setTimeout(resolve, ms)` for async state updates in tests
 - Track captured handlers via module-level variables for test assertions
 
-## Kimi/Moonshot API Usage
+## Kimi/Moonshot API Usage (FN-1578)
 
-- Kimi usage endpoint uses `/v1/coding_plan/usage` (underscore) as the primary endpoint — this is the Codexbar-validated working endpoint. The hyphen variant (`/v1/coding-plan/usage`) is a legacy fallback that may return 404 `url.not_found` for some accounts.
-- When implementing endpoint fallbacks for API providers, test the fallback logic with extra fields in the error payload (e.g., `{"code":5,"error":"url.not_found","message":"没找到对象",...}`) to ensure the fallback trigger remains robust.
+- **Primary endpoint**: `/v1/coding_plan/usage` (underscore) — Codexbar-validated working endpoint.
+- **Fallback endpoint**: `/v1/coding-plan/usage` (hyphen) — Legacy endpoint for older accounts/API versions.
+- **Fallback trigger**: ANY 404 response triggers fallback (regardless of body content).
+- **Auth errors (401/403)**: Short-circuit immediately — no fallback for authentication failures.
+- **Known 404 error shapes**:
+  - `{"code":5,"error":"url.not_found","message":"没找到对象",...}` — endpoint not available (no coding plan active).
+  - `{"error":"url_not_found"}` — alternative format.
+- **User-facing error**: When last endpoint returns `url.not_found`, show friendly message: "Usage endpoint unavailable — Kimi coding plan may not be active on this account".
+- **Auth**: Uses `Authorization: Bearer <api_key>` header with `kimi-coding` key from `~/.pi/agent/auth.json`.
+- **Response parsing**: Supports `data.windows[]` array and flat `data.used/total/remaining` shapes.
 ## FN-1516: Periodic Auto-Merge Sweep
 
 - The `canAutoMergeTask()` function must be defined locally inside `runDashboard()` to work correctly with Vitest mocks. Module-level exports capture the real `getTaskMergeBlocker` at import time, before mocks are applied.
