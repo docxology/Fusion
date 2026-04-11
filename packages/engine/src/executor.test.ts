@@ -2234,13 +2234,18 @@ describe("buildExecutionPrompt", () => {
       expect(result).toContain(".fusion/memory.md");
     });
 
-    it("includes append instruction for updating memory at end of execution", () => {
+    it("includes selective memory write instruction for durable learnings at end of execution", () => {
       const task = createMockTaskDetail();
       const result = buildExecutionPrompt(task, "/project", {
         memoryEnabled: true,
       } as any);
-      expect(result).toContain("append");
+      // Should instruct selective writes, not unconditional appends
+      expect(result).toMatch(/skip.*memory.*update|selectively|durable.*learnings/i);
       expect(result).toMatch(/end of execution|before calling.*task_done/i);
+      // Should forbid task-specific trivia
+      expect(result).toMatch(/avoid.*trivia|task-specific.*trivia|per-task.*log/i);
+      // Should allow consolidation/editing
+      expect(result).toMatch(/consolidate|update.*refine.*existing|edit.*existing/i);
     });
 
     it("uses project-root memory path not worktree-local path", () => {

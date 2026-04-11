@@ -614,9 +614,15 @@ The memory file is never overwritten — if it already exists (even with custom 
 - Known pitfalls and things to avoid
 - Important context about dependencies, deployment, or constraints
 
+**What does NOT go in memory:**
+- Task-specific implementation logs or changelog entries
+- Transient failures resolved without broader lessons
+- One-off file paths, variable names, or minor code changes
+- Notes about what you did rather than what future agents should know
+
 **How agents use it:**
 - **Triage agent** — Reads memory before writing specifications, incorporating documented patterns and constraints
-- **Executor agent** — Reads memory at the start of execution, then appends new durable learnings before calling `task_done()`
+- **Executor agent** — Reads memory at the start of execution. At the end, selectively updates memory only when genuinely durable insights were discovered. Agents skip updates when nothing durable was learned and prefer consolidating or editing existing entries over always appending.
 
 The memory path is always the project-root `.fusion/memory.md`, never a worktree-local path. Agents running in worktrees access the file at its project-root location.
 

@@ -173,21 +173,35 @@ describe("project-memory", () => {
       expect(instructions).toMatch(/read.*memory\.md/i);
     });
 
-    it("instructs agent to append learnings at end", () => {
+    it("instructs agent to selectively write learnings at end", () => {
       const instructions = buildExecutionMemoryInstructions(testDir);
       expect(instructions).toMatch(/end of execution|before calling.*task_done/i);
-      expect(instructions).toMatch(/append/i);
+      // Should mention selective/skip behavior, not just append
+      expect(instructions).toMatch(/skip.*memory.*update|selectively|durable.*learnings/i);
+    });
+
+    it("instructs agent to skip when nothing durable was learned", () => {
+      const instructions = buildExecutionMemoryInstructions(testDir);
+      // Should explicitly allow skipping when nothing durable was learned
+      expect(instructions).toMatch(/skip.*memory.*update|nothing durable|if nothing/i);
+    });
+
+    it("instructs agent to avoid task-specific trivia", () => {
+      const instructions = buildExecutionMemoryInstructions(testDir);
+      // Should explicitly forbid task-specific trivia
+      expect(instructions).toMatch(/avoid.*trivia|task-specific.*trivia|per-task.*log|changelog/i);
+    });
+
+    it("allows editing/consolidating existing entries", () => {
+      const instructions = buildExecutionMemoryInstructions(testDir);
+      // Should allow consolidation/editing, not forbid it
+      expect(instructions).toMatch(/consolidate|update.*refine.*existing|edit.*existing/i);
     });
 
     it("specifies project-root path not worktree-local", () => {
       const instructions = buildExecutionMemoryInstructions(testDir);
       // Should use .fusion/memory.md (project root relative) not absolute worktree paths
       expect(instructions).toContain("`.fusion/memory.md`");
-    });
-
-    it("warns against deleting existing content", () => {
-      const instructions = buildExecutionMemoryInstructions(testDir);
-      expect(instructions).toMatch(/do not delete|only append/i);
     });
   });
 });

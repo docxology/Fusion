@@ -115,7 +115,12 @@ This project has a memory file at \`.fusion/memory.md\` that stores durable proj
  * Build the memory instruction section for the execution prompt.
  *
  * Tells the executor agent to read the memory file at the start of execution
- * and append new durable learnings at the end.
+ * and selectively update it with durable learnings at the end.
+ *
+ * Key behavioral changes from legacy append-only pattern:
+ * - Agents SHOULD skip memory updates when nothing durable was learned
+ * - Agents CAN edit/consolidate existing entries (not just append)
+ * - Only genuinely reusable insights qualify — not task-specific trivia
  *
  * The path is always the project-root relative path (`.fusion/memory.md`),
  * not a worktree-local path. Agents running in worktrees should access
@@ -137,10 +142,19 @@ This project has a memory file at \`.fusion/memory.md\` that stores durable proj
 3. Apply these learnings to your implementation — follow documented patterns and avoid known pitfalls
 
 **At the end of execution (before calling \`task_done()\`):**
-1. Review what you learned during this task that would benefit future runs
-2. If you discovered new patterns, conventions, pitfalls, or important context, **append them** to the appropriate section in \`.fusion/memory.md\`
-3. Only add genuinely durable, reusable learnings — not task-specific trivia
-4. Do NOT delete or reorganize existing content; only append new items
+1. Review what you learned during this task that would genuinely benefit future runs
+2. **If nothing durable was learned, skip the memory update entirely** — do not append trivial or task-specific notes
+3. Only write when you have genuinely durable, reusable insights such as:
+   - New architectural patterns or module boundaries discovered
+   - Conventions or standards that should be followed
+   - Pitfalls or anti-patterns to avoid in future work
+   - Important constraints or context that affects implementation decisions
+4. **Avoid** writing task-specific trivia such as:
+   - Per-task implementation logs or changelog entries
+   - Transient failures resolved without broader lessons
+   - One-off file paths, variable names, or minor code changes
+   - Notes about what you did rather than what future agents should know
+5. **Consolidate when possible**: If an existing entry already covers a concept, update or refine it rather than adding a duplicate. Delete entries that are no longer accurate.
 
 **Format for additions:** Add bullet points under the relevant section heading:
 - Use \`- \` prefix for list items
