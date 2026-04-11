@@ -58,6 +58,7 @@ function createMockStore(overrides: Partial<TaskStore> = {}): TaskStore {
     getAgentLogs: vi.fn().mockResolvedValue([]),
     addSteeringComment: vi.fn(),
     parseDependenciesFromPrompt: vi.fn().mockResolvedValue([]),
+    parseStepsFromPrompt: vi.fn().mockResolvedValue([]),
     parseFileScopeFromPrompt: vi.fn().mockResolvedValue([]),
     on: vi.fn(),
     emit: vi.fn(),

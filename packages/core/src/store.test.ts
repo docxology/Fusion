@@ -1351,6 +1351,38 @@ describe("TaskStore", () => {
       expect(slim.steeringComments).toEqual(full.steeringComments);
     });
 
+    it("slim mode hydrates step metadata from PROMPT.md for board cards", async () => {
+      const task = await store.createTask({ description: "Prompt-only steps" });
+      await store.updateTask(task.id, {
+        prompt: `# ${task.id}: Prompt-only steps
+
+## Steps
+
+### Step 0: Update the list payload
+
+- [ ] Keep card progress visible
+
+### Step 1: Add regression coverage
+
+- [ ] Prove slim lists still include prompt steps
+`,
+      });
+
+      const fullList = await store.listTasks();
+      const slimList = await store.listTasks({ slim: true });
+      const full = fullList.find((t) => t.id === task.id)!;
+      const slim = slimList.find((t) => t.id === task.id)!;
+
+      expect(full.steps).toEqual([]);
+      expect(slim.steps).toEqual([
+        { name: "Update the list payload", status: "pending" },
+        { name: "Add regression coverage", status: "pending" },
+      ]);
+
+      const searchResults = await store.searchTasks("Prompt-only");
+      expect(searchResults.find((t) => t.id === task.id)?.steps).toEqual(slim.steps);
+    });
+
     it("includeArchived=false excludes archived tasks; default includes them", async () => {
       const keep = await store.createTask({ description: "Stays visible" });
       const toArchive = await store.createTask({ description: "Will be archived" });

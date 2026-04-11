@@ -3020,7 +3020,7 @@ describe("TaskCard files-changed in done column", () => {
     expect(screen.queryByText("1 files changed")).not.toBeInTheDocument();
   });
 
-  it("shows session files count for done column with worktree but no mergeDetails.filesChanged", () => {
+  it("does not fetch session files count for done column with worktree but no mergeDetails.filesChanged", () => {
     const task = makeTask({
       column: "done",
       worktree: "/repo/.worktrees/fn-099",
@@ -3035,7 +3035,8 @@ describe("TaskCard files-changed in done column", () => {
       />
     );
 
-    expect(screen.getByText("3 files changed")).toBeInTheDocument();
+    expect(screen.queryByText("3 files changed")).not.toBeInTheDocument();
+    expect(screen.queryByText("Checking files…")).not.toBeInTheDocument();
   });
 
   it("shows nothing for done column without worktree, modifiedFiles, and mergeDetails.filesChanged", () => {
@@ -3226,7 +3227,7 @@ describe("TaskCard singular/plural file count", () => {
     mockUseTaskDiffStats.mockReturnValue({ stats: null, loading: false });
   });
 
-  it("displays '1 file changed' (singular) for in-progress column with 1 session file", () => {
+  it("shows a static files action for in-progress worktrees without fetching file counts", () => {
     const task = makeTask({
       column: "in-progress",
       worktree: "/repo/.worktrees/fn-099",
@@ -3242,10 +3243,12 @@ describe("TaskCard singular/plural file count", () => {
       />
     );
 
-    expect(screen.getByText("1 file changed")).toBeInTheDocument();
+    expect(screen.getByText("View files")).toBeInTheDocument();
+    expect(screen.queryByText(/files? changed/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Checking files…")).not.toBeInTheDocument();
   });
 
-  it("displays '2 files changed' (plural) for in-progress column with 2 session files", () => {
+  it("does not use session file counts for in-progress worktree cards", () => {
     const task = makeTask({
       column: "in-progress",
       worktree: "/repo/.worktrees/fn-099",
@@ -3261,7 +3264,8 @@ describe("TaskCard singular/plural file count", () => {
       />
     );
 
-    expect(screen.getByText("2 files changed")).toBeInTheDocument();
+    expect(screen.getByText("View files")).toBeInTheDocument();
+    expect(screen.queryByText("2 files changed")).not.toBeInTheDocument();
   });
 
   it("displays '1 file changed' (singular) for done column with displayCount=1 via diffStats", () => {
@@ -3303,7 +3307,7 @@ describe("TaskCard singular/plural file count", () => {
     expect(screen.queryByText("1 files changed")).not.toBeInTheDocument();
   });
 
-  it("displays '1 file changed' (singular) for done column with sessionFiles fallback of length 1", () => {
+  it("does not fetch session file counts as a done column fallback", () => {
     const task = makeTask({
       column: "done",
       worktree: "/repo/.worktrees/fn-099",
@@ -3318,8 +3322,8 @@ describe("TaskCard singular/plural file count", () => {
       />
     );
 
-    expect(screen.getByText("1 file changed")).toBeInTheDocument();
-    expect(screen.queryByText("1 files changed")).not.toBeInTheDocument();
+    expect(screen.queryByText("1 file changed")).not.toBeInTheDocument();
+    expect(screen.queryByText("Checking files…")).not.toBeInTheDocument();
   });
 
   it("displays 'N files changed' (plural) for done column with diffStats count > 1", () => {

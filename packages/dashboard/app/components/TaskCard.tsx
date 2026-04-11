@@ -7,7 +7,6 @@ import { GitHubBadge } from "./GitHubBadge";
 import { pickPreferredBadge } from "./TaskCardBadge";
 import { useBadgeWebSocket } from "../hooks/useBadgeWebSocket";
 import { getFreshBatchData } from "../hooks/useBatchBadgeFetch";
-import { useSessionFiles } from "../hooks/useSessionFiles";
 import { useTaskDiffStats } from "../hooks/useTaskDiffStats";
 import { isTaskStuck } from "../utils/taskStuck";
 import type { ToastType } from "../hooks/useToast";
@@ -492,15 +491,6 @@ function TaskCardComponent({
 
   const liveBadgeData = badgeUpdates.get(task.id);
 
-  // Viewport-gated session files fetching - only fetch when card is visible
-  const { files: sessionFiles, loading: sessionFilesLoading } = useSessionFiles(
-    task.id,
-    task.worktree,
-    task.column,
-    projectId,
-    { enabled: isInViewport },
-  );
-
   // Viewport-gated diff stats fetching - only fetch when card is visible
   const { stats: diffStats } = useTaskDiffStats(
     task.id,
@@ -928,9 +918,7 @@ function TaskCardComponent({
           disabled={!onOpenDetailWithTab}
         >
           <Folder size={12} />
-          <span>
-            {sessionFilesLoading ? "Checking files…" : `${sessionFiles.length} ${sessionFiles.length === 1 ? "file" : "files"} changed`}
-          </span>
+          <span>View files</span>
         </button>
       )}
       {task.column === "done" && (() => {
@@ -963,21 +951,6 @@ function TaskCardComponent({
             >
               <Folder size={12} />
               <span>{modifiedCount} {modifiedCount === 1 ? "file" : "files"} changed</span>
-            </button>
-          );
-        }
-        if (task.worktree && sessionFiles.length > 0) {
-          return (
-            <button
-              type="button"
-              className="card-session-files"
-              onClick={handleOpenFiles}
-              disabled={!onOpenDetailWithTab}
-            >
-              <Folder size={12} />
-              <span>
-                {sessionFilesLoading ? "Checking files…" : `${sessionFiles.length} ${sessionFiles.length === 1 ? "file" : "files"} changed`}
-              </span>
             </button>
           );
         }

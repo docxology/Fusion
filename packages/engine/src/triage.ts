@@ -1215,6 +1215,11 @@ export class TriageProcessor {
       triageLog.log(`${task.id} dependencies: ${parsedDeps.join(", ")}`);
     }
 
+    const parsedSteps = await this.store.parseStepsFromPrompt(task.id);
+    if (parsedSteps.length > 0) {
+      taskUpdates.steps = parsedSteps;
+    }
+
     const sizeMatch = written.match(/^\*\*Size:\*\*\s+(S|M|L)\b/m);
     if (sizeMatch) {
       taskUpdates.size = sizeMatch[1] as "S" | "M" | "L";

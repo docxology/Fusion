@@ -1360,7 +1360,15 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
     const sql = `SELECT ${selectClause} FROM tasks${whereClause} ORDER BY createdAt ASC`;
 
     const rows = this.db.prepare(sql).all(...params);
-    const tasks = (rows as any[]).map((row) => this.rowToTask(row));
+    const tasks = await Promise.all((rows as any[]).map(async (row) => {
+      const task = this.rowToTask(row);
+      if (!slim || task.steps.length > 0) {
+        return task;
+      }
+
+      const steps = await this.parseStepsFromPrompt(task.id);
+      return steps.length > 0 ? { ...task, steps } : task;
+    }));
 
     // Sort by createdAt, then by numeric ID suffix for tie-breaking
     const sorted = tasks.sort((a, b) => {
@@ -1432,7 +1440,15 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       LIMIT ${limit >= 0 ? limit : -1}${offsetClause}
     `).all(ftsQuery) as any[];
 
-    return rows.map((row) => this.rowToTask(row));
+    return Promise.all(rows.map(async (row) => {
+      const task = this.rowToTask(row);
+      if (task.steps.length > 0) {
+        return task;
+      }
+
+      const steps = await this.parseStepsFromPrompt(task.id);
+      return steps.length > 0 ? { ...task, steps } : task;
+    }));
   }
 
   async selectNextTaskForAgent(agentId: string): Promise<InboxTask | null> {
@@ -1588,7 +1604,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
 
   async updateTask(
     id: string,
-    updates: { title?: string; description?: string; prompt?: string; worktree?: string | null; status?: string | null; dependencies?: string[]; blockedBy?: string | null; assignedAgentId?: string | null; assigneeUserId?: string | null; checkedOutBy?: string | null; checkedOutAt?: string | null; paused?: boolean; baseBranch?: string | null; branch?: string | null; baseCommitSha?: string | null; size?: "S" | "M" | "L"; reviewLevel?: number; mergeRetries?: number; stuckKillCount?: number | null; recoveryRetryCount?: number | null; nextRecoveryAt?: string | null; enabledWorkflowSteps?: string[]; modelProvider?: string | null; modelId?: string | null; validatorModelProvider?: string | null; validatorModelId?: string | null; planningModelProvider?: string | null; planningModelId?: string | null; thinkingLevel?: string | null; error?: string | null; summary?: string | null; sessionFile?: string | null; workflowStepResults?: import("./types.js").WorkflowStepResult[] | null; mergeDetails?: import("./types.js").MergeDetails | null; modifiedFiles?: string[] | null; missionId?: string | null; sliceId?: string | null },
+    updates: { title?: string; description?: string; prompt?: string; worktree?: string | null; status?: string | null; dependencies?: string[]; steps?: import("./types.js").TaskStep[]; blockedBy?: string | null; assignedAgentId?: string | null; assigneeUserId?: string | null; checkedOutBy?: string | null; checkedOutAt?: string | null; paused?: boolean; baseBranch?: string | null; branch?: string | null; baseCommitSha?: string | null; size?: "S" | "M" | "L"; reviewLevel?: number; mergeRetries?: number; stuckKillCount?: number | null; recoveryRetryCount?: number | null; nextRecoveryAt?: string | null; enabledWorkflowSteps?: string[]; modelProvider?: string | null; modelId?: string | null; validatorModelProvider?: string | null; validatorModelId?: string | null; planningModelProvider?: string | null; planningModelId?: string | null; thinkingLevel?: string | null; error?: string | null; summary?: string | null; sessionFile?: string | null; workflowStepResults?: import("./types.js").WorkflowStepResult[] | null; mergeDetails?: import("./types.js").MergeDetails | null; modifiedFiles?: string[] | null; missionId?: string | null; sliceId?: string | null },
     runContext?: RunMutationContext,
   ): Promise<Task> {
     return this.withTaskLock(id, async () => {
@@ -1634,6 +1650,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
           movedToTriage = true;
         }
       }
+      if (updates.steps !== undefined) task.steps = updates.steps;
       if (updates.status === null) {
         task.status = undefined;
       } else if (updates.status !== undefined) {
