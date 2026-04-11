@@ -630,3 +630,21 @@ updatedAt=now WHERE column='done' AND columnMovedAt < cutoff` is safe and
 fast — subsequent watch() polls will pick up the changes and emit
 `task:moved` events. (Beware emitting hundreds of events in one cycle if a
 dashboard is connected.)
+
+## FN-1567: Mission Contract Assertions
+
+**Schema version bump pattern:** When adding a new schema migration:
+1. Increment `SCHEMA_VERSION` constant in `db.ts`
+2. Add `if (version < N)` block with `applyMigration(N, () => { ... })`
+3. Use `addColumnIfMissing()` for column additions (idempotent)
+4. Use `CREATE TABLE IF NOT EXISTS` for new tables (idempotent)
+5. Use `CREATE INDEX IF NOT EXISTS` for indexes (idempotent)
+6. Update all schema version assertions in test files (`db.test.ts`, `run-audit.test.ts`, `__tests__/task-documents.test.ts`)
+
+**Optional fields in interfaces:** When adding an optional field to an existing interface (like `validationState?: MilestoneValidationState`), TypeScript may infer `T | undefined` when the field is used in SQL prepared statements. Use type assertions (`as string`) or null coalescing (`?? "default"`) to satisfy SQLite type requirements.
+
+**Deterministic ordering:** Always use `ORDER BY orderIndex ASC, createdAt ASC, id ASC` for listing items within a parent. This ensures stable ordering even when items have identical timestamps.
+
+**Event emitter events:** Add new event types to `MissionStoreEvents` interface and emit them from the appropriate methods. The EventEmitter pattern follows the same conventions as `TaskStore`.
+
+**Many-to-many relationship pattern:** Use a composite primary key `(featureId, assertionId)` to prevent duplicate links. Check for existing links before inserting and throw meaningful errors. Use `hasTable()` guards before creating indexes on new tables.
