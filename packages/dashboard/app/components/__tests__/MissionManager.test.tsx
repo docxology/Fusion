@@ -47,6 +47,7 @@ vi.mock("lucide-react", () => ({
   Activity: () => <span data-testid="activity-icon">Activity</span>,
   FileText: () => <span data-testid="file-text-icon">FileText</span>,
   Minimize2: () => <span data-testid="minimize-icon">Minimize2</span>,
+  Lock: () => <span data-testid="lock-icon">Lock</span>,
   RefreshCw: ({ className }: any) => <span data-testid="refresh-icon" className={className}>Refresh</span>,
 }));
 
