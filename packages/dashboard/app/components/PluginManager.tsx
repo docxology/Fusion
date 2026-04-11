@@ -7,13 +7,31 @@
  * - Enable/disable plugins
  * - Configure plugin settings
  * - Uninstall plugins
+ * - Live updates via SSE (plugin:lifecycle events)
  */
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Package, Settings, Trash2, Plus, X, RefreshCw, RotateCcw } from "lucide-react";
 import { fetchPlugins, installPlugin, enablePlugin, disablePlugin, uninstallPlugin, fetchPluginSettings, updatePluginSettings, reloadPlugin } from "../api";
-import type { PluginInstallation } from "@fusion/core";
+import type { PluginInstallation, PluginState } from "@fusion/core";
 import type { ToastType } from "../hooks/useToast";
+
+/** SSE heartbeat watchdog timeout (matches useTasks hook) */
+const SSE_HEARTBEAT_TIMEOUT_MS = 45_000;
+
+/** Normalized plugin lifecycle payload from SSE plugin:lifecycle events */
+interface PluginLifecyclePayload {
+  pluginId: string;
+  transition: "installing" | "enabled" | "disabled" | "error" | "uninstalled" | "settings-updated";
+  sourceEvent: string;
+  timestamp: string;
+  projectId?: string;
+  enabled: boolean;
+  state: PluginState;
+  version: string;
+  settings: Record<string, unknown>;
+  error?: string;
+}
 
 interface PluginManagerProps {
   addToast: (message: string, type?: ToastType) => void;
@@ -54,6 +72,128 @@ export function PluginManager({ addToast, projectId }: PluginManagerProps) {
   useEffect(() => {
     loadPlugins();
   }, [loadPlugins]);
+
+  // SSE live updates for plugin lifecycle events
+  const pluginsRef = useRef<PluginInstallation[]>([]);
+  pluginsRef.current = plugins;
+
+  useEffect(() => {
+    let closedByCleanup = false;
+    let heartbeatTimer: ReturnType<typeof setTimeout> | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const query = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
+    const es = new EventSource(`/api/events${query}`);
+
+    /** Reset the SSE heartbeat watchdog */
+    const resetHeartbeat = () => {
+      if (heartbeatTimer) clearTimeout(heartbeatTimer);
+      heartbeatTimer = setTimeout(() => {
+        if (!closedByCleanup) {
+          // Connection appears dead — force reconnect
+          es.close();
+          if (!closedByCleanup) {
+            reconnectTimer = setTimeout(() => {
+              if (!closedByCleanup) {
+                void loadPlugins(); // Fallback: refetch all plugins
+              }
+            }, 3000);
+          }
+        }
+      }, SSE_HEARTBEAT_TIMEOUT_MS);
+    };
+
+    // Start the heartbeat watchdog immediately
+    resetHeartbeat();
+
+    const handlePluginLifecycle = (e: MessageEvent) => {
+      resetHeartbeat();
+      try {
+        const payload: PluginLifecyclePayload = JSON.parse(e.data);
+        
+        // Filter by projectId if in project-scoped mode
+        if (projectId && payload.projectId && payload.projectId !== projectId) {
+          return;
+        }
+
+        const currentPlugins = pluginsRef.current;
+
+        switch (payload.transition) {
+          case "installing":
+          case "enabled":
+          case "disabled":
+          case "settings-updated":
+            // Update existing plugin or add if new
+            setPlugins((prev) => {
+              const existingIndex = prev.findIndex((p) => p.id === payload.pluginId);
+              if (existingIndex >= 0) {
+                // Update existing plugin
+                const updated = [...prev];
+                updated[existingIndex] = {
+                  ...updated[existingIndex],
+                  enabled: payload.enabled,
+                  state: payload.state,
+                  settings: payload.settings,
+                  error: payload.error,
+                };
+                return updated;
+              } else {
+                // New plugin added via another session — refetch to get full data
+                void loadPlugins();
+                return prev;
+              }
+            });
+            break;
+
+          case "uninstalled":
+            // Remove plugin from list
+            setPlugins((prev) => prev.filter((p) => p.id !== payload.pluginId));
+            break;
+
+          case "error":
+            // Update plugin state to error
+            setPlugins((prev) => {
+              const existingIndex = prev.findIndex((p) => p.id === payload.pluginId);
+              if (existingIndex >= 0) {
+                const updated = [...prev];
+                updated[existingIndex] = {
+                  ...updated[existingIndex],
+                  state: payload.state,
+                  error: payload.error,
+                };
+                return updated;
+              }
+              return prev;
+            });
+            break;
+        }
+      } catch {
+        // Ignore parse errors
+      }
+    };
+
+    es.addEventListener("plugin:lifecycle", handlePluginLifecycle);
+
+    // Also listen for the heartbeat to keep the connection alive
+    es.addEventListener("heartbeat", () => {
+      resetHeartbeat();
+    });
+
+    es.onerror = () => {
+      if (closedByCleanup) return;
+      // EventSource will automatically attempt reconnection
+      // We just need to clear our heartbeat watchdog
+      if (heartbeatTimer) clearTimeout(heartbeatTimer);
+    };
+
+    return () => {
+      closedByCleanup = true;
+      if (heartbeatTimer) clearTimeout(heartbeatTimer);
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      es.removeEventListener("plugin:lifecycle", handlePluginLifecycle);
+      es.close();
+    };
+  }, [projectId, loadPlugins]);
 
   const handleInstall = async () => {
     if (!installPath.trim()) {

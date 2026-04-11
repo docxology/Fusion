@@ -652,3 +652,133 @@ export { PROMPT_KEY_CATALOG } from "./prompt-overrides.js";
 ```
 
 Then rebuild core: pnpm --filter @fusion/core build before running dashboard tests or build.
+
+
+## FN-1413: Plugin Settings Section with SSE Live Updates
+
+The Plugin Settings section in the dashboard Settings modal provides real-time plugin management with SSE-driven live updates.
+
+### Component Structure
+
+**PluginManager.tsx** (`packages/dashboard/app/components/`):
+- Manages plugin lifecycle (install, enable/disable, uninstall, settings)
+- Subscribes to `/api/events` SSE stream for real-time updates
+- Handles project-scoped filtering for multi-project mode
+
+### SSE Live Update Pattern
+
+```typescript
+// EventSource subscription with heartbeat watchdog
+const SSE_HEARTBEAT_TIMEOUT_MS = 45_000;
+
+useEffect(() => {
+  let closedByCleanup = false;
+  let heartbeatTimer: ReturnType<typeof setTimeout> | null = null;
+  
+  const query = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
+  const es = new EventSource(`/api/events${query}`);
+
+  const resetHeartbeat = () => {
+    if (heartbeatTimer) clearTimeout(heartbeatTimer);
+    heartbeatTimer = setTimeout(() => {
+      if (!closedByCleanup) {
+        es.close();
+        // Fallback: refetch all plugins
+        void loadPlugins();
+      }
+    }, SSE_HEARTBEAT_TIMEOUT_MS);
+  };
+
+  es.addEventListener("plugin:lifecycle", (e: MessageEvent) => {
+    resetHeartbeat();
+    const payload: PluginLifecyclePayload = JSON.parse(e.data);
+    // Filter by projectId if scoped
+    if (projectId && payload.projectId && payload.projectId !== projectId) {
+      return;
+    }
+    // Reconcile local state based on transition type
+    // ...
+  });
+
+  return () => {
+    closedByCleanup = true;
+    es.removeEventListener("plugin:lifecycle", handlePluginLifecycle);
+    es.close();
+  };
+}, [projectId, loadPlugins]);
+```
+
+### Event Payload Types
+
+```typescript
+interface PluginLifecyclePayload {
+  pluginId: string;
+  transition: "installing" | "enabled" | "disabled" | "error" | "uninstalled" | "settings-updated";
+  sourceEvent: string;
+  timestamp: string;
+  projectId?: string;
+  enabled: boolean;
+  state: PluginState;
+  version: string;
+  settings: Record<string, unknown>;
+  error?: string;
+}
+```
+
+### Transition Handling
+
+| Transition | Action |
+|-------------|--------|
+| `enabled` | Update plugin state to enabled |
+| `disabled` | Update plugin state to disabled |
+| `settings-updated` | Update plugin settings |
+| `uninstalled` | Remove plugin from list |
+| `error` | Update plugin state to error |
+| `installing` | Refetch plugin list |
+
+### Project-Scoped Filtering
+
+- SSE URL includes `projectId` query param when provided
+- PluginManager filters events by `payload.projectId !== projectId`
+- Prevents cross-project state pollution in multi-project mode
+
+### Test Patterns
+
+When testing SSE event handling:
+- Mock EventSource globally in `beforeEach`
+- Store handler reference in a module-level variable for triggering
+- Use `act()` when triggering events to ensure React updates complete
+- Test projectId filtering by sending events with mismatched projectId
+
+```typescript
+beforeEach(() => {
+  const eventSourceInstance = {
+    handlers: {},
+    addEventListener: vi.fn((event, handler) => {
+      eventSourceInstance.handlers[event] = handler;
+    }),
+    close: vi.fn(),
+  };
+  vi.stubGlobal("EventSource", vi.fn(() => eventSourceInstance));
+});
+
+it("handles plugin enabled SSE event", async () => {
+  // Trigger the event
+  const handler = eventSourceInstance.handlers["plugin:lifecycle"];
+  act(() => {
+    handler({ data: JSON.stringify({ pluginId: "test", transition: "enabled", ... }) });
+  });
+  
+  // Assert state change
+  expect(screen.getByRole("checkbox")).toBeChecked();
+});
+```
+
+### API Wrapper Tests
+
+When adding plugin API wrappers:
+- Mock `vi.mock("../../api")` with inline object (not external variable)
+- Test projectId propagation via `withProjectId()` pattern
+- Use `mockResolvedValueOnce()` for deterministic test sequences
+- Verify URL construction with query string parameters
+

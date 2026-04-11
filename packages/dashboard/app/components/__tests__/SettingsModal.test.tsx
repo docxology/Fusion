@@ -48,9 +48,28 @@ vi.mock("../../api", () => ({
     favoriteModels: [],
   })),
   testNtfyNotification: vi.fn(() => Promise.resolve({ success: true })),
+  // Plugin API mocks
+  fetchPlugins: vi.fn(() => Promise.resolve([])),
+  installPlugin: vi.fn(() => Promise.resolve({ id: "test-plugin", name: "Test Plugin", version: "1.0.0", state: "started" as const, enabled: true, settings: {}, settingsSchema: {} })),
+  enablePlugin: vi.fn(() => Promise.resolve({ id: "test-plugin", name: "Test Plugin", version: "1.0.0", state: "started" as const, enabled: true, settings: {}, settingsSchema: {} })),
+  disablePlugin: vi.fn(() => Promise.resolve({ id: "test-plugin", name: "Test Plugin", version: "1.0.0", state: "stopped" as const, enabled: false, settings: {}, settingsSchema: {} })),
+  uninstallPlugin: vi.fn(() => Promise.resolve()),
+  fetchPluginSettings: vi.fn(() => Promise.resolve({})),
+  updatePluginSettings: vi.fn(() => Promise.resolve({})),
+  reloadPlugin: vi.fn(() => Promise.resolve({ id: "test-plugin", name: "Test Plugin", version: "1.0.0", state: "started" as const, enabled: true, settings: {}, settingsSchema: {} })),
 }));
 
-import { fetchSettings, updateSettings, updateGlobalSettings, fetchAuthStatus, loginProvider, logoutProvider, saveApiKey, clearApiKey, fetchModels, testNtfyNotification } from "../../api";
+// Mock PluginManager to avoid SSE setup in tests
+vi.mock("../PluginManager", () => ({
+  PluginManager: vi.fn(({ addToast }) => (
+    <div data-testid="plugin-manager">
+      <p>Plugin Manager Component</p>
+      <button onClick={() => addToast?.("Plugin action", "success")}>Mock Plugin Action</button>
+    </div>
+  )),
+}));
+
+import { fetchSettings, updateSettings, updateGlobalSettings, fetchAuthStatus, loginProvider, logoutProvider, saveApiKey, clearApiKey, fetchModels, testNtfyNotification, fetchPlugins } from "../../api";
 
 const onClose = vi.fn();
 const addToast = vi.fn();
