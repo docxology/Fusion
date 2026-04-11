@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { FileBrowserModal } from "./FileBrowserModal";
 import * as workspaceBrowserHook from "../hooks/useWorkspaceFileBrowser";
@@ -309,6 +309,225 @@ describe("FileBrowserModal", () => {
     expect(screen.getByText(".env.example")).toBeInTheDocument();
     expect(screen.getByText(".github")).toBeInTheDocument();
     expect(screen.getByText("src")).toBeInTheDocument();
+  });
+
+  describe("image file preview", () => {
+    it("renders image preview for .png files instead of editor", async () => {
+      mockUseWorkspaceFileBrowser.mockReturnValue({
+        ...defaultBrowserState,
+        entries: [
+          { name: "screenshot.png", type: "file" as const, size: 102400, mtime: "2024-01-01" },
+        ],
+      });
+
+      render(
+        <FileBrowserModal
+          initialWorkspace="project"
+          isOpen={true}
+          onClose={mockOnClose}
+        />,
+      );
+
+      // Select the image file
+      await act(async () => {
+        fireEvent.click(screen.getByText("screenshot.png"));
+      });
+
+      // Should render an image preview
+      const imagePreview = screen.getByRole("img", { name: "screenshot.png" });
+      expect(imagePreview).toBeInTheDocument();
+      expect(imagePreview).toHaveAttribute("src", expect.stringContaining("screenshot.png"));
+
+      // Should NOT render the text editor
+      expect(screen.queryByLabelText(/Editor for screenshot.png/)).not.toBeInTheDocument();
+    });
+
+    it("renders image preview for .jpg files instead of editor", async () => {
+      mockUseWorkspaceFileBrowser.mockReturnValue({
+        ...defaultBrowserState,
+        entries: [
+          { name: "photo.jpg", type: "file" as const, size: 204800, mtime: "2024-01-01" },
+        ],
+      });
+
+      render(
+        <FileBrowserModal
+          initialWorkspace="project"
+          isOpen={true}
+          onClose={mockOnClose}
+        />,
+      );
+
+      await act(async () => {
+        fireEvent.click(screen.getByText("photo.jpg"));
+      });
+
+      const imagePreview = screen.getByRole("img", { name: "photo.jpg" });
+      expect(imagePreview).toBeInTheDocument();
+    });
+
+    it("renders image preview for .gif files instead of editor", async () => {
+      mockUseWorkspaceFileBrowser.mockReturnValue({
+        ...defaultBrowserState,
+        entries: [
+          { name: "animation.gif", type: "file" as const, size: 51200, mtime: "2024-01-01" },
+        ],
+      });
+
+      render(
+        <FileBrowserModal
+          initialWorkspace="project"
+          isOpen={true}
+          onClose={mockOnClose}
+        />,
+      );
+
+      await act(async () => {
+        fireEvent.click(screen.getByText("animation.gif"));
+      });
+
+      const imagePreview = screen.getByRole("img", { name: "animation.gif" });
+      expect(imagePreview).toBeInTheDocument();
+    });
+
+    it("renders image preview for .webp files instead of editor", async () => {
+      mockUseWorkspaceFileBrowser.mockReturnValue({
+        ...defaultBrowserState,
+        entries: [
+          { name: "image.webp", type: "file" as const, size: 76800, mtime: "2024-01-01" },
+        ],
+      });
+
+      render(
+        <FileBrowserModal
+          initialWorkspace="project"
+          isOpen={true}
+          onClose={mockOnClose}
+        />,
+      );
+
+      await act(async () => {
+        fireEvent.click(screen.getByText("image.webp"));
+      });
+
+      const imagePreview = screen.getByRole("img", { name: "image.webp" });
+      expect(imagePreview).toBeInTheDocument();
+    });
+
+    it("hides save/discard actions for image files", async () => {
+      mockUseWorkspaceFileBrowser.mockReturnValue({
+        ...defaultBrowserState,
+        entries: [
+          { name: "test.png", type: "file" as const, size: 1024, mtime: "2024-01-01" },
+        ],
+      });
+
+      // Mock editor state with changes
+      mockUseWorkspaceFileEditor.mockReturnValue({
+        ...defaultEditorState,
+        hasChanges: true,
+      });
+
+      render(
+        <FileBrowserModal
+          initialWorkspace="project"
+          isOpen={true}
+          onClose={mockOnClose}
+        />,
+      );
+
+      await act(async () => {
+        fireEvent.click(screen.getByText("test.png"));
+      });
+
+      // Should NOT show Discard or Save buttons for images
+      expect(screen.queryByRole("button", { name: /Discard/ })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /Save/ })).not.toBeInTheDocument();
+    });
+
+    it("still shows save/discard actions for text files with changes", async () => {
+      // Mock editor state with changes
+      mockUseWorkspaceFileEditor.mockReturnValue({
+        ...defaultEditorState,
+        hasChanges: true,
+      });
+
+      render(
+        <FileBrowserModal
+          initialWorkspace="project"
+          isOpen={true}
+          onClose={mockOnClose}
+        />,
+      );
+
+      // Select a text file
+      await act(async () => {
+        fireEvent.click(screen.getByText("file1.ts"));
+      });
+
+      // Should show Discard and Save buttons
+      expect(screen.getByRole("button", { name: /Discard/ })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /Save/ })).toBeInTheDocument();
+    });
+
+    it("renders file editor for non-image binary files like .pdf", async () => {
+      mockUseWorkspaceFileBrowser.mockReturnValue({
+        ...defaultBrowserState,
+        entries: [
+          { name: "document.pdf", type: "file" as const, size: 1024000, mtime: "2024-01-01" },
+        ],
+      });
+
+      render(
+        <FileBrowserModal
+          initialWorkspace="project"
+          isOpen={true}
+          onClose={mockOnClose}
+        />,
+      );
+
+      await act(async () => {
+        fireEvent.click(screen.getByText("document.pdf"));
+      });
+
+      // Should show binary indicator
+      expect(screen.getByText(/Binary file — read only/)).toBeInTheDocument();
+
+      // Should NOT render an image preview
+      expect(screen.queryByRole("img")).not.toBeInTheDocument();
+    });
+
+    it("image preview uses workspace-safe URL pattern", async () => {
+      mockUseWorkspaceFileBrowser.mockReturnValue({
+        ...defaultBrowserState,
+        entries: [
+          { name: "test.png", type: "file" as const, size: 1024, mtime: "2024-01-01" },
+        ],
+      });
+
+      render(
+        <FileBrowserModal
+          initialWorkspace="FN-001"
+          isOpen={true}
+          onClose={mockOnClose}
+        />,
+      );
+
+      await act(async () => {
+        fireEvent.click(screen.getByText("test.png"));
+      });
+
+      const imagePreview = screen.getByRole("img", { name: "test.png" });
+      // URL should include workspace parameter
+      expect(imagePreview).toHaveAttribute(
+        "src",
+        expect.stringContaining("workspace=FN-001")
+      );
+      expect(imagePreview).toHaveAttribute(
+        "src",
+        expect.stringContaining("test.png")
+      );
+    });
   });
 
   describe("modal height constraint regression", () => {

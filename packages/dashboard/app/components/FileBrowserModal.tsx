@@ -3,6 +3,7 @@ import { X, Save, RotateCcw, Folder, FileType, ArrowLeft } from "lucide-react";
 import { useWorkspaceFileBrowser } from "../hooks/useWorkspaceFileBrowser";
 import { useWorkspaceFileEditor } from "../hooks/useWorkspaceFileEditor";
 import { useWorkspaces } from "../hooks/useWorkspaces";
+import { downloadFileUrl } from "../api";
 import { FileBrowser } from "./FileBrowser";
 import { FileEditor } from "./FileEditor";
 import { WorkspaceSelector } from "./WorkspaceSelector";
@@ -10,10 +11,17 @@ import { WorkspaceSelector } from "./WorkspaceSelector";
 const MOBILE_BREAKPOINT = 768;
 
 /**
+ * Image file extensions that should be rendered as image previews.
+ */
+const IMAGE_EXTENSIONS = new Set([
+  ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".bmp", ".svgz",
+]);
+
+/**
  * Binary file extensions that should be displayed as read-only.
  */
 const BINARY_EXTENSIONS = new Set([
-  ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".bmp", ".svgz",
+  ...IMAGE_EXTENSIONS,
   ".exe", ".dll", ".so", ".dylib",
   ".zip", ".tar", ".gz", ".bz2", ".xz", ".7z", ".rar",
   ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
@@ -25,6 +33,11 @@ const BINARY_EXTENSIONS = new Set([
 function isBinaryFile(filename: string): boolean {
   const ext = filename.slice(filename.lastIndexOf(".")).toLowerCase();
   return BINARY_EXTENSIONS.has(ext);
+}
+
+function isImageFile(filename: string): boolean {
+  const ext = filename.slice(filename.lastIndexOf(".")).toLowerCase();
+  return IMAGE_EXTENSIONS.has(ext);
 }
 
 interface FileBrowserModalProps {
@@ -139,6 +152,12 @@ export function FileBrowserModal({
 
   const modalTitle = `Files — ${workspaceLabel}`;
 
+  // Compute image source URL when an image file is selected
+  const imageSrc = useMemo(() => {
+    if (!selectedFile || !isImageFile(selectedFile)) return null;
+    return downloadFileUrl(currentWorkspace, selectedFile);
+  }, [selectedFile, currentWorkspace]);
+
   const formatFileSize = (value: string): string => {
     const bytes = new Blob([value]).size;
     if (bytes < 1024) return `${bytes} B`;
@@ -218,7 +237,7 @@ export function FileBrowserModal({
                     )}
                   </div>
                   <div className="file-browser-actions">
-                    {hasChanges && (
+                    {!imageSrc && hasChanges && (
                       <>
                         <button
                           className="btn btn-sm"
@@ -241,23 +260,35 @@ export function FileBrowserModal({
                   </div>
                 </div>
 
-                {editorError && (
+                {editorError && !imageSrc && (
                   <div className="file-browser-error-banner">{editorError}</div>
                 )}
 
-                <div className="file-editor-wrapper">
-                  <FileEditor
-                    content={content}
-                    onChange={setContent}
-                    filePath={selectedFile}
-                    readOnly={isBinaryFile(selectedFile)}
-                  />
-                </div>
+                {imageSrc ? (
+                  <div className="file-browser-image-preview">
+                    <img
+                      src={imageSrc}
+                      alt={selectedFile ?? ""}
+                      className="file-browser-image"
+                    />
+                  </div>
+                ) : (
+                  <div className="file-editor-wrapper">
+                    <FileEditor
+                      content={content}
+                      onChange={setContent}
+                      filePath={selectedFile}
+                      readOnly={isBinaryFile(selectedFile)}
+                    />
+                  </div>
+                )}
 
-                <div className="file-browser-footer">
-                  <span>{formatFileSize(content)}</span>
-                  {hasChanges && <span className="file-browser-unsaved">Unsaved changes</span>}
-                </div>
+                {!imageSrc && (
+                  <div className="file-browser-footer">
+                    <span>{formatFileSize(content)}</span>
+                    {hasChanges && <span className="file-browser-unsaved">Unsaved changes</span>}
+                  </div>
+                )}
               </>
             ) : (
               <div className="file-browser-placeholder">
