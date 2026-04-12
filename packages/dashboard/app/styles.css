@@ -18750,6 +18750,7 @@ html .column.drag-over * {
   font-family: var(--font-mono);
   font-weight: 600;
   color: var(--text);
+  line-height: 1;
 }
 
 .executor-status-bar__count--warning {
@@ -18763,6 +18764,7 @@ html .column.drag-over * {
 /* Label text */
 .executor-status-bar__label {
   color: var(--text-muted);
+  line-height: 1;
 }
 
 /* Max concurrent display */
