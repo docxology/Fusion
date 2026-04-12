@@ -3594,10 +3594,10 @@ export function fetchFeaturesForAssertion(assertionId: string, projectId?: strin
 export interface MilestoneValidationRollup {
   milestoneId: string;
   totalAssertions: number;
-  passedCount: number;
-  failedCount: number;
-  blockedCount: number;
-  pendingCount: number;
+  passedAssertions: number;
+  failedAssertions: number;
+  blockedAssertions: number;
+  pendingAssertions: number;
   state: "not_started" | "needs_coverage" | "ready" | "passed" | "failed" | "blocked";
 }
 

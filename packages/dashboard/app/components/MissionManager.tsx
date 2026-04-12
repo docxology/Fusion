@@ -2012,13 +2012,13 @@ export function MissionManager({ isOpen, isInline = false, onClose, addToast, pr
                           {validationRollupByMilestone.get(milestone.id)!.totalAssertions > 0 && (
                             <div
                               className="mission-milestone__coverage-bar"
-                              title={`${validationRollupByMilestone.get(milestone.id)!.passedCount} of ${validationRollupByMilestone.get(milestone.id)!.totalAssertions} assertions passing`}
+                              title={`${(validationRollupByMilestone.get(milestone.id)!.passedAssertions ?? 0)} of ${validationRollupByMilestone.get(milestone.id)!.totalAssertions} assertions passing`}
                             >
                               <div
                                 className="mission-milestone__coverage-bar-fill"
                                 style={{
-                                  width: `${(validationRollupByMilestone.get(milestone.id)!.passedCount / validationRollupByMilestone.get(milestone.id)!.totalAssertions) * 100}%`,
-                                  backgroundColor: validationRollupByMilestone.get(milestone.id)!.passedCount === validationRollupByMilestone.get(milestone.id)!.totalAssertions
+                                  width: `${((validationRollupByMilestone.get(milestone.id)!.passedAssertions ?? 0) / validationRollupByMilestone.get(milestone.id)!.totalAssertions) * 100}%`,
+                                  backgroundColor: (validationRollupByMilestone.get(milestone.id)!.passedAssertions ?? 0) === validationRollupByMilestone.get(milestone.id)!.totalAssertions
                                     ? "var(--color-success)"
                                     : "var(--color-warning)",
                                 }}
@@ -2636,12 +2636,12 @@ export function MissionManager({ isOpen, isInline = false, onClose, addToast, pr
                               )}
                               {/* Assertion coverage bar */}
                               {validationRollupByMilestone.get(milestone.id) && validationRollupByMilestone.get(milestone.id)!.totalAssertions > 0 && (
-                                <div className="mission-assertions__coverage-bar" title={`${validationRollupByMilestone.get(milestone.id)!.passedCount} of ${validationRollupByMilestone.get(milestone.id)!.totalAssertions} assertions passing`}>
+                                <div className="mission-assertions__coverage-bar" title={`${(validationRollupByMilestone.get(milestone.id)!.passedAssertions ?? 0)} of ${validationRollupByMilestone.get(milestone.id)!.totalAssertions} assertions passing`}>
                                   <div
                                     className="mission-assertions__coverage-bar-fill"
                                     style={{
-                                      width: `${(validationRollupByMilestone.get(milestone.id)!.passedCount / validationRollupByMilestone.get(milestone.id)!.totalAssertions) * 100}%`,
-                                      backgroundColor: validationRollupByMilestone.get(milestone.id)!.passedCount === validationRollupByMilestone.get(milestone.id)!.totalAssertions
+                                      width: `${((validationRollupByMilestone.get(milestone.id)!.passedAssertions ?? 0) / validationRollupByMilestone.get(milestone.id)!.totalAssertions) * 100}%`,
+                                      backgroundColor: (validationRollupByMilestone.get(milestone.id)!.passedAssertions ?? 0) === validationRollupByMilestone.get(milestone.id)!.totalAssertions
                                         ? "var(--color-success)"
                                         : "var(--color-warning)",
                                     }}

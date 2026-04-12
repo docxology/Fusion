@@ -113,10 +113,10 @@ export interface FeatureAssertionLink {
 export interface MilestoneValidationRollup {
   milestoneId: string;
   totalAssertions: number;
-  passedCount: number;
-  failedCount: number;
-  blockedCount: number;
-  pendingCount: number;
+  passedAssertions: number;
+  failedAssertions: number;
+  blockedAssertions: number;
+  pendingAssertions: number;
   state: MilestoneValidationState;
 }
 
