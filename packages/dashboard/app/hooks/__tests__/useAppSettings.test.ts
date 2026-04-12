@@ -83,4 +83,36 @@ describe("useAppSettings", () => {
     expect(result.current.globalPaused).toBe(true);
     expect(mockUpdateSettings).toHaveBeenCalledWith({ globalPause: false }, "proj_123");
   });
+
+  it("refresh() re-fetches and updates state", async () => {
+    const { result } = renderHook(() => useAppSettings("proj_123"));
+
+    // Initial state from first mock
+    await waitFor(() => {
+      expect(result.current.showQuickChatFAB).toBe(false);
+    });
+
+    // Change mock to return different value
+    mockFetchSettings.mockResolvedValueOnce({
+      autoMerge: false,
+      globalPause: true,
+      enginePaused: false,
+      githubTokenConfigured: true,
+      taskStuckTimeoutMs: 600000,
+      showQuickChatFAB: true,
+    } as never);
+
+    // Call refresh
+    await act(async () => {
+      await result.current.refresh();
+    });
+
+    // Verify state was updated
+    await waitFor(() => {
+      expect(result.current.showQuickChatFAB).toBe(true);
+    });
+
+    // Verify fetchSettings was called again with correct projectId
+    expect(mockFetchSettings).toHaveBeenCalledWith("proj_123");
+  });
 });

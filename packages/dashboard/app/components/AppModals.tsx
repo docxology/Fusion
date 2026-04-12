@@ -53,6 +53,8 @@ interface AppModalsProps {
     setThemeMode: (mode: ThemeMode) => void;
     setColorTheme: (theme: ColorTheme) => void;
   };
+  /** Optional override for the settings modal close handler. When provided, this is called instead of modalManager.closeSettings. */
+  onSettingsClose?: () => void;
 }
 
 export function AppModals({
@@ -69,7 +71,11 @@ export function AppModals({
   taskOperations,
   deepLink,
   settings,
+  onSettingsClose,
 }: AppModalsProps) {
+  // Use the override handler if provided, otherwise fall back to modalManager.closeSettings
+  const handleSettingsClose = onSettingsClose ?? modalManager.closeSettings;
+
   return (
     <>
       {modalManager.detailTask && (
@@ -96,7 +102,7 @@ export function AppModals({
       {modalManager.settingsOpen && (
         <ModalErrorBoundary>
           <SettingsModal
-            onClose={modalManager.closeSettings}
+            onClose={handleSettingsClose}
             addToast={addToast}
             initialSection={modalManager.settingsInitialSection}
             projectId={projectId}

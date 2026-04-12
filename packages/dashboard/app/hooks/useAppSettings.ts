@@ -17,6 +17,8 @@ export interface UseAppSettingsResult {
   toggleGlobalPause: () => Promise<void>;
   toggleEnginePause: () => Promise<void>;
   toggleShowQuickChatFAB: () => Promise<void>;
+  /** Re-fetches settings from the backend to pick up changes made externally (e.g., by SettingsModal). */
+  refresh: () => Promise<void>;
 }
 
 /**
@@ -32,29 +34,35 @@ export function useAppSettings(projectId?: string): UseAppSettingsResult {
   const [showQuickChatFAB, setShowQuickChatFAB] = useState(true);
   const [githubTokenConfigured, setGithubTokenConfigured] = useState(false);
 
-  useEffect(() => {
-    fetchConfig(projectId)
-      .then((cfg) => {
-        setMaxConcurrent(cfg.maxConcurrent);
-        setRootDir(cfg.rootDir);
-      })
-      .catch(() => {
-        // Keep defaults on fetch failure.
-      });
+  /**
+   * Fetches config and settings from the backend and updates local state.
+   * Shared between the mount-time useEffect and the refresh() function.
+   */
+  const refresh = useCallback(async () => {
+    try {
+      const cfg = await fetchConfig(projectId);
+      setMaxConcurrent(cfg.maxConcurrent);
+      setRootDir(cfg.rootDir);
+    } catch {
+      // Keep current state on fetch failure.
+    }
 
-    fetchSettings(projectId)
-      .then((settings) => {
-        setAutoMerge(Boolean(settings.autoMerge));
-        setGlobalPaused(Boolean(settings.globalPause));
-        setEnginePaused(Boolean(settings.enginePaused));
-        setGithubTokenConfigured(Boolean(settings.githubTokenConfigured));
-        setTaskStuckTimeoutMs(settings.taskStuckTimeoutMs);
-        setShowQuickChatFAB(settings.showQuickChatFAB !== false);
-      })
-      .catch(() => {
-        // Keep defaults on fetch failure.
-      });
+    try {
+      const settings = await fetchSettings(projectId);
+      setAutoMerge(Boolean(settings.autoMerge));
+      setGlobalPaused(Boolean(settings.globalPause));
+      setEnginePaused(Boolean(settings.enginePaused));
+      setGithubTokenConfigured(Boolean(settings.githubTokenConfigured));
+      setTaskStuckTimeoutMs(settings.taskStuckTimeoutMs);
+      setShowQuickChatFAB(settings.showQuickChatFAB !== false);
+    } catch {
+      // Keep current state on fetch failure.
+    }
   }, [projectId]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
 
   const toggleAutoMerge = useCallback(async () => {
     const next = !autoMerge;
@@ -113,5 +121,6 @@ export function useAppSettings(projectId?: string): UseAppSettingsResult {
     toggleGlobalPause,
     toggleEnginePause,
     toggleShowQuickChatFAB,
+    refresh,
   };
 }

@@ -136,6 +136,7 @@ function AppInner() {
     toggleAutoMerge,
     toggleGlobalPause,
     toggleEnginePause,
+    refresh: refreshAppSettings,
   } = useAppSettings(currentProject?.id);
   const {
     availableModels,
@@ -542,6 +543,10 @@ function AppInner() {
         taskOperations={{ moveTask, deleteTask, mergeTask, retryTask, duplicateTask }}
         deepLink={{ handleDetailClose }}
         settings={{ githubTokenConfigured, themeMode, colorTheme, setThemeMode, setColorTheme }}
+        onSettingsClose={() => {
+          modalManager.closeSettings();
+          void refreshAppSettings();
+        }}
       />
     </>
   );
