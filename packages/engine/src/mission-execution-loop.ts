@@ -35,7 +35,7 @@ const VALIDATION_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
  */
 export interface ValidationResult {
   /** Overall validation status */
-  status: "pass" | "fail" | "blocked";
+  status: "pass" | "fail" | "blocked" | "error";
   /** Per-assertion results */
   assertions: Array<{
     assertionId: string;
@@ -136,7 +136,14 @@ export class MissionExecutionLoop extends EventEmitter {
       for (const mission of missions) {
         if (mission.status !== "active") continue;
 
-        const hierarchy = this.missionStore.getMissionWithHierarchy(mission.id);
+        let hierarchy;
+        try {
+          hierarchy = this.missionStore.getMissionWithHierarchy(mission.id);
+        } catch {
+          // Database error, skip this mission
+          continue;
+        }
+
         if (!hierarchy) continue;
 
         for (const milestone of hierarchy.milestones) {
@@ -148,16 +155,32 @@ export class MissionExecutionLoop extends EventEmitter {
               if (feature.loopState === "validating") {
                 loopLog.log(`Recovery: re-queuing validating feature ${feature.id}`);
                 // Transition back to implementing so the next task completion triggers validation
-                // Or if there's a task, we can re-trigger validation directly
-                recoveredCount++;
+                try {
+                  await this.missionStore.transitionLoopState(feature.id, "implementing");
+                  // If the feature has a linked task that's already done, re-trigger validation
+                  if (feature.taskId) {
+                    await this.processTaskOutcome(feature.taskId);
+                  }
+                  recoveredCount++;
+                } catch (err) {
+                  loopLog.error(`Recovery failed for validating feature ${feature.id}:`, err);
+                }
               }
 
-              // Features in needs_fix state need to continue their fix cycle
+              // Features in needs_fix state with completed tasks need to continue
               if (feature.loopState === "needs_fix") {
                 loopLog.log(`Recovery: feature ${feature.id} awaiting fix implementation`);
-                // The feature is already in needs_fix - it will progress when
-                // its fix task completes and processTaskOutcome is called again
-                recoveredCount++;
+                // If the fix task is complete, call processTaskOutcome to continue the cycle
+                if (feature.taskId) {
+                  try {
+                    await this.processTaskOutcome(feature.taskId);
+                    recoveredCount++;
+                  } catch (err) {
+                    loopLog.error(`Recovery failed for needs_fix feature ${feature.id}:`, err);
+                  }
+                } else {
+                  recoveredCount++;
+                }
               }
             }
           }
@@ -332,34 +355,238 @@ export class MissionExecutionLoop extends EventEmitter {
   }
 
   /**
-   * Parse the validation result from the agent's response.
+   * Parse the validation result from the AI agent's response.
+   *
    * The agent is expected to return structured JSON with the validation result.
+   * We extract the text from the AI's messages and parse the JSON response.
    */
   private async parseValidationResult(
     agentSession: Awaited<ReturnType<typeof createKbAgent>>["session"],
     assertions: MissionContractAssertion[],
   ): Promise<ValidationResult> {
-    // In a real implementation, we would parse the agent's response to extract
-    // the structured validation result. For now, we'll use a simplified approach
-    // where we look for a JSON response in the conversation.
-    //
-    // The agent should have responded with something like:
-    // {
-    //   "status": "pass|fail|blocked",
-    //   "assertions": [...],
-    //   "summary": "..."
-    // }
+    try {
+      // Extract the AI's response text from the session messages
+      const responseText = this.extractResponseTextFromSession(agentSession);
 
-    // For now, return a default "pass" result since we don't have the actual
-    // parsing logic implemented. This will be refined based on the actual
-    // agent response format.
+      if (!responseText) {
+        loopLog.warn("No response text found in validation session");
+        return this.createErrorValidationResult("No response from validation agent", assertions);
+      }
+
+      // Extract JSON from the response (handles markdown code blocks)
+      const jsonCandidate = this.extractJsonCandidate(responseText);
+
+      if (!jsonCandidate) {
+        loopLog.warn("No JSON found in validation response");
+        return this.createErrorValidationResult("Validation agent did not return JSON", assertions);
+      }
+
+      // Try to parse the JSON
+      let parsed: Record<string, unknown>;
+      try {
+        parsed = JSON.parse(jsonCandidate);
+      } catch {
+        // Try to repair common JSON issues
+        const repaired = this.repairJson(jsonCandidate);
+        try {
+          parsed = JSON.parse(repaired);
+        } catch (e) {
+          loopLog.warn("Failed to parse validation JSON", e);
+          return this.createErrorValidationResult("Invalid JSON in validation response", assertions);
+        }
+      }
+
+      // Validate the status field
+      const status = this.validateValidationStatus(parsed.status);
+      if (!status) {
+        loopLog.warn("Invalid validation status in response", parsed.status);
+        return this.createErrorValidationResult("Invalid status in validation response", assertions);
+      }
+
+      // Extract assertion results from the parsed JSON
+      const assertionResults = this.extractAssertionResults(parsed, assertions);
+
+      // Extract summary and blocked reason
+      const summary = typeof parsed.summary === "string" ? parsed.summary : `Validation ${status}`;
+      const blockedReason = typeof parsed.blockedReason === "string" ? parsed.blockedReason : undefined;
+
+      return {
+        status,
+        assertions: assertionResults,
+        summary,
+        blockedReason,
+      };
+    } catch (err) {
+      loopLog.error("Error parsing validation result", err);
+      return this.createErrorValidationResult(`Error parsing validation: ${err}`, assertions);
+    }
+  }
+
+  /**
+   * Extract response text from AI session messages.
+   * Looks for the last assistant message with text content.
+   */
+  private extractResponseTextFromSession(
+    agentSession: Awaited<ReturnType<typeof createKbAgent>>["session"],
+  ): string | undefined {
+    try {
+      // Access the session state to get messages
+      const state = (agentSession as { state?: { messages?: Array<{ role?: string; content?: unknown }> } }).state;
+      if (!state?.messages) {
+        return undefined;
+      }
+
+      // Find the last assistant message with text content
+      for (let i = state.messages.length - 1; i >= 0; i--) {
+        const msg = state.messages[i];
+        if (msg.role === "assistant") {
+          if (typeof msg.content === "string" && msg.content.trim()) {
+            return msg.content;
+          }
+          // Handle content as array (common in some AI SDKs)
+          if (Array.isArray(msg.content)) {
+            for (const part of msg.content) {
+              if (typeof part === "object" && part !== null && "text" in part && typeof part.text === "string") {
+                return part.text;
+              }
+            }
+          }
+        }
+      }
+
+      return undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * Extract JSON from a text that may contain markdown code blocks.
+   */
+  private extractJsonCandidate(text: string): string | undefined {
+    // Try to find JSON in markdown code blocks first
+    const codeBlockMatch = text.match(/```(?:json)?\s*\n?([\s\S]*?)```/);
+    if (codeBlockMatch) {
+      return codeBlockMatch[1].trim();
+    }
+
+    // Try to find JSON directly (starts with { or [)
+    const jsonStartMatch = text.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
+    if (jsonStartMatch) {
+      return jsonStartMatch[1];
+    }
+
+    return undefined;
+  }
+
+  /**
+   * Repair common JSON issues in AI responses.
+   */
+  private repairJson(json: string): string {
+    // Remove trailing commas before closing braces/brackets
+    let repaired = json.replace(/,\s*([\]}])/g, "$1");
+
+    // Handle unclosed arrays/objects by finding the last balanced close
+    const openBraces = (repaired.match(/\{/g) || []).length;
+    const closeBraces = (repaired.match(/\}/g) || []).length;
+    const openBrackets = (repaired.match(/\[/g) || []).length;
+    const closeBrackets = (repaired.match(/\]/g) || []).length;
+
+    // Close missing braces
+    while (closeBraces < openBraces) {
+      repaired += "}";
+    }
+    // Close missing brackets
+    while (closeBrackets < openBrackets) {
+      repaired += "]";
+    }
+
+    // Remove any trailing commas
+    repaired = repaired.replace(/,\s*([\]}])/g, "$1");
+
+    return repaired;
+  }
+
+  /**
+   * Validate that the status field is a valid validation status.
+   */
+  private validateValidationStatus(status: unknown): ValidationResult["status"] | undefined {
+    if (status === "pass" || status === "fail" || status === "blocked") {
+      return status;
+    }
+    return undefined;
+  }
+
+  /**
+   * Extract assertion results from the parsed JSON.
+   */
+  private extractAssertionResults(
+    parsed: Record<string, unknown>,
+    assertions: MissionContractAssertion[],
+  ): Array<{ assertionId: string; passed: boolean; message?: string; expected?: string; actual?: string }> {
+    const results: Array<{
+      assertionId: string;
+      passed: boolean;
+      message?: string;
+      expected?: string;
+      actual?: string;
+    }> = [];
+
+    // If assertions array is provided in the response, use it
+    if (Array.isArray(parsed.assertions)) {
+      for (const item of parsed.assertions) {
+        if (typeof item === "object" && item !== null) {
+          const assertionItem = item as Record<string, unknown>;
+          const assertionId =
+            typeof assertionItem.assertionId === "string"
+              ? assertionItem.assertionId
+              : typeof assertionItem.id === "string"
+                ? assertionItem.id
+                : undefined;
+
+          const passed = typeof assertionItem.passed === "boolean" ? assertionItem.passed : false;
+
+          results.push({
+            assertionId: assertionId || "unknown",
+            passed,
+            message: typeof assertionItem.message === "string" ? assertionItem.message : undefined,
+            expected: typeof assertionItem.expected === "string" ? assertionItem.expected : undefined,
+            actual: typeof assertionItem.actual === "string" ? assertionItem.actual : undefined,
+          });
+        }
+      }
+    }
+
+    // If no assertion results but we have assertions, create default results based on status
+    if (results.length === 0 && assertions.length > 0) {
+      const overallPassed = parsed.status === "pass";
+      for (const assertion of assertions) {
+        results.push({
+          assertionId: assertion.id,
+          passed: overallPassed,
+          message: overallPassed ? "Passed" : "Failed",
+        });
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Create an error validation result.
+   */
+  private createErrorValidationResult(
+    errorMessage: string,
+    assertions: MissionContractAssertion[],
+  ): ValidationResult {
     return {
-      status: "pass",
+      status: "error",
       assertions: assertions.map((a) => ({
         assertionId: a.id,
-        passed: true,
+        passed: false,
+        message: errorMessage,
       })),
-      summary: "All assertions passed",
+      summary: errorMessage,
     };
   }
 

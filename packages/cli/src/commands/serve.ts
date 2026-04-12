@@ -593,10 +593,15 @@ export async function runServe(
     taskStore: store,
     missionStore: store.getMissionStore(),
     missionAutopilot: {
-      notifyValidationComplete: async (featureId: string, status: "passed" | "failed" | "blocked" | "error") => {
+      notifyValidationComplete: async (featureId: string, _status: "passed" | "failed" | "blocked" | "error") => {
         // Delegate to autopilot after validation completes
+        // Pass the feature's linked taskId to handleTaskCompletion, not the featureId
         if (missionAutopilot) {
-          await missionAutopilot.handleTaskCompletion(featureId);
+          const missionStore = store.getMissionStore();
+          const feature = missionStore?.getFeature(featureId);
+          if (feature?.taskId) {
+            await missionAutopilot.handleTaskCompletion(feature.taskId);
+          }
         }
       },
     },

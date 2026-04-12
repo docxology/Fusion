@@ -179,8 +179,12 @@ export class InProcessRuntime
             missionStore,
             missionAutopilot: missionAutopilot
               ? {
-                  notifyValidationComplete: async (featureId: string, status: "passed" | "failed" | "blocked" | "error") => {
-                    await missionAutopilot.handleTaskCompletion(featureId);
+                  notifyValidationComplete: async (featureId: string, _status: "passed" | "failed" | "blocked" | "error") => {
+                    // Pass the feature's linked taskId to handleTaskCompletion, not the featureId
+                    const feature = missionStore.getFeature(featureId);
+                    if (feature?.taskId) {
+                      await missionAutopilot.handleTaskCompletion(feature.taskId);
+                    }
                   },
                 }
               : undefined,
