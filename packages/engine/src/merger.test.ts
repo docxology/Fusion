@@ -810,17 +810,17 @@ describe("detectResolvableConflicts", () => {
     vi.clearAllMocks();
   });
 
-  it("returns empty array when no conflicts exist", () => {
+  it("returns empty array when no conflicts exist", async () => {
     mockedExecSync.mockReturnValue(""); // Empty output = no conflicts
 
-    const result = detectResolvableConflicts("/tmp/root");
+    const result = await detectResolvableConflicts("/tmp/root");
     expect(result).toEqual([]);
   });
 
-  it("detects package-lock.json as auto-resolvable with 'theirs' strategy", () => {
+  it("detects package-lock.json as auto-resolvable with 'theirs' strategy", async () => {
     mockedExecSync.mockReturnValue("package-lock.json\n");
 
-    const result = detectResolvableConflicts("/tmp/root");
+    const result = await detectResolvableConflicts("/tmp/root");
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({
       filePath: "package-lock.json",
@@ -830,10 +830,10 @@ describe("detectResolvableConflicts", () => {
     });
   });
 
-  it("detects pnpm-lock.yaml as lock file with 'ours' strategy", () => {
+  it("detects pnpm-lock.yaml as lock file with 'ours' strategy", async () => {
     mockedExecSync.mockReturnValue("pnpm-lock.yaml\n");
 
-    const result = detectResolvableConflicts("/tmp/root");
+    const result = await detectResolvableConflicts("/tmp/root");
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({
       filePath: "pnpm-lock.yaml",
@@ -843,10 +843,10 @@ describe("detectResolvableConflicts", () => {
     });
   });
 
-  it("detects yarn.lock as lock file with 'ours' strategy", () => {
+  it("detects yarn.lock as lock file with 'ours' strategy", async () => {
     mockedExecSync.mockReturnValue("yarn.lock\n");
 
-    const result = detectResolvableConflicts("/tmp/root");
+    const result = await detectResolvableConflicts("/tmp/root");
     expect(result[0]).toMatchObject({
       autoResolvable: true,
       strategy: "ours",
@@ -854,10 +854,10 @@ describe("detectResolvableConflicts", () => {
     });
   });
 
-  it("detects Gemfile.lock as lock file with 'ours' strategy", () => {
+  it("detects Gemfile.lock as lock file with 'ours' strategy", async () => {
     mockedExecSync.mockReturnValue("Gemfile.lock\n");
 
-    const result = detectResolvableConflicts("/tmp/root");
+    const result = await detectResolvableConflicts("/tmp/root");
     expect(result[0]).toMatchObject({
       autoResolvable: true,
       strategy: "ours",
@@ -865,10 +865,10 @@ describe("detectResolvableConflicts", () => {
     });
   });
 
-  it("detects .gen.ts files as generated files with 'theirs' strategy", () => {
+  it("detects .gen.ts files as generated files with 'theirs' strategy", async () => {
     mockedExecSync.mockReturnValue("src/types.gen.ts\n");
 
-    const result = detectResolvableConflicts("/tmp/root");
+    const result = await detectResolvableConflicts("/tmp/root");
     expect(result[0]).toMatchObject({
       autoResolvable: true,
       strategy: "theirs",
@@ -876,10 +876,10 @@ describe("detectResolvableConflicts", () => {
     });
   });
 
-  it("detects dist/ paths as generated files with 'theirs' strategy", () => {
+  it("detects dist/ paths as generated files with 'theirs' strategy", async () => {
     mockedExecSync.mockReturnValue("dist/index.js\n");
 
-    const result = detectResolvableConflicts("/tmp/root");
+    const result = await detectResolvableConflicts("/tmp/root");
     expect(result[0]).toMatchObject({
       autoResolvable: true,
       strategy: "theirs",
@@ -887,14 +887,14 @@ describe("detectResolvableConflicts", () => {
     });
   });
 
-  it("detects coverage/ paths as generated files with 'theirs' strategy", () => {
+  it("detects coverage/ paths as generated files with 'theirs' strategy", async () => {
     mockedExecSync.mockImplementation((cmd: any) => {
       const cmdStr = String(cmd);
       if (cmdStr.includes("git diff --name-only")) return "coverage/lcov.info\n";
       return Buffer.from("");
     });
 
-    const result = detectResolvableConflicts("/tmp/root");
+    const result = await detectResolvableConflicts("/tmp/root");
     expect(result[0]).toMatchObject({
       autoResolvable: true,
       strategy: "theirs",
@@ -902,7 +902,7 @@ describe("detectResolvableConflicts", () => {
     });
   });
 
-  it("marks regular source files as complex conflicts", () => {
+  it("marks regular source files as complex conflicts", async () => {
     mockedExecSync.mockImplementation((cmd: any) => {
       const cmdStr = String(cmd);
       if (cmdStr.includes("git diff --name-only")) return "src/components/App.tsx\n";
@@ -911,7 +911,7 @@ describe("detectResolvableConflicts", () => {
       return Buffer.from("");
     });
 
-    const result = detectResolvableConflicts("/tmp/root");
+    const result = await detectResolvableConflicts("/tmp/root");
     expect(result[0]).toMatchObject({
       filePath: "src/components/App.tsx",
       autoResolvable: false,
@@ -919,7 +919,7 @@ describe("detectResolvableConflicts", () => {
     });
   });
 
-  it("handles multiple conflicted files with mixed categories", () => {
+  it("handles multiple conflicted files with mixed categories", async () => {
     mockedExecSync.mockImplementation((cmd: any) => {
       const cmdStr = String(cmd);
       if (cmdStr.includes("git diff --name-only"))
@@ -929,7 +929,7 @@ describe("detectResolvableConflicts", () => {
       return Buffer.from("");
     });
 
-    const result = detectResolvableConflicts("/tmp/root");
+    const result = await detectResolvableConflicts("/tmp/root");
     expect(result).toHaveLength(3);
 
     const lockFile = result.find((r) => r.filePath === "package-lock.json");
@@ -941,12 +941,12 @@ describe("detectResolvableConflicts", () => {
     expect(distFile).toMatchObject({ autoResolvable: true, reason: "generated-file" });
   });
 
-  it("returns empty array on git command failure", () => {
+  it("returns empty array on git command failure", async () => {
     mockedExecSync.mockImplementation(() => {
       throw new Error("git command failed");
     });
 
-    const result = detectResolvableConflicts("/tmp/root");
+    const result = await detectResolvableConflicts("/tmp/root");
     expect(result).toEqual([]);
   });
 });
@@ -958,8 +958,8 @@ describe("autoResolveFile", () => {
     mockedExecSync.mockReturnValue(Buffer.from(""));
   });
 
-  it("calls git checkout --theirs for 'theirs' resolution", () => {
-    autoResolveFile("package-lock.json", "theirs", "/tmp/root");
+  it("calls git checkout --theirs for 'theirs' resolution", async () => {
+    await autoResolveFile("package-lock.json", "theirs", "/tmp/root");
 
     const checkoutCall = mockedExecSync.mock.calls.find((call) =>
       String(call[0]).includes("git checkout --theirs"),
@@ -968,8 +968,8 @@ describe("autoResolveFile", () => {
     expect(String(checkoutCall![0])).toContain("package-lock.json");
   });
 
-  it("calls git checkout --ours for 'ours' resolution", () => {
-    autoResolveFile("config.json", "ours", "/tmp/root");
+  it("calls git checkout --ours for 'ours' resolution", async () => {
+    await autoResolveFile("config.json", "ours", "/tmp/root");
 
     const checkoutCall = mockedExecSync.mock.calls.find((call) =>
       String(call[0]).includes("git checkout --ours"),
@@ -978,8 +978,8 @@ describe("autoResolveFile", () => {
     expect(String(checkoutCall![0])).toContain("config.json");
   });
 
-  it("stages the resolved file with git add", () => {
-    autoResolveFile("package-lock.json", "theirs", "/tmp/root");
+  it("stages the resolved file with git add", async () => {
+    await autoResolveFile("package-lock.json", "theirs", "/tmp/root");
 
     const addCall = mockedExecSync.mock.calls.find((call) =>
       String(call[0]).includes("git add"),
@@ -988,7 +988,7 @@ describe("autoResolveFile", () => {
     expect(String(addCall![0])).toContain("package-lock.json");
   });
 
-  it("throws error when git checkout fails", () => {
+  it("throws error when git checkout fails", async () => {
     mockedExecSync.mockImplementation((cmd: any) => {
       if (String(cmd).includes("checkout")) {
         throw new Error("checkout failed");
@@ -996,7 +996,7 @@ describe("autoResolveFile", () => {
       return Buffer.from("");
     });
 
-    expect(() => autoResolveFile("file.ts", "theirs", "/tmp/root")).toThrow(
+    await expect(autoResolveFile("file.ts", "theirs", "/tmp/root")).rejects.toThrow(
       "Failed to auto-resolve",
     );
   });
@@ -1009,14 +1009,14 @@ describe("resolveConflicts", () => {
     mockedExecSync.mockReturnValue(Buffer.from(""));
   });
 
-  it("resolves lock files and returns remaining complex conflicts", () => {
+  it("resolves lock files and returns remaining complex conflicts", async () => {
     const categories: ConflictCategory[] = [
       { filePath: "package-lock.json", autoResolvable: true, strategy: "ours", reason: "lock-file" },
       { filePath: "src/App.tsx", autoResolvable: false, reason: "complex" },
       { filePath: "dist/bundle.js", autoResolvable: true, strategy: "ours", reason: "generated-file" },
     ];
 
-    const remaining = resolveConflicts(categories, "/tmp/root");
+    const remaining = await resolveConflicts(categories, "/tmp/root");
 
     // Should have resolved package-lock.json and dist/bundle.js
     expect(remaining).toEqual(["src/App.tsx"]);
@@ -1028,13 +1028,13 @@ describe("resolveConflicts", () => {
     expect(checkoutCalls).toHaveLength(2);
   });
 
-  it("returns all files when none are auto-resolvable", () => {
+  it("returns all files when none are auto-resolvable", async () => {
     const categories: ConflictCategory[] = [
       { filePath: "src/App.tsx", autoResolvable: false, reason: "complex" },
       { filePath: "src/utils.ts", autoResolvable: false, reason: "complex" },
     ];
 
-    const remaining = resolveConflicts(categories, "/tmp/root");
+    const remaining = await resolveConflicts(categories, "/tmp/root");
 
     expect(remaining).toEqual(["src/App.tsx", "src/utils.ts"]);
     // No checkout calls should be made
@@ -1044,13 +1044,13 @@ describe("resolveConflicts", () => {
     expect(checkoutCalls).toHaveLength(0);
   });
 
-  it("returns empty array when all conflicts are resolved", () => {
+  it("returns empty array when all conflicts are resolved", async () => {
     const categories: ConflictCategory[] = [
       { filePath: "package-lock.json", autoResolvable: true, strategy: "ours", reason: "lock-file" },
       { filePath: "yarn.lock", autoResolvable: true, strategy: "ours", reason: "lock-file" },
     ];
 
-    const remaining = resolveConflicts(categories, "/tmp/root");
+    const remaining = await resolveConflicts(categories, "/tmp/root");
 
     expect(remaining).toEqual([]);
   });
@@ -1063,7 +1063,7 @@ describe("trivial conflict detection (isTrivialWhitespaceConflict via detectReso
     vi.clearAllMocks();
   });
 
-  it("detects whitespace-only conflicts as trivial", () => {
+  it("detects whitespace-only conflicts as trivial", async () => {
     mockedExecSync.mockImplementation((cmd: any) => {
       const cmdStr = String(cmd);
       if (cmdStr.includes("git diff --name-only")) return "src/utils.ts\n";
@@ -1072,7 +1072,7 @@ describe("trivial conflict detection (isTrivialWhitespaceConflict via detectReso
       return Buffer.from("");
     });
 
-    const result = detectResolvableConflicts("/tmp/root");
+    const result = await detectResolvableConflicts("/tmp/root");
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({
       filePath: "src/utils.ts",
@@ -1082,7 +1082,7 @@ describe("trivial conflict detection (isTrivialWhitespaceConflict via detectReso
     });
   });
 
-  it("marks conflicts with actual content differences as complex", () => {
+  it("marks conflicts with actual content differences as complex", async () => {
     mockedExecSync.mockImplementation((cmd: any) => {
       const cmdStr = String(cmd);
       if (cmdStr.includes("git diff --name-only")) return "src/utils.ts\n";
@@ -1091,7 +1091,7 @@ describe("trivial conflict detection (isTrivialWhitespaceConflict via detectReso
       return Buffer.from("");
     });
 
-    const result = detectResolvableConflicts("/tmp/root");
+    const result = await detectResolvableConflicts("/tmp/root");
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({
       filePath: "src/utils.ts",
@@ -1100,7 +1100,7 @@ describe("trivial conflict detection (isTrivialWhitespaceConflict via detectReso
     });
   });
 
-  it("handles multiple conflict sections - one non-trivial makes complex", () => {
+  it("handles multiple conflict sections - one non-trivial makes complex", async () => {
     mockedExecSync.mockImplementation((cmd: any) => {
       const cmdStr = String(cmd);
       if (cmdStr.includes("git diff --name-only")) return "src/utils.ts\n";
@@ -1109,7 +1109,7 @@ describe("trivial conflict detection (isTrivialWhitespaceConflict via detectReso
       return Buffer.from("");
     });
 
-    const result = detectResolvableConflicts("/tmp/root");
+    const result = await detectResolvableConflicts("/tmp/root");
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({
       autoResolvable: false,
@@ -1117,7 +1117,7 @@ describe("trivial conflict detection (isTrivialWhitespaceConflict via detectReso
     });
   });
 
-  it("handles git command errors as complex conflicts", () => {
+  it("handles git command errors as complex conflicts", async () => {
     mockedExecSync.mockImplementation((cmd: any) => {
       const cmdStr = String(cmd);
       if (cmdStr.includes("git diff --name-only")) return "src/utils.ts\n";
@@ -1125,7 +1125,7 @@ describe("trivial conflict detection (isTrivialWhitespaceConflict via detectReso
       return Buffer.from("");
     });
 
-    const result = detectResolvableConflicts("/tmp/root");
+    const result = await detectResolvableConflicts("/tmp/root");
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({
       autoResolvable: false,
@@ -1226,6 +1226,13 @@ describe("aiMergeTask — retry logic with escalating strategies", () => {
       // Conflict detection returns conflicts
       if (cmdStr.includes("diff --name-only --diff-filter=U")) {
         return "src/file.ts\n";
+      }
+
+      // git diff-tree for trivial whitespace detection - return real changes (non-trivial)
+      if (cmdStr.includes("diff-tree")) {
+        const error = new Error("exit code 1") as any;
+        error.stdout = "+const x = 2;\n-const x = 1;";
+        throw error;
       }
 
       // Staged changes check after merge (conflicts present but not staged)
@@ -1335,6 +1342,13 @@ describe("aiMergeTask — retry logic with escalating strategies", () => {
       // After -X theirs, no conflicts
       if (cmdStr.includes("diff --name-only --diff-filter=U")) {
         return hasConflicts ? "src/complex.ts\n" : "";
+      }
+
+      // git diff-tree for trivial whitespace detection - return real changes (non-trivial)
+      if (cmdStr.includes("diff-tree")) {
+        const error = new Error("exit code 1") as any;
+        error.stdout = "+const x = 2;\n-const x = 1;";
+        throw error;
       }
 
       if (cmdStr.includes("diff --cached --quiet")) return hasConflicts ? "1" : "0";
@@ -1461,59 +1475,70 @@ describe("classifyConflict", () => {
     vi.clearAllMocks();
   });
 
-  it("classifies package-lock.json as 'lockfile-ours'", () => {
-    const result = classifyConflict("package-lock.json", "/tmp/root");
+  it("classifies package-lock.json as 'lockfile-ours'", async () => {
+    const result = await classifyConflict("package-lock.json", "/tmp/root");
     expect(result).toBe("lockfile-ours");
   });
 
-  it("classifies pnpm-lock.yaml as 'lockfile-ours'", () => {
-    const result = classifyConflict("pnpm-lock.yaml", "/tmp/root");
+  it("classifies pnpm-lock.yaml as 'lockfile-ours'", async () => {
+    const result = await classifyConflict("pnpm-lock.yaml", "/tmp/root");
     expect(result).toBe("lockfile-ours");
   });
 
-  it("classifies yarn.lock as 'lockfile-ours'", () => {
-    const result = classifyConflict("yarn.lock", "/tmp/root");
+  it("classifies yarn.lock as 'lockfile-ours'", async () => {
+    const result = await classifyConflict("yarn.lock", "/tmp/root");
     expect(result).toBe("lockfile-ours");
   });
 
-  it("classifies Gemfile.lock as 'lockfile-ours'", () => {
-    const result = classifyConflict("Gemfile.lock", "/tmp/root");
+  it("classifies Gemfile.lock as 'lockfile-ours'", async () => {
+    const result = await classifyConflict("Gemfile.lock", "/tmp/root");
     expect(result).toBe("lockfile-ours");
   });
 
-  it("classifies bun.lockb as 'lockfile-ours'", () => {
-    const result = classifyConflict("bun.lockb", "/tmp/root");
+  it("classifies bun.lockb as 'lockfile-ours'", async () => {
+    const result = await classifyConflict("bun.lockb", "/tmp/root");
     expect(result).toBe("lockfile-ours");
   });
 
-  it("classifies go.sum as 'lockfile-ours'", () => {
-    const result = classifyConflict("go.sum", "/tmp/root");
+  it("classifies go.sum as 'lockfile-ours'", async () => {
+    const result = await classifyConflict("go.sum", "/tmp/root");
     expect(result).toBe("lockfile-ours");
   });
 
-  it("classifies *.gen.ts files as 'generated-theirs'", () => {
-    const result = classifyConflict("src/types.gen.ts", "/tmp/root");
+  it("classifies *.gen.ts files as 'generated-theirs'", async () => {
+    const result = await classifyConflict("src/types.gen.ts", "/tmp/root");
     expect(result).toBe("generated-theirs");
   });
 
-  it("classifies dist/* files as 'generated-theirs'", () => {
-    const result = classifyConflict("dist/bundle.js", "/tmp/root");
+  it("classifies dist/* files as 'generated-theirs'", async () => {
+    const result = await classifyConflict("dist/bundle.js", "/tmp/root");
     expect(result).toBe("generated-theirs");
   });
 
-  it("classifies build/* files as 'generated-theirs'", () => {
-    const result = classifyConflict("build/index.html", "/tmp/root");
+  it("classifies build/* files as 'generated-theirs'", async () => {
+    const result = await classifyConflict("build/index.html", "/tmp/root");
     expect(result).toBe("generated-theirs");
   });
 
-  it("classifies *.min.js files as 'generated-theirs'", () => {
-    const result = classifyConflict("app.min.js", "/tmp/root");
+  it("classifies *.min.js files as 'generated-theirs'", async () => {
+    const result = await classifyConflict("app.min.js", "/tmp/root");
     expect(result).toBe("generated-theirs");
   });
 
-  it("classifies regular source files as 'complex'", () => {
+  it("classifies regular source files as 'complex'", async () => {
+    // Mock git diff-tree to return actual content changes (non-trivial)
+    mockedExecSync.mockImplementation(() => {
+      const error = new Error("exit code 1") as any;
+      error.stdout = `diff --git a/src/components/App.tsx b/src/components/App.tsx
+--- a/src/components/App.tsx
++++ b/src/components/App.tsx
+@@ -1 +1 @@
+-const x = 1;
++const x = 2;`;
+      throw error;
+    });
     mockedReadFileSync.mockReturnValue("const x = 1;");
-    const result = classifyConflict("src/components/App.tsx", "/tmp/root");
+    const result = await classifyConflict("src/components/App.tsx", "/tmp/root");
     expect(result).toBe("complex");
   });
 });
@@ -1523,26 +1548,26 @@ describe("getConflictedFiles", () => {
     vi.clearAllMocks();
   });
 
-  it("returns array of conflicted file paths", () => {
+  it("returns array of conflicted file paths", async () => {
     mockedExecSync.mockReturnValue("package-lock.json\nsrc/index.ts\n");
 
-    const result = getConflictedFiles("/tmp/root");
+    const result = await getConflictedFiles("/tmp/root");
     expect(result).toEqual(["package-lock.json", "src/index.ts"]);
   });
 
-  it("returns empty array when no conflicts", () => {
+  it("returns empty array when no conflicts", async () => {
     mockedExecSync.mockReturnValue("");
 
-    const result = getConflictedFiles("/tmp/root");
+    const result = await getConflictedFiles("/tmp/root");
     expect(result).toEqual([]);
   });
 
-  it("returns empty array on git error", () => {
+  it("returns empty array on git error", async () => {
     mockedExecSync.mockImplementation(() => {
       throw new Error("git error");
     });
 
-    const result = getConflictedFiles("/tmp/root");
+    const result = await getConflictedFiles("/tmp/root");
     expect(result).toEqual([]);
   });
 });
@@ -1553,8 +1578,8 @@ describe("resolveWithOurs", () => {
     mockedExecSync.mockReturnValue(Buffer.from(""));
   });
 
-  it("calls git checkout --ours and git add", () => {
-    resolveWithOurs("package-lock.json", "/tmp/root");
+  it("calls git checkout --ours and git add", async () => {
+    await resolveWithOurs("package-lock.json", "/tmp/root");
 
     const checkoutCall = mockedExecSync.mock.calls.find((call) =>
       String(call[0]).includes("checkout --ours"),
@@ -1568,12 +1593,12 @@ describe("resolveWithOurs", () => {
     expect(String(checkoutCall![0])).toContain("package-lock.json");
   });
 
-  it("throws on git error", () => {
+  it("throws on git error", async () => {
     mockedExecSync.mockImplementation(() => {
       throw new Error("checkout failed");
     });
 
-    expect(() => resolveWithOurs("file.ts", "/tmp/root")).toThrow(
+    await expect(resolveWithOurs("file.ts", "/tmp/root")).rejects.toThrow(
       "Failed to auto-resolve",
     );
   });
@@ -1585,8 +1610,8 @@ describe("resolveWithTheirs", () => {
     mockedExecSync.mockReturnValue(Buffer.from(""));
   });
 
-  it("calls git checkout --theirs and git add", () => {
-    resolveWithTheirs("dist/bundle.js", "/tmp/root");
+  it("calls git checkout --theirs and git add", async () => {
+    await resolveWithTheirs("dist/bundle.js", "/tmp/root");
 
     const checkoutCall = mockedExecSync.mock.calls.find((call) =>
       String(call[0]).includes("checkout --theirs"),
@@ -1600,12 +1625,12 @@ describe("resolveWithTheirs", () => {
     expect(String(checkoutCall![0])).toContain("dist/bundle.js");
   });
 
-  it("throws on git error", () => {
+  it("throws on git error", async () => {
     mockedExecSync.mockImplementation(() => {
       throw new Error("checkout failed");
     });
 
-    expect(() => resolveWithTheirs("file.ts", "/tmp/root")).toThrow(
+    await expect(resolveWithTheirs("file.ts", "/tmp/root")).rejects.toThrow(
       "Failed to auto-resolve",
     );
   });
@@ -1617,8 +1642,8 @@ describe("resolveTrivialWhitespace", () => {
     mockedExecSync.mockReturnValue(Buffer.from(""));
   });
 
-  it("calls git add to resolve trivial whitespace conflict", () => {
-    resolveTrivialWhitespace("src/utils.ts", "/tmp/root");
+  it("calls git add to resolve trivial whitespace conflict", async () => {
+    await resolveTrivialWhitespace("src/utils.ts", "/tmp/root");
 
     const addCall = mockedExecSync.mock.calls.find((call) =>
       String(call[0]).includes("git add"),
@@ -1628,12 +1653,12 @@ describe("resolveTrivialWhitespace", () => {
     expect(String(addCall![0])).toContain("src/utils.ts");
   });
 
-  it("throws on git error", () => {
+  it("throws on git error", async () => {
     mockedExecSync.mockImplementation(() => {
       throw new Error("add failed");
     });
 
-    expect(() => resolveTrivialWhitespace("file.ts", "/tmp/root")).toThrow(
+    await expect(resolveTrivialWhitespace("file.ts", "/tmp/root")).rejects.toThrow(
       "Failed to auto-resolve",
     );
   });
@@ -1669,17 +1694,17 @@ describe("isTrivialWhitespaceConflict", () => {
     vi.clearAllMocks();
   });
 
-  it("returns true when diff contains only whitespace changes", () => {
+  it("returns true when diff contains only whitespace changes", async () => {
     // Mock git diff-tree to return empty diff (no content changes)
     mockedExecSync.mockReturnValue(
       "diff --git a/file.ts b/file.ts\nindex 123..456 100644\n--- a/file.ts\n+++ b/file.ts\n"
     );
 
-    const result = isTrivialWhitespaceConflict("src/file.ts", "/tmp/root");
+    const result = await isTrivialWhitespaceConflict("src/file.ts", "/tmp/root");
     expect(result).toBe(true);
   });
 
-  it("returns false when diff contains content changes", () => {
+  it("returns false when diff contains content changes", async () => {
     // Mock git diff-tree to return diff with actual content changes
     mockedExecSync.mockImplementation(() => {
       const error = new Error("exit code 1") as any;
@@ -1692,35 +1717,35 @@ describe("isTrivialWhitespaceConflict", () => {
       throw error;
     });
 
-    const result = isTrivialWhitespaceConflict("src/file.ts", "/tmp/root");
+    const result = await isTrivialWhitespaceConflict("src/file.ts", "/tmp/root");
     expect(result).toBe(false);
   });
 
-  it("returns true when only line endings differ (CRLF vs LF)", () => {
+  it("returns true when only line endings differ (CRLF vs LF)", async () => {
     // Mock git diff-tree -w to show no content changes (whitespace ignored)
     mockedExecSync.mockReturnValue(
       "diff --git a/file.ts b/file.ts\nindex 123..456 100644\n--- a/file.ts\n+++ b/file.ts\n"
     );
 
-    const result = isTrivialWhitespaceConflict("src/file.ts", "/tmp/root");
+    const result = await isTrivialWhitespaceConflict("src/file.ts", "/tmp/root");
     expect(result).toBe(true);
   });
 
-  it("returns false when git diff-tree fails unexpectedly", () => {
+  it("returns false when git diff-tree fails unexpectedly", async () => {
     mockedExecSync.mockImplementation(() => {
       throw new Error("fatal: not a git repository");
     });
     // Mock readFileSync for the fallback
     mockedReadFileSync.mockReturnValue("content without conflict markers");
 
-    const result = isTrivialWhitespaceConflict("src/file.ts", "/tmp/root");
+    const result = await isTrivialWhitespaceConflict("src/file.ts", "/tmp/root");
     expect(result).toBe(false);
   });
 
-  it("calls git diff-tree with correct index references (:2: and :3:)", () => {
+  it("calls git diff-tree with correct index references (:2: and :3:)", async () => {
     mockedExecSync.mockReturnValue("");
 
-    isTrivialWhitespaceConflict("src/utils.ts", "/tmp/root");
+    await isTrivialWhitespaceConflict("src/utils.ts", "/tmp/root");
 
     const call = mockedExecSync.mock.calls.find((call) =>
       String(call[0]).includes("git diff-tree")
@@ -3356,6 +3381,12 @@ describe("aiMergeTask — context limit recovery with truncation", () => {
         throw new Error("merge conflict");
       }
       if (cmdStr.includes("diff --name-only --diff-filter=U")) return "src/file.ts";
+      // git diff-tree for trivial whitespace detection - return real changes (non-trivial)
+      if (cmdStr.includes("diff-tree")) {
+        const error = new Error("exit code 1") as any;
+        error.stdout = "+const x = 2;\n-const x = 1;";
+        throw error;
+      }
       if (cmdStr.includes("reset --merge")) return Buffer.from("");
       return Buffer.from("");
     });

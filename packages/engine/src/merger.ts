@@ -140,13 +140,13 @@ function matchGlob(path: string, pattern: string): boolean {
   return regex.test(fileName) || regex.test(path);
 }
 
-export function getStagedFiles(cwd: string): string[] {
+export async function getStagedFiles(cwd: string): Promise<string[]> {
   try {
-    const output = execSync("git diff --cached --name-only", {
+    const { stdout } = await execAsync("git diff --cached --name-only", {
       cwd,
       encoding: "utf-8",
-      stdio: "pipe",
-    }).trim();
+    });
+    const output = stdout.trim();
     return output ? output.split("\n").filter(Boolean) : [];
   } catch {
     return [];
@@ -544,12 +544,13 @@ export async function validateDiffScope(
  * Get list of conflicted files from git.
  * Runs `git diff --name-only --diff-filter=U` and returns array of file paths.
  */
-export function getConflictedFiles(cwd: string): string[] {
+export async function getConflictedFiles(cwd: string): Promise<string[]> {
   try {
-    const output = execSync("git diff --name-only --diff-filter=U", {
+    const { stdout } = await execAsync("git diff --name-only --diff-filter=U", {
       cwd,
       encoding: "utf-8",
-    }).trim();
+    });
+    const output = stdout.trim();
 
     if (!output) return [];
     return output.split("\n").filter(Boolean);
@@ -562,19 +563,19 @@ export function getConflictedFiles(cwd: string): string[] {
  * Check if a file has only trivial whitespace conflicts using git.
  * Compares ours (:2) and theirs (:3) versions with whitespace ignored.
  */
-export function isTrivialWhitespaceConflict(filePath: string, cwd: string): boolean {
+export async function isTrivialWhitespaceConflict(filePath: string, cwd: string): Promise<boolean> {
   try {
     // Use git diff-tree to compare index entries with whitespace ignored
     // :2 = ours (current branch), :3 = theirs (incoming branch)
     // -w flag ignores whitespace
-    const result = execSync(
+    const { stdout } = await execAsync(
       `git diff-tree -p -w -- :2:"${filePath}" :3:"${filePath}"`,
-      { cwd, encoding: "utf-8", stdio: ["pipe", "pipe", "ignore"] }
+      { cwd, encoding: "utf-8" }
     );
 
     // If the diff output is empty or contains no actual changes, it's trivial
     // The diff output will have headers but no +/- content lines for whitespace-only changes
-    const lines = result.split("\n");
+    const lines = stdout.split("\n");
     const contentChanges = lines.filter(
       (line: string) => (line.startsWith("+") || line.startsWith("-")) &&
                 !line.startsWith("+++") && !line.startsWith("---")
@@ -601,7 +602,7 @@ export function isTrivialWhitespaceConflict(filePath: string, cwd: string): bool
  * Classify a single conflicted file for auto-resolution.
  * Returns one of: 'lockfile-ours', 'generated-theirs', 'trivial-whitespace', 'complex'
  */
-export function classifyConflict(filePath: string, cwd: string): ConflictType {
+export async function classifyConflict(filePath: string, cwd: string): Promise<ConflictType> {
   // Check for lock files - always take "ours" (current branch's version)
   if (LOCKFILE_PATTERNS.some((pattern) => matchGlob(filePath, pattern))) {
     return "lockfile-ours";
@@ -613,7 +614,7 @@ export function classifyConflict(filePath: string, cwd: string): ConflictType {
   }
 
   // Check for trivial conflicts (whitespace-only)
-  if (isTrivialWhitespaceConflict(filePath, cwd)) {
+  if (await isTrivialWhitespaceConflict(filePath, cwd)) {
     return "trivial-whitespace";
   }
 
@@ -625,10 +626,10 @@ export function classifyConflict(filePath: string, cwd: string): ConflictType {
  * Resolve a conflicted file using "ours" (current branch's version).
  * Runs `git checkout --ours` and `git add`.
  */
-export function resolveWithOurs(filePath: string, cwd: string): void {
+export async function resolveWithOurs(filePath: string, cwd: string): Promise<void> {
   try {
-    execSync(`git checkout --ours "${filePath}"`, { cwd, stdio: "pipe" });
-    execSync(`git add "${filePath}"`, { cwd, stdio: "pipe" });
+    await execAsync(`git checkout --ours "${filePath}"`, { cwd });
+    await execAsync(`git add "${filePath}"`, { cwd });
     mergerLog.log(`Auto-resolved ${filePath} using --ours`);
   } catch (error) {
     throw new Error(`Failed to auto-resolve ${filePath} with ours: ${error}`);
@@ -639,10 +640,10 @@ export function resolveWithOurs(filePath: string, cwd: string): void {
  * Resolve a conflicted file using "theirs" (incoming branch's version).
  * Runs `git checkout --theirs` and `git add`.
  */
-export function resolveWithTheirs(filePath: string, cwd: string): void {
+export async function resolveWithTheirs(filePath: string, cwd: string): Promise<void> {
   try {
-    execSync(`git checkout --theirs "${filePath}"`, { cwd, stdio: "pipe" });
-    execSync(`git add "${filePath}"`, { cwd, stdio: "pipe" });
+    await execAsync(`git checkout --theirs "${filePath}"`, { cwd });
+    await execAsync(`git add "${filePath}"`, { cwd });
     mergerLog.log(`Auto-resolved ${filePath} using --theirs`);
   } catch (error) {
     throw new Error(`Failed to auto-resolve ${filePath} with theirs: ${error}`);
@@ -653,9 +654,9 @@ export function resolveWithTheirs(filePath: string, cwd: string): void {
  * Resolve a trivial whitespace conflict.
  * For trivial conflicts, we can just stage the file (git considers it resolved).
  */
-export function resolveTrivialWhitespace(filePath: string, cwd: string): void {
+export async function resolveTrivialWhitespace(filePath: string, cwd: string): Promise<void> {
   try {
-    execSync(`git add "${filePath}"`, { cwd, stdio: "pipe" });
+    await execAsync(`git add "${filePath}"`, { cwd });
     mergerLog.log(`Auto-resolved ${filePath} (trivial whitespace)`);
   } catch (error) {
     throw new Error(`Failed to auto-resolve ${filePath} trivial conflict: ${error}`);
@@ -678,36 +679,42 @@ export interface ConflictCategory {
  * Detect and categorize merge conflicts. Delegates to the new classifyConflict API.
  * @deprecated Use getConflictedFiles() + classifyConflict() instead.
  */
-export function detectResolvableConflicts(rootDir: string): ConflictCategory[] {
-  const files = getConflictedFiles(rootDir);
-  return files.map((filePath): ConflictCategory => {
-    const type = classifyConflict(filePath, rootDir);
+export async function detectResolvableConflicts(rootDir: string): Promise<ConflictCategory[]> {
+  const files = await getConflictedFiles(rootDir);
+  const results: ConflictCategory[] = [];
+  for (const filePath of files) {
+    const type = await classifyConflict(filePath, rootDir);
     switch (type) {
       case "lockfile-ours":
-        return { filePath, autoResolvable: true, strategy: "ours", reason: "lock-file" };
+        results.push({ filePath, autoResolvable: true, strategy: "ours", reason: "lock-file" });
+        break;
       case "generated-theirs":
-        return { filePath, autoResolvable: true, strategy: "theirs", reason: "generated-file" };
+        results.push({ filePath, autoResolvable: true, strategy: "theirs", reason: "generated-file" });
+        break;
       case "trivial-whitespace":
-        return { filePath, autoResolvable: true, strategy: "ours", reason: "trivial" };
+        results.push({ filePath, autoResolvable: true, strategy: "ours", reason: "trivial" });
+        break;
       case "complex":
-        return { filePath, autoResolvable: false, reason: "complex" };
+        results.push({ filePath, autoResolvable: false, reason: "complex" });
+        break;
     }
-  });
+  }
+  return results;
 }
 
 /**
  * Auto-resolve a single file using git checkout --ours or --theirs.
  * @deprecated Use resolveWithOurs() or resolveWithTheirs() instead.
  */
-export function autoResolveFile(
+export async function autoResolveFile(
   filePath: string,
   resolution: ConflictResolution,
   rootDir: string,
-): void {
+): Promise<void> {
   if (resolution === "ours") {
-    resolveWithOurs(filePath, rootDir);
+    await resolveWithOurs(filePath, rootDir);
   } else {
-    resolveWithTheirs(filePath, rootDir);
+    await resolveWithTheirs(filePath, rootDir);
   }
 }
 
@@ -715,14 +722,14 @@ export function autoResolveFile(
  * Auto-resolve all resolvable conflicts from the categorization.
  * @deprecated Use classifyConflict + resolveWithOurs/resolveWithTheirs instead.
  */
-export function resolveConflicts(
+export async function resolveConflicts(
   categories: ConflictCategory[],
   rootDir: string,
-): string[] {
+): Promise<string[]> {
   const remainingComplex: string[] = [];
   for (const category of categories) {
     if (category.autoResolvable && category.strategy) {
-      autoResolveFile(category.filePath, category.strategy, rootDir);
+      await autoResolveFile(category.filePath, category.strategy, rootDir);
     } else {
       remainingComplex.push(category.filePath);
     }
@@ -996,9 +1003,8 @@ export async function aiMergeTask(
     }).trim().replace(/^origin\//, "");
     if (currentBranch !== mainBranch) {
       mergerLog.log(`${taskId}: rootDir on '${currentBranch}', checking out '${mainBranch}' before merge`);
-      execSync(`git checkout "${mainBranch}"`, {
+      await execAsync(`git checkout "${mainBranch}"`, {
         cwd: rootDir,
-        stdio: "pipe",
       });
       // Audit trail: record git checkout (FN-1404)
       await audit.git({ type: "branch:checkout", target: mainBranch });
@@ -1006,7 +1012,7 @@ export async function aiMergeTask(
   } catch {
     // Fallback: try checking out main directly
     try {
-      execSync("git checkout main", { cwd: rootDir, stdio: "pipe" });
+      await execAsync("git checkout main", { cwd: rootDir });
       // Audit trail: record git checkout (FN-1404)
       await audit.git({ type: "branch:checkout", target: "main" });
     } catch {
@@ -1018,22 +1024,25 @@ export async function aiMergeTask(
   let commitLog = "";
   let diffStat = "";
   try {
-    commitLog = execSync(`git log HEAD..${branch} --format="- %s"`, {
+    const { stdout: logOutput } = await execAsync(`git log HEAD..${branch} --format="- %s"`, {
       cwd: rootDir,
       encoding: "utf-8",
-    }).trim();
+    });
+    commitLog = logOutput.trim();
   } catch {
     commitLog = "(unable to read commit log)";
   }
   try {
-    const mergeBase = execSync(`git merge-base HEAD ${branch}`, {
+    const { stdout: mergeBaseOutput } = await execAsync(`git merge-base HEAD ${branch}`, {
       cwd: rootDir,
       encoding: "utf-8",
-    }).trim();
-    diffStat = execSync(`git diff ${mergeBase}..${branch} --stat`, {
+    });
+    const mergeBase = mergeBaseOutput.trim();
+    const { stdout: diffOutput } = await execAsync(`git diff ${mergeBase}..${branch} --stat`, {
       cwd: rootDir,
       encoding: "utf-8",
-    }).trim();
+    });
+    diffStat = diffOutput.trim();
   } catch {
     diffStat = "(unable to read diff)";
   }
@@ -1182,12 +1191,11 @@ export async function aiMergeTask(
     let deletions: number | undefined;
 
     try {
-      const statsOutput = execSync("git show --shortstat --format= HEAD", {
+      const { stdout: statsOutput } = await execAsync("git show --shortstat --format= HEAD", {
         cwd: rootDir,
-        stdio: "pipe",
         encoding: "utf-8",
-      }).trim();
-      const normalized = statsOutput.replace(/\n/g, " ");
+      });
+      const normalized = statsOutput.trim().replace(/\n/g, " ");
       const filesMatch = normalized.match(/(\d+) files? changed/);
       const insertionsMatch = normalized.match(/(\d+) insertions?\(\+\)/);
       const deletionsMatch = normalized.match(/(\d+) deletions?\(-\)/);
@@ -1218,13 +1226,13 @@ export async function aiMergeTask(
 
   // 6. Delete branch
   try {
-    execSync(`git branch -d "${branch}"`, { cwd: rootDir, stdio: "pipe" });
+    await execAsync(`git branch -d "${branch}"`, { cwd: rootDir });
     result.branchDeleted = true;
     // Audit trail: record branch deletion (FN-1404)
     await audit.git({ type: "branch:delete", target: branch });
   } catch {
     try {
-      execSync(`git branch -D "${branch}"`, { cwd: rootDir, stdio: "pipe" });
+      await execAsync(`git branch -D "${branch}"`, { cwd: rootDir });
       result.branchDeleted = true;
       // Audit trail: record branch deletion (force) (FN-1404)
       await audit.git({ type: "branch:delete", target: branch, metadata: { force: true } });
@@ -1242,9 +1250,8 @@ export async function aiMergeTask(
       result.worktreeRemoved = false;
     } else {
       try {
-        execSync(`git worktree remove "${worktreePath}" --force`, {
+        await execAsync(`git worktree remove "${worktreePath}" --force`, {
           cwd: rootDir,
-          stdio: "pipe",
         });
         // Audit trail: record worktree removal (FN-1404)
         await audit.git({ type: "worktree:remove", target: worktreePath });
@@ -1372,9 +1379,8 @@ async function executeMergeAttempt(
       // This is expected - we catch it and proceed with auto-resolution
       let mergeExitedWithConflicts = false;
       try {
-        execSync(`git merge --squash "${branch}"`, {
+        await execAsync(`git merge --squash "${branch}"`, {
           cwd: rootDir,
-          stdio: "pipe",
         });
       } catch {
         // Merge exits with code 1 when conflicts exist - this is expected
@@ -1382,13 +1388,14 @@ async function executeMergeAttempt(
       }
 
       // Use new API: get conflicted files and classify them
-      const conflictedFiles = getConflictedFiles(rootDir);
+      const conflictedFiles = await getConflictedFiles(rootDir);
       if (conflictedFiles.length > 0 || mergeExitedWithConflicts) {
         // Classify each conflicted file
-        const classified = conflictedFiles.map((file) => ({
-          file,
-          type: classifyConflict(file, rootDir),
-        }));
+        const classified: { file: string; type: ConflictType }[] = [];
+        for (const file of conflictedFiles) {
+          const type = await classifyConflict(file, rootDir);
+          classified.push({ file, type });
+        }
 
         const autoResolvable = classified.filter(
           (c) => c.type !== "complex",
@@ -1405,11 +1412,11 @@ async function executeMergeAttempt(
           for (const { file, type } of autoResolvable) {
             try {
               if (type === "lockfile-ours") {
-                resolveWithOurs(file, rootDir);
+                await resolveWithOurs(file, rootDir);
               } else if (type === "generated-theirs") {
-                resolveWithTheirs(file, rootDir);
+                await resolveWithTheirs(file, rootDir);
               } else if (type === "trivial-whitespace") {
-                resolveTrivialWhitespace(file, rootDir);
+                await resolveTrivialWhitespace(file, rootDir);
               }
               result.autoResolvedCount = (result.autoResolvedCount || 0) + 1;
             } catch (error) {
@@ -1431,9 +1438,9 @@ async function executeMergeAttempt(
           if (staged !== "0") {
             const escapedLog = commitLog.replace(/"/g, '\\"');
             const fallbackPrefix = includeTaskId ? `feat(${taskId})` : "feat";
-            execSync(
+            await execAsync(
               `git commit -m "${fallbackPrefix}: merge ${branch}" -m "${escapedLog}"`,
-              { cwd: rootDir, stdio: "pipe" },
+              { cwd: rootDir },
             );
             mergerLog.log(`${taskId}: committed after auto-resolving all conflicts`);
           }
@@ -1465,9 +1472,8 @@ async function executeMergeAttempt(
       }
     } else {
       // Attempt 1: Standard merge
-      execSync(`git merge --squash "${branch}"`, {
+      await execAsync(`git merge --squash "${branch}"`, {
         cwd: rootDir,
-        stdio: "pipe",
       });
 
       // Check if squash is empty
@@ -1504,7 +1510,7 @@ async function executeMergeAttempt(
     }
 
     if (buildCommand) {
-      const stagedFiles = getStagedFiles(rootDir);
+      const stagedFiles = await getStagedFiles(rootDir);
       if (shouldSyncDependenciesForMerge(stagedFiles, hasInstallState(rootDir))) {
         await syncDependenciesForMerge(store, rootDir, taskId);
       }
@@ -1583,9 +1589,8 @@ async function attemptWithTheirsStrategy(params: MergeAttemptParams): Promise<bo
 
   try {
     // Use -X theirs to auto-resolve conflicts favoring the incoming branch
-    execSync(`git merge -X theirs --squash "${branch}"`, {
+    await execAsync(`git merge -X theirs --squash "${branch}"`, {
       cwd: rootDir,
-      stdio: "pipe",
     });
 
     // Check if there are still conflicts (some types can't be auto-resolved)
@@ -1617,9 +1622,9 @@ async function attemptWithTheirsStrategy(params: MergeAttemptParams): Promise<bo
     // Commit with fallback message
     const escapedLog = commitLog.replace(/"/g, '\\"');
     const fallbackPrefix = includeTaskId ? `feat(${taskId})` : "feat";
-    execSync(
+    await execAsync(
       `git commit -m "${fallbackPrefix}: merge ${branch} (auto-resolved)" -m "${escapedLog}"`,
-      { cwd: rootDir, stdio: "pipe" },
+      { cwd: rootDir },
     );
     mergerLog.log(`${taskId}: committed with -X theirs auto-resolution`);
 
@@ -1882,9 +1887,9 @@ async function runAiAgentForCommit(params: AiAgentParams): Promise<{ success: bo
         mergerLog.log("Agent didn't commit — committing with fallback message");
         const escapedLog = commitLog.replace(/"/g, '\\"');
         const fallbackPrefix = includeTaskId ? `feat(${taskId})` : "feat";
-        execSync(
+        await execAsync(
           `git commit -m "${fallbackPrefix}: merge ${branch}" -m "${escapedLog}"`,
-          { cwd: rootDir, stdio: "pipe" },
+          { cwd: rootDir },
         );
       } else {
         // Build command was configured but agent didn't commit and didn't report failure
