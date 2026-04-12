@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, waitFor, within, cleanup } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ModelSelectorTab } from "../ModelSelectorTab";
 import type { Task } from "@fusion/core";
@@ -1091,6 +1091,105 @@ describe("ModelSelectorTab", () => {
       await waitForSelectors();
 
       expect(screen.getByText("medium")).toBeInTheDocument();
+    });
+
+    it("shows effective default thinking level in badge when settings.defaultThinkingLevel is 'high' and no task override", async () => {
+      render(
+        <ModelSelectorTab
+          task={FAKE_TASK}
+          addToast={mockAddToast}
+          settings={{ defaultThinkingLevel: "high" }}
+        />,
+      );
+
+      await waitForSelectors();
+
+      const thinkingSection = getSection("Thinking Level");
+      expect(within(thinkingSection!).getByText("Using default (high)")).toBeInTheDocument();
+    });
+
+    it("shows effective default thinking level in badge for all valid thinking levels", async () => {
+      for (const level of ["minimal", "low", "medium", "high"] as const) {
+        render(
+          <ModelSelectorTab
+            task={FAKE_TASK}
+            addToast={mockAddToast}
+            settings={{ defaultThinkingLevel: level }}
+          />,
+        );
+
+        await waitForSelectors();
+
+        const thinkingSection = getSection("Thinking Level");
+        expect(within(thinkingSection!).getByText(`Using default (${level})`)).toBeInTheDocument();
+
+        cleanup();
+      }
+    });
+
+    it("shows toast with effective default when clearing thinking override with settings", async () => {
+      const taskWithThinking = { ...FAKE_TASK, thinkingLevel: "high" as const };
+      mockUpdateTask.mockImplementation(async (_id: string, updates: Record<string, unknown>) => ({
+        ...FAKE_TASK, // Return task without override
+        ...updates,
+      }));
+
+      const user = userEvent.setup();
+      render(
+        <ModelSelectorTab
+          task={taskWithThinking}
+          addToast={mockAddToast}
+          settings={{ defaultThinkingLevel: "high" }}
+        />,
+      );
+
+      await waitForSelectors();
+
+      await user.selectOptions(screen.getByLabelText("Thinking Level"), "off");
+
+      await waitFor(() => {
+        expect(mockUpdateTask).toHaveBeenCalledWith("FN-001", {
+          thinkingLevel: null,
+        });
+      });
+
+      await waitFor(() => {
+        expect(mockAddToast).toHaveBeenCalledWith(
+          "Thinking level set to default (high)",
+          "success",
+        );
+      });
+    });
+
+    it("shows 'Using default (off)' when settings is undefined and no task override", async () => {
+      render(<ModelSelectorTab task={FAKE_TASK} addToast={mockAddToast} />);
+
+      await waitForSelectors();
+
+      const thinkingSection = getSection("Thinking Level");
+      expect(within(thinkingSection!).getByText("Using default (off)")).toBeInTheDocument();
+    });
+
+    it("shows 'Using default (off)' toast when clearing with undefined settings", async () => {
+      const taskWithThinking = { ...FAKE_TASK, thinkingLevel: "high" as const };
+      mockUpdateTask.mockImplementation(async (_id: string, updates: Record<string, unknown>) => ({
+        ...FAKE_TASK,
+        ...updates,
+      }));
+
+      const user = userEvent.setup();
+      render(<ModelSelectorTab task={taskWithThinking} addToast={mockAddToast} />);
+
+      await waitForSelectors();
+
+      await user.selectOptions(screen.getByLabelText("Thinking Level"), "off");
+
+      await waitFor(() => {
+        expect(mockAddToast).toHaveBeenCalledWith(
+          "Thinking level set to default (off)",
+          "success",
+        );
+      });
     });
   });
 });

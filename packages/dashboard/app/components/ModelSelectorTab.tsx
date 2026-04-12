@@ -138,8 +138,8 @@ export function ModelSelectorTab({ task, addToast, onTaskUpdated, settings }: Mo
   const [savedValidator, setSavedValidator] = useState<ModelSelection>(() => getValidatorSelection(task));
   const [selectedPlanning, setSelectedPlanning] = useState<ModelSelection>(() => getPlanningSelection(task));
   const [savedPlanning, setSavedPlanning] = useState<ModelSelection>(() => getPlanningSelection(task));
-  const [selectedThinking, setSelectedThinking] = useState<string>(() => task.thinkingLevel ?? "off");
-  const [savedThinking, setSavedThinking] = useState<string>(() => task.thinkingLevel ?? "off");
+  const [selectedThinking, setSelectedThinking] = useState<string | null>(() => task.thinkingLevel ?? null);
+  const [savedThinking, setSavedThinking] = useState<string | null>(() => task.thinkingLevel ?? null);
   const [savingTarget, setSavingTarget] = useState<"executor" | "validator" | "planning" | "thinking" | null>(null);
 
   const activeTaskIdRef = useRef(task.id);
@@ -213,7 +213,7 @@ export function ModelSelectorTab({ task, addToast, onTaskUpdated, settings }: Mo
     setSavedValidator(nextValidator);
     setSelectedPlanning(nextPlanning);
     setSavedPlanning(nextPlanning);
-    const nextThinking = task.thinkingLevel ?? "off";
+    const nextThinking = task.thinkingLevel ?? null;
     setSelectedThinking(nextThinking);
     setSavedThinking(nextThinking);
     setSavingTarget(null);
@@ -353,30 +353,38 @@ export function ModelSelectorTab({ task, addToast, onTaskUpdated, settings }: Mo
     async (value: string) => {
       const requestTaskId = task.id;
       const previousThinking = savedThinking;
+      // Value "off" means clear override (null)
+      const nextValue = value === "off" ? null : value;
 
-      setSelectedThinking(value);
+      setSelectedThinking(nextValue);
       setSavingTarget("thinking");
 
       try {
         const updatedTask = await updateTask(requestTaskId, {
-          thinkingLevel: value === "off" ? null : value,
+          thinkingLevel: nextValue,
         });
 
         if (activeTaskIdRef.current !== requestTaskId) {
           return;
         }
 
-        const nextThinking = updatedTask.thinkingLevel ?? "off";
+        const nextThinking = updatedTask.thinkingLevel ?? null;
         setSavedThinking(nextThinking);
         setSelectedThinking(nextThinking);
         onTaskUpdated?.(updatedTask);
 
-        addToast(
-          nextThinking === "off"
-            ? "Thinking level set to default (off)"
-            : `Thinking level set to ${nextThinking}`,
-          "success",
-        );
+        const effectiveDefault = settings?.defaultThinkingLevel ?? "off";
+        if (nextThinking === null) {
+          addToast(
+            `Thinking level set to default (${effectiveDefault})`,
+            "success",
+          );
+        } else {
+          addToast(
+            `Thinking level set to ${nextThinking}`,
+            "success",
+          );
+        }
       } catch (err: any) {
         if (activeTaskIdRef.current !== requestTaskId) {
           return;
@@ -390,7 +398,7 @@ export function ModelSelectorTab({ task, addToast, onTaskUpdated, settings }: Mo
         }
       }
     },
-    [task.id, savedThinking, addToast, onTaskUpdated],
+    [task.id, savedThinking, settings, addToast, onTaskUpdated],
   );
 
   const executorUsingDefault = !savedExecutor.provider && !savedExecutor.modelId;
@@ -527,8 +535,10 @@ export function ModelSelectorTab({ task, addToast, onTaskUpdated, settings }: Mo
           <div className="form-group">
             <label htmlFor="thinkingLevel">Thinking Level</label>
             <div className="model-selector-current">
-              {savedThinking === "off" ? (
-                <span className="model-badge model-badge-default">Using default (off)</span>
+              {savedThinking === null ? (
+                <span className="model-badge model-badge-default">
+                  Using default ({settings?.defaultThinkingLevel ?? "off"})
+                </span>
               ) : (
                 <span className="model-badge model-badge-custom">
                   {savedThinking}
@@ -537,7 +547,7 @@ export function ModelSelectorTab({ task, addToast, onTaskUpdated, settings }: Mo
             </div>
             <select
               id="thinkingLevel"
-              value={selectedThinking}
+              value={selectedThinking ?? "off"}
               onChange={(e) => handleThinkingChange(e.target.value)}
               disabled={isSaving}
               className="thinking-level-select"
@@ -552,7 +562,7 @@ export function ModelSelectorTab({ task, addToast, onTaskUpdated, settings }: Mo
           </div>
 
           <div className="model-selector-status">
-            {executorUsingDefault && validatorUsingDefault && planningUsingDefault && savedThinking === "off"
+            {executorUsingDefault && validatorUsingDefault && planningUsingDefault && savedThinking === null
               ? "Using global default models."
               : "Model settings are up to date."}
           </div>
