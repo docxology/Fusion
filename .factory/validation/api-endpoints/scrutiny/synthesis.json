@@ -1,0 +1,61 @@
+{
+  "milestone": "api-endpoints",
+  "round": 1,
+  "status": "fail",
+  "validatorsRun": {
+    "test": {
+      "passed": false,
+      "command": "pnpm test",
+      "exitCode": 1,
+      "note": "4 pre-existing test failures in store.test.ts related to git branch cleanup (not related to api-endpoints feature). 2211 tests pass."
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "pnpm build",
+      "exitCode": 0
+    },
+    "lint": {
+      "passed": false,
+      "command": "pnpm lint",
+      "exitCode": 1,
+      "note": "4338 pre-existing lint errors across codebase. Not addressed - many in demo/, scripts/, and test files unrelated to api-endpoints."
+    }
+  },
+  "reviewsSummary": {
+    "total": 2,
+    "passed": 1,
+    "failed": 1,
+    "failedFeatures": ["FEAT-005"]
+  },
+  "blockingIssues": [
+    {
+      "featureId": "FEAT-005",
+      "severity": "blocking",
+      "description": "VAL-API-018 not implemented: Assertion CRUD and link/unlink do not emit milestone:validation:updated SSE events. Route handlers call store methods that emit internal events, but routes do not forward these as SSE to connected clients. The existing SSE pattern in mission-routes.ts is only used for interview streams, not general mission events.",
+      "file": "packages/dashboard/src/mission-routes.ts",
+      "line": 1445
+    }
+  ],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Clarify when SSE event emission is required for API endpoints. The validation contract (VAL-API-018) requires SSE events for assertion mutations, but the existing SSE infrastructure in mission-routes.ts only supports interview streams. Workers implementing similar features need guidance on: (1) when to add SSE broadcast to route handlers, (2) what existing SSE infrastructure can be reused vs. what needs to be built.",
+      "evidence": "FEAT-005 implements all assertion CRUD endpoints correctly but doesn't emit SSE events. The existing SSE pattern (writeSSEEvent) exists but is only used for interview streams. No clear convention exists for broadcasting mission domain events via SSE.",
+      "isSystemic": true
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Strengthen TDD enforcement for API route implementations. The backend-worker skill requires TDD, but neither FEAT-005 nor FEAT-006 added API route tests. While store methods have unit tests, HTTP route handlers have zero test coverage.",
+      "evidence": "FEAT-005 and FEAT-006 handoffs both state 'No new tests added'. VAL-API-001 through VAL-API-018 describe curl-based verification steps that would normally be covered by route handler tests.",
+      "isSystemic": true
+    }
+  ],
+  "rejectedObservations": [
+    {
+      "observation": "MissionStore.reorderContractAssertions does not emit any event",
+      "reason": "This is actually a gap in FEAT-005's implementation - the reorder store method lacks an event emission. It should be fixed as part of the FEAT-005 blocking issue, not documented as a separate knowledge item."
+    }
+  ],
+  "previousRound": null
+}
