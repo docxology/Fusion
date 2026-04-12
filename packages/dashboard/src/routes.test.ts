@@ -189,6 +189,47 @@ function buildMultipart(fieldName: string, filename: string, contentType: string
   return { body, boundary };
 }
 
+type GitTestRepo = {
+  root: string;
+  repoDir: string;
+  headSha: string;
+};
+
+let sharedGitTestRepo: GitTestRepo | null = null;
+
+function getSharedGitTestRepo(): GitTestRepo {
+  if (sharedGitTestRepo) {
+    return sharedGitTestRepo;
+  }
+
+  const root = mkdtempSync(join(tmpdir(), "kb-dashboard-git-"));
+  const remoteDir = join(root, "remote.git");
+  const repoDir = join(root, "repo");
+
+  mkdirSync(repoDir, { recursive: true });
+  execFileSync("git", ["init", "--bare", remoteDir], { stdio: "pipe" });
+  execFileSync("git", ["init", repoDir], { stdio: "pipe" });
+  execFileSync("git", ["-C", repoDir, "config", "user.email", "kb-tests@example.com"], { stdio: "pipe" });
+  execFileSync("git", ["-C", repoDir, "config", "user.name", "KB Tests"], { stdio: "pipe" });
+  writeFileSync(join(repoDir, "README.md"), "# Test Repo\n");
+  execFileSync("git", ["-C", repoDir, "add", "README.md"], { stdio: "pipe" });
+  execFileSync("git", ["-C", repoDir, "commit", "-m", "Initial commit"], { stdio: "pipe" });
+  execFileSync("git", ["-C", repoDir, "branch", "-M", "main"], { stdio: "pipe" });
+  execFileSync("git", ["-C", repoDir, "remote", "add", "origin", remoteDir], { stdio: "pipe" });
+  execFileSync("git", ["-C", repoDir, "push", "-u", "origin", "HEAD"], { stdio: "pipe" });
+
+  const headSha = execFileSync("git", ["-C", repoDir, "rev-parse", "HEAD"], { encoding: "utf-8", stdio: "pipe" }).trim();
+  sharedGitTestRepo = { root, repoDir, headSha };
+  return sharedGitTestRepo;
+}
+
+afterAll(() => {
+  if (sharedGitTestRepo) {
+    rmSync(sharedGitTestRepo.root, { recursive: true, force: true });
+    sharedGitTestRepo = null;
+  }
+});
+
 describe("GET /tasks", () => {
   let store: TaskStore;
 
@@ -6083,41 +6124,27 @@ describe("GET /tasks/:id/diff", () => {
 
   describe("done tasks with commit SHA", () => {
     it("attempts git diff when commitSha is present", { timeout: 30_000 }, async () => {
-      // Use a real git repo to test the commit-backed path
-      const testDir = mkdtempSync(join(tmpdir(), "kb-diff-test-"));
-      try {
-        execFileSync("git", ["init", testDir], { stdio: "pipe" });
-        execFileSync("git", ["-C", testDir, "config", "user.email", "test@test.com"], { stdio: "pipe" });
-        execFileSync("git", ["-C", testDir, "config", "user.name", "Test"], { stdio: "pipe" });
-        writeFileSync(join(testDir, "a.txt"), "initial\n");
-        execFileSync("git", ["-C", testDir, "add", "a.txt"], { stdio: "pipe" });
-        execFileSync("git", ["-C", testDir, "commit", "-m", "init"], { stdio: "pipe" });
+      const gitRepo = getSharedGitTestRepo();
+      const localStore = createMockStore({
+        getRootDir: vi.fn().mockReturnValue(gitRepo.repoDir),
+      });
+      const doneTask = {
+        ...FAKE_TASK_DETAIL,
+        id: "FN-001",
+        column: "done",
+        mergeDetails: { commitSha: gitRepo.headSha },
+      };
+      (localStore.getTask as ReturnType<typeof vi.fn>).mockResolvedValue(doneTask);
 
-        const headSha = execFileSync("git", ["-C", testDir, "rev-parse", "HEAD"], { encoding: "utf-8", stdio: "pipe" }).trim();
+      const app = express();
+      app.use(express.json());
+      app.use("/api", createApiRoutes(localStore));
 
-        const localStore = createMockStore({
-          getRootDir: vi.fn().mockReturnValue(testDir),
-        });
-        const doneTask = {
-          ...FAKE_TASK_DETAIL,
-          id: "FN-001",
-          column: "done",
-          mergeDetails: { commitSha: headSha },
-        };
-        (localStore.getTask as ReturnType<typeof vi.fn>).mockResolvedValue(doneTask);
-
-        const app = express();
-        app.use(express.json());
-        app.use("/api", createApiRoutes(localStore));
-
-        const res = await GET(app, "/api/tasks/FN-001/diff");
-        expect(res.status).toBe(200);
-        // The diff should be schema-compatible even if it returns empty
-        expect(Array.isArray(res.body.files)).toBe(true);
-        expect(res.body.stats).toHaveProperty("filesChanged");
-      } finally {
-        rmSync(testDir, { recursive: true, force: true });
-      }
+      const res = await GET(app, "/api/tasks/FN-001/diff");
+      expect(res.status).toBe(200);
+      // The diff should be schema-compatible even if it returns empty
+      expect(Array.isArray(res.body.files)).toBe(true);
+      expect(res.body.stats).toHaveProperty("filesChanged");
     });
   });
 });
@@ -6175,41 +6202,15 @@ describe("GET /tasks/:id/file-diffs", () => {
 describe("Git Management endpoints", () => {
   let store: TaskStore;
   let gitRepoDir: string;
-  let gitTestRoot: string;
-
-  function createGitTestRepo() {
-    gitTestRoot = mkdtempSync(join(tmpdir(), "kb-dashboard-git-"));
-    const remoteDir = join(gitTestRoot, "remote.git");
-    gitRepoDir = join(gitTestRoot, "repo");
-
-    mkdirSync(gitRepoDir, { recursive: true });
-    execFileSync("git", ["init", "--bare", remoteDir], { stdio: "pipe" });
-    execFileSync("git", ["init", gitRepoDir], { stdio: "pipe" });
-    execFileSync("git", ["-C", gitRepoDir, "config", "user.email", "kb-tests@example.com"], { stdio: "pipe" });
-    execFileSync("git", ["-C", gitRepoDir, "config", "user.name", "KB Tests"], { stdio: "pipe" });
-    writeFileSync(join(gitRepoDir, "README.md"), "# Test Repo\n");
-    execFileSync("git", ["-C", gitRepoDir, "add", "README.md"], { stdio: "pipe" });
-    execFileSync("git", ["-C", gitRepoDir, "commit", "-m", "Initial commit"], { stdio: "pipe" });
-    execFileSync("git", ["-C", gitRepoDir, "remote", "add", "origin", remoteDir], { stdio: "pipe" });
-    execFileSync("git", ["-C", gitRepoDir, "push", "-u", "origin", "HEAD"], { stdio: "pipe" });
-  }
 
   beforeAll(() => {
-    createGitTestRepo();
+    gitRepoDir = getSharedGitTestRepo().repoDir;
   });
 
   beforeEach(() => {
     store = createMockStore({
       getRootDir: vi.fn().mockReturnValue(gitRepoDir),
     });
-  });
-
-  afterAll(() => {
-    if (gitTestRoot) {
-      rmSync(gitTestRoot, { recursive: true, force: true });
-      gitTestRoot = "";
-      gitRepoDir = "";
-    }
   });
 
   function buildApp() {

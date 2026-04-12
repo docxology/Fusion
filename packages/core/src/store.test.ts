@@ -47,7 +47,7 @@ describe("TaskStore", () => {
   });
 
   afterEach(async () => {
-    store.stopWatching();
+    store.close();
     await rm(rootDir, { recursive: true, force: true });
     await rm(globalDir, { recursive: true, force: true });
   });
@@ -1460,7 +1460,7 @@ describe("TaskStore", () => {
       expect(task.id).toBe("FN-001");
       expect(await freshStore.getTask(task.id)).toBeDefined();
 
-      freshStore.stopWatching();
+      freshStore.close();
       await rm(freshRoot, { recursive: true, force: true });
       await rm(freshGlobal, { recursive: true, force: true });
     });
@@ -4938,6 +4938,7 @@ Task with acceptance criteria
       expect(entries).toHaveLength(1);
       expect(entries[0].id).toBe(task.id);
       expect(entries[0].description).toBe("Survival test");
+      newStore.close();
     });
   });
 
@@ -5030,6 +5031,7 @@ Task with acceptance criteria
       const logs = await newStore.getActivityLog();
       expect(logs).toHaveLength(1);
       expect(logs[0].taskId).toBe("FN-001");
+      newStore.close();
     });
   });
 
@@ -6157,14 +6159,14 @@ Task with acceptance criteria
       });
 
       // Re-create store to simulate restart
-      store.stopWatching();
+      store.close();
       const store2 = new TaskStore(rootDir, globalDir);
       await store2.init();
 
       const reloaded = await store2.getTask(task.id);
       expect(reloaded.recoveryRetryCount).toBe(5);
       expect(reloaded.nextRecoveryAt).toBe(futureTime);
-      store2.stopWatching();
+      store2.close();
     });
 
     it("schema migration: existing rows default to NULL (undefined) for recovery fields", async () => {
@@ -6385,7 +6387,7 @@ Task with acceptance criteria
         if (existsSync(memoryPath)) {
           await unlink(memoryPath);
         }
-        localStore.stopWatching();
+        localStore.close();
 
         // Re-init with memory disabled
         const store2 = new TaskStore(localRoot, localGlobal);
@@ -6393,7 +6395,7 @@ Task with acceptance criteria
         await store2.init();
         await store2.updateSettings({ memoryEnabled: false } as any);
         // After setting false, verify we can init without creating
-        store2.stopWatching();
+        store2.close();
 
         // Create a third store with memory disabled in config
         const store3 = new TaskStore(localRoot, localGlobal);
@@ -6404,7 +6406,7 @@ Task with acceptance criteria
         // But init creates it by default, then we disabled it
         // The key behavior is that when memoryEnabled is explicitly false,
         // init() should not create the file
-        store3.stopWatching();
+        store3.close();
       } finally {
         await rm(localRoot, { recursive: true, force: true });
         await rm(localGlobal, { recursive: true, force: true });
@@ -6435,7 +6437,7 @@ Task with acceptance criteria
         const content = await readFile(memoryPath, "utf-8");
         expect(content).toContain("# Project Memory");
 
-        localStore.stopWatching();
+        localStore.close();
       } finally {
         await rm(localRoot, { recursive: true, force: true });
         await rm(localGlobal, { recursive: true, force: true });
@@ -6462,7 +6464,7 @@ Task with acceptance criteria
         const content = await readFile(memoryPath, "utf-8");
         expect(content).toBe(customContent);
 
-        localStore.stopWatching();
+        localStore.close();
       } finally {
         await rm(localRoot, { recursive: true, force: true });
         await rm(localGlobal, { recursive: true, force: true });
@@ -6664,7 +6666,7 @@ describe("RunMutationContext", () => {
       expect(lastEntry.action).toBe("Test action");
       expect(lastEntry.outcome).toBe("Test outcome");
 
-      localStore.stopWatching();
+      localStore.close();
     } finally {
       await rm(localRoot, { recursive: true, force: true });
       await rm(localGlobal, { recursive: true, force: true });
@@ -6689,7 +6691,7 @@ describe("RunMutationContext", () => {
       expect(lastEntry.runContext).toBeUndefined();
       expect(lastEntry.action).toBe("Test action");
 
-      localStore.stopWatching();
+      localStore.close();
     } finally {
       await rm(localRoot, { recursive: true, force: true });
       await rm(localGlobal, { recursive: true, force: true });
@@ -6717,7 +6719,7 @@ describe("RunMutationContext", () => {
       const lastEntry = updatedTask.log[updatedTask.log.length - 1];
       expect(lastEntry.runContext).toEqual(runContext);
 
-      localStore.stopWatching();
+      localStore.close();
     } finally {
       await rm(localRoot, { recursive: true, force: true });
       await rm(localGlobal, { recursive: true, force: true });
@@ -6745,7 +6747,7 @@ describe("RunMutationContext", () => {
       const lastEntry = updatedTask.log[updatedTask.log.length - 1];
       expect(lastEntry.runContext).toEqual(runContext);
 
-      localStore.stopWatching();
+      localStore.close();
     } finally {
       await rm(localRoot, { recursive: true, force: true });
       await rm(localGlobal, { recursive: true, force: true });
@@ -6776,7 +6778,7 @@ describe("RunMutationContext", () => {
       // Verify sorted by timestamp
       expect(new Date(mutations[0].timestamp).getTime()).toBeLessThan(new Date(mutations[1].timestamp).getTime());
 
-      localStore.stopWatching();
+      localStore.close();
     } finally {
       await rm(localRoot, { recursive: true, force: true });
       await rm(localGlobal, { recursive: true, force: true });
@@ -6797,7 +6799,7 @@ describe("RunMutationContext", () => {
 
       expect(mutations).toEqual([]);
 
-      localStore.stopWatching();
+      localStore.close();
     } finally {
       await rm(localRoot, { recursive: true, force: true });
       await rm(localGlobal, { recursive: true, force: true });
@@ -6824,7 +6826,7 @@ describe("RunMutationContext", () => {
       expect(mutations).toHaveLength(2);
       expect(mutations.map(m => m.action).sort()).toEqual(["Entry 1", "Entry 2"]);
 
-      localStore.stopWatching();
+      localStore.close();
     } finally {
       await rm(localRoot, { recursive: true, force: true });
       await rm(localGlobal, { recursive: true, force: true });
