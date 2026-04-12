@@ -13,7 +13,8 @@
  *    by cleaning oldest idle worktrees when count exceeds 2× maxWorktrees.
  */
 
-import { execSync } from "node:child_process";
+import { exec, execSync } from "node:child_process";
+import { promisify } from "node:util";
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { getTaskMergeBlocker, type TaskStore, type Settings, type Task } from "@fusion/core";
@@ -21,6 +22,7 @@ import { createLogger } from "./logger.js";
 import { scanIdleWorktrees, scanOrphanedBranches } from "./worktree-pool.js";
 
 const log = createLogger("self-healing");
+const execAsync = promisify(exec);
 
 export interface SelfHealingOptions {
   /** Project root directory (parent of .worktrees/) */
@@ -708,7 +710,7 @@ export class SelfHealingManager {
       let recovered = 0;
       for (const task of candidates) {
         try {
-          if (this.hasRecoverableGitWork(task)) {
+          if (await this.hasRecoverableGitWork(task)) {
             log.log(`${task.id} has recoverable git work — leaving in-progress for inspection`);
             continue;
           }
@@ -739,16 +741,14 @@ export class SelfHealingManager {
     }
   }
 
-  private hasRecoverableGitWork(task: Task): boolean {
+  private async hasRecoverableGitWork(task: Task): Promise<boolean> {
     if (task.worktree && existsSync(task.worktree)) {
       try {
-        const status = execSync("git status --porcelain", {
+        const { stdout: status } = await execAsync("git status --porcelain", {
           cwd: task.worktree,
-          stdio: "pipe",
-          encoding: "utf-8",
           timeout: 30_000,
-        }).trim();
-        if (status.length > 0) return true;
+        });
+        if (status.trim().length > 0) return true;
       } catch {
         // If we cannot inspect an existing worktree, preserve it.
         return true;
@@ -757,9 +757,8 @@ export class SelfHealingManager {
 
     const branchName = task.branch || `fusion/${task.id.toLowerCase()}`;
     try {
-      execSync(`git rev-parse --verify "${branchName}"`, {
+      await execAsync(`git rev-parse --verify "${branchName}"`, {
         cwd: this.options.rootDir,
-        stdio: "pipe",
         timeout: 30_000,
       });
     } catch {
@@ -767,13 +766,11 @@ export class SelfHealingManager {
     }
 
     try {
-      const uniqueCommits = execSync(`git rev-list --count HEAD.."${branchName}"`, {
-        cwd: this.options.rootDir,
-        stdio: "pipe",
-        encoding: "utf-8",
-        timeout: 30_000,
-      }).trim();
-      return Number.parseInt(uniqueCommits, 10) > 0;
+      const { stdout: uniqueCommits } = await execAsync(
+        `git rev-list --count HEAD.."${branchName}"`,
+        { cwd: this.options.rootDir, timeout: 30_000 },
+      );
+      return Number.parseInt(uniqueCommits.trim(), 10) > 0;
     } catch {
       // If the branch exists but cannot be compared, preserve it.
       return true;

@@ -1,8 +1,39 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-vi.mock("node:child_process", () => ({
-  execSync: vi.fn(),
-}));
+// Mock node modules
+// Route async `exec` through the `execSync` mock so existing tests that set up
+// mockedExecSync.mockImplementation for verification keep working unchanged.
+vi.mock("node:child_process", async () => {
+  const { promisify: utilPromisify } = await import("node:util");
+  const execSyncFn = vi.fn();
+  const execFn: any = vi.fn((cmd: any, opts: any, cb: any) => {
+    const callback = typeof opts === "function" ? opts : cb;
+    const options = typeof opts === "object" && opts !== null ? opts : {};
+    try {
+      const out = execSyncFn(cmd, { ...options, stdio: ["pipe", "pipe", "pipe"] });
+      const stdout = out === undefined ? "" : out.toString();
+      if (typeof callback === "function") callback(null, stdout, "");
+    } catch (err: any) {
+      if (typeof callback === "function") {
+        callback(err, err?.stdout?.toString?.() ?? "", err?.stderr?.toString?.() ?? "");
+      }
+    }
+  });
+  // Mirror real child_process.exec: promisify resolves to { stdout, stderr }.
+  execFn[utilPromisify.custom] = (cmd: any, opts?: any) =>
+    new Promise((resolve, reject) => {
+      execFn(cmd, opts, (err: any, stdout: any, stderr: any) => {
+        if (err) {
+          err.stdout = stdout;
+          err.stderr = stderr;
+          reject(err);
+        } else {
+          resolve({ stdout, stderr });
+        }
+      });
+    });
+  return { execSync: execSyncFn, exec: execFn };
+});
 
 vi.mock("node:fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs")>();
@@ -429,7 +460,7 @@ describe("SelfHealingManager", () => {
       managerWithRecovery.stop();
     });
 
-    it("treats dirty worktrees as recoverable git work", () => {
+    it("treats dirty worktrees as recoverable git work", async () => {
       const task = {
         id: "FN-1473",
         worktree: "/tmp/test-project/.worktrees/fn-1473",
@@ -443,7 +474,7 @@ describe("SelfHealingManager", () => {
         return "" as any;
       });
 
-      expect((manager as any).hasRecoverableGitWork(task)).toBe(true);
+      expect(await (manager as any).hasRecoverableGitWork(task)).toBe(true);
       mockedExecSync.mockClear();
     });
   });
