@@ -93,6 +93,8 @@ interface TaskCardProps {
   onOpenMission?: (missionId: string) => void;
   /** Called when user moves a task to a different column from the card. */
   onMoveTask?: (id: string, column: Column) => Promise<Task>;
+  /** Timestamp (ms) when task data was last confirmed fresh from the server. Used for freshness-aware stuck detection. */
+  lastFetchTimeMs?: number;
 }
 
 function areTaskBadgeInfosEqual(
@@ -229,6 +231,7 @@ function TaskCardComponent({
   taskStuckTimeoutMs,
   onOpenMission,
   onMoveTask,
+  lastFetchTimeMs,
 }: TaskCardProps) {
   const [dragging, setDragging] = useState(false);
   const [fileDragOver, setFileDragOver] = useState(false);
@@ -467,7 +470,7 @@ function TaskCardComponent({
 
   const isFailed = task.status === "failed";
   const isPaused = task.paused === true;
-  const isStuck = isTaskStuck(task, taskStuckTimeoutMs);
+  const isStuck = isTaskStuck(task, taskStuckTimeoutMs, lastFetchTimeMs);
   const isAwaitingApproval = task.column === "triage" && task.status === "awaiting-approval";
   const isArchived = task.column === "archived";
   const isAgentActive = !globalPaused && !queued && !isFailed && !isPaused && !isStuck && !isAwaitingApproval && (task.column === "in-progress" || ACTIVE_STATUSES.has(task.status as string));
@@ -924,6 +927,9 @@ function TaskCardComponent({
       })()}
       {task.worktree && (task.column === "in-progress" || task.column === "in-review") && (() => {
         const activeCount = diffStats?.filesChanged;
+        if (activeCount == null || activeCount === 0) {
+          return null;
+        }
         return (
           <button
             type="button"
@@ -932,11 +938,7 @@ function TaskCardComponent({
             disabled={!onOpenDetailWithTab}
           >
             <Folder size={12} />
-            <span>
-              {activeCount != null && activeCount > 0
-                ? `${activeCount} ${activeCount === 1 ? "file" : "files"} changed`
-                : "View files"}
-            </span>
+            <span>{activeCount} {activeCount === 1 ? "file" : "files"} changed</span>
           </button>
         );
       })()}

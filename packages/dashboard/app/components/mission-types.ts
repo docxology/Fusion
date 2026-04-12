@@ -12,6 +12,18 @@ export type SliceStatus = "pending" | "active" | "complete";
 export type SlicePlanState = "not_started" | "planned" | "needs_update";
 export type FeatureStatus = "defined" | "triaged" | "in-progress" | "done";
 
+/** Loop state values for a feature's execution loop lifecycle */
+export type FeatureLoopState = "idle" | "implementing" | "validating" | "needs_fix" | "passed" | "blocked";
+
+/** Status values for a contract assertion */
+export type MissionAssertionStatus = "pending" | "passed" | "failed" | "blocked";
+
+/** Status values for a validator run */
+export type ValidatorRunStatus = "running" | "passed" | "failed" | "blocked" | "error";
+
+/** Validation states for a milestone's contract coverage */
+export type MilestoneValidationState = "not_started" | "needs_coverage" | "ready" | "passed" | "failed" | "blocked";
+
 /** Autopilot state values for mission autonomous progression */
 export type AutopilotState = "inactive" | "watching" | "activating" | "completing";
 
@@ -48,6 +60,96 @@ export interface MissionFeature {
   status: FeatureStatus;
   createdAt: string;
   updatedAt: string;
+  /** Current loop state for the execution loop (idle, implementing, validating, needs_fix, passed, blocked) */
+  loopState?: FeatureLoopState;
+  /** Number of implementation attempts made for this feature */
+  implementationAttemptCount?: number;
+  /** Number of validation attempts made for this feature */
+  validatorAttemptCount?: number;
+  /** ID of the last validator run for this feature */
+  lastValidatorRunId?: string;
+  /** Status of the last validator run */
+  lastValidatorStatus?: ValidatorRunStatus;
+  /** Feature ID that generated this feature (if it was a fix feature) */
+  generatedFromFeatureId?: string;
+  /** Validator run ID that generated this feature (if applicable) */
+  generatedFromRunId?: string;
+}
+
+/** A contract assertion represents an explicit behavioral test or requirement associated with a milestone */
+export interface MissionContractAssertion {
+  id: string;
+  milestoneId: string;
+  title: string;
+  assertion: string;
+  status: MissionAssertionStatus;
+  orderIndex: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Input for creating a contract assertion */
+export interface ContractAssertionCreateInput {
+  title: string;
+  assertion: string;
+  status?: MissionAssertionStatus;
+}
+
+/** Input for updating a contract assertion */
+export interface ContractAssertionUpdateInput {
+  title?: string;
+  assertion?: string;
+  status?: MissionAssertionStatus;
+}
+
+/** A feature-assertion link represents the association between a feature and an assertion */
+export interface FeatureAssertionLink {
+  featureId: string;
+  assertionId: string;
+  createdAt: string;
+}
+
+/** Validation rollup for a milestone */
+export interface MilestoneValidationRollup {
+  milestoneId: string;
+  totalAssertions: number;
+  passedCount: number;
+  failedCount: number;
+  blockedCount: number;
+  pendingCount: number;
+  state: MilestoneValidationState;
+}
+
+/** Validator run */
+export interface MissionValidatorRun {
+  id: string;
+  featureId: string;
+  milestoneId: string;
+  sliceId: string;
+  status: ValidatorRunStatus;
+  triggerType: string;
+  implementationAttempt: number;
+  validatorAttempt: number;
+  summary?: string;
+  blockedReason?: string;
+  startedAt: string;
+  completedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Loop state snapshot for a feature */
+export interface MissionFeatureLoopSnapshot {
+  featureId: string;
+  feature: MissionFeature;
+  loopState: FeatureLoopState;
+  implementationAttemptCount: number;
+  validatorAttemptCount: number;
+  lastValidatorRunId?: string;
+  lastValidatorStatus?: ValidatorRunStatus;
+  generatedFromFeatureId?: string;
+  generatedFromRunId?: string;
+  retryBudgetRemaining: number;
 }
 
 export interface Slice {

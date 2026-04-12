@@ -287,10 +287,9 @@ function ProviderCard({ provider, viewMode }: ProviderCardProps) {
         </div>
       )}
 
-      {(provider.plan || provider.email) && (
+      {provider.plan && (
         <div className="usage-provider-meta">
-          {provider.plan && <span className="usage-provider-plan">{provider.plan}</span>}
-          {provider.email && <span className="usage-provider-email">{provider.email}</span>}
+          <span className="usage-provider-plan">{provider.plan}</span>
         </div>
       )}
 

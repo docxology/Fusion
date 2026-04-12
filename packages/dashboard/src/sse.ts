@@ -218,6 +218,21 @@ export function createSSE(
     const onFeatureLinked = (data: any) => {
       send(`event: feature:linked\ndata: ${JSON.stringify(data)}\n\n`);
     };
+    const onAssertionCreated = (data: any) => {
+      send(`event: assertion:created\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+    const onAssertionUpdated = (data: any) => {
+      send(`event: assertion:updated\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+    const onAssertionDeleted = (data: any) => {
+      send(`event: assertion:deleted\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+    const onAssertionLinked = (data: any) => {
+      send(`event: assertion:linked\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+    const onAssertionUnlinked = (data: any) => {
+      send(`event: assertion:unlinked\ndata: ${JSON.stringify(data)}\n\n`);
+    };
     const onMissionEvent = (data: any) => {
       send(`event: mission:event\ndata: ${JSON.stringify(data)}\n\n`);
     };
@@ -296,6 +311,11 @@ export function createSSE(
         missionStore.off("feature:updated", onFeatureUpdated);
         missionStore.off("feature:deleted", onFeatureDeleted);
         missionStore.off("feature:linked", onFeatureLinked);
+        missionStore.off("assertion:created", onAssertionCreated);
+        missionStore.off("assertion:updated", onAssertionUpdated);
+        missionStore.off("assertion:deleted", onAssertionDeleted);
+        missionStore.off("assertion:linked", onAssertionLinked);
+        missionStore.off("assertion:unlinked", onAssertionUnlinked);
         missionStore.off("mission:event", onMissionEvent);
         missionStore.off("milestone:validation:updated", onMilestoneValidationUpdated);
       }
@@ -336,6 +356,11 @@ export function createSSE(
       missionStore.on("feature:updated", onFeatureUpdated);
       missionStore.on("feature:deleted", onFeatureDeleted);
       missionStore.on("feature:linked", onFeatureLinked);
+      missionStore.on("assertion:created", onAssertionCreated);
+      missionStore.on("assertion:updated", onAssertionUpdated);
+      missionStore.on("assertion:deleted", onAssertionDeleted);
+      missionStore.on("assertion:linked", onAssertionLinked);
+      missionStore.on("assertion:unlinked", onAssertionUnlinked);
       missionStore.on("mission:event", onMissionEvent);
       missionStore.on("milestone:validation:updated", onMilestoneValidationUpdated);
     }

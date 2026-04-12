@@ -2912,14 +2912,28 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         const baseRef = await resolveDiffBase(task, task.worktree);
 
         if (baseRef) {
+          // Committed changes since baseRef
           const committedOutput = (await runGitCommand(["diff", "--name-only", `${baseRef}..HEAD`], task.worktree, 5000)).trim();
           for (const file of committedOutput.split("\n").filter(Boolean)) {
             fileSet.add(file);
           }
         }
 
+        // Staged changes (in git index)
+        const stagedOutput = (await runGitCommand(["diff", "--cached", "--name-only"], task.worktree, 5000)).trim();
+        for (const file of stagedOutput.split("\n").filter(Boolean)) {
+          fileSet.add(file);
+        }
+
+        // Unstaged working tree changes
         const workingTreeOutput = (await runGitCommand(["diff", "--name-only"], task.worktree, 5000)).trim();
         for (const file of workingTreeOutput.split("\n").filter(Boolean)) {
+          fileSet.add(file);
+        }
+
+        // Untracked files (new files not yet staged)
+        const untrackedOutput = (await runGitCommand(["ls-files", "--others", "--exclude-standard"], task.worktree, 5000)).trim();
+        for (const file of untrackedOutput.split("\n").filter(Boolean)) {
           fileSet.add(file);
         }
 
@@ -13082,7 +13096,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
       const diffBase = await resolveDiffBase(task, cwd);
       const diffRange = diffBase ? `${diffBase}..HEAD` : "HEAD";
 
-      // Get list of changed files — include both committed and working-tree changes
+      // Get list of changed files — include committed, staged, unstaged, and untracked
       const fileMap = new Map<string, string>();
 
       if (diffBase) {
@@ -13097,14 +13111,44 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         }
       }
 
+      // Staged changes (in git index)
+      try {
+        const stagedOutput = (await runGitCommand(["diff", "--cached", "--name-status"], cwd, 10000)).trim();
+        for (const line of stagedOutput.split("\n").filter(Boolean)) {
+          const parts = line.split("\t");
+          // Use staged status (don't overwrite committed status)
+          const filePath = parts[1] ?? "";
+          if (filePath && !fileMap.has(filePath)) {
+            fileMap.set(filePath, parts[0] ?? "M");
+          }
+        }
+      } catch {
+        // staged diff failed
+      }
+
       try {
         const workingTreeOutput = (await runGitCommand(["diff", "--name-status"], cwd, 10000)).trim();
         for (const line of workingTreeOutput.split("\n").filter(Boolean)) {
           const parts = line.split("\t");
-          fileMap.set(parts[1] ?? "", parts[0] ?? "M");
+          const filePath = parts[1] ?? "";
+          // Unstaged changes only affect files not already in map (to avoid overwrite)
+          if (filePath && !fileMap.has(filePath)) {
+            fileMap.set(filePath, parts[0] ?? "M");
+          }
         }
       } catch {
         // working tree diff failed
+      }
+
+      // Untracked files (new files not yet staged)
+      try {
+        const untrackedOutput = (await runGitCommand(["ls-files", "--others", "--exclude-standard"], cwd, 10000)).trim();
+        for (const line of untrackedOutput.split("\n").filter(Boolean)) {
+          // Mark as untracked with special status "U" - will be converted to "added"
+          fileMap.set(line, "U");
+        }
+      } catch {
+        // untracked listing failed
       }
 
       const files: Array<{
@@ -13119,14 +13163,19 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         if (!filePath) continue;
 
         let status: "added" | "modified" | "deleted";
-        if (statusCode.startsWith("A")) status = "added";
+        if (statusCode.startsWith("A") || statusCode === "U") status = "added";
         else if (statusCode.startsWith("D")) status = "deleted";
         else status = "modified";
 
         // Get patch for this file
         let patch = "";
         try {
-          patch = await runGitCommand(["diff", diffRange, "--", filePath], cwd, 10000);
+          // For untracked files, generate synthetic diff against /dev/null
+          if (statusCode === "U") {
+            patch = await runGitCommand(["diff", "--no-index", "/dev/null", filePath], cwd, 10000).catch(() => "");
+          } else {
+            patch = await runGitCommand(["diff", diffRange, "--", filePath], cwd, 10000);
+          }
         } catch {
           // Ignore errors for individual files
         }
@@ -13231,9 +13280,9 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
       // baseCommitSha when it is still valid for the current HEAD.
       const diffBase = await resolveDiffBase(task, cwd);
 
-      // Collect file statuses from both committed changes (against diffBase)
-      // and working-tree changes, deduplicating by path to match session-files.
-      const fileMap = new Map<string, { statusCode: string; oldPath?: string }>();
+      // Collect file statuses from committed, staged, unstaged, and untracked changes.
+      // Deduplicate by path to match session-files.
+      const fileMap = new Map<string, { statusCode: string; oldPath?: string; isUntracked?: boolean }>();
 
       if (diffBase) {
         try {
@@ -13252,19 +13301,57 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         }
       }
 
+      // Staged changes (in git index)
+      try {
+        const stagedOutput = (await runGitCommand(["diff", "--cached", "--name-status"], cwd, 5000)).trim();
+        for (const line of stagedOutput.split("\n").filter(Boolean)) {
+          const parts = line.split("\t");
+          const statusCode = parts[0] ?? "M";
+          const filePath = parts[1] ?? "";
+          // Only add if not already in map (committed takes precedence)
+          if (filePath && !fileMap.has(filePath)) {
+            if (statusCode.startsWith("R")) {
+              fileMap.set(filePath, { statusCode, oldPath: parts[2] });
+            } else {
+              fileMap.set(filePath, { statusCode });
+            }
+          }
+        }
+      } catch {
+        // staged diff failed
+      }
+
+      // Unstaged working tree changes
       try {
         const workingTreeOutput = (await runGitCommand(["diff", "--name-status"], cwd, 5000)).trim();
         for (const line of workingTreeOutput.split("\n").filter(Boolean)) {
           const parts = line.split("\t");
           const statusCode = parts[0] ?? "M";
-          if (statusCode.startsWith("R")) {
-            fileMap.set(parts[2] ?? parts[1] ?? "", { statusCode, oldPath: parts[1] });
-          } else {
-            fileMap.set(parts[1] ?? "", { statusCode });
+          const filePath = parts[1] ?? "";
+          // Only add if not already in map (committed/staged takes precedence)
+          if (filePath && !fileMap.has(filePath)) {
+            if (statusCode.startsWith("R")) {
+              fileMap.set(filePath, { statusCode, oldPath: parts[2] });
+            } else {
+              fileMap.set(filePath, { statusCode });
+            }
           }
         }
       } catch {
-        // working tree diff failed — continue with committed only
+        // working tree diff failed
+      }
+
+      // Untracked files (new files not yet staged)
+      try {
+        const untrackedOutput = (await runGitCommand(["ls-files", "--others", "--exclude-standard"], cwd, 5000)).trim();
+        for (const line of untrackedOutput.split("\n").filter(Boolean)) {
+          // Only add if not already tracked (committed/staged/unstaged)
+          if (line && !fileMap.has(line)) {
+            fileMap.set(line, { statusCode: "U", isUntracked: true });
+          }
+        }
+      } catch {
+        // untracked listing failed
       }
 
       // Build the result array with per-file diffs using the two-dot range
@@ -13272,10 +13359,10 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
       const diffRange = diffBase ? `${diffBase}..HEAD` : "HEAD";
 
       const files = [];
-      for (const [filePath, { statusCode, oldPath }] of fileMap.entries()) {
+      for (const [filePath, { statusCode, oldPath, isUntracked }] of fileMap.entries()) {
         let status: "added" | "modified" | "deleted" | "renamed" = "modified";
 
-        if (statusCode.startsWith("A")) {
+        if (statusCode.startsWith("A") || statusCode === "U") {
           status = "added";
         } else if (statusCode.startsWith("D")) {
           status = "deleted";
@@ -13285,12 +13372,19 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
 
         let diff = "";
         try {
-          diff = await runGitCommand(["diff", diffRange, "--", filePath], cwd, 5000);
+          // For untracked files, generate synthetic diff against /dev/null
+          if (isUntracked) {
+            diff = await runGitCommand(["diff", "--no-index", "/dev/null", filePath], cwd, 5000).catch(() => "");
+          } else {
+            diff = await runGitCommand(["diff", diffRange, "--", filePath], cwd, 5000);
+          }
         } catch {
           diff = "";
         }
 
-        if (!diff) {
+        // Skip files with empty diffs (mode-only changes, binary files)
+        // BUT keep untracked files which have synthetic diffs
+        if (!diff && !isUntracked) {
           continue;
         }
 

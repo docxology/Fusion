@@ -212,6 +212,36 @@
   --autopilot-completing-bg: color-mix(in srgb, #a855f7 15%, transparent);
   --autopilot-completing-text: #a855f7;
 
+  /* === Loop State Colors === */
+  --loop-idle-bg: var(--bg-tertiary);
+  --loop-idle-text: var(--text-secondary);
+  --loop-idle-indicator: var(--text-dim);
+  --loop-implementing-bg: color-mix(in srgb, var(--in-review) 15%, transparent);
+  --loop-implementing-text: var(--in-review);
+  --loop-implementing-indicator: var(--in-review);
+  --loop-validating-bg: color-mix(in srgb, var(--color-warning) 15%, transparent);
+  --loop-validating-text: var(--color-warning);
+  --loop-validating-indicator: var(--color-warning);
+  --loop-needs-fix-bg: color-mix(in srgb, #f97316 15%, transparent);
+  --loop-needs-fix-text: #f97316;
+  --loop-needs-fix-indicator: #f97316;
+  --loop-passed-bg: color-mix(in srgb, var(--color-success) 15%, transparent);
+  --loop-passed-text: var(--color-success);
+  --loop-passed-indicator: var(--color-success);
+  --loop-blocked-bg: color-mix(in srgb, var(--color-error) 15%, transparent);
+  --loop-blocked-text: var(--color-error);
+  --loop-blocked-indicator: var(--color-error);
+
+  /* === Assertion Status Colors === */
+  --assertion-pending-bg: color-mix(in srgb, var(--triage) 15%, transparent);
+  --assertion-pending-text: var(--triage);
+  --assertion-passed-bg: color-mix(in srgb, var(--color-success) 15%, transparent);
+  --assertion-passed-text: var(--color-success);
+  --assertion-failed-bg: color-mix(in srgb, var(--color-error) 15%, transparent);
+  --assertion-failed-text: var(--color-error);
+  --assertion-blocked-bg: color-mix(in srgb, var(--color-warning) 15%, transparent);
+  --assertion-blocked-text: var(--color-warning);
+
   /* === Interview Modal Icon Colors === */
   --icon-milestone: var(--triage);
   --icon-slice: var(--in-review);
@@ -13990,6 +14020,7 @@ html .column.drag-over * {
   position: relative;
   flex: 1;
   min-width: 0;
+  width: 100%;
 }
 
 /* Quick Entry Box expand button - bottom-right of textarea */
@@ -20516,6 +20547,23 @@ html .column.drag-over * {
   white-space: nowrap;
 }
 
+/* Validation coverage bar in milestone header */
+.mission-milestone__coverage-bar {
+  flex: 1;
+  height: 4px;
+  background: var(--bg-tertiary);
+  border-radius: 2px;
+  overflow: hidden;
+  min-width: 40px;
+  max-width: 100px;
+}
+
+.mission-milestone__coverage-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width var(--transition-normal);
+}
+
 .mission-milestone__actions {
   display: flex;
   align-items: center;
@@ -20683,6 +20731,244 @@ html .column.drag-over * {
   margin-top: var(--space-sm);
 }
 
+/* ── Loop State Indicator ── */
+.mission-loop-state {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.mission-loop-state--implementing {
+  animation: loop-pulse 1.5s ease-in-out infinite;
+}
+
+.mission-loop-state--validating {
+  animation: loop-spin 1s linear infinite;
+}
+
+.mission-loop-state--needs_fix {
+  color: var(--color-warning);
+}
+
+.mission-loop-state--passed {
+  color: var(--color-success);
+}
+
+.mission-loop-state--blocked {
+  color: var(--color-error);
+}
+
+@keyframes loop-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@keyframes loop-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* ── Assertions Panel ── */
+.mission-assertions {
+  margin-top: var(--space-md);
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--border);
+}
+
+.mission-assertions__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-sm);
+}
+
+.mission-assertions__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.mission-assertions__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.mission-assertions__empty {
+  padding: var(--space-md);
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+/* ── Single Assertion ── */
+.mission-assertion {
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-sm);
+}
+
+.mission-assertion__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+.mission-assertion__title {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.mission-assertion__body {
+  margin-top: var(--space-sm);
+  padding-top: var(--space-sm);
+  border-top: 1px solid var(--border);
+}
+
+.mission-assertion__text {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  line-height: 1.5;
+  margin-bottom: var(--space-sm);
+}
+
+.mission-assertion__linked-count {
+  font-size: 11px;
+  color: var(--text-dim);
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 1px 6px;
+  flex-shrink: 0;
+}
+
+.mission-assertion__linked-features {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.mission-assertion__linked-features-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+}
+
+.mission-assertion__linked-features-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.mission-assertion__feature-picker {
+  position: relative;
+}
+
+.mission-assertion__feature-picker-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  max-height: 200px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-xs);
+}
+
+.mission-assertion__feature-picker-empty {
+  font-size: 12px;
+  color: var(--text-dim);
+  padding: var(--space-xs);
+  text-align: center;
+}
+
+.mission-assertion__feature-picker-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  padding: var(--space-xs) var(--space-sm);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 0.1s;
+}
+
+.mission-assertion__feature-picker-item:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+.mission-assertion__feature-picker-item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.mission-assertion__feature-picker-title {
+  font-size: 12px;
+  color: var(--text);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mission-assertion__linked-empty {
+  font-size: 12px;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+.mission-assertion__linked-feature {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-xs) 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.mission-assertion__linked-feature:last-child {
+  border-bottom: none;
+}
+
+.mission-assertion__linked-feature-title {
+  flex: 1;
+  font-size: 12px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Validate Button ── */
+.mission-icon-btn--validate {
+  color: var(--color-warning);
+}
+
 /* ── Features (nested inside slices) ── */
 .mission-features {
   display: flex;
@@ -20761,6 +21047,218 @@ html .column.drag-over * {
 
 .mission-feature__task-link:hover {
   background: rgba(88, 166, 255, 0.2);
+}
+
+.mission-feature__lineage {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  color: #f97316;
+  background: rgba(249, 115, 22, 0.1);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+}
+
+.mission-feature__retry-budget {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.mission-feature__expand {
+  background: none;
+  border: none;
+  padding: 2px;
+  cursor: pointer;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.mission-feature__expand:hover {
+  color: var(--text);
+}
+
+/* Run History */
+.mission-feature__run-history {
+  margin-top: var(--space-sm);
+  padding: var(--space-sm);
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+
+.mission-feature__run-history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-sm);
+}
+
+.mission-feature__run-history-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.mission-run {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin-bottom: var(--space-xs);
+  overflow: hidden;
+}
+
+.mission-run:last-child {
+  margin-bottom: 0;
+}
+
+.mission-run__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-xs) var(--space-sm);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.mission-run__header:hover {
+  background: var(--card-hover);
+}
+
+.mission-run__status {
+  flex-shrink: 0;
+}
+
+.mission-run__status--passed {
+  background: var(--loop-passed-bg) !important;
+  color: var(--loop-passed-text) !important;
+}
+
+.mission-run__status--failed {
+  background: var(--loop-needs-fix-bg) !important;
+  color: var(--loop-needs-fix-text) !important;
+}
+
+.mission-run__status--blocked {
+  background: var(--loop-blocked-bg) !important;
+  color: var(--loop-blocked-text) !important;
+}
+
+.mission-run__status--running {
+  background: var(--loop-validating-bg) !important;
+  color: var(--loop-validating-text) !important;
+}
+
+.mission-run__status--error {
+  background: var(--color-error) !important;
+  color: white !important;
+}
+
+.mission-run__time {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.mission-run__duration {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.mission-run__trigger {
+  color: var(--text-dim);
+  font-size: 10px;
+  background: var(--bg-tertiary);
+  padding: 1px 4px;
+  border-radius: var(--radius-sm);
+}
+
+.mission-run__details {
+  padding: var(--space-sm);
+  border-top: 1px solid var(--border);
+  background: var(--bg-tertiary);
+}
+
+.mission-run__summary {
+  font-size: 12px;
+  color: var(--text);
+  margin: 0 0 var(--space-xs);
+}
+
+.mission-run__blocked-reason {
+  font-size: 12px;
+  color: var(--color-warning);
+  margin: 0 0 var(--space-xs);
+}
+
+.mission-run__failures {
+  margin-top: var(--space-sm);
+}
+
+.mission-run__failures-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  display: block;
+  margin-bottom: var(--space-xs);
+}
+
+.mission-run__failure {
+  background: rgba(248, 81, 73, 0.1);
+  border: 1px solid rgba(248, 81, 73, 0.2);
+  border-radius: var(--radius-sm);
+  padding: var(--space-xs) var(--space-sm);
+  margin-bottom: var(--space-xs);
+  font-size: 11px;
+}
+
+.mission-run__failure-message {
+  color: var(--color-error);
+  display: block;
+}
+
+.mission-run__failure-expected,
+.mission-run__failure-actual {
+  color: var(--text-muted);
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  margin-top: 2px;
+}
+
+.mission-run__no-failures {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-style: italic;
+  margin: 0;
+}
+
+.mission-run-history__empty {
+  font-size: 12px;
+  color: var(--text-dim);
+  text-align: center;
+  padding: var(--space-sm);
+}
+
+/* Assertion coverage bar */
+.mission-assertions__coverage-bar {
+  flex: 1;
+  height: 4px;
+  background: var(--bg-tertiary);
+  border-radius: 2px;
+  overflow: hidden;
+  min-width: 40px;
+  max-width: 100px;
+}
+
+.mission-assertions__coverage-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width var(--transition-normal);
 }
 
 /* ================================================================
@@ -20988,6 +21486,44 @@ html .column.drag-over * {
   /* Confirm panel inputs fill width */
   .mission-confirm-panel__content input[type="text"] {
     width: 100%;
+  }
+
+  /* Run history responsive at 375px */
+  .mission-feature__run-history {
+    padding: var(--space-xs);
+  }
+
+  .mission-feature__run-history-header {
+    margin-bottom: var(--space-xs);
+  }
+
+  .mission-run {
+    margin-bottom: var(--space-xs);
+  }
+
+  .mission-run__header {
+    flex-wrap: wrap;
+    gap: var(--space-xs);
+  }
+
+  .mission-run__details {
+    padding: var(--space-xs);
+  }
+
+  .mission-run__failure {
+    padding: var(--space-xs);
+  }
+
+  /* Assertions coverage bar responsive */
+  .mission-assertions__coverage-bar {
+    min-width: 30px;
+    max-width: 60px;
+  }
+
+  /* Feature lineage and retry budget wrap on narrow screens */
+  .mission-feature__lineage,
+  .mission-feature__retry-budget {
+    font-size: 10px;
   }
 }
 

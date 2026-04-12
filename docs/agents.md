@@ -279,6 +279,29 @@ Fusion's `HeartbeatTriggerScheduler` supports three trigger types:
 
 All triggers respect per-agent `maxConcurrentRuns` and produce structured wake context metadata.
 
+### Control-Plane Lane (No Task Concurrency Gating)
+
+Heartbeat runs from the Agents panel run on a **separate control-plane lane** that is independent of task execution concurrency limits. This ensures agent responsiveness is preserved even when task pipelines are saturated.
+
+**Key behaviors:**
+
+- Heartbeat runs (via `POST /api/agents/:id/runs`) execute without gating on `maxConcurrent` or in-progress task count
+- The `HeartbeatTriggerScheduler` and `HeartbeatMonitor` components do not receive the task-lane semaphore
+- Trigger scheduling remains responsive regardless of how busy the task pipeline is
+- Active-run 409 conflict semantics still apply — a new heartbeat run is rejected if the agent already has an active run
+
+**Architectural boundary:**
+
+| Component | Path | Concurrency |
+|-----------|------|------------|
+| TriageProcessor | Task lane | Semaphore-gated |
+| TaskExecutor | Task lane | Semaphore-gated |
+| Scheduler | Task lane | Semaphore-gated |
+| onMerge | Task lane | Semaphore-gated |
+| HeartbeatMonitor | Utility/control plane | **NOT** semaphore-gated |
+| HeartbeatTriggerScheduler | Utility/control plane | **NOT** semaphore-gated |
+| CronRunner | Utility/control plane | **NOT** semaphore-gated |
+
 ## Dashboard Health Status
 
 The dashboard displays agent health status in AgentsView, AgentListModal, and AgentDetailView using a centralized health evaluation utility (`packages/dashboard/app/utils/agentHealth.ts`).

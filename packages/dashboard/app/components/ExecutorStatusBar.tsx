@@ -18,6 +18,8 @@ interface ExecutorStatusBarProps {
   backgroundNeedsInput?: number;
   onOpenBackgroundSession?: (session: AiSessionSummary) => void;
   onDismissBackgroundSession?: (id: string) => void;
+  /** Timestamp (ms) when task data was last confirmed fresh from the server. Used for freshness-aware stuck detection. */
+  lastFetchTimeMs?: number;
 }
 
 /**
@@ -67,8 +69,8 @@ function getStateDisplay(state: ExecutorState): { label: string; color: string; 
  * - Executor state badge (idle/running/paused)
  * - Last activity timestamp
  */
-export function ExecutorStatusBar({ tasks, projectId, taskStuckTimeoutMs, backgroundSessions, backgroundGenerating, backgroundNeedsInput, onOpenBackgroundSession, onDismissBackgroundSession }: ExecutorStatusBarProps) {
-  const { stats, loading, error } = useExecutorStats(tasks, projectId, taskStuckTimeoutMs);
+export function ExecutorStatusBar({ tasks, projectId, taskStuckTimeoutMs, backgroundSessions, backgroundGenerating, backgroundNeedsInput, onOpenBackgroundSession, onDismissBackgroundSession, lastFetchTimeMs }: ExecutorStatusBarProps) {
+  const { stats, loading, error } = useExecutorStats(tasks, projectId, taskStuckTimeoutMs, lastFetchTimeMs);
 
   const stateDisplay = useMemo(() => getStateDisplay(stats.executorState), [stats.executorState]);
 

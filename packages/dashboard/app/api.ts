@@ -3494,6 +3494,178 @@ export function triageAllSliceFeatures(sliceId: string, projectId?: string): Pro
   });
 }
 
+// ── Contract Assertion API ─────────────────────────────────────────────────────
+
+/** Contract assertion status */
+export type MissionAssertionStatus = "pending" | "passed" | "failed" | "blocked";
+
+/** A contract assertion represents an explicit behavioral test or requirement associated with a milestone */
+export interface MissionContractAssertion {
+  id: string;
+  milestoneId: string;
+  title: string;
+  assertion: string;
+  status: MissionAssertionStatus;
+  orderIndex: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Input for creating a contract assertion */
+export interface ContractAssertionCreateInput {
+  title: string;
+  assertion: string;
+  status?: MissionAssertionStatus;
+}
+
+/** Input for updating a contract assertion */
+export interface ContractAssertionUpdateInput {
+  title?: string;
+  assertion?: string;
+  status?: MissionAssertionStatus;
+}
+
+/** List assertions for a milestone, ordered by orderIndex */
+export function fetchAssertions(milestoneId: string, projectId?: string): Promise<MissionContractAssertion[]> {
+  return api<MissionContractAssertion[]>(withProjectId(`/missions/milestones/${encodeURIComponent(milestoneId)}/assertions`, projectId));
+}
+
+/** Create a new assertion for a milestone */
+export function createAssertion(milestoneId: string, input: ContractAssertionCreateInput, projectId?: string): Promise<MissionContractAssertion> {
+  return api<MissionContractAssertion>(withProjectId(`/missions/milestones/${encodeURIComponent(milestoneId)}/assertions`, projectId), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+/** Reorder assertions within a milestone */
+export function reorderAssertions(milestoneId: string, orderedIds: string[], projectId?: string): Promise<void> {
+  return api<void>(withProjectId(`/missions/milestones/${encodeURIComponent(milestoneId)}/assertions/reorder`, projectId), {
+    method: "POST",
+    body: JSON.stringify({ orderedIds }),
+  });
+}
+
+/** Get a single assertion by ID */
+export function fetchAssertion(assertionId: string, projectId?: string): Promise<MissionContractAssertion> {
+  return api<MissionContractAssertion>(withProjectId(`/missions/assertions/${encodeURIComponent(assertionId)}`, projectId));
+}
+
+/** Update an assertion */
+export function updateAssertion(assertionId: string, updates: ContractAssertionUpdateInput, projectId?: string): Promise<MissionContractAssertion> {
+  return api<MissionContractAssertion>(withProjectId(`/missions/assertions/${encodeURIComponent(assertionId)}`, projectId), {
+    method: "PATCH",
+    body: JSON.stringify(updates),
+  });
+}
+
+/** Delete an assertion */
+export function deleteAssertion(assertionId: string, projectId?: string): Promise<void> {
+  return api<void>(withProjectId(`/missions/assertions/${encodeURIComponent(assertionId)}`, projectId), {
+    method: "DELETE",
+  });
+}
+
+/** Link a feature to an assertion */
+export function linkFeatureToAssertion(featureId: string, assertionId: string, projectId?: string): Promise<{ success: boolean }> {
+  return api<{ success: boolean }>(withProjectId(`/missions/features/${encodeURIComponent(featureId)}/assertions/${encodeURIComponent(assertionId)}/link`, projectId), {
+    method: "POST",
+  });
+}
+
+/** Unlink a feature from an assertion */
+export function unlinkFeatureFromAssertion(featureId: string, assertionId: string, projectId?: string): Promise<{ success: boolean }> {
+  return api<{ success: boolean }>(withProjectId(`/missions/features/${encodeURIComponent(featureId)}/assertions/${encodeURIComponent(assertionId)}/unlink`, projectId), {
+    method: "POST",
+  });
+}
+
+/** List assertions linked to a feature */
+export function fetchAssertionsForFeature(featureId: string, projectId?: string): Promise<MissionContractAssertion[]> {
+  return api<MissionContractAssertion[]>(withProjectId(`/missions/features/${encodeURIComponent(featureId)}/assertions`, projectId));
+}
+
+/** List features linked to an assertion */
+export function fetchFeaturesForAssertion(assertionId: string, projectId?: string): Promise<MissionFeature[]> {
+  return api<MissionFeature[]>(withProjectId(`/missions/assertions/${encodeURIComponent(assertionId)}/features`, projectId));
+}
+
+/** Validation rollup for a milestone */
+export interface MilestoneValidationRollup {
+  milestoneId: string;
+  totalAssertions: number;
+  passedCount: number;
+  failedCount: number;
+  blockedCount: number;
+  pendingCount: number;
+  state: "not_started" | "needs_coverage" | "ready" | "passed" | "failed" | "blocked";
+}
+
+/** Get milestone validation rollup */
+export function fetchMilestoneValidation(milestoneId: string, projectId?: string): Promise<MilestoneValidationRollup> {
+  return api<MilestoneValidationRollup>(withProjectId(`/missions/milestones/${encodeURIComponent(milestoneId)}/validation`, projectId));
+}
+
+// ── Validation Loop API ───────────────────────────────────────────────────────
+
+/** Loop state snapshot for a feature */
+export interface MissionFeatureLoopSnapshot {
+  featureId: string;
+  feature: MissionFeature;
+  loopState: "idle" | "implementing" | "validating" | "needs_fix" | "passed" | "blocked";
+  implementationAttemptCount: number;
+  validatorAttemptCount: number;
+  lastValidatorRunId?: string;
+  lastValidatorStatus?: "running" | "passed" | "failed" | "blocked" | "error";
+  generatedFromFeatureId?: string;
+  generatedFromRunId?: string;
+  retryBudgetRemaining: number;
+}
+
+/** Validator run */
+export interface MissionValidatorRun {
+  id: string;
+  featureId: string;
+  milestoneId: string;
+  sliceId: string;
+  status: "running" | "passed" | "failed" | "blocked" | "error";
+  triggerType: string;
+  implementationAttempt: number;
+  validatorAttempt: number;
+  summary?: string;
+  blockedReason?: string;
+  startedAt: string;
+  completedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Trigger validation for a feature */
+export function triggerValidation(featureId: string, projectId?: string): Promise<{ runId: string; featureId: string; status: string; triggerType: string; implementationAttempt: number; validatorAttempt: number; startedAt: string }> {
+  return api(withProjectId(`/missions/features/${encodeURIComponent(featureId)}/validate`, projectId), {
+    method: "POST",
+  });
+}
+
+/** Get validation loop state for a feature */
+export function fetchValidationLoopState(featureId: string, projectId?: string): Promise<MissionFeatureLoopSnapshot> {
+  return api<MissionFeatureLoopSnapshot>(withProjectId(`/missions/features/${encodeURIComponent(featureId)}/validation-loop`, projectId));
+}
+
+/** List validation runs for a feature */
+export function fetchValidationRuns(featureId: string, options?: { limit?: number; offset?: number }, projectId?: string): Promise<MissionValidatorRun[]> {
+  const params = new URLSearchParams();
+  if (options?.limit !== undefined) params.set("limit", String(options.limit));
+  if (options?.offset !== undefined) params.set("offset", String(options.offset));
+  const suffix = params.size > 0 ? `?${params.toString()}` : "";
+  return api<MissionValidatorRun[]>(withProjectId(`/missions/features/${encodeURIComponent(featureId)}/validation-runs${suffix}`, projectId));
+}
+
+/** Get a single validator run */
+export function fetchValidationRun(runId: string, projectId?: string): Promise<MissionValidatorRun & { failures?: Array<{ id: string; assertionId: string; message?: string; expected?: string; actual?: string }> }> {
+  return api(withProjectId(`/missions/validation-runs/${encodeURIComponent(runId)}`, projectId));
+}
+
 /** Pause a mission (sets status to "blocked", in-flight tasks continue) */
 export function pauseMission(missionId: string, projectId?: string): Promise<Mission> {
   return api<Mission>(withProjectId(`/missions/${encodeURIComponent(missionId)}/pause`, projectId), {

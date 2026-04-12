@@ -56,6 +56,9 @@ export function useTasks(options?: UseTasksOptions) {
   const lastVisibilityRefreshRef = useRef<number>(0);
   const searchQueryRef = useRef(searchQuery);
   const refreshTasksRef = useRef<typeof refreshTasks>(null!);
+  // Tracks when task data was last confirmed fresh by the server.
+  // Used to prevent false positives in stuck detection when tab has been in background.
+  const lastFetchTimeMs = useRef<number | undefined>(undefined);
   tasksRef.current = tasks;
   searchQueryRef.current = searchQuery;
 
@@ -72,6 +75,8 @@ export function useTasks(options?: UseTasksOptions) {
         return;
       }
       setTasks(fetchedTasks.map(normalizeTask));
+      // Record when we received fresh server data for stuck detection
+      lastFetchTimeMs.current = Date.now();
     } catch {
       if (fetchVersionRef.current !== requestVersion) {
         return;
@@ -187,6 +192,8 @@ export function useTasks(options?: UseTasksOptions) {
           t.id === normalizedTask.id ? { ...normalizedTask, column: to } : t
         )
       );
+      // Record when we received fresh server data for stuck detection
+      lastFetchTimeMs.current = Date.now();
     };
 
     const handleUpdated = (e: MessageEvent) => {
@@ -222,6 +229,8 @@ export function useTasks(options?: UseTasksOptions) {
           return incoming;
         })
       );
+      // Record when we received fresh server data for stuck detection
+      lastFetchTimeMs.current = Date.now();
     };
 
     const handleDeleted = (e: MessageEvent) => {
@@ -394,5 +403,5 @@ export function useTasks(options?: UseTasksOptions) {
     return normalized;
   }, [projectId]);
 
-  return { tasks, createTask, moveTask, deleteTask, mergeTask, retryTask, duplicateTask, updateTask, archiveTask, unarchiveTask, archiveAllDone, loadArchivedTasks, includeArchived };
+  return { tasks, createTask, moveTask, deleteTask, mergeTask, retryTask, duplicateTask, updateTask, archiveTask, unarchiveTask, archiveAllDone, loadArchivedTasks, includeArchived, lastFetchTimeMs: lastFetchTimeMs.current };
 }

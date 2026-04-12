@@ -452,6 +452,50 @@ describe("Agent runs routes (with HeartbeatMonitor)", () => {
         },
       });
     });
+
+    it("executes heartbeat even when task concurrency is saturated (no route-level maxConcurrent gating)", async () => {
+      // This test verifies that heartbeat routes are NOT gated on maxConcurrent or
+      // in-progress task count. Heartbeat runs are on a separate control-plane lane.
+      const mockRun = createMockRun({ invocationSource: "on_demand" });
+      mockExecuteHeartbeat.mockResolvedValue(mockRun);
+      // No gating on maxConcurrent in the route - it should proceed regardless
+
+      const response = await request(
+        app,
+        "POST",
+        "/api/agents/agent-001/runs",
+        JSON.stringify({ source: "on_demand" }),
+        { "content-type": "application/json" },
+      );
+
+      // Route should succeed and delegate to executeHeartbeat
+      expect(response.status).toBe(201);
+      expect(mockExecuteHeartbeat).toHaveBeenCalledTimes(1);
+      expect(mockExecuteHeartbeat).toHaveBeenCalledWith(expect.objectContaining({
+        agentId: "agent-001",
+        source: "on_demand",
+      }));
+    });
+
+    it("still returns 409 for active-run conflicts even when no maxConcurrent gating", async () => {
+      // Active-run 409 conflict semantics must remain intact
+      const existingRun = createMockRun({ id: "existing-run" });
+      mockGetActiveHeartbeatRun.mockResolvedValue(existingRun);
+
+      const response = await request(
+        app,
+        "POST",
+        "/api/agents/agent-001/runs",
+        JSON.stringify({}),
+        { "content-type": "application/json" },
+      );
+
+      expect(response.status).toBe(409);
+      expect((response.body as any).error).toContain("already has an active run");
+      expect((response.body as any).details.runId).toBe("existing-run");
+      // executeHeartbeat should NOT be called when there's a conflict
+      expect(mockExecuteHeartbeat).not.toHaveBeenCalled();
+    });
   });
 
   describe("POST /api/agents/:id/runs/stop", () => {
@@ -501,6 +545,34 @@ describe("Agent runs routes (with HeartbeatMonitor)", () => {
           triggerDetail: "Triggered from heartbeat",
         },
       });
+      // Response should include both event and run
+      expect((response.body as any).event).toBeDefined();
+      expect((response.body as any).run).toBeDefined();
+    });
+
+    it("executes heartbeat via triggerExecution even when task concurrency is saturated", async () => {
+      // This test verifies that triggerExecution paths are NOT gated on maxConcurrent.
+      // Heartbeat control-plane runs should execute regardless of task-lane saturation.
+      const mockEvent = { id: "evt-002", agentId: "agent-001", status: "ok", timestamp: "2026-01-01T00:00:00.000Z" };
+      mockRecordHeartbeat.mockResolvedValue(mockEvent);
+      const mockRun = createMockRun({ invocationSource: "on_demand" });
+      mockExecuteHeartbeat.mockResolvedValue(mockRun);
+
+      const response = await request(
+        app,
+        "POST",
+        "/api/agents/agent-001/heartbeat",
+        JSON.stringify({ status: "ok", triggerExecution: true }),
+        { "content-type": "application/json" },
+      );
+
+      // Route should succeed - no route-level gating on maxConcurrent
+      expect(response.status).toBe(200);
+      expect(mockExecuteHeartbeat).toHaveBeenCalledTimes(1);
+      expect(mockExecuteHeartbeat).toHaveBeenCalledWith(expect.objectContaining({
+        agentId: "agent-001",
+        source: "on_demand",
+      }));
       // Response should include both event and run
       expect((response.body as any).event).toBeDefined();
       expect((response.body as any).run).toBeDefined();

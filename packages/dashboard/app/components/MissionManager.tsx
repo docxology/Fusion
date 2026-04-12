@@ -42,6 +42,14 @@ import type {
   MissionHealth,
   MissionEvent,
   MissionEventType,
+  FeatureLoopState,
+  MissionAssertionStatus,
+  MissionContractAssertion,
+  ContractAssertionCreateInput,
+  ContractAssertionUpdateInput,
+  MilestoneValidationRollup,
+  MissionFeatureLoopSnapshot,
+  MissionValidatorRun,
 } from "./mission-types";
 import {
   fetchMissions,
@@ -71,6 +79,21 @@ import {
   fetchMissionHealth,
   fetchMissionsHealth,
   fetchMissionEvents,
+  fetchAssertions,
+  createAssertion,
+  updateAssertion,
+  deleteAssertion,
+  reorderAssertions,
+  linkFeatureToAssertion,
+  unlinkFeatureFromAssertion,
+  fetchAssertionsForFeature,
+  fetchFeaturesForAssertion,
+  fetchMilestoneValidation,
+  triggerValidation,
+  fetchValidationLoopState,
+  fetchValidationRuns,
+  fetchValidationRun,
+  fetchAssertion,
 } from "../api";
 import type { AutopilotStatus as AutopilotStatusType, AutopilotState } from "./mission-types";
 
@@ -121,6 +144,24 @@ const autopilotStateColors: Record<AutopilotState, { bg: string; text: string }>
   watching: { bg: "var(--autopilot-watching-bg)", text: "var(--autopilot-watching-text)" },
   activating: { bg: "var(--autopilot-activating-bg)", text: "var(--autopilot-activating-text)" },
   completing: { bg: "var(--autopilot-completing-bg)", text: "var(--autopilot-completing-text)" },
+};
+
+/** Loop state colors for feature execution loop */
+const loopStateColors: Record<FeatureLoopState, { bg: string; text: string; indicator: string }> = {
+  idle: { bg: "var(--loop-idle-bg)", text: "var(--loop-idle-text)", indicator: "var(--loop-idle-indicator)" },
+  implementing: { bg: "var(--loop-implementing-bg)", text: "var(--loop-implementing-text)", indicator: "var(--loop-implementing-indicator)" },
+  validating: { bg: "var(--loop-validating-bg)", text: "var(--loop-validating-text)", indicator: "var(--loop-validating-indicator)" },
+  needs_fix: { bg: "var(--loop-needs-fix-bg)", text: "var(--loop-needs-fix-text)", indicator: "var(--loop-needs-fix-indicator)" },
+  passed: { bg: "var(--loop-passed-bg)", text: "var(--loop-passed-text)", indicator: "var(--loop-passed-indicator)" },
+  blocked: { bg: "var(--loop-blocked-bg)", text: "var(--loop-blocked-text)", indicator: "var(--loop-blocked-indicator)" },
+};
+
+/** Assertion status colors */
+const assertionStatusColors: Record<MissionAssertionStatus, { bg: string; text: string }> = {
+  pending: { bg: "var(--assertion-pending-bg)", text: "var(--assertion-pending-text)" },
+  passed: { bg: "var(--assertion-passed-bg)", text: "var(--assertion-passed-text)" },
+  failed: { bg: "var(--assertion-failed-bg)", text: "var(--assertion-failed-text)" },
+  blocked: { bg: "var(--assertion-blocked-bg)", text: "var(--assertion-blocked-text)" },
 };
 
 /** Get the plan state for a milestone (derived from interviewState) */
@@ -424,6 +465,39 @@ export function MissionManager({ isOpen, isInline = false, onClose, addToast, pr
   // Delete confirmation
   const [deleteConfirmId, setDeleteConfirmId] = useState<{ type: string; id: string } | null>(null);
 
+  // Assertion panel state
+  const [assertionsByMilestone, setAssertionsByMilestone] = useState<Map<string, MissionContractAssertion[]>>(new Map());
+  const [assertionsLoading, setAssertionsLoading] = useState(false);
+  const [editingAssertionId, setEditingAssertionId] = useState<string | null>(null);
+  const [assertionForm, setAssertionForm] = useState<{ title: string; assertion: string; status: MissionAssertionStatus }>({
+    title: "",
+    assertion: "",
+    status: "pending",
+  });
+  const [isCreatingAssertion, setIsCreatingAssertion] = useState(false);
+  const [expandedAssertionId, setExpandedAssertionId] = useState<string | null>(null);
+  const [linkedFeaturesByAssertion, setLinkedFeaturesByAssertion] = useState<Map<string, MissionFeature[]>>(new Map());
+  const [linkingAssertions, setLinkingAssertions] = useState<Set<string>>(new Set());
+  const [unlinkingFeatures, setUnlinkingFeatures] = useState<Set<string>>(new Set());
+  const [featurePickerOpenForAssertion, setFeaturePickerOpenForAssertion] = useState<string | null>(null);
+  const [validationRollupByMilestone, setValidationRollupByMilestone] = useState<Map<string, MilestoneValidationRollup>>(new Map());
+  const [validatingFeatures, setValidatingFeatures] = useState<Set<string>>(new Set());
+
+  // Feature loop state
+  const [featureLoopStates, setFeatureLoopStates] = useState<Map<string, MissionFeatureLoopSnapshot>>(new Map());
+
+  // Expanded feature for run history display
+  const [expandedFeatureId, setExpandedFeatureId] = useState<string | null>(null);
+
+  // Validation runs by feature
+  const [validationRunsByFeature, setValidationRunsByFeature] = useState<Map<string, MissionValidatorRun[]>>(new Map());
+
+  // Expanded run ID for showing details with failures
+  const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
+
+  // Run details with failures (keyed by runId)
+  const [runDetailsByRunId, setRunDetailsByRunId] = useState<Map<string, MissionValidatorRun & { failures?: Array<{ id: string; assertionId: string; message?: string; expected?: string; actual?: string }> }>>(new Map());
+
   const [missionHealthById, setMissionHealthById] = useState<Map<string, MissionHealth>>(new Map());
 
   const [activeTab, setActiveTab] = useState<"structure" | "activity">("structure");
@@ -650,6 +724,92 @@ export function MissionManager({ isOpen, isInline = false, onClose, addToast, pr
       }
     };
 
+    // Handler for validator run started - refresh feature loop state and validation runs
+    const handleValidatorRunStarted = (rawEvent: Event) => {
+      const messageEvent = rawEvent as MessageEvent<string>;
+      if (!messageEvent.data) return;
+      try {
+        const payload = JSON.parse(messageEvent.data);
+        if (payload && payload.featureId) {
+          // Refresh feature loop state
+          void loadFeatureLoopState(payload.featureId);
+          // Refresh validation runs
+          void loadValidationRuns(payload.featureId);
+        }
+      } catch {
+        // ignore invalid payloads
+      }
+    };
+
+    // Handler for validator run completed - refresh feature loop state, runs, and mission detail
+    const handleValidatorRunCompleted = (rawEvent: Event) => {
+      const messageEvent = rawEvent as MessageEvent<string>;
+      if (!messageEvent.data) return;
+      try {
+        const payload = JSON.parse(messageEvent.data);
+        if (payload && payload.featureId) {
+          // Refresh feature loop state
+          void loadFeatureLoopState(payload.featureId);
+          // Refresh validation runs
+          void loadValidationRuns(payload.featureId);
+          // Refresh mission detail to update feature status
+          if (selectedMission) {
+            void loadMissionDetail(selectedMission.id);
+          }
+        }
+      } catch {
+        // ignore invalid payloads
+      }
+    };
+
+    // Handler for milestone validation updated - refresh validation rollup
+    const handleMilestoneValidationUpdated = (rawEvent: Event) => {
+      const messageEvent = rawEvent as MessageEvent<string>;
+      if (!messageEvent.data) return;
+      try {
+        const payload = JSON.parse(messageEvent.data);
+        if (payload && payload.milestoneId) {
+          void loadValidationRollup(payload.milestoneId);
+        }
+      } catch {
+        // ignore invalid payloads
+      }
+    };
+
+    // Handler for assertion mutations - refresh assertions and validation rollup
+    const handleAssertionMutation = (rawEvent: Event) => {
+      const messageEvent = rawEvent as MessageEvent<string>;
+      if (!messageEvent.data) return;
+      try {
+        const payload = JSON.parse(messageEvent.data);
+        if (payload && payload.milestoneId) {
+          void loadAssertionsForMilestone(payload.milestoneId);
+          void loadValidationRollup(payload.milestoneId);
+        }
+      } catch {
+        // ignore invalid payloads
+      }
+    };
+
+    // Handler for fix-feature:created - refresh mission detail to show new fix feature with lineage
+    const handleFixFeatureCreated = (rawEvent: Event) => {
+      const messageEvent = rawEvent as MessageEvent<string>;
+      if (!messageEvent.data) return;
+      try {
+        const payload = JSON.parse(messageEvent.data);
+        if (payload && payload.sourceFeatureId) {
+          // Refresh feature loop state for the source feature
+          void loadFeatureLoopState(payload.sourceFeatureId);
+          // Refresh mission detail to show the new fix feature in the list
+          if (selectedMission) {
+            void loadMissionDetail(selectedMission.id);
+          }
+        }
+      } catch {
+        // ignore invalid payloads
+      }
+    };
+
     const handleMissionEvent = (rawEvent: Event) => {
       refreshHealth();
 
@@ -698,12 +858,31 @@ export function MissionManager({ isOpen, isInline = false, onClose, addToast, pr
     eventSource.addEventListener("slice:updated", handleSliceUpdated);
     eventSource.addEventListener("feature:updated", handleFeatureUpdated);
     eventSource.addEventListener("mission:event", handleMissionEvent);
+    // Validation events
+    eventSource.addEventListener("validator-run:started", handleValidatorRunStarted);
+    eventSource.addEventListener("validator-run:completed", handleValidatorRunCompleted);
+    eventSource.addEventListener("milestone:validation:updated", handleMilestoneValidationUpdated);
+    eventSource.addEventListener("assertion:created", handleAssertionMutation);
+    eventSource.addEventListener("assertion:updated", handleAssertionMutation);
+    eventSource.addEventListener("assertion:deleted", handleAssertionMutation);
+    eventSource.addEventListener("assertion:linked", handleAssertionMutation);
+    eventSource.addEventListener("assertion:unlinked", handleAssertionMutation);
+    eventSource.addEventListener("fix-feature:created", handleFixFeatureCreated);
 
     return () => {
       eventSource.removeEventListener("mission:updated", handleMissionUpdated);
       eventSource.removeEventListener("slice:updated", handleSliceUpdated);
       eventSource.removeEventListener("feature:updated", handleFeatureUpdated);
       eventSource.removeEventListener("mission:event", handleMissionEvent);
+      eventSource.removeEventListener("validator-run:started", handleValidatorRunStarted);
+      eventSource.removeEventListener("validator-run:completed", handleValidatorRunCompleted);
+      eventSource.removeEventListener("milestone:validation:updated", handleMilestoneValidationUpdated);
+      eventSource.removeEventListener("assertion:created", handleAssertionMutation);
+      eventSource.removeEventListener("assertion:updated", handleAssertionMutation);
+      eventSource.removeEventListener("assertion:deleted", handleAssertionMutation);
+      eventSource.removeEventListener("assertion:linked", handleAssertionMutation);
+      eventSource.removeEventListener("assertion:unlinked", handleAssertionMutation);
+      eventSource.removeEventListener("fix-feature:created", handleFixFeatureCreated);
       eventSource.close();
     };
   }, [
@@ -871,10 +1050,14 @@ export function MissionManager({ isOpen, isInline = false, onClose, addToast, pr
   const toggleMilestoneExpanded = useCallback((milestoneId: string) => {
     setExpandedMilestones((prev) => {
       const next = new Set(prev);
-      if (next.has(milestoneId)) {
-        next.delete(milestoneId);
-      } else {
+      const isExpanding = !next.has(milestoneId);
+      if (isExpanding) {
         next.add(milestoneId);
+        // Load assertions and validation rollup when expanding milestone
+        void loadAssertionsForMilestone(milestoneId);
+        void loadValidationRollup(milestoneId);
+      } else {
+        next.delete(milestoneId);
       }
       return next;
     });
@@ -1119,6 +1302,253 @@ export function MissionManager({ isOpen, isInline = false, onClose, addToast, pr
       setSaving(false);
     }
   }, [addToast, loadMissionDetail, selectedMission, projectId]);
+
+  // ── Assertion handlers ──
+
+  const loadAssertionsForMilestone = useCallback(async (milestoneId: string) => {
+    try {
+      const assertions = await fetchAssertions(milestoneId, projectId);
+      setAssertionsByMilestone((prev) => {
+        const next = new Map(prev);
+        next.set(milestoneId, assertions);
+        return next;
+      });
+    } catch (err: any) {
+      // Silently fail - assertions are optional
+    }
+  }, [projectId]);
+
+  const loadValidationRollup = useCallback(async (milestoneId: string) => {
+    try {
+      const rollup = await fetchMilestoneValidation(milestoneId, projectId);
+      setValidationRollupByMilestone((prev) => {
+        const next = new Map(prev);
+        next.set(milestoneId, rollup);
+        return next;
+      });
+    } catch (err: any) {
+      // Silently fail
+    }
+  }, [projectId]);
+
+  const handleCreateAssertion = useCallback(async (milestoneId: string) => {
+    if (!assertionForm.title.trim() || !assertionForm.assertion.trim()) {
+      addToast("Title and assertion text are required", "error");
+      return;
+    }
+    try {
+      setSaving(true);
+      await createAssertion(milestoneId, {
+        title: assertionForm.title.trim(),
+        assertion: assertionForm.assertion.trim(),
+        status: assertionForm.status,
+      }, projectId);
+      addToast("Assertion created", "success");
+      await loadAssertionsForMilestone(milestoneId);
+      await loadValidationRollup(milestoneId);
+      setIsCreatingAssertion(false);
+      setAssertionForm({ title: "", assertion: "", status: "pending" });
+    } catch (err: any) {
+      addToast(err.message || "Failed to create assertion", "error");
+    } finally {
+      setSaving(false);
+    }
+  }, [assertionForm, addToast, loadAssertionsForMilestone, loadValidationRollup, projectId]);
+
+  const handleEditAssertion = useCallback((assertion: MissionContractAssertion) => {
+    setEditingAssertionId(assertion.id);
+    setAssertionForm({
+      title: assertion.title,
+      assertion: assertion.assertion,
+      status: assertion.status,
+    });
+  }, []);
+
+  const handleCancelAssertion = useCallback(() => {
+    setEditingAssertionId(null);
+    setIsCreatingAssertion(false);
+    setAssertionForm({ title: "", assertion: "", status: "pending" });
+  }, []);
+
+  const handleSaveAssertion = useCallback(async (assertionId: string, milestoneId: string) => {
+    if (!assertionForm.title.trim() || !assertionForm.assertion.trim()) {
+      addToast("Title and assertion text are required", "error");
+      return;
+    }
+    try {
+      setSaving(true);
+      await updateAssertion(assertionId, {
+        title: assertionForm.title.trim(),
+        assertion: assertionForm.assertion.trim(),
+        status: assertionForm.status,
+      }, projectId);
+      addToast("Assertion updated", "success");
+      await loadAssertionsForMilestone(milestoneId);
+      await loadValidationRollup(milestoneId);
+      handleCancelAssertion();
+    } catch (err: any) {
+      addToast(err.message || "Failed to update assertion", "error");
+    } finally {
+      setSaving(false);
+    }
+  }, [assertionForm, addToast, loadAssertionsForMilestone, loadValidationRollup, handleCancelAssertion, projectId]);
+
+  const handleDeleteAssertion = useCallback(async (assertionId: string, milestoneId: string) => {
+    try {
+      await deleteAssertion(assertionId, projectId);
+      addToast("Assertion deleted", "success");
+      await loadAssertionsForMilestone(milestoneId);
+      await loadValidationRollup(milestoneId);
+      setDeleteConfirmId(null);
+    } catch (err: any) {
+      addToast(err.message || "Failed to delete assertion", "error");
+    }
+  }, [addToast, loadAssertionsForMilestone, loadValidationRollup, projectId]);
+
+  const loadLinkedFeaturesForAssertion = useCallback(async (assertionId: string) => {
+    try {
+      const features = await fetchFeaturesForAssertion(assertionId, projectId);
+      setLinkedFeaturesByAssertion((prev) => {
+        const next = new Map(prev);
+        next.set(assertionId, features);
+        return next;
+      });
+    } catch (err: any) {
+      // Silently fail
+    }
+  }, [projectId]);
+
+  const handleToggleAssertionExpanded = useCallback(async (assertionId: string) => {
+    const isExpanding = expandedAssertionId !== assertionId;
+    setExpandedAssertionId((prev) => (prev === assertionId ? null : assertionId));
+    if (isExpanding) {
+      await loadLinkedFeaturesForAssertion(assertionId);
+    }
+  }, [expandedAssertionId, loadLinkedFeaturesForAssertion]);
+
+  const handleLinkFeatureToAssertion = useCallback(async (featureId: string, assertionId: string) => {
+    try {
+      setLinkingAssertions((prev) => new Set(prev).add(assertionId));
+      await linkFeatureToAssertion(featureId, assertionId, projectId);
+      addToast("Feature linked to assertion", "success");
+      await loadLinkedFeaturesForAssertion(assertionId);
+      setFeaturePickerOpenForAssertion(null);
+    } catch (err: any) {
+      addToast(err.message || "Failed to link feature", "error");
+    } finally {
+      setLinkingAssertions((prev) => {
+        const next = new Set(prev);
+        next.delete(assertionId);
+        return next;
+      });
+    }
+  }, [addToast, loadLinkedFeaturesForAssertion, projectId]);
+
+  const handleUnlinkFeatureFromAssertion = useCallback(async (featureId: string, assertionId: string) => {
+    const key = `${featureId}-${assertionId}`;
+    try {
+      setUnlinkingFeatures((prev) => new Set(prev).add(key));
+      await unlinkFeatureFromAssertion(featureId, assertionId, projectId);
+      addToast("Feature unlinked from assertion", "success");
+      await loadLinkedFeaturesForAssertion(assertionId);
+    } catch (err: any) {
+      addToast(err.message || "Failed to unlink feature", "error");
+    } finally {
+      setUnlinkingFeatures((prev) => {
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
+    }
+  }, [addToast, loadLinkedFeaturesForAssertion, projectId]);
+
+  // ── Validation trigger ──
+
+  const handleTriggerValidation = useCallback(async (featureId: string) => {
+    try {
+      setValidatingFeatures((prev) => new Set(prev).add(featureId));
+      await triggerValidation(featureId, projectId);
+      addToast("Validation triggered", "success");
+      // Reload feature loop state
+      const snapshot = await fetchValidationLoopState(featureId, projectId);
+      setFeatureLoopStates((prev) => {
+        const next = new Map(prev);
+        next.set(featureId, snapshot);
+        return next;
+      });
+    } catch (err: any) {
+      addToast(err.message || "Failed to trigger validation", "error");
+    } finally {
+      setValidatingFeatures((prev) => {
+        const next = new Set(prev);
+        next.delete(featureId);
+        return next;
+      });
+    }
+  }, [addToast, projectId]);
+
+  const loadFeatureLoopState = useCallback(async (featureId: string) => {
+    try {
+      const snapshot = await fetchValidationLoopState(featureId, projectId);
+      setFeatureLoopStates((prev) => {
+        const next = new Map(prev);
+        next.set(featureId, snapshot);
+        return next;
+      });
+    } catch (err: any) {
+      // Silently fail
+    }
+  }, [projectId]);
+
+  // Load validation runs for a feature
+  const loadValidationRuns = useCallback(async (featureId: string) => {
+    try {
+      const runs = await fetchValidationRuns(featureId, { limit: 10 }, projectId);
+      setValidationRunsByFeature((prev) => {
+        const next = new Map(prev);
+        next.set(featureId, runs);
+        return next;
+      });
+    } catch (err: any) {
+      // Silently fail
+    }
+  }, [projectId]);
+
+  // Load run detail with failures
+  const loadRunDetail = useCallback(async (runId: string) => {
+    try {
+      const detail = await fetchValidationRun(runId, projectId);
+      setRunDetailsByRunId((prev) => {
+        const next = new Map(prev);
+        next.set(runId, detail);
+        return next;
+      });
+    } catch (err: any) {
+      // Silently fail
+    }
+  }, [projectId]);
+
+  // Toggle feature expansion to show run history
+  const toggleFeatureExpanded = useCallback(async (featureId: string) => {
+    if (expandedFeatureId === featureId) {
+      setExpandedFeatureId(null);
+    } else {
+      setExpandedFeatureId(featureId);
+      // Load loop state and validation runs when expanding
+      await loadFeatureLoopState(featureId);
+      await loadValidationRuns(featureId);
+    }
+  }, [expandedFeatureId, loadFeatureLoopState, loadValidationRuns]);
+
+  // Toggle run expansion to show failures
+  const toggleRunExpanded = useCallback(async (runId: string) => {
+    if (expandedRunId === runId) {
+      setExpandedRunId(null);
+    } else {
+      setExpandedRunId(runId);
+      await loadRunDetail(runId);
+    }
+  }, [expandedRunId, loadRunDetail]);
 
   // Resume a paused mission — set status back to "active"
   const handleResumeMission = useCallback(async (missionId: string) => {
@@ -1526,6 +1956,49 @@ export function MissionManager({ isOpen, isInline = false, onClose, addToast, pr
                       </span>
                       <span className="mission-milestone__count">{milestone.slices.length} slices</span>
                       <PlanStateIndicator state={getMilestonePlanState(milestone.interviewState)} />
+                      {/* Validation state badge and coverage bar in milestone header */}
+                      {validationRollupByMilestone.get(milestone.id) && (
+                        <>
+                          <span
+                            className="mission-status-badge mission-status-badge--sm"
+                            style={{
+                              backgroundColor: validationRollupByMilestone.get(milestone.id)?.state === "passed"
+                                ? "var(--loop-passed-bg)"
+                                : validationRollupByMilestone.get(milestone.id)?.state === "failed"
+                                  ? "var(--loop-blocked-bg)"
+                                  : validationRollupByMilestone.get(milestone.id)?.state === "blocked"
+                                    ? "var(--loop-blocked-bg)"
+                                    : "var(--assertion-pending-bg)",
+                              color: validationRollupByMilestone.get(milestone.id)?.state === "passed"
+                                ? "var(--loop-passed-text)"
+                                : validationRollupByMilestone.get(milestone.id)?.state === "failed"
+                                  ? "var(--loop-blocked-text)"
+                                  : validationRollupByMilestone.get(milestone.id)?.state === "blocked"
+                                    ? "var(--loop-blocked-text)"
+                                    : "var(--assertion-pending-text)",
+                            }}
+                            title="Validation state"
+                          >
+                            {validationRollupByMilestone.get(milestone.id)?.state || "not_started"}
+                          </span>
+                          {validationRollupByMilestone.get(milestone.id)!.totalAssertions > 0 && (
+                            <div
+                              className="mission-milestone__coverage-bar"
+                              title={`${validationRollupByMilestone.get(milestone.id)!.passedCount} of ${validationRollupByMilestone.get(milestone.id)!.totalAssertions} assertions passing`}
+                            >
+                              <div
+                                className="mission-milestone__coverage-bar-fill"
+                                style={{
+                                  width: `${(validationRollupByMilestone.get(milestone.id)!.passedCount / validationRollupByMilestone.get(milestone.id)!.totalAssertions) * 100}%`,
+                                  backgroundColor: validationRollupByMilestone.get(milestone.id)!.passedCount === validationRollupByMilestone.get(milestone.id)!.totalAssertions
+                                    ? "var(--color-success)"
+                                    : "var(--color-warning)",
+                                }}
+                              />
+                            </div>
+                          )}
+                        </>
+                      )}
                       {milestone.status !== "complete" && (
                         <button
                           className="mission-icon-btn"
@@ -1740,6 +2213,13 @@ export function MissionManager({ isOpen, isInline = false, onClose, addToast, pr
                                     {slice.features?.map((feature) => (
                                       <div key={feature.id} className="mission-feature">
                                         <div className="mission-feature__header">
+                                          <button
+                                            className="mission-feature__expand"
+                                            onClick={() => toggleFeatureExpanded(feature.id)}
+                                            title={expandedFeatureId === feature.id ? "Collapse details" : "Expand to show run history"}
+                                          >
+                                            {expandedFeatureId === feature.id ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                                          </button>
                                           <Box size={14} className="mission-feature__icon" />
                                           <span className="mission-feature__title">{feature.title}</span>
                                           <span
@@ -1751,6 +2231,52 @@ export function MissionManager({ isOpen, isInline = false, onClose, addToast, pr
                                           >
                                             {feature.status}
                                           </span>
+                                          {/* Loop state indicator */}
+                                          {(feature.loopState && feature.loopState !== "idle") && (
+                                            <span
+                                              className={`mission-loop-state mission-loop-state--${feature.loopState}`}
+                                              title={`Loop state: ${feature.loopState}`}
+                                            >
+                                              {feature.loopState === "implementing" && "⏳"}
+                                              {feature.loopState === "validating" && "🔄"}
+                                              {feature.loopState === "needs_fix" && "🔧"}
+                                              {feature.loopState === "passed" && "✅"}
+                                              {feature.loopState === "blocked" && "🚫"}
+                                            </span>
+                                          )}
+                                          {/* Lineage indicator for fix features */}
+                                          {feature.generatedFromFeatureId && (
+                                            <span
+                                              className="mission-feature__lineage"
+                                              title={`Generated from fix for assertion failure`}
+                                            >
+                                              🔗 Fix
+                                            </span>
+                                          )}
+                                          {/* Retry budget display */}
+                                          {feature.loopState && feature.loopState !== "idle" && featureLoopStates.get(feature.id) && (
+                                            <span
+                                              className="mission-feature__retry-budget"
+                                              title="Implementation attempts remaining"
+                                            >
+                                              Attempt {featureLoopStates.get(feature.id)!.implementationAttemptCount} of {featureLoopStates.get(feature.id)!.implementationAttemptCount + featureLoopStates.get(feature.id)!.retryBudgetRemaining}
+                                            </span>
+                                          )}
+                                          {/* Validation trigger button for implementing features */}
+                                          {feature.loopState === "implementing" && (
+                                            <button
+                                              className="mission-icon-btn mission-icon-btn--validate"
+                                              onClick={() => handleTriggerValidation(feature.id)}
+                                              title="Validate feature"
+                                              disabled={validatingFeatures.has(feature.id)}
+                                            >
+                                              {validatingFeatures.has(feature.id) ? (
+                                                <Loader2 size={14} className="spinner" />
+                                              ) : (
+                                                <Sparkles size={14} />
+                                              )}
+                                            </button>
+                                          )}
                                           {feature.taskId && (
                                             <span
                                               className="mission-feature__task-link"
@@ -1890,6 +2416,89 @@ export function MissionManager({ isOpen, isInline = false, onClose, addToast, pr
                                             </div>
                                           </div>
                                         )}
+
+                                        {/* Validation Run History - shown when feature is expanded */}
+                                        {expandedFeatureId === feature.id && (
+                                          <div className="mission-feature__run-history">
+                                            <div className="mission-feature__run-history-header">
+                                              <span className="mission-feature__run-history-title">Validation Runs</span>
+                                            </div>
+                                            {validationRunsByFeature.get(feature.id)?.map((run) => (
+                                              <div key={run.id} className="mission-run">
+                                                <div
+                                                  className="mission-run__header"
+                                                  onClick={() => toggleRunExpanded(run.id)}
+                                                >
+                                                  <span
+                                                    className={`mission-status-badge mission-status-badge--sm mission-run__status mission-run__status--${run.status}`}
+                                                    title={run.status}
+                                                  >
+                                                    {run.status}
+                                                  </span>
+                                                  <span className="mission-run__time">
+                                                    {new Date(run.startedAt).toLocaleString()}
+                                                  </span>
+                                                  {run.completedAt && (
+                                                    <span className="mission-run__duration">
+                                                      {Math.round((new Date(run.completedAt).getTime() - new Date(run.startedAt).getTime()) / 1000)}s
+                                                    </span>
+                                                  )}
+                                                  {run.triggerType && (
+                                                    <span className="mission-run__trigger">
+                                                      {run.triggerType}
+                                                    </span>
+                                                  )}
+                                                  <button
+                                                    className="mission-icon-btn"
+                                                    title={expandedRunId === run.id ? "Hide details" : "Show details"}
+                                                  >
+                                                    {expandedRunId === run.id ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                                                  </button>
+                                                </div>
+                                                {expandedRunId === run.id && runDetailsByRunId.get(run.id) && (
+                                                  <div className="mission-run__details">
+                                                    {run.summary && (
+                                                      <p className="mission-run__summary">{run.summary}</p>
+                                                    )}
+                                                    {run.blockedReason && (
+                                                      <p className="mission-run__blocked-reason">
+                                                        <strong>Blocked:</strong> {run.blockedReason}
+                                                      </p>
+                                                    )}
+                                                    {runDetailsByRunId.get(run.id)?.failures && runDetailsByRunId.get(run.id)!.failures!.length > 0 && (
+                                                      <div className="mission-run__failures">
+                                                        <span className="mission-run__failures-title">Failed Assertions:</span>
+                                                        {runDetailsByRunId.get(run.id)!.failures!.map((failure) => (
+                                                          <div key={failure.id} className="mission-run__failure">
+                                                            <span className="mission-run__failure-message">{failure.message}</span>
+                                                            {failure.expected && (
+                                                              <span className="mission-run__failure-expected">
+                                                                Expected: {failure.expected}
+                                                              </span>
+                                                            )}
+                                                            {failure.actual && (
+                                                              <span className="mission-run__failure-actual">
+                                                                Actual: {failure.actual}
+                                                              </span>
+                                                            )}
+                                                          </div>
+                                                        ))}
+                                                      </div>
+                                                    )}
+                                                    {(!runDetailsByRunId.get(run.id)?.failures || runDetailsByRunId.get(run.id)!.failures!.length === 0) && (
+                                                      <p className="mission-run__no-failures">No assertion failures</p>
+                                                    )}
+                                                  </div>
+                                                )}
+                                              </div>
+                                            ))}
+                                            {(!validationRunsByFeature.get(feature.id) || validationRunsByFeature.get(feature.id)!.length === 0) && (
+                                              <div className="mission-run-history__empty">
+                                                No validation runs yet.
+                                              </div>
+                                            )}
+                                          </div>
+                                        )}
                                       </div>
                                     ))}
 
@@ -1939,6 +2548,265 @@ export function MissionManager({ isOpen, isInline = false, onClose, addToast, pr
                               <span>No slices yet</span>
                             </div>
                           )}
+
+                          {/* Assertions Panel */}
+                          <div className="mission-assertions">
+                            <div className="mission-assertions__header">
+                              <span className="mission-assertions__title">Assertions</span>
+                              {validationRollupByMilestone.get(milestone.id) && (
+                                <span
+                                  className="mission-status-badge mission-status-badge--sm"
+                                  style={{
+                                    backgroundColor: validationRollupByMilestone.get(milestone.id)?.state === "passed"
+                                      ? "var(--loop-passed-bg)"
+                                      : validationRollupByMilestone.get(milestone.id)?.state === "failed"
+                                        ? "var(--loop-blocked-bg)"
+                                        : "var(--assertion-pending-bg)",
+                                    color: validationRollupByMilestone.get(milestone.id)?.state === "passed"
+                                      ? "var(--loop-passed-text)"
+                                      : validationRollupByMilestone.get(milestone.id)?.state === "failed"
+                                        ? "var(--loop-blocked-text)"
+                                        : "var(--assertion-pending-text)",
+                                  }}
+                                >
+                                  {validationRollupByMilestone.get(milestone.id)?.state || "not_started"}
+                                </span>
+                              )}
+                              {/* Assertion coverage bar */}
+                              {validationRollupByMilestone.get(milestone.id) && validationRollupByMilestone.get(milestone.id)!.totalAssertions > 0 && (
+                                <div className="mission-assertions__coverage-bar" title={`${validationRollupByMilestone.get(milestone.id)!.passedCount} of ${validationRollupByMilestone.get(milestone.id)!.totalAssertions} assertions passing`}>
+                                  <div
+                                    className="mission-assertions__coverage-bar-fill"
+                                    style={{
+                                      width: `${(validationRollupByMilestone.get(milestone.id)!.passedCount / validationRollupByMilestone.get(milestone.id)!.totalAssertions) * 100}%`,
+                                      backgroundColor: validationRollupByMilestone.get(milestone.id)!.passedCount === validationRollupByMilestone.get(milestone.id)!.totalAssertions
+                                        ? "var(--color-success)"
+                                        : "var(--color-warning)",
+                                    }}
+                                  />
+                                </div>
+                              )}
+                              <button
+                                className="mission-icon-btn"
+                                onClick={() => {
+                                  setIsCreatingAssertion(true);
+                                  setEditingAssertionId(null);
+                                  setAssertionForm({ title: "", assertion: "", status: "pending" });
+                                }}
+                                title="Add assertion"
+                              >
+                                <Plus size={14} />
+                              </button>
+                            </div>
+
+                            {/* Create assertion form */}
+                            {isCreatingAssertion && (
+                              <div className="mission-form-card">
+                                <input
+                                  type="text"
+                                  placeholder="Assertion title"
+                                  value={assertionForm.title}
+                                  onChange={(e) => setAssertionForm({ ...assertionForm, title: e.target.value })}
+                                  autoFocus
+                                />
+                                <textarea
+                                  placeholder="Assertion text (what should be true when complete)"
+                                  value={assertionForm.assertion}
+                                  onChange={(e) => setAssertionForm({ ...assertionForm, assertion: e.target.value })}
+                                  rows={2}
+                                />
+                                <select
+                                  value={assertionForm.status}
+                                  onChange={(e) => setAssertionForm({ ...assertionForm, status: e.target.value as MissionAssertionStatus })}
+                                >
+                                  <option value="pending">Pending</option>
+                                  <option value="passed">Passed</option>
+                                  <option value="failed">Failed</option>
+                                  <option value="blocked">Blocked</option>
+                                </select>
+                                <div className="mission-form-card__actions">
+                                  <button className="mission-btn mission-btn--primary" onClick={() => handleCreateAssertion(milestone.id)} disabled={saving}>
+                                    {saving ? <Loader2 size={14} className="spinner" /> : <Check size={14} />}
+                                    Create
+                                  </button>
+                                  <button className="mission-btn mission-btn--ghost" onClick={handleCancelAssertion}>
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Assertions list */}
+                            <div className="mission-assertions__list">
+                              {assertionsByMilestone.get(milestone.id)?.map((assertion) => (
+                                <div key={assertion.id} className="mission-assertion">
+                                  <div className="mission-assertion__header">
+                                    {editingAssertionId === assertion.id ? (
+                                      <div className="mission-form-card">
+                                        <input
+                                          type="text"
+                                          placeholder="Assertion title"
+                                          value={assertionForm.title}
+                                          onChange={(e) => setAssertionForm({ ...assertionForm, title: e.target.value })}
+                                          autoFocus
+                                        />
+                                        <textarea
+                                          placeholder="Assertion text"
+                                          value={assertionForm.assertion}
+                                          onChange={(e) => setAssertionForm({ ...assertionForm, assertion: e.target.value })}
+                                          rows={2}
+                                        />
+                                        <select
+                                          value={assertionForm.status}
+                                          onChange={(e) => setAssertionForm({ ...assertionForm, status: e.target.value as MissionAssertionStatus })}
+                                        >
+                                          <option value="pending">Pending</option>
+                                          <option value="passed">Passed</option>
+                                          <option value="failed">Failed</option>
+                                          <option value="blocked">Blocked</option>
+                                        </select>
+                                        <div className="mission-form-card__actions">
+                                          <button className="mission-btn mission-btn--primary" onClick={() => handleSaveAssertion(assertion.id, milestone.id)} disabled={saving}>
+                                            {saving ? <Loader2 size={14} className="spinner" /> : <Check size={14} />}
+                                            Save
+                                          </button>
+                                          <button className="mission-btn mission-btn--ghost" onClick={handleCancelAssertion}>
+                                            Cancel
+                                          </button>
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <>
+                                        <span
+                                          className="mission-status-badge mission-status-badge--sm"
+                                          style={{
+                                            backgroundColor: assertionStatusColors[assertion.status].bg,
+                                            color: assertionStatusColors[assertion.status].text,
+                                          }}
+                                        >
+                                          {assertion.status}
+                                        </span>
+                                        <span className="mission-assertion__title">{assertion.title}</span>
+                                        {(() => {
+                                          const linked = linkedFeaturesByAssertion.get(assertion.id);
+                                          const count = linked?.length ?? 0;
+                                          return count > 0 ? (
+                                            <span className="mission-assertion__linked-count" title={`${count} linked feature${count !== 1 ? "s" : ""}`}>
+                                              ({count} linked)
+                                            </span>
+                                          ) : null;
+                                        })()}
+                                        <button
+                                          className="mission-icon-btn"
+                                          onClick={() => handleToggleAssertionExpanded(assertion.id)}
+                                          title="Toggle details"
+                                        >
+                                          {expandedAssertionId === assertion.id ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                                        </button>
+                                        <button
+                                          className="mission-icon-btn"
+                                          onClick={() => handleEditAssertion(assertion)}
+                                          title="Edit assertion"
+                                        >
+                                          <Pencil size={14} />
+                                        </button>
+                                        <button
+                                          className="mission-icon-btn mission-icon-btn--danger"
+                                          onClick={() => setDeleteConfirmId({ type: "assertion", id: assertion.id })}
+                                          title="Delete assertion"
+                                        >
+                                          <Trash2 size={14} />
+                                        </button>
+                                      </>
+                                    )}
+                                  </div>
+                                  {expandedAssertionId === assertion.id && (
+                                    <div className="mission-assertion__body">
+                                      <p className="mission-assertion__text">{assertion.assertion}</p>
+                                      {/* Linked features section */}
+                                      <div className="mission-assertion__linked-features">
+                                        <div className="mission-assertion__linked-features-header">
+                                          <span className="mission-assertion__linked-features-label">Linked Features</span>
+                                          <button
+                                            className="mission-btn mission-btn--ghost mission-btn--sm"
+                                            onClick={async () => {
+                                              // First expand the assertion if it's not already expanded
+                                              if (expandedAssertionId !== assertion.id) {
+                                                await handleToggleAssertionExpanded(assertion.id);
+                                              }
+                                              // Then toggle the picker
+                                              setFeaturePickerOpenForAssertion(featurePickerOpenForAssertion === assertion.id ? null : assertion.id);
+                                            }}
+                                            title="Link a feature"
+                                          >
+                                            <Link size={12} />
+                                            Link Feature
+                                          </button>
+                                        </div>
+                                        {/* Feature picker dropdown */}
+                                        {featurePickerOpenForAssertion === assertion.id && (
+                                          <div className="mission-assertion__feature-picker">
+                                            <div className="mission-assertion__feature-picker-dropdown">
+                                              {(() => {
+                                                const linkedFeatureIds = new Set((linkedFeaturesByAssertion.get(assertion.id) ?? []).map((f) => f.id));
+                                                const allFeatures: MissionFeature[] = [];
+                                                selectedMission?.milestones.forEach((m) =>
+                                                  m.slices.forEach((s) => allFeatures.push(...s.features.filter((f) => !linkedFeatureIds.has(f.id))))
+                                                );
+                                                if (allFeatures.length === 0) {
+                                                  return <span className="mission-assertion__feature-picker-empty">All features already linked</span>;
+                                                }
+                                                return allFeatures.map((feature) => (
+                                                  <button
+                                                    key={feature.id}
+                                                    className="mission-assertion__feature-picker-item"
+                                                    onClick={() => handleLinkFeatureToAssertion(feature.id, assertion.id)}
+                                                    disabled={linkingAssertions.has(assertion.id)}
+                                                  >
+                                                    <span className="mission-assertion__feature-picker-title">{feature.title}</span>
+                                                    {linkingAssertions.has(assertion.id) && <Loader2 size={12} className="spinner" />}
+                                                  </button>
+                                                ));
+                                              })()}
+                                            </div>
+                                          </div>
+                                        )}
+                                        {/* Linked features list */}
+                                        {(() => {
+                                          const linked = linkedFeaturesByAssertion.get(assertion.id) ?? [];
+                                          if (linked.length === 0) {
+                                            return <span className="mission-assertion__linked-empty">No features linked yet</span>;
+                                          }
+                                          return linked.map((feature) => {
+                                            const key = `${feature.id}-${assertion.id}`;
+                                            const isUnlinking = unlinkingFeatures.has(key);
+                                            return (
+                                              <div key={feature.id} className="mission-assertion__linked-feature">
+                                                <span className="mission-assertion__linked-feature-title">{feature.title}</span>
+                                                <button
+                                                  className="mission-icon-btn mission-icon-btn--danger"
+                                                  onClick={() => handleUnlinkFeatureFromAssertion(feature.id, assertion.id)}
+                                                  disabled={isUnlinking}
+                                                  title="Unlink feature"
+                                                >
+                                                  {isUnlinking ? <Loader2 size={12} className="spinner" /> : <Unlink size={12} />}
+                                                </button>
+                                              </div>
+                                            );
+                                          });
+                                        })()}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                              {(!assertionsByMilestone.get(milestone.id) || assertionsByMilestone.get(milestone.id)?.length === 0) && !isCreatingAssertion && (
+                                <div className="mission-manager__empty mission-assertions__empty">
+                                  <span>No assertions defined. Add one to define completion criteria.</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
                         </div>
                       </div>
                     )}

@@ -1825,7 +1825,7 @@ export class MissionStore extends EventEmitter<MissionStoreEvents> {
         run.milestoneId,
         run.sliceId,
         run.status,
-        run.triggerType ?? null,
+        run.triggerType ?? "auto",
         run.implementationAttempt,
         run.validatorAttempt,
         run.startedAt,

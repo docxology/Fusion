@@ -128,6 +128,8 @@ interface ListViewProps {
   taskStuckTimeoutMs?: number;
   /** External search query from header search (defaults to "") */
   searchQuery?: string;
+  /** Timestamp (ms) when task data was last confirmed fresh from the server. Used for freshness-aware stuck detection. */
+  lastFetchTimeMs?: number;
 }
 
 function getStepProgress(steps: TaskStep[]): string {
@@ -162,6 +164,7 @@ export function ListView({
   projectName,
   taskStuckTimeoutMs,
   searchQuery = "",
+  lastFetchTimeMs,
 }: ListViewProps) {
   const [sortField, setSortField] = useState<SortField>("id");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
@@ -804,7 +807,7 @@ export function ListView({
                         columnTasks.map((task) => {
                           const isFailed = task.status === "failed";
                           const isPaused = task.paused === true;
-                          const isStuckState = isTaskStuck(task, taskStuckTimeoutMs);
+                          const isStuckState = isTaskStuck(task, taskStuckTimeoutMs, lastFetchTimeMs);
                           const isAgentActive =
                             !globalPaused &&
                             !isFailed &&
@@ -979,7 +982,7 @@ export function ListView({
                           columnTasks.map((task) => {
                             const isFailed = task.status === "failed";
                             const isPaused = task.paused === true;
-                            const isStuckState = isTaskStuck(task, taskStuckTimeoutMs);
+                            const isStuckState = isTaskStuck(task, taskStuckTimeoutMs, lastFetchTimeMs);
                             const isAgentActive =
                               !globalPaused &&
                               !isFailed &&

@@ -41,7 +41,6 @@ vi.mock("../../api", async (importOriginal) => {
     fetchScripts: vi.fn(() => Promise.resolve({ build: "npm run build", test: "pnpm test" })),
     runScript: vi.fn(() => Promise.resolve({ sessionId: "sess-script-1", command: "echo hello" })),
     killPtyTerminalSession: vi.fn(() => Promise.resolve({ killed: true })),
-    fetchScripts: vi.fn(() => Promise.resolve({ build: "npm run build", test: "pnpm test" })),
   };
 });
 
@@ -62,10 +61,6 @@ const mockUseTasks = vi.fn(() => ({
 // Accept both old and new hook signatures
 vi.mock("../../hooks/useTasks", () => ({
   useTasks: (options?: { projectId?: string; searchQuery?: string }) => mockUseTasks(options),
-}));
-
-vi.mock("../../hooks/useTasks", () => ({
-  useTasks: () => mockUseTasks(),
 }));
 
 // Mock useRemoteNodeData

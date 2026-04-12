@@ -21,6 +21,8 @@ interface WorktreeGroupProps {
   taskStuckTimeoutMs?: number;
   /** Called when user clicks a mission badge on a task card */
   onOpenMission?: (missionId: string) => void;
+  /** Timestamp (ms) when task data was last confirmed fresh from the server. Used for freshness-aware stuck detection. */
+  lastFetchTimeMs?: number;
 }
 
 function WorktreeGroupComponent({
@@ -35,6 +37,7 @@ function WorktreeGroupComponent({
   onOpenDetailWithTab,
   taskStuckTimeoutMs,
   onOpenMission,
+  lastFetchTimeMs,
 }: WorktreeGroupProps) {
   return (
     <div className="worktree-group">
@@ -45,7 +48,7 @@ function WorktreeGroupComponent({
         <span className="worktree-label">{label}</span>
       </div>
       {activeTasks.map((task) => (
-        <TaskCard key={task.id} task={task} projectId={projectId} onOpenDetail={onOpenDetail} addToast={addToast} globalPaused={globalPaused} onUpdateTask={onUpdateTask} onOpenDetailWithTab={onOpenDetailWithTab} taskStuckTimeoutMs={taskStuckTimeoutMs} onOpenMission={onOpenMission} />
+        <TaskCard key={task.id} task={task} projectId={projectId} onOpenDetail={onOpenDetail} addToast={addToast} globalPaused={globalPaused} onUpdateTask={onUpdateTask} onOpenDetailWithTab={onOpenDetailWithTab} taskStuckTimeoutMs={taskStuckTimeoutMs} onOpenMission={onOpenMission} lastFetchTimeMs={lastFetchTimeMs} />
       ))}
       {queuedTasks.map((task) => (
         <TaskCard
@@ -60,6 +63,7 @@ function WorktreeGroupComponent({
           onOpenDetailWithTab={onOpenDetailWithTab}
           taskStuckTimeoutMs={taskStuckTimeoutMs}
           onOpenMission={onOpenMission}
+          lastFetchTimeMs={lastFetchTimeMs}
         />
       ))}
     </div>

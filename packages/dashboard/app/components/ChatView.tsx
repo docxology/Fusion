@@ -15,6 +15,11 @@ import { CustomModelDropdown } from "./CustomModelDropdown";
 import { fetchModels } from "../api";
 import type { ModelInfo } from "../api";
 
+export interface ChatViewProps {
+  projectId?: string;
+  addToast: (msg: string, type?: "success" | "error") => void;
+}
+
 function formatRelativeTime(dateStr: string): string {
   const date = new Date(dateStr);
   const now = new Date();

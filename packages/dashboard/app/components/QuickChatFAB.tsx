@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { MessageSquare, Send, X } from "lucide-react";
-import type { Message } from "@fusion/core";
 import type { Agent } from "../api";
-import { fetchConversation, sendMessage } from "../api";
+import { useQuickChat, type ChatMessageInfo } from "../hooks/useQuickChat";
 import { useAgents } from "../hooks/useAgents";
 
 interface QuickChatFABProps {
@@ -37,19 +36,30 @@ export function QuickChatFAB({ projectId, addToast, showFAB = true, open, onOpen
       }
     : setInternalOpen;
   const [selectedAgentId, setSelectedAgentId] = useState<string>("");
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [isConversationLoading, setIsConversationLoading] = useState(false);
   const [messageInput, setMessageInput] = useState("");
-  const [isSending, setIsSending] = useState(false);
+
+  // Chat session hook
+  const {
+    messages,
+    isStreaming,
+    streamingText,
+    streamingThinking,
+    sessionsLoading,
+    messagesLoading,
+    sendMessage,
+    switchSession,
+  } = useQuickChat(projectId, addToast);
 
   const panelRef = useRef<HTMLDivElement | null>(null);
   const fabRef = useRef<HTMLButtonElement | null>(null);
   const messagesRef = useRef<HTMLDivElement | null>(null);
 
+  // Track the previous agent ID to detect changes
+  const prevAgentIdRef = useRef<string>("");
+
   useEffect(() => {
     if (agents.length === 0) {
       setSelectedAgentId("");
-      setMessages([]);
       return;
     }
 
@@ -59,34 +69,31 @@ export function QuickChatFAB({ projectId, addToast, showFAB = true, open, onOpen
     }
   }, [agents, selectedAgentId]);
 
+  // Initialize session when an agent is selected and panel opens
+  useEffect(() => {
+    if (!isOpen || !selectedAgentId) return;
+    if (selectedAgentId !== prevAgentIdRef.current) {
+      prevAgentIdRef.current = selectedAgentId;
+      void switchSession(selectedAgentId);
+    }
+  }, [isOpen, selectedAgentId, switchSession]);
+
+  // Handle agent selector changes
+  const handleAgentChange = useCallback(
+    (agentId: string) => {
+      setSelectedAgentId(agentId);
+      prevAgentIdRef.current = agentId;
+      void switchSession(agentId);
+    },
+    [switchSession],
+  );
+
   const selectedAgent = useMemo(
     () => agents.find((agent) => agent.id === selectedAgentId) ?? null,
     [agents, selectedAgentId],
   );
 
-  const loadConversation = useCallback(async (agentId: string) => {
-    if (!agentId) {
-      setMessages([]);
-      return;
-    }
-
-    setIsConversationLoading(true);
-    try {
-      const conversation = await fetchConversation(agentId, "agent", projectId);
-      setMessages(conversation);
-    } catch {
-      addToast("Failed to load conversation", "error");
-      setMessages([]);
-    } finally {
-      setIsConversationLoading(false);
-    }
-  }, [addToast, projectId]);
-
-  useEffect(() => {
-    if (!isOpen || !selectedAgentId) return;
-    void loadConversation(selectedAgentId);
-  }, [isOpen, selectedAgentId, loadConversation]);
-
+  // Click outside and escape handling
   useEffect(() => {
     if (!isOpen) return;
 
@@ -112,36 +119,21 @@ export function QuickChatFAB({ projectId, addToast, showFAB = true, open, onOpen
     };
   }, [isOpen]);
 
+  // Auto-scroll messages
   useEffect(() => {
     if (!isOpen) return;
     const messagesEl = messagesRef.current;
     if (!messagesEl) return;
     messagesEl.scrollTop = messagesEl.scrollHeight;
-  }, [messages, isOpen]);
+  }, [messages, streamingText, streamingThinking, isOpen]);
 
   const handleSendMessage = useCallback(async () => {
     const trimmed = messageInput.trim();
-    if (!selectedAgentId || !trimmed || isSending) return;
+    if (!selectedAgentId || !trimmed || isStreaming) return;
 
-    setIsSending(true);
-    try {
-      await sendMessage(
-        {
-          toId: selectedAgentId,
-          toType: "agent",
-          content: trimmed,
-          type: "user-to-agent",
-        },
-        projectId,
-      );
-      setMessageInput("");
-      await loadConversation(selectedAgentId);
-    } catch {
-      addToast("Failed to send message", "error");
-    } finally {
-      setIsSending(false);
-    }
-  }, [addToast, isSending, loadConversation, messageInput, projectId, selectedAgentId]);
+    setMessageInput("");
+    await sendMessage(trimmed);
+  }, [sendMessage, isStreaming, messageInput, selectedAgentId]);
 
   const handleInputKeyDown = useCallback((event: ReactKeyboardEvent<HTMLInputElement>) => {
     if (event.key !== "Enter" || event.shiftKey) return;
@@ -188,7 +180,7 @@ export function QuickChatFAB({ projectId, addToast, showFAB = true, open, onOpen
             <select
               id="quick-chat-agent-select"
               value={selectedAgentId}
-              onChange={(event) => setSelectedAgentId(event.target.value)}
+              onChange={(event) => handleAgentChange(event.target.value)}
               data-testid="quick-chat-agent-select"
             >
               {agents.map((agent) => (
@@ -200,23 +192,41 @@ export function QuickChatFAB({ projectId, addToast, showFAB = true, open, onOpen
           </div>
 
           <div className="quick-chat-panel-messages" ref={messagesRef} data-testid="quick-chat-messages">
-            {isConversationLoading ? (
+            {sessionsLoading || messagesLoading ? (
               <div className="quick-chat-panel-empty">Loading conversation…</div>
-            ) : messages.length === 0 ? (
+            ) : messages.length === 0 && !streamingText && !streamingThinking ? (
               <div className="quick-chat-panel-empty">No messages yet. Start the conversation!</div>
             ) : (
-              messages.map((message) => {
-                const isSent = message.fromType === "user";
-                return (
+              <>
+                {messages.map((message: ChatMessageInfo) => {
+                  const isSent = message.role === "user";
+                  return (
+                    <div
+                      key={message.id}
+                      className={`quick-chat-panel-message ${isSent ? "quick-chat-panel-message--sent" : "quick-chat-panel-message--received"}`}
+                      data-testid={`quick-chat-message-${message.id}`}
+                    >
+                      <p>{message.content}</p>
+                    </div>
+                  );
+                })}
+                {/* Streaming message bubble */}
+                {(streamingText || streamingThinking) && (
                   <div
-                    key={message.id}
-                    className={`quick-chat-panel-message ${isSent ? "quick-chat-panel-message--sent" : "quick-chat-panel-message--received"}`}
-                    data-testid={`quick-chat-message-${message.id}`}
+                    className="quick-chat-panel-message quick-chat-panel-message--received quick-chat-panel-message--streaming"
+                    data-testid="quick-chat-streaming-message"
                   >
-                    <p>{message.content}</p>
+                    {streamingThinking && (
+                      <p className="quick-chat-panel-thinking" data-testid="quick-chat-streaming-thinking">
+                        {streamingThinking}
+                      </p>
+                    )}
+                    {streamingText && (
+                      <p data-testid="quick-chat-streaming-text">{streamingText}</p>
+                    )}
                   </div>
-                );
-              })
+                )}
+              </>
             )}
           </div>
 
@@ -227,13 +237,13 @@ export function QuickChatFAB({ projectId, addToast, showFAB = true, open, onOpen
               onChange={(event) => setMessageInput(event.target.value)}
               onKeyDown={handleInputKeyDown}
               placeholder={selectedAgent ? `Message ${selectedAgent.name || selectedAgent.id}` : "Type a message"}
-              disabled={!selectedAgentId || isSending}
+              disabled={!selectedAgentId || isStreaming}
               data-testid="quick-chat-input"
             />
             <button
               type="button"
               onClick={() => void handleSendMessage()}
-              disabled={!selectedAgentId || messageInput.trim().length === 0 || isSending}
+              disabled={!selectedAgentId || messageInput.trim().length === 0 || isStreaming}
               data-testid="quick-chat-send"
             >
               <Send size={16} />

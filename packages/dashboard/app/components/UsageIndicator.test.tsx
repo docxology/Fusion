@@ -1944,4 +1944,34 @@ describe("UsageIndicator", () => {
     // Tomorrow should always be weekday format, never month/day
     expect(resetAtEl?.textContent).toMatch(/^[A-Z][a-z]{2} \d{1,2}:\d{2} [AP]M$/);
   });
+
+  // Email display tests
+  it("does not render provider email even when email is present in data", () => {
+    mockUseUsageData.mockReturnValue({
+      providers: [
+        {
+          name: "Claude",
+          icon: "🟠",
+          status: "ok",
+          email: "user@example.com",
+          plan: "Pro",
+          windows: [
+            { label: "Session", percentUsed: 10, percentLeft: 90, resetText: "resets in 4h" },
+          ],
+        },
+      ],
+      loading: false,
+      error: null,
+      lastUpdated: new Date(),
+      refresh: mockRefresh,
+    });
+
+    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
+
+    // Plan should be visible
+    expect(screen.getByText("Pro")).toBeInTheDocument();
+    // Email should NOT be rendered
+    expect(screen.queryByText("user@example.com")).not.toBeInTheDocument();
+    expect(document.querySelector(".usage-provider-email")).not.toBeInTheDocument();
+  });
 });

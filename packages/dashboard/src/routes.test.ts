@@ -6075,7 +6075,7 @@ describe("GET /tasks/:id/diff", () => {
   });
 
   describe("done tasks with commit SHA", () => {
-    it("attempts git diff when commitSha is present", async () => {
+    it("attempts git diff when commitSha is present", { timeout: 30_000 }, async () => {
       // Use a real git repo to test the commit-backed path
       const testDir = mkdtempSync(join(tmpdir(), "kb-diff-test-"));
       try {

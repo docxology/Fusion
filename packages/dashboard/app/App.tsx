@@ -71,7 +71,7 @@ function AppInner() {
   const effectiveTasks = isRemote && remoteData.tasks.length > 0 ? remoteData.tasks : [];
   
   // Tasks hook with project context and search query
-  const { tasks, createTask, moveTask, deleteTask, mergeTask, retryTask, updateTask, duplicateTask, archiveTask, unarchiveTask, archiveAllDone, loadArchivedTasks } = useTasks(
+  const { tasks, createTask, moveTask, deleteTask, mergeTask, retryTask, updateTask, duplicateTask, archiveTask, unarchiveTask, archiveAllDone, loadArchivedTasks, lastFetchTimeMs } = useTasks(
     currentProject ? { projectId: currentProject.id, searchQuery: searchQuery || undefined } : { searchQuery: searchQuery || undefined }
   );
 
@@ -372,6 +372,7 @@ function AppInner() {
             onToggleModelFavorite={handleToggleModelFavorite}
             taskStuckTimeoutMs={taskStuckTimeoutMs}
             onOpenMission={handleOpenMission}
+            lastFetchTimeMs={lastFetchTimeMs}
           />
         </PageErrorBoundary>
       );
@@ -398,6 +399,7 @@ function AppInner() {
           onToggleModelFavorite={handleToggleModelFavorite}
           taskStuckTimeoutMs={taskStuckTimeoutMs}
           searchQuery={searchQuery}
+          lastFetchTimeMs={lastFetchTimeMs}
         />
       </PageErrorBoundary>
     );
@@ -483,6 +485,7 @@ function AppInner() {
           backgroundNeedsInput={bgNeedsInput}
           onOpenBackgroundSession={handleOpenBackgroundSession}
           onDismissBackgroundSession={bgDismiss}
+          lastFetchTimeMs={lastFetchTimeMs}
         />
       )}
       <MobileNavBar

@@ -48,7 +48,7 @@ function deriveExecutorState(
 /**
  * Derive statistics from the task list.
  */
-function deriveStatsFromTasks(tasks: Task[], taskStuckTimeoutMs?: number): Pick<
+function deriveStatsFromTasks(tasks: Task[], taskStuckTimeoutMs?: number, lastFetchTimeMs?: number): Pick<
   ExecutorStats,
   "runningTaskCount" | "blockedTaskCount" | "stuckTaskCount" | "queuedTaskCount" | "inReviewCount"
 > {
@@ -62,7 +62,7 @@ function deriveStatsFromTasks(tasks: Task[], taskStuckTimeoutMs?: number): Pick<
     switch (task.column) {
       case "in-progress":
         runningTaskCount++;
-        if (isTaskStuck(task, taskStuckTimeoutMs)) {
+        if (isTaskStuck(task, taskStuckTimeoutMs, lastFetchTimeMs)) {
           stuckTaskCount++;
         }
         break;
@@ -101,7 +101,7 @@ function deriveStatsFromTasks(tasks: Task[], taskStuckTimeoutMs?: number): Pick<
  * - Derives executorState from globalPause and enginePaused flags
  * - Returns ExecutorStats object with reactive updates
  */
-export function useExecutorStats(tasks: Task[], projectId?: string, taskStuckTimeoutMs?: number): UseExecutorStatsResult {
+export function useExecutorStats(tasks: Task[], projectId?: string, taskStuckTimeoutMs?: number, lastFetchTimeMs?: number): UseExecutorStatsResult {
 
   const [apiData, setApiData] = useState<{
     globalPause: boolean;
@@ -173,7 +173,7 @@ export function useExecutorStats(tasks: Task[], projectId?: string, taskStuckTim
   }, [refresh]);
 
   // Derive stats from tasks and API data
-  const taskStats = deriveStatsFromTasks(tasks, taskStuckTimeoutMs);
+  const taskStats = deriveStatsFromTasks(tasks, taskStuckTimeoutMs, lastFetchTimeMs);
   const executorState = deriveExecutorState(
     apiData.globalPause,
     apiData.enginePaused,

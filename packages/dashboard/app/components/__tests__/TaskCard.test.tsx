@@ -3268,7 +3268,7 @@ describe("TaskCard singular/plural file count", () => {
     expect(screen.queryByText("View files")).not.toBeInTheDocument();
   });
 
-  it("falls back to View files for in-progress worktrees without a positive diff count", () => {
+  it("hides file changes link for in-progress worktrees when filesChanged is 0", () => {
     const task = makeTask({
       column: "in-progress",
       worktree: "/repo/.worktrees/fn-099",
@@ -3284,7 +3284,27 @@ describe("TaskCard singular/plural file count", () => {
       />
     );
 
-    expect(screen.getByText("View files")).toBeInTheDocument();
+    expect(screen.queryByText("View files")).not.toBeInTheDocument();
+    expect(screen.queryByText(/files? changed/)).not.toBeInTheDocument();
+  });
+
+  it("hides file changes link for in-progress worktrees when diffStats is null", () => {
+    const task = makeTask({
+      column: "in-progress",
+      worktree: "/repo/.worktrees/fn-099",
+      status: "executing",
+    });
+    mockUseTaskDiffStats.mockReturnValue({ stats: null, loading: false });
+
+    render(
+      <TaskCard
+        task={task}
+        onOpenDetail={vi.fn()}
+        addToast={noopToast}
+      />
+    );
+
+    expect(screen.queryByText("View files")).not.toBeInTheDocument();
     expect(screen.queryByText(/files? changed/)).not.toBeInTheDocument();
   });
 

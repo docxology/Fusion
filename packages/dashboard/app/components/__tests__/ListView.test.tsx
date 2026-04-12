@@ -1554,6 +1554,27 @@ describe("ListView Quick Entry", () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(mockOnQuickCreate).not.toHaveBeenCalled();
   });
+
+  it("QuickEntryBox textarea spans full container width in list view (FN-1579)", () => {
+    mockDesktopViewport();
+    const mockOnQuickCreate = vi.fn().mockResolvedValue(undefined);
+    renderListView({ onQuickCreate: mockOnQuickCreate });
+
+    const quickEntryBox = screen.getByTestId("quick-entry-box");
+    const input = screen.getByTestId("quick-entry-input") as HTMLTextAreaElement;
+
+    // Get the bounding rectangles for the textarea and its container
+    const inputRect = input.getBoundingClientRect();
+    const containerRect = quickEntryBox.getBoundingClientRect();
+
+    // The textarea should span the full width of its container (within 2px tolerance for rounding)
+    // This ensures the input visually reaches the right edge of the container
+    expect(inputRect.width).toBeGreaterThanOrEqual(containerRect.width - 2);
+
+    // The textarea should be at least 80% of the container width
+    // (accounting for the toggle button on the right)
+    expect(inputRect.width).toBeGreaterThanOrEqual(containerRect.width * 0.8);
+  });
 });
 
 describe("ListView Collapsible Sections", () => {

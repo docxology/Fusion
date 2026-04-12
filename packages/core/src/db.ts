@@ -1113,7 +1113,7 @@ export class Database {
             milestoneId TEXT NOT NULL,
             sliceId TEXT NOT NULL,
             status TEXT NOT NULL DEFAULT 'running',
-            triggerType TEXT,
+            triggerType TEXT NOT NULL DEFAULT 'auto',
             implementationAttempt INTEGER NOT NULL DEFAULT 0,
             validatorAttempt INTEGER NOT NULL DEFAULT 0,
             summary TEXT,
@@ -1131,6 +1131,10 @@ export class Database {
         this.db.exec(`CREATE INDEX IF NOT EXISTS idxValidatorRunsMilestoneId ON mission_validator_runs(milestoneId)`);
         this.db.exec(`CREATE INDEX IF NOT EXISTS idxValidatorRunsSliceId ON mission_validator_runs(sliceId)`);
         this.db.exec(`CREATE INDEX IF NOT EXISTS idxValidatorRunsStatus ON mission_validator_runs(status)`);
+
+        // Ensure triggerType column has correct definition for existing databases
+        // (migration originally created it as nullable TEXT, this adds NOT NULL DEFAULT 'auto')
+        this.addColumnIfMissing("mission_validator_runs", "triggerType", "TEXT NOT NULL DEFAULT 'auto'");
 
         // Create mission_validator_failures table for assertion failure records
         this.db.exec(`
