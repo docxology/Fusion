@@ -65,6 +65,8 @@ export const DEFAULT_PROJECT_SETTINGS = {
   buildRetryCount: 0,
   buildTimeoutMs: 300_000,
   requirePlanApproval: false,
+  specStalenessEnabled: false,
+  specStalenessMaxAgeMs: 6 * 60 * 60 * 1000,
   taskStuckTimeoutMs: undefined,
   aiSessionTtlMs: 7 * 24 * 60 * 60 * 1000,
   aiSessionCleanupIntervalMs: 60 * 60 * 1000,

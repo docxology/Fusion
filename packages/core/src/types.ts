@@ -996,6 +996,14 @@ export interface ProjectSettings {
    *  remain in triage with status "awaiting-approval" until a user approves
    *  or rejects the plan. Default: false. */
   requirePlanApproval?: boolean;
+  /** When true, enforces that task specifications (PROMPT.md) are refreshed if they
+   *  become stale. Stale specs are detected based on specStalenessMaxAgeMs.
+   *  Default: false. */
+  specStalenessEnabled?: boolean;
+  /** Maximum age in milliseconds for a task specification before it is considered stale
+   *  and requires regeneration. Only enforced when specStalenessEnabled is true.
+   *  Default: 21600000 (6 hours). */
+  specStalenessMaxAgeMs?: number;
   /** Timeout in milliseconds for detecting stuck tasks. When a task's agent session
    *  shows no activity (no text deltas, tool calls, or progress updates) for longer
    *  than this duration, the task is considered stuck and will be terminated and retried.
