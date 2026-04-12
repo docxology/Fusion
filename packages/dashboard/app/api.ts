@@ -343,8 +343,13 @@ export async function deleteAttachment(id: string, filename: string, projectId?:
   return api<Task>(withProjectId(`/tasks/${id}/attachments/${filename}`, projectId), { method: "DELETE" });
 }
 
-export function fetchAgentLogs(taskId: string, projectId?: string): Promise<AgentLogEntry[]> {
-  return api<AgentLogEntry[]>(withProjectId(`/tasks/${taskId}/logs`, projectId));
+export function fetchAgentLogs(taskId: string, projectId?: string, options?: { limit?: number }): Promise<AgentLogEntry[]> {
+  const params = new URLSearchParams();
+  if (options?.limit !== undefined) {
+    params.set("limit", String(options.limit));
+  }
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return api<AgentLogEntry[]>(withProjectId(`/tasks/${taskId}/logs${suffix}`, projectId));
 }
 
 export function fetchSessionFiles(taskId: string, projectId?: string): Promise<string[]> {

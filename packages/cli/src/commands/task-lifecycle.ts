@@ -108,6 +108,18 @@ export async function cleanupMergedTaskArtifacts(cwd: string, task: Pick<TaskDet
   }
 }
 
+async function finalizePullRequestMerge(
+  store: TaskStore,
+  cwd: string,
+  task: TaskDetail,
+  prInfo: PrInfo,
+): Promise<void> {
+  await cleanupMergedTaskArtifacts(cwd, task);
+  await store.updateTask(task.id, { status: null, mergeRetries: 0 });
+  await store.moveTask(task.id, "done");
+  await store.logEntry(task.id, "Pull request merged", `PR #${prInfo.number}: ${prInfo.url}`);
+}
+
 /**
  * Result of processing a PR merge task.
  * - "waiting": PR exists but not ready to merge (checks pending, reviews needed)
@@ -188,10 +200,7 @@ export async function processPullRequestMergeTask(
   await store.updatePrInfo(task.id, refreshedPrInfo);
 
   if (mergeStatus.prInfo.status === "merged") {
-    await cleanupMergedTaskArtifacts(cwd, task);
-    await store.moveTask(task.id, "done");
-    await store.updateTask(task.id, { status: null, mergeRetries: 0 });
-    await store.logEntry(task.id, "Pull request merged", `PR #${prInfo.number}: ${prInfo.url}`);
+    await finalizePullRequestMerge(store, cwd, task, prInfo);
     return "merged";
   }
 
@@ -207,9 +216,6 @@ export async function processPullRequestMergeTask(
   await store.updateTask(task.id, { status: "merging-pr" });
   const mergedPr = await github.mergePr({ number: prInfo.number, method: "squash" });
   await store.updatePrInfo(task.id, { ...mergedPr, lastCheckedAt: new Date().toISOString() });
-  await cleanupMergedTaskArtifacts(cwd, task);
-  await store.moveTask(task.id, "done");
-  await store.updateTask(task.id, { status: null, mergeRetries: 0 });
-  await store.logEntry(task.id, "Pull request merged", `PR #${mergedPr.number}: ${mergedPr.url}`);
+  await finalizePullRequestMerge(store, cwd, task, mergedPr);
   return "merged";
 }

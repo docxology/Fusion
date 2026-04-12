@@ -4,104 +4,9 @@ import {
   DEFAULT_PROJECT_SETTINGS,
   GLOBAL_SETTINGS_KEYS,
   PROJECT_SETTINGS_KEYS,
+  isGlobalSettingsKey,
+  isProjectSettingsKey,
 } from "../types.js";
-import type { GlobalSettings, ProjectSettings } from "../types.js";
-
-const GLOBAL_KEYS: (keyof GlobalSettings)[] = [
-  "themeMode",
-  "colorTheme",
-  "defaultProvider",
-  "defaultModelId",
-  "fallbackProvider",
-  "fallbackModelId",
-  "defaultThinkingLevel",
-  "ntfyEnabled",
-  "ntfyTopic",
-  "ntfyEvents",
-  "ntfyDashboardHost",
-  "defaultProjectId",
-  "setupComplete",
-  "favoriteProviders",
-  "favoriteModels",
-  "openrouterModelSync",
-  "modelOnboardingComplete",
-];
-
-const PROJECT_KEYS: (keyof ProjectSettings)[] = [
-  "globalPause",
-  "enginePaused",
-  "maxConcurrent",
-  "maxWorktrees",
-  "pollIntervalMs",
-  "groupOverlappingFiles",
-  "autoMerge",
-  "mergeStrategy",
-  "worktreeInitCommand",
-  "testCommand",
-  "buildCommand",
-  "recycleWorktrees",
-  "worktreeNaming",
-  "taskPrefix",
-  "includeTaskIdInCommit",
-  "planningProvider",
-  "planningModelId",
-  "planningFallbackProvider",
-  "planningFallbackModelId",
-  "validatorProvider",
-  "validatorModelId",
-  "validatorFallbackProvider",
-  "validatorFallbackModelId",
-  "modelPresets",
-  "autoSelectModelPreset",
-  "defaultPresetBySize",
-  "autoResolveConflicts",
-  "smartConflictResolution",
-  "strictScopeEnforcement",
-  "buildRetryCount",
-  "buildTimeoutMs",
-  "requirePlanApproval",
-  "taskStuckTimeoutMs",
-  "aiSessionTtlMs",
-  "aiSessionCleanupIntervalMs",
-  "autoUnpauseEnabled",
-  "autoUnpauseBaseDelayMs",
-  "autoUnpauseMaxDelayMs",
-  "maxStuckKills",
-  "maxSpawnedAgentsPerParent",
-  "maxSpawnedAgentsGlobal",
-  "maintenanceIntervalMs",
-  "autoUpdatePrStatus",
-  "autoCreatePr",
-  "autoBackupEnabled",
-  "autoBackupSchedule",
-  "autoBackupRetention",
-  "autoBackupDir",
-  "autoSummarizeTitles",
-  "titleSummarizerProvider",
-  "titleSummarizerModelId",
-  "titleSummarizerFallbackProvider",
-  "titleSummarizerFallbackModelId",
-  "scripts",
-  "setupScript",
-  "insightExtractionEnabled",
-  "insightExtractionSchedule",
-  "insightExtractionMinIntervalMs",
-  "memoryEnabled",
-  "memoryBackendType",
-  "tokenCap",
-  "runStepsInNewSessions",
-  "maxParallelSteps",
-  "missionStaleThresholdMs",
-  "missionMaxTaskRetries",
-  "missionHealthCheckIntervalMs",
-  "agentPrompts",
-  "promptOverrides",
-  "reflectionEnabled",
-  "reflectionIntervalMs",
-  "reflectionAfterTask",
-  "reviewHandoffPolicy",
-  "showQuickChatFAB",
-];
 
 function assertExactKeyCoverage(scopeName: string, actual: readonly string[], expected: readonly string[]): void {
   const uniqueActual = [...new Set(actual)];
@@ -124,28 +29,27 @@ function assertExactKeyCoverage(scopeName: string, actual: readonly string[], ex
 }
 
 describe("settings key parity", () => {
-  it("GLOBAL_SETTINGS_KEYS covers all GlobalSettings keys", () => {
-    assertExactKeyCoverage("GLOBAL_SETTINGS_KEYS", GLOBAL_SETTINGS_KEYS as readonly string[], GLOBAL_KEYS as string[]);
-  });
-
-  it("PROJECT_SETTINGS_KEYS covers all ProjectSettings keys", () => {
-    assertExactKeyCoverage("PROJECT_SETTINGS_KEYS", PROJECT_SETTINGS_KEYS as readonly string[], PROJECT_KEYS as string[]);
-  });
-
-  it("DEFAULT_GLOBAL_SETTINGS covers all GlobalSettings keys", () => {
+  it("GLOBAL_SETTINGS_KEYS is derived from the global settings defaults", () => {
     assertExactKeyCoverage(
-      "DEFAULT_GLOBAL_SETTINGS",
+      "GLOBAL_SETTINGS_KEYS",
+      GLOBAL_SETTINGS_KEYS as readonly string[],
       Object.keys(DEFAULT_GLOBAL_SETTINGS),
-      GLOBAL_KEYS as string[],
     );
   });
 
-  it("DEFAULT_PROJECT_SETTINGS covers all ProjectSettings keys", () => {
+  it("PROJECT_SETTINGS_KEYS is derived from the project settings defaults", () => {
     assertExactKeyCoverage(
-      "DEFAULT_PROJECT_SETTINGS",
+      "PROJECT_SETTINGS_KEYS",
+      PROJECT_SETTINGS_KEYS as readonly string[],
       Object.keys(DEFAULT_PROJECT_SETTINGS),
-      PROJECT_KEYS as string[],
     );
+  });
+
+  it("identifies settings scopes", () => {
+    expect(isGlobalSettingsKey("themeMode")).toBe(true);
+    expect(isGlobalSettingsKey("maxConcurrent")).toBe(false);
+    expect(isProjectSettingsKey("maxConcurrent")).toBe(true);
+    expect(isProjectSettingsKey("themeMode")).toBe(false);
   });
 
   it("No key appears in both GLOBAL_SETTINGS_KEYS and PROJECT_SETTINGS_KEYS", () => {

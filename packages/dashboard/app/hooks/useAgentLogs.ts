@@ -22,7 +22,7 @@ function capLogEntries(entries: AgentLogEntry[]): AgentLogEntry[] {
  * Hook that manages agent log fetching and live SSE streaming for a task.
  *
  * When `enabled` is true:
- * 1. Fetches historical logs via GET /api/tasks/:id/logs
+ * 1. Fetches recent historical logs via GET /api/tasks/:id/logs?limit=500
  * 2. Opens an EventSource to /api/tasks/:id/logs/stream for live updates
  * 3. Merges historical + live entries in order
  *
@@ -53,7 +53,7 @@ export function useAgentLogs(taskId: string | null, enabled: boolean, projectId?
 
       setLoading(true);
       try {
-        const historical = await fetchAgentLogs(currentTaskId, projectId);
+        const historical = await fetchAgentLogs(currentTaskId, projectId, { limit: MAX_LOG_ENTRIES });
         if (cancelled) return;
         setEntries(capLogEntries(historical));
       } catch {

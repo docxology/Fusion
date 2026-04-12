@@ -670,8 +670,14 @@ The pi extension provides tools and a `/fn` command for interacting with fn from
 
 Update it when:
 
-- **CLI commands change** — if `fn task create`, `fn task list`, `fn task show`, `fn task attach`, `fn task pause`, or `fn task unpause` change their behavior, flags, or output, update the corresponding tool in `packages/cli/src/extension.ts`.
-- **Task store API changes** — the extension calls `TaskStore` directly (`createTask`, `listTasks`, `getTask`, `addAttachment`, `pauseTask`). If these methods change signature or behavior, update the extension.
+- **CLI commands change** — if any of these tools change their behavior, flags, or output, update the corresponding tool in `packages/cli/src/extension.ts`:
+  - **Task tools:** `fn_task_create`, `fn_task_update`, `fn_task_list`, `fn_task_show`, `fn_task_attach`, `fn_task_pause`, `fn_task_unpause`, `fn_task_retry`, `fn_task_duplicate`, `fn_task_refine`, `fn_task_archive`, `fn_task_unarchive`, `fn_task_delete`, `fn_task_import_github`, `fn_task_import_github_issue`, `fn_task_browse_github_issues`, `fn_task_plan`
+  - **Mission tools:** `fn_mission_create`, `fn_mission_list`, `fn_mission_show`, `fn_mission_delete`, `fn_milestone_add`, `fn_slice_add`, `fn_feature_add`, `fn_slice_activate`, `fn_feature_link_task`
+  - **Agent tools:** `fn_agent_stop`, `fn_agent_start`
+- **Task store / Agent store API changes** — the extension calls these methods directly. If any change signature or behavior, update the extension:
+  - `TaskStore`: `createTask`, `listTasks`, `getTask`, `updateTask`, `moveTask`, `logEntry`, `addAttachment`, `pauseTask`, `duplicateTask`, `refineTask`, `archiveTask`, `unarchiveTask`, `deleteTask`
+  - `AgentStore`: methods used by agent tools
+  - `getMissionStore`: for mission/milestone/slice/feature operations
 - **New user-facing features** — if a new CLI command is added that the chat agent should be able to use (task creation, status checking, automation control), add a tool for it.
 
 **Don't** add tools for engine-internal operations (move, step updates, logging, merge) — those are handled by the engine's own agents.

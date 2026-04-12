@@ -1,4 +1,4 @@
-import { execSync, exec } from "node:child_process";
+import { exec } from "node:child_process";
 import { promisify } from "node:util";
 
 const execAsync = promisify(exec);
@@ -39,6 +39,7 @@ import {
   taskCreateParams,
   taskLogParams,
 } from "./agent-tools.js";
+import { getTaskCompletionBlockerForStore } from "./task-completion.js";
 
 // Re-export for backward compatibility (tests import from executor.ts)
 export { summarizeToolArgs } from "./agent-logger.js";
@@ -619,9 +620,18 @@ export class TaskExecutor {
   }
 
   private async shouldFinalizeCompletedTask(taskId: string, taskDone: boolean): Promise<boolean> {
-    if (taskDone) return true;
     const task = await this.store.getTask(taskId);
+    const completionBlocker = await this.getTaskCompletionBlocker(task);
+    if (completionBlocker) {
+      executorLog.log(`${taskId} completion blocked — ${completionBlocker}`);
+      return false;
+    }
+    if (taskDone) return true;
     return this.isTaskWorkComplete(task);
+  }
+
+  private async getTaskCompletionBlocker(task: Task): Promise<string | undefined> {
+    return getTaskCompletionBlockerForStore(this.store, task);
   }
 
   /**
@@ -2136,9 +2146,21 @@ export class TaskExecutor {
         })),
       }),
       execute: async (_id: string, params: { summary?: string }) => {
-        onDone();
-        // Mark all pending/in-progress steps as done
         const task = await store.getTask(taskId);
+        const completionBlocker = await this.getTaskCompletionBlocker(task);
+        if (completionBlocker) {
+          return {
+            content: [{
+              type: "text" as const,
+              text: `Cannot mark task done yet — ${completionBlocker}. Resolve the blocker before calling task_done().`,
+            }],
+            details: {},
+          };
+        }
+
+        onDone();
+
+        // Mark all pending/in-progress steps as done
         for (let i = 0; i < task.steps.length; i++) {
           if (task.steps[i].status !== "done" && task.steps[i].status !== "skipped") {
             await store.updateStep(taskId, i, "done");

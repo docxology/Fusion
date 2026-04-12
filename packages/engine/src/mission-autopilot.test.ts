@@ -632,6 +632,40 @@ describe("MissionAutopilot", () => {
       autopilot.stop();
     });
 
+    it("does not promote a feature to done when the linked task has unresolved dependencies", async () => {
+      autopilot.start();
+      autopilot.watchMission("M-TEST1");
+      missionStore.getMissionWithHierarchy.mockReturnValue({
+        ...createMockMission(),
+        milestones: [{
+          ...createMockMilestone(),
+          slices: [{
+            ...createMockSlice({ status: "active" }),
+            features: [createMockFeature({ id: "F-001", status: "triaged", taskId: "FN-001" })],
+          }],
+        }],
+      });
+      taskStore.getTask.mockImplementation(async (taskId: string) => {
+        if (taskId === "FN-001") {
+          return {
+            id: "FN-001",
+            column: "done",
+            dependencies: ["FN-DEP-1"],
+            blockedBy: undefined,
+          };
+        }
+        return {
+          id: "FN-DEP-1",
+          column: "in-progress",
+        };
+      });
+
+      await autopilot.recoverMissions(missionStore as any);
+
+      expect(missionStore.updateFeatureStatus).not.toHaveBeenCalledWith("F-001", "done");
+      autopilot.stop();
+    });
+
     it("fixes feature status when task is in-progress but feature is triaged", async () => {
       autopilot.start();
       autopilot.watchMission("M-TEST1");

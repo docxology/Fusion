@@ -6,6 +6,7 @@ import type { AgentSemaphore } from "./concurrency.js";
 import { generateReservedWorktreeName, slugify } from "./worktree-names.js";
 import { schedulerLog } from "./logger.js";
 import { type PrMonitor, type PrComment } from "./pr-monitor.js";
+import { reconcileMissionFeatureState } from "./mission-feature-sync.js";
 
 /**
  * Check whether two sets of file scope paths overlap.
@@ -746,6 +747,10 @@ export class Scheduler {
     const missionStore = this.options.missionStore;
 
     try {
+      const task = await this.store.getTask(taskId);
+      if (!task) {
+        return;
+      }
       const feature = missionStore.getFeatureByTaskId(taskId);
       if (!feature) return;
 
@@ -756,9 +761,24 @@ export class Scheduler {
         return;
       }
 
+      const reconciliation = await reconcileMissionFeatureState(
+        this.store,
+        { ...task, column: "done" },
+        feature,
+      );
+      if (reconciliation.kind === "blocked") {
+        schedulerLog.warn(`Task ${taskId} mission completion blocked — ${reconciliation.reason}`);
+        return;
+      }
+
+      if (reconciliation.kind === "failure") {
+        schedulerLog.warn(`Task ${taskId} mission completion reported failure — ${reconciliation.reason}`);
+        return;
+      }
+
       const sliceIdBeforeUpdate = feature.sliceId;
 
-      if (feature.status !== "done") {
+      if (reconciliation.kind === "update" && reconciliation.status === "done") {
         missionStore.updateFeatureStatus(feature.id, "done");
         schedulerLog.log(`Feature ${feature.id} marked done (task ${taskId} completed)`);
       }
@@ -930,29 +950,25 @@ export class Scheduler {
             const task = await this.store.getTask(feature.taskId);
             if (!task) continue;
 
-            // Task done but feature not done -> update feature to done
-            if (task.column === "done" && feature.status !== "done") {
-              missionStore.updateFeatureStatus(feature.id, "done");
-              totalFixed++;
+            const reconciliation = await reconcileMissionFeatureState(this.store, task, feature);
+
+            if (reconciliation.kind === "failure") {
+              if (this.options.onTaskFailed) {
+                await this.options.onTaskFailed(task.id);
+                totalFixed++;
+              } else {
+                schedulerLog.warn(`Skipping failed feature reconciliation for ${feature.id} — ${reconciliation.reason}`);
+              }
               continue;
             }
 
-            // Task in-progress and feature triaged/defined -> update to in-progress
-            if (
-              task.column === "in-progress"
-              && (feature.status === "triaged" || feature.status === "defined")
-            ) {
-              missionStore.updateFeatureStatus(feature.id, "in-progress");
-              totalFixed++;
+            if (reconciliation.kind === "blocked") {
+              schedulerLog.warn(`Skipping feature ${feature.id} reconciliation — ${reconciliation.reason}`);
               continue;
             }
 
-            // Task in triage/todo and feature in-progress -> update to triaged
-            if (
-              (task.column === "triage" || task.column === "todo")
-              && feature.status === "in-progress"
-            ) {
-              missionStore.updateFeatureStatus(feature.id, "triaged");
+            if (reconciliation.kind === "update") {
+              missionStore.updateFeatureStatus(feature.id, reconciliation.status);
               totalFixed++;
             }
           }

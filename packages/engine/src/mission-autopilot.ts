@@ -29,6 +29,7 @@ import type {
   MissionEventType,
 } from "@fusion/core";
 import { autopilotLog } from "./logger.js";
+import { reconcileMissionFeatureState } from "./mission-feature-sync.js";
 
 /** Maximum retry attempts for slice activation failures. */
 const MAX_RETRY_ATTEMPTS = 3;
@@ -762,32 +763,21 @@ export class MissionAutopilot {
           continue;
         }
 
-        if (task.status === "failed" && feature.status === "in-progress") {
+        const reconciliation = await reconcileMissionFeatureState(this.taskStore, task, feature);
+
+        if (reconciliation.kind === "failure") {
           await this.handleTaskFailure(feature.taskId);
           fixedCount++;
           continue;
         }
 
-        if (task.column === "done" && feature.status !== "done") {
-          this.missionStore.updateFeatureStatus(feature.id, "done");
-          fixedCount++;
+        if (reconciliation.kind === "blocked") {
+          autopilotLog.warn(`Skipping feature ${feature.id} reconciliation — ${reconciliation.reason}`);
           continue;
         }
 
-        if (
-          task.column === "in-progress"
-          && (feature.status === "triaged" || feature.status === "defined")
-        ) {
-          this.missionStore.updateFeatureStatus(feature.id, "in-progress");
-          fixedCount++;
-          continue;
-        }
-
-        if (
-          (task.column === "triage" || task.column === "todo")
-          && feature.status === "in-progress"
-        ) {
-          this.missionStore.updateFeatureStatus(feature.id, "triaged");
+        if (reconciliation.kind === "update") {
+          this.missionStore.updateFeatureStatus(feature.id, reconciliation.status);
           fixedCount++;
         }
       }

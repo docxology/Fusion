@@ -2829,7 +2829,12 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
   router.get("/tasks/:id/logs", async (req, res) => {
     try {
       const scopedStore = await getScopedStore(req);
-      const logs = await scopedStore.getAgentLogs(req.params.id);
+      const limit = typeof req.query.limit === "string"
+        ? Number.parseInt(req.query.limit, 10)
+        : undefined;
+      const logs = await scopedStore.getAgentLogs(req.params.id, limit !== undefined && Number.isFinite(limit)
+        ? { limit }
+        : undefined);
       res.json(logs);
     } catch (err: any) {
       if (err instanceof ApiError) {

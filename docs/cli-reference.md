@@ -52,6 +52,41 @@ fn dashboard --dev
 
 ---
 
+## `fn serve`
+
+Start Fusion as a headless node (API server + AI engine, no frontend UI).
+
+```bash
+fn serve [--port <port>] [--host <host>] [--paused]
+fn serve --interactive
+```
+
+| Option | Description |
+|---|---|
+| `--port`, `-p` | Port for the API server (default `4040`). |
+| `--host` | Host to bind (default `0.0.0.0`, all interfaces). |
+| `--paused` | Start with engine paused (automation disabled). |
+| `--interactive` | Interactive port selection. |
+
+---
+
+## `fn desktop`
+
+Launch the Fusion desktop app (Electron).
+
+```bash
+fn desktop
+fn desktop --dev
+fn desktop --paused
+```
+
+| Option | Description |
+|---|---|
+| `--dev` | Launch with hot-reload (connects to Vite dev server). |
+| `--paused` | Launch with automation paused. |
+
+---
+
 ## `fn task`
 
 Task lifecycle and task operations.
@@ -138,13 +173,25 @@ Manage external execution nodes.
 
 ```bash
 fn node list --json
-fn node add edge-runner --url https://node.example.com --api-key $NODE_API_KEY --max-concurrent 4
+fn node connect edge-runner --url https://node.example.com --api-key $NODE_API_KEY --max-concurrent 4
+fn node disconnect edge-runner --force
 fn node show edge-runner
 fn node health edge-runner
-fn node remove edge-runner --force
 ```
 
-Subcommands: `list|ls`, `add`, `remove|rm`, `show|info`, `health`.
+Subcommands: `list|ls`, `connect`, `disconnect`, `show|info`, `health`.
+
+---
+
+## `fn mesh`
+
+Mesh network status.
+
+```bash
+fn mesh status [--json]
+```
+
+Subcommands: `status`.
 
 ---
 
@@ -173,9 +220,10 @@ fn agent stop AGENT-001
 fn agent start AGENT-001
 fn agent mailbox AGENT-001
 fn agent import ./companies-manifest.yaml --dry-run
+fn agent export ./output-dir --company-name "My Company" --company-slug my-company
 ```
 
-Subcommands: `stop`, `start`, `mailbox`, `import`.
+Subcommands: `stop`, `start`, `mailbox`, `import`, `export`.
 
 ---
 
@@ -233,14 +281,32 @@ fn backup --cleanup
 
 ---
 
+## `fn plugin`
+
+Plugin lifecycle management.
+
+```bash
+fn plugin list
+fn plugin install <path>
+fn plugin uninstall <id> --force
+fn plugin enable <id>
+fn plugin disable <id>
+fn plugin create <name>
+```
+
+Subcommands: `list|ls`, `install`, `uninstall`, `enable`, `disable`, `create`.
+
+---
+
 ## Useful option flags by context
 
 | Option | Used by |
 |---|---|
-| `--port`, `-p` | `fn dashboard` |
-| `--interactive` | `fn dashboard`, `fn task import`, `fn project add` |
-| `--paused` | `fn dashboard` |
-| `--dev` | `fn dashboard` |
+| `--port`, `-p` | `fn dashboard`, `fn serve` |
+| `--host` | `fn serve` |
+| `--interactive` | `fn dashboard`, `fn serve`, `fn task import`, `fn project add` |
+| `--paused` | `fn dashboard`, `fn serve`, `fn desktop` |
+| `--dev` | `fn dashboard`, `fn desktop` |
 | `--attach` | `fn task create` |
 | `--depends` | `fn task create` |
 | `--feedback` | `fn task refine` |

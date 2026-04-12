@@ -392,6 +392,7 @@ describe("SelfHealingManager", () => {
       const result = await managerWithRecovery.recoverNoProgressNoTaskDoneFailures();
 
       expect(result).toBe(1);
+      expect(store.listTasks).toHaveBeenCalledWith({ column: "in-progress" });
       expect(store.updateTask).toHaveBeenCalledWith("FN-1473", {
         status: "stuck-killed",
         worktree: null,
@@ -586,6 +587,7 @@ describe("SelfHealingManager", () => {
       const result = await managerWithRecovery.recoverCompletedTasks();
 
       expect(result).toBe(1);
+      expect(store.listTasks).toHaveBeenCalledWith({ column: "in-progress" });
       expect(recoverFn).toHaveBeenCalledWith(
         expect.objectContaining({ id: "FN-001" }),
       );

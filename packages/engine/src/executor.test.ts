@@ -5904,6 +5904,77 @@ describe("TaskExecutor task_done with summary", () => {
   });
 });
 
+describe("TaskExecutor task_done blockers", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockedExistsSync.mockReturnValue(true);
+  });
+
+  it("rejects task_done when the task is explicitly blocked", async () => {
+    const store = createMockStore();
+    let capturedTool: any = null;
+
+    store.getTask.mockImplementation(async (taskId: string) => {
+      if (taskId === "FN-001") {
+        return {
+          id: "FN-001",
+          title: "Blocked task",
+          description: "Blocked task",
+          column: "in-progress",
+          blockedBy: "FN-DEP-1",
+          dependencies: [],
+          steps: [{ name: "Step 1", status: "in-progress" }],
+          currentStep: 0,
+          log: [],
+          prompt: "# test\n## Steps\n### Step 0: Preflight\n- [ ] check",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+      }
+      return {
+        id: taskId,
+        column: "done",
+      };
+    });
+
+    mockedCreateHaiAgent.mockImplementation(async ({ customTools }: any) => {
+      capturedTool = customTools?.find((t: any) => t.name === "task_done");
+      return {
+        session: {
+          prompt: vi.fn().mockResolvedValue(undefined),
+          dispose: vi.fn(),
+        },
+      } as any;
+    });
+
+    const executor = new TaskExecutor(store, "/tmp/test");
+
+    await executor.execute({
+      id: "FN-001",
+      title: "Blocked task",
+      description: "Blocked task",
+      column: "in-progress",
+      dependencies: [],
+      steps: [{ name: "Step 1", status: "in-progress" }],
+      currentStep: 0,
+      log: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+
+    expect(capturedTool).toBeDefined();
+
+    store.updateStep.mockClear();
+    store.updateTask.mockClear();
+
+    const result = await capturedTool.execute("tool-1", {});
+
+    expect(result.content[0].text).toContain("Cannot mark task done yet");
+    expect(store.updateStep).not.toHaveBeenCalled();
+    expect(store.updateTask).not.toHaveBeenCalled();
+  });
+});
+
 describe("Workflow Steps Execution", () => {
   beforeEach(() => {
     vi.clearAllMocks();

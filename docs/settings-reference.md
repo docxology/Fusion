@@ -96,6 +96,7 @@ Defaults from `DEFAULT_PROJECT_SETTINGS`; key scope from `PROJECT_SETTINGS_KEYS`
 | `buildRetryCount` | `number` | `0` | Build retry attempts during merge. |
 | `buildTimeoutMs` | `number` | `300000` | Build timeout in ms (5 minutes). |
 | `requirePlanApproval` | `boolean` | `false` | Require manual approval before triage → todo. |
+| `reviewHandoffPolicy` | `"disabled" \| "comment-triggered" \| "always"` | `"disabled"` | Policy for agent-to-user review handoff. |
 | `showQuickChatFAB` | `boolean` | `false` | Show floating quick-chat button. Chat accessible from More menu when hidden. |
 | `taskStuckTimeoutMs` | `number` | `undefined` | Inactivity timeout for stuck-task recovery. |
 | `autoUnpauseEnabled` | `boolean` | `true` | Auto-unpause after rate-limit-triggered pauses. |
@@ -104,6 +105,9 @@ Defaults from `DEFAULT_PROJECT_SETTINGS`; key scope from `PROJECT_SETTINGS_KEYS`
 | `maxStuckKills` | `number` | `6` | Max stuck-task terminations before permanent failure. |
 | `maxSpawnedAgentsPerParent` | `number` | `5` | Max child agents per parent. |
 | `maxSpawnedAgentsGlobal` | `number` | `20` | Max total spawned agents in an executor instance. |
+| `missionStaleThresholdMs` | `number` | `600000` | Time in ms after which a mission in `activating` state is considered stale and eligible for self-healing recovery. |
+| `missionMaxTaskRetries` | `number` | `3` | Maximum automatic retry attempts for a failed mission-linked task before its feature is marked as blocked for manual intervention. |
+| `missionHealthCheckIntervalMs` | `number` | `300000` | Interval in ms between mission feature/task consistency checks. Set to 0 to disable periodic health checks. |
 | `maintenanceIntervalMs` | `number` | `900000` | Maintenance interval in ms (15 min). |
 | `autoUpdatePrStatus` | `boolean` | `false` | Auto-refresh PR status badges. |
 | `autoCreatePr` | `boolean` | `false` | Auto-create PRs for completed tasks. |
@@ -124,6 +128,11 @@ Defaults from `DEFAULT_PROJECT_SETTINGS`; key scope from `PROJECT_SETTINGS_KEYS`
 | `memoryBackendType` | `string` | `"file"` | Memory backend type: `file` or `readonly`. |
 | `runStepsInNewSessions` | `boolean` | `false` | Run each task step in a fresh agent session. |
 | `maxParallelSteps` | `number` | `2` | Max concurrent step sessions (1–4). |
+| `aiSessionTtlMs` | `number` | `604800000` | TTL in ms for persisted AI planning, subtask breakdown, and mission interview sessions. Valid range: 600000 (10 min) to 2592000000 (30 days). |
+| `aiSessionCleanupIntervalMs` | `number` | `3600000` | Interval in ms for scheduled AI session cleanup sweeps. Valid range: 60000 (1 min) to 86400000 (24 hours). |
+| `reflectionEnabled` | `boolean` | `false` | Enable/disable agent self-reflection workflows. |
+| `reflectionIntervalMs` | `number` | `3600000` | How often periodic reflections occur in milliseconds. |
+| `reflectionAfterTask` | `boolean` | `true` | When true, automatically trigger reflection after task completion. |
 | `agentPrompts` | `object` | `undefined` | Custom agent prompt templates + role assignments. |
 | `promptOverrides` | `Record<string, string>` | `undefined` | Fine-grained prompt segment overrides (e.g., `{"executor-welcome": "..."}`). |
 

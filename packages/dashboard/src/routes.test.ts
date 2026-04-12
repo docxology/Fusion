@@ -2970,7 +2970,7 @@ describe("Attachment routes", () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual(fakeLogs);
-      expect(store.getAgentLogs).toHaveBeenCalledWith("KB-001");
+    expect(store.getAgentLogs).toHaveBeenCalledWith("KB-001", undefined);
   });
 
   it("GET /tasks/:id/logs — returns empty array when no logs", async () => {

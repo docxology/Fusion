@@ -1,10 +1,10 @@
 import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
-import { appendFile, mkdir, readFile, writeFile, rename, unlink } from "node:fs/promises";
+import { appendFile, mkdir, open, readFile, writeFile, rename, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { existsSync, watch, type FSWatcher } from "node:fs";
 import type { Task, TaskDetail, TaskCreateInput, TaskAttachment, AgentLogEntry, BoardConfig, Column, MergeResult, Settings, GlobalSettings, ProjectSettings, ActivityLogEntry, ActivityEventType, TaskDocument, TaskDocumentRevision, TaskDocumentCreateInput, InboxTask, TaskLogEntry, RunMutationContext, RunAuditEvent, RunAuditEventInput, RunAuditEventFilter } from "./types.js";
-import { VALID_TRANSITIONS, DEFAULT_SETTINGS, GLOBAL_SETTINGS_KEYS, WORKFLOW_STEP_TEMPLATES, validateDocumentKey } from "./types.js";
+import { VALID_TRANSITIONS, DEFAULT_SETTINGS, isGlobalSettingsKey, WORKFLOW_STEP_TEMPLATES, validateDocumentKey } from "./types.js";
 import { GlobalSettingsStore } from "./global-settings.js";
 import { Database, toJson, toJsonNullable, fromJson } from "./db.js";
 import { detectLegacyData, migrateFromLegacy } from "./db-migrate.js";
@@ -673,9 +673,8 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
     // Extract only project-level keys from config.settings
     const projectSettings: Partial<ProjectSettings> = {};
     if (config.settings) {
-      const globalKeySet = new Set<string>(GLOBAL_SETTINGS_KEYS);
       for (const key of Object.keys(config.settings)) {
-        if (!globalKeySet.has(key)) {
+        if (!isGlobalSettingsKey(key)) {
           (projectSettings as any)[key] = (config.settings as any)[key];
         }
       }
@@ -695,7 +694,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
     // Filter out global-only fields — they should go through updateGlobalSettings()
     const projectPatch: Partial<Settings> = {};
     for (const [key, value] of Object.entries(patch)) {
-      if (!(GLOBAL_SETTINGS_KEYS as readonly string[]).includes(key)) {
+      if (!isGlobalSettingsKey(key)) {
         (projectPatch as Record<string, unknown>)[key] = value;
       }
     }
@@ -1466,7 +1465,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
   }
 
   async selectNextTaskForAgent(agentId: string): Promise<InboxTask | null> {
-    const tasks = await this.listTasks();
+    const tasks = await this.listTasks({ slim: true });
     if (tasks.length === 0) {
       return null;
     }
@@ -1547,6 +1546,16 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       const dir = this.taskDir(id);
       const task = await this.readTaskJson(dir);
 
+      if (task.column === "done" && toColumn === "done") {
+        if (this.clearDoneTransientFields(task)) {
+          task.updatedAt = new Date().toISOString();
+          await this.atomicWriteTaskJson(dir, task);
+          if (this.isWatching) this.taskCache.set(id, { ...task });
+          this.emit("task:updated", task);
+        }
+        return task;
+      }
+
       const validTargets = VALID_TRANSITIONS[task.column];
       if (!validTargets.includes(toColumn)) {
         throw new Error(
@@ -1568,12 +1577,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
 
       // Clear transient fields when moving to done (matches moveToDone behavior)
       if (toColumn === "done") {
-        task.status = undefined;
-        task.error = undefined;
-        task.worktree = undefined;
-        task.blockedBy = undefined;
-        task.recoveryRetryCount = undefined;
-        task.nextRecoveryAt = undefined;
+        this.clearDoneTransientFields(task);
       }
 
       // Clear transient fields when reopening/resetting a task into todo/triage.
@@ -2017,11 +2021,11 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
    * Scans all tasks' logs for entries whose runContext.runId matches.
    */
   async getMutationsForRun(runId: string): Promise<TaskLogEntry[]> {
-    const allTasks = await this.listTasks();
+    const rows = this.db.prepare("SELECT log FROM tasks").all() as Array<{ log: string | null }>;
     const mutations: TaskLogEntry[] = [];
-    for (const task of allTasks) {
-      if (!task.log) continue;
-      for (const entry of task.log) {
+    for (const row of rows) {
+      const logEntries = fromJson<TaskLogEntry[]>(row.log) || [];
+      for (const entry of logEntries) {
         if (entry.runContext?.runId === runId) {
           mutations.push(entry);
         }
@@ -2388,13 +2392,53 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
     return this.withTaskLock(id, async () => {
       const dir = this.taskDir(id);
       const task = await this.readTaskJson(dir);
+      const branch = `fusion/${id.toLowerCase()}`;
+
+      if (task.column === "done") {
+        const result: MergeResult = {
+          task,
+          branch,
+          merged: false,
+          worktreeRemoved: false,
+          branchDeleted: false,
+        };
+
+        const worktreePath = task.worktree;
+        const changed = this.clearDoneTransientFields(task);
+
+        if (worktreePath && existsSync(worktreePath)) {
+          const removeWorktree = await this.runGitCommand(`git worktree remove "${worktreePath}" --force`, 120_000);
+          if (removeWorktree.exitCode === 0) {
+            result.worktreeRemoved = true;
+          }
+        }
+
+        const deleteBranch = await this.runGitCommand(`git branch -d "${branch}"`);
+        if (deleteBranch.exitCode === 0) {
+          result.branchDeleted = true;
+        } else {
+          const forceDeleteBranch = await this.runGitCommand(`git branch -D "${branch}"`);
+          if (forceDeleteBranch.exitCode === 0) {
+            result.branchDeleted = true;
+          }
+        }
+
+        if (changed) {
+          task.updatedAt = new Date().toISOString();
+          await this.atomicWriteTaskJson(dir, task);
+          if (this.isWatching) this.taskCache.set(id, { ...task });
+          this.emit("task:updated", task);
+        }
+
+        result.task = task;
+        return result;
+      }
 
       const mergeBlocker = getTaskMergeBlocker(task);
       if (mergeBlocker) {
         throw new Error(`Cannot merge ${id}: ${mergeBlocker}`);
       }
 
-      const branch = `fusion/${id.toLowerCase()}`;
       const worktreePath = task.worktree;
       const result: MergeResult = {
         task,
@@ -2477,8 +2521,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
    * Returns an array of archived tasks.
    */
   async archiveAllDone(): Promise<Task[]> {
-    const tasks = await this.listTasks();
-    const doneTasks = tasks.filter((t) => t.column === "done");
+    const doneTasks = await this.listTasks({ slim: true, column: "done" });
     
     if (doneTasks.length === 0) {
       return [];
@@ -2680,18 +2723,18 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
   }
 
   private async moveToDone(task: Task, dir: string): Promise<void> {
+    if (task.column === "done") {
+      return;
+    }
+
+    const fromColumn = task.column;
     const mergeBlocker = getTaskMergeBlocker(task);
     if (mergeBlocker) {
       throw new Error(`Cannot move ${task.id} to done: ${mergeBlocker}`);
     }
 
     task.column = "done";
-    task.worktree = undefined;
-    task.status = undefined;
-    task.error = undefined;
-    task.blockedBy = undefined;
-    task.recoveryRetryCount = undefined;
-    task.nextRecoveryAt = undefined;
+    this.clearDoneTransientFields(task);
     task.columnMovedAt = new Date().toISOString();
     task.updatedAt = task.columnMovedAt;
 
@@ -2700,7 +2743,25 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
     // Update cache if watcher is active
     if (this.isWatching) this.taskCache.set(task.id, { ...task });
 
-    this.emit("task:moved", { task, from: "in-review" as Column, to: "done" as Column });
+    this.emit("task:moved", { task, from: fromColumn, to: "done" as Column });
+  }
+
+  private clearDoneTransientFields(task: Task): boolean {
+    const changed = task.status !== undefined
+      || task.error !== undefined
+      || task.worktree !== undefined
+      || task.blockedBy !== undefined
+      || task.recoveryRetryCount !== undefined
+      || task.nextRecoveryAt !== undefined;
+
+    task.status = undefined;
+    task.error = undefined;
+    task.worktree = undefined;
+    task.blockedBy = undefined;
+    task.recoveryRetryCount = undefined;
+    task.nextRecoveryAt = undefined;
+
+    return changed;
   }
 
   // ── File-system watcher ───────────────────────────────────────────
@@ -2713,8 +2774,10 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
   async watch(): Promise<void> {
     if (this.watcher || this.pollInterval) return; // already watching
 
-    // Populate cache with current state
-    const tasks = await this.listTasks();
+    // Populate cache with current state. The watcher only needs metadata to
+    // detect created/updated/moved/deleted events; full task logs stay on the
+    // detail path.
+    const tasks = await this.listTasks({ slim: true });
     this.taskCache.clear();
     for (const task of tasks) {
       this.taskCache.set(task.id, { ...task });
@@ -2769,9 +2832,10 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
 
       // Only load tasks modified since our last known timestamp.
       // Use lastKnownPollTime (ISO string) to filter — much cheaper than full scan.
+      const selectClause = this.getTaskSelectClause(true);
       const changedRows = this.lastPollTime
-        ? this.db.prepare('SELECT * FROM tasks WHERE updatedAt > ? OR columnMovedAt > ?').all(this.lastPollTime, this.lastPollTime) as any[]
-        : this.db.prepare('SELECT * FROM tasks').all() as any[];
+        ? this.db.prepare(`SELECT ${selectClause} FROM tasks WHERE updatedAt > ? OR columnMovedAt > ?`).all(this.lastPollTime, this.lastPollTime) as any[]
+        : this.db.prepare(`SELECT ${selectClause} FROM tasks`).all() as any[];
       this.lastPollTime = new Date().toISOString();
 
       for (const row of changedRows) {
@@ -2974,6 +3038,75 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
     await mkdir(dir, { recursive: true });
     await appendFile(logPath, JSON.stringify(entry) + "\n");
     this.emit("agent:log", entry);
+  }
+
+  private parseAgentLogLine(line: string): AgentLogEntry | null {
+    const trimmed = line.trim();
+    if (!trimmed) return null;
+    try {
+      return JSON.parse(trimmed) as AgentLogEntry;
+    } catch {
+      return null;
+    }
+  }
+
+  private parseAgentLogContent(content: string): AgentLogEntry[] {
+    const entries: AgentLogEntry[] = [];
+    for (const line of content.split("\n")) {
+      const entry = this.parseAgentLogLine(line);
+      if (entry) entries.push(entry);
+    }
+    return entries;
+  }
+
+  private async readAgentLogTail(logPath: string, limit: number): Promise<AgentLogEntry[]> {
+    const handle = await open(logPath, "r");
+    try {
+      const { size } = await handle.stat();
+      if (size === 0) return [];
+
+      const chunkSize = 64 * 1024;
+      let position = size;
+      let buffer = Buffer.alloc(0);
+      const entriesNewestFirst: AgentLogEntry[] = [];
+
+      while (position > 0 && entriesNewestFirst.length < limit) {
+        const readSize = Math.min(chunkSize, position);
+        position -= readSize;
+
+        const chunk = Buffer.allocUnsafe(readSize);
+        const { bytesRead } = await handle.read(chunk, 0, readSize, position);
+        if (bytesRead <= 0) break;
+
+        buffer = Buffer.concat([chunk.subarray(0, bytesRead), buffer]);
+
+        while (entriesNewestFirst.length < limit) {
+          const newlineIndex = buffer.lastIndexOf(10);
+          if (newlineIndex === -1) break;
+
+          const lineBuffer = buffer.subarray(newlineIndex + 1);
+          buffer = buffer.subarray(0, newlineIndex);
+
+          if (lineBuffer.length === 0) continue;
+
+          const entry = this.parseAgentLogLine(lineBuffer.toString("utf-8"));
+          if (entry) {
+            entriesNewestFirst.push(entry);
+          }
+        }
+      }
+
+      if (entriesNewestFirst.length < limit && buffer.length > 0) {
+        const entry = this.parseAgentLogLine(buffer.toString("utf-8"));
+        if (entry) {
+          entriesNewestFirst.push(entry);
+        }
+      }
+
+      return entriesNewestFirst.reverse();
+    } finally {
+      await handle.close();
+    }
   }
 
   async addTaskComment(id: string, text: string, author: string): Promise<Task> {
@@ -3494,21 +3627,18 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
    * @param taskId - The task ID (e.g. "KB-001")
    * @returns Array of agent log entries, empty if no log file exists
    */
-  async getAgentLogs(taskId: string): Promise<AgentLogEntry[]> {
+  async getAgentLogs(taskId: string, options?: { limit?: number }): Promise<AgentLogEntry[]> {
     const dir = this.taskDir(taskId);
     const logPath = join(dir, "agent.log");
     if (!existsSync(logPath)) return [];
-    const content = await readFile(logPath, "utf-8");
-    const entries: AgentLogEntry[] = [];
-    for (const line of content.split("\n")) {
-      if (!line.trim()) continue;
-      try {
-        entries.push(JSON.parse(line) as AgentLogEntry);
-      } catch {
-        // skip malformed lines
-      }
+    if (options?.limit !== undefined) {
+      const limit = Number.isFinite(options.limit) ? Math.max(0, Math.floor(options.limit)) : 0;
+      if (limit === 0) return [];
+      return this.readAgentLogTail(logPath, limit);
     }
-    return entries;
+
+    const content = await readFile(logPath, "utf-8");
+    return this.parseAgentLogContent(content);
   }
 
   /**
@@ -3559,9 +3689,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
    * and removing task directories. Also removes from tasks table.
    */
   async cleanupArchivedTasks(): Promise<string[]> {
-    const archivedTasks = await this.listTasks().then((tasks) =>
-      tasks.filter((t) => t.column === "archived"),
-    );
+    const archivedTasks = await this.listTasks({ column: "archived" });
 
     const cleanedUpIds: string[] = [];
 
@@ -4021,7 +4149,7 @@ ${stepsSection}`;
 
     // Clean up references from existing tasks (best-effort, outside config lock)
     try {
-      const tasks = await this.listTasks();
+      const tasks = await this.listTasks({ slim: true });
       for (const task of tasks) {
         if (task.enabledWorkflowSteps?.includes(id)) {
           const updated = task.enabledWorkflowSteps.filter((wsId) => wsId !== id);

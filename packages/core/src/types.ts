@@ -1156,7 +1156,7 @@ export interface ProjectSettings {
   reviewHandoffPolicy?: "disabled" | "comment-triggered" | "always";
   /** When true, show the quick-chat floating action button (FAB) in the dashboard.
    *  When false, the FAB is hidden but chat remains accessible via the More menu.
-   *  Default: true. */
+   *  Default: false. */
   showQuickChatFAB?: boolean;
 }
 
@@ -1177,229 +1177,15 @@ export interface Settings extends GlobalSettings, ProjectSettings {
   [key: string]: unknown;
 }
 
-/** Default values for global (user-level) settings. */
-export const DEFAULT_GLOBAL_SETTINGS: Required<Pick<GlobalSettings, "themeMode" | "colorTheme">> & GlobalSettings = {
-  themeMode: "dark",
-  colorTheme: "default",
-  defaultProvider: undefined,
-  defaultModelId: undefined,
-  fallbackProvider: undefined,
-  fallbackModelId: undefined,
-  defaultThinkingLevel: undefined,
-  ntfyEnabled: false,
-  ntfyTopic: undefined,
-  ntfyEvents: ["in-review", "merged", "failed", "awaiting-approval", "awaiting-user-review"],
-  ntfyDashboardHost: undefined,
-  defaultProjectId: undefined,
-  setupComplete: undefined,
-  favoriteProviders: undefined,
-  favoriteModels: undefined,
-  openrouterModelSync: true,
-  modelOnboardingComplete: undefined,
-};
-
-/** Default values for project-level settings. */
-export const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
-  globalPause: false,
-  enginePaused: false,
-  maxConcurrent: 2,
-  maxWorktrees: 4,
-  pollIntervalMs: 15000,
-  groupOverlappingFiles: true,
-  autoMerge: true,
-  mergeStrategy: "direct",
-  worktreeInitCommand: undefined,
-  testCommand: undefined,
-  buildCommand: undefined,
-  recycleWorktrees: false,
-  worktreeNaming: "random",
-  taskPrefix: "FN",
-  includeTaskIdInCommit: true,
-  planningProvider: undefined,
-  planningModelId: undefined,
-  planningFallbackProvider: undefined,
-  planningFallbackModelId: undefined,
-  validatorProvider: undefined,
-  validatorModelId: undefined,
-  validatorFallbackProvider: undefined,
-  validatorFallbackModelId: undefined,
-  modelPresets: [],
-  autoSelectModelPreset: false,
-  defaultPresetBySize: {},
-  autoResolveConflicts: true,
-  smartConflictResolution: true,
-  strictScopeEnforcement: false,
-  buildRetryCount: 0,
-  buildTimeoutMs: 300_000,
-  requirePlanApproval: false,
-  taskStuckTimeoutMs: undefined,
-  aiSessionTtlMs: 7 * 24 * 60 * 60 * 1000,
-  aiSessionCleanupIntervalMs: 60 * 60 * 1000,
-  autoUnpauseEnabled: true,
-  autoUnpauseBaseDelayMs: 300_000,
-  autoUnpauseMaxDelayMs: 3_600_000,
-  maxStuckKills: 6,
-  maxSpawnedAgentsPerParent: 5,
-  maxSpawnedAgentsGlobal: 20,
-  maintenanceIntervalMs: 900_000,
-  autoUpdatePrStatus: false,
-  autoCreatePr: false,
-  autoBackupEnabled: false,
-  autoBackupSchedule: "0 2 * * *",
-  autoBackupRetention: 7,
-  autoBackupDir: ".fusion/backups",
-  autoSummarizeTitles: false,
-  titleSummarizerProvider: undefined,
-  titleSummarizerModelId: undefined,
-  titleSummarizerFallbackProvider: undefined,
-  titleSummarizerFallbackModelId: undefined,
-  scripts: undefined,
-  setupScript: undefined,
-  insightExtractionEnabled: false,
-  insightExtractionSchedule: "0 2 * * *",
-  insightExtractionMinIntervalMs: 86_400_000,
-  memoryEnabled: true,
-  memoryBackendType: "file",
-  tokenCap: undefined,
-  runStepsInNewSessions: false,
-  maxParallelSteps: 2,
-  missionStaleThresholdMs: 600_000,
-  missionMaxTaskRetries: 3,
-  missionHealthCheckIntervalMs: 300_000,
-  agentPrompts: undefined,
-  promptOverrides: undefined,
-  reflectionEnabled: false,
-  reflectionIntervalMs: 3_600_000,
-  reflectionAfterTask: true,
-  reviewHandoffPolicy: "disabled",
-  showQuickChatFAB: false,
-};
-
-/**
- * Merged default settings (backward compatible).
- * This combines global and project defaults into a single object
- * that matches the legacy `DEFAULT_SETTINGS` shape.
- */
-export const DEFAULT_SETTINGS: Settings = {
-  ...DEFAULT_GLOBAL_SETTINGS,
-  ...DEFAULT_PROJECT_SETTINGS,
-};
-
-/** Keys that belong to the global settings scope. */
-export const GLOBAL_SETTINGS_KEYS: ReadonlyArray<keyof GlobalSettings> = [
-  "themeMode",
-  "colorTheme",
-  "defaultProvider",
-  "defaultModelId",
-  "fallbackProvider",
-  "fallbackModelId",
-  "defaultThinkingLevel",
-  "ntfyEnabled",
-  "ntfyTopic",
-  "ntfyEvents",
-  "ntfyDashboardHost",
-  "defaultProjectId",
-  "setupComplete",
-  "favoriteProviders",
-  "favoriteModels",
-  "openrouterModelSync",
-  "modelOnboardingComplete",
-] as const;
-
-/** Keys that belong to the project settings scope. */
-export const PROJECT_SETTINGS_KEYS: ReadonlyArray<keyof ProjectSettings> = [
-  "globalPause",
-  "enginePaused",
-  "maxConcurrent",
-  "maxWorktrees",
-  "pollIntervalMs",
-  "groupOverlappingFiles",
-  "autoMerge",
-  "mergeStrategy",
-  "worktreeInitCommand",
-  "testCommand",
-  "buildCommand",
-  "recycleWorktrees",
-  "worktreeNaming",
-  "taskPrefix",
-  "includeTaskIdInCommit",
-  "planningProvider",
-  "planningModelId",
-  "planningFallbackProvider",
-  "planningFallbackModelId",
-  "validatorProvider",
-  "validatorModelId",
-  "validatorFallbackProvider",
-  "validatorFallbackModelId",
-  "modelPresets",
-  "autoSelectModelPreset",
-  "defaultPresetBySize",
-  "autoResolveConflicts",
-  "smartConflictResolution",
-  "strictScopeEnforcement",
-  "buildRetryCount",
-  "buildTimeoutMs",
-  "requirePlanApproval",
-  "taskStuckTimeoutMs",
-  "autoUnpauseEnabled",
-  "autoUnpauseBaseDelayMs",
-  "autoUnpauseMaxDelayMs",
-  "aiSessionTtlMs",
-  "aiSessionCleanupIntervalMs",
-  "maxStuckKills",
-  "autoUpdatePrStatus",
-  "autoCreatePr",
-  "autoBackupEnabled",
-  "autoBackupSchedule",
-  "autoBackupRetention",
-  "autoBackupDir",
-  "autoSummarizeTitles",
-  "titleSummarizerProvider",
-  "titleSummarizerModelId",
-  "titleSummarizerFallbackProvider",
-  "titleSummarizerFallbackModelId",
-  "scripts",
-  "setupScript",
-  "tokenCap",
-  "insightExtractionEnabled",
-  "insightExtractionSchedule",
-  "insightExtractionMinIntervalMs",
-  "memoryEnabled",
-  "memoryBackendType",
-  "maxSpawnedAgentsPerParent",
-  "maxSpawnedAgentsGlobal",
-  "maintenanceIntervalMs",
-  "runStepsInNewSessions",
-  "maxParallelSteps",
-  "missionStaleThresholdMs",
-  "missionMaxTaskRetries",
-  "missionHealthCheckIntervalMs",
-  "agentPrompts",
-  "promptOverrides",
-  "reflectionEnabled",
-  "reflectionIntervalMs",
-  "reflectionAfterTask",
-  "reviewHandoffPolicy",
-  "showQuickChatFAB",
-] as const;
-
-// ── Compile-time parity: ensures every interface key is listed exactly once ──
-// If either assertion fails with "Type 'X' is not assignable to type 'Y'",
-// a key was added to the interface without updating the corresponding array
-// (or vice versa). Add or remove the key to fix.
-type _GlobalKeysCheck = typeof GLOBAL_SETTINGS_KEYS[number] extends keyof GlobalSettings
-  ? keyof GlobalSettings extends typeof GLOBAL_SETTINGS_KEYS[number]
-    ? true
-    : never
-  : never;
-const _globalParity: _GlobalKeysCheck = true as _GlobalKeysCheck;
-
-type _ProjectKeysCheck = typeof PROJECT_SETTINGS_KEYS[number] extends keyof ProjectSettings
-  ? keyof ProjectSettings extends typeof PROJECT_SETTINGS_KEYS[number]
-    ? true
-    : never
-  : never;
-const _projectParity: _ProjectKeysCheck = true as _ProjectKeysCheck;
+export {
+  DEFAULT_GLOBAL_SETTINGS,
+  DEFAULT_PROJECT_SETTINGS,
+  DEFAULT_SETTINGS,
+  GLOBAL_SETTINGS_KEYS,
+  PROJECT_SETTINGS_KEYS,
+  isGlobalSettingsKey,
+  isProjectSettingsKey,
+} from "./settings-schema.js";
 
 export interface BoardConfig {
   nextId: number;
@@ -2730,4 +2516,3 @@ export interface Mailbox {
 
 // Re-export PROMPT_KEY_CATALOG for backward compatibility with vite alias
 export { PROMPT_KEY_CATALOG } from "./prompt-overrides.js";
-

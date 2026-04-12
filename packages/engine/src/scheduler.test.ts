@@ -45,6 +45,7 @@ function createMockStore(overrides: Partial<TaskStore> = {}): TaskStore {
   return {
     listTasks: vi.fn().mockResolvedValue([]),
     getSettings: vi.fn().mockResolvedValue({}),
+    getTask: vi.fn().mockResolvedValue(createMockTask()),
     updateTask: vi.fn().mockResolvedValue(undefined),
     moveTask: vi.fn().mockResolvedValue(undefined),
     parseFileScopeFromPrompt: vi.fn().mockResolvedValue([]),
@@ -1867,6 +1868,42 @@ describe("Scheduler", () => {
       // Delegates to autopilot, which internally checks autoAdvance
       expect(mockAutopilot.handleTaskCompletion).toHaveBeenCalledWith("FN-001");
     });
+
+    it("does not mark a feature done when the completed task is blocked", async () => {
+      const store = createMockStore({
+        getTask: vi.fn().mockResolvedValue(createMockTask({
+          id: "FN-001",
+          blockedBy: "FN-000",
+          column: "done",
+        })),
+      });
+      const mockAutopilot = {
+        setScheduler: vi.fn(),
+        watchMission: vi.fn(),
+        start: vi.fn(),
+        stop: vi.fn(),
+        handleTaskCompletion: vi.fn().mockResolvedValue(undefined),
+        isWatching: vi.fn(() => true),
+      };
+      const mockMissionStore = createMockMissionStore({
+        getFeatureByTaskId: vi.fn().mockReturnValue({
+          id: "F-001",
+          sliceId: "SL-001",
+          status: "in-progress",
+        }),
+        updateFeatureStatus: vi.fn(),
+      });
+
+      const scheduler = new Scheduler(store, {
+        missionStore: mockMissionStore as any,
+        missionAutopilot: mockAutopilot as any,
+      });
+
+      await (scheduler as any).handleMissionTaskCompletion("FN-001", "SL-001");
+
+      expect(mockMissionStore.updateFeatureStatus).not.toHaveBeenCalled();
+      expect(mockAutopilot.handleTaskCompletion).not.toHaveBeenCalled();
+    });
   });
 
   describe("reconcileAllMissionFeatures", () => {
@@ -1969,6 +2006,95 @@ describe("Scheduler", () => {
       const result = await scheduler.reconcileAllMissionFeatures();
 
       expect(mockMissionStore.updateFeatureStatus).toHaveBeenCalledWith("F-001", "done");
+      expect(result).toBe(1);
+    });
+
+    it("does not reconcile feature to done when the linked task has unresolved dependencies", async () => {
+      const getTask = vi.fn(async (id: string) => {
+        if (id === "FN-001") {
+          return createMockTask({
+            id: "FN-001",
+            column: "done",
+            dependencies: ["FN-000"],
+          });
+        }
+        return createMockTask({ id, column: "in-progress" });
+      });
+      const store = createMockStore({ getTask: getTask as any });
+      const mockMissionStore = createMockMissionStore({
+        listMissions: vi.fn().mockReturnValue([
+          { id: "M-001", status: "active" },
+        ]),
+        getMissionWithHierarchy: vi.fn().mockReturnValue({
+          id: "M-001",
+          status: "active",
+          milestones: [{
+            id: "MS-001",
+            slices: [{
+              id: "SL-001",
+              status: "active",
+              features: [{
+                id: "F-001",
+                taskId: "FN-001",
+                status: "in-progress",
+              }],
+            }],
+          }],
+        }),
+        updateFeatureStatus: vi.fn(),
+      });
+
+      const scheduler = new Scheduler(store, {
+        missionStore: mockMissionStore as any,
+      });
+
+      const result = await scheduler.reconcileAllMissionFeatures();
+
+      expect(mockMissionStore.updateFeatureStatus).not.toHaveBeenCalled();
+      expect(result).toBe(0);
+    });
+
+    it("routes failed linked tasks through onTaskFailed during reconciliation", async () => {
+      const store = createMockStore({
+        getTask: vi.fn().mockReturnValue(createMockTask({
+          id: "FN-001",
+          column: "in-progress",
+          status: "failed",
+        })),
+      });
+      const onTaskFailed = vi.fn().mockResolvedValue(undefined);
+      const mockMissionStore = createMockMissionStore({
+        listMissions: vi.fn().mockReturnValue([
+          { id: "M-001", status: "active" },
+        ]),
+        getMissionWithHierarchy: vi.fn().mockReturnValue({
+          id: "M-001",
+          status: "active",
+          milestones: [{
+            id: "MS-001",
+            slices: [{
+              id: "SL-001",
+              status: "active",
+              features: [{
+                id: "F-001",
+                taskId: "FN-001",
+                status: "in-progress",
+              }],
+            }],
+          }],
+        }),
+        updateFeatureStatus: vi.fn(),
+      });
+
+      const scheduler = new Scheduler(store, {
+        missionStore: mockMissionStore as any,
+        onTaskFailed,
+      });
+
+      const result = await scheduler.reconcileAllMissionFeatures();
+
+      expect(onTaskFailed).toHaveBeenCalledWith("FN-001");
+      expect(mockMissionStore.updateFeatureStatus).not.toHaveBeenCalled();
       expect(result).toBe(1);
     });
 

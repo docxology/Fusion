@@ -426,7 +426,7 @@ export class SelfHealingManager {
     if (!recoverFn) return 0;
 
     try {
-      const tasks = await this.store.listTasks({ slim: true, column: "in-progress" });
+      const tasks = await this.store.listTasks({ column: "in-progress" });
       const executingIds = this.options.getExecutingTaskIds?.() ?? new Set<string>();
 
       const stuckCompleted = tasks.filter((t) =>
@@ -469,7 +469,7 @@ export class SelfHealingManager {
    */
   async recoverMergeableReviewTasks(): Promise<number> {
     try {
-      const tasks = await this.store.listTasks({ slim: true, column: "in-review" });
+      const tasks = await this.store.listTasks({ column: "in-review" });
 
       const mergeable = tasks.filter((t) =>
         t.column === "in-review" &&
@@ -520,7 +520,7 @@ export class SelfHealingManager {
    */
   async recoverMergedReviewTasks(): Promise<number> {
     try {
-      const tasks = await this.store.listTasks({ slim: true, column: "in-review" });
+      const tasks = await this.store.listTasks({ column: "in-review" });
 
       const mergedButNotDone = tasks.filter((t) =>
         t.column === "in-review" &&
@@ -573,7 +573,7 @@ export class SelfHealingManager {
    */
   async recoverMisclassifiedFailures(): Promise<number> {
     try {
-      const tasks = await this.store.listTasks({ slim: true, column: "in-review" });
+      const tasks = await this.store.listTasks({ column: "in-review" });
 
       const misclassified = tasks.filter((t) =>
         t.column === "in-review" &&
@@ -622,7 +622,7 @@ export class SelfHealingManager {
    */
   async recoverOrphanedExecutions(): Promise<number> {
     try {
-      const tasks = await this.store.listTasks({ slim: true, column: "in-progress" });
+      const tasks = await this.store.listTasks({ column: "in-progress" });
       const executingIds = this.options.getExecutingTaskIds?.() ?? new Set<string>();
       const now = Date.now();
 
@@ -690,7 +690,7 @@ export class SelfHealingManager {
    */
   async recoverNoProgressNoTaskDoneFailures(): Promise<number> {
     try {
-      const tasks = await this.store.listTasks({ slim: true, column: "in-progress" });
+      const tasks = await this.store.listTasks({ column: "in-progress" });
       const executingIds = this.options.getExecutingTaskIds?.() ?? new Set<string>();
 
       const candidates = tasks.filter((task) =>
@@ -789,7 +789,7 @@ export class SelfHealingManager {
     if (!recoverFn) return 0;
 
     try {
-      const tasks = await this.store.listTasks({ slim: true, column: "triage" });
+      const tasks = await this.store.listTasks({ column: "triage" });
       const specifyingIds = this.options.getSpecifyingTaskIds?.() ?? new Set<string>();
       const now = Date.now();
 

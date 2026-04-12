@@ -116,7 +116,7 @@ async function getTaskCounts(projectPath: string): Promise<Record<string, number
   try {
     const store = new TaskStore(projectPath);
     await store.init();
-    const tasks = await store.listTasks();
+    const tasks = await store.listTasks({ slim: true });
 
     const counts: Record<string, number> = {};
     for (const col of COLUMNS) {

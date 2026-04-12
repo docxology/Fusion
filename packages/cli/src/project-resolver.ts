@@ -685,7 +685,7 @@ export async function getProjectInfo(name?: string): Promise<{
   const health = await central.getProjectHealth(project.projectId);
 
   // Get task counts by column
-  const tasks = await project.store.listTasks();
+  const tasks = await project.store.listTasks({ slim: true });
   const taskCounts: Record<string, number> = {};
   for (const task of tasks) {
     taskCounts[task.column] = (taskCounts[task.column] || 0) + 1;
@@ -791,7 +791,7 @@ export async function getProjectsWithStatus(): Promise<
       try {
         const store = new (await import("@fusion/core")).TaskStore(project.path);
         await store.init();
-        const tasks = await store.listTasks();
+        const tasks = await store.listTasks({ slim: true });
         taskCount = tasks.length;
       } catch {
         // If we can't read tasks, just report 0
@@ -848,7 +848,7 @@ export async function getProjectTaskCounts(
 
   if (!taskStore) return {};
 
-  const tasks = await taskStore.listTasks();
+  const tasks = await taskStore.listTasks({ slim: true });
   const counts: Record<string, number> = {};
 
   for (const task of tasks) {

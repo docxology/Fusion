@@ -68,3 +68,44 @@ export function isTaskReadyForMerge(
 ): boolean {
   return getTaskMergeBlocker(task) === undefined;
 }
+
+export interface TaskCompletionBlockerOptions {
+  resolveTask?: (taskId: string) => Promise<Pick<Task, "id" | "column"> | null | undefined>;
+}
+
+/**
+ * Returns a human-readable reason when a task should not be treated as
+ * successfully complete yet. Undefined means the task can be finalized.
+ *
+ * This is intentionally conservative: if dependency state cannot be resolved,
+ * the helper only blocks when the task itself carries enough state to prove
+ * completion is unsafe (`blockedBy`).
+ */
+export async function getTaskCompletionBlocker(
+  task: Pick<Task, "blockedBy" | "dependencies">,
+  options: TaskCompletionBlockerOptions = {},
+): Promise<string | undefined> {
+  if (task.blockedBy?.trim()) {
+    return `task is blocked by ${task.blockedBy.trim()}`;
+  }
+
+  const dependencies = task.dependencies ?? [];
+  if (dependencies.length === 0 || !options.resolveTask) {
+    return undefined;
+  }
+
+  const unresolvedDependencies: string[] = [];
+
+  for (const dependencyId of dependencies) {
+    const dependency = await options.resolveTask(dependencyId);
+    if (!dependency || (dependency.column !== "done" && dependency.column !== "archived")) {
+      unresolvedDependencies.push(dependencyId);
+    }
+  }
+
+  if (unresolvedDependencies.length > 0) {
+    return `task has unresolved dependencies: ${unresolvedDependencies.join(", ")}`;
+  }
+
+  return undefined;
+}

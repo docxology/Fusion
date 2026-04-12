@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Globe, Folder } from "lucide-react";
-import { THINKING_LEVELS, GLOBAL_SETTINGS_KEYS, PROJECT_SETTINGS_KEYS, PROMPT_KEY_CATALOG } from "@fusion/core";
+import { THINKING_LEVELS, PROMPT_KEY_CATALOG, isGlobalSettingsKey, isProjectSettingsKey } from "@fusion/core";
 import type { Settings, GlobalSettings, ThemeMode, ColorTheme, ModelPreset, NtfyNotificationEvent } from "@fusion/core";
 import { fetchSettings, updateSettings, updateGlobalSettings, fetchAuthStatus, loginProvider, logoutProvider, saveApiKey, clearApiKey, fetchModels, testNtfyNotification, fetchBackups, createBackup, exportSettings, importSettings, fetchMemory, saveMemory } from "../api";
 import type { AuthProvider, ModelInfo, BackupListResponse, SettingsExportData } from "../api";
@@ -497,19 +497,17 @@ export function SettingsModal({
       // updateGlobalSettings ignores project keys). This ensures fields in sections
       // are persisted correctly based on their scope.
 
-      const globalKeySet = new Set<string>(GLOBAL_SETTINGS_KEYS);
       const globalPatch: Partial<GlobalSettings> = {};
       for (const [key, value] of Object.entries(payload)) {
-        if (globalKeySet.has(key)) {
+        if (isGlobalSettingsKey(key)) {
           (globalPatch as any)[key] = value;
         }
       }
 
-      const projectKeySet = new Set<string>(PROJECT_SETTINGS_KEYS as readonly string[]);
       const projectPatch: Partial<Settings> = {};
       for (const [key, value] of Object.entries(payload)) {
         if (key === "githubTokenConfigured") continue; // server-only field
-        if (projectKeySet.has(key)) {
+        if (isProjectSettingsKey(key)) {
           (projectPatch as any)[key] = value;
         }
       }

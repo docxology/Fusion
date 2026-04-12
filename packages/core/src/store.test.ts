@@ -24,7 +24,7 @@ import { runCommandAsync } from "./run-command.js";
 const mockedRunCommandAsync = vi.mocked(runCommandAsync);
 
 import { TaskStore } from "./store.js";
-import { readFile, writeFile, mkdir, rm, readdir, unlink } from "node:fs/promises";
+import { appendFile, readFile, writeFile, mkdir, rm, readdir, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { mkdtempSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -2186,6 +2186,46 @@ Task with acceptance criteria
       expect(logs[4].text).toBe("chunk 4");
     });
 
+    it("can return only the most recent agent log entries while skipping malformed lines", async () => {
+      const task = await createTestTask();
+      const dir = join(rootDir, ".fusion", "tasks", task.id);
+      const logPath = join(dir, "agent.log");
+
+      for (let i = 0; i < 5; i++) {
+        if (i === 2) {
+          await appendFile(logPath, "{not valid json}\n");
+        }
+        await store.appendAgentLog(task.id, `chunk ${i}`, "text");
+      }
+
+      const logs = await store.getAgentLogs(task.id, { limit: 2 });
+
+      expect(logs.map((entry) => entry.text)).toEqual(["chunk 3", "chunk 4"]);
+    });
+
+    it("preserves long entry fields when returning a bounded tail", async () => {
+      const task = await createTestTask();
+      const longText = [
+        "## Long Tail Entry",
+        "",
+        "This entry should survive a bounded tail read in full.",
+        "Z".repeat(800),
+      ].join("\n");
+      const longDetail = "detail/".repeat(120) + "AgentLogViewer.tsx";
+
+      await store.appendAgentLog(task.id, "older entry", "text");
+      await store.appendAgentLog(task.id, longText, "tool", longDetail, "executor");
+      await store.appendAgentLog(task.id, "newest entry", "text");
+
+      const logs = await store.getAgentLogs(task.id, { limit: 2 });
+
+      expect(logs.map((entry) => entry.text)).toEqual([longText, "newest entry"]);
+      expect(logs[0].detail).toBe(longDetail);
+      expect(logs[0].agent).toBe("executor");
+      expect(logs[0].text.length).toBe(longText.length);
+      expect(logs[0].detail!.length).toBe(longDetail.length);
+    });
+
     it("appendAgentLog persists and reads back the agent field", async () => {
       const task = await createTestTask();
 
@@ -3385,6 +3425,45 @@ Task with acceptance criteria
       expect(moved.column).toBe("done");
       expect(moved.recoveryRetryCount).toBeUndefined();
       expect(moved.nextRecoveryAt).toBeUndefined();
+    });
+
+    it("treats repeated done finalization as an idempotent no-op", async () => {
+      const task = await store.createTask({ description: "test repeated done finalization" });
+      await store.moveTask(task.id, "todo");
+      await store.moveTask(task.id, "in-progress");
+      await store.moveTask(task.id, "in-review");
+      const done = await store.moveTask(task.id, "done");
+
+      const repeated = await store.moveTask(task.id, "done");
+
+      expect(repeated.column).toBe("done");
+      expect(repeated.updatedAt).toBe(done.updatedAt);
+    });
+
+    it("normalizes stale completion fields on repeated done finalization", async () => {
+      const task = await store.createTask({ description: "test repeated dirty done finalization" });
+      await store.moveTask(task.id, "todo");
+      await store.moveTask(task.id, "in-progress");
+      await store.moveTask(task.id, "in-review");
+      await store.moveTask(task.id, "done");
+      await store.updateTask(task.id, {
+        status: "failed",
+        error: "stale failure",
+        blockedBy: "FN-000",
+        worktree: "/tmp/fusion-stale-worktree",
+        recoveryRetryCount: 2,
+        nextRecoveryAt: new Date(Date.now() + 86400000).toISOString(),
+      });
+
+      const repeated = await store.moveTask(task.id, "done");
+
+      expect(repeated.column).toBe("done");
+      expect(repeated.status).toBeUndefined();
+      expect(repeated.error).toBeUndefined();
+      expect(repeated.blockedBy).toBeUndefined();
+      expect(repeated.worktree).toBeUndefined();
+      expect(repeated.recoveryRetryCount).toBeUndefined();
+      expect(repeated.nextRecoveryAt).toBeUndefined();
     });
 
     it("blocks moving failed in-review tasks to done", async () => {

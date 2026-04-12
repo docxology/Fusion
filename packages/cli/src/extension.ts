@@ -290,7 +290,7 @@ export default function kbExtension(pi: ExtensionAPI) {
 
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const store = await getStore(ctx.cwd);
-      const tasks = await store.listTasks();
+      const tasks = await store.listTasks({ slim: true });
 
       if (tasks.length === 0) {
         return {
@@ -763,7 +763,7 @@ export default function kbExtension(pi: ExtensionAPI) {
       }
 
       const store = await getStore(ctx.cwd);
-      const existingTasks = await store.listTasks();
+      const existingTasks = await store.listTasks({ slim: true });
       const createdTasks: Array<{ id: string; title: string }> = [];
 
       for (const issue of issues) {
@@ -841,7 +841,7 @@ export default function kbExtension(pi: ExtensionAPI) {
 
       // Check if already imported
       const store = await getStore(ctx.cwd);
-      const existingTasks = await store.listTasks();
+      const existingTasks = await store.listTasks({ slim: true });
       const sourceUrl = issue.html_url;
 
       for (const task of existingTasks) {
@@ -936,7 +936,7 @@ export default function kbExtension(pi: ExtensionAPI) {
 
       // Check which issues are already imported
       const store = await getStore(ctx.cwd);
-      const existingTasks = await store.listTasks();
+      const existingTasks = await store.listTasks({ slim: true });
       const importedUrls = new Set<string>();
 
       for (const task of existingTasks) {

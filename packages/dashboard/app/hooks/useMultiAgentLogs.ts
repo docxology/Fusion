@@ -35,7 +35,7 @@ interface InitState {
  * Hook that manages agent log fetching and live SSE streaming for multiple tasks.
  *
  * For each task ID in the provided array:
- * 1. Fetches historical logs via GET /api/tasks/:id/logs
+ * 1. Fetches recent historical logs via GET /api/tasks/:id/logs?limit=500
  * 2. Opens an EventSource to /api/tasks/:id/logs/stream for live updates
  * 3. Merges historical + live entries in order
  *
@@ -195,7 +195,7 @@ export function useMultiAgentLogs(taskIds: string[]): LogStateMap {
       es.addEventListener("error", handleError);
 
       // Fetch historical logs
-      void fetchAgentLogs(taskId)
+      void fetchAgentLogs(taskId, undefined, { limit: MAX_LOG_ENTRIES })
         .then((historical) => {
           if (cancelled[taskId]) return;
 

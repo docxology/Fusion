@@ -7,9 +7,10 @@ import {
   readAttachmentContents,
   computeUserCommentFingerprint,
 } from "./triage.js";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
-import { mkdir, writeFile, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { mkdir, writeFile, rm, mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { setTimeout as delay } from "node:timers/promises";
 
 const { mockReviewStep, mockCreateKbAgent } = vi.hoisted(() => ({
   mockReviewStep: vi.fn(),
@@ -34,7 +35,28 @@ vi.mock("@fusion/core", async () => {
   };
 });
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
+async function createTriageFixtureRoot(prefix: string): Promise<string> {
+  return mkdtemp(join(tmpdir(), prefix));
+}
+
+async function cleanupTriageFixtureRoot(rootDir: string | undefined): Promise<void> {
+  if (!rootDir) return;
+
+  const retryableCodes = new Set(["ENOTEMPTY", "EBUSY", "EPERM"]);
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      await rm(rootDir, { recursive: true, force: true });
+      return;
+    } catch (error: any) {
+      if (!retryableCodes.has(error?.code) || attempt === 4) {
+        throw error;
+      }
+
+      await delay(25 * (attempt + 1));
+    }
+  }
+}
 
 function createMockStore(overrides: Partial<TaskStore> = {}): TaskStore {
   return {
@@ -417,15 +439,18 @@ describe("TRIAGE_SYSTEM_PROMPT", () => {
 });
 
 describe("readAttachmentContents", () => {
-  const testDir = join(__dirname, "test-attachments");
+  let testDir = "";
   const taskId = "FN-TEST";
 
   beforeEach(async () => {
-    // Clean up and create test directory
-    await rm(testDir, { recursive: true, force: true });
+    testDir = await createTriageFixtureRoot("fusion-triage-attachments-");
     await mkdir(join(testDir, ".fusion", "tasks", taskId, "attachments"), {
       recursive: true,
     });
+  });
+
+  afterEach(async () => {
+    await cleanupTriageFixtureRoot(testDir);
   });
 
   it("returns empty arrays when no attachments provided", async () => {
@@ -578,75 +603,77 @@ describe("TriageProcessor", () => {
 
   it("re-reads settings when review_spec runs so reviewer uses the latest validator model", async () => {
     const taskId = "FN-001";
-    const testRootDir = join(__dirname, "__test_triage_review_spec__");
-    const promptPath = `.fusion/tasks/${taskId}/PROMPT.md`;
-    const taskDir = join(testRootDir, ".fusion", "tasks", taskId);
-    await mkdir(taskDir, { recursive: true });
-    await writeFile(join(taskDir, "PROMPT.md"), "# Spec\n\nCurrent prompt");
+    const testRootDir = await createTriageFixtureRoot("fusion-triage-review-spec-");
+    try {
+      const promptPath = `.fusion/tasks/${taskId}/PROMPT.md`;
+      const taskDir = join(testRootDir, ".fusion", "tasks", taskId);
+      await mkdir(taskDir, { recursive: true });
+      await writeFile(join(taskDir, "PROMPT.md"), "# Spec\n\nCurrent prompt");
 
-    const freshSettings: Settings = {
-      maxConcurrent: 2,
-      maxWorktrees: 4,
-      pollIntervalMs: 10000,
-      groupOverlappingFiles: false,
-      autoMerge: true,
-      defaultProvider: "openai-codex",
-      defaultModelId: "gpt-5.4",
-      validatorProvider: "zai",
-      validatorModelId: "glm-5.1",
-    };
-
-    store = createMockStore({
-      getSettings: vi.fn().mockResolvedValue(freshSettings),
-      getTask: vi.fn().mockResolvedValue({
-        ...mockTaskDetail,
-        id: taskId,
-        comments: [],
-      }),
-    });
-    processor = new TriageProcessor(store, testRootDir);
-
-    mockReviewStep.mockResolvedValue({
-      verdict: "APPROVE",
-      review: "Looks good.",
-      summary: "approved",
-    });
-
-    const tool = (processor as any).createReviewSpecTool(
-      taskId,
-      promptPath,
-      { current: null },
-      { current: null },
-      { current: null },
-      {
-        defaultProvider: "anthropic",
-        defaultModelId: "claude-opus-4-6",
-        validatorProvider: "anthropic",
-        validatorModelId: "claude-opus-4-6",
-      },
-    );
-
-    await tool.execute({});
-
-    expect(store.getSettings).toHaveBeenCalled();
-    expect(mockReviewStep).toHaveBeenCalledWith(
-      testRootDir,
-      taskId,
-      0,
-      "Specification",
-      "spec",
-      "# Spec\n\nCurrent prompt",
-      undefined,
-      expect.objectContaining({
+      const freshSettings: Settings = {
+        maxConcurrent: 2,
+        maxWorktrees: 4,
+        pollIntervalMs: 10000,
+        groupOverlappingFiles: false,
+        autoMerge: true,
         defaultProvider: "openai-codex",
         defaultModelId: "gpt-5.4",
-        validatorModelProvider: "zai",
+        validatorProvider: "zai",
         validatorModelId: "glm-5.1",
-        userComments: undefined,
-      }),
-    );
+      };
 
-    await rm(testRootDir, { recursive: true, force: true });
+      store = createMockStore({
+        getSettings: vi.fn().mockResolvedValue(freshSettings),
+        getTask: vi.fn().mockResolvedValue({
+          ...mockTaskDetail,
+          id: taskId,
+          comments: [],
+        }),
+      });
+      processor = new TriageProcessor(store, testRootDir);
+
+      mockReviewStep.mockResolvedValue({
+        verdict: "APPROVE",
+        review: "Looks good.",
+        summary: "approved",
+      });
+
+      const tool = (processor as any).createReviewSpecTool(
+        taskId,
+        promptPath,
+        { current: null },
+        { current: null },
+        { current: null },
+        {
+          defaultProvider: "anthropic",
+          defaultModelId: "claude-opus-4-6",
+          validatorProvider: "anthropic",
+          validatorModelId: "claude-opus-4-6",
+        },
+      );
+
+      await tool.execute({});
+
+      expect(store.getSettings).toHaveBeenCalled();
+      expect(mockReviewStep).toHaveBeenCalledWith(
+        testRootDir,
+        taskId,
+        0,
+        "Specification",
+        "spec",
+        "# Spec\n\nCurrent prompt",
+        undefined,
+        expect.objectContaining({
+          defaultProvider: "openai-codex",
+          defaultModelId: "gpt-5.4",
+          validatorModelProvider: "zai",
+          validatorModelId: "glm-5.1",
+          userComments: undefined,
+        }),
+      );
+    } finally {
+      await cleanupTriageFixtureRoot(testRootDir);
+    }
   });
 });
 
@@ -713,10 +740,14 @@ describe("Re-specification flow", () => {
 });
 
 describe("requirePlanApproval setting", () => {
-  const rootDir = join(__dirname, "__test_triage_approval__");
+  let rootDir = "";
 
   beforeEach(async () => {
-    await mkdir(rootDir, { recursive: true });
+    rootDir = await createTriageFixtureRoot("fusion-triage-approval-");
+  });
+
+  afterEach(async () => {
+    await cleanupTriageFixtureRoot(rootDir);
   });
 
   it("sets awaiting-approval status instead of moving to todo when requirePlanApproval is true", async () => {
@@ -776,8 +807,6 @@ describe("requirePlanApproval setting", () => {
     // We can't easily run the full specifyTask without mocking the AI,
     // but we can verify the store setup is correct
     expect(await store.getSettings()).toHaveProperty("requirePlanApproval", true);
-
-    await rm(rootDir, { recursive: true, force: true });
   });
 
   it("auto-moves to todo when requirePlanApproval is false", async () => {
@@ -813,9 +842,10 @@ describe("requirePlanApproval setting", () => {
 });
 
 describe("approved triage recovery", () => {
-  const rootDir = join(__dirname, "__test_triage_recovery__");
+  let rootDir = "";
 
   beforeEach(async () => {
+    rootDir = await createTriageFixtureRoot("fusion-triage-recovery-");
     await mkdir(join(rootDir, ".fusion", "tasks", "FN-001"), { recursive: true });
     await writeFile(
       join(rootDir, ".fusion", "tasks", "FN-001", "PROMPT.md"),
@@ -824,7 +854,7 @@ describe("approved triage recovery", () => {
   });
 
   afterEach(async () => {
-    await rm(rootDir, { recursive: true, force: true });
+    await cleanupTriageFixtureRoot(rootDir);
   });
 
   it("moves approved specifying task to todo during recovery", async () => {
@@ -1742,6 +1772,16 @@ describe("awaiting-approval poll exclusion", () => {
 });
 
 describe("stale approval detection", () => {
+  let rootDir = "";
+
+  beforeEach(async () => {
+    rootDir = await createTriageFixtureRoot("fusion-triage-stale-approval-");
+  });
+
+  afterEach(async () => {
+    await cleanupTriageFixtureRoot(rootDir);
+  });
+
   it("computeUserCommentFingerprint detects added user comment", () => {
     const before = [
       { id: "c1", text: "First", author: "user", createdAt: "2026-01-01T00:00:00.000Z" },
@@ -1771,7 +1811,6 @@ describe("stale approval detection", () => {
   });
 
   it("captures fingerprint on review_spec APPROVE", async () => {
-    const rootDir = join(__dirname, "__test_stale_approval_capture__");
     const taskId = "FN-CAP";
     const taskDir = join(rootDir, ".fusion", "tasks", taskId);
     await mkdir(taskDir, { recursive: true });
@@ -1820,12 +1859,9 @@ describe("stale approval detection", () => {
 
     // Verify fingerprint was captured from the user comments at approval time
     expect(approvedCommentFingerprintRef.current).toBe("c1");
-
-    await rm(rootDir, { recursive: true, force: true });
   });
 
   it("fingerprint is empty string when review_spec returns REVISE (no capture)", async () => {
-    const rootDir = join(__dirname, "__test_stale_approval_revise__");
     const taskId = "FN-REV";
     const taskDir = join(rootDir, ".fusion", "tasks", taskId);
     await mkdir(taskDir, { recursive: true });
@@ -1869,8 +1905,6 @@ describe("stale approval detection", () => {
 
     // Fingerprint should NOT be captured on REVISE
     expect(approvedCommentFingerprintRef.current).toBe("");
-
-    await rm(rootDir, { recursive: true, force: true });
   });
 });
 

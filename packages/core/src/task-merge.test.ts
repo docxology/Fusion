@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { StepStatus } from "./types.js";
-import { getTaskMergeBlocker, isTaskReadyForMerge } from "./task-merge.js";
+import { getTaskCompletionBlocker, getTaskMergeBlocker, isTaskReadyForMerge } from "./task-merge.js";
 
 const baseTask = {
   column: "in-review" as const,
@@ -9,6 +9,11 @@ const baseTask = {
   error: undefined as string | undefined,
   steps: [] as Array<{ name: string; status: StepStatus }>,
   workflowStepResults: undefined as any,
+};
+
+const baseCompletionTask = {
+  dependencies: [] as string[],
+  blockedBy: undefined as string | undefined,
 };
 
 describe("getTaskMergeBlocker", () => {
@@ -189,5 +194,44 @@ describe("isTaskReadyForMerge", () => {
         status: "failed",
       }],
     })).toBe(true);
+  });
+});
+
+describe("getTaskCompletionBlocker", () => {
+  it("returns undefined for a task with no blockers", async () => {
+    await expect(getTaskCompletionBlocker(baseCompletionTask)).resolves.toBeUndefined();
+  });
+
+  it("returns a reason when task has blockedBy", async () => {
+    await expect(getTaskCompletionBlocker({ ...baseCompletionTask, blockedBy: "FN-123" }))
+      .resolves.toBe("task is blocked by FN-123");
+  });
+
+  it("returns a reason when a dependency is unresolved", async () => {
+    const resolveTask = async (taskId: string) => {
+      if (taskId === "FN-001") {
+        return { id: "FN-001", column: "done" as const };
+      }
+      if (taskId === "FN-002") {
+        return { id: "FN-002", column: "in-progress" as const };
+      }
+      return null;
+    };
+
+    await expect(getTaskCompletionBlocker({
+      ...baseCompletionTask,
+      dependencies: ["FN-001", "FN-002"],
+    }, { resolveTask }))
+      .resolves.toBe("task has unresolved dependencies: FN-002");
+  });
+
+  it("returns undefined when all dependencies are resolved", async () => {
+    const resolveTask = async (taskId: string) => ({ id: taskId, column: "done" as const });
+
+    await expect(getTaskCompletionBlocker({
+      ...baseCompletionTask,
+      dependencies: ["FN-001", "FN-002"],
+    }, { resolveTask }))
+      .resolves.toBeUndefined();
   });
 });

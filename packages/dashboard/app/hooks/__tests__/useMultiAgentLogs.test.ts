@@ -98,8 +98,8 @@ describe("useMultiAgentLogs", () => {
       expect(result.current["FN-002"].entries).toEqual(logs2);
     });
 
-    expect(mockFetchAgentLogs).toHaveBeenCalledWith("FN-001");
-    expect(mockFetchAgentLogs).toHaveBeenCalledWith("FN-002");
+    expect(mockFetchAgentLogs).toHaveBeenCalledWith("FN-001", undefined, { limit: 500 });
+    expect(mockFetchAgentLogs).toHaveBeenCalledWith("FN-002", undefined, { limit: 500 });
   });
 
   it("opens SSE EventSource for each task ID", async () => {

@@ -161,7 +161,7 @@ export async function runTaskCreate(descriptionArg?: string, attachFiles?: strin
 export async function runTaskList(projectName?: string) {
   const projectContext = await getProjectContext(projectName);
   const store = projectContext?.store ?? await getStore(projectName);
-  const tasks = await store.listTasks();
+  const tasks = await store.listTasks({ slim: true });
 
   if (tasks.length === 0) {
     console.log("\n  No tasks yet. Create one with: fn task create\n");
@@ -711,7 +711,7 @@ export async function runTaskImportGitHubInteractive(
   console.log(`\n  Fetching issues from ${owner}/${repo}...\n`);
 
   const store = await getStore(projectName);
-  const existingTasks = await store.listTasks();
+  const existingTasks = await store.listTasks({ slim: true });
 
   // Build a set of already-imported issue URLs
   const importedUrls = new Map<string, string>();
@@ -899,7 +899,7 @@ export async function runTaskImportFromGitHub(
   console.log(`\n  Importing issues from ${owner}/${repo}...\n`);
 
   const store = await getStore(projectName);
-  const existingTasks = await store.listTasks();
+  const existingTasks = await store.listTasks({ slim: true });
 
   // Build a set of already-imported issue URLs
   const importedUrls = new Map<string, string>();
