@@ -252,7 +252,7 @@ describe("agent-generation module", () => {
       expect(spec.description).toBe("");
       expect(spec.systemPrompt).toBe("");
       expect(spec.thinkingLevel).toBe("off");
-      expect(spec.maxTurns).toBe(10);
+      expect(spec.maxTurns).toBe(1000);
     });
 
     it("truncates title to 60 characters", () => {
@@ -274,11 +274,11 @@ describe("agent-generation module", () => {
     it("clamps maxTurns to valid range", () => {
       const json = JSON.stringify({
         title: "Test",
-        maxTurns: 999,
+        maxTurns: 9999,
       });
 
       const spec = parseGenerationResponse(json);
-      expect(spec.maxTurns).toBe(500);
+      expect(spec.maxTurns).toBe(2000);
 
       const json2 = JSON.stringify({ title: "Test", maxTurns: -5 });
       const spec2 = parseGenerationResponse(json2);

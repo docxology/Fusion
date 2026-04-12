@@ -48,7 +48,7 @@ export function NewAgentDialog({ isOpen, onClose, onCreated, projectId }: NewAge
   const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig>({
     model: "",
     thinkingLevel: "off",
-    maxTurns: 10,
+    maxTurns: 1000,
   });
   const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -151,7 +151,7 @@ export function NewAgentDialog({ isOpen, onClose, onCreated, projectId }: NewAge
     setInstructionsText("");
     setSoul("");
     setMemory("");
-    setRuntimeConfig({ model: "", thinkingLevel: "off", maxTurns: 10 });
+    setRuntimeConfig({ model: "", thinkingLevel: "off", maxTurns: 1000 });
     setSelectedPresetId(null);
     setError(null);
     setIsGenerationModalOpen(false);
@@ -166,7 +166,7 @@ export function NewAgentDialog({ isOpen, onClose, onCreated, projectId }: NewAge
       const runtimeCfg: Record<string, unknown> = {};
       if (runtimeConfig.model.trim()) runtimeCfg.model = runtimeConfig.model.trim();
       if (runtimeConfig.thinkingLevel !== "off") runtimeCfg.thinkingLevel = runtimeConfig.thinkingLevel;
-      if (runtimeConfig.maxTurns !== 10) runtimeCfg.maxTurns = runtimeConfig.maxTurns;
+      if (runtimeConfig.maxTurns !== 1000) runtimeCfg.maxTurns = runtimeConfig.maxTurns;
       await createAgent({
         name: name.trim(),
         role,
@@ -398,7 +398,7 @@ export function NewAgentDialog({ isOpen, onClose, onCreated, projectId }: NewAge
                   type="number"
                   className="input"
                   min={1}
-                  max={500}
+                  max={2000}
                   value={runtimeConfig.maxTurns}
                   onChange={e => setRuntimeConfig(c => ({ ...c, maxTurns: Math.max(1, parseInt(e.target.value, 10) || 1) }))}
                 />

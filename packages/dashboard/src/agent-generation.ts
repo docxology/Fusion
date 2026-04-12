@@ -85,7 +85,7 @@ You MUST respond with ONLY valid JSON (no markdown, no explanation):
   "description": "A brief 1-2 sentence description of the agent's purpose and expertise",
   "systemPrompt": "A detailed markdown system prompt for the agent. This should be comprehensive and include:\\n- Role definition\\n- Core responsibilities\\n- Specific areas of expertise\\n- Behavioral guidelines\\n- Output format expectations\\n- Edge case handling instructions",
   "thinkingLevel": "off | minimal | low | medium | high",
-  "maxTurns": 10
+  "maxTurns": 1000
 }
 
 ## Guidelines for System Prompt Generation
@@ -400,8 +400,8 @@ export function parseGenerationResponse(text: string): AgentGenerationSpec {
       ? (obj.thinkingLevel as AgentGenerationSpec["thinkingLevel"])
       : "off",
     maxTurns: typeof obj.maxTurns === "number"
-      ? Math.max(1, Math.min(500, Math.round(obj.maxTurns)))
-      : 10,
+      ? Math.max(1, Math.min(2000, Math.round(obj.maxTurns)))
+      : 1000,
   };
 }
 

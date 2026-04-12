@@ -203,7 +203,7 @@ You MUST respond with ONLY valid JSON (no markdown, no explanation):
   "description": "A brief 1-2 sentence description of the agent's purpose and expertise",
   "systemPrompt": "A detailed markdown system prompt for the agent. This should be comprehensive and include:\\n- Role definition\\n- Core responsibilities\\n- Specific areas of expertise\\n- Behavioral guidelines\\n- Output format expectations\\n- Edge case handling instructions",
   "thinkingLevel": "off | minimal | low | medium | high",
-  "maxTurns": 10
+  "maxTurns": 1000
 }
 
 ## Guidelines for System Prompt Generation
