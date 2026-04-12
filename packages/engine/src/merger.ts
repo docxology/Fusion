@@ -85,6 +85,8 @@ function truncateWithEllipsis(text: string, maxChars: number): string {
   return `${text.slice(0, maxChars)}\n... (truncated)`;
 }
 
+// Kept for potential future diagnostics use (may be helpful for detailed error analysis)
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function truncateVerificationOutput(output: string): string {
   if (output.length <= VERIFICATION_LOG_MAX_CHARS) return output;
   return `... output truncated to last ${VERIFICATION_LOG_MAX_CHARS} characters ...\n${output.slice(-VERIFICATION_LOG_MAX_CHARS)}`;
@@ -94,7 +96,11 @@ function truncateVerificationOutput(output: string): string {
  * Summarize test/build verification failure output into a concise message.
  * Extracts test counts and failure names from common test runner formats,
  * falls back to truncated output for unstructured output.
+ *
+ * @param output - The raw command output to summarize
+ * @param type - The verification type (reserved for future use; currently unused)
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function summarizeVerificationOutput(output: string, type: "test" | "build"): string {
   const lines = output.split("\n");
   let summaryLine: string | null = null;
