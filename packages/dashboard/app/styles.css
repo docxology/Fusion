@@ -12229,6 +12229,7 @@ html .column.drag-over * {
   text-align: center;
   flex: 1;
   min-height: 0;
+  overflow: hidden;
 }
 
 .planning-intro {
@@ -12758,7 +12759,6 @@ html .column.drag-over * {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: 300px;
   gap: var(--space-lg);
   padding: var(--space-xl);
   color: var(--text-muted);
