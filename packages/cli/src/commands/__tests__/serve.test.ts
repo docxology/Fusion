@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => {
   const selfHealingInstances: any[] = [];
   const cronRunnerInstances: any[] = [];
   const missionAutopilotInstances: any[] = [];
+  const missionExecutionLoopInstances: any[] = [];
   const notifierInstances: any[] = [];
   const pluginStoreInstances: any[] = [];
   const pluginLoaderInstances: any[] = [];
@@ -194,6 +195,17 @@ const mocks = vi.hoisted(() => {
     return autopilot;
   });
 
+  const missionExecutionLoopCtor = vi.fn().mockImplementation(() => {
+    const loop = {
+      start: vi.fn().mockResolvedValue(undefined),
+      stop: vi.fn().mockResolvedValue(undefined),
+      processTaskOutcome: vi.fn().mockResolvedValue(undefined),
+      recoverActiveMissions: vi.fn().mockResolvedValue(undefined),
+    };
+    missionExecutionLoopInstances.push(loop);
+    return loop;
+  });
+
   const notifierCtor = vi.fn().mockImplementation(() => {
     const notifier = {
       start: vi.fn(),
@@ -253,6 +265,7 @@ const mocks = vi.hoisted(() => {
     selfHealingInstances,
     cronRunnerInstances,
     missionAutopilotInstances,
+    missionExecutionLoopInstances,
     notifierInstances,
     listenCalls,
     taskStoreCtor,
@@ -267,6 +280,7 @@ const mocks = vi.hoisted(() => {
     selfHealingCtor,
     cronRunnerCtor,
     missionAutopilotCtor,
+    missionExecutionLoopCtor,
     notifierCtor,
     pluginStoreCtor,
     pluginLoaderCtor,
@@ -284,6 +298,7 @@ const mocks = vi.hoisted(() => {
       selfHealingInstances.length = 0;
       cronRunnerInstances.length = 0;
       missionAutopilotInstances.length = 0;
+      missionExecutionLoopInstances.length = 0;
       notifierInstances.length = 0;
       pluginStoreInstances.length = 0;
       pluginLoaderInstances.length = 0;
@@ -344,6 +359,7 @@ vi.mock("@fusion/engine", () => ({
   StuckTaskDetector: mocks.stuckDetectorCtor,
   SelfHealingManager: mocks.selfHealingCtor,
   MissionAutopilot: mocks.missionAutopilotCtor,
+  MissionExecutionLoop: mocks.missionExecutionLoopCtor,
   createAiPromptExecutor: vi.fn().mockResolvedValue(vi.fn().mockResolvedValue("ok")),
   HeartbeatMonitor: vi.fn().mockImplementation(() => ({
     start: vi.fn(),
