@@ -1,4 +1,7 @@
-import { execSync } from "node:child_process";
+import { execSync, exec } from "node:child_process";
+import { promisify } from "node:util";
+
+const execAsync = promisify(exec);
 import { join } from "node:path";
 import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
@@ -953,11 +956,12 @@ export class TaskExecutor {
           }
 
           // Run worktree init command for fresh worktrees (skip for pooled — caches are warm)
+          // Non-blocking: uses async exec so the executor event loop keeps running
+          // while the user-configured command (e.g. `pnpm install`) executes.
           if (settings.worktreeInitCommand) {
             try {
-              execSync(settings.worktreeInitCommand, {
+              await execAsync(settings.worktreeInitCommand, {
                 cwd: worktreePath,
-                stdio: "pipe",
                 timeout: 120_000,
               });
               await this.store.logEntry(task.id, "Worktree init command completed", settings.worktreeInitCommand, this.currentRunContext);
@@ -972,9 +976,8 @@ export class TaskExecutor {
             const scriptCommand = settings.scripts?.[settings.setupScript];
             if (scriptCommand) {
               try {
-                execSync(scriptCommand, {
+                await execAsync(scriptCommand, {
                   cwd: worktreePath,
-                  stdio: "pipe",
                   timeout: 120_000,
                 });
                 await this.store.logEntry(task.id, `Setup script '${settings.setupScript}' completed`, scriptCommand, this.currentRunContext);
@@ -2859,17 +2862,18 @@ ${failureFeedback}
     await this.store.logEntry(task.id, `Workflow step '${workflowStep.name}' executing script '${scriptName}': ${scriptCommand}`);
 
     try {
-      const output = execSync(scriptCommand, {
+      // Non-blocking: async exec so the executor event loop keeps running
+      // while the user-configured workflow script executes.
+      const { stdout: out } = await execAsync(scriptCommand, {
         cwd: worktreePath,
-        stdio: "pipe",
         timeout: 120_000,
       });
-      const stdout = output.toString().trim();
+      const stdout = out.toString().trim();
       return { success: true, output: stdout || `Script '${scriptName}' completed successfully` };
     } catch (err: any) {
       const stderr = err.stderr?.toString()?.trim() || "";
       const stdout = err.stdout?.toString()?.trim() || "";
-      const exitCode = err.status;
+      const exitCode = err.code ?? err.status;
       const parts: string[] = [];
       if (exitCode !== undefined) parts.push(`Exit code: ${exitCode}`);
       if (stdout) parts.push(`stdout: ${stdout}`);

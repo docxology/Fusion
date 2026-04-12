@@ -1,4 +1,7 @@
-import { execSync } from "node:child_process";
+import { execSync, exec } from "node:child_process";
+import { promisify } from "node:util";
+
+const execAsync = promisify(exec);
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { getTaskMergeBlocker, type TaskStore, type MergeResult, type MergeDetails, type WorkflowStep, type WorkflowStepResult, type Settings, type AgentPromptsConfig } from "@fusion/core";
@@ -325,15 +328,16 @@ async function runVerificationCommand(
   };
 
   try {
-    // Execute the command with timeout
-    const output = execSync(command, {
+    // Execute the command with timeout (non-blocking: uses async exec so the
+    // engine event loop keeps running while the child process executes)
+    const { stdout, stderr } = await execAsync(command, {
       cwd: rootDir,
       encoding: "utf-8",
       maxBuffer: VERIFICATION_COMMAND_MAX_BUFFER,
       timeout: 300_000, // 5 minute timeout for verification commands
-      stdio: ["pipe", "pipe", "pipe"],
     });
-    result.stdout = output;
+    result.stdout = stdout;
+    result.stderr = stderr;
     result.exitCode = 0;
     result.success = true;
     mergerLog.log(`${taskId}: ${type} command succeeded`);

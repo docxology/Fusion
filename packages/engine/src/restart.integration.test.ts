@@ -30,6 +30,10 @@ vi.mock("./reviewer.js", () => ({
 }));
 vi.mock("node:child_process", () => ({
   execSync: vi.fn().mockReturnValue(Buffer.from("")),
+  exec: vi.fn((_cmd: any, opts: any, cb: any) => {
+    const callback = typeof opts === "function" ? opts : cb;
+    if (typeof callback === "function") callback(null, "", "");
+  }),
 }));
 vi.mock("node:fs", () => ({
   existsSync: vi.fn().mockReturnValue(true),

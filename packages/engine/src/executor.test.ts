@@ -57,10 +57,42 @@ vi.mock("./worktree-names.js", async () => {
   };
 });
 
-// Mock node modules used by executor
-vi.mock("node:child_process", () => ({
-  execSync: vi.fn(),
-}));
+// Mock node modules used by executor.
+// Route async `exec` through the `execSync` mock so existing tests that set
+// up mockedExecSync.mockImplementation for user commands (worktreeInitCommand,
+// workflow step scripts, etc.) keep working unchanged after the switch to
+// promisify(exec) in executor.ts.
+vi.mock("node:child_process", async () => {
+  const { promisify } = await import("node:util");
+  const execSyncFn = vi.fn();
+  const execFn: any = vi.fn((cmd: any, opts: any, cb: any) => {
+    const callback = typeof opts === "function" ? opts : cb;
+    const forwardedOpts = typeof opts === "function" ? undefined : opts;
+    try {
+      const out = execSyncFn(cmd, forwardedOpts);
+      const stdout = out === undefined ? "" : out.toString();
+      if (typeof callback === "function") callback(null, stdout, "");
+    } catch (err: any) {
+      if (typeof callback === "function") {
+        callback(err, err?.stdout?.toString?.() ?? "", err?.stderr?.toString?.() ?? "");
+      }
+    }
+  });
+  // Mirror real child_process.exec: promisify resolves to { stdout, stderr }.
+  execFn[promisify.custom] = (cmd: any, opts?: any) =>
+    new Promise((resolve, reject) => {
+      execFn(cmd, opts, (err: any, stdout: any, stderr: any) => {
+        if (err) {
+          err.stdout = stdout;
+          err.stderr = stderr;
+          reject(err);
+        } else {
+          resolve({ stdout, stderr });
+        }
+      });
+    });
+  return { execSync: execSyncFn, exec: execFn };
+});
 vi.mock("node:fs", () => ({
   existsSync: vi.fn().mockReturnValue(true),
 }));

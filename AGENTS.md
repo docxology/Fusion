@@ -166,6 +166,32 @@ pnpm build         # build all packages
 
 Tests are required. Typechecks and manual verification are not substitutes for real tests with assertions.
 
+## Engine process rules
+
+The engine (`packages/engine`) runs the executor, merger, scheduler, IPC host, and dashboard-facing activity loop on a single Node event loop. **Blocking that loop stalls every task concurrently in-flight.**
+
+### Never use `execSync` for user-configured or long-running commands
+
+`execSync` blocks the entire event loop until the child process exits (or hits its timeout). If a user's test/build/setup command hangs for 5 minutes, the engine stops responding — no logging, no heartbeats, no scheduler ticks, no other merges/executions progress. We've been burned by this: the engine appeared hung while waiting for `pnpm test`.
+
+**Rule:** any command that comes from project settings or user configuration — `testCommand`, `buildCommand`, `worktreeInitCommand`, `setupScript`, `settings.scripts[...]`, workflow step scripts — **must** run via `promisify(exec)` (or `spawn`) and be `await`ed. Always pass a `timeout`.
+
+```ts
+import { exec } from "node:child_process";
+import { promisify } from "node:util";
+const execAsync = promisify(exec);
+
+const { stdout, stderr } = await execAsync(command, {
+  cwd: worktreePath,
+  timeout: 120_000,
+  maxBuffer: 10 * 1024 * 1024,
+});
+```
+
+`execSync` is only acceptable for short, deterministic git plumbing (`git rev-parse`, `git branch -d`, `git worktree remove`, etc.) where the command is internal, bounded, and measured in milliseconds. When in doubt, use async.
+
+Same reasoning applies to any new helper added to the engine: if you find yourself reaching for `execSync` and the command is not a trivial git/fs call, stop and use the async form.
+
 ## Multi-Project Architecture / Central Core
 
 fn supports multi-project coordination through a central infrastructure that provides:
@@ -2414,7 +2440,7 @@ The order of IDs in `enabledWorkflowSteps` determines execution order — the en
 ### Engine Behavior
 
 - **Prompt mode** steps use readonly agent tools (file reading only, no modifications); **script mode** steps execute a named command from project settings (`settings.scripts`) in the task worktree
-- Each prompt-mode step runs as a separate agent session; script-mode steps run via `execSync` with a 2-minute timeout
+- Each prompt-mode step runs as a separate agent session; script-mode steps run via async `exec` (promisified) with a 2-minute timeout — **never use `execSync` here** (see "Engine process rules" below)
 - **Model override:** Prompt-mode steps can specify a `modelProvider` + `modelId` pair. When both are set, the executor uses that model instead of global defaults. When either is missing, the executor falls back to `defaultProvider`/`defaultModelId`
 - Steps execute sequentially within their phase (pre-merge steps first, then post-merge steps after merge)
 - Pre-merge steps run in the executor; post-merge steps run in the merger after successful merge
