@@ -1518,11 +1518,11 @@ describe("TaskExecutor dependency-based worktree creation", () => {
 
     expect(mockedExecSync).toHaveBeenCalledWith(
       `git worktree remove "${conflictingPath}" --force`,
-      expect.objectContaining({ cwd: "/tmp/test", stdio: "pipe" }),
+      expect.objectContaining({ cwd: "/tmp/test" }),
     );
     expect(mockedExecSync).toHaveBeenCalledWith(
       'git branch -D "fusion/fn-064"',
-      expect.objectContaining({ cwd: "/tmp/test", stdio: "pipe" }),
+      expect.objectContaining({ cwd: "/tmp/test" }),
     );
 
     const worktreeCreateCalls = mockedExecSync.mock.calls.filter(

@@ -683,7 +683,7 @@ export class TaskExecutor {
 
       // Capture modified files if the worktree still exists
       if (task.worktree && existsSync(task.worktree)) {
-        const modifiedFiles = this.captureModifiedFiles(task.worktree, task.baseCommitSha);
+        const modifiedFiles = await this.captureModifiedFiles(task.worktree, task.baseCommitSha);
         if (modifiedFiles.length > 0) {
           await this.store.updateTask(task.id, { modifiedFiles });
           executorLog.log(`${task.id}: recovered ${modifiedFiles.length} modified files`);
@@ -809,10 +809,9 @@ export class TaskExecutor {
    * a new branch in the existing worktree via `git checkout -b`. The worktree
    * directory (and its build caches) are preserved.
    */
-  private reuseWorktree(branch: string, worktreePath: string): void {
-    execSync(`git checkout -b "${branch}"`, {
+  private async reuseWorktree(branch: string, worktreePath: string): Promise<void> {
+    await execAsync(`git checkout -b "${branch}"`, {
       cwd: worktreePath,
-      stdio: "pipe",
     });
     executorLog.log(`Reused worktree at ${worktreePath}, created branch ${branch}`);
   }
@@ -1028,11 +1027,11 @@ export class TaskExecutor {
       // overwrite any prior task baseline instead of inheriting it.
       if (!isResume) {
         try {
-          const baseCommitSha = execSync("git rev-parse HEAD", {
+          const { stdout } = await execAsync("git rev-parse HEAD", {
             cwd: worktreePath,
-            stdio: "pipe",
             encoding: "utf-8",
-          }).trim();
+          });
+          const baseCommitSha = stdout.trim();
           await this.store.updateTask(task.id, { baseCommitSha });
           executorLog.log(`${task.id}: captured baseCommitSha ${baseCommitSha.slice(0, 7)}`);
           // Audit trail: record base commit capture for later diff computation (FN-1404)
@@ -1123,7 +1122,7 @@ export class TaskExecutor {
           const allSuccess = results.every(r => r.success);
           if (allSuccess) {
             const updatedTask = await this.store.getTask(task.id);
-            const modifiedFiles = this.captureModifiedFiles(worktreePath, updatedTask.baseCommitSha);
+            const modifiedFiles = await this.captureModifiedFiles(worktreePath, updatedTask.baseCommitSha);
             if (modifiedFiles.length > 0) {
               await this.store.updateTask(task.id, { modifiedFiles });
               executorLog.log(`${task.id}: captured ${modifiedFiles.length} modified files`);
@@ -1213,7 +1212,7 @@ export class TaskExecutor {
               }
               if (worktreePath && existsSync(worktreePath)) {
                 try {
-                  execSync(`git worktree remove "${worktreePath}" --force`, { cwd: this.rootDir, stdio: "pipe" });
+                  await execAsync(`git worktree remove "${worktreePath}" --force`, { cwd: this.rootDir });
                   // Audit trail: record worktree removal (FN-1404)
                   await audit.git({ type: "worktree:remove", target: worktreePath });
                 } catch {}
@@ -1264,7 +1263,7 @@ export class TaskExecutor {
 
               if (worktreePath && existsSync(worktreePath)) {
                 try {
-                  execSync(`git worktree remove "${worktreePath}" --force`, { cwd: this.rootDir, stdio: "pipe" });
+                  await execAsync(`git worktree remove "${worktreePath}" --force`, { cwd: this.rootDir });
                 } catch {}
               }
               await this.store.updateTask(task.id, { status: "stuck-killed", worktree: null, branch: null });
@@ -1549,7 +1548,7 @@ export class TaskExecutor {
           if (taskDone) {
             // Capture modified files before running workflow steps
             const updatedTask = await this.store.getTask(task.id);
-            const modifiedFiles = this.captureModifiedFiles(worktreePath, updatedTask.baseCommitSha);
+            const modifiedFiles = await this.captureModifiedFiles(worktreePath, updatedTask.baseCommitSha);
             if (modifiedFiles.length > 0) {
               await this.store.updateTask(task.id, { modifiedFiles });
               executorLog.log(`${task.id}: captured ${modifiedFiles.length} modified files`);
@@ -1653,7 +1652,7 @@ export class TaskExecutor {
 
             if (taskDone) {
               const updatedTask = await this.store.getTask(task.id);
-              const modifiedFiles = this.captureModifiedFiles(worktreePath, updatedTask.baseCommitSha);
+              const modifiedFiles = await this.captureModifiedFiles(worktreePath, updatedTask.baseCommitSha);
               if (modifiedFiles.length > 0) {
                 await this.store.updateTask(task.id, { modifiedFiles });
                 executorLog.log(`${task.id}: captured ${modifiedFiles.length} modified files`);
@@ -1754,7 +1753,7 @@ export class TaskExecutor {
           executorLog.log(`${task.id} paused — moving to todo`);
           if (worktreePath && existsSync(worktreePath)) {
             try {
-              execSync(`git worktree remove "${worktreePath}" --force`, { cwd: this.rootDir, stdio: "pipe" });
+              await execAsync(`git worktree remove "${worktreePath}" --force`, { cwd: this.rootDir });
               executorLog.log(`Removed old worktree for paused task: ${worktreePath}`);
               // Audit trail: record worktree removal (FN-1404)
               await audit.git({ type: "worktree:remove", target: worktreePath });
@@ -1845,7 +1844,7 @@ export class TaskExecutor {
             // Clean up the old worktree so the retry gets a fresh one
             if (worktreePath && existsSync(worktreePath)) {
               try {
-                execSync(`git worktree remove "${worktreePath}" --force`, { cwd: this.rootDir, stdio: "pipe" });
+                await execAsync(`git worktree remove "${worktreePath}" --force`, { cwd: this.rootDir });
                 executorLog.log(`Removed old worktree for transient retry: ${worktreePath}`);
                 // Audit trail: record worktree removal (FN-1404)
                 await audit.git({ type: "worktree:remove", target: worktreePath });
@@ -1907,7 +1906,7 @@ export class TaskExecutor {
           // Clean up the old worktree so the retry gets a fresh one
           if (worktreePath && existsSync(worktreePath)) {
             try {
-              execSync(`git worktree remove "${worktreePath}" --force`, { cwd: this.rootDir, stdio: "pipe" });
+              await execAsync(`git worktree remove "${worktreePath}" --force`, { cwd: this.rootDir });
               executorLog.log(`Removed old worktree for stuck-killed retry: ${worktreePath}`);
               // Audit trail: record worktree removal (FN-1404)
               await audit.git({ type: "worktree:remove", target: worktreePath });
@@ -2247,7 +2246,7 @@ export class TaskExecutor {
               // For plan reviews: skip git reset (no code has been written yet)
               if (reviewType === "code" && baseline) {
                 try {
-                  execSync(`git reset --hard ${baseline}`, { cwd: worktreePath, stdio: "pipe" });
+                  await execAsync(`git reset --hard ${baseline}`, { cwd: worktreePath });
                   executorLog.log(`${taskId}: RETHINK — git reset --hard ${baseline}`);
                 } catch (gitErr: any) {
                   executorLog.error(`${taskId}: RETHINK git reset failed: ${gitErr.message}`);
@@ -2323,7 +2322,7 @@ export class TaskExecutor {
 
     // Remove worktree
     try {
-      execSync(`git worktree remove "${worktreePath}" --force`, { cwd: this.rootDir, stdio: "pipe" });
+      await execAsync(`git worktree remove "${worktreePath}" --force`, { cwd: this.rootDir });
     } catch {
       // Worktree may already be gone
     }
@@ -2332,7 +2331,7 @@ export class TaskExecutor {
     const task = await this.store.getTask(taskId);
     const branch = task.branch || `fusion/${taskId.toLowerCase()}`;
     try {
-      execSync(`git branch -D "${branch}"`, { cwd: this.rootDir, stdio: "pipe" });
+      await execAsync(`git branch -D "${branch}"`, { cwd: this.rootDir });
     } catch {
       // Branch may not exist
     }
@@ -2627,7 +2626,7 @@ ${failureFeedback}
    * Uses git diff against the stored baseCommitSha to determine what changed.
    * Returns an empty array if no changes or if git commands fail.
    */
-  private captureModifiedFiles(worktreePath: string, baseCommitSha?: string): string[] {
+  private async captureModifiedFiles(worktreePath: string, baseCommitSha?: string): Promise<string[]> {
     try {
       // Determine the base reference for diff
       // If baseCommitSha is stored, use it; otherwise fall back to merge-base with HEAD
@@ -2635,19 +2634,19 @@ ${failureFeedback}
       if (!baseRef) {
         // Try to find merge-base with main/master as fallback
         try {
-          baseRef = execSync("git merge-base HEAD origin/main 2>/dev/null || git merge-base HEAD main", {
+          const { stdout } = await execAsync("git merge-base HEAD origin/main 2>/dev/null || git merge-base HEAD main", {
             cwd: worktreePath,
-            stdio: "pipe",
             encoding: "utf-8",
-          }).trim();
+          });
+          baseRef = stdout.trim();
         } catch {
           // If merge-base fails, use HEAD~1 as last resort
           try {
-            baseRef = execSync("git rev-parse HEAD~1", {
+            const { stdout } = await execAsync("git rev-parse HEAD~1", {
               cwd: worktreePath,
-              stdio: "pipe",
               encoding: "utf-8",
-            }).trim();
+            });
+            baseRef = stdout.trim();
           } catch {
             executorLog.log(`Could not determine base commit for diff in ${worktreePath}`);
             return [];
@@ -2660,11 +2659,11 @@ ${failureFeedback}
       }
 
       // Get list of modified files using git diff --name-only
-      const output = execSync(`git diff --name-only ${baseRef}..HEAD`, {
+      const { stdout } = await execAsync(`git diff --name-only ${baseRef}..HEAD`, {
         cwd: worktreePath,
-        stdio: "pipe",
         encoding: "utf-8",
-      }).trim();
+      });
+      const output = stdout.trim();
 
       if (!output) {
         return [];
@@ -3107,7 +3106,7 @@ and show an appropriate message to the user.\`
           `Removing existing directory (not a registered worktree): ${path}`,
         );
         try {
-          execSync(`rm -rf "${path}"`, { cwd: this.rootDir, stdio: "pipe" });
+          await execAsync(`rm -rf "${path}"`, { cwd: this.rootDir });
         } catch (e: any) {
           throw new Error(`Failed to remove existing directory ${path}: ${e.message}`);
         }
@@ -3117,19 +3116,19 @@ and show an appropriate message to the user.\`
       }
     }
 
-    const createWithBranch = (branchToCreate: string) => {
+    const createWithBranch = async (branchToCreate: string) => {
       const cmd = startPoint
         ? `git worktree add -b "${branchToCreate}" "${path}" "${startPoint}"`
         : `git worktree add -b "${branchToCreate}" "${path}"`;
-      execSync(cmd, { cwd: this.rootDir, stdio: "pipe" });
+      await execAsync(cmd, { cwd: this.rootDir });
     };
 
-    const createFromExistingBranch = () => {
-      execSync(`git worktree add "${path}" "${branch}"`, { cwd: this.rootDir, stdio: "pipe" });
+    const createFromExistingBranch = async () => {
+      await execAsync(`git worktree add "${path}" "${branch}"`, { cwd: this.rootDir });
     };
 
     try {
-      createWithBranch(branch);
+      await createWithBranch(branch);
       executorLog.log(`Worktree created: ${path}${startPoint ? ` (from ${startPoint})` : ""}`);
       if (attemptNumber > 0) {
         await this.store.logEntry(taskId, `Worktree created on attempt ${attemptNumber + 1}`, path);
@@ -3178,7 +3177,7 @@ and show an appropriate message to the user.\`
 
       // Try creating from existing branch (branch might already exist)
       try {
-        createFromExistingBranch();
+        await createFromExistingBranch();
         executorLog.log(`Worktree created from existing branch: ${path}`);
         return { path, branch };
       } catch (fallbackError: any) {
@@ -3313,29 +3312,29 @@ and show an appropriate message to the user.\`
     try {
       // Check if worktree is locked and unlock if needed
       try {
-        const lockInfo = execSync(`git worktree unlock "${worktreePath}"`, {
+        await execAsync(`git worktree unlock "${worktreePath}"`, {
           cwd: this.rootDir,
-          stdio: "pipe",
         });
-        if (lockInfo !== undefined) {
-          await this.store.logEntry(taskId, `Unlocked worktree`, worktreePath);
-        }
+        await this.store.logEntry(taskId, `Unlocked worktree`, worktreePath);
       } catch {
         // Unlock failed - worktree wasn't locked, that's fine
       }
 
       // Remove the worktree
-      execSync(`git worktree remove "${worktreePath}" --force`, {
-        cwd: this.rootDir,
-        stdio: "pipe",
-      });
-      await this.store.logEntry(taskId, `Removed conflicting worktree`, worktreePath);
+      try {
+        await execAsync(`git worktree remove "${worktreePath}" --force`, {
+          cwd: this.rootDir,
+        });
+        await this.store.logEntry(taskId, `Removed conflicting worktree`, worktreePath);
+      } catch (e: any) {
+        // Re-throw to be caught by outer catch for proper error logging
+        throw e;
+      }
 
       // Delete the branch if it exists
       try {
-        execSync(`git branch -D "${branch}"`, {
+        await execAsync(`git branch -D "${branch}"`, {
           cwd: this.rootDir,
-          stdio: "pipe",
         });
         await this.store.logEntry(taskId, `Deleted branch`, branch);
       } catch {
@@ -3369,7 +3368,7 @@ and show an appropriate message to the user.\`
   private async cleanupStaleBranch(branch: string, taskId: string): Promise<boolean> {
     // Step 1: Prune stale worktree metadata that may hold a lock on the branch
     try {
-      execSync("git worktree prune", { cwd: this.rootDir, stdio: "pipe" });
+      await execAsync("git worktree prune", { cwd: this.rootDir });
       await this.store.logEntry(taskId, `Pruned stale worktree metadata`, branch);
     } catch {
       // Prune is best-effort — continue even if it fails
@@ -3377,9 +3376,8 @@ and show an appropriate message to the user.\`
 
     // Step 2: Try normal branch deletion
     try {
-      execSync(`git branch -D "${branch}"`, {
+      await execAsync(`git branch -D "${branch}"`, {
         cwd: this.rootDir,
-        stdio: "pipe",
       });
       await this.store.logEntry(taskId, `Removed stale branch`, branch);
       return true;
@@ -3394,9 +3392,8 @@ and show an appropriate message to the user.\`
     // Step 3: Force-remove the reference directly
     try {
       const refPath = `refs/heads/${branch}`;
-      execSync(`git update-ref -d "${refPath}"`, {
+      await execAsync(`git update-ref -d "${refPath}"`, {
         cwd: this.rootDir,
-        stdio: "pipe",
       });
       await this.store.logEntry(taskId, `Force-removed stale branch reference via update-ref`, refPath);
       return true;
@@ -3477,7 +3474,7 @@ and show an appropriate message to the user.\`
     }
 
     try {
-      execSync(`git worktree remove "${worktreePath}" --force`, { cwd: this.rootDir, stdio: "pipe" });
+      await execAsync(`git worktree remove "${worktreePath}" --force`, { cwd: this.rootDir });
       executorLog.log(`Cleaned up worktree for ${taskId}`);
     } catch (err: any) {
       executorLog.error(`Failed to clean up worktree for ${taskId}:`, err.message);
@@ -3502,14 +3499,16 @@ and show an appropriate message to the user.\`
 
     try {
       // Check if the branch has any unique commits vs main
-      const mergeBase = execSync(
+      const { stdout: mergeBaseStdout } = await execAsync(
         `git merge-base "${branchName}" HEAD 2>/dev/null`,
-        { cwd: this.rootDir, stdio: "pipe", encoding: "utf-8" },
-      ).trim();
-      const branchHead = execSync(
+        { cwd: this.rootDir, encoding: "utf-8" },
+      );
+      const { stdout: branchHeadStdout } = await execAsync(
         `git rev-parse "${branchName}" 2>/dev/null`,
-        { cwd: this.rootDir, stdio: "pipe", encoding: "utf-8" },
-      ).trim();
+        { cwd: this.rootDir, encoding: "utf-8" },
+      );
+      const mergeBase = mergeBaseStdout.trim();
+      const branchHead = branchHeadStdout.trim();
 
       if (mergeBase === branchHead) {
         // Branch has no unique commits — all step work was lost
