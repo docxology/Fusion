@@ -1,0 +1,222 @@
+/**
+ * ProjectEngineManager — uniform lifecycle management for all project engines.
+ *
+ * Every registered project gets an identical ProjectEngine. There is no
+ * "primary" or "default" engine — each is created from CentralCore metadata
+ * and started through the same code path.
+ *
+ * The manager is the single owner of all engines. It handles:
+ *   - Eager startup of all registered projects via `startAll()`
+ *   - Lazy startup of newly-accessed projects via `ensureEngine()`
+ *   - Deduplication of concurrent start requests for the same project
+ *   - Graceful shutdown of all engines via `stopAll()`
+ */
+
+import type {
+  CentralCore,
+  TaskStore,
+  RegisteredProject,
+} from "@fusion/core";
+import { ProjectEngine } from "./project-engine.js";
+import type { ProjectEngineOptions } from "./project-engine.js";
+import type { ProjectRuntimeConfig } from "./project-runtime.js";
+import { runtimeLog } from "./logger.js";
+
+/**
+ * Options shared across all engines created by the manager.
+ * These are injected by the CLI layer (dashboard.ts / serve.ts).
+ */
+export interface EngineManagerOptions {
+  getMergeStrategy?: ProjectEngineOptions["getMergeStrategy"];
+  processPullRequestMerge?: ProjectEngineOptions["processPullRequestMerge"];
+  getTaskMergeBlocker?: ProjectEngineOptions["getTaskMergeBlocker"];
+  onInsightRunProcessed?: ProjectEngineOptions["onInsightRunProcessed"];
+}
+
+export class ProjectEngineManager {
+  private engines = new Map<string, ProjectEngine>();
+  private starting = new Map<string, Promise<ProjectEngine>>();
+  private stopped = false;
+
+  constructor(
+    private centralCore: CentralCore,
+    private options: EngineManagerOptions = {},
+  ) {}
+
+  // ── Public accessors ──
+
+  /** Get a running engine by projectId. Returns undefined if not started. */
+  getEngine(projectId: string): ProjectEngine | undefined {
+    return this.engines.get(projectId);
+  }
+
+  /** Get all running engines. */
+  getAllEngines(): ReadonlyMap<string, ProjectEngine> {
+    return this.engines;
+  }
+
+  /** Get the TaskStore for a project from its engine. */
+  getStore(projectId: string): TaskStore | undefined {
+    return this.engines.get(projectId)?.getTaskStore();
+  }
+
+  /** Check if an engine is running or starting for this project. */
+  has(projectId: string): boolean {
+    return this.engines.has(projectId) || this.starting.has(projectId);
+  }
+
+  // ── Lifecycle ──
+
+  /**
+   * Ensure an engine is running for the given project.
+   * If already started, returns immediately. If starting, deduplicates.
+   * If not started, creates and starts a new engine from CentralCore metadata.
+   */
+  async ensureEngine(
+    projectId: string,
+    overrides?: Partial<ProjectEngineOptions>,
+  ): Promise<ProjectEngine> {
+    if (this.stopped) throw new Error("ProjectEngineManager is stopped");
+
+    const existing = this.engines.get(projectId);
+    if (existing) return existing;
+
+    // Deduplicate concurrent start requests
+    const pending = this.starting.get(projectId);
+    if (pending) return pending;
+
+    const promise = this.createAndStart(projectId, overrides);
+    this.starting.set(projectId, promise);
+
+    try {
+      const engine = await promise;
+      return engine;
+    } catch (err) {
+      // Clean up on failure so a retry can attempt again
+      this.starting.delete(projectId);
+      throw err;
+    }
+  }
+
+  /**
+   * Start engines for all registered projects.
+   * Failures for individual projects are logged but don't stop others.
+   */
+  async startAll(): Promise<void> {
+    const projects = await this.centralCore.listProjects();
+    if (projects.length === 0) return;
+
+    runtimeLog.log(`Starting engines for ${projects.length} registered project(s)`);
+
+    const results = await Promise.allSettled(
+      projects.map((p) => this.ensureEngine(p.id)),
+    );
+
+    let started = 0;
+    let failed = 0;
+    for (const result of results) {
+      if (result.status === "fulfilled") {
+        started++;
+      } else {
+        failed++;
+        runtimeLog.warn(`Engine start failed: ${result.reason}`);
+      }
+    }
+
+    runtimeLog.log(`Engine startup complete: ${started} started, ${failed} failed`);
+  }
+
+  /** Gracefully stop all engines. */
+  async stopAll(): Promise<void> {
+    this.stopped = true;
+
+    const stops = Array.from(this.engines.entries()).map(
+      async ([id, engine]) => {
+        try {
+          await engine.stop();
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          runtimeLog.warn(`Engine ${id} stop error: ${message}`);
+        }
+      },
+    );
+    await Promise.all(stops);
+    this.engines.clear();
+    this.starting.clear();
+  }
+
+  /**
+   * Fire-and-forget engine start — suitable as a callback for
+   * onProjectFirstAccessed in the server layer.
+   */
+  onProjectAccessed(projectId: string): void {
+    if (this.has(projectId)) return;
+    this.ensureEngine(projectId).catch((err) => {
+      const message = err instanceof Error ? err.message : String(err);
+      runtimeLog.warn(
+        `Failed to start engine for project ${projectId}: ${message}`,
+      );
+    });
+  }
+
+  // ── Internal ──
+
+  private async createAndStart(
+    projectId: string,
+    overrides?: Partial<ProjectEngineOptions>,
+  ): Promise<ProjectEngine> {
+    const project = await this.centralCore.getProject(projectId);
+    if (!project) {
+      throw new Error(`Project ${projectId} not found in CentralCore`);
+    }
+
+    const runtimeConfig = this.buildRuntimeConfig(project);
+    const engineOptions = this.buildEngineOptions(project, overrides);
+
+    const engine = new ProjectEngine(
+      runtimeConfig,
+      this.centralCore,
+      engineOptions,
+    );
+
+    await engine.start();
+
+    this.engines.set(projectId, engine);
+    this.starting.delete(projectId);
+    runtimeLog.log(
+      `Started engine for ${project.name ?? projectId} (${projectId})`,
+    );
+
+    return engine;
+  }
+
+  private buildRuntimeConfig(project: RegisteredProject): ProjectRuntimeConfig {
+    const settings = project.settings as
+      | Record<string, unknown>
+      | undefined;
+
+    return {
+      projectId: project.id,
+      workingDirectory: project.path,
+      isolationMode:
+        (project.isolationMode as "in-process" | "child-process") ??
+        "in-process",
+      maxConcurrent: (settings?.maxConcurrent as number) ?? 4,
+      maxWorktrees: (settings?.maxWorktrees as number) ?? 10,
+    };
+  }
+
+  private buildEngineOptions(
+    project: RegisteredProject,
+    overrides?: Partial<ProjectEngineOptions>,
+  ): ProjectEngineOptions {
+    return {
+      projectId: project.id,
+      getMergeStrategy: this.options.getMergeStrategy,
+      processPullRequestMerge: this.options.processPullRequestMerge,
+      getTaskMergeBlocker: this.options.getTaskMergeBlocker,
+      onInsightRunProcessed: this.options.onInsightRunProcessed,
+      ...overrides,
+    };
+  }
+}
