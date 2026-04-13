@@ -19,6 +19,8 @@ const mockCreateBackup = vi.fn();
 const mockImportSettings = vi.fn();
 const mockFetchMemory = vi.fn();
 const mockSaveMemory = vi.fn();
+const mockFetchGlobalConcurrency = vi.fn();
+const mockUpdateGlobalConcurrency = vi.fn();
 
 vi.mock("../api", () => ({
   fetchSettings: (...args: unknown[]) => mockFetchSettings(...args),
@@ -35,6 +37,10 @@ vi.mock("../api", () => ({
   createBackup: (...args: unknown[]) => mockCreateBackup(...args),
   fetchMemory: (...args: unknown[]) => mockFetchMemory(...args),
   saveMemory: (...args: unknown[]) => mockSaveMemory(...args),
+  fetchGlobalConcurrency: (...args: unknown[]) => mockFetchGlobalConcurrency(...args),
+  updateGlobalConcurrency: (...args: unknown[]) => mockUpdateGlobalConcurrency(...args),
+  saveApiKey: vi.fn().mockResolvedValue(undefined),
+  clearApiKey: vi.fn().mockResolvedValue(undefined),
 }));
 
 const noop = () => {};
@@ -73,6 +79,8 @@ describe("SettingsModal", () => {
     mockFetchBackups.mockResolvedValue({ backups: [], totalSize: 0 });
     mockFetchMemory.mockResolvedValue({ content: "## Existing memory\n- Learned pattern" });
     mockSaveMemory.mockResolvedValue({ success: true });
+    mockFetchGlobalConcurrency.mockResolvedValue({ globalMaxConcurrent: 4, currentlyActive: 0, queuedCount: 0, projectsActive: {} });
+    mockUpdateGlobalConcurrency.mockResolvedValue({ globalMaxConcurrent: 4, currentlyActive: 0, queuedCount: 0, projectsActive: {} });
 
     // jsdom doesn't provide URL.createObjectURL — polyfill it
     if (!URL.createObjectURL) {

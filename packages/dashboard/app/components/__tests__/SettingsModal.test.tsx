@@ -60,6 +60,14 @@ vi.mock("../../api", () => ({
   fetchPluginSettings: vi.fn(() => Promise.resolve({})),
   updatePluginSettings: vi.fn(() => Promise.resolve({})),
   reloadPlugin: vi.fn(() => Promise.resolve({ id: "test-plugin", name: "Test Plugin", version: "1.0.0", state: "started" as const, enabled: true, settings: {}, settingsSchema: {} })),
+  fetchGlobalConcurrency: vi.fn(() => Promise.resolve({ globalMaxConcurrent: 4, currentlyActive: 0, queuedCount: 0, projectsActive: {} })),
+  updateGlobalConcurrency: vi.fn(() => Promise.resolve({ globalMaxConcurrent: 4, currentlyActive: 0, queuedCount: 0, projectsActive: {} })),
+  fetchBackups: vi.fn(() => Promise.resolve({ backups: [], totalSize: 0 })),
+  createBackup: vi.fn(() => Promise.resolve({ success: true })),
+  exportSettings: vi.fn(() => Promise.resolve({ version: 1, exportedAt: new Date().toISOString(), global: undefined, project: {} })),
+  importSettings: vi.fn(() => Promise.resolve({ success: true })),
+  fetchMemory: vi.fn(() => Promise.resolve({ content: "" })),
+  saveMemory: vi.fn(() => Promise.resolve({ success: true })),
 }));
 
 // Mock PluginManager to avoid SSE setup in tests
