@@ -4,16 +4,37 @@ import { useLiveTranscript } from "../hooks/useLiveTranscript";
 
 interface LiveAgentCardProps {
   agent: Agent;
+  onSelect?: (agentId: string) => void;
 }
 
-function LiveAgentCard({ agent }: LiveAgentCardProps) {
+function LiveAgentCard({ agent, onSelect }: LiveAgentCardProps) {
   const { entries, isConnected } = useLiveTranscript(agent.taskId);
   const elapsed = agent.lastHeartbeatAt
     ? Math.floor((Date.now() - new Date(agent.lastHeartbeatAt).getTime()) / 1000)
     : 0;
 
+  const handleSelect = () => {
+    if (onSelect) {
+      onSelect(agent.id);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      handleSelect();
+    }
+  };
+
   return (
-    <div className="live-agent-card">
+    <div
+      className="live-agent-card"
+      onClick={handleSelect}
+      onKeyDown={handleKeyDown}
+      role="button"
+      tabIndex={0}
+      aria-label={`Select agent ${agent.name}`}
+    >
       <div className="live-agent-card-header">
         <div className="live-agent-card-name">
           <span className="live-agent-pulse" />
@@ -52,9 +73,10 @@ function formatElapsed(seconds: number): string {
 
 interface ActiveAgentsPanelProps {
   agents: Agent[];
+  onAgentSelect?: (agentId: string) => void;
 }
 
-export function ActiveAgentsPanel({ agents }: ActiveAgentsPanelProps) {
+export function ActiveAgentsPanel({ agents, onAgentSelect }: ActiveAgentsPanelProps) {
   if (agents.length === 0) return null;
 
   return (
@@ -65,7 +87,7 @@ export function ActiveAgentsPanel({ agents }: ActiveAgentsPanelProps) {
       </div>
       <div className="active-agents-grid">
         {agents.map(agent => (
-          <LiveAgentCard key={agent.id} agent={agent} />
+          <LiveAgentCard key={agent.id} agent={agent} onSelect={onAgentSelect} />
         ))}
       </div>
     </div>

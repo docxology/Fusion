@@ -496,7 +496,7 @@ export function AgentsView({ addToast, projectId }: AgentsViewProps) {
         <AgentMetricsBar stats={stats} />
 
         {/* Active Agents Panel - Live streaming cards */}
-        <ActiveAgentsPanel agents={activeAgents} />
+        <ActiveAgentsPanel agents={activeAgents} onAgentSelect={setSelectedAgentId} />
 
         {/* Agent List */}
         {agentView === "tree" ? (

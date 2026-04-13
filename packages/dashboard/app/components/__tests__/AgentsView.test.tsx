@@ -786,4 +786,157 @@ describe("AgentsView", () => {
       });
     });
   });
+
+  describe("active agents panel selection", () => {
+    it("renders active agents panel when agents are active", async () => {
+      // agent-002 is active with taskId FN-001
+      render(<AgentsView addToast={mockAddToast} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Active Agents (1)")).toBeTruthy();
+      });
+
+      // Should have a live agent card for the active agent
+      const liveAgentCards = document.querySelectorAll(".live-agent-card");
+      expect(liveAgentCards.length).toBe(1);
+    });
+
+    it("opens AgentDetailView when clicking an active agent card", async () => {
+      render(<AgentsView addToast={mockAddToast} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Active Agents (1)")).toBeTruthy();
+      });
+
+      // Find and click the live agent card
+      const liveAgentCard = document.querySelector(".live-agent-card");
+      expect(liveAgentCard).toBeTruthy();
+
+      fireEvent.click(liveAgentCard!);
+
+      await waitFor(() => {
+        // Should open detail view for agent-002 (the active agent)
+        expect(screen.getByTestId("agent-detail-view")).toHaveTextContent("agent-002");
+      });
+    });
+
+    it("opens AgentDetailView when pressing Enter on an active agent card", async () => {
+      render(<AgentsView addToast={mockAddToast} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Active Agents (1)")).toBeTruthy();
+      });
+
+      // Find the live agent card
+      const liveAgentCard = document.querySelector(".live-agent-card") as HTMLElement;
+      expect(liveAgentCard).toBeTruthy();
+
+      // Focus and press Enter
+      liveAgentCard.focus();
+      fireEvent.keyDown(liveAgentCard, { key: "Enter" });
+
+      await waitFor(() => {
+        expect(screen.getByTestId("agent-detail-view")).toHaveTextContent("agent-002");
+      });
+    });
+
+    it("opens AgentDetailView when pressing Space on an active agent card", async () => {
+      render(<AgentsView addToast={mockAddToast} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Active Agents (1)")).toBeTruthy();
+      });
+
+      // Find the live agent card
+      const liveAgentCard = document.querySelector(".live-agent-card") as HTMLElement;
+      expect(liveAgentCard).toBeTruthy();
+
+      // Focus and press Space
+      liveAgentCard.focus();
+      fireEvent.keyDown(liveAgentCard, { key: " " });
+
+      await waitFor(() => {
+        expect(screen.getByTestId("agent-detail-view")).toHaveTextContent("agent-002");
+      });
+    });
+
+    it("live agent cards have proper accessibility attributes", async () => {
+      render(<AgentsView addToast={mockAddToast} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Active Agents (1)")).toBeTruthy();
+      });
+
+      const liveAgentCard = document.querySelector(".live-agent-card") as HTMLElement;
+      expect(liveAgentCard).toBeTruthy();
+
+      // Check accessibility attributes
+      expect(liveAgentCard.getAttribute("role")).toBe("button");
+      expect(liveAgentCard.getAttribute("tabIndex")).toBe("0");
+      expect(liveAgentCard.getAttribute("aria-label")).toBe("Select agent Test Agent 2");
+    });
+
+    it("does not show active agents panel when no agents are active", async () => {
+      // Create agents with no active ones
+      const inactiveAgents: Agent[] = [
+        {
+          id: "agent-005",
+          name: "Idle Agent",
+          role: "executor" as AgentCapability,
+          state: "idle" as AgentState,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          metadata: {},
+        },
+      ];
+      mockFetchAgents.mockResolvedValue(inactiveAgents);
+
+      render(<AgentsView addToast={mockAddToast} />);
+
+      await waitFor(() => {
+        expect(screen.queryByText("Active Agents")).toBeNull();
+      });
+    });
+
+    it("opens AgentDetailView for spawned agents in the active panel", async () => {
+      // Simulate spawned agents by having multiple active agents
+      const spawnedAgents: Agent[] = [
+        ...mockAgents,
+        {
+          id: "spawned-001",
+          name: "Spawned Worker",
+          role: "custom" as AgentCapability,
+          state: "active" as AgentState,
+          taskId: "FN-100",
+          lastHeartbeatAt: new Date().toISOString(),
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          metadata: {},
+        },
+      ];
+      mockFetchAgents.mockResolvedValue(spawnedAgents);
+
+      render(<AgentsView addToast={mockAddToast} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Active Agents (2)")).toBeTruthy();
+      });
+
+      // Find and click the spawned agent card
+      const liveAgentCards = document.querySelectorAll(".live-agent-card");
+      expect(liveAgentCards.length).toBe(2);
+
+      // Click on the spawned agent
+      const spawnedCard = Array.from(liveAgentCards).find(
+        card => card.textContent?.includes("Spawned Worker")
+      );
+      expect(spawnedCard).toBeTruthy();
+
+      fireEvent.click(spawnedCard!);
+
+      await waitFor(() => {
+        expect(screen.getByTestId("agent-detail-view")).toHaveTextContent("spawned-001");
+      });
+    });
+  });
 });
