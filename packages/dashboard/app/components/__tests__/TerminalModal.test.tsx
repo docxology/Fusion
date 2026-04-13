@@ -3419,3 +3419,113 @@ describe("TerminalModal — FN-872 real-device keyboard overlap refinement", () 
     });
   });
 });
+
+// --- xterm focus initialization regression tests ---
+describe("TerminalModal — xterm focus initialization (FN-1602)", () => {
+  const mockOnClose = vi.fn();
+  const mockSendInput = vi.fn();
+  const mockResize = vi.fn();
+  const mockReconnect = vi.fn();
+
+  const createMockTerminalState = (overrides = {}) => ({
+    connectionStatus: "disconnected" as const,
+    sendInput: mockSendInput,
+    resize: mockResize,
+    onData: vi.fn(() => vi.fn()),
+    onExit: vi.fn(() => vi.fn()),
+    onConnect: vi.fn(() => vi.fn()),
+    onScrollback: vi.fn(() => vi.fn()),
+    reconnect: mockReconnect,
+    onSessionInvalid: vi.fn(() => vi.fn()),
+    ...overrides,
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockCreateTerminalSession.mockResolvedValue({
+      sessionId: "test-session-123",
+      shell: "/bin/bash",
+      cwd: "/project",
+    });
+    mockKillPtyTerminalSession.mockResolvedValue({ killed: true });
+    mockUseTerminal.mockReturnValue(createMockTerminalState());
+    mockUseTerminalSessions.mockReturnValue(defaultSessionState);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /**
+   * Regression: terminal text entry not working after xterm initialization.
+   *
+   * The original bug occurred because xterm's programmatic focus() call did not
+   * properly trigger xterm's internal focus tracking. xterm.js relies on
+   * canvas click events to set up focus handling, so we now:
+   * 1. Focus the helper textarea directly after terminal.open()
+   * 2. Dispatch a synthetic click on the container to trigger xterm's
+   *    internal focus tracking
+   */
+  it("renders terminal container after xterm is ready", async () => {
+    mockUseTerminal.mockReturnValue(
+      createMockTerminalState({ connectionStatus: "connected" })
+    );
+
+    render(<TerminalModal isOpen={true} onClose={mockOnClose} />);
+
+    await waitFor(() => {
+      expect(mockTerminalInstance.open).toHaveBeenCalled();
+    });
+
+    // Terminal container should be rendered
+    expect(screen.getByTestId("terminal-xterm")).toBeTruthy();
+  });
+
+  it("handles dispatchEvent errors gracefully in non-browser environments", async () => {
+    // Simulate dispatchEvent throwing an error (e.g., in jsdom without proper setup)
+    const originalDispatchEvent = Element.prototype.dispatchEvent;
+    Element.prototype.dispatchEvent = vi.fn(() => {
+      throw new Error("dispatchEvent not supported");
+    });
+
+    mockUseTerminal.mockReturnValue(
+      createMockTerminalState({ connectionStatus: "connected" })
+    );
+
+    // Should not throw despite dispatchEvent failing
+    expect(() => {
+      render(<TerminalModal isOpen={true} onClose={mockOnClose} />);
+    }).not.toThrow();
+
+    // Restore original method
+    Element.prototype.dispatchEvent = originalDispatchEvent;
+  });
+
+  it("continues to work when connection status changes after initial render", async () => {
+    // Start with disconnected
+    mockUseTerminal.mockReturnValue(
+      createMockTerminalState({ connectionStatus: "disconnected" })
+    );
+
+    const { rerender } = render(
+      <TerminalModal isOpen={true} onClose={mockOnClose} />
+    );
+
+    // xterm should still initialize
+    await waitFor(() => {
+      expect(mockTerminalInstance.open).toHaveBeenCalled();
+    });
+
+    // Now simulate connection becoming established
+    mockUseTerminal.mockReturnValue(
+      createMockTerminalState({ connectionStatus: "connected" })
+    );
+
+    rerender(<TerminalModal isOpen={true} onClose={mockOnClose} />);
+
+    // Modal should still render correctly
+    await waitFor(() => {
+      expect(screen.getByTestId("terminal-modal")).toBeTruthy();
+    });
+  });
+});

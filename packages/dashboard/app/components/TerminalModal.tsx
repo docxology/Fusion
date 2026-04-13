@@ -401,9 +401,40 @@ export function TerminalModal({ isOpen, onClose, initialCommand, projectId }: Te
         // Clear watchdog — imports and open() succeeded within deadline
         clearTimeout(watchdogTimer);
 
+        // Ensure xterm's textarea receives focus for keyboard input.
+        // xterm.js creates a hidden textarea that captures keyboard events.
+        // We focus the textarea directly and dispatch a synthetic click on
+        // the container to trigger xterm's internal focus tracking.
+        const helperTextarea = terminalRef.current?.querySelector(
+          ".xterm-helper-textarea",
+        ) as HTMLTextAreaElement | undefined;
+        if (helperTextarea) {
+          helperTextarea.focus();
+        }
+        // Dispatch a click event on the xterm container to ensure xterm's
+        // internal focus tracking is properly initialized. This is necessary
+        // because xterm relies on canvas click events for full focus setup.
+        if (terminalRef.current) {
+          try {
+            terminalRef.current.dispatchEvent(new MouseEvent("click", {
+              bubbles: true,
+              cancelable: true,
+            }));
+          } catch {
+            // Ignore event dispatch errors in non-browser environments
+          }
+        }
+
         // Initial fit
         setTimeout(() => {
           fitAddon.fit();
+          // Re-focus after fit in case the DOM changed
+          const textarea = terminalRef.current?.querySelector(
+            ".xterm-helper-textarea",
+          ) as HTMLTextAreaElement | undefined;
+          if (textarea) {
+            textarea.focus();
+          }
         }, 50);
 
         xtermRef.current = terminal;
@@ -614,7 +645,23 @@ export function TerminalModal({ isOpen, onClose, initialCommand, projectId }: Te
   useEffect(() => {
     if (connectionStatus === "connected" && xtermRef.current) {
       setTimeout(() => {
-        xtermRef.current?.focus();
+        if (!xtermRef.current || !terminalRef.current) return;
+        // Focus the xterm textarea directly for keyboard input
+        const helperTextarea = terminalRef.current.querySelector(
+          ".xterm-helper-textarea",
+        ) as HTMLTextAreaElement | undefined;
+        if (helperTextarea) {
+          helperTextarea.focus();
+        }
+        // Also dispatch a click to trigger xterm's internal focus tracking
+        try {
+          terminalRef.current.dispatchEvent(new MouseEvent("click", {
+            bubbles: true,
+            cancelable: true,
+          }));
+        } catch {
+          // Ignore event dispatch errors in non-browser environments
+        }
       }, 100);
     }
   }, [connectionStatus]);
