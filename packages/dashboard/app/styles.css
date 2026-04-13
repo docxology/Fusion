@@ -12446,7 +12446,10 @@ html .column.drag-over * {
 .planning-options {
   display: flex;
   flex-direction: column;
-  gap: var(--space-lg);
+  gap: var(--space-md);
+  max-height: 40vh;
+  overflow-y: auto;
+  padding-right: var(--space-xs);
 }
 
 .planning-option {
@@ -12504,7 +12507,7 @@ html .column.drag-over * {
 .planning-checkbox-group {
   display: flex;
   flex-direction: column;
-  gap: var(--space-md);
+  gap: var(--space-sm);
 }
 
 .planning-confirm-group {

@@ -1,8 +1,10 @@
 import { Router, type Request, type Response, type NextFunction } from "express";
 import multer from "multer";
 import { randomUUID } from "node:crypto";
-import { createReadStream, existsSync } from "node:fs";
+import { createReadStream, createWriteStream, existsSync } from "node:fs";
 import { mkdtemp } from "node:fs/promises";
+import { Readable } from "node:stream";
+import { pipeline as streamPipeline } from "node:stream/promises";
 import { execFile } from "node:child_process";
 import { execSync } from "node:child_process";
 import { resolve, sep, join } from "node:path";
@@ -9404,13 +9406,16 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
               tagline: typeof entry.tagline === "string" ? entry.tagline : undefined,
               repo: typeof entry.repo === "string" ? entry.repo : undefined,
               website: typeof entry.website === "string" ? entry.website : undefined,
-              installs: typeof entry.installs === "number" ? entry.installs : undefined,
+              installs: typeof entry.installs === "number" ? entry.installs
+                : typeof entry.installs === "string" ? parseInt(entry.installs, 10) || undefined
+                : undefined,
             };
           }).filter((c): c is CompaniesShCompany => c !== null);
         } else if (typeof data === "object" && data !== null) {
-          // Handle wrapped response: { companies: [...] } or { data: [...] }
+          // Handle wrapped response: { items: [...] }, { companies: [...] }, or { data: [...] }
           const obj = data as Record<string, unknown>;
-          const arr = Array.isArray(obj.companies) ? obj.companies
+          const arr = Array.isArray(obj.items) ? obj.items
+            : Array.isArray(obj.companies) ? obj.companies
             : Array.isArray(obj.data) ? obj.data
             : [];
 
@@ -9428,7 +9433,9 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
               tagline: typeof entry.tagline === "string" ? entry.tagline : undefined,
               repo: typeof entry.repo === "string" ? entry.repo : undefined,
               website: typeof entry.website === "string" ? entry.website : undefined,
-              installs: typeof entry.installs === "number" ? entry.installs : undefined,
+              installs: typeof entry.installs === "number" ? entry.installs
+                : typeof entry.installs === "string" ? parseInt(entry.installs, 10) || undefined
+                : undefined,
             };
           }).filter((c): c is CompaniesShCompany => c !== null);
         }
@@ -9580,10 +9587,11 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         }
 
         // Parse the repo URL to determine the archive URL
-        // Accept HTTPS GitHub URLs: https://github.com/owner/repo
-        const repoMatch = companyInfo.repo.match(/^https?:\/\/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?$/i);
+        // Accept HTTPS GitHub URLs: https://github.com/owner/repo or shorthand: owner/repo
+        const repoMatch = companyInfo.repo.match(/^https?:\/\/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?$/i)
+          ?? companyInfo.repo.match(/^([a-zA-Z0-9_-]+)\/([a-zA-Z0-9_.-]+)$/);
         if (!repoMatch) {
-          throw badRequest(`Unsupported repository URL format: ${companyInfo.repo}. Only GitHub HTTPS URLs are supported.`);
+          throw badRequest(`Unsupported repository URL format: ${companyInfo.repo}. Only GitHub HTTPS URLs and owner/repo shorthand are supported.`);
         }
 
         const [, repoOwner, repoName] = repoMatch;
@@ -9597,49 +9605,23 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
 
           // Download the archive
           const archivePath = join(tempDir, "archive.tar.gz");
-          const { createWriteStream } = await import("node:fs");
 
           const archiveResponse = await fetch(archiveUrl);
-          if (!archiveResponse.ok) {
-            // Try main branch as fallback
-            const fallbackUrl = `https://github.com/${repoOwner}/${repoName}/archive/refs/heads/master.tar.gz`;
-            const fallbackResponse = await fetch(fallbackUrl);
-            if (!fallbackResponse.ok) {
-              throw badRequest(`Failed to download repository archive: ${fallbackResponse.status} ${fallbackResponse.statusText}`);
-            }
+          const downloadResponse = archiveResponse.ok
+            ? archiveResponse
+            : await fetch(`https://github.com/${repoOwner}/${repoName}/archive/refs/heads/master.tar.gz`);
 
-            const fallbackStream = createWriteStream(archivePath);
-            if (!fallbackResponse.body) {
-              throw new Error("No response body");
-            }
-            await fallbackResponse.body.pipeTo(new WritableStream({
-              write(chunk) {
-                fallbackStream.write(chunk);
-              },
-              close() {
-                fallbackStream.end();
-              },
-              abort(err) {
-                fallbackStream.close();
-              },
-            }));
-          } else {
-            const stream = createWriteStream(archivePath);
-            if (!archiveResponse.body) {
-              throw new Error("No response body");
-            }
-            await archiveResponse.body.pipeTo(new WritableStream({
-              write(chunk) {
-                stream.write(chunk);
-              },
-              close() {
-                stream.end();
-              },
-              abort(err) {
-                stream.close();
-              },
-            }));
+          if (!downloadResponse.ok) {
+            throw badRequest(`Failed to download repository archive: ${downloadResponse.status} ${downloadResponse.statusText}`);
           }
+          if (!downloadResponse.body) {
+            throw new Error("No response body");
+          }
+
+          await streamPipeline(
+            Readable.fromWeb(downloadResponse.body as import("node:stream/web").ReadableStream),
+            createWriteStream(archivePath),
+          );
 
           // Extract the archive
           // The archive extracts to a subdirectory named after the repo
