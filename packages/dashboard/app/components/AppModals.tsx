@@ -218,6 +218,7 @@ export function AppModals({
           onClose={modalManager.closeGitManager}
           tasks={tasks}
           addToast={addToast}
+          projectId={projectId}
         />
       </ModalErrorBoundary>
 

@@ -163,11 +163,12 @@ interface GitManagerModalProps {
   onClose: () => void;
   tasks: Task[];
   addToast: (message: string, type?: ToastType) => void;
+  projectId?: string;
 }
 
 // ── Main Component ────────────────────────────────────────────────
 
-export function GitManagerModal({ isOpen, onClose, tasks, addToast }: GitManagerModalProps) {
+export function GitManagerModal({ isOpen, onClose, tasks, addToast, projectId }: GitManagerModalProps) {
   const [activeSection, setActiveSection] = useState<SectionId>("status");
   const [loading, setLoading] = useState(false);
   const [sectionError, setSectionError] = useState<string | null>(null);
@@ -226,40 +227,40 @@ export function GitManagerModal({ isOpen, onClose, tasks, addToast }: GitManager
     try {
       switch (activeSection) {
         case "status": {
-          const statusData = await fetchGitStatus();
+          const statusData = await fetchGitStatus(projectId);
           setStatus(statusData);
           break;
         }
         case "changes": {
-          const [statusData, changes] = await Promise.all([fetchGitStatus(), fetchFileChanges()]);
+          const [statusData, changes] = await Promise.all([fetchGitStatus(projectId), fetchFileChanges(projectId)]);
           setStatus(statusData);
           setFileChanges(changes);
           setSelectedFiles(new Set());
           break;
         }
         case "commits": {
-          const commitsData = await fetchGitCommits(commitsLimit);
+          const commitsData = await fetchGitCommits(commitsLimit, projectId);
           setCommits(commitsData);
           break;
         }
         case "branches": {
-          const [branchesData, statusForBranch] = await Promise.all([fetchGitBranches(), fetchGitStatus()]);
+          const [branchesData, statusForBranch] = await Promise.all([fetchGitBranches(projectId), fetchGitStatus(projectId)]);
           setBranches(branchesData);
           setStatus(statusForBranch);
           break;
         }
         case "worktrees": {
-          const worktreesData = await fetchGitWorktrees();
+          const worktreesData = await fetchGitWorktrees(projectId);
           setWorktrees(worktreesData);
           break;
         }
         case "stashes": {
-          const stashesData = await fetchGitStashList();
+          const stashesData = await fetchGitStashList(projectId);
           setStashes(stashesData);
           break;
         }
         case "remotes": {
-          const remoteStatus = await fetchGitStatus();
+          const remoteStatus = await fetchGitStatus(projectId);
           setStatus(remoteStatus);
           break;
         }
@@ -270,7 +271,7 @@ export function GitManagerModal({ isOpen, onClose, tasks, addToast }: GitManager
     } finally {
       setLoading(false);
     }
-  }, [activeSection, isOpen, commitsLimit, addToast]);
+  }, [activeSection, isOpen, commitsLimit, addToast, projectId]);
 
   useEffect(() => {
     if (isOpen) {
@@ -306,52 +307,52 @@ export function GitManagerModal({ isOpen, onClose, tasks, addToast }: GitManager
 
   const handleStageFiles = useCallback(async (files: string[]) => {
     try {
-      await stageFiles(files);
+      await stageFiles(files, projectId);
       addToast(`Staged ${files.length} file(s)`, "success");
-      const changes = await fetchFileChanges();
+      const changes = await fetchFileChanges(projectId);
       setFileChanges(changes);
       setSelectedFiles(new Set());
     } catch (err: any) {
       addToast(err.message || "Failed to stage files", "error");
     }
-  }, [addToast]);
+  }, [addToast, projectId]);
 
   const handleUnstageFiles = useCallback(async (files: string[]) => {
     try {
-      await unstageFiles(files);
+      await unstageFiles(files, projectId);
       addToast(`Unstaged ${files.length} file(s)`, "success");
-      const changes = await fetchFileChanges();
+      const changes = await fetchFileChanges(projectId);
       setFileChanges(changes);
       setSelectedFiles(new Set());
     } catch (err: any) {
       addToast(err.message || "Failed to unstage files", "error");
     }
-  }, [addToast]);
+  }, [addToast, projectId]);
 
   const handleDiscardChanges = useCallback(async (files: string[]) => {
     if (!confirm(`Discard changes to ${files.length} file(s)? This cannot be undone.`)) return;
     try {
-      await discardChanges(files);
+      await discardChanges(files, projectId);
       addToast(`Discarded changes to ${files.length} file(s)`, "success");
-      const [changes, statusData] = await Promise.all([fetchFileChanges(), fetchGitStatus()]);
+      const [changes, statusData] = await Promise.all([fetchFileChanges(projectId), fetchGitStatus(projectId)]);
       setFileChanges(changes);
       setStatus(statusData);
       setSelectedFiles(new Set());
     } catch (err: any) {
       addToast(err.message || "Failed to discard changes", "error");
     }
-  }, [addToast]);
+  }, [addToast, projectId]);
 
   const handleCommit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     if (!commitMessage.trim()) return;
     setCommitting(true);
     try {
-      const result = await createCommit(commitMessage.trim());
+      const result = await createCommit(commitMessage.trim(), projectId);
       addToast(`Committed: ${result.hash}`, "success");
       setCommitMessage("");
       // Refresh changes and status
-      const [changes, statusData] = await Promise.all([fetchFileChanges(), fetchGitStatus()]);
+      const [changes, statusData] = await Promise.all([fetchFileChanges(projectId), fetchGitStatus(projectId)]);
       setFileChanges(changes);
       setStatus(statusData);
     } catch (err: any) {
@@ -359,7 +360,7 @@ export function GitManagerModal({ isOpen, onClose, tasks, addToast }: GitManager
     } finally {
       setCommitting(false);
     }
-  }, [commitMessage, addToast]);
+  }, [commitMessage, addToast, projectId]);
 
   const handleStageAllAndCommit = useCallback(async () => {
     if (!commitMessage.trim()) return;
@@ -367,12 +368,12 @@ export function GitManagerModal({ isOpen, onClose, tasks, addToast }: GitManager
     try {
       const unstaged = fileChanges.filter((f) => !f.staged).map((f) => f.file);
       if (unstaged.length > 0) {
-        await stageFiles(unstaged);
+        await stageFiles(unstaged, projectId);
       }
-      const result = await createCommit(commitMessage.trim());
+      const result = await createCommit(commitMessage.trim(), projectId);
       addToast(`Committed: ${result.hash}`, "success");
       setCommitMessage("");
-      const [changes, statusData] = await Promise.all([fetchFileChanges(), fetchGitStatus()]);
+      const [changes, statusData] = await Promise.all([fetchFileChanges(projectId), fetchGitStatus(projectId)]);
       setFileChanges(changes);
       setStatus(statusData);
     } catch (err: any) {
@@ -380,19 +381,19 @@ export function GitManagerModal({ isOpen, onClose, tasks, addToast }: GitManager
     } finally {
       setCommitting(false);
     }
-  }, [commitMessage, fileChanges, addToast]);
+  }, [commitMessage, fileChanges, addToast, projectId]);
 
   const handleViewDiff = useCallback(async () => {
     setLoadingChangeDiff(true);
     try {
-      const diff = await fetchUnstagedDiff();
+      const diff = await fetchUnstagedDiff(projectId);
       setChangeDiff(diff);
     } catch (err: any) {
       addToast(err.message || "Failed to load diff", "error");
     } finally {
       setLoadingChangeDiff(false);
     }
-  }, [addToast]);
+  }, [addToast, projectId]);
 
   const toggleFileSelection = useCallback((file: string) => {
     setSelectedFiles((prev) => {
@@ -417,7 +418,7 @@ export function GitManagerModal({ isOpen, onClose, tasks, addToast }: GitManager
     setSelectedCommit(hash);
     setLoadingDiff(true);
     try {
-      const diff = await fetchCommitDiff(hash);
+      const diff = await fetchCommitDiff(hash, projectId);
       setCommitDiff(diff);
     } catch (err: any) {
       addToast(err.message || "Failed to load diff", "error");
@@ -425,7 +426,7 @@ export function GitManagerModal({ isOpen, onClose, tasks, addToast }: GitManager
     } finally {
       setLoadingDiff(false);
     }
-  }, [selectedCommit, addToast]);
+  }, [selectedCommit, addToast, projectId]);
 
   const handleLoadMoreCommits = useCallback(() => {
     setCommitsLimit((prev) => Math.min(prev + 20, 100));
@@ -449,25 +450,25 @@ export function GitManagerModal({ isOpen, onClose, tasks, addToast }: GitManager
     if (!newBranchName.trim()) return;
     setLoading(true);
     try {
-      await createBranch(newBranchName.trim(), branchBase.trim() || undefined);
+      await createBranch(newBranchName.trim(), branchBase.trim() || undefined, projectId);
       addToast(`Created branch ${newBranchName}`, "success");
       setNewBranchName("");
       setBranchBase("");
-      const branchesData = await fetchGitBranches();
+      const branchesData = await fetchGitBranches(projectId);
       setBranches(branchesData);
     } catch (err: any) {
       addToast(err.message || "Failed to create branch", "error");
     } finally {
       setLoading(false);
     }
-  }, [newBranchName, branchBase, addToast]);
+  }, [newBranchName, branchBase, addToast, projectId]);
 
   const handleCheckoutBranch = useCallback(async (name: string) => {
     setLoading(true);
     try {
-      await checkoutBranch(name);
+      await checkoutBranch(name, projectId);
       addToast(`Switched to ${name}`, "success");
-      const [statusData, branchesData] = await Promise.all([fetchGitStatus(), fetchGitBranches()]);
+      const [statusData, branchesData] = await Promise.all([fetchGitStatus(projectId), fetchGitBranches(projectId)]);
       setStatus(statusData);
       setBranches(branchesData);
     } catch (err: any) {
@@ -475,23 +476,23 @@ export function GitManagerModal({ isOpen, onClose, tasks, addToast }: GitManager
     } finally {
       setLoading(false);
     }
-  }, [addToast]);
+  }, [addToast, projectId]);
 
   const handleDeleteBranch = useCallback(async (name: string) => {
     if (!confirm(`Delete branch "${name}"?`)) return;
     setLoading(true);
     try {
-      await deleteBranch(name);
+      await deleteBranch(name, undefined, projectId);
       addToast(`Deleted branch ${name}`, "success");
-      const branchesData = await fetchGitBranches();
+      const branchesData = await fetchGitBranches(projectId);
       setBranches(branchesData);
     } catch (err: any) {
       if (err.message?.includes("not fully merged")) {
         if (confirm("Branch has unmerged commits. Force delete?")) {
           try {
-            await deleteBranch(name, true);
+            await deleteBranch(name, true, projectId);
             addToast(`Force deleted branch ${name}`, "success");
-            const branchesData = await fetchGitBranches();
+            const branchesData = await fetchGitBranches(projectId);
             setBranches(branchesData);
           } catch (forceErr: any) {
             addToast(forceErr.message || "Failed to delete branch", "error");
@@ -503,7 +504,7 @@ export function GitManagerModal({ isOpen, onClose, tasks, addToast }: GitManager
     } finally {
       setLoading(false);
     }
-  }, [addToast]);
+  }, [addToast, projectId]);
 
   const filteredBranches = useMemo(() => {
     if (!branchSearch.trim()) return branches;
@@ -529,14 +530,14 @@ export function GitManagerModal({ isOpen, onClose, tasks, addToast }: GitManager
     setBranchCommitDiff(null);
     setLoadingBranchCommits(true);
     try {
-      const data = await fetchBranchCommits(name, 10);
+      const data = await fetchBranchCommits(name, 10, projectId);
       setBranchCommits(data);
     } catch {
       setBranchCommits([]);
     } finally {
       setLoadingBranchCommits(false);
     }
-  }, [selectedBranch]);
+  }, [selectedBranch, projectId]);
 
   /** Click a commit in the branch view to expand/collapse its diff */
   const handleBranchCommitClick = useCallback(async (hash: string) => {
@@ -549,14 +550,14 @@ export function GitManagerModal({ isOpen, onClose, tasks, addToast }: GitManager
     setBranchCommitDiff(null);
     setLoadingBranchCommitDiff(true);
     try {
-      const diff = await fetchCommitDiff(hash);
+      const diff = await fetchCommitDiff(hash, projectId);
       setBranchCommitDiff(diff);
     } catch {
       setBranchCommitDiff(null);
     } finally {
       setLoadingBranchCommitDiff(false);
     }
-  }, [expandedBranchCommit]);
+  }, [expandedBranchCommit, projectId]);
 
   /** Close branch details panel */
   const handleCloseBranchDetails = useCallback(() => {
@@ -572,97 +573,97 @@ export function GitManagerModal({ isOpen, onClose, tasks, addToast }: GitManager
     e.preventDefault();
     setStashLoading("create");
     try {
-      await createStash(stashMessage.trim() || undefined);
+      await createStash(stashMessage.trim() || undefined, projectId);
       addToast("Changes stashed", "success");
       setStashMessage("");
-      const stashesData = await fetchGitStashList();
+      const stashesData = await fetchGitStashList(projectId);
       setStashes(stashesData);
     } catch (err: any) {
       addToast(err.message || "Failed to stash changes", "error");
     } finally {
       setStashLoading(null);
     }
-  }, [stashMessage, addToast]);
+  }, [stashMessage, addToast, projectId]);
 
   const handleApplyStash = useCallback(async (index: number, drop: boolean = false) => {
     setStashLoading(`apply-${index}`);
     try {
-      await applyStash(index, drop);
+      await applyStash(index, drop, projectId);
       addToast(drop ? "Stash popped" : "Stash applied", "success");
-      const stashesData = await fetchGitStashList();
+      const stashesData = await fetchGitStashList(projectId);
       setStashes(stashesData);
     } catch (err: any) {
       addToast(err.message || "Failed to apply stash", "error");
     } finally {
       setStashLoading(null);
     }
-  }, [addToast]);
+  }, [addToast, projectId]);
 
   const handleDropStash = useCallback(async (index: number) => {
     if (!confirm(`Drop stash@{${index}}? This cannot be undone.`)) return;
     setStashLoading(`drop-${index}`);
     try {
-      await dropStash(index);
+      await dropStash(index, projectId);
       addToast("Stash dropped", "success");
-      const stashesData = await fetchGitStashList();
+      const stashesData = await fetchGitStashList(projectId);
       setStashes(stashesData);
     } catch (err: any) {
       addToast(err.message || "Failed to drop stash", "error");
     } finally {
       setStashLoading(null);
     }
-  }, [addToast]);
+  }, [addToast, projectId]);
 
   // ── Remote Handlers ─────────────────────────────────────────────
 
   const handleFetch = useCallback(async () => {
     setRemoteLoading("fetch");
     try {
-      const result = await fetchRemote();
+      const result = await fetchRemote(undefined, projectId);
       setLastRemoteResult(result);
       addToast(result.message || "Fetch completed", result.fetched ? "success" : "info");
-      const statusData = await fetchGitStatus();
+      const statusData = await fetchGitStatus(projectId);
       setStatus(statusData);
     } catch (err: any) {
       addToast(err.message || "Fetch failed", "error");
     } finally {
       setRemoteLoading(null);
     }
-  }, [addToast]);
+  }, [addToast, projectId]);
 
   const handlePull = useCallback(async () => {
     setRemoteLoading("pull");
     try {
-      const result = await pullBranch();
+      const result = await pullBranch(projectId);
       setLastRemoteResult(result);
       if (result.conflict) {
         addToast("Merge conflict detected. Resolve manually.", "error");
       } else {
         addToast(result.message || "Pull completed", "success");
       }
-      const statusData = await fetchGitStatus();
+      const statusData = await fetchGitStatus(projectId);
       setStatus(statusData);
     } catch (err: any) {
       addToast(err.message || "Pull failed", "error");
     } finally {
       setRemoteLoading(null);
     }
-  }, [addToast]);
+  }, [addToast, projectId]);
 
   const handlePush = useCallback(async () => {
     setRemoteLoading("push");
     try {
-      const result = await pushBranch();
+      const result = await pushBranch(projectId);
       setLastRemoteResult(result);
       addToast(result.message || "Push completed", "success");
-      const statusData = await fetchGitStatus();
+      const statusData = await fetchGitStatus(projectId);
       setStatus(statusData);
     } catch (err: any) {
       addToast(err.message || "Push failed", "error");
     } finally {
       setRemoteLoading(null);
     }
-  }, [addToast]);
+  }, [addToast, projectId]);
 
   // ── Derived state ───────────────────────────────────────────────
 
