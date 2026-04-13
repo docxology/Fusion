@@ -119,5 +119,15 @@ describe("core modals mobile css coverage", () => {
 
     expect(menuBlock).toContain("max-height");
     expect(menuBlock).toContain("overflow-y: auto");
+    expect(menuBlock).toContain("max-width: calc(100vw - 28px)");
+  });
+
+  it("TaskDetailModal: footer dropdown menus anchor toward available horizontal space", () => {
+    const css = fs.readFileSync(stylesPath, "utf-8");
+
+    const actionsMenuAnchorMatch = css.match(/^\.detail-actions-menu\s*\{\s*left: 0;\s*\}/m);
+    const moveMenuAnchorMatch = css.match(/^\.detail-move-menu\s*\{\s*right: 0;\s*\}/m);
+    expect(actionsMenuAnchorMatch).not.toBeNull();
+    expect(moveMenuAnchorMatch).not.toBeNull();
   });
 });
