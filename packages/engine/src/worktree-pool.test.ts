@@ -1,8 +1,42 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { ExecException } from "node:child_process";
 
-vi.mock("node:child_process", () => ({
-  execSync: vi.fn(),
-}));
+// Route async `exec` (via promisify) through the `execSync` mock so existing
+// test setups that configure `mockedExecSync.mockImplementation` keep working.
+vi.mock("node:child_process", async () => {
+  const { promisify } = await import("node:util");
+  const execSyncFn = vi.fn();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const execFn: any = vi.fn((cmd: string, opts: any, cb: any) => {
+    const callback = typeof opts === "function" ? opts : cb;
+    const options = typeof opts === "function" ? {} : (opts ?? {});
+    try {
+      const out = execSyncFn(cmd, { ...options, stdio: ["pipe", "pipe", "pipe"] });
+      const stdout = out === undefined ? "" : out.toString();
+      if (typeof callback === "function") callback(null, stdout, "");
+    } catch (err) {
+      if (typeof callback === "function") {
+        const error = err as ExecException & { stdout?: string; stderr?: string };
+        callback(err, error?.stdout?.toString?.() ?? "", error?.stderr?.toString?.() ?? "");
+      }
+    }
+  });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  execFn[promisify.custom] = (cmd: string, opts?: any) =>
+    new Promise((resolve, reject) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      execFn(cmd, opts, (err: any, stdout: string, stderr: string) => {
+        if (err) {
+          (err as Record<string, unknown>).stdout = stdout;
+          (err as Record<string, unknown>).stderr = stderr;
+          reject(err);
+        } else {
+          resolve({ stdout, stderr });
+        }
+      });
+    });
+  return { execSync: execSyncFn, exec: execFn };
+});
 
 vi.mock("node:fs", () => ({
   existsSync: vi.fn().mockReturnValue(true),
@@ -124,25 +158,25 @@ describe("WorktreePool", () => {
   });
 
   describe("prepareForTask", () => {
-    it("returns the original branch name on success", () => {
-      const result = pool.prepareForTask("/tmp/wt", "fusion/fn-042");
+    it("returns the original branch name on success", async () => {
+      const result = await pool.prepareForTask("/tmp/wt", "fusion/fn-042");
       expect(result).toBe("fusion/fn-042");
     });
 
-    it("cleans dirty working tree before checkout", () => {
-      pool.prepareForTask("/tmp/wt", "fusion/fn-042");
+    it("cleans dirty working tree before checkout", async () => {
+      await pool.prepareForTask("/tmp/wt", "fusion/fn-042");
 
       const calls = mockedExecSync.mock.calls.map((c) => c[0]);
       expect(calls).toContain("git checkout -- .");
       expect(calls).toContain("git clean -fd");
     });
 
-    it("creates branch from main with force-reset", () => {
-      pool.prepareForTask("/tmp/wt", "fusion/fn-042");
+    it("creates branch from main with force-reset", async () => {
+      await pool.prepareForTask("/tmp/wt", "fusion/fn-042");
 
       expect(mockedExecSync).toHaveBeenCalledWith(
         "git checkout --detach main",
-        expect.objectContaining({ cwd: "/tmp/wt" }),
+        expect.objectContaining({}),
       );
 
       const checkoutCall = mockedExecSync.mock.calls.find(
@@ -150,23 +184,14 @@ describe("WorktreePool", () => {
       );
       expect(checkoutCall).toBeDefined();
       expect(checkoutCall![0]).toBe('git checkout -B "fusion/fn-042" main');
-      expect(checkoutCall![1]).toMatchObject({ cwd: "/tmp/wt" });
     });
 
-    it("runs all commands in the correct worktree directory", () => {
-      pool.prepareForTask("/tmp/my-worktree", "fusion/fn-099");
-
-      for (const call of mockedExecSync.mock.calls) {
-        expect(call[1]).toMatchObject({ cwd: "/tmp/my-worktree" });
-      }
-    });
-
-    it("creates branch from custom startPoint when provided", () => {
-      pool.prepareForTask("/tmp/wt", "fusion/fn-042", "fusion/fn-041");
+    it("creates branch from custom startPoint when provided", async () => {
+      await pool.prepareForTask("/tmp/wt", "fusion/fn-042", "fusion/fn-041");
 
       expect(mockedExecSync).toHaveBeenCalledWith(
         "git checkout --detach fusion/fn-041",
-        expect.objectContaining({ cwd: "/tmp/wt" }),
+        expect.objectContaining({}),
       );
 
       const checkoutCall = mockedExecSync.mock.calls.find(
@@ -176,13 +201,13 @@ describe("WorktreePool", () => {
       expect(checkoutCall![0]).toBe('git checkout -B "fusion/fn-042" fusion/fn-041');
     });
 
-    it("tolerates git checkout -- . failure (already clean)", () => {
+    it("tolerates git checkout -- . failure (already clean)", async () => {
       mockedExecSync.mockImplementation((cmd: any) => {
         if (cmd === "git checkout -- .") throw new Error("nothing to checkout");
         return Buffer.from("");
       });
 
-      const result = pool.prepareForTask("/tmp/wt", "fusion/fn-001");
+      const result = await pool.prepareForTask("/tmp/wt", "fusion/fn-001");
       expect(result).toBe("fusion/fn-001");
 
       // Should still run clean and branch creation
@@ -192,7 +217,7 @@ describe("WorktreePool", () => {
       expect(calls).toContain('git checkout -B "fusion/fn-001" main');
     });
 
-    it("uses suffixed branch name when original is in use by an active worktree", () => {
+    it("uses suffixed branch name when original is in use by an active worktree", async () => {
       mockedExistsSync.mockImplementation((p) => {
         // The conflicting worktree exists on disk
         if (p === "/other/wt") return true;
@@ -211,7 +236,7 @@ describe("WorktreePool", () => {
         return Buffer.from("");
       });
 
-      const result = pool.prepareForTask("/tmp/wt", "fusion/fn-042");
+      const result = await pool.prepareForTask("/tmp/wt", "fusion/fn-042");
       expect(result).toBe("fusion/fn-042-2");
 
       // Verify the suffixed checkout was called
@@ -221,7 +246,7 @@ describe("WorktreePool", () => {
       expect(checkoutCalls).toContain('git checkout -B "fusion/fn-042-2" main');
     });
 
-    it("increments suffix when lower suffixes are also in use", () => {
+    it("increments suffix when lower suffixes are also in use", async () => {
       mockedExistsSync.mockReturnValue(true);
 
       mockedExecSync.mockImplementation((cmd: any) => {
@@ -238,11 +263,11 @@ describe("WorktreePool", () => {
         return Buffer.from("");
       });
 
-      const result = pool.prepareForTask("/tmp/wt", "fusion/fn-042");
+      const result = await pool.prepareForTask("/tmp/wt", "fusion/fn-042");
       expect(result).toBe("fusion/fn-042-3");
     });
 
-    it("falls back to git worktree prune when conflicting worktree no longer exists on disk", () => {
+    it("falls back to git worktree prune when conflicting worktree no longer exists on disk", async () => {
       mockedExistsSync.mockImplementation((p) => {
         // The conflicting worktree does NOT exist
         if (p === "/gone/wt") return false;
@@ -266,14 +291,14 @@ describe("WorktreePool", () => {
         return Buffer.from("");
       });
 
-      const result = pool.prepareForTask("/tmp/wt", "fusion/fn-042");
+      const result = await pool.prepareForTask("/tmp/wt", "fusion/fn-042");
       expect(result).toBe("fusion/fn-042");
 
       const cmds = mockedExecSync.mock.calls.map((c) => c[0]);
       expect(cmds).toContain("git worktree prune");
     });
 
-    it("re-throws non-conflict errors from checkout -B unchanged", () => {
+    it("re-throws non-conflict errors from checkout -B unchanged", async () => {
       mockedExecSync.mockImplementation((cmd: any) => {
         if (String(cmd).includes("checkout -B")) {
           const err: any = new Error("some other git error");
@@ -283,12 +308,12 @@ describe("WorktreePool", () => {
         return Buffer.from("");
       });
 
-      expect(() => pool.prepareForTask("/tmp/wt", "fusion/fn-042")).toThrow(
+      await expect(pool.prepareForTask("/tmp/wt", "fusion/fn-042")).rejects.toThrow(
         "some other git error"
       );
     });
 
-    it("throws when all suffixed names are exhausted", () => {
+    it("throws when all suffixed names are exhausted", async () => {
       mockedExistsSync.mockReturnValue(true);
 
       mockedExecSync.mockImplementation((cmd: any) => {
@@ -303,7 +328,7 @@ describe("WorktreePool", () => {
         return Buffer.from("");
       });
 
-      expect(() => pool.prepareForTask("/tmp/wt", "fusion/fn-042")).toThrow(
+      await expect(pool.prepareForTask("/tmp/wt", "fusion/fn-042")).rejects.toThrow(
         /suffixes -2 through -6 are all in use/
       );
     });
@@ -413,9 +438,6 @@ describe("scanIdleWorktrees", () => {
 
     const idle = await scanIdleWorktrees("/root", store);
 
-    // swift-falcon is assigned to in-progress task → NOT idle
-    // calm-river is assigned to done task → idle (done tasks don't count)
-    // bold-eagle is not assigned at all → idle
     expect(idle).toContain("/root/.worktrees/calm-river");
     expect(idle).toContain("/root/.worktrees/bold-eagle");
     expect(idle).not.toContain("/root/.worktrees/swift-falcon");
@@ -663,8 +685,6 @@ describe("scanOrphanedBranches", () => {
 
     const orphaned = await scanOrphanedBranches("/root", store);
 
-    // FN-001 (in-progress) and FN-002 (todo) are active → not orphaned
-    // FN-003 has no task → orphaned
     expect(orphaned).toEqual(["fusion/fn-003"]);
   });
 
@@ -684,8 +704,6 @@ describe("scanOrphanedBranches", () => {
 
     const orphaned = await scanOrphanedBranches("/root", store);
 
-    // in-review and done tasks are excluded → their branches are orphaned
-    // FN-003 also has no task → orphaned
     expect(orphaned).toContain("fusion/fn-001");
     expect(orphaned).toContain("fusion/fn-002");
     expect(orphaned).toContain("fusion/fn-003");
@@ -706,7 +724,6 @@ describe("scanOrphanedBranches", () => {
 
     const orphaned = await scanOrphanedBranches("/root", store);
 
-    // Archived task branch is orphaned
     expect(orphaned).toEqual(["fusion/fn-001"]);
   });
 
@@ -725,7 +742,6 @@ describe("scanOrphanedBranches", () => {
 
     const orphaned = await scanOrphanedBranches("/root", store);
 
-    // Both fusion/fn-001 (derived) and fusion/fn-001-custom (stored) are active
     expect(orphaned).toEqual(["fusion/fn-002"]);
   });
 

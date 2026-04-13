@@ -6,8 +6,11 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
-import { execSync } from "node:child_process";
+import { exec } from "node:child_process";
+import { promisify } from "node:util";
 import { join, relative, isAbsolute, resolve } from "node:path";
+
+const execAsync = promisify(exec);
 import {
   AuthStorage,
   createAgentSession,
@@ -274,15 +277,14 @@ function getProjectRootFromWorktree(cwd: string): string | null {
   return null;
 }
 
-function isRegisteredGitWorktree(projectRoot: string, worktreePath: string): boolean {
+async function isRegisteredGitWorktree(projectRoot: string, worktreePath: string): Promise<boolean> {
   try {
-    const output = String(execSync("git worktree list --porcelain", {
+    const { stdout } = await execAsync("git worktree list --porcelain", {
       cwd: projectRoot,
       encoding: "utf-8",
-      stdio: "pipe",
-    }));
+    });
     const resolvedWorktree = resolve(worktreePath);
-    return output.split("\n").some((line) =>
+    return stdout.split("\n").some((line) =>
       line.startsWith("worktree ") && resolve(line.slice("worktree ".length)) === resolvedWorktree
     );
   } catch {
@@ -290,14 +292,14 @@ function isRegisteredGitWorktree(projectRoot: string, worktreePath: string): boo
   }
 }
 
-function assertValidWorktreeSession(cwd: string, projectRoot: string): void {
+async function assertValidWorktreeSession(cwd: string, projectRoot: string): Promise<void> {
   if (!existsSync(cwd)) {
     throw new Error(`Refusing to start coding agent in missing worktree: ${cwd}`);
   }
   if (!existsSync(join(cwd, ".git")) || !existsSync(join(cwd, "package.json"))) {
     throw new Error(`Refusing to start coding agent in incomplete worktree: ${cwd}`);
   }
-  if (!isRegisteredGitWorktree(projectRoot, cwd)) {
+  if (!await isRegisteredGitWorktree(projectRoot, cwd)) {
     throw new Error(`Refusing to start coding agent in unregistered git worktree: ${cwd}`);
   }
 }
@@ -428,7 +430,7 @@ export async function createKbAgent(options: AgentOptions): Promise<AgentResult>
   const worktreePath = options.cwd;
   const projectRoot = getProjectRootFromWorktree(worktreePath);
   if (projectRoot) {
-    assertValidWorktreeSession(worktreePath, projectRoot);
+    await assertValidWorktreeSession(worktreePath, projectRoot);
   }
   const wrappedTools = wrapToolsWithBoundary(tools, worktreePath, projectRoot);
 

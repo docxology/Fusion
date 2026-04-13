@@ -10,7 +10,10 @@
  * execution progress via callbacks.
  */
 
-import { execSync } from "node:child_process";
+import { exec } from "node:child_process";
+import { promisify } from "node:util";
+
+const execAsync = promisify(exec);
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { AgentSession, ToolDefinition } from "@mariozechner/pi-coding-agent";
@@ -655,9 +658,8 @@ export class StepSessionExecutor {
     for (const [stepIdx, worktreePath] of this.parallelWorktrees) {
       try {
         if (existsSync(worktreePath)) {
-          execSync(`git worktree remove "${worktreePath}" --force`, {
+          await execAsync(`git worktree remove "${worktreePath}" --force`, {
             cwd: this.options.rootDir,
-            stdio: "pipe",
           });
         } else {
           stepExecLog.warn(`Parallel worktree for step ${stepIdx} already removed: ${worktreePath}`);
@@ -670,9 +672,8 @@ export class StepSessionExecutor {
     // Delete branches created for parallel worktrees
     for (const [stepIdx, branchName] of this.parallelBranches) {
       try {
-        execSync(`git branch -D "${branchName}"`, {
+        await execAsync(`git branch -D "${branchName}"`, {
           cwd: this.options.rootDir,
-          stdio: "pipe",
         });
       } catch (err) {
         stepExecLog.warn(`Failed to delete branch ${branchName} for step ${stepIdx}: ${err}`);
@@ -1049,16 +1050,14 @@ export class StepSessionExecutor {
       if (worktreePath !== this.options.worktreePath) {
         try {
           if (existsSync(worktreePath)) {
-            execSync(`git worktree remove "${worktreePath}" --force`, {
+            await execAsync(`git worktree remove "${worktreePath}" --force`, {
               cwd: this.options.rootDir,
-              stdio: "pipe",
             });
           }
           const branch = this.parallelBranches.get(stepIdx);
           if (branch) {
-            execSync(`git branch -D "${branch}"`, {
+            await execAsync(`git branch -D "${branch}"`, {
               cwd: this.options.rootDir,
-              stdio: "pipe",
             });
           }
         } catch (err) {
@@ -1088,9 +1087,9 @@ export class StepSessionExecutor {
 
     stepExecLog.log(`Creating worktree for step ${stepIndex}: ${worktreePath} (branch: ${branchName})`);
 
-    execSync(
+    await execAsync(
       `git worktree add -b "${branchName}" "${worktreePath}" HEAD`,
-      { cwd: this.options.worktreePath, stdio: "pipe" },
+      { cwd: this.options.worktreePath },
     );
 
     this.parallelWorktrees.set(stepIndex, worktreePath);
@@ -1102,16 +1101,17 @@ export class StepSessionExecutor {
   /**
    * Cherry-pick commits from a parallel step's worktree into the primary worktree.
    */
-  private cherryPickCommits(stepIndex: number, worktreePath: string): void {
+  private async cherryPickCommits(stepIndex: number, worktreePath: string): Promise<void> {
     const { worktreePath: primaryPath, rootDir, taskDetail } = this.options;
 
     // Get commits made in the parallel worktree since it was created
     let commits: string;
     try {
-      commits = execSync(
+      const { stdout } = await execAsync(
         `git log --oneline --format="%H" HEAD...HEAD~10 --since="1 hour ago"`,
-        { cwd: worktreePath, stdio: "pipe", encoding: "utf-8" },
-      ).trim();
+        { cwd: worktreePath, encoding: "utf-8" },
+      );
+      commits = stdout.trim();
     } catch {
       stepExecLog.warn(`Could not list commits in parallel worktree for step ${stepIndex}`);
       return;
@@ -1130,14 +1130,13 @@ export class StepSessionExecutor {
 
     for (const sha of shas.reverse()) {
       try {
-        execSync(`git cherry-pick "${sha}"`, {
+        await execAsync(`git cherry-pick "${sha}"`, {
           cwd: primaryPath,
-          stdio: "pipe",
         });
       } catch (err) {
         // Cherry-pick conflict — abort and log
         try {
-          execSync("git cherry-pick --abort", { cwd: primaryPath, stdio: "pipe" });
+          await execAsync("git cherry-pick --abort", { cwd: primaryPath });
         } catch {
           // Ignore abort failure
         }

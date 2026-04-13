@@ -929,7 +929,7 @@ export class TaskExecutor {
       // Resolve the base branch — set by the scheduler when a dep is in-review
       const baseBranch = task.baseBranch || null;
 
-      if (task.worktree && isResume && !isUsableTaskWorktree(this.rootDir, worktreePath)) {
+      if (task.worktree && isResume && !await isUsableTaskWorktree(this.rootDir, worktreePath)) {
         const invalidWorktreePath = worktreePath;
         executorLog.log(`${task.id}: assigned worktree is not usable; creating a fresh worktree instead: ${invalidWorktreePath}`);
         await this.store.logEntry(
@@ -950,7 +950,7 @@ export class TaskExecutor {
           const pooled = this.options.pool.acquire();
           if (pooled) {
             try {
-              const actualBranch = this.options.pool.prepareForTask(pooled, branchName, baseBranch ?? undefined);
+              const actualBranch = await this.options.pool.prepareForTask(pooled, branchName, baseBranch ?? undefined);
               worktreePath = pooled;
               acquiredFromPool = true;
               executorLog.log(`Acquired worktree from pool: ${pooled}`);
@@ -3177,7 +3177,7 @@ and show an appropriate message to the user.\`
   ): Promise<{ path: string; branch: string }> {
     // If directory exists but is not a registered worktree, remove it first
     if (existsSync(path)) {
-      const isRegistered = this.isRegisteredWorktree(path);
+      const isRegistered = await this.isRegisteredWorktree(path);
       if (!isRegistered) {
         await this.store.logEntry(
           taskId,
@@ -3353,7 +3353,7 @@ and show an appropriate message to the user.\`
   /**
    * Check if a path is registered as a git worktree.
    */
-  private isRegisteredWorktree(path: string): boolean {
+  private async isRegisteredWorktree(path: string): Promise<boolean> {
     return isRegisteredGitWorktree(this.rootDir, path);
   }
 

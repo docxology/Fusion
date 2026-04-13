@@ -18,13 +18,45 @@ const settingsManagerCreateMock = vi.fn(() => ({ kind: "settings-manager-create"
 const settingsManagerInMemoryMock = vi.fn(() => ({ kind: "settings-manager" }));
 const setFallbackResolverMock = vi.fn();
 const reloadMock = vi.fn(async () => {});
-const execSyncMock = vi.fn(() => "");
+const execSyncMock = vi.fn((_cmd?: any, _opts?: any) => "");
 const existsSyncMock = vi.fn((_path: PathLike) => false);
 const readFileSyncMock = vi.fn(() => "{}");
 
-vi.mock("node:child_process", () => ({
-  execSync: execSyncMock,
-}));
+// Route async `exec` through the `execSync` mock so the promisify bridge works.
+vi.mock("node:child_process", async () => {
+  const { promisify } = await import("node:util");
+  const execSyncFn = execSyncMock;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const execFn: any = vi.fn((cmd: string, opts: any, cb: any) => {
+    const callback = typeof opts === "function" ? opts : cb;
+    const options = typeof opts === "function" ? {} : (opts ?? {});
+    try {
+      const out = execSyncFn(cmd, { ...options, stdio: ["pipe", "pipe", "pipe"] });
+      const stdout = out === undefined ? "" : out.toString();
+      if (typeof callback === "function") callback(null, stdout, "");
+    } catch (err) {
+      if (typeof callback === "function") {
+        const error = err as { stdout?: string; stderr?: string };
+        callback(err, error?.stdout?.toString?.() ?? "", error?.stderr?.toString?.() ?? "");
+      }
+    }
+  });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  execFn[promisify.custom] = (cmd: string, opts?: any) =>
+    new Promise((resolve, reject) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      execFn(cmd, opts, (err: any, stdout: string, stderr: string) => {
+        if (err) {
+          (err as Record<string, unknown>).stdout = stdout;
+          (err as Record<string, unknown>).stderr = stderr;
+          reject(err);
+        } else {
+          resolve({ stdout, stderr });
+        }
+      });
+    });
+  return { execSync: execSyncFn, exec: execFn };
+});
 
 vi.mock("node:fs", async () => {
   const actual = await vi.importActual<typeof import("node:fs")>("node:fs");

@@ -1,19 +1,21 @@
-import { execSync } from "node:child_process";
+import { exec } from "node:child_process";
+import { promisify } from "node:util";
 import { existsSync, readdirSync, rmSync } from "node:fs";
 import { join, relative, resolve, isAbsolute } from "node:path";
 import type { Column, TaskStore } from "@fusion/core";
 import { worktreePoolLog } from "./logger.js";
 
-export function getRegisteredWorktreePaths(rootDir: string): Set<string> {
+const execAsync = promisify(exec);
+
+export async function getRegisteredWorktreePaths(rootDir: string): Promise<Set<string>> {
   try {
-    const output = String(execSync("git worktree list --porcelain", {
+    const { stdout } = await execAsync("git worktree list --porcelain", {
       cwd: rootDir,
       encoding: "utf-8",
-      stdio: "pipe",
-    }));
+    });
 
     const paths = new Set<string>();
-    for (const line of output.split("\n")) {
+    for (const line of stdout.split("\n")) {
       if (line.startsWith("worktree ")) {
         paths.add(resolve(line.slice("worktree ".length)));
       }
@@ -24,17 +26,17 @@ export function getRegisteredWorktreePaths(rootDir: string): Set<string> {
   }
 }
 
-export function isRegisteredGitWorktree(rootDir: string, worktreePath: string): boolean {
-  return getRegisteredWorktreePaths(rootDir).has(resolve(worktreePath));
+export async function isRegisteredGitWorktree(rootDir: string, worktreePath: string): Promise<boolean> {
+  return (await getRegisteredWorktreePaths(rootDir)).has(resolve(worktreePath));
 }
 
 export function hasRequiredWorktreeFiles(worktreePath: string): boolean {
   return existsSync(join(worktreePath, ".git")) && existsSync(join(worktreePath, "package.json"));
 }
 
-export function isUsableTaskWorktree(rootDir: string, worktreePath: string): boolean {
+export async function isUsableTaskWorktree(rootDir: string, worktreePath: string): Promise<boolean> {
   return existsSync(worktreePath) &&
-    isRegisteredGitWorktree(rootDir, worktreePath) &&
+    await isRegisteredGitWorktree(rootDir, worktreePath) &&
     hasRequiredWorktreeFiles(worktreePath);
 }
 
@@ -160,29 +162,27 @@ export class WorktreePool {
    * @param startPoint — Git ref to branch from (e.g., `fusion/fn-041`). Defaults to `main`.
    * @returns The actual branch name checked out in the worktree
    */
-  prepareForTask(worktreePath: string, branchName: string, startPoint?: string): string {
+  async prepareForTask(worktreePath: string, branchName: string, startPoint?: string): Promise<string> {
     // Clean tracked modifications
     try {
-      execSync("git checkout -- .", { cwd: worktreePath, stdio: "pipe" });
+      await execAsync("git checkout -- .", { cwd: worktreePath });
     } catch {
       // May fail if worktree is already clean — that's fine
     }
 
     // Remove untracked files (but not .gitignore'd build caches)
-    execSync("git clean -fd", { cwd: worktreePath, stdio: "pipe" });
+    await execAsync("git clean -fd", { cwd: worktreePath });
 
     const base = startPoint || "main";
-    execSync(`git checkout --detach ${base}`, {
+    await execAsync(`git checkout --detach ${base}`, {
       cwd: worktreePath,
-      stdio: "pipe",
     });
 
     // Create or force-reset the branch from the start point (or main)
     const checkoutCmd = `git checkout -B "${branchName}" ${base}`;
     try {
-      execSync(checkoutCmd, {
+      await execAsync(checkoutCmd, {
         cwd: worktreePath,
-        stdio: "pipe",
       });
       return branchName;
     } catch (err: any) {
@@ -197,8 +197,8 @@ export class WorktreePool {
       const conflictingPath = match[1];
       if (!existsSync(conflictingPath)) {
         // Conflicting worktree no longer exists — prune and retry with original name
-        execSync("git worktree prune", { cwd: worktreePath, stdio: "pipe" });
-        execSync(checkoutCmd, { cwd: worktreePath, stdio: "pipe" });
+        await execAsync("git worktree prune", { cwd: worktreePath });
+        await execAsync(checkoutCmd, { cwd: worktreePath });
         return branchName;
       }
 
@@ -208,7 +208,7 @@ export class WorktreePool {
         const suffixedName = `${branchName}-${suffix}`;
         const suffixedCmd = `git checkout -B "${suffixedName}" ${base}`;
         try {
-          execSync(suffixedCmd, { cwd: worktreePath, stdio: "pipe" });
+          await execAsync(suffixedCmd, { cwd: worktreePath });
           return suffixedName;
         } catch (suffixErr: any) {
           const suffixStderr = suffixErr?.stderr?.toString() ?? "";
@@ -261,7 +261,7 @@ export async function scanIdleWorktrees(rootDir: string, store: TaskStore): Prom
     return [];
   }
 
-  const registeredWorktrees = getRegisteredWorktreePaths(rootDir);
+  const registeredWorktrees = await getRegisteredWorktreePaths(rootDir);
   const registeredDirs = dirs.filter((dir) => registeredWorktrees.has(resolve(dir)));
 
   // Find worktree paths assigned to non-done tasks (active worktrees)
@@ -301,7 +301,7 @@ export async function cleanupOrphanedWorktrees(rootDir: string, store: TaskStore
   }
 
   const orphaned = await scanIdleWorktrees(rootDir, store);
-  const registeredWorktrees = getRegisteredWorktreePaths(rootDir);
+  const registeredWorktrees = await getRegisteredWorktreePaths(rootDir);
 
   let dirs: string[] = [];
   if (existsSync(worktreesDir)) {
@@ -321,9 +321,8 @@ export async function cleanupOrphanedWorktrees(rootDir: string, store: TaskStore
   for (const worktreePath of candidates) {
     try {
       if (registeredWorktrees.has(resolve(worktreePath))) {
-        execSync(`git worktree remove "${worktreePath}" --force`, {
+        await execAsync(`git worktree remove "${worktreePath}" --force`, {
           cwd: rootDir,
-          stdio: "pipe",
         });
       } else {
         if (!isInsideWorktreesDir(rootDir, worktreePath)) {
@@ -362,12 +361,11 @@ export async function scanOrphanedBranches(rootDir: string, store: TaskStore): P
   // List all local branches matching fusion/*
   let allBranches: string[];
   try {
-    const output = execSync("git branch --list 'fusion/*'", {
+    const { stdout } = await execAsync("git branch --list 'fusion/*'", {
       cwd: rootDir,
-      stdio: "pipe",
       encoding: "utf-8",
     });
-    allBranches = output
+    allBranches = stdout
       .split("\n")
       .map((line) => line.trim().replace(/^\*?\s*/, ""))
       .filter((line) => line.startsWith("fusion/"));

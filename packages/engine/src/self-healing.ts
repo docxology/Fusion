@@ -13,7 +13,7 @@
  *    by cleaning oldest idle worktrees when count exceeds 2× maxWorktrees.
  */
 
-import { exec, execSync } from "node:child_process";
+import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -284,14 +284,16 @@ export class SelfHealingManager {
     const branchName = task.branch || `fusion/${task.id.toLowerCase()}`;
 
     try {
-      const mergeBase = execSync(
-        `git merge-base "${branchName}" HEAD 2>/dev/null`,
-        { cwd: this.options.rootDir, stdio: "pipe", encoding: "utf-8" },
-      ).trim();
-      const branchHead = execSync(
-        `git rev-parse "${branchName}" 2>/dev/null`,
-        { cwd: this.options.rootDir, stdio: "pipe", encoding: "utf-8" },
-      ).trim();
+      const { stdout: mergeBaseOut } = await execAsync(
+        `git merge-base "${branchName}" HEAD`,
+        { cwd: this.options.rootDir, encoding: "utf-8", timeout: 30_000 },
+      );
+      const mergeBase = mergeBaseOut.trim();
+      const { stdout: branchHeadOut } = await execAsync(
+        `git rev-parse "${branchName}"`,
+        { cwd: this.options.rootDir, encoding: "utf-8", timeout: 30_000 },
+      );
+      const branchHead = branchHeadOut.trim();
 
       if (mergeBase === branchHead) {
         log.warn(
@@ -826,9 +828,8 @@ export class SelfHealingManager {
   /** Run `git worktree prune` to clean stale metadata. */
   private async pruneWorktrees(): Promise<void> {
     try {
-      execSync("git worktree prune", {
+      await execAsync("git worktree prune", {
         cwd: this.options.rootDir,
-        stdio: "pipe",
         timeout: 30_000,
       });
       log.log("Worktree prune completed");
@@ -852,9 +853,8 @@ export class SelfHealingManager {
       let cleaned = 0;
       for (const worktreePath of orphaned) {
         try {
-          execSync(`git worktree remove "${worktreePath}" --force`, {
+          await execAsync(`git worktree remove "${worktreePath}" --force`, {
             cwd: this.options.rootDir,
-            stdio: "pipe",
             timeout: 30_000,
           });
           cleaned++;
@@ -895,9 +895,8 @@ export class SelfHealingManager {
       for (const branch of orphaned) {
         try {
           // Try safe delete first (-d requires branch to be merged)
-          execSync(`git branch -d "${branch}"`, {
+          await execAsync(`git branch -d "${branch}"`, {
             cwd: this.options.rootDir,
-            stdio: "pipe",
             timeout: 30_000,
           });
           log.log(`Deleted branch: ${branch}`);
@@ -905,9 +904,8 @@ export class SelfHealingManager {
         } catch {
           // Safe delete failed (not merged) — force delete
           try {
-            execSync(`git branch -D "${branch}"`, {
+            await execAsync(`git branch -D "${branch}"`, {
               cwd: this.options.rootDir,
-              stdio: "pipe",
               timeout: 30_000,
             });
             log.log(`Force-deleted branch: ${branch}`);
@@ -975,9 +973,8 @@ export class SelfHealingManager {
       for (const { path: worktreePath } of withMtime) {
         if (removed >= excess) break;
         try {
-          execSync(`git worktree remove "${worktreePath}" --force`, {
+          await execAsync(`git worktree remove "${worktreePath}" --force`, {
             cwd: this.options.rootDir,
-            stdio: "pipe",
             timeout: 30_000,
           });
           removed++;

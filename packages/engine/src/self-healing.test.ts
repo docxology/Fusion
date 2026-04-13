@@ -6,26 +6,30 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 vi.mock("node:child_process", async () => {
   const { promisify: utilPromisify } = await import("node:util");
   const execSyncFn = vi.fn();
-  const execFn: any = vi.fn((cmd: any, opts: any, cb: any) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const execFn: any = vi.fn((cmd: string, opts: any, cb: any) => {
     const callback = typeof opts === "function" ? opts : cb;
     const options = typeof opts === "object" && opts !== null ? opts : {};
     try {
       const out = execSyncFn(cmd, { ...options, stdio: ["pipe", "pipe", "pipe"] });
       const stdout = out === undefined ? "" : out.toString();
       if (typeof callback === "function") callback(null, stdout, "");
-    } catch (err: any) {
+    } catch (err) {
       if (typeof callback === "function") {
-        callback(err, err?.stdout?.toString?.() ?? "", err?.stderr?.toString?.() ?? "");
+        const error = err as { stdout?: string; stderr?: string };
+        callback(err, error?.stdout?.toString?.() ?? "", error?.stderr?.toString?.() ?? "");
       }
     }
   });
   // Mirror real child_process.exec: promisify resolves to { stdout, stderr }.
-  execFn[utilPromisify.custom] = (cmd: any, opts?: any) =>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  execFn[utilPromisify.custom] = (cmd: string, opts?: any) =>
     new Promise((resolve, reject) => {
-      execFn(cmd, opts, (err: any, stdout: any, stderr: any) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      execFn(cmd, opts, (err: any, stdout: string, stderr: string) => {
         if (err) {
-          err.stdout = stdout;
-          err.stderr = stderr;
+          (err as Record<string, unknown>).stdout = stdout;
+          (err as Record<string, unknown>).stderr = stderr;
           reject(err);
         } else {
           resolve({ stdout, stderr });
