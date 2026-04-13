@@ -8,5 +8,6 @@
     "noEmit": true,
     "types": ["vitest/globals", "@testing-library/jest-dom", "node", "vite/client"]
   },
-  "include": ["app/**/*"]
+  "include": ["app/**/*"],
+  "exclude": ["app/**/*.test.ts", "app/**/*.test.tsx", "app/**/__tests__/**/*"]
 }

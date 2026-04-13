@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { ActivityLogModal } from "../ActivityLogModal";
 import * as apiModule from "../../api";
-import type { ActivityLogEntry } from "@fusion/core";
+import type { ActivityLogEntry, Task } from "@fusion/core";
 
 // Mock the API module
 vi.mock("../../api", () => ({
@@ -19,10 +19,10 @@ describe("ActivityLogModal", () => {
   const mockOnClose = vi.fn();
   const mockOnOpenTaskDetail = vi.fn();
 
-  const mockTasks = [
+  const mockTasks: Task[] = [
     { id: "FN-001", title: "Test Task 1", column: "todo" as const },
     { id: "FN-002", title: "Test Task 2", column: "in-progress" as const },
-  ];
+  ] as Task[];
 
   /** Create entries that match both ActivityLogEntry and the ActivityFeedEntry shape */
   const mockActivityEntries: ActivityLogEntry[] = [

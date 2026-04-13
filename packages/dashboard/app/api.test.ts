@@ -1729,8 +1729,6 @@ describe("Planning Mode API", () => {
 
 // --- API Error Handling Tests ---
 
-import { fetchTasks } from "./api";
-
 /** Mock helper for HTML error responses (e.g., 404 page) */
 function mockHtmlErrorResponse(status: number, htmlBody: string) {
   return Promise.resolve({
