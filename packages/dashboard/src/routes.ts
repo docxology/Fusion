@@ -9736,8 +9736,19 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
             throw badRequest("Archive did not extract to a directory");
           }
 
-          // Parse the extracted company
-          pkg = parseCompanyDirectory(extractedDir);
+          // Parse the extracted company.
+          // Multi-company repos (e.g. paperclipai/companies) contain multiple company
+          // subdirectories. If the extracted root doesn't contain COMPANY.md but has a
+          // subdirectory matching the requested slug, descend into it.
+          let companyDir = extractedDir;
+          if (!existsSync(join(extractedDir, "COMPANY.md"))) {
+            const slugDir = join(extractedDir, importCompanySlug);
+            if (existsSync(slugDir) && nodeFs.statSync(slugDir).isDirectory()) {
+              companyDir = slugDir;
+            }
+          }
+
+          pkg = parseCompanyDirectory(companyDir);
 
           // Override company info if available from API
           if (companyInfo) {
