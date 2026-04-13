@@ -5911,6 +5911,15 @@ body {
   margin-top: 0;
 }
 
+/* Portal-rendered agent picker dropdown - uses fixed positioning from JS */
+.agent-picker-dropdown--portal {
+  position: fixed !important;
+  top: auto;
+  left: auto;
+  margin-top: 0;
+  z-index: 201;
+}
+
 .dep-dropdown-search-header {
   position: sticky;
   top: 0;

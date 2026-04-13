@@ -119,6 +119,8 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
   const modelTriggerRef = useRef<HTMLButtonElement>(null);
   const modelMenuPortalRef = useRef<HTMLDivElement>(null);
   const agentPickerRef = useRef<HTMLDivElement>(null);
+  const agentPickerPortalRef = useRef<HTMLDivElement>(null);
+  const [agentPickerPosition, setAgentPickerPosition] = useState<{ top: number; left: number; width: number; maxHeight?: number } | null>(null);
   const [modelMenuPosition, setModelMenuPosition] = useState<{ top: number; left: number; width: number; maxHeight?: number } | null>(null);
   // Dependency dropdown portal refs and state
   const depTriggerRef = useRef<HTMLButtonElement>(null);
@@ -244,6 +246,7 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
     setAgentsProjectId(undefined);
     setSelectedAgentId(null);
     setShowAgentPicker(false);
+    setAgentPickerPosition(null);
   }, [projectId]);
 
   // Clean up legacy disclosure persistence key from previous versions
@@ -343,8 +346,11 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
 
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as Node;
+      // Check both the trigger button and the portaled dropdown
       if (agentPickerRef.current?.contains(target)) return;
+      if (agentPickerPortalRef.current?.contains(target)) return;
       setShowAgentPicker(false);
+      setAgentPickerPosition(null);
     };
 
     document.addEventListener("mousedown", handleClickOutside);
@@ -362,6 +368,7 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
     setDependencies([]);
     setSelectedAgentId(null);
     setShowAgentPicker(false);
+    setAgentPickerPosition(null);
     setExecutorProvider(undefined);
     setExecutorModelId(undefined);
     setValidatorProvider(undefined);
@@ -515,6 +522,7 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
         }
         if (showAgentPicker) {
           setShowAgentPicker(false);
+          setAgentPickerPosition(null);
           return;
         }
         // Clear non-empty input on Escape and clear localStorage
@@ -746,6 +754,65 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
     });
   }, [getEffectiveViewport]);
 
+  const updateAgentPickerPosition = useCallback(() => {
+    const trigger = agentPickerRef.current?.querySelector("button") as HTMLButtonElement | null;
+    if (!trigger) return;
+
+    const rect = trigger.getBoundingClientRect();
+    const { width: viewportWidth, height: viewportHeight, offsetTop, offsetLeft } = getEffectiveViewport();
+    const horizontalPadding = 16;
+    const verticalPadding = 16;
+    const gap = 4;
+    const isMobile = viewportWidth <= 768;
+
+    const preferredHeight = isMobile
+      ? Math.min(viewportHeight * 0.6, 320)
+      : Math.min(viewportHeight * 0.5, 320);
+
+    const preferredWidth = isMobile
+      ? Math.min(viewportWidth - horizontalPadding * 2, 280)
+      : Math.max(rect.width, 240);
+
+    const width = Math.min(
+      preferredWidth,
+      Math.max(viewportWidth - horizontalPadding * 2, 200),
+    );
+
+    const triggerTop = rect.top - offsetTop;
+    const triggerBottom = rect.bottom - offsetTop;
+    const triggerLeft = rect.left - offsetLeft;
+
+    const spaceBelow = viewportHeight - triggerBottom;
+    const spaceAbove = triggerTop;
+    const availableBelow = Math.max(spaceBelow - verticalPadding - gap, 160);
+    const availableAbove = Math.max(spaceAbove - verticalPadding - gap, 160);
+    const openUpward = spaceBelow < preferredHeight && spaceAbove > spaceBelow;
+
+    const maxHeight = Math.max(
+      Math.min(openUpward ? availableAbove : availableBelow, preferredHeight),
+      160,
+    );
+
+    const left = Math.min(
+      Math.max(triggerLeft, horizontalPadding),
+      viewportWidth - horizontalPadding - width,
+    ) + offsetLeft;
+
+    const top = openUpward
+      ? Math.max(verticalPadding + offsetTop, triggerTop - maxHeight - gap + offsetTop)
+      : Math.min(
+          triggerBottom + gap + offsetTop,
+          viewportHeight + offsetTop - verticalPadding - maxHeight,
+        );
+
+    setAgentPickerPosition({
+      top,
+      left,
+      width,
+      maxHeight,
+    });
+  }, [getEffectiveViewport]);
+
   // Keep model menu portal anchored during scroll/resize
   useEffect(() => {
     if (!isModelMenuOpen) return;
@@ -820,6 +887,31 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
       }
     };
   }, [showDeps, updateDepDropdownPosition]);
+
+  // Keep agent picker portal anchored during scroll/resize
+  useEffect(() => {
+    if (!showAgentPicker) return;
+
+    const handleReposition = () => updateAgentPickerPosition();
+
+    window.addEventListener("resize", handleReposition);
+    window.addEventListener("scroll", handleReposition, true);
+
+    const vv = window.visualViewport;
+    if (vv) {
+      vv.addEventListener("resize", handleReposition);
+      vv.addEventListener("scroll", handleReposition);
+    }
+
+    return () => {
+      window.removeEventListener("resize", handleReposition);
+      window.removeEventListener("scroll", handleReposition, true);
+      if (vv) {
+        vv.removeEventListener("resize", handleReposition);
+        vv.removeEventListener("scroll", handleReposition);
+      }
+    };
+  }, [showAgentPicker, updateAgentPickerPosition]);
 
   const handlePlanningModelChange = useCallback((value: string) => {
     const next = parseModelSelection(value);
@@ -968,6 +1060,7 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
   const loadAgents = useCallback(async () => {
     if (agents.length > 0 && agentsProjectId === projectId) {
       setShowAgentPicker(true);
+      updateAgentPickerPosition();
       return;
     }
 
@@ -977,13 +1070,14 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
       setAgents(result);
       setAgentsProjectId(projectId);
       setShowAgentPicker(true);
+      updateAgentPickerPosition();
     } catch (err: any) {
       addToast(err?.message ? `Failed to load agents: ${err.message}` : "Failed to load agents", "error");
       setShowAgentPicker(false);
     } finally {
       setAgentsLoading(false);
     }
-  }, [agents.length, agentsProjectId, projectId, addToast]);
+  }, [agents.length, agentsProjectId, projectId, addToast, updateAgentPickerPosition]);
 
   const selectedAgent = selectedAgentId ? agents.find((agent) => agent.id === selectedAgentId) : undefined;
   const selectedAgentLabel = selectedAgent?.name ?? selectedAgentId;
@@ -1258,6 +1352,7 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
                 onClick={() => {
                   if (showAgentPicker) {
                     setShowAgentPicker(false);
+                    setAgentPickerPosition(null);
                   } else {
                     void loadAgents();
                   }
@@ -1267,43 +1362,58 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
                 <Bot size={12} style={{ verticalAlign: "middle" }} />
                 {selectedAgentLabel ? ` ${selectedAgentLabel}` : " Agent"}
               </button>
-              {showAgentPicker && (
-                <div className="dep-dropdown agent-picker-dropdown" onMouseDown={(e) => e.preventDefault()}>
-                  <div className="dep-dropdown-search-header">Select agent</div>
-                  {agentsLoading && <div className="dep-dropdown-empty">Loading agents...</div>}
-                  {!agentsLoading && agents.filter((a) => a.state !== "terminated").map((a) => (
-                    <div
-                      key={a.id}
-                      className={`dep-dropdown-item${selectedAgentId === a.id ? " selected" : ""}`}
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => {
-                        setSelectedAgentId(a.id === selectedAgentId ? null : a.id);
-                        setShowAgentPicker(false);
-                      }}
-                    >
-                      <Bot size={12} style={{ marginRight: 6 }} />
-                      <span className="dep-dropdown-id">{a.role}</span>
-                      <span className="dep-dropdown-title">{a.name}</span>
-                    </div>
-                  ))}
-                  {!agentsLoading && agents.filter((a) => a.state !== "terminated").length === 0 && (
-                    <div className="dep-dropdown-empty">No agents available</div>
-                  )}
-                  {selectedAgentId && (
-                    <div
-                      className="dep-dropdown-item"
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => {
-                        setSelectedAgentId(null);
-                        setShowAgentPicker(false);
-                      }}
-                    >
-                      <span className="dep-dropdown-title">Clear selection</span>
-                    </div>
-                  )}
-                </div>
-              )}
             </div>
+            {showAgentPicker && portalRoot && agentPickerPosition && createPortal(
+              <div
+                ref={agentPickerPortalRef}
+                className="dep-dropdown agent-picker-dropdown agent-picker-dropdown--portal"
+                onMouseDown={(e) => e.preventDefault()}
+                style={{
+                  position: "fixed",
+                  top: `${agentPickerPosition.top}px`,
+                  left: `${agentPickerPosition.left}px`,
+                  width: `${agentPickerPosition.width}px`,
+                  maxHeight: agentPickerPosition.maxHeight ? `${agentPickerPosition.maxHeight}px` : undefined,
+                  overflowY: agentPickerPosition.maxHeight ? "auto" : undefined,
+                }}
+              >
+                <div className="dep-dropdown-search-header">Select agent</div>
+                {agentsLoading && <div className="dep-dropdown-empty">Loading agents...</div>}
+                {!agentsLoading && agents.filter((a) => a.state !== "terminated").map((a) => (
+                  <div
+                    key={a.id}
+                    className={`dep-dropdown-item${selectedAgentId === a.id ? " selected" : ""}`}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      setSelectedAgentId(a.id === selectedAgentId ? null : a.id);
+                      setShowAgentPicker(false);
+                      setAgentPickerPosition(null);
+                    }}
+                  >
+                    <Bot size={12} style={{ marginRight: 6 }} />
+                    <span className="dep-dropdown-id">{a.role}</span>
+                    <span className="dep-dropdown-title">{a.name}</span>
+                  </div>
+                ))}
+                {!agentsLoading && agents.filter((a) => a.state !== "terminated").length === 0 && (
+                  <div className="dep-dropdown-empty">No agents available</div>
+                )}
+                {selectedAgentId && (
+                  <div
+                    className="dep-dropdown-item"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      setSelectedAgentId(null);
+                      setShowAgentPicker(false);
+                      setAgentPickerPosition(null);
+                    }}
+                  >
+                    <span className="dep-dropdown-title">Clear selection</span>
+                  </div>
+                )}
+              </div>,
+              portalRoot,
+            )}
 
             <button
               type="button"

@@ -2581,6 +2581,177 @@ describe("QuickEntryBox", () => {
     });
   });
 
+  describe("agent picker portal (FN-1630)", () => {
+    it("renders agent picker as a portal in document.body (not inside QuickEntryBox)", async () => {
+      vi.mocked(fetchAgents).mockResolvedValue([
+        {
+          id: "agent-001",
+          name: "Test Agent",
+          role: "executor",
+          state: "active",
+          metadata: {},
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+      ] as any);
+
+      renderQuickEntryBox({});
+      expandQuickEntry();
+
+      fireEvent.click(screen.getByTestId("quick-entry-agent-button"));
+
+      await waitFor(() => {
+        expect(screen.getByText("Select agent")).toBeInTheDocument();
+      });
+
+      // Find the agent picker dropdown
+      const agentPicker = document.querySelector(".agent-picker-dropdown");
+      expect(agentPicker).toBeTruthy();
+
+      // The portaled agent picker should have the --portal modifier class
+      expect(agentPicker?.classList.contains("agent-picker-dropdown--portal")).toBe(true);
+
+      // The picker should NOT be inside the QuickEntryBox container
+      const quickEntryBox = screen.getByTestId("quick-entry-box");
+      expect(quickEntryBox.contains(agentPicker)).toBe(false);
+      expect(document.body.contains(agentPicker)).toBe(true);
+    });
+
+    it("positions the portaled agent picker with fixed positioning to escape overflow containers", async () => {
+      vi.mocked(fetchAgents).mockResolvedValue([
+        {
+          id: "agent-001",
+          name: "Test Agent",
+          role: "executor",
+          state: "active",
+          metadata: {},
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+      ] as any);
+
+      renderQuickEntryBox({});
+      expandQuickEntry();
+
+      fireEvent.click(screen.getByTestId("quick-entry-agent-button"));
+
+      await waitFor(() => {
+        expect(screen.getByText("Select agent")).toBeInTheDocument();
+      });
+
+      // Find the agent picker dropdown
+      const agentPicker = document.querySelector(".agent-picker-dropdown") as HTMLElement;
+      expect(agentPicker).toBeTruthy();
+
+      // The portaled picker should use fixed positioning
+      expect(agentPicker.style.position).toBe("fixed");
+      // Should have explicit top, left, and width set
+      expect(agentPicker.style.top).toBeTruthy();
+      expect(agentPicker.style.left).toBeTruthy();
+      expect(agentPicker.style.width).toBeTruthy();
+    });
+
+    it("does not close agent picker when clicking inside the picker portal", async () => {
+      vi.mocked(fetchAgents).mockResolvedValue([
+        {
+          id: "agent-001",
+          name: "Test Agent",
+          role: "executor",
+          state: "active",
+          metadata: {},
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+      ] as any);
+
+      renderQuickEntryBox({});
+      expandQuickEntry();
+
+      fireEvent.click(screen.getByTestId("quick-entry-agent-button"));
+
+      await waitFor(() => {
+        expect(screen.getByText("Select agent")).toBeInTheDocument();
+      });
+
+      // Click inside the picker portal (simulating click on an agent item)
+      const agentPicker = document.querySelector(".agent-picker-dropdown");
+      expect(agentPicker).toBeTruthy();
+      fireEvent.mouseDown(agentPicker!);
+
+      // Picker should still be open
+      expect(screen.getByText("Select agent")).toBeInTheDocument();
+    });
+
+    it("closes agent picker on outside click (click outside both trigger and portal)", async () => {
+      vi.mocked(fetchAgents).mockResolvedValue([
+        {
+          id: "agent-001",
+          name: "Test Agent",
+          role: "executor",
+          state: "active",
+          metadata: {},
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+      ] as any);
+
+      renderQuickEntryBox({});
+      expandQuickEntry();
+
+      fireEvent.click(screen.getByTestId("quick-entry-agent-button"));
+
+      await waitFor(() => {
+        expect(screen.getByText("Select agent")).toBeInTheDocument();
+      });
+
+      // Click on an element outside both the trigger and the picker portal
+      const outsideElement = document.createElement("div");
+      document.body.appendChild(outsideElement);
+      try {
+        fireEvent.mouseDown(outsideElement);
+      } finally {
+        document.body.removeChild(outsideElement);
+      }
+
+      // Picker should be closed
+      expect(screen.queryByText("Select agent")).toBeNull();
+    });
+
+    it("repositions portaled picker on window resize while open", async () => {
+      vi.mocked(fetchAgents).mockResolvedValue([
+        {
+          id: "agent-001",
+          name: "Test Agent",
+          role: "executor",
+          state: "active",
+          metadata: {},
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+      ] as any);
+
+      renderQuickEntryBox({});
+      expandQuickEntry();
+
+      fireEvent.click(screen.getByTestId("quick-entry-agent-button"));
+
+      await waitFor(() => {
+        expect(screen.getByText("Select agent")).toBeInTheDocument();
+      });
+
+      const agentPicker = document.querySelector(".agent-picker-dropdown") as HTMLElement;
+      expect(agentPicker).toBeTruthy();
+      const initialTop = agentPicker.style.top;
+
+      // Trigger a resize event
+      fireEvent.resize(window);
+
+      // Picker should still be open and have fixed positioning
+      expect(screen.getByText("Select agent")).toBeInTheDocument();
+      expect(agentPicker.style.position).toBe("fixed");
+    });
+  });
+
   describe("description expand functionality removed", () => {
     it("does not render expand button when textarea is focused and has content", async () => {
       renderQuickEntryBox({});
