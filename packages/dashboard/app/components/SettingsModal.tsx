@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { Globe, Folder } from "lucide-react";
 import { THINKING_LEVELS, PROMPT_KEY_CATALOG, isGlobalSettingsKey, isProjectSettingsKey } from "@fusion/core";
 import type { Settings, GlobalSettings, ThemeMode, ColorTheme, ModelPreset, NtfyNotificationEvent } from "@fusion/core";
-import { fetchSettings, updateSettings, updateGlobalSettings, fetchAuthStatus, loginProvider, logoutProvider, saveApiKey, clearApiKey, fetchModels, testNtfyNotification, fetchBackups, createBackup, exportSettings, importSettings, fetchMemory, saveMemory } from "../api";
+import { fetchSettings, updateSettings, updateGlobalSettings, fetchAuthStatus, loginProvider, logoutProvider, saveApiKey, clearApiKey, fetchModels, testNtfyNotification, fetchBackups, createBackup, exportSettings, importSettings, fetchMemory, saveMemory, fetchGlobalConcurrency, updateGlobalConcurrency } from "../api";
 import type { AuthProvider, ModelInfo, BackupListResponse, SettingsExportData } from "../api";
 import type { ToastType } from "../hooks/useToast";
 import { ThemeSelector } from "./ThemeSelector";
@@ -139,6 +139,9 @@ export function SettingsModal({
   const [memoryLoading, setMemoryLoading] = useState(false);
   const [memoryDirty, setMemoryDirty] = useState(false);
 
+  // Global concurrency state
+  const [globalMaxConcurrent, setGlobalMaxConcurrent] = useState<number>(4);
+
   // Import/Export state
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [, setImportFile] = useState<File | null>(null);
@@ -159,6 +162,14 @@ export function SettingsModal({
         setLoading(false);
       });
   }, [addToast, projectId]);
+
+  useEffect(() => {
+    fetchGlobalConcurrency()
+      .then((state) => setGlobalMaxConcurrent(state.globalMaxConcurrent))
+      .catch(() => {
+        // Silently fail — global concurrency may not be available
+      });
+  }, []);
 
   // Load auth status when the authentication section is active
   const loadAuthStatus = useCallback(async () => {
@@ -531,6 +542,7 @@ export function SettingsModal({
       await Promise.all([
         Object.keys(globalPatch).length > 0 ? updateGlobalSettings(globalPatch) : Promise.resolve(),
         Object.keys(projectPatch).length > 0 ? updateSettings(projectPatch, projectId) : Promise.resolve(),
+        updateGlobalConcurrency({ globalMaxConcurrent }),
       ]);
 
       addToast("Settings saved", "success");
@@ -538,7 +550,7 @@ export function SettingsModal({
     } catch (err: any) {
       addToast(err.message, "error");
     }
-  }, [form, prefixError, presetDraft, onClose, addToast, projectId]);
+  }, [form, globalMaxConcurrent, prefixError, presetDraft, onClose, addToast, projectId]);
 
   const handleSaveMemory = useCallback(async () => {
     try {
@@ -1285,6 +1297,18 @@ export function SettingsModal({
           <>
             {renderScopeBanner()}
             <h4 className="settings-section-heading">Scheduling</h4>
+            <div className="form-group">
+              <label htmlFor="globalMaxConcurrent">Global Max Concurrent</label>
+              <input
+                id="globalMaxConcurrent"
+                type="number"
+                min={1}
+                max={50}
+                value={globalMaxConcurrent}
+                onChange={(e) => setGlobalMaxConcurrent(Number(e.target.value))}
+              />
+              <small className="form-text text-muted">Maximum concurrent agents across all projects</small>
+            </div>
             <div className="form-group">
               <label htmlFor="maxConcurrent">Max Concurrent Tasks</label>
               <input

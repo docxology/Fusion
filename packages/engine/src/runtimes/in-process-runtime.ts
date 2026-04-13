@@ -91,6 +91,7 @@ export class InProcessRuntime
   private missionExecutionLoop?: MissionExecutionLoop;
   private missionAutopilot?: MissionAutopilot;
   private triageProcessor?: TriageProcessor;
+  private concurrencyChangedListener?: (state: { globalMaxConcurrent: number }) => void;
 
   /**
    * @param config - Runtime configuration
@@ -175,8 +176,19 @@ export class InProcessRuntime
       if (this.config.globalSemaphore) {
         this.globalSemaphore = this.config.globalSemaphore;
       } else {
-        const globalLimit = await this.getGlobalConcurrencyLimit();
-        this.globalSemaphore = new AgentSemaphore(() => globalLimit);
+        // Dynamic getter that re-reads from CentralCore on each semaphore acquire.
+        // This ensures changes via PUT /api/global-concurrency take effect immediately.
+        let cachedLimit = await this.getGlobalConcurrencyLimit();
+        this.globalSemaphore = new AgentSemaphore(() => cachedLimit);
+
+        // Listen for concurrency changes from CentralCore (if it supports events)
+        if (typeof this.centralCore.on === "function") {
+          this.concurrencyChangedListener = (state: { globalMaxConcurrent: number }) => {
+            cachedLimit = state.globalMaxConcurrent;
+            runtimeLog.log(`Global concurrency limit updated to ${cachedLimit}`);
+          };
+          this.centralCore.on("concurrency:changed", this.concurrencyChangedListener);
+        }
       }
 
       // 5. Initialize Scheduler
@@ -549,7 +561,13 @@ export class InProcessRuntime
     runtimeLog.log(`Stopping InProcessRuntime for project ${this.config.projectId}`);
 
     try {
-      // 1. Stop self-healing manager
+      // 1. Remove concurrency change listener (if we registered one)
+      if (this.concurrencyChangedListener && typeof this.centralCore.off === "function") {
+        this.centralCore.off("concurrency:changed", this.concurrencyChangedListener);
+        this.concurrencyChangedListener = undefined;
+      }
+
+      // 2. Stop self-healing manager
       if (this.selfHealingManager) {
         this.selfHealingManager.stop();
         runtimeLog.log("SelfHealingManager stopped");

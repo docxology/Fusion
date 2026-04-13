@@ -3191,6 +3191,13 @@ export function fetchGlobalConcurrency(): Promise<GlobalConcurrencyState> {
   return api<GlobalConcurrencyState>("/global-concurrency");
 }
 
+export function updateGlobalConcurrency(updates: { globalMaxConcurrent: number }): Promise<GlobalConcurrencyState> {
+  return api<GlobalConcurrencyState>("/global-concurrency", {
+    method: "PUT",
+    body: JSON.stringify(updates),
+  });
+}
+
 /** Fetch tasks for a specific project */
 export function fetchProjectTasks(projectId: string, limit?: number, offset?: number): Promise<Task[]> {
   const params = new URLSearchParams();

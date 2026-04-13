@@ -13486,6 +13486,29 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
   });
 
   /**
+   * PUT /api/global-concurrency
+   * Update the global execution concurrency limit.
+   * Body: { globalMaxConcurrent: number }
+   */
+  router.put("/global-concurrency", async (req, res) => {
+    try {
+      const { globalMaxConcurrent } = req.body;
+      if (typeof globalMaxConcurrent !== "number" || globalMaxConcurrent < 1 || globalMaxConcurrent > 50) {
+        throw new ApiError(400, "globalMaxConcurrent must be a number between 1 and 50");
+      }
+      const { CentralCore } = await import("@fusion/core");
+      const central = new CentralCore();
+      await central.init();
+      const state = await central.updateGlobalConcurrency({ globalMaxConcurrent });
+      await central.close();
+      res.json(state);
+    } catch (err: any) {
+      if (err instanceof ApiError) throw err;
+      rethrowAsApiError(err);
+    }
+  });
+
+  /**
    * GET /api/first-run-status
    * Check if user has projects or needs setup wizard.
    * Returns: { hasProjects: boolean, singleProjectPath: string | null }
