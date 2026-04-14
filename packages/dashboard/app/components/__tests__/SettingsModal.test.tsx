@@ -7,7 +7,6 @@ import type { Settings, ThemeMode, ColorTheme } from "@fusion/core";
 
 const defaultSettings: Settings = {
   maxConcurrent: 2,
-  globalMaxConcurrent: 4,
   maxWorktrees: 4,
   pollIntervalMs: 15000,
   groupOverlappingFiles: false,
@@ -231,7 +230,7 @@ describe("SettingsModal", () => {
     // Click Scheduling
     fireEvent.click(screen.getByText("Scheduling"));
     expect(screen.getByLabelText("Max Concurrent Tasks")).toBeTruthy();
-    expect(screen.getByLabelText("Global Concurrent Agents")).toBeTruthy();
+    expect(screen.getByLabelText("Global Max Concurrent")).toBeTruthy();
     expect(screen.queryByLabelText("Task Prefix")).toBeNull();
 
     // Click Commands
@@ -312,7 +311,7 @@ describe("SettingsModal", () => {
     // Scheduling
     fireEvent.click(screen.getByText("Scheduling"));
     expect(screen.getByLabelText("Max Concurrent Tasks")).toBeTruthy();
-    expect(screen.getByLabelText("Global Concurrent Agents")).toBeTruthy();
+    expect(screen.getByLabelText("Global Max Concurrent")).toBeTruthy();
     expect(screen.getByLabelText("Poll Interval (ms)")).toBeTruthy();
 
     // Worktrees
@@ -676,15 +675,13 @@ describe("SettingsModal", () => {
   it("loads and saves the central global concurrency limit", async () => {
     (fetchGlobalConcurrency as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       globalMaxConcurrent: 8,
-      currentlyActive: 3,
-      queuedCount: 0,
-      projectsActive: {},
+      currentUsage: 3,
     });
 
     render(<SettingsModal onClose={onClose} addToast={addToast} initialSection="scheduling" />);
     await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
 
-    const input = screen.getByLabelText("Global Concurrent Agents") as HTMLInputElement;
+    const input = screen.getByLabelText("Global Max Concurrent") as HTMLInputElement;
     expect(input.value).toBe("8");
 
     fireEvent.change(input, { target: { value: "10" } });
@@ -942,7 +939,7 @@ describe("SettingsModal", () => {
     expect(payload.defaultModelId).toBe("claude-sonnet-4-5");
   });
 
-  it("Use default option clears model selection", async () => {
+  it("Use default option clears model selection (sends null for explicit clear)", async () => {
     const user = userEvent.setup();
     (fetchSettings as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       ...defaultSettings,
@@ -972,11 +969,12 @@ describe("SettingsModal", () => {
 
     fireEvent.click(screen.getByText("Save"));
     // defaultProvider and defaultModelId are global settings
+    // Clearing sends null (null-as-delete semantics)
     await waitFor(() => expect(updateGlobalSettings).toHaveBeenCalledTimes(1));
 
     const payload = (updateGlobalSettings as ReturnType<typeof vi.fn>).mock.calls[0][0];
-    expect(payload.defaultProvider).toBeUndefined();
-    expect(payload.defaultModelId).toBeUndefined();
+    expect(payload.defaultProvider).toBeNull();
+    expect(payload.defaultModelId).toBeNull();
   });
 
   it("shows empty state when no models available", async () => {
@@ -1792,7 +1790,7 @@ describe("SettingsModal", () => {
     expect(payload.ntfyTopic).toBe("my-topic");
   });
 
-  it("ntfy topic field submits undefined when empty", async () => {
+  it("ntfy topic field submits null when cleared (null-as-delete semantics)", async () => {
     (fetchSettings as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       ...defaultSettings,
       ntfyEnabled: true,
@@ -1807,11 +1805,11 @@ describe("SettingsModal", () => {
     fireEvent.change(input, { target: { value: "" } });
 
     fireEvent.click(screen.getByText("Save"));
-    // ntfyTopic is a global setting
+    // ntfyTopic is a global setting - clearing it sends null (null-as-delete)
     await waitFor(() => expect(updateGlobalSettings).toHaveBeenCalledTimes(1));
 
     const payload = (updateGlobalSettings as ReturnType<typeof vi.fn>).mock.calls[0][0];
-    expect(payload.ntfyTopic).toBeUndefined();
+    expect(payload.ntfyTopic).toBeNull(); // null means "explicitly clear this field"
   });
 
   it("ntfy topic shows validation error for invalid input", async () => {
@@ -2005,7 +2003,7 @@ describe("SettingsModal", () => {
     expect(payload.ntfyEvents).toEqual(["in-review", "failed", "awaiting-approval", "awaiting-user-review"]);
   });
 
-  it("sets ntfyEvents to undefined when all checkboxes are unchecked", async () => {
+  it("sets ntfyEvents to null when all checkboxes are unchecked (null-as-delete)", async () => {
     (fetchSettings as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       ...defaultSettings,
       ntfyEnabled: true,
@@ -2029,7 +2027,7 @@ describe("SettingsModal", () => {
     await waitFor(() => expect(updateGlobalSettings).toHaveBeenCalledTimes(1));
 
     const payload = (updateGlobalSettings as ReturnType<typeof vi.fn>).mock.calls[0][0];
-    expect(payload.ntfyEvents).toBeUndefined();
+    expect(payload.ntfyEvents).toBeNull(); // null means "explicitly clear this field"
   });
 
   it("restores ntfyEvents from saved settings", async () => {

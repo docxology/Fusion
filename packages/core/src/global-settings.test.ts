@@ -172,13 +172,66 @@ describe("GlobalSettingsStore", () => {
       expect(settings.themeMode).toBe("light");
     });
 
-    it("can clear a field by setting it to undefined", async () => {
+    it("can clear a field by setting it to null (null-as-delete semantics)", async () => {
       await store.init();
       await store.updateSettings({ defaultProvider: "anthropic" });
-      await store.updateSettings({ defaultProvider: undefined });
+      // @ts-expect-error - null is intentionally used to clear field (null-as-delete)
+      await store.updateSettings({ defaultProvider: null });
 
       const settings = await store.getSettings();
       expect(settings.defaultProvider).toBeUndefined();
+    });
+
+    it("clearing ntfyTopic with null removes it from disk and returns undefined", async () => {
+      await store.init();
+      await store.updateSettings({ ntfyEnabled: true, ntfyTopic: "my-topic" });
+
+      // Verify it was persisted
+      const raw = JSON.parse(await readFile(join(dir, "settings.json"), "utf-8"));
+      expect(raw.ntfyTopic).toBe("my-topic");
+
+      // Clear the topic with null
+      // @ts-expect-error - null is intentionally used to clear field (null-as-delete)
+      await store.updateSettings({ ntfyTopic: null });
+
+      // Verify it was removed from disk
+      const rawAfter = JSON.parse(await readFile(join(dir, "settings.json"), "utf-8"));
+      expect(rawAfter.ntfyTopic).toBeUndefined();
+
+      // Verify getSettings returns undefined
+      const settings = await store.getSettings();
+      expect(settings.ntfyTopic).toBeUndefined();
+    });
+
+    it("clearing ntfyDashboardHost with null removes it from disk", async () => {
+      await store.init();
+      await store.updateSettings({ ntfyDashboardHost: "https://dashboard.example.com" });
+
+      // @ts-expect-error - null is intentionally used to clear field (null-as-delete)
+      await store.updateSettings({ ntfyDashboardHost: null });
+
+      const raw = JSON.parse(await readFile(join(dir, "settings.json"), "utf-8"));
+      expect(raw.ntfyDashboardHost).toBeUndefined();
+
+      const settings = await store.getSettings();
+      expect(settings.ntfyDashboardHost).toBeUndefined();
+    });
+
+    it("clearing ntfyEvents with null resets to default on read", async () => {
+      await store.init();
+      await store.updateSettings({ ntfyEvents: ["in-review", "failed"] });
+
+      // Verify it was persisted with custom value
+      const raw = JSON.parse(await readFile(join(dir, "settings.json"), "utf-8"));
+      expect(raw.ntfyEvents).toEqual(["in-review", "failed"]);
+
+      // @ts-expect-error - null is intentionally used to clear field (null-as-delete)
+      await store.updateSettings({ ntfyEvents: null });
+
+      // After clear, reading back gives the default value
+      // (either undefined on disk with default applied, or default written directly)
+      const settings = await store.getSettings();
+      expect(settings.ntfyEvents).toEqual(["in-review", "merged", "failed", "awaiting-approval", "awaiting-user-review"]);
     });
 
     it("handles concurrent updates safely via locking", async () => {

@@ -132,16 +132,42 @@ export class GlobalSettingsStore {
    * merging, so fields that were removed from the TypeScript schema are not
    * silently dropped during save cycles.
    *
+   * **Null-as-delete semantics**: Fields set to `null` in the patch are
+   * explicitly deleted from the settings. This allows the frontend to clear
+   * a setting by sending `null` instead of `undefined` (since JSON.stringify
+   * drops `undefined` values, `null` serves as the explicit clear sentinel).
+   *
    * @returns The full updated settings after merge.
    */
-  async updateSettings(patch: Partial<GlobalSettings>): Promise<GlobalSettings> {
+  async updateSettings(patch: Partial<GlobalSettings> & Record<string, unknown>): Promise<GlobalSettings> {
     return this.withLock(async () => {
       const raw = await this.readRaw();
-      const merged = { ...DEFAULT_GLOBAL_SETTINGS, ...raw, ...patch };
+
+      // Apply null-as-delete semantics: null means "remove this field"
+      // Merge order: defaults → raw (disk) → patch
+      // This means: patch values win, then raw, then defaults
+      // But null in patch means "delete" - so we delete from raw first
+      const merged: Record<string, unknown> = { ...raw };
+
+      for (const [key, value] of Object.entries(patch)) {
+        if (value === null) {
+          // null → delete this key from the merged object
+          // This effectively makes it fall through to the default
+          delete merged[key];
+        } else {
+          // normal value → set it
+          merged[key] = value;
+        }
+      }
+
+      // After merging, fill in defaults for any missing keys
+      // This ensures fields that were deleted (by null) get their default value
+      const withDefaults = { ...DEFAULT_GLOBAL_SETTINGS, ...merged } as GlobalSettings;
+
       await mkdir(this.dir, { recursive: true });
-      await this.atomicWrite(merged as GlobalSettings);
+      await this.atomicWrite(withDefaults);
       // Update the write-through cache
-      this.cachedSettings = merged as GlobalSettings;
+      this.cachedSettings = withDefaults;
       return this.cachedSettings;
     });
   }

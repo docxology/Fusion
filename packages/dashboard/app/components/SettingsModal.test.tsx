@@ -39,8 +39,6 @@ vi.mock("../api", () => ({
   saveMemory: (...args: unknown[]) => mockSaveMemory(...args),
   fetchGlobalConcurrency: (...args: unknown[]) => mockFetchGlobalConcurrency(...args),
   updateGlobalConcurrency: (...args: unknown[]) => mockUpdateGlobalConcurrency(...args),
-  saveApiKey: vi.fn().mockResolvedValue(undefined),
-  clearApiKey: vi.fn().mockResolvedValue(undefined),
 }));
 
 const noop = () => {};
