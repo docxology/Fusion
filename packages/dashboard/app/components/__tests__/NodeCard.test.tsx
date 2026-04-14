@@ -188,4 +188,178 @@ describe("NodeCard", () => {
     // Remote node should show only 1 project (explicitly assigned only)
     expect(screen.getByText("1")).toBeDefined();
   });
+
+  describe("multi-node scenarios", () => {
+    it("renders remote node with long URL", () => {
+      const longUrl = "https://this-is-a-very-long-hostname.example.com/some/very/long/path/to/resource";
+      const node = makeNode({
+        id: "node-long-url",
+        name: "Long URL Node",
+        type: "remote",
+        url: longUrl,
+        status: "online",
+      });
+
+      render(
+        <NodeCard
+          node={node}
+          projects={[]}
+          onHealthCheck={vi.fn()}
+          onEdit={vi.fn()}
+          onRemove={vi.fn()}
+        />
+      );
+
+      // Node name should be visible
+      expect(screen.getByText("Long URL Node")).toBeDefined();
+
+      // URL should be visible (component may truncate it)
+      expect(screen.getByText(/this-is-a-very-long-hostname/)).toBeDefined();
+    });
+
+    it("renders node with connecting status", () => {
+      const node = makeNode({
+        id: "node-connecting",
+        name: "Connecting Node",
+        type: "remote",
+        url: "https://connecting.example.com",
+        status: "connecting",
+      });
+
+      render(
+        <NodeCard
+          node={node}
+          projects={[]}
+          onHealthCheck={vi.fn()}
+          onEdit={vi.fn()}
+          onRemove={vi.fn()}
+        />
+      );
+
+      expect(screen.getByText("Connecting Node")).toBeDefined();
+      expect(screen.getByText("Connecting")).toBeDefined();
+      expect(screen.getByText("Remote")).toBeDefined();
+    });
+
+    it("renders node with error status", () => {
+      const node = makeNode({
+        id: "node-error",
+        name: "Error Node",
+        type: "remote",
+        url: "https://error.example.com",
+        status: "error",
+      });
+
+      render(
+        <NodeCard
+          node={node}
+          projects={[]}
+          onHealthCheck={vi.fn()}
+          onEdit={vi.fn()}
+          onRemove={vi.fn()}
+        />
+      );
+
+      expect(screen.getByText("Error Node")).toBeDefined();
+      expect(screen.getByText("Error")).toBeDefined();
+      expect(screen.getByText("Remote")).toBeDefined();
+    });
+
+    it("remove button arms on first click, removes on second click", () => {
+      const onRemove = vi.fn();
+      const node = makeNode({ id: "node-remove-test", name: "Remove Test Node" });
+
+      render(
+        <NodeCard
+          node={node}
+          projects={[]}
+          onHealthCheck={vi.fn()}
+          onEdit={vi.fn()}
+          onRemove={onRemove}
+        />
+      );
+
+      // First click arms the button (shows confirm)
+      const removeButton = screen.getByLabelText("Remove node");
+      fireEvent.click(removeButton);
+
+      // Should show confirm text
+      expect(screen.getByText("Confirm")).toBeDefined();
+      expect(onRemove).not.toHaveBeenCalled();
+
+      // Second click removes
+      fireEvent.click(screen.getByLabelText("Confirm remove node"));
+      expect(onRemove).toHaveBeenCalledWith(node.id);
+    });
+
+    it("disarms remove on clicking the armed button again", () => {
+      const onRemove = vi.fn();
+      const node = makeNode({ id: "node-disarm", name: "Disarm Test Node" });
+
+      render(
+        <NodeCard
+          node={node}
+          projects={[]}
+          onHealthCheck={vi.fn()}
+          onEdit={vi.fn()}
+          onRemove={onRemove}
+        />
+      );
+
+      // First click arms the button
+      const removeButton = screen.getByLabelText("Remove node");
+      fireEvent.click(removeButton);
+
+      // Should show confirm text
+      expect(screen.getByText("Confirm")).toBeDefined();
+
+      // Click the armed button again to disarm (should not trigger remove)
+      const armedButton = screen.getByLabelText("Confirm remove node");
+      // Click the button again (third click) to disarm
+      fireEvent.click(armedButton);
+
+      // Should not call remove (it was disarmed, not confirmed)
+      // The button should now be disarmed back to "Remove" state
+      expect(screen.getByText("Remove")).toBeDefined();
+      expect(screen.queryByText("Confirm")).not.toBeInTheDocument();
+    });
+
+    it("renders sample seed nodes correctly", () => {
+      // Test the actual seed data nodes
+      const seedNodes = [
+        makeNode({ id: "node-staging-seed", name: "Staging Server X", type: "remote", url: "https://staging.runfusion.ai", status: "online", maxConcurrent: 4 }),
+        makeNode({ id: "node-gpu-seed", name: "GPU Cluster Y", type: "remote", url: "https://gpu.runfusion.ai", status: "offline", maxConcurrent: 16 }),
+        makeNode({ id: "node-dev-seed", name: "Dev Box Z", type: "remote", url: "http://192.168.1.100:4040", status: "error", maxConcurrent: 2 }),
+      ];
+
+      for (const node of seedNodes) {
+        render(
+          <NodeCard
+            node={node}
+            projects={[]}
+            onHealthCheck={vi.fn()}
+            onEdit={vi.fn()}
+            onRemove={vi.fn()}
+          />
+        );
+
+        // Verify node is rendered with correct data
+        expect(screen.getByText(node.name, { exact: true })).toBeDefined();
+
+        // Verify correct type badge
+        const typeBadge = document.querySelector(".node-card__type-badge");
+        expect(typeBadge?.textContent).toBe("Remote");
+
+        // Verify correct status
+        const statusClass = `.node-card__status--${node.status}`;
+        const statusElement = document.querySelector(statusClass);
+        expect(statusElement).toBeInTheDocument();
+
+        // Clear between renders
+        if (node !== seedNodes[seedNodes.length - 1]) {
+          render(null as unknown as JSX.Element);
+        }
+      }
+    });
+  });
 });

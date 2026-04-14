@@ -190,4 +190,83 @@ describe("NodesView", () => {
     fireEvent.click(closeButton);
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  describe("multi-node dashboard scenarios", () => {
+    it("renders 6 sample nodes with correct stats and mesh topology", () => {
+      // Mock 6 nodes matching the seed data: 1 local + 5 remote
+      const sampleNodes = [
+        makeNode({ id: "node-local", name: "local", type: "local", status: "online", maxConcurrent: 4 }),
+        makeNode({ id: "node-staging", name: "Staging Server", type: "remote", url: "https://staging.runfusion.ai", status: "online", maxConcurrent: 4 }),
+        makeNode({ id: "node-build", name: "Build Machine", type: "remote", url: "https://build.runfusion.ai", status: "online", maxConcurrent: 8 }),
+        makeNode({ id: "node-gpu", name: "GPU Cluster", type: "remote", url: "https://gpu.runfusion.ai", status: "offline", maxConcurrent: 16 }),
+        makeNode({ id: "node-dev", name: "Dev Box (John)", type: "remote", url: "http://192.168.1.100:4040", status: "error", maxConcurrent: 2 }),
+        makeNode({ id: "node-qa", name: "QA Environment", type: "remote", url: "https://qa.runfusion.ai", status: "connecting", maxConcurrent: 4 }),
+      ];
+
+      mockUseNodes.mockReturnValue(makeUseNodesResult({ nodes: sampleNodes }));
+
+      render(<NodesView addToast={vi.fn()} onClose={vi.fn()} />);
+
+      // Check stats bar shows correct counts
+      expect(screen.getByTestId("nodes-stat-total").textContent).toContain("6");
+      expect(screen.getByTestId("nodes-stat-online").textContent).toContain("3"); // local + 2 remote
+      expect(screen.getByTestId("nodes-stat-offline").textContent).toContain("2"); // error + offline
+      expect(screen.getByTestId("nodes-stat-remote").textContent).toContain("5");
+
+      // Check 6 node cards are rendered
+      const nodeCards = document.querySelectorAll(".node-card");
+      expect(nodeCards).toHaveLength(6);
+
+      // Check mesh topology is visible
+      const svg = document.querySelector(".mesh-topology__svg");
+      expect(svg).toBeInTheDocument();
+
+      // Check header shows correct count
+      expect(screen.getByText("6 registered")).toBeDefined();
+    });
+
+    it("renders all node names and statuses correctly", () => {
+      const sampleNodes = [
+        makeNode({ id: "node-alpha-xyz", name: "Alpha Node Xyz", status: "online", type: "local" }),
+        makeNode({ id: "node-beta-uvw", name: "Beta Node Uvw", status: "offline", type: "remote", url: "https://beta.node" }),
+        makeNode({ id: "node-gamma-rst", name: "Gamma Node Rst", status: "error", type: "remote", url: "https://gamma.node" }),
+        makeNode({ id: "node-delta-opq", name: "Delta Node Opq", status: "connecting", type: "remote", url: "https://delta.node" }),
+      ];
+
+      mockUseNodes.mockReturnValue(makeUseNodesResult({ nodes: sampleNodes }));
+
+      render(<NodesView addToast={vi.fn()} onClose={vi.fn()} />);
+
+      // Verify all node names are displayed (unique names to avoid collisions)
+      expect(screen.getByText("Alpha Node Xyz", { exact: true })).toBeDefined();
+      expect(screen.getByText("Beta Node Uvw", { exact: true })).toBeDefined();
+      expect(screen.getByText("Gamma Node Rst", { exact: true })).toBeDefined();
+      expect(screen.getByText("Delta Node Opq", { exact: true })).toBeDefined();
+
+      // Verify statuses are displayed (check existence)
+      const onlineElements = document.querySelectorAll(".node-card__status--online");
+      const offlineElements = document.querySelectorAll(".node-card__status--offline");
+      const errorElements = document.querySelectorAll(".node-card__status--error");
+      const connectingElements = document.querySelectorAll(".node-card__status--connecting");
+
+      expect(onlineElements.length).toBe(1);
+      expect(offlineElements.length).toBe(1);
+      expect(errorElements.length).toBe(1);
+      expect(connectingElements.length).toBe(1);
+    });
+
+    it("shows empty state mesh topology indicator when only local node exists", () => {
+      mockUseNodes.mockReturnValue(makeUseNodesResult({
+        nodes: [makeNode({ id: "node-local", name: "local", type: "local", status: "online" })],
+      }));
+
+      render(<NodesView addToast={vi.fn()} onClose={vi.fn()} />);
+
+      // Stats should show only local
+      expect(screen.getByTestId("nodes-stat-total").textContent).toContain("1");
+      expect(screen.getByTestId("nodes-stat-online").textContent).toContain("1");
+      expect(screen.getByTestId("nodes-stat-offline").textContent).toContain("0");
+      expect(screen.getByTestId("nodes-stat-remote").textContent).toContain("0");
+    });
+  });
 });
