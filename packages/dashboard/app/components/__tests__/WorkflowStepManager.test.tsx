@@ -59,21 +59,47 @@ vi.mock("../../api", () => ({
         icon: "globe",
         toolMode: "coding",
       },
+      {
+        id: "frontend-ux-design",
+        name: "Frontend UX Design",
+        description: "Verify visual polish and consistency with existing UI patterns and design tokens",
+        prompt: "Test prompt",
+        category: "Quality",
+        icon: "layout-grid",
+        toolMode: "readonly",
+      },
     ],
   })),
-  createWorkflowStepFromTemplate: vi.fn(() => Promise.resolve({
-    id: "WS-010",
-    templateId: "browser-verification",
-    name: "Browser Verification",
-    description: "Verify web application functionality using browser automation",
-    mode: "prompt",
-    phase: "pre-merge",
-    prompt: "Test prompt",
-    toolMode: "coding",
-    enabled: true,
-    createdAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-01T00:00:00.000Z",
-  })),
+  createWorkflowStepFromTemplate: vi.fn((templateId?: string) => {
+    if (templateId === "frontend-ux-design") {
+      return Promise.resolve({
+        id: "WS-011",
+        templateId: "frontend-ux-design",
+        name: "Frontend UX Design",
+        description: "Verify visual polish and consistency with existing UI patterns and design tokens",
+        mode: "prompt",
+        phase: "pre-merge",
+        prompt: "Test prompt",
+        toolMode: "readonly",
+        enabled: true,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      });
+    }
+    return Promise.resolve({
+      id: "WS-010",
+      templateId: "browser-verification",
+      name: "Browser Verification",
+      description: "Verify web application functionality using browser automation",
+      mode: "prompt",
+      phase: "pre-merge",
+      prompt: "Test prompt",
+      toolMode: "coding",
+      enabled: true,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+  }),
   fetchScripts: vi.fn(() => Promise.resolve({ test: "pnpm test", lint: "pnpm lint" })),
   fetchModels: vi.fn(() => Promise.resolve({
     models: [
@@ -676,6 +702,58 @@ describe("WorkflowStepManager templates tab", () => {
     await waitFor(() => {
       expect(createWorkflowStepFromTemplate).toHaveBeenCalledWith("browser-verification", undefined);
       expect(addToast).toHaveBeenCalledWith("Added Browser Verification workflow step", "success");
+    });
+  });
+
+  it("renders frontend-ux-design template", async () => {
+    vi.mocked(fetchWorkflowSteps).mockResolvedValueOnce([]);
+
+    render(<WorkflowStepManager isOpen={true} onClose={onClose} addToast={addToast} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("tab-templates")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId("tab-templates"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("template-frontend-ux-design")).toBeInTheDocument();
+      expect(screen.getByText("Frontend UX Design")).toBeInTheDocument();
+    });
+  });
+
+  it("displays the LayoutGrid icon for frontend-ux-design template", async () => {
+    vi.mocked(fetchWorkflowSteps).mockResolvedValueOnce([]);
+
+    render(<WorkflowStepManager isOpen={true} onClose={onClose} addToast={addToast} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("tab-templates")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId("tab-templates"));
+
+    const templateCard = await screen.findByTestId("template-frontend-ux-design");
+    expect(templateCard.querySelector(".lucide-layout-grid")).toBeInTheDocument();
+  });
+
+  it("can add frontend-ux-design template as a workflow step", async () => {
+    vi.mocked(fetchWorkflowSteps).mockResolvedValue([]);
+
+    render(<WorkflowStepManager isOpen={true} onClose={onClose} addToast={addToast} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("tab-templates")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId("tab-templates"));
+
+    const templateCard = await screen.findByTestId("template-frontend-ux-design");
+    fireEvent.click(within(templateCard).getByTestId("add-template-frontend-ux-design"));
+
+    await waitFor(() => {
+      expect(createWorkflowStepFromTemplate).toHaveBeenCalledWith("frontend-ux-design", undefined);
+      expect(addToast).toHaveBeenCalledWith("Added Frontend UX Design workflow step", "success");
     });
   });
 });

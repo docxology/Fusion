@@ -576,6 +576,8 @@ Prompt-mode steps support **model overrides** — pin a specific AI model per qu
 | **Security Audit** | Security | Check for vulnerabilities and anti-patterns |
 | **Performance Review** | Quality | Check for performance anti-patterns |
 | **Accessibility Check** | Quality | Verify WCAG 2.1 compliance |
+| **Browser Verification** | Quality | Verify end-to-end web behavior using browser automation |
+| **Frontend UX Design** | Quality | Verify visual polish and design token consistency |
 
 Click **Add** on any template in the Workflow Step Manager to create a customizable step.
 

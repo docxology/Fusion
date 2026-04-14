@@ -5622,6 +5622,23 @@ Task with acceptance criteria
       expect(steps.filter((step) => step.templateId === "browser-verification")).toHaveLength(1);
     });
 
+    it("should materialize frontend-ux-design built-in template when creating a task", async () => {
+      const task = await store.createTask({
+        description: "Task with frontend UX design review",
+        enabledWorkflowSteps: ["frontend-ux-design"],
+      });
+
+      expect(task.enabledWorkflowSteps).toEqual(["WS-001"]);
+
+      const step = await store.getWorkflowStep("WS-001");
+      expect(step).toMatchObject({
+        id: "WS-001",
+        templateId: "frontend-ux-design",
+        name: "Frontend UX Design",
+        toolMode: "readonly",
+      });
+    });
+
     it("should not set enabledWorkflowSteps when empty array provided", async () => {
       const task = await store.createTask({
         description: "Task without workflow steps",
@@ -5877,6 +5894,19 @@ Task with acceptance criteria
         mode: "prompt",
         phase: "pre-merge",
         toolMode: "coding",
+      });
+    });
+
+    it("should resolve frontend-ux-design built-in template from getWorkflowStep", async () => {
+      const step = await store.getWorkflowStep("frontend-ux-design");
+
+      expect(step).toMatchObject({
+        id: "frontend-ux-design",
+        templateId: "frontend-ux-design",
+        name: "Frontend UX Design",
+        mode: "prompt",
+        phase: "pre-merge",
+        toolMode: "readonly",
       });
     });
 

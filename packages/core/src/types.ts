@@ -365,6 +365,33 @@ Use these agent-browser commands for verification:
 
 Note: Refs (@e1, @e2) are invalidated after page navigation. Re-snapshot after clicking links or form submissions.`,
   },
+  {
+    id: "frontend-ux-design",
+    name: "Frontend UX Design",
+    description: "Verify visual polish and consistency with existing UI patterns and design tokens",
+    category: "Quality",
+    icon: "layout-grid",
+    toolMode: "readonly",
+    prompt: `You are a UX design reviewer. Verify frontend changes maintain visual polish and consistency with existing UI patterns and design tokens.
+
+Design System Review:
+1. **Visual Hierarchy** — Check that the changes maintain consistent heading levels, content flow, and information architecture
+2. **Spacing and Typography** — Verify consistent spacing (margins, padding, gaps) and typography scale usage
+3. **Color and Token Consistency** — Check that CSS custom properties and design tokens are used correctly; no hardcoded color values that bypass the design system
+4. **Component Reuse** — Verify existing UI components are reused instead of creating one-off styling; identify any duplication that could be refactored
+5. **Responsive Behavior** — Check that layouts adapt properly across viewport sizes and maintain usability on mobile
+6. **Fit with Design Language** — Verify the visual style matches existing patterns (border radius, shadows, transitions, icon style, etc.)
+
+Files to Review:
+- Modified UI components (React, Vue, Angular, HTML)
+- CSS/SCSS/styled-component files
+- Design token or theme configuration files
+
+Output Requirements:
+- If design is consistent and polished: call task_done() with success status
+- If issues found: describe each finding with specific file paths and suggested corrections via task_log()
+- Prioritize issues by impact: layout breaks > visual inconsistency > style preferences`,
+  },
 ];
 
 export interface PrInfo {

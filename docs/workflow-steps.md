@@ -31,9 +31,9 @@ Workflow steps run in one of two phases:
 
 Prompt mode can run with readonly or coding-capable tool access depending on step/template configuration.
 
-## Built-In Templates (6)
+## Built-In Templates (7)
 
-Fusion ships six templates:
+Fusion ships seven templates:
 
 1. Documentation Review
 2. QA Check
@@ -41,8 +41,11 @@ Fusion ships six templates:
 4. Performance Review
 5. Accessibility Check
 6. Browser Verification
+7. Frontend UX Design
 
-The Browser Verification template uses browser automation style checks and is designed for UI validation flows.
+The **Browser Verification** template uses browser automation style checks and is designed for UI validation flows.
+
+The **Frontend UX Design** template verifies visual polish and consistency with existing UI patterns and design tokens, including visual hierarchy, spacing/typography consistency, color/token consistency, component reuse, responsive behavior, and fit with existing design language.
 
 ## Model Overrides for Prompt Steps
 

@@ -11024,6 +11024,8 @@ describe("GET /workflow-step-templates", () => {
     expect(ids).toContain("security-audit");
     expect(ids).toContain("performance-review");
     expect(ids).toContain("accessibility-check");
+    expect(ids).toContain("browser-verification");
+    expect(ids).toContain("frontend-ux-design");
   });
 });
 
@@ -11096,6 +11098,37 @@ describe("POST /workflow-step-templates/:id/create", () => {
       description: "Run tests and verify they pass, check for obvious bugs",
       prompt: expect.stringContaining("QA tester"),
       toolMode: "coding",
+      enabled: true,
+    });
+  });
+
+  it("creates workflow step from frontend-ux-design template", async () => {
+    const created = {
+      id: "WS-003",
+      name: "Frontend UX Design",
+      description: "Verify visual polish and consistency with existing UI patterns and design tokens",
+      prompt: expect.stringContaining("UX design reviewer"),
+      toolMode: "readonly",
+      enabled: true,
+      createdAt: "2026-01-01",
+      updatedAt: "2026-01-01",
+    };
+    (store.listWorkflowSteps as ReturnType<typeof vi.fn>).mockResolvedValueOnce([]);
+    (store.createWorkflowStep as ReturnType<typeof vi.fn>).mockResolvedValueOnce(created);
+
+    const res = await REQUEST(buildApp(), "POST", "/api/workflow-step-templates/frontend-ux-design/create", JSON.stringify({}), {
+      "Content-Type": "application/json",
+    });
+
+    expect(res.status).toBe(201);
+    expect(res.body.name).toBe("Frontend UX Design");
+    expect(res.body.toolMode).toBe("readonly");
+    expect(store.createWorkflowStep).toHaveBeenCalledWith({
+      templateId: "frontend-ux-design",
+      name: "Frontend UX Design",
+      description: "Verify visual polish and consistency with existing UI patterns and design tokens",
+      prompt: expect.stringContaining("UX design reviewer"),
+      toolMode: "readonly",
       enabled: true,
     });
   });

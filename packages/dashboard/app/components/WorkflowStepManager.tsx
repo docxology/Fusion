@@ -98,6 +98,8 @@ function getTemplateIcon(iconName: string | undefined) {
       return Eye;
     case "globe":
       return Globe;
+    case "layout-grid":
+      return LayoutGrid;
     default:
       return CheckCircle;
   }
