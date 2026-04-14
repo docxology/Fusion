@@ -127,7 +127,7 @@ Defaults from `DEFAULT_PROJECT_SETTINGS`; key scope from `PROJECT_SETTINGS_KEYS`
 | `insightExtractionSchedule` | `string` | `"0 2 * * *"` | Insight extraction cron schedule. |
 | `insightExtractionMinIntervalMs` | `number` | `86400000` | Minimum interval between insight extraction runs (24h). |
 | `memoryEnabled` | `boolean` | `true` | Enable project memory integration. |
-| `memoryBackendType` | `string` | `"file"` | Memory backend type: `file` or `readonly`. |
+| `memoryBackendType` | `string` | `"file"` | Memory backend type: `file`, `readonly`, `qmd`, or custom backend. Unknown types are accepted and persisted verbatim; the system falls back to `file` at runtime. |
 | `runStepsInNewSessions` | `boolean` | `false` | Run each task step in a fresh agent session. |
 | `maxParallelSteps` | `number` | `2` | Max concurrent step sessions (1–4). |
 | `aiSessionTtlMs` | `number` | `604800000` | TTL in ms for persisted AI planning, subtask breakdown, and mission interview sessions. Valid range: 600000 (10 min) to 2592000000 (30 days). |

@@ -195,7 +195,7 @@ const backend = resolveMemoryBackend(settings);
 
 **Settings integration:**
 - `memoryEnabled`: Toggle controls whether memory instructions are injected into prompts
-- `memoryBackendType`: Select which backend to use (`file` or `readonly`)
+- `memoryBackendType`: Select which backend to use (`file`, `readonly`, `qmd`, or custom). Unknown types are accepted and persisted verbatim; the system falls back to `file` at runtime.
 
 **Dashboard API:**
 - `GET /api/memory/backend` — Returns current backend status and capabilities

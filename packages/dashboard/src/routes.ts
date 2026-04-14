@@ -12,7 +12,7 @@ import * as nodeFs from "node:fs";
 
 import { promisify } from "node:util";
 import type { TaskStore, Column, ScheduleType, ActivityEventType, ModelPreset, MessageType, ParticipantType, RoutineTriggerType } from "@fusion/core";
-import { COLUMNS, VALID_TRANSITIONS, GLOBAL_SETTINGS_KEYS, type BatchStatusEntry, type BatchStatusResponse, type BatchStatusResult, type IssueInfo, type PrInfo, type Task, getCurrentRepo, isGhAuthenticated, AutomationStore, validateBackupSchedule, validateBackupRetention, validateBackupDir, syncBackupAutomation, exportSettings, importSettings, validateImportData, MessageStore, MEMORY_FILE_PATH, RoutineStore, isWebhookTrigger, resolveMemoryBackend, getMemoryBackendCapabilities, listMemoryBackendTypes } from "@fusion/core";
+import { COLUMNS, VALID_TRANSITIONS, GLOBAL_SETTINGS_KEYS, type BatchStatusEntry, type BatchStatusResponse, type BatchStatusResult, type IssueInfo, type PrInfo, type Task, getCurrentRepo, isGhAuthenticated, AutomationStore, validateBackupSchedule, validateBackupRetention, validateBackupDir, syncBackupAutomation, exportSettings, importSettings, validateImportData, MessageStore, MEMORY_FILE_PATH, RoutineStore, isWebhookTrigger, resolveMemoryBackend, getMemoryBackendCapabilities, listMemoryBackendTypes, readMemory, writeMemory, MemoryBackendError } from "@fusion/core";
 import type { ServerOptions } from "./server.js";
 import { GitHubClient, parseBadgeUrl } from "./github.js";
 import { githubRateLimiter } from "./github-poll.js";
@@ -1987,6 +1987,15 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         throw badRequest("autoBackupDir must be a relative path without '..' traversal");
       }
 
+      // Validate memoryBackendType if provided - must be string or null (for explicit clear)
+      // Unknown backend IDs are accepted and persisted verbatim (for custom backend compatibility)
+      // Fallback-to-file is runtime resolution behavior only
+      if (clientSettings.memoryBackendType !== undefined) {
+        if (clientSettings.memoryBackendType !== null && typeof clientSettings.memoryBackendType !== "string") {
+          throw badRequest("memoryBackendType must be a string or null");
+        }
+      }
+
       const settings = await scopedStore.updateSettings(clientSettings);
       
       // Sync backup automation schedule when backup settings change
@@ -2016,30 +2025,47 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
 
   /**
    * GET /api/memory
-   * Returns the project memory file content.
-   * If .fusion/memory.md does not exist yet, returns an empty string.
+   * Returns the project memory file content using the configured backend.
+   * If memory does not exist yet, returns an empty string.
+   *
+   * Uses backend-aware read via `readMemory()` which delegates to the
+   * configured memory backend (file, readonly, qmd, etc.).
    */
   router.get("/memory", async (req, res) => {
     try {
       const { store: scopedStore } = await getProjectContext(req);
-      const memory = await readProjectFile(scopedStore, MEMORY_FILE_PATH);
-      res.json({ content: memory.content });
+      const settings = await scopedStore.getSettings();
+      const rootDir = scopedStore.getRootDir();
+
+      // Use backend-aware memory read
+      const result = await readMemory(rootDir, settings);
+      res.json({ content: result.content });
     } catch (err: any) {
       if (err instanceof ApiError) {
         throw err;
       }
-      if (err instanceof FileServiceError && err.code === "ENOENT") {
-        res.json({ content: "" });
-        return;
-      }
+      // readMemory returns empty content for read failures (graceful degradation)
+      // so we should not normally get here for read operations
       rethrowAsApiError(err, "Failed to read memory");
     }
   });
 
   /**
    * PUT /api/memory
-   * Updates the project memory file content.
+   * Updates the project memory file content using the configured backend.
    * Body: { content: string }
+   *
+   * Uses backend-aware write via `writeMemory()` which delegates to the
+   * configured memory backend. Write-disabled backends (readonly) will
+   * return 409 Conflict.
+   *
+   * Error mapping:
+   * - READ_ONLY → 409 Conflict
+   * - BACKEND_UNAVAILABLE → 503 Service Unavailable
+   * - QUOTA_EXCEEDED → 413 Payload Too Large
+   * - UNSUPPORTED → 409 Conflict
+   * - CONFLICT → 409 Conflict
+   * - Other errors → 500 Internal Server Error
    */
   router.put("/memory", async (req, res) => {
     try {
@@ -2049,12 +2075,43 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
       }
 
       const { store: scopedStore } = await getProjectContext(req);
-      await writeProjectFile(scopedStore, MEMORY_FILE_PATH, content);
+      const settings = await scopedStore.getSettings();
+      const rootDir = scopedStore.getRootDir();
+
+      // Use backend-aware memory write with explicit error mapping
+      await writeMemory(rootDir, content, settings);
       res.json({ success: true });
     } catch (err: any) {
       if (err instanceof ApiError) {
         throw err;
       }
+
+      // Map MemoryBackendError codes to appropriate HTTP status codes
+      if (err instanceof MemoryBackendError) {
+        const details = { code: err.code, backend: err.backend };
+        switch (err.code) {
+          case "READ_ONLY":
+          case "UNSUPPORTED":
+          case "CONFLICT":
+            throw new ApiError(409, `Memory operation failed: ${err.message}`, details);
+          case "BACKEND_UNAVAILABLE":
+            res.status(503).json({
+              error: `Memory backend unavailable: ${err.message}`,
+              ...details,
+            });
+            return;
+          case "QUOTA_EXCEEDED":
+            res.status(413).json({
+              error: `Memory quota exceeded: ${err.message}`,
+              ...details,
+            });
+            return;
+          default:
+            // READ_FAILED, WRITE_FAILED, NOT_FOUND, etc.
+            throw new ApiError(500, `Memory operation failed: ${err.message}`, details);
+        }
+      }
+
       rethrowAsApiError(err, "Failed to save memory");
     }
   });
@@ -2064,6 +2121,16 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
   /**
    * GET /api/memory/backend
    * Returns the current memory backend status and capabilities.
+   *
+   * The `currentBackend` field reflects the **effective** backend after runtime
+   * resolution. If a custom/unknown backend type is persisted in settings, it
+   * is returned as-is in the response, but `currentBackend` reflects the
+   * fallback backend (file) used at runtime.
+   *
+   * Response shape:
+   * - `currentBackend`: The effective backend type after runtime resolution
+   * - `capabilities`: The capabilities of the effective backend
+   * - `availableBackends`: List of registered backend types
    */
   router.get("/memory/backend", async (req, res) => {
     try {
