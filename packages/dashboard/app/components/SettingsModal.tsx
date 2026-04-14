@@ -1403,7 +1403,7 @@ export function SettingsModal({
                 }}
                 disabled={!form.specStalenessEnabled}
               />
-              <small>Maximum age in hours before a specification is considered stale. Default: 6 (21600000 ms). Stored as milliseconds internally.</small>
+              <small>Maximum age in hours before a specification is considered stale. Default: 6 hours.</small>
             </div>
             <div className="form-group">
               <label htmlFor="maxStuckKills">Max Stuck Retries</label>
