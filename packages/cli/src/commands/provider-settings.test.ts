@@ -9,23 +9,17 @@ function writeJson(path: string, value: Record<string, unknown>): void {
 }
 
 describe("createReadOnlyProviderSettingsView", () => {
-  it("reads provider package settings from .pi and .fusion with .fusion taking precedence", () => {
+  it("reads provider package settings from .fusion/settings.json", () => {
     const root = mkdtempSync(join(tmpdir(), "fusion-provider-settings-"));
     const cwd = join(root, "project");
     const agentDir = join(root, "agent");
 
-    mkdirSync(join(cwd, ".pi"), { recursive: true });
     mkdirSync(join(cwd, ".fusion"), { recursive: true });
     mkdirSync(agentDir, { recursive: true });
 
     writeJson(join(agentDir, "settings.json"), {
       npmCommand: ["pnpm"],
       globalOnly: true,
-    });
-    writeJson(join(cwd, ".pi", "settings.json"), {
-      npmCommand: ["npm"],
-      extensions: [{ name: "pi-provider", enabled: true }],
-      shared: "pi",
     });
     writeJson(join(cwd, ".fusion", "settings.json"), {
       extensions: [{ name: "fusion-provider", enabled: true }],
@@ -42,26 +36,24 @@ describe("createReadOnlyProviderSettingsView", () => {
       extensions: [{ name: "fusion-provider", enabled: true }],
       shared: "fusion",
     });
-    expect(view.getNpmCommand()).toEqual(["npm"]);
+    expect(view.getNpmCommand()).toEqual(["pnpm"]);
   });
 
-  it("falls back to .pi settings when .fusion settings do not exist", () => {
+  it("returns empty project settings when .fusion/settings.json does not exist", () => {
     const root = mkdtempSync(join(tmpdir(), "fusion-provider-settings-"));
     const cwd = join(root, "project");
     const agentDir = join(root, "agent");
 
-    mkdirSync(join(cwd, ".pi"), { recursive: true });
     mkdirSync(agentDir, { recursive: true });
 
-    writeJson(join(cwd, ".pi", "settings.json"), {
-      extensions: [{ name: "pi-provider", enabled: true }],
+    writeJson(join(agentDir, "settings.json"), {
+      npmCommand: ["pnpm"],
     });
 
     const view = createReadOnlyProviderSettingsView(cwd, agentDir);
 
-    expect(view.getProjectSettings()).toMatchObject({
-      extensions: [{ name: "pi-provider", enabled: true }],
-    });
+    expect(view.getProjectSettings()).toEqual({});
+    expect(view.getNpmCommand()).toEqual(["pnpm"]);
   });
 });
 
@@ -85,26 +77,7 @@ describe("createProjectSettingsPersistence", () => {
     });
   });
 
-  it("falls back to .pi/settings.json when .fusion/settings.json does not exist", () => {
-    const root = mkdtempSync(join(tmpdir(), "fusion-provider-settings-"));
-    const cwd = join(root, "project");
-
-    mkdirSync(join(cwd, ".pi"), { recursive: true });
-    writeJson(join(cwd, ".pi", "settings.json"), {
-      skills: ["-other-skill"],
-      npmCommand: ["npm"],
-    });
-
-    const persistence = createProjectSettingsPersistence(cwd);
-    const settings = persistence.read();
-
-    expect(settings).toEqual({
-      skills: ["-other-skill"],
-      npmCommand: ["npm"],
-    });
-  });
-
-  it("returns empty object when neither settings file exists", () => {
+  it("returns empty object when .fusion/settings.json does not exist", () => {
     const root = mkdtempSync(join(tmpdir(), "fusion-provider-settings-"));
     const cwd = join(root, "project");
 

@@ -22,14 +22,12 @@ function readJsonObject(path: string): Record<string, any> {
 
 export function createReadOnlyProviderSettingsView(cwd: string, agentDir: string): PackageManagerSettingsView {
   const globalSettings = readJsonObject(join(agentDir, "settings.json"));
-  const legacyProjectSettings = readJsonObject(join(cwd, ".pi", "settings.json"));
   const fusionProjectSettings = readJsonObject(join(cwd, ".fusion", "settings.json"));
-  const projectSettings = { ...legacyProjectSettings, ...fusionProjectSettings };
-  const mergedSettings = { ...globalSettings, ...projectSettings };
+  const mergedSettings = { ...globalSettings, ...fusionProjectSettings };
 
   return {
     getGlobalSettings: () => structuredClone(globalSettings),
-    getProjectSettings: () => structuredClone(projectSettings),
+    getProjectSettings: () => structuredClone(fusionProjectSettings),
     getNpmCommand: () => Array.isArray(mergedSettings.npmCommand)
       ? [...mergedSettings.npmCommand]
       : undefined,
@@ -39,8 +37,7 @@ export function createReadOnlyProviderSettingsView(cwd: string, agentDir: string
 /**
  * Project settings persistence helper.
  *
- * Reads from and writes to `.fusion/settings.json` with fallback to `.pi/settings.json`
- * for backward compatibility. Changes are always written to `.fusion/settings.json`.
+ * Reads from and writes to `.fusion/settings.json`.
  *
  * @param projectPath - Absolute path to the project root
  * @returns Object with read/write methods for project settings
@@ -54,23 +51,13 @@ export function createProjectSettingsPersistence(projectPath: string): {
   getSettingsPath(): string;
 } {
   const fusionSettingsPath = join(projectPath, ".fusion", "settings.json");
-  const legacySettingsPath = join(projectPath, ".pi", "settings.json");
 
   function readSettings(): Record<string, any> {
-    // Try .fusion first
     if (existsSync(fusionSettingsPath)) {
       try {
         return JSON.parse(readFileSync(fusionSettingsPath, "utf-8")) as Record<string, any>;
       } catch {
-        // Fall through to legacy
-      }
-    }
-    // Fall back to .pi
-    if (existsSync(legacySettingsPath)) {
-      try {
-        return JSON.parse(readFileSync(legacySettingsPath, "utf-8")) as Record<string, any>;
-      } catch {
-        // Return empty
+        // Return empty on parse error
       }
     }
     return {};

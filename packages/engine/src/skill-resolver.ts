@@ -104,24 +104,14 @@ function readJsonObject(path: string): Record<string, unknown> {
 }
 
 /**
- * Read project settings from .fusion/settings.json with .pi/settings.json fallback.
+ * Read project settings from .fusion/settings.json.
  */
 function readProjectSettings(projectRootDir: string): ProjectSkillSettings {
   const fusionSettings = join(projectRootDir, ".fusion", "settings.json");
-  const legacySettings = join(projectRootDir, ".pi", "settings.json");
 
-  // Try .fusion first, then .pi
   if (existsSync(fusionSettings)) {
     const parsed = readJsonObject(fusionSettings);
     // Only return skill-relevant fields
-    return {
-      skills: Array.isArray(parsed.skills) ? (parsed.skills as string[]) : undefined,
-      packages: Array.isArray(parsed.packages) ? (parsed.packages as Array<string | { source: string; skills?: string[] }>) : undefined,
-    };
-  }
-
-  if (existsSync(legacySettings)) {
-    const parsed = readJsonObject(legacySettings);
     return {
       skills: Array.isArray(parsed.skills) ? (parsed.skills as string[]) : undefined,
       packages: Array.isArray(parsed.packages) ? (parsed.packages as Array<string | { source: string; skills?: string[] }>) : undefined,

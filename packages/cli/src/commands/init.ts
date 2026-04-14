@@ -8,7 +8,7 @@
  * Idempotent: if already initialized, reports success without recreating.
  */
 
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { join, resolve, basename } from "node:path";
 import { homedir } from "node:os";
 import { exec } from "node:child_process";
@@ -74,6 +74,9 @@ export async function runInit(options: InitOptions = {}): Promise<void> {
     mkdirSync(fusionDir, { recursive: true });
     console.log(`  ✓ Created .fusion/ directory`);
   }
+
+  // Add .fusion to .gitignore
+  await addFusionToGitignore(cwd);
 
   // Create fusion.db (empty SQLite file)
   if (!existsSync(dbPath)) {
@@ -158,4 +161,37 @@ async function detectProjectName(dir: string): Promise<string> {
 
   // Fallback to directory name
   return basename(dir) || "my-project";
+}
+
+/**
+ * Add .fusion to .gitignore if not already present.
+ * Idempotent: only adds if not already in the file.
+ */
+async function addFusionToGitignore(cwd: string): Promise<void> {
+  const gitignorePath = join(cwd, ".gitignore");
+
+  let content = "";
+  if (existsSync(gitignorePath)) {
+    try {
+      content = readFileSync(gitignorePath, "utf-8");
+    } catch {
+      // Best-effort: if we can't read, treat as empty
+    }
+  }
+
+  // Check if .fusion is already in the file
+  const lines = content.split(/\r?\n/);
+  if (lines.some((line) => line.trim() === ".fusion")) {
+    return; // Already present, skip
+  }
+
+  // Append .fusion to .gitignore
+  const newContent = content.endsWith("\n") ? content + ".fusion\n" : content + "\n.fusion\n";
+  try {
+    writeFileSync(gitignorePath, newContent);
+    console.log(`  ✓ Added .fusion to .gitignore`);
+  } catch {
+    // Best-effort: don't fail init if we can't write to .gitignore
+    console.log(`  ⚠ Could not update .gitignore (best-effort)`);
+  }
 }

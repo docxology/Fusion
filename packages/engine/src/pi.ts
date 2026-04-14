@@ -221,14 +221,12 @@ function readJsonObject(path: string): Record<string, any> {
 
 function createReadOnlyPiSettingsView(cwd: string, agentDir: string): PackageManagerSettingsView {
   const globalSettings = readJsonObject(join(agentDir, "settings.json"));
-  const legacyProjectSettings = readJsonObject(join(cwd, ".pi", "settings.json"));
   const fusionProjectSettings = readJsonObject(join(cwd, ".fusion", "settings.json"));
-  const projectSettings = { ...legacyProjectSettings, ...fusionProjectSettings };
-  const mergedSettings = { ...globalSettings, ...projectSettings };
+  const mergedSettings = { ...globalSettings, ...fusionProjectSettings };
 
   return {
     getGlobalSettings: () => structuredClone(globalSettings),
-    getProjectSettings: () => structuredClone(projectSettings),
+    getProjectSettings: () => structuredClone(fusionProjectSettings),
     getNpmCommand: () => Array.isArray(mergedSettings.npmCommand)
       ? [...mergedSettings.npmCommand]
       : undefined,

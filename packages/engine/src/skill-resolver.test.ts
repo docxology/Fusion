@@ -297,41 +297,17 @@ describe("resolveSessionSkills", () => {
     });
   });
 
-  describe("reads from .fusion/settings.json primary and .pi/settings.json fallback", () => {
-    it("prefers .fusion/settings.json over .pi/settings.json", () => {
-      const dir = createMockProjectDir(null);
-
-      // Create .pi/settings.json (legacy)
-      mockFiles.set(`${dir}/.pi/settings.json`, JSON.stringify({
-        skills: ["+skills/legacy/SKILL.md"],
-      }));
-
-      // Create .fusion/settings.json (newer, should win)
-      mockFiles.set(`${dir}/.fusion/settings.json`, JSON.stringify({
+  describe("reads from .fusion/settings.json only", () => {
+    it("reads from .fusion/settings.json", () => {
+      const dir = createMockProjectDir({
         skills: ["+skills/fusion/SKILL.md"],
-      }));
+      });
 
       const result = resolveSessionSkills({
         projectRootDir: dir,
       });
 
       expect(result.allowedSkillPaths.has("skills/fusion/SKILL.md")).toBe(true);
-      expect(result.allowedSkillPaths.has("skills/legacy/SKILL.md")).toBe(false);
-    });
-
-    it("falls back to .pi/settings.json when .fusion/settings.json doesn't exist", () => {
-      const dir = createMockProjectDir(null);
-
-      // Create only .pi/settings.json (legacy)
-      mockFiles.set(`${dir}/.pi/settings.json`, JSON.stringify({
-        skills: ["+skills/legacy/SKILL.md"],
-      }));
-
-      const result = resolveSessionSkills({
-        projectRootDir: dir,
-      });
-
-      expect(result.allowedSkillPaths.has("skills/legacy/SKILL.md")).toBe(true);
     });
   });
 

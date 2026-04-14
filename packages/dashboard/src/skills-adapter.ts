@@ -576,24 +576,14 @@ function normalizeEntry(entry: unknown): CatalogEntry {
 }
 
 /**
- * Read project settings from .fusion/settings.json with fallback to .pi/settings.json.
+ * Read project settings from .fusion/settings.json.
  */
 export function readProjectSettings(projectPath: string): Record<string, unknown> {
   const fusionSettings = join(projectPath, ".fusion", "settings.json");
-  const legacySettings = join(projectPath, ".pi", "settings.json");
 
-  // Try .fusion first, then .pi
   if (existsSync(fusionSettings)) {
     try {
       return JSON.parse(readFileSync(fusionSettings, "utf-8")) as Record<string, unknown>;
-    } catch {
-      // Fall through to legacy
-    }
-  }
-
-  if (existsSync(legacySettings)) {
-    try {
-      return JSON.parse(readFileSync(legacySettings, "utf-8")) as Record<string, unknown>;
     } catch {
       // Return empty on parse error
     }

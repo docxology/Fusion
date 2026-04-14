@@ -238,8 +238,6 @@ function getAuthFileCandidates(): string[] {
     path.join(home, ".fusion", "auth.json"),
     path.join(process.cwd(), ".fusion", "agent", "auth.json"),
     path.join(process.cwd(), ".fusion", "auth.json"),
-    path.join(process.cwd(), ".pi", "agent", "auth.json"),
-    path.join(process.cwd(), ".pi", "auth.json"),
   ];
 }
 

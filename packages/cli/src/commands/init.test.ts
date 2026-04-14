@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtempSync, existsSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, existsSync, rmSync, writeFileSync, mkdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runInit } from "./init.js";
@@ -122,5 +122,39 @@ describe("init command", () => {
 
     expect(existsSync(fusionDir)).toBe(true);
     expect(existsSync(join(fusionDir, "fusion.db"))).toBe(true);
+  });
+
+  it("should add .fusion to .gitignore when it doesn't exist", async () => {
+    const gitignorePath = join(tempProjectDir, ".gitignore");
+    expect(existsSync(gitignorePath)).toBe(false);
+
+    await runInit({ path: tempProjectDir });
+
+    expect(existsSync(gitignorePath)).toBe(true);
+    const content = readFileSync(gitignorePath, "utf-8");
+    expect(content).toContain(".fusion");
+  });
+
+  it("should append .fusion to existing .gitignore", async () => {
+    const gitignorePath = join(tempProjectDir, ".gitignore");
+    writeFileSync(gitignorePath, "node_modules\ndist\n");
+
+    await runInit({ path: tempProjectDir });
+
+    const content = readFileSync(gitignorePath, "utf-8");
+    expect(content).toContain("node_modules");
+    expect(content).toContain("dist");
+    expect(content).toContain(".fusion");
+  });
+
+  it("should not duplicate .fusion in .gitignore (idempotent)", async () => {
+    const gitignorePath = join(tempProjectDir, ".gitignore");
+    writeFileSync(gitignorePath, "node_modules\n.fusion\n");
+
+    await runInit({ path: tempProjectDir });
+
+    const content = readFileSync(gitignorePath, "utf-8");
+    const fusionMatches = content.match(/\.fusion/g);
+    expect(fusionMatches).toHaveLength(1);
   });
 });
