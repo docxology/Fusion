@@ -3401,56 +3401,97 @@ body {
 }
 
 /* === Auth Provider Cards === */
-.auth-provider-row {
+.auth-section-hint {
+  padding: 12px 16px;
+  margin-bottom: 12px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius);
+  font-size: 13px;
+  color: var(--text-muted);
+  border-left: 3px solid var(--text-muted);
+}
+.auth-provider-group {
+  margin-bottom: 16px;
+}
+.auth-group-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  padding: 0 4px;
+}
+.auth-provider-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  margin-bottom: 8px;
+  overflow: hidden;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+.auth-provider-card:hover {
+  border-color: var(--text-dim);
+}
+.auth-provider-card--authenticated {
+  border-color: color-mix(in srgb, var(--color-success) 40%, var(--border));
+  background: color-mix(in srgb, var(--color-success) 5%, var(--surface));
+}
+.auth-provider-card--authenticated:hover {
+  border-color: color-mix(in srgb, var(--color-success) 60%, var(--border));
+}
+.auth-provider-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 20px;
-  margin: 0;
-  border-bottom: 1px solid var(--border);
-  transition: background var(--transition-fast);
-}
-.auth-provider-row:hover {
-  background: rgba(255, 255, 255, 0.02);
-}
-.auth-provider-row:last-of-type {
-  border-bottom: none;
+  padding: 12px 16px;
+  gap: 12px;
 }
 .auth-provider-info {
   display: flex;
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
+  flex: 1;
+  min-width: 0;
+}
+.auth-provider-info strong {
+  font-weight: 500;
+  color: var(--text);
 }
 .auth-status-badge {
   display: inline-flex;
   align-items: center;
   gap: var(--space-xs);
-  padding: 2px 8px;
+  padding: 3px 8px;
   border-radius: var(--radius-pill);
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.3px;
+  white-space: nowrap;
 }
 .auth-status-badge.authenticated {
-  background: rgba(63, 185, 80, 0.15);
+  background: color-mix(in srgb, var(--color-success) 20%, transparent);
   color: var(--color-success);
 }
 .auth-status-badge.not-authenticated {
-  background: rgba(248, 81, 73, 0.15);
+  background: color-mix(in srgb, var(--color-error) 15%, transparent);
   color: var(--color-error);
 }
 .auth-hint {
   display: block;
-  padding: 10px 20px 0;
+  padding: 12px 4px 0;
   font-size: 12px;
   color: var(--text-muted);
+  border-top: 1px solid var(--border);
+  margin-top: 8px;
 }
 .auth-apikey-section {
   display: flex;
   flex-direction: column;
   gap: 4px;
   align-items: flex-end;
+  flex-shrink: 0;
 }
 .auth-apikey-input-row {
   display: flex;
@@ -3462,9 +3503,9 @@ body {
   border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--text);
-  padding: 5px 10px;
+  padding: 6px 10px;
   font-size: 13px;
-  width: 200px;
+  width: 180px;
   font-family: monospace;
 }
 .auth-apikey-input:focus {
@@ -3476,12 +3517,12 @@ body {
   opacity: 0.6;
 }
 .auth-apikey-progress {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-muted);
   padding-right: 4px;
 }
 .auth-apikey-error {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--color-error);
   padding-right: 4px;
 }
@@ -6746,6 +6787,58 @@ body {
     flex-wrap: wrap;
     padding: 12px 14px;
     gap: var(--space-sm);
+  }
+
+  .auth-section-hint {
+    margin: 0 14px 12px;
+    padding: 10px 14px;
+  }
+
+  .auth-provider-group {
+    margin-bottom: 12px;
+  }
+
+  .auth-group-label {
+    padding: 0 14px;
+  }
+
+  .auth-provider-card {
+    margin: 0 14px 8px;
+  }
+
+  .auth-provider-header {
+    flex-wrap: wrap;
+    padding: 10px 14px;
+    gap: 10px;
+  }
+
+  .auth-provider-info {
+    width: 100%;
+    flex-basis: 100%;
+  }
+
+  .auth-apikey-section {
+    width: 100%;
+    flex-basis: 100%;
+    align-items: stretch;
+  }
+
+  .auth-apikey-input-row {
+    flex-wrap: wrap;
+  }
+
+  .auth-apikey-input {
+    flex: 1;
+    min-width: 120px;
+    width: auto;
+  }
+
+  .auth-apikey-input-row .btn {
+    flex-shrink: 0;
+  }
+
+  .auth-hint {
+    padding: 12px 14px 0;
   }
 
   .backup-list ul {

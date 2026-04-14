@@ -1096,7 +1096,7 @@ describe("SettingsModal", () => {
     await waitFor(() => expect(fetchAuthStatus).toHaveBeenCalled());
 
     expect(screen.getByText("Anthropic")).toBeTruthy();
-    expect(screen.getByText("✗ Not authenticated")).toBeTruthy();
+    expect(screen.getByText("✗ Not connected")).toBeTruthy();
   });
 
   it("shows authenticated status with checkmark", async () => {
@@ -1110,7 +1110,7 @@ describe("SettingsModal", () => {
     fireEvent.click(screen.getAllByText("Authentication")[0]);
     await waitFor(() => expect(fetchAuthStatus).toHaveBeenCalled());
 
-    expect(screen.getByText("✓ Authenticated")).toBeTruthy();
+    expect(screen.getByText("✓ Active")).toBeTruthy();
     expect(screen.getByText("Logout")).toBeTruthy();
   });
 
@@ -1174,14 +1174,92 @@ describe("SettingsModal", () => {
     expect(unauthBadge.className).toContain("not-authenticated");
   });
 
-  it("auth provider rows use auth-provider-row class", async () => {
+  it("renders authenticated providers before unauthenticated when API returns mixed order", async () => {
+    // API returns GitHub first (authenticated) and Anthropic second (not authenticated)
+    (fetchAuthStatus as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      providers: [
+        { id: "github", name: "GitHub", authenticated: true },
+        { id: "anthropic", name: "Anthropic", authenticated: false },
+      ],
+    });
+
     render(<SettingsModal onClose={onClose} addToast={addToast} />);
     await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
 
     fireEvent.click(screen.getAllByText("Authentication")[0]);
     await waitFor(() => expect(fetchAuthStatus).toHaveBeenCalled());
 
-    const providerRow = screen.getByText("Anthropic").closest(".auth-provider-row");
+    // GitHub (authenticated) should appear first
+    const container = document.body;
+    const cards = container.querySelectorAll(".auth-provider-card");
+    expect(cards.length).toBe(2);
+
+    // First card should be GitHub (authenticated) - check by looking for "GitHub" text in first card
+    const firstCardText = cards[0].textContent;
+    expect(firstCardText).toContain("GitHub");
+    expect(firstCardText).toContain("✓ Active");
+
+    // Second card should be Anthropic (unauthenticated)
+    const secondCardText = cards[1].textContent;
+    expect(secondCardText).toContain("Anthropic");
+    expect(secondCardText).toContain("✗ Not connected");
+  });
+
+  it("sorts providers alphabetically within each auth-state bucket", async () => {
+    // API returns in reverse alphabetical order
+    (fetchAuthStatus as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      providers: [
+        { id: "zod", name: "Zod", authenticated: false },
+        { id: "anthropic", name: "Anthropic", authenticated: false },
+        { id: "azure", name: "Azure", authenticated: false },
+      ],
+    });
+
+    render(<SettingsModal onClose={onClose} addToast={addToast} />);
+    await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
+
+    fireEvent.click(screen.getAllByText("Authentication")[0]);
+    await waitFor(() => expect(fetchAuthStatus).toHaveBeenCalled());
+
+    const cards = document.body.querySelectorAll(".auth-provider-card");
+    expect(cards.length).toBe(3);
+
+    // Should be sorted alphabetically: Anthropic, Azure, Zod
+    const names = Array.from(cards).map(card => {
+      const strong = card.querySelector("strong");
+      return strong?.textContent;
+    });
+    expect(names).toEqual(["Anthropic", "Azure", "Zod"]);
+  });
+
+  it("renders Authenticated and Available group labels in auth section", async () => {
+    (fetchAuthStatus as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      providers: [
+        { id: "anthropic", name: "Anthropic", authenticated: true },
+        { id: "github", name: "GitHub", authenticated: false },
+      ],
+    });
+
+    render(<SettingsModal onClose={onClose} addToast={addToast} />);
+    await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
+
+    fireEvent.click(screen.getAllByText("Authentication")[0]);
+    await waitFor(() => expect(fetchAuthStatus).toHaveBeenCalled());
+
+    // Should show "Authenticated" group label (authenticated providers)
+    expect(screen.getAllByText("Authenticated").length).toBeGreaterThanOrEqual(1);
+    // Should show "Available" group label (unauthenticated providers)
+    expect(screen.getAllByText("Available").length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("auth provider rows use auth-provider-card class", async () => {
+    render(<SettingsModal onClose={onClose} addToast={addToast} />);
+    await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
+
+    fireEvent.click(screen.getAllByText("Authentication")[0]);
+    await waitFor(() => expect(fetchAuthStatus).toHaveBeenCalled());
+
+    const providerRow = screen.getByText("Anthropic").closest(".auth-provider-card");
     expect(providerRow).toBeTruthy();
   });
 
@@ -1326,7 +1404,7 @@ describe("SettingsModal", () => {
     fireEvent.click(screen.getAllByText("Authentication")[0]);
     await waitFor(() => expect(fetchAuthStatus).toHaveBeenCalled());
 
-    expect(screen.getByText("Sign in to at least one provider to get started.")).toBeTruthy();
+    expect(screen.getByText("Sign in to at least one provider to get started with AI models.")).toBeTruthy();
     // Provider rows should still be visible
     expect(screen.getByText("Anthropic")).toBeTruthy();
     expect(screen.getByText("GitHub")).toBeTruthy();
@@ -1346,7 +1424,7 @@ describe("SettingsModal", () => {
     fireEvent.click(screen.getAllByText("Authentication")[0]);
     await waitFor(() => expect(fetchAuthStatus).toHaveBeenCalled());
 
-    expect(screen.queryByText("Sign in to at least one provider to get started.")).toBeNull();
+    expect(screen.queryByText("Sign in to at least one provider to get started with AI models.")).toBeNull();
     // Provider rows should still be visible
     expect(screen.getByText("Anthropic")).toBeTruthy();
     expect(screen.getByText("GitHub")).toBeTruthy();
@@ -1687,7 +1765,7 @@ describe("SettingsModal", () => {
     fireEvent.click(screen.getAllByText("Authentication")[0]);
     await waitFor(() => expect(fetchAuthStatus).toHaveBeenCalled());
 
-    const rows = container.querySelectorAll(".auth-provider-row");
+    const rows = container.querySelectorAll(".auth-provider-card");
     expect(rows.length).toBe(2);
 
     for (const row of rows) {

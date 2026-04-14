@@ -2088,6 +2088,16 @@ export function SettingsModal({
           </>
         );
       case "authentication":
+        // Sort providers: authenticated first, then unauthenticated. Within each bucket, sort alphabetically by name.
+        const sortedProviders = [...authProviders].sort((a, b) => {
+          if (a.authenticated !== b.authenticated) {
+            return a.authenticated ? -1 : 1;
+          }
+          return a.name.localeCompare(b.name);
+        });
+        const authenticatedProviders = sortedProviders.filter(p => p.authenticated);
+        const unauthenticatedProviders = sortedProviders.filter(p => !p.authenticated);
+
         return (
           <>
             <h4 className="settings-section-heading">Authentication</h4>
@@ -2099,83 +2109,145 @@ export function SettingsModal({
               </div>
             ) : (
               <>
-              {!authProviders.some(p => p.authenticated) && (
-                <div className="settings-empty-state settings-muted">
-                  Sign in to at least one provider to get started.
+              {authenticatedProviders.length === 0 && (
+                <div className="auth-section-hint">
+                  Sign in to at least one provider to get started with AI models.
                 </div>
               )}
-              {authProviders.map((provider) => (
-                <div key={provider.id} className="auth-provider-row">
-                  <div className="auth-provider-info">
-                    <strong>{provider.name}</strong>
-                    <span
-                      data-testid={`auth-status-${provider.id}`}
-                      className={`auth-status-badge ${provider.authenticated ? "authenticated" : "not-authenticated"}`}
-                    >
-                      {provider.authenticated ? "✓ Authenticated" : "✗ Not authenticated"}
-                    </span>
-                  </div>
-                  {provider.type === "api_key" ? (
-                    <div className="auth-apikey-section">
-                      <div className="auth-apikey-input-row">
-                        <input
-                          type="password"
-                          className="auth-apikey-input"
-                          placeholder="Enter API key"
-                          value={apiKeyInputs[provider.id] ?? ""}
-                          onChange={(e) => setApiKeyInputs((prev) => ({ ...prev, [provider.id]: e.target.value }))}
-                          disabled={authActionInProgress === provider.id}
-                        />
-                        {provider.authenticated && !apiKeyInputs[provider.id] ? (
-                          <button
-                            className="btn btn-sm"
-                            onClick={() => handleClearApiKey(provider.id)}
-                            disabled={authActionInProgress === provider.id}
+              {authenticatedProviders.length > 0 && (
+                <div className="auth-provider-group">
+                  <div className="auth-group-label">Authenticated</div>
+                  {authenticatedProviders.map((provider) => (
+                    <div key={provider.id} className="auth-provider-card auth-provider-card--authenticated">
+                      <div className="auth-provider-header">
+                        <div className="auth-provider-info">
+                          <strong>{provider.name}</strong>
+                          <span
+                            data-testid={`auth-status-${provider.id}`}
+                            className={`auth-status-badge ${provider.authenticated ? "authenticated" : "not-authenticated"}`}
                           >
-                            Clear
-                          </button>
+                            ✓ Active
+                          </span>
+                        </div>
+                        {provider.type === "api_key" ? (
+                          <div className="auth-apikey-section">
+                            <div className="auth-apikey-input-row">
+                              <input
+                                type="password"
+                                className="auth-apikey-input"
+                                placeholder="Enter API key"
+                                value={apiKeyInputs[provider.id] ?? ""}
+                                onChange={(e) => setApiKeyInputs((prev) => ({ ...prev, [provider.id]: e.target.value }))}
+                                disabled={authActionInProgress === provider.id}
+                              />
+                              {provider.authenticated && !apiKeyInputs[provider.id] ? (
+                                <button
+                                  className="btn btn-sm"
+                                  onClick={() => handleClearApiKey(provider.id)}
+                                  disabled={authActionInProgress === provider.id}
+                                >
+                                  Clear
+                                </button>
+                              ) : (
+                                <button
+                                  className="btn btn-primary btn-sm"
+                                  onClick={() => handleSaveApiKey(provider.id)}
+                                  disabled={authActionInProgress === provider.id}
+                                >
+                                  Save
+                                </button>
+                              )}
+                            </div>
+                            {authActionInProgress === provider.id && (
+                              <small className="auth-apikey-progress">Saving…</small>
+                            )}
+                            {apiKeyErrors[provider.id] && (
+                              <small className="auth-apikey-error">{apiKeyErrors[provider.id]}</small>
+                            )}
+                          </div>
                         ) : (
-                          <button
-                            className="btn btn-primary btn-sm"
-                            onClick={() => handleSaveApiKey(provider.id)}
-                            disabled={authActionInProgress === provider.id}
-                          >
-                            Save
-                          </button>
+                          <div>
+                            {authActionInProgress === provider.id ? (
+                              <button className="btn btn-sm" disabled>
+                                Logging out…
+                              </button>
+                            ) : (
+                              <button
+                                className="btn btn-sm"
+                                onClick={() => handleLogout(provider.id)}
+                              >
+                                Logout
+                              </button>
+                            )}
+                          </div>
                         )}
                       </div>
-                      {authActionInProgress === provider.id && (
-                        <small className="auth-apikey-progress">Saving…</small>
-                      )}
-                      {apiKeyErrors[provider.id] && (
-                        <small className="auth-apikey-error">{apiKeyErrors[provider.id]}</small>
-                      )}
                     </div>
-                  ) : (
-                    <div>
-                      {authActionInProgress === provider.id ? (
-                        <button className="btn btn-sm" disabled>
-                          {provider.authenticated ? "Logging out…" : "Waiting for login…"}
-                        </button>
-                      ) : provider.authenticated ? (
-                        <button
-                          className="btn btn-sm"
-                          onClick={() => handleLogout(provider.id)}
-                        >
-                          Logout
-                        </button>
-                      ) : (
-                        <button
-                          className="btn btn-primary btn-sm"
-                          onClick={() => handleLogin(provider.id)}
-                        >
-                          Login
-                        </button>
-                      )}
-                    </div>
-                  )}
+                  ))}
                 </div>
-              ))}
+              )}
+              {unauthenticatedProviders.length > 0 && (
+                <div className="auth-provider-group">
+                  <div className="auth-group-label">Available</div>
+                  {unauthenticatedProviders.map((provider) => (
+                    <div key={provider.id} className="auth-provider-card">
+                      <div className="auth-provider-header">
+                        <div className="auth-provider-info">
+                          <strong>{provider.name}</strong>
+                          <span
+                            data-testid={`auth-status-${provider.id}`}
+                            className={`auth-status-badge ${provider.authenticated ? "authenticated" : "not-authenticated"}`}
+                          >
+                            ✗ Not connected
+                          </span>
+                        </div>
+                        {provider.type === "api_key" ? (
+                          <div className="auth-apikey-section">
+                            <div className="auth-apikey-input-row">
+                              <input
+                                type="password"
+                                className="auth-apikey-input"
+                                placeholder="Enter API key"
+                                value={apiKeyInputs[provider.id] ?? ""}
+                                onChange={(e) => setApiKeyInputs((prev) => ({ ...prev, [provider.id]: e.target.value }))}
+                                disabled={authActionInProgress === provider.id}
+                              />
+                              <button
+                                className="btn btn-primary btn-sm"
+                                onClick={() => handleSaveApiKey(provider.id)}
+                                disabled={authActionInProgress === provider.id}
+                              >
+                                Save
+                              </button>
+                            </div>
+                            {authActionInProgress === provider.id && (
+                              <small className="auth-apikey-progress">Saving…</small>
+                            )}
+                            {apiKeyErrors[provider.id] && (
+                              <small className="auth-apikey-error">{apiKeyErrors[provider.id]}</small>
+                            )}
+                          </div>
+                        ) : (
+                          <div>
+                            {authActionInProgress === provider.id ? (
+                              <button className="btn btn-sm" disabled>
+                                Waiting for login…
+                              </button>
+                            ) : (
+                              <button
+                                className="btn btn-primary btn-sm"
+                                onClick={() => handleLogin(provider.id)}
+                              >
+                                Login
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
               </>
             )}
             <small className="auth-hint">
