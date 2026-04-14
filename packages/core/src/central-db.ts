@@ -196,6 +196,8 @@ export class CentralDatabase {
 
     // Enable WAL mode for concurrent reader/writer access
     this.db.exec("PRAGMA journal_mode = WAL");
+    // Wait up to 5s for locks to clear before returning SQLITE_BUSY
+    this.db.exec("PRAGMA busy_timeout = 5000");
     // Enable foreign key enforcement
     this.db.exec("PRAGMA foreign_keys = ON");
   }
