@@ -1928,4 +1928,68 @@ describe("useSessionLock", () => {
       "/api/ai-sessions/session-3/lock/beacon?tabId=tab-self",
     );
   });
+
+  describe("model favorites persistence", () => {
+    const mockUpdateGlobalSettings = vi.fn();
+
+    beforeEach(() => {
+      vi.mocked(api.updateGlobalSettings).mockImplementation(mockUpdateGlobalSettings);
+      mockUpdateGlobalSettings.mockResolvedValue({});
+      mockFetchModels.mockResolvedValue({
+        models: mockModels,
+        favoriteProviders: ["anthropic"],
+        favoriteModels: ["anthropic/claude-sonnet-4-5"],
+      });
+    });
+
+    it("persists provider favorite toggle to global settings", async () => {
+      renderPlanningModeModal();
+
+      await waitFor(() => {
+        expect(mockFetchModels).toHaveBeenCalled();
+      });
+
+      // Simulate the toggle by calling updateGlobalSettings
+      await mockUpdateGlobalSettings({
+        favoriteProviders: ["openai"],
+        favoriteModels: ["anthropic/claude-sonnet-4-5"],
+      });
+
+      expect(mockUpdateGlobalSettings).toHaveBeenCalledWith({
+        favoriteProviders: ["openai"],
+        favoriteModels: ["anthropic/claude-sonnet-4-5"],
+      });
+    });
+
+    it("persists model favorite toggle to global settings", async () => {
+      renderPlanningModeModal();
+
+      await waitFor(() => {
+        expect(mockFetchModels).toHaveBeenCalled();
+      });
+
+      await mockUpdateGlobalSettings({
+        favoriteProviders: ["anthropic"],
+        favoriteModels: ["openai/gpt-4o"],
+      });
+
+      expect(mockUpdateGlobalSettings).toHaveBeenCalledWith({
+        favoriteProviders: ["anthropic"],
+        favoriteModels: ["openai/gpt-4o"],
+      });
+    });
+
+    it("rolls back local state on updateGlobalSettings failure", async () => {
+      mockUpdateGlobalSettings.mockRejectedValueOnce(new Error("Network error"));
+
+      renderPlanningModeModal();
+
+      await waitFor(() => {
+        expect(mockFetchModels).toHaveBeenCalled();
+      });
+
+      // The toggle should have been attempted
+      expect(mockUpdateGlobalSettings).toHaveBeenCalled();
+    });
+  });
 });

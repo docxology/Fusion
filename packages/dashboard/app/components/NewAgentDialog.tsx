@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import type { AgentCapability, ModelInfo, AgentGenerationSpec } from "../api";
-import { createAgent, fetchModels } from "../api";
+import { createAgent, fetchModels, updateGlobalSettings } from "../api";
 import { CustomModelDropdown } from "./CustomModelDropdown";
 import { ProviderIcon } from "./ProviderIcon";
 import { AgentGenerationModal } from "./AgentGenerationModal";
@@ -114,8 +114,16 @@ export function NewAgentDialog({ isOpen, onClose, onCreated, projectId }: NewAge
     const newFavorites = isFavorite
       ? currentFavorites.filter(p => p !== provider)
       : [provider, ...currentFavorites];
+
     setFavoriteProviders(newFavorites);
-  }, [favoriteProviders]);
+
+    try {
+      await updateGlobalSettings({ favoriteProviders: newFavorites, favoriteModels });
+    } catch {
+      // Revert on error
+      setFavoriteProviders(currentFavorites);
+    }
+  }, [favoriteProviders, favoriteModels]);
 
   const handleToggleModelFavorite = useCallback(async (modelId: string) => {
     const currentFavorites = favoriteModels;
@@ -123,8 +131,16 @@ export function NewAgentDialog({ isOpen, onClose, onCreated, projectId }: NewAge
     const newFavorites = isFavorite
       ? currentFavorites.filter(m => m !== modelId)
       : [modelId, ...currentFavorites];
+
     setFavoriteModels(newFavorites);
-  }, [favoriteModels]);
+
+    try {
+      await updateGlobalSettings({ favoriteProviders, favoriteModels: newFavorites });
+    } catch {
+      // Revert on error
+      setFavoriteModels(currentFavorites);
+    }
+  }, [favoriteProviders, favoriteModels]);
 
   const handlePresetSelect = useCallback((preset: AgentPreset) => {
     setSelectedPresetId(preset.id);

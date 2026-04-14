@@ -10,6 +10,7 @@ import {
   fetchAiSession,
   parseConversationHistory,
   fetchModels,
+  updateGlobalSettings,
   type MissionPlanSummary,
   type ConversationHistoryEntry,
   type MissionPlanMilestone,
@@ -167,16 +168,36 @@ export function MissionInterviewModal({
   }, []);
 
   const handleToggleFavoriteProvider = useCallback((provider: string) => {
-    setFavoriteProviders((prev) =>
-      prev.includes(provider) ? prev.filter((item) => item !== provider) : [...prev, provider],
-    );
-  }, []);
+    setFavoriteProviders((prev) => {
+      const currentFavorites = prev;
+      const isFavorite = currentFavorites.includes(provider);
+      const newFavorites = isFavorite
+        ? currentFavorites.filter((item) => item !== provider)
+        : [provider, ...currentFavorites];
+
+      updateGlobalSettings({ favoriteProviders: newFavorites, favoriteModels }).catch(() => {
+        setFavoriteProviders(currentFavorites);
+      });
+
+      return newFavorites;
+    });
+  }, [favoriteModels]);
 
   const handleToggleFavoriteModel = useCallback((modelIdToToggle: string) => {
-    setFavoriteModels((prev) =>
-      prev.includes(modelIdToToggle) ? prev.filter((item) => item !== modelIdToToggle) : [...prev, modelIdToToggle],
-    );
-  }, []);
+    setFavoriteModels((prev) => {
+      const currentFavorites = prev;
+      const isFavorite = currentFavorites.includes(modelIdToToggle);
+      const newFavorites = isFavorite
+        ? currentFavorites.filter((item) => item !== modelIdToToggle)
+        : [modelIdToToggle, ...currentFavorites];
+
+      updateGlobalSettings({ favoriteProviders, favoriteModels: newFavorites }).catch(() => {
+        setFavoriteModels(currentFavorites);
+      });
+
+      return newFavorites;
+    });
+  }, [favoriteProviders]);
 
   const getModelBadgeLabel = useCallback(
     (provider?: string, mid?: string) => {

@@ -12,6 +12,7 @@ import {
   createTasksFromPlanning,
   fetchModels,
   cancelPlanning,
+  updateGlobalSettings,
   type PlanningSession,
   type SubtaskItem,
   type ModelInfo,
@@ -152,16 +153,36 @@ export function PlanningModeModal({ isOpen, onClose, onTaskCreated, onTasksCreat
   }, []);
 
   const handleToggleFavoriteProvider = useCallback((provider: string) => {
-    setFavoriteProviders((prev) =>
-      prev.includes(provider) ? prev.filter((item) => item !== provider) : [...prev, provider],
-    );
-  }, []);
+    setFavoriteProviders((prev) => {
+      const currentFavorites = prev;
+      const isFavorite = currentFavorites.includes(provider);
+      const newFavorites = isFavorite
+        ? currentFavorites.filter((item) => item !== provider)
+        : [provider, ...currentFavorites];
+
+      updateGlobalSettings({ favoriteProviders: newFavorites, favoriteModels }).catch(() => {
+        setFavoriteProviders(currentFavorites);
+      });
+
+      return newFavorites;
+    });
+  }, [favoriteModels]);
 
   const handleToggleFavoriteModel = useCallback((modelId: string) => {
-    setFavoriteModels((prev) =>
-      prev.includes(modelId) ? prev.filter((item) => item !== modelId) : [...prev, modelId],
-    );
-  }, []);
+    setFavoriteModels((prev) => {
+      const currentFavorites = prev;
+      const isFavorite = currentFavorites.includes(modelId);
+      const newFavorites = isFavorite
+        ? currentFavorites.filter((item) => item !== modelId)
+        : [modelId, ...currentFavorites];
+
+      updateGlobalSettings({ favoriteProviders, favoriteModels: newFavorites }).catch(() => {
+        setFavoriteModels(currentFavorites);
+      });
+
+      return newFavorites;
+    });
+  }, [favoriteProviders]);
 
   const connectToPlanningStream = useCallback(
     (sessionId: string) => {
