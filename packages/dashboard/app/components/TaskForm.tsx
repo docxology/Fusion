@@ -575,18 +575,23 @@ export function TaskForm({
             rows={mode === "edit" ? 8 : 5}
             disabled={disabled || isRefining}
           />
-          {!disabled && !isDescriptionExpanded && (
-            <button
-              type="button"
-              className="btn btn-sm description-expand-btn"
-              onClick={handleToggleDescriptionExpand}
-              aria-label="Expand description"
-              title="Expand description"
-            >
-              <Maximize2 size={14} />
-            </button>
-          )}
-          {description.trim() && !disabled && (
+          {/* Determine if refine button will be shown — controls expand button placement */}
+          {(() => {
+            const showRefineButton = Boolean(description.trim()) && !disabled;
+            return (
+              <>
+                {!isDescriptionExpanded && (
+                  <button
+                    type="button"
+                    className={`btn btn-sm description-expand-btn${showRefineButton ? " description-expand-btn--offset" : " description-expand-btn--flush"}`}
+                    onClick={handleToggleDescriptionExpand}
+                    aria-label="Expand description"
+                    title="Expand description"
+                  >
+                    <Maximize2 size={14} />
+                  </button>
+                )}
+                {showRefineButton && (
             <button
               type="button"
               className={`btn btn-sm refine-button ${isRefining ? "refine-button--loading" : ""}`}
@@ -598,7 +603,10 @@ export function TaskForm({
               <Sparkles size={12} style={{ verticalAlign: "middle" }} />
               {isRefining ? "Refining..." : "Refine"}
             </button>
-          )}
+                )}
+              </>
+            );
+          })()}
           {isRefineMenuOpen && (
             <div
               className="refine-menu refine-menu--modal"

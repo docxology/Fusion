@@ -6086,9 +6086,19 @@ body {
   position: relative;
 }
 
+/* Description expand button positioning.
+   The expand button sits in the top-right corner of the description textarea.
+   When the Refine button is visible (non-empty description), the expand button
+   is offset left (right: 40px) to avoid overlap. When Refine is absent (empty
+   description), the expand button sits flush in the corner (right: 8px). */
 .description-expand-btn {
   position: absolute;
   top: 8px;
+  right: 8px; /* Default: flush placement when Refine is absent */
+}
+
+/* Offset placement when Refine button is visible (non-empty description) */
+.description-expand-btn--offset {
   right: 40px;
 }
 

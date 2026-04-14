@@ -285,6 +285,40 @@ describe("TaskForm", () => {
     expect(container.querySelector(".description-with-refine.description--fullscreen")).toBeNull();
   });
 
+  it("expand button uses flush placement when description is empty (no refine button)", () => {
+    const { container } = renderTaskForm({
+      mode: "create",
+      description: "",
+    });
+
+    const expandButton = screen.getByRole("button", { name: "Expand description" });
+    expect(expandButton).toBeTruthy();
+
+    // Expand button should have flush placement when refine is absent
+    expect(container.querySelector(".description-expand-btn--flush")).toBeTruthy();
+    expect(container.querySelector(".description-expand-btn--offset")).toBeNull();
+
+    // Refine button should NOT be rendered when description is empty
+    expect(screen.queryByTestId("refine-button")).toBeNull();
+  });
+
+  it("expand button uses offset placement when description has content (refine visible)", () => {
+    const { container } = renderTaskForm({
+      mode: "create",
+      description: "Some task description",
+    });
+
+    const expandButton = screen.getByRole("button", { name: "Expand description" });
+    expect(expandButton).toBeTruthy();
+
+    // Expand button should have offset placement when refine is visible
+    expect(container.querySelector(".description-expand-btn--offset")).toBeTruthy();
+    expect(container.querySelector(".description-expand-btn--flush")).toBeNull();
+
+    // Refine button should be rendered when description is non-empty
+    expect(screen.getByTestId("refine-button")).toBeTruthy();
+  });
+
   it("collapses fullscreen description editor on Escape in create mode", () => {
     const { container } = renderTaskForm({
       mode: "create",
