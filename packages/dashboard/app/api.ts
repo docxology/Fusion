@@ -1783,7 +1783,7 @@ export async function deleteRoutine(id: string): Promise<void> {
 }
 
 export function runRoutine(id: string): Promise<RoutineRunResponse> {
-  return api<RoutineRunResponse>(`/routines/${id}/run`, {
+  return api<RoutineRunResponse>(`/routines/${id}/trigger`, {
     method: "POST",
   });
 }

@@ -8680,7 +8680,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
     }
   });
 
-  // POST /routines/:id/run — manual trigger (record a manual run)
+  // POST /routines/:id/run — manual trigger (backward-compatible alias for /trigger)
   router.post("/routines/:id/run", async (req: Request, res: Response) => {
     if (!routineStore) {
       throw new ApiError(503, "Routine store not available");
@@ -8697,9 +8697,41 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         throw badRequest("Routine is disabled");
       }
 
-      // Execute via RoutineRunner
+      // Execute via RoutineRunner (persistence handled by RoutineRunner.completeRoutineExecution)
       const result = await routineRunner.triggerManual(id);
-      await routineStore.recordRun(id, result);
+      const updated = await routineStore.getRoutine(id);
+      res.json({ routine: updated, result });
+    } catch (err: any) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      if (err.code === "ENOENT") {
+        throw notFound("Routine not found");
+      }
+      rethrowAsApiError(err);
+    }
+  });
+
+  // POST /routines/:id/trigger — canonical manual trigger (uses RoutineRunner)
+  // POST /routines/:id/run is a backward-compatible alias with identical behavior
+  router.post("/routines/:id/trigger", async (req: Request, res: Response) => {
+    if (!routineStore) {
+      throw new ApiError(503, "Routine store not available");
+    }
+    if (!routineRunner) {
+      throw new ApiError(503, "Routine execution not available");
+    }
+    try {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      const routine = await routineStore.getRoutine(id);
+
+      // Validate routine is enabled
+      if (!routine.enabled) {
+        throw badRequest("Routine is disabled");
+      }
+
+      // Execute via RoutineRunner (persistence handled by RoutineRunner.completeRoutineExecution)
+      const result = await routineRunner.triggerManual(id);
       const updated = await routineStore.getRoutine(id);
       res.json({ routine: updated, result });
     } catch (err: any) {
@@ -8759,24 +8791,23 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
       const rawBody = (req as any).rawBody as Buffer | undefined;
       const signatureHeader = req.headers["x-hub-signature-256"] as string | undefined;
 
-      // If webhook secret is configured, verify the signature
+      // If webhook secret is configured, verify the signature (auth failures return 401)
       if (routine.trigger.secret) {
         if (!rawBody) {
           throw badRequest("Raw body not available for signature verification");
         }
         if (!signatureHeader) {
-          throw new ApiError(403, "Missing signature header");
+          throw new ApiError(401, "Missing signature header");
         }
         const verification = verifyWebhookSignature(rawBody, signatureHeader, routine.trigger.secret);
         if (!verification.valid) {
-          throw new ApiError(403, verification.error ?? "Invalid signature");
+          throw new ApiError(401, verification.error ?? "Invalid signature");
         }
       }
 
-      // Execute via RoutineRunner
+      // Execute via RoutineRunner (persistence handled by RoutineRunner.completeRoutineExecution)
       const payload = req.body;
       const result = await routineRunner.triggerWebhook(id, payload, signatureHeader);
-      await routineStore.recordRun(id, result);
       const updated = await routineStore.getRoutine(id);
       res.json({ routine: updated, result });
     } catch (err: any) {
