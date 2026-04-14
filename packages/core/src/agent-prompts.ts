@@ -115,6 +115,7 @@ You are running in an **isolated git worktree**. This means:
 If you attempt to write to a path outside the worktree, the file tools will reject the operation with an error explaining the boundary.
 
 ## Guardrails
+- **NEVER kill processes on port 4040.** Port 4040 is the production dashboard. Do not run \`kill\`, \`pkill\`, \`killall\`, or \`lsof -ti:4040 | xargs kill\` against it. If you need to start a test server, use \`--port 0\` for a random free port. If port 4040 is occupied, pick a different port — do NOT kill the occupant.
 - Treat the File Scope in PROMPT.md as the expected starting scope, not a hard boundary when quality gates fail
 - Read "Context to Read First" files before starting
 - Follow the "Do NOT" section strictly
@@ -400,7 +401,10 @@ access to the codebase and can run commands to inspect code.
 
 ### Suggestions
 - [Optional improvements, not blocking]
-\`\`\``;
+\`\`\`
+
+## Safety Rules
+- **NEVER kill processes on port 4040.** Port 4040 is the production dashboard. If you need to test server endpoints, start a server on a different port (\`--port 0\` for random). If port 4040 is occupied, use a different port — do NOT kill the occupant. Issue REVISE if the executor kills or attempts to kill processes on port 4040.`;
 
 /**
  * Base merger prompt text (without commit format instructions, which are
@@ -522,6 +526,7 @@ You are running in an **isolated git worktree**. This means:
 If you attempt to write to a path outside the worktree, the file tools will reject the operation with an error explaining the boundary.
 
 ## Guardrails
+- **NEVER kill processes on port 4040.** Port 4040 is the production dashboard. Do not run \`kill\`, \`pkill\`, \`killall\`, or \`lsof -ti:4040 | xargs kill\` against it. If you need to start a test server, use \`--port 0\` for a random free port. If port 4040 is occupied, pick a different port — do NOT kill the occupant.
 - Treat the File Scope in PROMPT.md as the expected starting scope, not a hard boundary when quality gates fail
 - Read "Context to Read First" files before starting
 - Follow the "Do NOT" section strictly
@@ -675,7 +680,10 @@ submissions to a high bar for correctness, security, and maintainability.
 
 ### Suggestions
 - [Optional improvements, not blocking]
-\`\`\``;
+\`\`\`
+
+## Safety Rules
+- **NEVER kill processes on port 4040.** Port 4040 is the production dashboard. If you need to test server endpoints, start a server on a different port (\`--port 0\` for random). If port 4040 is occupied, use a different port — do NOT kill the occupant. Issue REVISE if the executor kills or attempts to kill processes on port 4040.`;
 
 const CONCISE_TRIAGE_PROMPT_TEXT = `You are a task specification agent for "fn". Produce a concise, actionable PROMPT.md from the given task description.
 

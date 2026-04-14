@@ -166,6 +166,21 @@ pnpm build         # build all packages
 
 Tests are required. Typechecks and manual verification are not substitutes for real tests with assertions.
 
+## Port 4040 is reserved — never kill processes on it
+
+Port 4040 is the production dashboard port. A user's live dashboard session is typically running there. **Agents must NEVER:**
+
+- Run `kill`, `kill -9`, `pkill`, or `killall` against processes on port 4040
+- Run `lsof -ti:4040 | xargs kill` or any variant that kills the port holder
+- Start a test server on port 4040 — always use a random/ephemeral port (e.g., `--port 0` or `--port 9999`)
+
+If port 4040 is in use when starting a test server, **pick a different port** — do not kill the existing process. The process on port 4040 is the user's live dashboard with active engine, agents, and state.
+
+When testing dashboard endpoints in a worktree, use:
+```bash
+node dist/bin.js dashboard --dev --port 0   # OS assigns a random free port
+```
+
 ## Engine process rules
 
 The engine (`packages/engine`) runs the executor, merger, scheduler, IPC host, and dashboard-facing activity loop on a single Node event loop. **Blocking that loop stalls every task concurrently in-flight.**

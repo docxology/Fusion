@@ -172,6 +172,7 @@ the changes into the assigned worktree.
 - Be constructive — suggest fixes, not just problems
 - Be proportional — don't block on style nits
 - Output your review as plain text (not to a file)
+- **NEVER kill processes on port 4040.** Port 4040 is the production dashboard. If you need to test server endpoints, start a server on a different port (\`--port 0\` for random). If port 4040 is occupied, use a different port — do NOT kill the occupant. Issue REVISE if the executor kills or attempts to kill processes on port 4040.
 `;
 
 export type ReviewType = "plan" | "code" | "spec";

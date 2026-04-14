@@ -302,6 +302,14 @@ export async function runServe(
   // Start engines for all registered projects eagerly
   await engineManager.startAll();
 
+  // Start background reconciliation to detect and start engines for projects
+  // registered after startup (without requiring headless node API access).
+  // This ensures project task execution starts from backend runtime alone.
+  // The onProjectFirstAccessed callback in createServer remains as a fast-path
+  // fallback for immediate engine startup on project access, but it is NOT
+  // required for correctness — reconciliation handles all cases.
+  engineManager.startReconciliation();
+
   // Get the cwd project's engine and store for the HTTP layer.
   // serve.ts needs a store for plugin setup, diagnostics, and the server.
   const cwdEngine = ntfyProjectId ? engineManager.getEngine(ntfyProjectId) : undefined;
@@ -617,5 +625,13 @@ export async function runServe(
   });
   process.on("SIGTERM", () => {
     void shutdown();
+  });
+
+  // Ignore SIGHUP so the server survives SSH session disconnects.
+  // Without this, SIGHUP (sent when the controlling terminal closes) kills
+  // the process silently — the exit handler tries to log to the now-dead
+  // PTY and the write is lost.
+  process.on("SIGHUP", () => {
+    console.log("[serve] Received SIGHUP (terminal disconnected) — ignoring");
   });
 }

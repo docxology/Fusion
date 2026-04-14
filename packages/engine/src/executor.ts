@@ -229,6 +229,7 @@ You are running in an **isolated git worktree**. This means:
 If you attempt to write to a path outside the worktree, the file tools will reject the operation with an error explaining the boundary.
 
 ## Guardrails
+- **NEVER kill processes on port 4040.** Port 4040 is the production dashboard. Do not run \`kill\`, \`pkill\`, \`killall\`, or \`lsof -ti:4040 | xargs kill\` against it. If you need to start a test server, use \`--port 0\` for a random free port. If port 4040 is occupied, pick a different port — do NOT kill the occupant.
 - Treat the File Scope in PROMPT.md as the expected starting scope, not a hard boundary when quality gates fail
 - Read "Context to Read First" files before starting
 - Follow the "Do NOT" section strictly

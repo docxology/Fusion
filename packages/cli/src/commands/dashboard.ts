@@ -497,6 +497,14 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
     // Start engines for all registered projects eagerly
     await engineManager.startAll();
 
+    // Start background reconciliation to detect and start engines for projects
+    // registered after startup (without requiring dashboard UI access).
+    // This ensures project task execution starts from backend runtime alone.
+    // The onProjectFirstAccessed callback in createServer remains as a fast-path
+    // fallback for immediate engine startup on project access, but it is NOT
+    // required for correctness — reconciliation handles all cases.
+    engineManager.startReconciliation();
+
     // Resolve the cwd project's engine for the dashboard's HTTP layer defaults.
     // The engine for the cwd project provides onMerge, automationStore, etc.
     // for requests that arrive without ?projectId=. This is transitional —
@@ -572,6 +580,14 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
     };
     registerHandler(process, "SIGINT", () => void shutdown("SIGINT"));
     registerHandler(process, "SIGTERM", () => void shutdown("SIGTERM"));
+
+    // Ignore SIGHUP so the dashboard survives SSH session disconnects.
+    // Without this, SIGHUP (sent when the controlling terminal closes) kills
+    // the process silently — the exit handler tries to log to the now-dead
+    // PTY and the write is lost.
+    registerHandler(process, "SIGHUP", () => {
+      console.log("[dashboard] Received SIGHUP (terminal disconnected) — ignoring");
+    });
   } else {
   // Dev mode: create HeartbeatMonitor + TriggerScheduler inline (engine not started)
     try {
@@ -698,6 +714,11 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
     };
     registerHandler(process, "SIGINT", () => void devShutdown("SIGINT"));
     registerHandler(process, "SIGTERM", () => void devShutdown("SIGTERM"));
+
+    // Ignore SIGHUP so the dashboard survives SSH session disconnects
+    registerHandler(process, "SIGHUP", () => {
+      console.log("[dashboard] Received SIGHUP (terminal disconnected) — ignoring");
+    });
   }
 
   const server = app.listen(selectedPort);
