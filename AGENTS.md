@@ -1588,6 +1588,34 @@ The dashboard Settings modal shows scope indicators (🌐 global, 📁 project) 
 
 The following settings are available in the fn configuration:
 
+### `maxConcurrent` (default: `2`)
+
+Controls the maximum number of **task-lane** AI agents that can run concurrently. The engine uses `AgentSemaphore` to enforce this limit.
+
+**Task-lane activities that ARE gated by `maxConcurrent`:**
+- Triage specification (AI spec generation for tasks in triage column)
+- Task execution (executor agent implementing tasks)
+- Merge operations
+
+**Utility AI workflows that are NOT gated (run on a separate control-plane lane):**
+- AI planning mode (`/api/planning/*`)
+- Subtask breakdown (`/api/subtasks/*`)
+- Mission/milestone/slice interviews (`/api/missions/*/interview/*`)
+- Agent chat/heartbeat wake (`/api/agents/:id/runs`, wake-on-message)
+- Title summarization (`/api/ai/summarize-title`)
+
+**Rationale:** Utility workflows remain responsive even when task pipelines are saturated. This ensures users can still plan, break down tasks, and receive AI assistance without waiting for running tasks to complete.
+
+**Configuration:**
+
+```json
+{
+  "settings": {
+    "maxConcurrent": 3
+  }
+}
+```
+
 ### `autoResolveConflicts` (default: `true`)
 
 When enabled, the auto-merge system will intelligently resolve common merge conflict patterns without requiring manual intervention:

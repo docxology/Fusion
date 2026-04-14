@@ -134,6 +134,8 @@ What the task should accomplish.
 }
 ```
 
+> **Note:** `maxConcurrent` applies to task-lane agents (triage, execution, merge) only. Utility AI workflows—planning mode, subtask breakdown, mission interviews, agent heartbeat/chat wake, and title summarization—run outside this limit on a dedicated control-plane lane.
+
 ## Global Settings
 
 User-level settings at `~/.pi/fusion/settings.json`:

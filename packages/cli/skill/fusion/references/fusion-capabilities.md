@@ -110,7 +110,7 @@ Triage → Todo → In Progress → In Review → Done → Archived
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `maxConcurrent` | 2 | Concurrent task execution |
+| `maxConcurrent` | 2 | Concurrent task execution lanes (triage, executor, merge). Utility AI workflows such as planning, subtask breakdown, interviews, and title summarization bypass this limit. |
 | `autoMerge` | true | Auto-merge completed tasks |
 | `requirePlanApproval` | false | Manual approval for specs |
 | `prCompletionMode` | direct | Completion: direct/pr-first |

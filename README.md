@@ -771,7 +771,7 @@ Project settings override global settings. Configure in the dashboard under **Se
 | `ntfyTopic` | Global | - | ntfy.sh topic for notifications |
 | `ntfyDashboardHost` | Global | - | Dashboard URL for notification deep links |
 | `modelOnboardingComplete` | Global | false | Tracks completion of first-run model onboarding wizard |
-| `maxConcurrent` | Project | 2 | Concurrent task execution limit |
+| `maxConcurrent` | Project | 2 | Concurrent task execution lanes (triage, executor, merge). Utility AI workflows (planning, subtask breakdown, interviews, heartbeat wake, title summarization) bypass this limit. |
 | `autoMerge` | Project | true | Auto-merge completed tasks |
 | `smartConflictResolution` | Project | true | Auto-resolve lock/generated files |
 | `requirePlanApproval` | Project | false | Manual approval for AI specs |

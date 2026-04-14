@@ -66,7 +66,7 @@ Defaults from `DEFAULT_PROJECT_SETTINGS`; key scope from `PROJECT_SETTINGS_KEYS`
 |---|---|---:|---|
 | `globalPause` | `boolean` | `false` | Hard stop: terminate active engine sessions and pause scheduling. |
 | `enginePaused` | `boolean` | `false` | Soft pause: stop dispatching new work but allow active sessions to finish. |
-| `maxConcurrent` | `number` | `2` | Max concurrent AI tasks. |
+| `maxConcurrent` | `number` | `2` | Max concurrent task-lane AI agents (triage, executor, merge). Utility AI workflows run on a separate control-plane lane and are not gated by this limit. |
 | `maxWorktrees` | `number` | `4` | Max git worktrees. |
 | `pollIntervalMs` | `number` | `15000` | Scheduler poll interval (ms). |
 | `groupOverlappingFiles` | `boolean` | `true` | Serialize execution when file scopes overlap. |
