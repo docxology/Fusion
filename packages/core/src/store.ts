@@ -793,6 +793,32 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
         }
       }
 
+      // Handle experimentalFeatures merging (similar to promptOverrides)
+      const incomingExperimentalFeatures = (projectPatch as Record<string, unknown>)["experimentalFeatures"];
+      if (
+        incomingExperimentalFeatures !== undefined &&
+        typeof incomingExperimentalFeatures === "object" &&
+        incomingExperimentalFeatures !== null &&
+        !Array.isArray(incomingExperimentalFeatures)
+      ) {
+        // experimentalFeatures: { key: value } → merge with existing
+        const incomingMap = incomingExperimentalFeatures as Record<string, unknown>;
+        const existingMap = ((config.settings as unknown as Record<string, unknown>)["experimentalFeatures"] as Record<string, boolean>) ?? {};
+        const mergedMap: Record<string, boolean> = { ...existingMap };
+
+        for (const [key, value] of Object.entries(incomingMap)) {
+          // null values remove the feature
+          if (value === null) {
+            delete mergedMap[key];
+          } else if (typeof value === "boolean") {
+            mergedMap[key] = value;
+          }
+        }
+
+        (config.settings as unknown as Record<string, unknown>)["experimentalFeatures"] = mergedMap;
+        (projectPatch as Record<string, unknown>)["experimentalFeatures"] = mergedMap;
+      }
+
       const globalSettings = await this.globalSettingsStore.getSettings();
       const previousMerged: Settings = { ...DEFAULT_SETTINGS, ...globalSettings, ...config.settings } as Settings;
       const updatedProjectSettings = { ...config.settings, ...projectPatch };

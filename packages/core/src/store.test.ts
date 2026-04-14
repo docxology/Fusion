@@ -1214,18 +1214,15 @@ describe("TaskStore", () => {
       expect(settings.experimentalFeatures).toEqual({ "feature-b": true });
     });
 
-    it("can remove an experimental feature by setting it to undefined (field stays)", async () => {
-      // Note: We cannot selectively remove a single key from experimentalFeatures
-      // since it's a simple Record<string, boolean> not a nested object with special handling.
-      // Users should replace the entire object if they need to remove specific keys.
-
+    it("can remove an experimental feature by setting it to null (selective removal)", async () => {
+      // Features can be selectively removed by setting them to null
       await store.updateSettings({
         experimentalFeatures: { "feature-a": true, "feature-b": true },
       });
 
-      // Replace with only feature-b
+      // Remove feature-a by setting it to null (cast needed for TypeScript type safety)
       await store.updateSettings({
-        experimentalFeatures: { "feature-b": true },
+        experimentalFeatures: { "feature-a": null } as unknown as Record<string, boolean>,
       });
 
       const settings = await store.getSettings();
