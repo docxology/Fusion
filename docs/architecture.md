@@ -49,7 +49,7 @@ At a high level, Fusion is split into:
           │ Persistence                      │
           │ - .fusion/fusion.db (SQLite/WAL)
           │ - .fusion/tasks/* (PROMPT/logs)
-          │ - ~/.pi/fusion/fusion-central.db │
+          │ - ~/.fusion/fusion-central.db │
           └──────────────────────────────────┘
 ```
 
@@ -134,7 +134,7 @@ Concrete references:
   - Exported from `@fusion/core` for downstream persistence/API/UI work
 - **CentralCore**: `packages/core/src/central-core.ts`
   - Global project registry, health, central activity feed, global concurrency
-  - Backed by `packages/core/src/central-db.ts` (`~/.pi/fusion/fusion-central.db`)
+  - Backed by `packages/core/src/central-db.ts` (`~/.fusion/fusion-central.db`)
 - **Specialized stores**:
   - `AgentStore` (`agent-store.ts`) — filesystem-based agent metadata + heartbeat run history
   - `MissionStore` (`mission-store.ts`) — mission/milestone/slice/feature hierarchy
@@ -383,7 +383,7 @@ SQLite schema is initialized in `packages/core/src/db.ts` and uses:
 - `__meta.lastModified` for change detection/polling
 
 ### Central storage (multi-project)
-- **Central DB**: `~/.pi/fusion/fusion-central.db`
+- **Central DB**: `~/.fusion/fusion-central.db`
 - Schema in `packages/core/src/central-db.ts`
   - `projects`, `projectHealth`, `centralActivityLog`, `globalConcurrency`, `nodes`, `__meta`
 
@@ -542,7 +542,7 @@ In `packages/engine/src/ipc/ipc-protocol.ts`:
 Settings are split by scope.
 
 ### Global scope
-- File: `~/.pi/fusion/settings.json`
+- File: `~/.fusion/settings.json`
 - Managed by `GlobalSettingsStore` (`packages/core/src/global-settings.ts`)
 - Examples: `themeMode`, `colorTheme`, default model/provider, notification preferences
 

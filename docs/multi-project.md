@@ -16,7 +16,7 @@ Use multi-project mode when you need to:
 
 Multi-project metadata is stored in:
 
-`~/.pi/fusion/fusion-central.db`
+`~/.fusion/fusion-central.db`
 
 Core tables:
 
@@ -86,7 +86,7 @@ Migration is idempotent and designed to avoid repeated re-registration.
 
 If central registry behavior needs to be reverted:
 
-1. Delete `~/.pi/fusion/fusion-central.db`
+1. Delete `~/.fusion/fusion-central.db`
 2. Keep using per-project `.fusion/fusion.db` data
 3. Fusion falls back to legacy/single-project behavior
 4. Re-register projects later with `fn init` / `fn project add`

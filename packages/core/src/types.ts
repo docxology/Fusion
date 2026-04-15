@@ -807,7 +807,7 @@ export interface TaskCreateInput {
 //
 // Settings are split into two scopes:
 //
-// 1. **GlobalSettings** — User preferences stored in `~/.pi/fusion/settings.json`.
+// 1. **GlobalSettings** — User preferences stored in `~/.fusion/settings.json`.
 //    These persist across all fn projects for the current user (theme, default
 //    AI models, notification preferences).
 //
@@ -840,7 +840,7 @@ export interface DaemonTokenSettings {
 }
 
 /**
- * Global (user-level) settings stored in `~/.pi/fusion/settings.json`.
+ * Global (user-level) settings stored in `~/.fusion/settings.json`.
  *
  * These are user preferences that persist across all fn projects.
  * The dashboard UI shows these under a "Global" section.

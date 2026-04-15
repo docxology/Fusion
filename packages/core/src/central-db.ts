@@ -5,7 +5,7 @@
  * synchronous transaction handling. The database runs in WAL mode
  * for concurrent reader/writer access.
  *
- * This database is stored at `~/.pi/fusion/fusion-central.db` and serves as the
+ * This database is stored at `~/.fusion/fusion-central.db` and serves as the
  * coordination hub for all projects, storing the project registry,
  * unified activity feed, global concurrency limits, and project health.
  */
@@ -412,7 +412,7 @@ export class CentralDatabase {
 /**
  * Create a new CentralDatabase instance (does NOT initialize schema).
  * Callers must call `db.init()` separately.
- * @param globalDir - Path to the global fusion directory (e.g., `~/.pi/fusion/`)
+ * @param globalDir - Path to the global fusion directory (e.g., `~/.fusion/`)
  * @returns CentralDatabase instance (not yet initialized)
  */
 export function createCentralDatabase(globalDir?: string): CentralDatabase {

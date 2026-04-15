@@ -458,7 +458,7 @@ vi.mock("@fusion/core", () => ({
   PluginStore: mocks.pluginStoreCtor,
   PluginLoader: mocks.pluginLoaderCtor,
   GlobalSettingsStore: vi.fn().mockImplementation(() => mocks.globalSettingsStoreInstance),
-  resolveGlobalDir: vi.fn().mockReturnValue("/home/user/.pi/fusion"),
+  resolveGlobalDir: vi.fn().mockReturnValue("/home/user/.fusion"),
   DaemonTokenManager: vi.fn().mockImplementation(() => ({
     getToken: vi.fn().mockImplementation(() => Promise.resolve(mocks.globalSettingsData.daemonToken as string | undefined)),
     generateToken: vi.fn().mockImplementation(() => {

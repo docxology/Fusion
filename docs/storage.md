@@ -56,7 +56,7 @@ API endpoints reviewed:
 - `PUT /api/settings/global`
 - `GET /api/settings/scopes`
 
-### 3.1 Global settings (`~/.pi/fusion/settings.json`)
+### 3.1 Global settings (`~/.fusion/settings.json`)
 
 | Setting Key | Scope | API Endpoint | Description |
 |---|---|---|---|

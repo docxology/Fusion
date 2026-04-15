@@ -40,7 +40,7 @@ See [docs/storage.md](./docs/storage.md) for the full storage architecture docum
 
 ## Multi-Project Support
 
-Fusion supports multiple projects with a central registry at `~/.pi/fusion/fusion-central.db`. Each project has its own SQLite database at `.fusion/fusion.db`. See [docs/multi-project.md](./docs/multi-project.md) for details on:
+Fusion supports multiple projects with a central registry at `~/.fusion/fusion-central.db`. Each project has its own SQLite database at `.fusion/fusion.db`. See [docs/multi-project.md](./docs/multi-project.md) for details on:
 - CentralCore API and project registration
 - Isolation modes (in-process, child-process)
 - Global concurrency management
@@ -220,7 +220,7 @@ See [docs/architecture.md](./docs/architecture.md) for the full reference includ
 ## Settings
 
 fn uses a two-tier settings hierarchy:
-- **Global settings** — User preferences in `~/.pi/fusion/settings.json` (theme, models, notifications)
+- **Global settings** — User preferences in `~/.fusion/settings.json` (theme, models, notifications)
 - **Project settings** — Project-specific settings in `.fusion/config.json` (concurrency, worktrees, commands)
 
 Project settings override global settings. Configure via the dashboard **Settings** modal or `fn settings` CLI.

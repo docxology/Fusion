@@ -600,7 +600,7 @@ async function createBackups(kbDir: string): Promise<void> {
  * - cwd has `.fusion/fusion.db` or `.fusion/fusion.db` (existing single-project)
  *
  * @param cwd — Current working directory to check
- * @param globalDir — Directory for central database. Defaults to `~/.pi/fusion/`.
+ * @param globalDir — Directory for central database. Defaults to `~/.fusion/`.
  */
 export function needsCentralMigration(cwd: string, globalDir?: string): boolean {
   const centralDbPath = join(resolveGlobalDir(globalDir), "fusion-central.db");
@@ -646,7 +646,7 @@ export function needsCentralMigration(cwd: string, globalDir?: string): boolean 
  * Detect existing projects by walking up from cwd.
  *
  * @param cwd — Starting directory (default: process.cwd())
- * @param globalDir — Directory for central database. Defaults to `~/.pi/fusion/`.
+ * @param globalDir — Directory for central database. Defaults to `~/.fusion/`.
  * @returns Array of detected projects
  */
 export async function detectExistingProjects(

@@ -138,7 +138,7 @@ What the task should accomplish.
 
 ## Global Settings
 
-User-level settings at `~/.pi/fusion/settings.json`:
+User-level settings at `~/.fusion/settings.json`:
 
 ```json
 {
@@ -152,7 +152,7 @@ User-level settings at `~/.pi/fusion/settings.json`:
 
 ## Central Database (Multi-Project)
 
-For multi-project setups: `~/.pi/fusion/fusion-central.db`
+For multi-project setups: `~/.fusion/fusion-central.db`
 - Project registry
 - Unified activity feed
 - Global concurrency management

@@ -67,7 +67,7 @@ describe("GlobalSettingsStore", () => {
       expect(settings.themeMode).toBe("light");
     });
 
-    it("adopts the legacy ~/.pi/kb directory when ~/.pi/fusion does not exist", async () => {
+    it("adopts the legacy ~/.pi/kb directory when ~/.fusion does not exist", async () => {
       const homeDir = makeTmpDir();
       process.env.HOME = homeDir;
 
@@ -82,9 +82,41 @@ describe("GlobalSettingsStore", () => {
       await defaultStore.init();
 
       expect(defaultStore.getSettingsPath()).toBe(join(defaultGlobalDir(), "settings.json"));
-      expect(existsSync(join(homeDir, ".pi", "fusion", "settings.json"))).toBe(true);
+      expect(existsSync(join(homeDir, ".fusion", "settings.json"))).toBe(true);
       expect(existsSync(join(homeDir, ".pi", "kb"))).toBe(false);
 
+      const settings = await defaultStore.getSettings();
+      expect(settings.themeMode).toBe("light");
+
+      await rm(homeDir, { recursive: true, force: true });
+    });
+
+    it("adopts the legacy ~/.pi/fusion directory when ~/.fusion does not exist", async () => {
+      const homeDir = makeTmpDir();
+      process.env.HOME = homeDir;
+
+      // Create the legacy ~/.pi/fusion directory with settings
+      const legacyDir = join(homeDir, ".pi", "fusion");
+      await mkdir(legacyDir, { recursive: true });
+      await writeFile(
+        join(legacyDir, "settings.json"),
+        JSON.stringify({ themeMode: "light" }),
+      );
+
+      // Verify legacy exists and new does not
+      expect(existsSync(join(homeDir, ".pi", "fusion", "settings.json"))).toBe(true);
+      expect(existsSync(join(homeDir, ".fusion"))).toBe(false);
+
+      // Instantiate GlobalSettingsStore with no argument (uses default resolution)
+      const defaultStore = new GlobalSettingsStore();
+      await defaultStore.init();
+
+      // Verify migration happened
+      expect(defaultStore.getSettingsPath()).toBe(join(defaultGlobalDir(), "settings.json"));
+      expect(existsSync(join(homeDir, ".fusion", "settings.json"))).toBe(true);
+      expect(existsSync(join(homeDir, ".pi", "fusion"))).toBe(false);
+
+      // Verify settings were preserved
       const settings = await defaultStore.getSettings();
       expect(settings.themeMode).toBe("light");
 

@@ -4,7 +4,7 @@
  * Provides project registry, health tracking, unified activity feed,
  * and global concurrency management across all registered projects.
  *
- * The central database is located at `~/.pi/fusion/fusion-central.db`.
+ * The central database is located at `~/.fusion/fusion-central.db`.
  *
  * @example
  * ```typescript
@@ -149,7 +149,7 @@ export class CentralCore extends EventEmitter<CentralCoreEvents> {
 
   /**
    * Create a CentralCore instance.
-   * @param globalDir — Directory for central database. Defaults to `~/.pi/fusion/`.
+   * @param globalDir — Directory for central database. Defaults to `~/.fusion/`.
    *                  Accepts a custom path for testing.
    */
   constructor(globalDir?: string) {

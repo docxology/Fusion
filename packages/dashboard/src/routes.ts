@@ -2147,7 +2147,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
 
   /**
    * GET /api/settings/global
-   * Returns the global (user-level) settings from ~/.pi/fusion/settings.json.
+   * Returns the global (user-level) settings from ~/.fusion/settings.json.
    * Does NOT include computed/server-only fields like githubTokenConfigured.
    */
   router.get("/settings/global", async (_req, res) => {
@@ -2165,7 +2165,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
 
   /**
    * PUT /api/settings/global
-   * Update global (user-level) settings in ~/.pi/fusion/settings.json.
+   * Update global (user-level) settings in ~/.fusion/settings.json.
    * These settings persist across all fn projects for the current user.
    */
   router.put("/settings/global", async (req, res) => {

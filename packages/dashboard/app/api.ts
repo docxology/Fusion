@@ -344,7 +344,7 @@ export function fetchMemoryBackendStatus(projectId?: string): Promise<MemoryBack
   return api<MemoryBackendStatus>(withProjectId("/memory/backend", projectId));
 }
 
-/** Fetch global (user-level) settings from ~/.pi/fusion/settings.json */
+/** Fetch global (user-level) settings from ~/.fusion/settings.json */
 export function fetchGlobalSettings(): Promise<GlobalSettings> {
   return api<GlobalSettings>("/settings/global");
 }

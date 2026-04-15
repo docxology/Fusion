@@ -1,5 +1,5 @@
 /**
- * Global settings store — manages user-level settings in `~/.pi/fusion/settings.json`.
+ * Global settings store — manages user-level settings in `~/.fusion/settings.json`.
  *
  * Global settings persist across all fn projects for the current user.
  * They include UI theme preferences, default AI model selection, and
@@ -20,38 +20,65 @@ import { existsSync, mkdirSync, renameSync } from "node:fs";
 import type { GlobalSettings } from "./types.js";
 import { DEFAULT_GLOBAL_SETTINGS } from "./types.js";
 
-/** Legacy directory for global settings before the rename to fusion. */
+/** Legacy directory for global settings (original name before rename to `.fusion`). */
 export function legacyGlobalDir(): string {
+  return join(homedir(), ".pi", "fusion");
+}
+
+/** Legacy directory for global settings from the earliest fn version (`.pi/kb`). */
+export function legacyGlobalDirOriginal(): string {
   return join(homedir(), ".pi", "kb");
 }
 
-/** Default directory for global fusion settings: `~/.pi/fusion/` */
+/** Default directory for global fusion settings: `~/.fusion/` */
 export function defaultGlobalDir(): string {
-  return join(homedir(), ".pi", "fusion");
+  return join(homedir(), ".fusion");
 }
 
 /**
  * Resolve the active global directory.
  *
- * If the new `~/.pi/fusion` directory does not exist but the legacy
- * `~/.pi/fusion` directory does, move the legacy directory into place so
- * existing settings and central metadata continue to work after upgrade.
+ * Migration chain:
+ * 1. If `~/.fusion` exists → use it
+ * 2. Else if `~/.pi/fusion` exists → rename to `~/.fusion` and use it
+ * 3. Else if `~/.pi/kb` exists → rename to `~/.fusion` and use it
+ * 4. Else → return `~/.fusion` (will be created on first use)
  */
 export function resolveGlobalDir(dir?: string): string {
   if (dir) return dir;
 
   const preferredDir = defaultGlobalDir();
-  const legacyDir = legacyGlobalDir();
 
-  if (!existsSync(preferredDir) && existsSync(legacyDir)) {
+  // Case 1: New directory already exists
+  if (existsSync(preferredDir)) {
+    return preferredDir;
+  }
+
+  // Case 2: Check for legacy ~/.pi/fusion directory
+  const legacyDir = legacyGlobalDir();
+  if (existsSync(legacyDir)) {
     try {
       mkdirSync(dirname(preferredDir), { recursive: true });
       renameSync(legacyDir, preferredDir);
+      return preferredDir;
     } catch {
       return legacyDir;
     }
   }
 
+  // Case 3: Check for original legacy ~/.pi/kb directory
+  const legacyDirOriginal = legacyGlobalDirOriginal();
+  if (existsSync(legacyDirOriginal)) {
+    try {
+      mkdirSync(dirname(preferredDir), { recursive: true });
+      renameSync(legacyDirOriginal, preferredDir);
+      return preferredDir;
+    } catch {
+      return legacyDirOriginal;
+    }
+  }
+
+  // Case 4: Return the preferred directory (will be created on first use)
   return preferredDir;
 }
 
@@ -67,7 +94,7 @@ export class GlobalSettingsStore {
 
   /**
    * Create a GlobalSettingsStore.
-   * @param dir — Directory to store settings.json. Defaults to `~/.pi/fusion/`.
+   * @param dir — Directory to store settings.json. Defaults to `~/.fusion/`.
    *              Accepts a custom path for testing.
    */
   constructor(dir?: string) {

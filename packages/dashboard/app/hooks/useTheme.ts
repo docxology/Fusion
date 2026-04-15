@@ -182,7 +182,7 @@ function unloadThemeDataStylesheet(): void {
 /**
  * Custom hook for theme management.
  *
- * Source of truth: backend global settings (`~/.pi/fusion/settings.json`).
+ * Source of truth: backend global settings (`~/.fusion/settings.json`).
  *
  * Behavior:
  * - Initializes from localStorage cache to avoid pre-hydration theme flash

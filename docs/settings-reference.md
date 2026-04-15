@@ -8,7 +8,7 @@ This guide documents Fusion settings from `packages/core/src/types.ts`.
 
 Fusion uses a two-tier settings system:
 
-- **Global settings** (`~/.pi/fusion/settings.json`): user preferences shared across projects
+- **Global settings** (`~/.fusion/settings.json`): user preferences shared across projects
 - **Project settings** (`.fusion/config.json`): execution/runtime behavior for one project
 
 At runtime, settings are merged. **Project settings override global settings** when keys overlap.

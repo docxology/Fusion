@@ -114,7 +114,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
   private configLock: Promise<void> = Promise.resolve();
   /** Cached workflow steps — invalidated on create/update/delete */
   private workflowStepsCache: import("./types.js").WorkflowStep[] | null = null;
-  /** Global settings store (`~/.pi/fusion/settings.json`) */
+  /** Global settings store (`~/.fusion/settings.json`) */
   private globalSettingsStore: GlobalSettingsStore;
   /** Polling interval for change detection */
   private pollInterval: ReturnType<typeof setInterval> | null = null;
@@ -652,7 +652,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
    * Get merged settings: global defaults ← global user prefs ← project overrides.
    *
    * Returns the combined view that most consumers should use. Project-level
-   * values in `.fusion/config.json` override global values from `~/.pi/fusion/settings.json`.
+   * values in `.fusion/config.json` override global values from `~/.fusion/settings.json`.
    *
    * Settings are canonicalized to resolve legacy defaults (e.g., `.kb/backups` → `.fusion/backups`).
    */
@@ -842,7 +842,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
   }
 
   /**
-   * Update global (user-level) settings in `~/.pi/fusion/settings.json`.
+   * Update global (user-level) settings in `~/.fusion/settings.json`.
    *
    * These settings persist across all fn projects for the current user.
    * Only fields defined in `GlobalSettings` are accepted.

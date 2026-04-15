@@ -44,7 +44,7 @@ Method used:
 - **High**
   - `packages/dashboard/src/subtask-breakdown.ts` — AI/session orchestration and persistence interactions; only route-level behavior is exercised.
   - `packages/dashboard/src/terminal.ts` — command validation + process spawning module has no tests and currently appears unused (no imports found), increasing drift risk.
-  - `packages/dashboard/src/script-store.ts` — file persistence logic under `~/.pi/fusion/scripts.json` has no direct tests.
+  - `packages/dashboard/src/script-store.ts` — file persistence logic under `~/.fusion/scripts.json` has no direct tests.
 - **Medium**
   - `packages/dashboard/src/mission-routes.ts` — no dedicated unit test file, but substantial endpoint coverage exists via `mission-e2e.test.ts`.
   - `packages/engine/src/github.ts` — git remote parsing helper has no direct test despite influencing scheduler GitHub linking behavior.
