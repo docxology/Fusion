@@ -6,6 +6,7 @@ import type { SettingsExportData } from "../api";
 
 // --- API mocks ---
 const mockFetchSettings = vi.fn();
+const mockFetchSettingsByScope = vi.fn();
 const mockExportSettings = vi.fn();
 const mockUpdateSettings = vi.fn();
 const mockUpdateGlobalSettings = vi.fn();
@@ -25,6 +26,7 @@ const mockFetchMemoryBackendStatus = vi.fn();
 
 vi.mock("../api", () => ({
   fetchSettings: (...args: unknown[]) => mockFetchSettings(...args),
+  fetchSettingsByScope: (...args: unknown[]) => mockFetchSettingsByScope(...args),
   updateSettings: (...args: unknown[]) => mockUpdateSettings(...args),
   updateGlobalSettings: (...args: unknown[]) => mockUpdateGlobalSettings(...args),
   exportSettings: (...args: unknown[]) => mockExportSettings(...args),
@@ -80,6 +82,7 @@ describe("SettingsModal", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockFetchSettings.mockResolvedValue(defaultSettings);
+    mockFetchSettingsByScope.mockResolvedValue({ global: defaultSettings, project: {} });
     mockFetchAuthStatus.mockResolvedValue({ providers: [] });
     mockFetchModels.mockResolvedValue({ models: [], favoriteProviders: [], favoriteModels: [] });
     mockFetchBackups.mockResolvedValue({ backups: [], totalSize: 0 });

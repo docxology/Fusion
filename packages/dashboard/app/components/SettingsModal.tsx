@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { Globe, Folder } from "lucide-react";
 import { THINKING_LEVELS, PROMPT_KEY_CATALOG, isGlobalSettingsKey, isProjectSettingsKey } from "@fusion/core";
 import type { Settings, GlobalSettings, ThemeMode, ColorTheme, ModelPreset, NtfyNotificationEvent, PromptKey, AgentPromptsConfig } from "@fusion/core";
-import { fetchSettings, updateSettings, updateGlobalSettings, fetchAuthStatus, loginProvider, logoutProvider, saveApiKey, clearApiKey, fetchModels, testNtfyNotification, fetchBackups, createBackup, exportSettings, importSettings, fetchMemory, saveMemory, fetchGlobalConcurrency, updateGlobalConcurrency } from "../api";
+import { fetchSettings, fetchSettingsByScope, updateSettings, updateGlobalSettings, fetchAuthStatus, loginProvider, logoutProvider, saveApiKey, clearApiKey, fetchModels, testNtfyNotification, fetchBackups, createBackup, exportSettings, importSettings, fetchMemory, saveMemory, fetchGlobalConcurrency, updateGlobalConcurrency } from "../api";
 import type { AuthProvider, ModelInfo, BackupListResponse, SettingsExportData, MemoryBackendCapabilities } from "../api";
 import { useMemoryBackendStatus } from "../hooks/useMemoryBackendStatus";
 import type { ToastType } from "../hooks/useToast";
@@ -111,6 +111,11 @@ export function SettingsModal({
   const [loading, setLoading] = useState(true);
   // Track initial values to detect explicit clears for null-as-delete semantics
   const [initialValues, setInitialValues] = useState<Settings | null>(null);
+  // Track scoped settings for inheritance detection (fetched alongside merged settings)
+  // This stores the raw { global, project } structure from the API
+  const [scopedSettings, setScopedSettings] = useState<{ global: GlobalSettings; project: Partial<Settings> } | null>(null);
+  // Track initial scoped values for null-as-delete semantics on project overrides
+  const [initialScopedValues, setInitialScopedValues] = useState<{ global: GlobalSettings; project: Partial<Settings> } | null>(null);
   // Find the first non-group-header section for default active section
   const firstNonHeaderSection = SETTINGS_SECTIONS.find((s) => !s.isGroupHeader);
   const [activeSection, setActiveSection] = useState<SectionId>(initialSection ?? firstNonHeaderSection?.id ?? "authentication");
@@ -160,10 +165,13 @@ export function SettingsModal({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    fetchSettings(projectId)
-      .then((s) => {
+    // Load both merged and scoped settings to enable inheritance detection
+    Promise.all([fetchSettings(projectId), fetchSettingsByScope(projectId)])
+      .then(([s, scoped]) => {
         setForm(s);
         setInitialValues(s); // Store initial values to detect explicit clears
+        setScopedSettings(scoped);
+        setInitialScopedValues(scoped); // Store initial scoped values for null-as-delete
         setLoading(false);
       })
       .catch((err) => {
@@ -515,6 +523,149 @@ export function SettingsModal({
     [onClose],
   );
 
+  /**
+   * Lane status types:
+   * - "overridden": Both provider and model keys are explicitly set in project scope
+   * - "inherited": Provider/model keys are not set in project scope (fallback to global)
+   */
+  type LaneStatus = "overridden" | "inherited";
+
+  /**
+   * Model lane keys that can be overridden at the project level.
+   * Each lane has global baseline keys and project override keys.
+   */
+  interface ModelLane {
+    laneId: string;
+    label: string;
+    globalProviderKey: keyof GlobalSettings;
+    globalModelKey: keyof GlobalSettings;
+    projectProviderKey: keyof Settings;
+    projectModelKey: keyof Settings;
+    helperText: string;
+    fallbackOrder: string;
+  }
+
+  /** All five model lanes with their global and project override keys */
+  const MODEL_LANES: ModelLane[] = [
+    {
+      laneId: "default",
+      label: "Default Model",
+      globalProviderKey: "defaultProvider",
+      globalModelKey: "defaultModelId",
+      projectProviderKey: "defaultProviderOverride",
+      projectModelKey: "defaultModelIdOverride",
+      helperText: "Default AI model used for task execution when no per-task override is set.",
+      fallbackOrder: "Project override → Global default lane → Automatic resolution",
+    },
+    {
+      laneId: "execution",
+      label: "Execution Model",
+      globalProviderKey: "executionGlobalProvider",
+      globalModelKey: "executionGlobalModelId",
+      projectProviderKey: "executionProvider",
+      projectModelKey: "executionModelId",
+      helperText: "AI model used for task implementation (executor agent).",
+      fallbackOrder: "Project override → Global execution lane → Global default lane → Automatic resolution",
+    },
+    {
+      laneId: "planning",
+      label: "Planning Model",
+      globalProviderKey: "planningGlobalProvider",
+      globalModelKey: "planningGlobalModelId",
+      projectProviderKey: "planningProvider",
+      projectModelKey: "planningModelId",
+      helperText: "AI model used for task specification (triage).",
+      fallbackOrder: "Project override → Global planning lane → Global default lane → Automatic resolution",
+    },
+    {
+      laneId: "validator",
+      label: "Validator Model",
+      globalProviderKey: "validatorGlobalProvider",
+      globalModelKey: "validatorGlobalModelId",
+      projectProviderKey: "validatorProvider",
+      projectModelKey: "validatorModelId",
+      helperText: "AI model used for code and specification review.",
+      fallbackOrder: "Project override → Global validator lane → Global default lane → Automatic resolution",
+    },
+    {
+      laneId: "summarization",
+      label: "Title Summarization Model",
+      globalProviderKey: "titleSummarizerGlobalProvider",
+      globalModelKey: "titleSummarizerGlobalModelId",
+      projectProviderKey: "titleSummarizerProvider",
+      projectModelKey: "titleSummarizerModelId",
+      helperText: "AI model used for auto-generating task titles from descriptions.",
+      fallbackOrder: "Project override → Global summarization lane → Global planning lane → Global default lane → Automatic resolution",
+    },
+  ];
+
+  /**
+   * Compute the status of a model lane from scoped project data.
+   * Returns "overridden" when both project lane keys are explicitly set,
+   * "inherited" when they are absent (fallback to global lane).
+   */
+  function getLaneStatus(lane: ModelLane): LaneStatus {
+    if (!scopedSettings?.project) return "inherited";
+    const provider = scopedSettings.project[lane.projectProviderKey as keyof Settings];
+    const model = scopedSettings.project[lane.projectModelKey as keyof Settings];
+    return provider !== undefined || model !== undefined ? "overridden" : "inherited";
+  }
+
+  /**
+   * Compute the display value for a model lane dropdown.
+   * Returns the provider/model pair when explicitly set, or empty string for inherited.
+   */
+  function getLaneValue(lane: ModelLane): string {
+    const provider = form[lane.projectProviderKey as keyof Settings] as string | undefined;
+    const model = form[lane.projectModelKey as keyof Settings] as string | undefined;
+    if (provider && model) {
+      return `${provider}/${model}`;
+    }
+    return "";
+  }
+
+  /**
+   * Update a model lane's provider and model values in the form.
+   */
+  function updateLaneValue(lane: ModelLane, value: string): void {
+    if (!value) {
+      // Clearing the dropdown - check if this is an inherited lane
+      const status = getLaneStatus(lane);
+      if (status === "inherited") {
+        // Don't write anything to form for inherited lanes
+        return;
+      }
+      // For overridden lanes, setting to undefined clears the override (null-as-delete)
+      setForm((f) => ({
+        ...f,
+        [lane.projectProviderKey]: undefined,
+        [lane.projectModelKey]: undefined,
+      }));
+    } else {
+      const slashIdx = value.indexOf("/");
+      setForm((f) => ({
+        ...f,
+        [lane.projectProviderKey]: value.slice(0, slashIdx),
+        [lane.projectModelKey]: value.slice(slashIdx + 1),
+      }));
+    }
+  }
+
+  /**
+   * Reset a model lane back to inherited state (null-as-delete for project override).
+   */
+  function resetLaneValue(lane: ModelLane): void {
+    const status = getLaneStatus(lane);
+    if (status === "inherited") return; // Nothing to reset
+
+    // Set to undefined to trigger null-as-delete on save
+    setForm((f) => ({
+      ...f,
+      [lane.projectProviderKey]: undefined,
+      [lane.projectModelKey]: undefined,
+    }));
+  }
+
   const handleSave = useCallback(async () => {
     if (prefixError || presetDraft) return;
     try {
@@ -524,10 +675,15 @@ export function SettingsModal({
         taskPrefix: form.taskPrefix?.trim() || undefined,
       };
 
-      // Always save both global and project settings.
-      // The backend filters each appropriately (updateSettings ignores global keys,
-      // updateGlobalSettings ignores project keys). This ensures fields in sections
-      // are persisted correctly based on their scope.
+      // Always save both global and project settings with strict scope separation.
+      //
+      // SCOPE RULES:
+      // - Global lane keys (executionGlobalProvider, planningGlobalProvider, etc.)
+      //   go to updateGlobalSettings
+      // - Project override lane keys (executionProvider, planningProvider, etc.)
+      //   go to updateSettings ONLY when explicitly changed from initial state
+      // - Inherited project lanes (unset in project scope) are NOT written to project payload
+      // - Resetting a project lane sends null to delete it from project scope
 
       const globalPatch: Partial<GlobalSettings> = {};
       for (const [key, value] of Object.entries(payload)) {
@@ -546,10 +702,40 @@ export function SettingsModal({
         }
       }
 
+      // Project settings: Only include keys that were explicitly changed.
+      // This prevents inherited effective values from being persisted as explicit overrides.
       const projectPatch: Partial<Settings> = {};
       for (const [key, value] of Object.entries(payload)) {
         if (key === "githubTokenConfigured") continue; // server-only field
-        if (isProjectSettingsKey(key)) {
+        if (!isProjectSettingsKey(key)) continue;
+
+        // Get the initial project-scoped value (null if not set)
+        const initialProjectValue = initialScopedValues?.project?.[key as keyof Settings];
+
+        // Check if this value is a model lane key that tracks inheritance
+        const isModelLaneKey = [
+          "planningProvider", "planningModelId",
+          "validatorProvider", "validatorModelId",
+          "executionProvider", "executionModelId",
+          "titleSummarizerProvider", "titleSummarizerModelId",
+          "defaultProviderOverride", "defaultModelIdOverride",
+          "planningFallbackProvider", "planningFallbackModelId",
+          "validatorFallbackProvider", "validatorFallbackModelId",
+          "titleSummarizerFallbackProvider", "titleSummarizerFallbackModelId",
+        ].includes(key);
+
+        if (isModelLaneKey) {
+          // For model lanes: only write if explicitly changed from initial project state
+          if (value !== initialProjectValue) {
+            // Detect explicit reset: current is undefined/null but initial was set
+            if ((value === undefined || value === null) && initialProjectValue !== undefined && initialProjectValue !== null) {
+              (projectPatch as any)[key] = null; // null-as-delete
+            } else if (value !== undefined) {
+              (projectPatch as any)[key] = value;
+            }
+          }
+        } else {
+          // For non-model settings: existing behavior
           (projectPatch as any)[key] = value;
         }
       }
@@ -569,7 +755,7 @@ export function SettingsModal({
     } catch (err: any) {
       addToast(err.message, "error");
     }
-  }, [form, globalMaxConcurrent, prefixError, presetDraft, initialValues, onClose, addToast, projectId]);
+  }, [form, globalMaxConcurrent, prefixError, presetDraft, initialValues, initialScopedValues, onClose, addToast, projectId]);
 
   const handleSaveMemory = useCallback(async () => {
     try {
@@ -826,15 +1012,15 @@ export function SettingsModal({
       }
 
       case "project-models": {
-        const planningValue = form.planningProvider && form.planningModelId
-          ? `${form.planningProvider}/${form.planningModelId}`
-          : "";
-        const validatorValue = form.validatorProvider && form.validatorModelId
-          ? `${form.validatorProvider}/${form.validatorModelId}`
-          : "";
         const presets = form.modelPresets || [];
         const presetOptions = presets.map((preset) => ({ id: preset.id, name: preset.name }));
         const inUsePresetIds = new Set(Object.values(form.defaultPresetBySize || {}).filter(Boolean));
+
+        // Filter model lanes to show in project scope (planning, validator, summarization)
+        // Default and execution lanes are global-only
+        const projectModelLanes = MODEL_LANES.filter(
+          (lane) => lane.laneId === "planning" || lane.laneId === "validator" || lane.laneId === "summarization",
+        );
 
         return (
           <>
@@ -870,8 +1056,12 @@ export function SettingsModal({
               <small>Automatically compact context when approaching this token count. Leave empty for no cap (compact only on overflow errors). Set a number to proactively compact when reaching this token count.</small>
             </div>
 
-            {/* --- Planning & Validation --- */}
-            <h4 className="settings-section-heading" style={{ marginTop: "1.5rem" }}>Planning &amp; Validation</h4>
+            {/* --- Project Model Lanes --- */}
+            <h4 className="settings-section-heading" style={{ marginTop: "1.5rem" }}>Model Lanes</h4>
+            <p className="settings-description">
+              Override global model settings at the project level. Each lane controls a specific AI usage context.
+              Unset lanes inherit from the corresponding global lane.
+            </p>
             {modelsLoading ? (
               <div className="settings-empty-state">Loading available models…</div>
             ) : availableModels.length === 0 ? (
@@ -880,33 +1070,68 @@ export function SettingsModal({
               </div>
             ) : (
               <>
-                <div className="form-group">
-                  <label htmlFor="planningModel">Planning Model</label>
-                  <CustomModelDropdown
-                    id="planningModel"
-                    label="Planning Model"
-                    models={availableModels}
-                    value={planningValue}
-                    onChange={(val) => {
-                      if (!val) {
-                        setForm((f) => ({ ...f, planningProvider: undefined, planningModelId: undefined }));
-                      } else {
-                        const slashIdx = val.indexOf("/");
-                        setForm((f) => ({
-                          ...f,
-                          planningProvider: val.slice(0, slashIdx),
-                          planningModelId: val.slice(slashIdx + 1),
-                        }));
-                      }
-                    }}
-                    placeholder="Use default"
-                    favoriteProviders={favoriteProviders}
-                    onToggleFavorite={handleToggleFavorite}
-                    favoriteModels={favoriteModels}
-                    onToggleModelFavorite={handleToggleModelFavorite}
-                  />
-                  <small>AI model used for task planning and specification (triage). Falls back to Default Model when not set.</small>
-                </div>
+                {projectModelLanes.map((lane) => {
+                  const status = getLaneStatus(lane);
+                  const value = getLaneValue(lane);
+                  const isOverridden = status === "overridden";
+
+                  return (
+                    <div className="form-group" key={lane.laneId}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.25rem" }}>
+                        <label htmlFor={`${lane.laneId}Model`}>{lane.label}</label>
+                        <span
+                          className={`settings-lane-badge ${isOverridden ? "settings-lane-badge--override" : "settings-lane-badge--inherited"}`}
+                          title={isOverridden ? "Explicitly set for this project" : "Inherited from global settings"}
+                        >
+                          {isOverridden ? "Override (Project)" : "Inherited (Global)"}
+                        </span>
+                      </div>
+                      <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                        <div style={{ flex: 1 }}>
+                          <CustomModelDropdown
+                            id={`${lane.laneId}Model`}
+                            label={lane.label}
+                            models={availableModels}
+                            value={value}
+                            onChange={(val) => updateLaneValue(lane, val)}
+                            placeholder="Use global"
+                            favoriteProviders={favoriteProviders}
+                            onToggleFavorite={handleToggleFavorite}
+                            favoriteModels={favoriteModels}
+                            onToggleModelFavorite={handleToggleModelFavorite}
+                          />
+                        </div>
+                        {isOverridden && (
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            title="Reset to inherit from global"
+                            onClick={() => resetLaneValue(lane)}
+                            style={{ whiteSpace: "nowrap" }}
+                          >
+                            Reset
+                          </button>
+                        )}
+                      </div>
+                      <small>
+                        {lane.helperText} Falls back to: {lane.fallbackOrder}.
+                      </small>
+                    </div>
+                  );
+                })}
+              </>
+            )}
+
+            {/* --- Fallback Models --- */}
+            <h4 className="settings-section-heading" style={{ marginTop: "1.5rem" }}>Fallback Models</h4>
+            {modelsLoading ? (
+              <div className="settings-empty-state">Loading available models…</div>
+            ) : availableModels.length === 0 ? (
+              <div className="settings-empty-state settings-muted">
+                No models available.
+              </div>
+            ) : (
+              <>
                 <div className="form-group">
                   <label htmlFor="planningFallbackModel">Planning Fallback Model</label>
                   <CustomModelDropdown
@@ -933,33 +1158,6 @@ export function SettingsModal({
                     onToggleModelFavorite={handleToggleModelFavorite}
                   />
                   <small>Used if the planning model fails due to rate limits or provider overload. Defaults to the global fallback model.</small>
-                </div>
-                <div className="form-group">
-                  <label htmlFor="validatorModel">Validator Model</label>
-                  <CustomModelDropdown
-                    id="validatorModel"
-                    label="Validator Model"
-                    models={availableModels}
-                    value={validatorValue}
-                    onChange={(val) => {
-                      if (!val) {
-                        setForm((f) => ({ ...f, validatorProvider: undefined, validatorModelId: undefined }));
-                      } else {
-                        const slashIdx = val.indexOf("/");
-                        setForm((f) => ({
-                          ...f,
-                          validatorProvider: val.slice(0, slashIdx),
-                          validatorModelId: val.slice(slashIdx + 1),
-                        }));
-                      }
-                    }}
-                    placeholder="Use default"
-                    favoriteProviders={favoriteProviders}
-                    onToggleFavorite={handleToggleFavorite}
-                    favoriteModels={favoriteModels}
-                    onToggleModelFavorite={handleToggleModelFavorite}
-                  />
-                  <small>AI model used for code and specification review. Falls back to Default Model when not set.</small>
                 </div>
                 <div className="form-group">
                   <label htmlFor="validatorFallbackModel">Validator Fallback Model</label>

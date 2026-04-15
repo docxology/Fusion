@@ -3545,6 +3545,34 @@ body {
   text-align: center;
 }
 
+/* === Model Lane Status Badges === */
+.settings-lane-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.settings-lane-badge--override {
+  background-color: color-mix(in srgb, var(--color-accent) 20%, transparent);
+  color: var(--color-accent);
+}
+
+.settings-lane-badge--inherited {
+  background-color: color-mix(in srgb, var(--color-text-muted) 15%, transparent);
+  color: var(--text-muted);
+}
+
+.settings-description {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: var(--space-md);
+  line-height: 1.5;
+}
+
 /* === Task Comments === */
 .comments-header-row {
   justify-content: space-between;

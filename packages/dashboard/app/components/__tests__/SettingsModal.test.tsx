@@ -35,6 +35,7 @@ const defaultSettings: Settings = {
 
 vi.mock("../../api", () => ({
   fetchSettings: vi.fn(() => Promise.resolve({ ...defaultSettings })),
+  fetchSettingsByScope: vi.fn(() => Promise.resolve({ global: { ...defaultSettings }, project: {} })),
   updateSettings: vi.fn(() => Promise.resolve({ ...defaultSettings })),
   updateGlobalSettings: vi.fn(() => Promise.resolve({ ...defaultSettings })),
   fetchAuthStatus: vi.fn(() => Promise.resolve({ providers: [{ id: "anthropic", name: "Anthropic", authenticated: false }] })),
@@ -81,7 +82,7 @@ vi.mock("../PluginManager", () => ({
   )),
 }));
 
-import { fetchSettings, updateSettings, updateGlobalSettings, fetchAuthStatus, loginProvider, logoutProvider, saveApiKey, clearApiKey, fetchModels, testNtfyNotification, fetchGlobalConcurrency, updateGlobalConcurrency } from "../../api";
+import { fetchSettings, fetchSettingsByScope, updateSettings, updateGlobalSettings, fetchAuthStatus, loginProvider, logoutProvider, saveApiKey, clearApiKey, fetchModels, testNtfyNotification, fetchGlobalConcurrency, updateGlobalConcurrency } from "../../api";
 
 const onClose = vi.fn();
 const addToast = vi.fn();
@@ -1150,6 +1151,138 @@ describe("SettingsModal", () => {
     const payload = (updateSettings as ReturnType<typeof vi.fn>).mock.calls[0][0];
     expect(payload.validatorProvider).toBe("openai");
     expect(payload.validatorModelId).toBe("gpt-4o");
+  });
+
+  describe("scope-safe save payloads", () => {
+    it("global lane edits go to updateGlobalSettings and NOT to project settings", async () => {
+      const user = userEvent.setup();
+
+      render(<SettingsModal onClose={onClose} addToast={addToast} />);
+      await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
+
+      // Navigate to Models (global section) and change default model
+      fireEvent.click(screen.getByText("Models"));
+      await waitFor(() => expect(fetchModels).toHaveBeenCalled());
+
+      const defaultTrigger = screen.getByLabelText("Default Model");
+      await user.click(defaultTrigger);
+      await user.click(screen.getByText("Claude Sonnet 4.5"));
+
+      fireEvent.click(screen.getByText("Save"));
+
+      await waitFor(() => expect(updateGlobalSettings).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(updateSettings).toHaveBeenCalledTimes(1));
+
+      // Global settings should have the new default model
+      const globalPayload = vi.mocked(updateGlobalSettings).mock.calls[0][0];
+      expect(globalPayload.defaultProvider).toBe("anthropic");
+      expect(globalPayload.defaultModelId).toBe("claude-sonnet-4-5");
+
+      // Project settings should NOT contain global lane keys
+      const projectPayload = vi.mocked(updateSettings).mock.calls[0][0];
+      expect(projectPayload).not.toHaveProperty("defaultProvider");
+      expect(projectPayload).not.toHaveProperty("defaultModelId");
+    });
+
+    it("project lane overrides go to updateSettings and NOT to global settings", async () => {
+      const user = userEvent.setup();
+
+      render(<SettingsModal onClose={onClose} addToast={addToast} />);
+      await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
+
+      // Navigate to Project Models section and change planning model
+      fireEvent.click(screen.getByText("Project Models"));
+      await waitFor(() => expect(fetchModels).toHaveBeenCalled());
+
+      const planningTrigger = screen.getByLabelText("Planning Model");
+      await user.click(planningTrigger);
+      await user.click(screen.getByText("GPT-4o"));
+
+      fireEvent.click(screen.getByText("Save"));
+
+      await waitFor(() => expect(updateSettings).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(updateGlobalSettings).toHaveBeenCalledTimes(1));
+
+      // Project settings should have the planning override
+      const projectPayload = vi.mocked(updateSettings).mock.calls[0][0];
+      expect(projectPayload.planningProvider).toBe("openai");
+      expect(projectPayload.planningModelId).toBe("gpt-4o");
+
+      // Global settings should NOT contain project override keys
+      const globalPayload = vi.mocked(updateGlobalSettings).mock.calls[0][0];
+      expect(globalPayload).not.toHaveProperty("planningProvider");
+      expect(globalPayload).not.toHaveProperty("planningModelId");
+    });
+
+    it("resetting a project lane sends null-as-delete payload", async () => {
+      const user = userEvent.setup();
+      // Set up with existing planning override in the merged settings
+      const settingsWithOverride = {
+        ...defaultSettings,
+        planningProvider: "anthropic",
+        planningModelId: "claude-sonnet-4-5",
+      };
+      (fetchSettings as ReturnType<typeof vi.fn>).mockResolvedValueOnce(settingsWithOverride);
+      // And in scoped settings
+      (fetchSettingsByScope as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        global: { ...defaultSettings },
+        project: {
+          planningProvider: "anthropic",
+          planningModelId: "claude-sonnet-4-5",
+        },
+      });
+
+      render(<SettingsModal onClose={onClose} addToast={addToast} />);
+      await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
+
+      // Navigate to Project Models section
+      fireEvent.click(screen.getByText("Project Models"));
+      await waitFor(() => expect(fetchModels).toHaveBeenCalled());
+
+      // Verify the planning lane shows as overridden
+      const planningBadge = screen.getByText("Override (Project)");
+      expect(planningBadge).toBeTruthy();
+
+      // Click reset button for planning lane
+      const resetButtons = screen.getAllByText("Reset");
+      await user.click(resetButtons[0]);
+
+      fireEvent.click(screen.getByText("Save"));
+
+      await waitFor(() => expect(updateSettings).toHaveBeenCalledTimes(1));
+
+      // Project settings should have null for the reset lane
+      const projectPayload = vi.mocked(updateSettings).mock.calls[0][0];
+      expect(projectPayload.planningProvider).toBeNull();
+      expect(projectPayload.planningModelId).toBeNull();
+    });
+
+    it("inherited lanes are not written to project payload", async () => {
+      const user = userEvent.setup();
+
+      render(<SettingsModal onClose={onClose} addToast={addToast} />);
+      await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
+
+      // Navigate to Project Models section
+      fireEvent.click(screen.getByText("Project Models"));
+      await waitFor(() => expect(fetchModels).toHaveBeenCalled());
+
+      // Verify lanes show as inherited (don't change anything)
+      const inheritedBadges = screen.getAllByText("Inherited (Global)");
+      expect(inheritedBadges.length).toBeGreaterThanOrEqual(1);
+
+      // Just save without changing anything
+      fireEvent.click(screen.getByText("Save"));
+
+      await waitFor(() => expect(updateSettings).toHaveBeenCalledTimes(1));
+
+      // Project settings should NOT contain model lane keys (they're inherited)
+      const projectPayload = vi.mocked(updateSettings).mock.calls[0][0];
+      expect(projectPayload).not.toHaveProperty("planningProvider");
+      expect(projectPayload).not.toHaveProperty("planningModelId");
+      expect(projectPayload).not.toHaveProperty("validatorProvider");
+      expect(projectPayload).not.toHaveProperty("validatorModelId");
+    });
   });
 
   it("shows empty state in Models section when no models available", async () => {

@@ -35,6 +35,7 @@ const defaultSettings = {
 
 vi.mock("../../api", () => ({
   fetchSettings: vi.fn(() => Promise.resolve({ ...defaultSettings })),
+  fetchSettingsByScope: vi.fn(() => Promise.resolve({ global: { ...defaultSettings }, project: {} })),
   updateSettings: vi.fn(() => Promise.resolve({ ...defaultSettings })),
   updateGlobalSettings: vi.fn(() => Promise.resolve({ ...defaultSettings })),
   fetchAuthStatus: vi.fn(() => Promise.resolve({ providers: [{ id: "anthropic", name: "Anthropic", authenticated: false }] })),
