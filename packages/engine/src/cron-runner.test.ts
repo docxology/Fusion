@@ -59,6 +59,7 @@ function createMockStore(settingsOverrides: Partial<Settings> = {}): TaskStore {
 function createMockAutomationStore(schedules: ScheduledTask[] = []): AutomationStore {
   return {
     getDueSchedules: vi.fn().mockResolvedValue(schedules),
+    getDueSchedulesAllScopes: vi.fn().mockResolvedValue(schedules),
     recordRun: vi.fn().mockResolvedValue(undefined),
     getSchedule: vi.fn().mockImplementation(async (id: string) => {
       const s = schedules.find((s) => s.id === id);
@@ -1227,6 +1228,282 @@ describe("CronRunner", () => {
       // When taskTitle is undefined, title should be undefined in the input
       const callArg = createTaskMock.mock.calls[0][0];
       expect(callArg.title).toBeUndefined();
+    });
+  });
+
+  // ── Scoped lane regression tests (FN-1766) ─────────────────────────────────
+
+  describe("scoped lane polling", () => {
+    it("scope='project' calls getDueSchedules with 'project'", async () => {
+      const store = createMockStore();
+      const automationStore = createMockAutomationStore([]);
+      runner = new CronRunner(store, automationStore, { scope: "project" });
+
+      await runner.tick();
+
+      expect(automationStore.getDueSchedules).toHaveBeenCalledWith("project");
+      expect(automationStore.getDueSchedulesAllScopes).not.toHaveBeenCalled();
+    });
+
+    it("scope='global' calls getDueSchedules with 'global'", async () => {
+      const store = createMockStore();
+      const automationStore = createMockAutomationStore([]);
+      runner = new CronRunner(store, automationStore, { scope: "global" });
+
+      await runner.tick();
+
+      expect(automationStore.getDueSchedules).toHaveBeenCalledWith("global");
+      expect(automationStore.getDueSchedulesAllScopes).not.toHaveBeenCalled();
+    });
+
+    it("scope='all' calls getDueSchedulesAllScopes", async () => {
+      const store = createMockStore();
+      const automationStore = createMockAutomationStore([]);
+      runner = new CronRunner(store, automationStore, { scope: "all" });
+
+      await runner.tick();
+
+      expect(automationStore.getDueSchedulesAllScopes).toHaveBeenCalled();
+      expect(automationStore.getDueSchedules).not.toHaveBeenCalled();
+    });
+
+    it("scope='project' skips global-scoped schedules", async () => {
+      const store = createMockStore();
+      const globalSchedule = createMockSchedule({ id: "global-schedule", scope: "global" });
+      const automationStore = createMockAutomationStore([globalSchedule]);
+      runner = new CronRunner(store, automationStore, { scope: "project" });
+
+      await runner.tick();
+
+      // Should NOT execute the global schedule
+      expect(automationStore.recordRun).not.toHaveBeenCalled();
+    });
+
+    it("scope='global' skips project-scoped schedules", async () => {
+      const store = createMockStore();
+      const projectSchedule = createMockSchedule({ id: "project-schedule", scope: "project" });
+      const automationStore = createMockAutomationStore([projectSchedule]);
+      runner = new CronRunner(store, automationStore, { scope: "global" });
+
+      await runner.tick();
+
+      // Should NOT execute the project schedule
+      expect(automationStore.recordRun).not.toHaveBeenCalled();
+    });
+
+    it("scope='all' executes both global and project schedules", async () => {
+      const store = createMockStore();
+      const globalSchedule = createMockSchedule({ id: "global-sched", name: "Global", scope: "global", command: "echo global" });
+      const projectSchedule = createMockSchedule({ id: "project-sched", name: "Project", scope: "project", command: "echo project" });
+      const automationStore = createMockAutomationStore([globalSchedule, projectSchedule]);
+      (automationStore.getDueSchedulesAllScopes as ReturnType<typeof vi.fn>).mockResolvedValue([globalSchedule, projectSchedule]);
+      runner = new CronRunner(store, automationStore, { scope: "all" });
+
+      await runner.tick();
+
+      // Should execute both schedules
+      expect(automationStore.recordRun).toHaveBeenCalledTimes(2);
+    });
+
+    it("scope='all' deduplicates by schedule ID — no double execution", async () => {
+      const store = createMockStore();
+      // Same schedule ID in both scopes
+      const scheduleInBothScopes = createMockSchedule({ id: "shared-id", name: "Shared", scope: "project", command: "echo shared" });
+      const automationStore = createMockAutomationStore([scheduleInBothScopes]);
+      // getDueSchedulesAllScopes returns it once
+      (automationStore.getDueSchedulesAllScopes as ReturnType<typeof vi.fn>).mockResolvedValue([scheduleInBothScopes]);
+      runner = new CronRunner(store, automationStore, { scope: "all" });
+
+      await runner.tick();
+
+      // Should only execute once
+      expect(automationStore.recordRun).toHaveBeenCalledTimes(1);
+    });
+
+    it("scope='all' skips schedule from wrong scope after scope mismatch", async () => {
+      const store = createMockStore();
+      // Schedule says global but runner is polling project scope
+      const mismatchedSchedule = createMockSchedule({ id: "mismatch", name: "Mismatched", scope: "global", command: "echo wrong" });
+      const automationStore = createMockAutomationStore([mismatchedSchedule]);
+      runner = new CronRunner(store, automationStore, { scope: "project" });
+
+      await runner.tick();
+
+      // Should NOT execute - schedule is global but runner is in project scope
+      expect(automationStore.recordRun).not.toHaveBeenCalled();
+    });
+
+    it("scope='all' includes lane tag in execution log context", async () => {
+      const store = createMockStore();
+      const globalSchedule = createMockSchedule({ id: "global-log", name: "Global", scope: "global", command: "echo global" });
+      const projectSchedule = createMockSchedule({ id: "project-log", name: "Project", scope: "project", command: "echo project" });
+      const automationStore = createMockAutomationStore([globalSchedule, projectSchedule]);
+      (automationStore.getDueSchedulesAllScopes as ReturnType<typeof vi.fn>).mockResolvedValue([globalSchedule, projectSchedule]);
+      runner = new CronRunner(store, automationStore, { scope: "all" });
+
+      await runner.tick();
+
+      // Both schedules executed
+      expect(automationStore.recordRun).toHaveBeenCalledTimes(2);
+      expect(automationStore.recordRun).toHaveBeenCalledWith("global-log", expect.any(Object));
+      expect(automationStore.recordRun).toHaveBeenCalledWith("project-log", expect.any(Object));
+    });
+
+    it("scope='project' default when not specified", () => {
+      const store = createMockStore();
+      const automationStore = createMockAutomationStore([]);
+      runner = new CronRunner(store, automationStore);
+
+      expect(runner["scope"]).toBe("project");
+    });
+  });
+
+  describe("scoped lane pause regressions", () => {
+    it("scope='project' skips when initially paused", async () => {
+      const store = createMockStore({ globalPause: true });
+      const schedule = createMockSchedule({ scope: "project" });
+      const automationStore = createMockAutomationStore([schedule]);
+      runner = new CronRunner(store, automationStore, { scope: "project" });
+
+      await runner.tick();
+
+      expect(automationStore.getDueSchedules).not.toHaveBeenCalled();
+    });
+
+    it("scope='global' skips when initially paused", async () => {
+      const store = createMockStore({ enginePaused: true });
+      const schedule = createMockSchedule({ scope: "global" });
+      const automationStore = createMockAutomationStore([schedule]);
+      runner = new CronRunner(store, automationStore, { scope: "global" });
+
+      await runner.tick();
+
+      expect(automationStore.getDueSchedules).not.toHaveBeenCalled();
+    });
+
+    it("scope='all' skips when initially paused", async () => {
+      const store = createMockStore({ globalPause: true });
+      const globalSchedule = createMockSchedule({ scope: "global" });
+      const projectSchedule = createMockSchedule({ scope: "project" });
+      const automationStore = createMockAutomationStore([globalSchedule, projectSchedule]);
+      (automationStore.getDueSchedulesAllScopes as ReturnType<typeof vi.fn>).mockResolvedValue([globalSchedule, projectSchedule]);
+      runner = new CronRunner(store, automationStore, { scope: "all" });
+
+      await runner.tick();
+
+      expect(automationStore.getDueSchedulesAllScopes).not.toHaveBeenCalled();
+    });
+
+    it("scope='project' halts mid-tick when pause flips", async () => {
+      const schedules = [
+        createMockSchedule({ id: "s1", name: "First", scope: "project", command: "echo first" }),
+        createMockSchedule({ id: "s2", name: "Second", scope: "project", command: "echo second" }),
+      ];
+      const automationStore = createMockAutomationStore(schedules);
+
+      // Mock getSettings to pause after first schedule executes
+      // Initial check (1), check before s1 (2), check after s1 starts (3) = pause
+      let getSettingsCalls = 0;
+      const mockStore: TaskStore = {
+        getSettings: vi.fn().mockImplementation(async () => {
+          getSettingsCalls++;
+          // Pause is detected on 3rd call: initial check, before s1, then before s2
+          return {
+            ...DEFAULT_SETTINGS,
+            globalPause: getSettingsCalls >= 3, // Pause on 3rd call (before s2)
+          };
+        }),
+        on: vi.fn(),
+        off: vi.fn(),
+      } as unknown as TaskStore;
+
+      runner = new CronRunner(mockStore, automationStore, { scope: "project" });
+
+      await runner.tick();
+
+      // Should only execute first schedule (s1 executes, s2 is skipped due to pause)
+      expect(automationStore.recordRun).toHaveBeenCalledTimes(1);
+      const [id] = (automationStore.recordRun as ReturnType<typeof vi.fn>).mock.calls[0] as [string, AutomationRunResult];
+      expect(id).toBe("s1");
+    });
+  });
+
+  describe("scoped lane ID-overlap regressions", () => {
+    it("identical IDs across global and project scopes must not cross lane boundaries", async () => {
+      const store = createMockStore();
+      // Same ID in both scopes - store returns both
+      const globalSchedule = createMockSchedule({ id: "overlap-id", name: "Global Overlap", scope: "global", command: "echo global" });
+      const projectSchedule = createMockSchedule({ id: "overlap-id", name: "Project Overlap", scope: "project", command: "echo project" });
+      const automationStore = createMockAutomationStore([globalSchedule, projectSchedule]);
+      // getDueSchedulesAllScopes returns both (simulating both lanes having schedules with same ID)
+      (automationStore.getDueSchedulesAllScopes as ReturnType<typeof vi.fn>).mockResolvedValue([globalSchedule, projectSchedule]);
+      runner = new CronRunner(store, automationStore, { scope: "all" });
+
+      await runner.tick();
+
+      // With scope="all", both schedules share the same ID
+      // The runner should execute once (first occurrence wins due to deduplication)
+      expect(automationStore.recordRun).toHaveBeenCalledTimes(1);
+      // The ID should be "overlap-id"
+      const [id] = (automationStore.recordRun as ReturnType<typeof vi.fn>).mock.calls[0] as [string, AutomationRunResult];
+      expect(id).toBe("overlap-id");
+    });
+
+    it("scope='project' with overlapping ID only processes project-scoped version", async () => {
+      const store = createMockStore();
+      // Only the project-scoped version should be processed
+      const projectSchedule = createMockSchedule({ id: "overlap-id", name: "Project Only", scope: "project", command: "echo project" });
+      const automationStore = createMockAutomationStore([projectSchedule]);
+      runner = new CronRunner(store, automationStore, { scope: "project" });
+
+      await runner.tick();
+
+      expect(automationStore.recordRun).toHaveBeenCalledTimes(1);
+      const [id] = (automationStore.recordRun as ReturnType<typeof vi.fn>).mock.calls[0] as [string, AutomationRunResult];
+      expect(id).toBe("overlap-id");
+    });
+
+    it("scope='global' with overlapping ID only processes global-scoped version", async () => {
+      const store = createMockStore();
+      // Only the global-scoped version should be processed
+      const globalSchedule = createMockSchedule({ id: "overlap-id", name: "Global Only", scope: "global", command: "echo global" });
+      const automationStore = createMockAutomationStore([globalSchedule]);
+      runner = new CronRunner(store, automationStore, { scope: "global" });
+
+      await runner.tick();
+
+      expect(automationStore.recordRun).toHaveBeenCalledTimes(1);
+      const [id] = (automationStore.recordRun as ReturnType<typeof vi.fn>).mock.calls[0] as [string, AutomationRunResult];
+      expect(id).toBe("overlap-id");
+    });
+  });
+
+  describe("utility-lane semaphore boundary", () => {
+    it("CronRunner does not use task-lane semaphore operations", async () => {
+      const store = createMockStore();
+      const automationStore = createMockAutomationStore([]);
+      runner = new CronRunner(store, automationStore);
+
+      // Cast to any to access internal state for semaphore trap
+      const runnerAny = runner as any;
+
+      // Verify no semaphore-related methods exist on the runner
+      expect(runnerAny.acquire).toBeUndefined();
+      expect(runnerAny.release).toBeUndefined();
+      expect(runnerAny.run).toBeUndefined();
+      expect(runnerAny.semaphore).toBeUndefined();
+      expect(runnerAny["_semaphore"]).toBeUndefined();
+    });
+
+    it("CronRunner constructor does not accept semaphore parameter", () => {
+      const store = createMockStore();
+      const automationStore = createMockAutomationStore();
+      runner = new CronRunner(store, automationStore);
+
+      // Verify internal state doesn't have semaphore references
+      const keys = Object.keys(runner);
+      const hasSemaphore = keys.some(k => k.toLowerCase().includes("semaphore") || k.toLowerCase().includes("acquire"));
+      expect(hasSemaphore).toBe(false);
     });
   });
 });

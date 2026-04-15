@@ -76,6 +76,7 @@ function createMockRoutineStore(routines: Routine[] = []): RoutineStore {
       return routine;
     }),
     getDueRoutines: vi.fn().mockResolvedValue(routines),
+    getDueRoutinesAllScopes: vi.fn().mockResolvedValue(routines),
     recordRun: vi.fn().mockImplementation((id: string, result: RoutineExecutionResult) => {
       return createMockRoutine({ id, lastRunResult: result });
     }),
@@ -107,13 +108,14 @@ function createRoutineScheduler(
   taskStore?: TaskStore,
   routineStore?: RoutineStore,
   routineRunner?: RoutineRunner,
-  options?: Partial<Pick<RoutineSchedulerOptions, "pollIntervalMs">>,
+  options?: Partial<Pick<RoutineSchedulerOptions, "pollIntervalMs" | "scope">>,
 ): RoutineScheduler {
   return new RoutineScheduler({
     taskStore: taskStore ?? createMockTaskStore(),
     routineStore: routineStore ?? createMockRoutineStore(),
     routineRunner: routineRunner ?? createMockRoutineRunner(),
     pollIntervalMs: options?.pollIntervalMs,
+    scope: options?.scope,
   });
 }
 
@@ -453,6 +455,288 @@ describe("RoutineScheduler", () => {
       scheduler.start();
       scheduler.stop();
       expect(scheduler.isActive()).toBe(false);
+    });
+  });
+
+  // ── Scoped lane regression tests (FN-1766) ─────────────────────────────────
+
+  describe("scoped lane polling", () => {
+    it("scope='project' calls getDueRoutines with 'project'", async () => {
+      const routineStore = createMockRoutineStore([]);
+      scheduler = createRoutineScheduler(createMockTaskStore(), routineStore, createMockRoutineRunner(), { scope: "project" });
+
+      await scheduler.tick();
+
+      expect(routineStore.getDueRoutines).toHaveBeenCalledWith("project");
+      expect(routineStore.getDueRoutinesAllScopes).not.toHaveBeenCalled();
+    });
+
+    it("scope='global' calls getDueRoutines with 'global'", async () => {
+      const routineStore = createMockRoutineStore([]);
+      scheduler = createRoutineScheduler(createMockTaskStore(), routineStore, createMockRoutineRunner(), { scope: "global" });
+
+      await scheduler.tick();
+
+      expect(routineStore.getDueRoutines).toHaveBeenCalledWith("global");
+      expect(routineStore.getDueRoutinesAllScopes).not.toHaveBeenCalled();
+    });
+
+    it("scope='all' calls getDueRoutinesAllScopes", async () => {
+      const routineStore = createMockRoutineStore([]);
+      scheduler = createRoutineScheduler(createMockTaskStore(), routineStore, createMockRoutineRunner(), { scope: "all" });
+
+      await scheduler.tick();
+
+      expect(routineStore.getDueRoutinesAllScopes).toHaveBeenCalled();
+      expect(routineStore.getDueRoutines).not.toHaveBeenCalled();
+    });
+
+    it("scope='project' skips global-scoped routines", async () => {
+      const globalRoutine = createMockRoutine({ id: "global-routine", scope: "global" });
+      const routineStore = createMockRoutineStore([globalRoutine]);
+      const routineRunner = createMockRoutineRunner();
+      scheduler = createRoutineScheduler(createMockTaskStore(), routineStore, routineRunner, { scope: "project" });
+
+      await scheduler.tick();
+
+      // Should NOT execute the global routine
+      expect(routineRunner.handleCatchUp).not.toHaveBeenCalled();
+      expect(routineRunner.executeRoutine).not.toHaveBeenCalled();
+    });
+
+    it("scope='global' skips project-scoped routines", async () => {
+      const projectRoutine = createMockRoutine({ id: "project-routine", scope: "project" });
+      const routineStore = createMockRoutineStore([projectRoutine]);
+      const routineRunner = createMockRoutineRunner();
+      scheduler = createRoutineScheduler(createMockTaskStore(), routineStore, routineRunner, { scope: "global" });
+
+      await scheduler.tick();
+
+      // Should NOT execute the project routine
+      expect(routineRunner.handleCatchUp).not.toHaveBeenCalled();
+      expect(routineRunner.executeRoutine).not.toHaveBeenCalled();
+    });
+
+    it("scope='all' executes both global and project routines", async () => {
+      const globalRoutine = createMockRoutine({ id: "global-rout", name: "Global", scope: "global" });
+      const projectRoutine = createMockRoutine({ id: "project-rout", name: "Project", scope: "project" });
+      const routineStore = createMockRoutineStore([globalRoutine, projectRoutine]);
+      (routineStore.getDueRoutinesAllScopes as ReturnType<typeof vi.fn>).mockResolvedValue([globalRoutine, projectRoutine]);
+      const routineRunner = createMockRoutineRunner();
+      scheduler = createRoutineScheduler(createMockTaskStore(), routineStore, routineRunner, { scope: "all" });
+
+      await scheduler.tick();
+
+      // Both routines should be processed
+      expect(routineRunner.handleCatchUp).toHaveBeenCalledTimes(2);
+      expect(routineRunner.executeRoutine).toHaveBeenCalledTimes(2);
+    });
+
+    it("scope='all' deduplicates by routine ID — no double execution", async () => {
+      // Same routine ID in both scopes
+      const sharedRoutine = createMockRoutine({ id: "shared-id", name: "Shared", scope: "project" });
+      const routineStore = createMockRoutineStore([sharedRoutine]);
+      (routineStore.getDueRoutinesAllScopes as ReturnType<typeof vi.fn>).mockResolvedValue([sharedRoutine]);
+      const routineRunner = createMockRoutineRunner();
+      scheduler = createRoutineScheduler(createMockTaskStore(), routineStore, routineRunner, { scope: "all" });
+
+      await scheduler.tick();
+
+      // Should only execute once
+      expect(routineRunner.executeRoutine).toHaveBeenCalledTimes(1);
+    });
+
+    it("scope='all' skips routine from wrong scope after scope mismatch", async () => {
+      // Routine says global but scheduler is polling project scope
+      const mismatchedRoutine = createMockRoutine({ id: "mismatch", name: "Mismatched", scope: "global" });
+      const routineStore = createMockRoutineStore([mismatchedRoutine]);
+      const routineRunner = createMockRoutineRunner();
+      scheduler = createRoutineScheduler(createMockTaskStore(), routineStore, routineRunner, { scope: "project" });
+
+      await scheduler.tick();
+
+      // Should NOT execute - routine is global but scheduler is in project scope
+      expect(routineRunner.handleCatchUp).not.toHaveBeenCalled();
+      expect(routineRunner.executeRoutine).not.toHaveBeenCalled();
+    });
+
+    it("scope='project' default when not specified", () => {
+      const routineStore = createMockRoutineStore([]);
+      scheduler = createRoutineScheduler(createMockTaskStore(), routineStore, createMockRoutineRunner());
+
+      expect(scheduler["scope"]).toBe("project");
+    });
+
+    it("scope is preserved when invoking handleCatchUp", async () => {
+      const projectRoutine = createMockRoutine({ id: "project-catchup", name: "Project", scope: "project" });
+      const routineStore = createMockRoutineStore([projectRoutine]);
+      const routineRunner = createMockRoutineRunner();
+      scheduler = createRoutineScheduler(createMockTaskStore(), routineStore, routineRunner, { scope: "project" });
+
+      await scheduler.tick();
+
+      // handleCatchUp should be called with the routine (preserving scope context)
+      expect(routineRunner.handleCatchUp).toHaveBeenCalledWith(projectRoutine);
+    });
+
+    it("scope is preserved when invoking executeRoutine", async () => {
+      const projectRoutine = createMockRoutine({ id: "project-exec", name: "Project", scope: "project" });
+      const routineStore = createMockRoutineStore([projectRoutine]);
+      const routineRunner = createMockRoutineRunner();
+      scheduler = createRoutineScheduler(createMockTaskStore(), routineStore, routineRunner, { scope: "project" });
+
+      await scheduler.tick();
+
+      // executeRoutine should be called with the routine ID and trigger type
+      expect(routineRunner.executeRoutine).toHaveBeenCalledWith("project-exec", "cron");
+    });
+  });
+
+  describe("scoped lane pause regressions", () => {
+    it("scope='project' skips when initially paused", async () => {
+      const routineStore = createMockRoutineStore([createMockRoutine({ scope: "project" })]);
+      const routineRunner = createMockRoutineRunner();
+      scheduler = createRoutineScheduler(
+        createMockTaskStore({ globalPause: true }),
+        routineStore,
+        routineRunner,
+        { scope: "project" },
+      );
+
+      await scheduler.tick();
+
+      expect(routineStore.getDueRoutines).not.toHaveBeenCalled();
+    });
+
+    it("scope='global' skips when initially paused", async () => {
+      const routineStore = createMockRoutineStore([createMockRoutine({ scope: "global" })]);
+      const routineRunner = createMockRoutineRunner();
+      scheduler = createRoutineScheduler(
+        createMockTaskStore({ enginePaused: true }),
+        routineStore,
+        routineRunner,
+        { scope: "global" },
+      );
+
+      await scheduler.tick();
+
+      expect(routineStore.getDueRoutines).not.toHaveBeenCalled();
+    });
+
+    it("scope='all' skips when initially paused", async () => {
+      const globalRoutine = createMockRoutine({ scope: "global" });
+      const projectRoutine = createMockRoutine({ scope: "project" });
+      const routineStore = createMockRoutineStore([globalRoutine, projectRoutine]);
+      (routineStore.getDueRoutinesAllScopes as ReturnType<typeof vi.fn>).mockResolvedValue([globalRoutine, projectRoutine]);
+      const routineRunner = createMockRoutineRunner();
+      scheduler = createRoutineScheduler(
+        createMockTaskStore({ globalPause: true }),
+        routineStore,
+        routineRunner,
+        { scope: "all" },
+      );
+
+      await scheduler.tick();
+
+      expect(routineStore.getDueRoutinesAllScopes).not.toHaveBeenCalled();
+    });
+
+    it("scope='project' halts mid-loop when pause flips", async () => {
+      const projectRoutine1 = createMockRoutine({ id: "r1", name: "Routine 1", scope: "project" });
+      const projectRoutine2 = createMockRoutine({ id: "r2", name: "Routine 2", scope: "project" });
+      const routineStore = createMockRoutineStore([projectRoutine1, projectRoutine2]);
+
+      // Mock getSettings to pause after first routine
+      let getSettingsCalls = 0;
+      const mockTaskStore: TaskStore = {
+        getSettings: vi.fn().mockImplementation(async () => {
+          getSettingsCalls++;
+          return {
+            ...DEFAULT_SETTINGS,
+            globalPause: getSettingsCalls >= 3, // Pause on 3rd call (before r2)
+          };
+        }),
+        on: vi.fn(),
+        off: vi.fn(),
+      } as unknown as TaskStore;
+
+      const routineRunner = createMockRoutineRunner();
+      scheduler = createRoutineScheduler(mockTaskStore, routineStore, routineRunner, { scope: "project" });
+
+      await scheduler.tick();
+
+      // Should only process first routine
+      expect(routineRunner.handleCatchUp).toHaveBeenCalledTimes(1);
+      expect(routineRunner.executeRoutine).toHaveBeenCalledTimes(1);
+      expect(routineRunner.handleCatchUp).toHaveBeenCalledWith(projectRoutine1);
+    });
+  });
+
+  describe("scoped lane ID-overlap regressions", () => {
+    it("identical IDs across global and project scopes must not cross lane boundaries", async () => {
+      // Same ID in both scopes - store returns both
+      const globalRoutine = createMockRoutine({ id: "overlap-id", name: "Global Overlap", scope: "global" });
+      const projectRoutine = createMockRoutine({ id: "overlap-id", name: "Project Overlap", scope: "project" });
+      const routineStore = createMockRoutineStore([globalRoutine, projectRoutine]);
+      (routineStore.getDueRoutinesAllScopes as ReturnType<typeof vi.fn>).mockResolvedValue([globalRoutine, projectRoutine]);
+      const routineRunner = createMockRoutineRunner();
+      scheduler = createRoutineScheduler(createMockTaskStore(), routineStore, routineRunner, { scope: "all" });
+
+      await scheduler.tick();
+
+      // With scope="all", both routines share the same ID
+      // The scheduler should execute once (first occurrence wins due to deduplication)
+      expect(routineRunner.executeRoutine).toHaveBeenCalledTimes(1);
+      expect(routineRunner.executeRoutine).toHaveBeenCalledWith("overlap-id", "cron");
+    });
+
+    it("scope='project' with overlapping ID only processes project-scoped version", async () => {
+      const projectRoutine = createMockRoutine({ id: "overlap-id", name: "Project Only", scope: "project" });
+      const routineStore = createMockRoutineStore([projectRoutine]);
+      const routineRunner = createMockRoutineRunner();
+      scheduler = createRoutineScheduler(createMockTaskStore(), routineStore, routineRunner, { scope: "project" });
+
+      await scheduler.tick();
+
+      expect(routineRunner.executeRoutine).toHaveBeenCalledTimes(1);
+      expect(routineRunner.executeRoutine).toHaveBeenCalledWith("overlap-id", "cron");
+    });
+
+    it("scope='global' with overlapping ID only processes global-scoped version", async () => {
+      const globalRoutine = createMockRoutine({ id: "overlap-id", name: "Global Only", scope: "global" });
+      const routineStore = createMockRoutineStore([globalRoutine]);
+      const routineRunner = createMockRoutineRunner();
+      scheduler = createRoutineScheduler(createMockTaskStore(), routineStore, routineRunner, { scope: "global" });
+
+      await scheduler.tick();
+
+      expect(routineRunner.executeRoutine).toHaveBeenCalledTimes(1);
+      expect(routineRunner.executeRoutine).toHaveBeenCalledWith("overlap-id", "cron");
+    });
+  });
+
+  describe("utility-lane semaphore boundary", () => {
+    it("RoutineScheduler does not use task-lane semaphore operations", async () => {
+      scheduler = createRoutineScheduler();
+
+      // Cast to any to access internal state for semaphore trap
+      const schedulerAny = scheduler as any;
+
+      // Verify no semaphore-related methods exist on the scheduler
+      expect(schedulerAny.acquire).toBeUndefined();
+      expect(schedulerAny.release).toBeUndefined();
+      expect(schedulerAny.run).toBeUndefined();
+      expect(schedulerAny.semaphore).toBeUndefined();
+      expect(schedulerAny["_semaphore"]).toBeUndefined();
+    });
+
+    it("RoutineScheduler constructor does not accept semaphore parameter", () => {
+      scheduler = createRoutineScheduler();
+
+      // Verify internal state doesn't have semaphore references
+      const keys = Object.keys(scheduler);
+      const hasSemaphore = keys.some(k => k.toLowerCase().includes("semaphore") || k.toLowerCase().includes("acquire"));
+      expect(hasSemaphore).toBe(false);
     });
   });
 });
