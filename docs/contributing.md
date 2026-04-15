@@ -33,6 +33,9 @@ pnpm build
 | `@fusion/dashboard` | Express API + React UI |
 | `@fusion/engine` | Scheduling, triage, execution, merge orchestration |
 | `@fusion/tui` | Ink-based terminal UI components |
+| `@fusion/desktop` | Electron shell around Fusion dashboard/client |
+| `@fusion/mobile` | Capacitor + PWA mobile packaging |
+| `@fusion/plugin-sdk` | Plugin SDK for building Fusion extensions |
 | `@gsxdsm/fusion` | Published CLI + pi extension |
 
 ## Development Workflow

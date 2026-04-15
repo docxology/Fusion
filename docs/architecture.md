@@ -65,8 +65,8 @@ At a high level, Fusion is split into:
 | `@gsxdsm/fusion` | **Published** | CLI binary (`fn`) + Pi extension | `packages/cli/src/bin.ts`, `commands/*`, `project-resolver.ts`, `extension.ts` |
 | `@fusion/desktop` | Private | Electron shell around Fusion dashboard/client | `packages/desktop/src/main.ts`, `ipc.ts`, `preload.ts`, `scripts/build.ts` |
 | `@fusion/tui` | Private | Ink-based terminal package with ScreenRouter and tab navigation | `packages/tui/src/index.tsx`, `packages/tui/src/components/screen-router.tsx` |
-
-> Note: The workspace also contains `@fusion/mobile` (`packages/mobile`), which packages dashboard assets for Capacitor targets.
+| `@fusion/mobile` | Private | Capacitor + PWA mobile packaging of dashboard assets | `packages/mobile/capacitor.config.ts`, `packages/mobile/src/*` |
+| `@fusion/plugin-sdk` | Private | Plugin SDK for building Fusion extensions | `packages/plugin-sdk/src/*` |
 
 ---
 
@@ -126,7 +126,7 @@ Concrete references:
 - **Database adapter**: `packages/core/src/db.ts`
   - SQLite (`node:sqlite`) with WAL mode + foreign keys
   - JSON helpers: `toJson`, `toJsonNullable`, `fromJson`
-  - Tables: `tasks`, `config`, `activityLog`, `archivedTasks`, `automations`, `agents`, `agentHeartbeats`, mission hierarchy tables, `__meta`
+  - Tables: `tasks`, `config`, `activityLog`, `archivedTasks`, `automations`, `agents`, `agentHeartbeats`, `agentRatings`, `ai_sessions`, `workflow_steps`, `messages`, `plugins`, `routines`, `runAuditEvents`, mission hierarchy tables (`missions`, `milestones`, `slices`, `mission_features`, `mission_events`), roadmap tables (`roadmaps`, `roadmap_milestones`, `roadmap_features`), `__meta`
 - **Standalone roadmap contracts**: `packages/core/src/roadmap-types.ts`, `roadmap-ordering.ts`, `roadmap-store.ts`
   - Roadmap-first entity types (`Roadmap`, `RoadmapMilestone`, `RoadmapFeature`)
   - Pure ordering helpers for contiguous 0-based milestone/feature order and deterministic cross-milestone feature moves

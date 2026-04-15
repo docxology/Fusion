@@ -10,30 +10,59 @@ Fusion is an AI-orchestrated task board that turns ideas into reviewed, merged c
 
 Install Fusion globally, run `fn dashboard`, then create your first task from the board or CLI.
 
-For a full walkthrough (installation, onboarding, first task, and lifecycle), start here:
+For a full walkthrough (installation, onboarding, first task, and daily workflow basics):
 
 ➡️ **[Getting Started](./getting-started.md)**
 
 ## Documentation Index
 
-| Guide | What it covers |
+### Getting Started
+| Guide | Description |
 |---|---|
-| [Getting Started](./getting-started.md) | Installation, first-run onboarding, first task, and daily workflow basics. |
-| [Architecture](./architecture.md) | System architecture, package layout, storage model, and engine execution flow. |
-| [Memory Plugin Contract](./memory-plugin-contract.md) | Pluggable memory backend architecture, interface contract, and migration strategy. |
-| [CLI Reference](./cli-reference.md) | Complete `fn` command reference with subcommands, flags, and examples. |
-| [Dashboard Guide](./dashboard-guide.md) | Detailed guide to board/list views, terminal, git manager, files, planning, and UI tools. |
-| [Task Management](./task-management.md) | Task creation modes, lifecycle, prompt specs, comments, archiving, and GitHub integration. |
-| [Missions](./missions.md) | Mission hierarchy, planning flow, activation, progress tracking, and autopilot behavior. |
-| [Agents](./agents.md) | Agent management, presets, prompts, heartbeat behavior, spawning, and mailbox workflows. |
-| [Workflow Steps](./workflow-steps.md) | Reusable quality gates, templates, pre/post-merge phases, and workflow execution results. |
-| [Settings Reference](./settings-reference.md) | Global and project settings, defaults, API endpoints, and model selection hierarchy. |
-| [Multi-Project](./multi-project.md) | Central registry architecture, project management, isolation modes, and migration paths. |
-| [UX Audit Report](./ux-audit-report.md) | Comprehensive UX audit with prioritized recommendations for dashboard improvements. |
-| [Codebase Improvement Audit](./codebase-improvement-audit.md) | Evidence-based technical debt and reliability gap audit with prioritized recommendations. |
-| [Dashboard Load Performance](./performance/dashboard-load.md) | SQLite index analysis and optimization for dashboard boot path queries. |
-| [Contributing](./contributing.md) | Local development setup, testing, release flow, and contributor conventions. |
-| [Code Signing Setup](./CODE_SIGNING.md) | macOS and Windows code signing configuration for release binaries. |
+| [Getting Started](./getting-started.md) | Installation, first-run, first task, and daily workflow basics |
+| [Dashboard Guide](./dashboard-guide.md) | Board/list views, terminal, git manager, files, planning, and UI tools |
+| [CLI Reference](./cli-reference.md) | Complete `fn` command reference with subcommands, flags, and examples |
+
+### Task & Project Management
+| Guide | Description |
+|---|---|
+| [Task Management](./task-management.md) | Task creation modes, lifecycle, prompt specs, comments, archiving, and GitHub integration |
+| [Missions](./missions.md) | Mission hierarchy, planning flow, activation, progress tracking, and autopilot behavior |
+| [Workflow Steps](./workflow-steps.md) | Reusable quality gates, templates, pre/post-merge phases, and workflow execution results |
+| [Multi-Project](./multi-project.md) | Central registry architecture, project management, isolation modes, and migration paths |
+
+### Configuration & Agents
+| Guide | Description |
+|---|---|
+| [Settings Reference](./settings-reference.md) | Global and project settings, defaults, API endpoints, and model selection hierarchy |
+| [Agents](./agents.md) | Agent management, presets, prompts, heartbeat behavior, spawning, and mailbox workflows |
+
+### Architecture & Development
+| Guide | Description |
+|---|---|
+| [Architecture](./architecture.md) | System architecture, package layout, storage model, and engine execution flow |
+| [Storage](./storage.md) | Storage architecture, migration, archive system, and SQLite schema |
+| [Contributing](./contributing.md) | Local development setup, testing, release flow, and contributor conventions |
+| [Docker](./docker.md) | Container builds, deployment, and persistence configuration |
+| [Code Signing](./CODE_SIGNING.md) | macOS and Windows code signing configuration for release binaries |
+| [Mobile](../MOBILE.md) | Capacitor/PWA mobile development setup and workflow |
+
+### Plugin Development
+| Guide | Description |
+|---|---|
+| [Plugin Authoring](./PLUGIN_AUTHORING.md) | Creating Fusion plugins with the plugin system |
+| [Memory Plugin Contract](./memory-plugin-contract.md) | Pluggable memory backend architecture, interface contract, and migration strategy |
+
+### Audit Reports
+| Report | Description |
+|---|---|
+| [UX Audit Report](./ux-audit-report.md) | Comprehensive UX audit with prioritized recommendations for dashboard improvements |
+| [Codebase Improvement Audit](./codebase-improvement-audit.md) | Evidence-based technical debt and reliability gap audit with prioritized recommendations |
+| [Gap Analysis](./gap-analysis.md) | System completeness analysis comparing Fusion to Paperclip feature set |
+| [Agent Sandbox Research](./agent-sandboxing-research.md) | Research on agent isolation, capability enforcement, and sandboxing approaches |
+| [Agent Gap Analysis](./agent-paperclip-gap-analysis.md) | Gap analysis for agent Paperclip integration |
+| [Test Audit Report](./test-audit-report.md) | Test coverage and effectiveness audit with recommendations |
+| [Dashboard Load Performance](./performance/dashboard-load.md) | SQLite index analysis and optimization for dashboard boot path queries |
 
 ## External Resources
 
