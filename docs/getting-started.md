@@ -53,7 +53,9 @@ On first launch, Fusion automatically opens the **onboarding wizard**. It guides
 **The onboarding wizard is dismissible and non-blocking.** If you skip setup, you can complete it later:
 - Click **Skip for now** to dismiss the wizard — the dashboard remains fully usable
 - After dismissing, a **Continue Setup** banner appears at the top of the dashboard, letting you resume from where you left off
-- Re-open onboarding anytime from **Settings → Authentication**, or by clearing the `modelOnboardingComplete` flag in global settings
+- Re-open onboarding anytime from **Settings → Authentication → Reopen onboarding guide**
+
+When reopening onboarding, the wizard pre-populates your previously saved AI provider and default model, so you can quickly review or update your setup.
 
 Onboarding completion is tracked by `modelOnboardingComplete` in global settings.
 

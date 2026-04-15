@@ -3127,4 +3127,47 @@ describe("Prompts section", () => {
     expect(payload.agentPrompts.templates.length).toBe(1);
     expect(payload.agentPrompts.templates[0].name).toBe("My Custom Template");
   });
+
+  describe("Reopen onboarding guide", () => {
+    it("renders Reopen onboarding guide button in Authentication section when onReopenOnboarding is provided", async () => {
+      const onReopenOnboarding = vi.fn();
+      render(<SettingsModal onClose={onClose} addToast={addToast} onReopenOnboarding={onReopenOnboarding} />);
+      await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
+
+      // Navigate to Authentication section
+      fireEvent.click(screen.getAllByText("Authentication")[0]);
+      await waitFor(() => expect(fetchAuthStatus).toHaveBeenCalled());
+
+      // Check that the reopen button is rendered
+      expect(screen.getByText("Reopen onboarding guide")).toBeTruthy();
+    });
+
+    it("does not render Reopen onboarding guide button when onReopenOnboarding is not provided", async () => {
+      render(<SettingsModal onClose={onClose} addToast={addToast} />);
+      await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
+
+      // Navigate to Authentication section
+      fireEvent.click(screen.getAllByText("Authentication")[0]);
+      await waitFor(() => expect(fetchAuthStatus).toHaveBeenCalled());
+
+      // Check that the reopen button is NOT rendered
+      expect(screen.queryByText("Reopen onboarding guide")).toBeNull();
+    });
+
+    it("calls onReopenOnboarding when Reopen button is clicked", async () => {
+      const onReopenOnboarding = vi.fn();
+      render(<SettingsModal onClose={onClose} addToast={addToast} onReopenOnboarding={onReopenOnboarding} />);
+      await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
+
+      // Navigate to Authentication section
+      fireEvent.click(screen.getAllByText("Authentication")[0]);
+      await waitFor(() => expect(fetchAuthStatus).toHaveBeenCalled());
+
+      // Click the reopen button
+      fireEvent.click(screen.getByText("Reopen onboarding guide"));
+
+      // Verify callback was called
+      expect(onReopenOnboarding).toHaveBeenCalledTimes(1);
+    });
+  });
 });

@@ -92,6 +92,8 @@ interface SettingsModalProps {
   onThemeModeChange?: (mode: ThemeMode) => void;
   /** Called when color theme changes */
   onColorThemeChange?: (theme: ColorTheme) => void;
+  /** Optional callback when user wants to reopen the onboarding guide */
+  onReopenOnboarding?: () => void;
 }
 
 export function SettingsModal({
@@ -103,6 +105,7 @@ export function SettingsModal({
   colorTheme = "default",
   onThemeModeChange,
   onColorThemeChange,
+  onReopenOnboarding,
 }: SettingsModalProps) {
   const [form, setForm] = useState<Settings & { worktreeInitCommand?: string }>({ maxConcurrent: 2, maxWorktrees: 4, pollIntervalMs: 15000, groupOverlappingFiles: true, autoMerge: true, mergeStrategy: "direct", recycleWorktrees: false, worktreeNaming: "random", includeTaskIdInCommit: true, worktreeInitCommand: "", ntfyEnabled: false, ntfyTopic: undefined });
   const [loading, setLoading] = useState(true);
@@ -2400,6 +2403,20 @@ export function SettingsModal({
             <small className="auth-hint">
               Authentication changes take effect immediately — no need to save.
             </small>
+            {onReopenOnboarding && (
+              <div className="form-group" style={{ marginTop: "var(--space-md)" }}>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={onReopenOnboarding}
+                >
+                  Reopen onboarding guide
+                </button>
+                <small className="settings-muted">
+                  Re-run the setup wizard to review or update your AI provider and model configuration.
+                </small>
+              </div>
+            )}
           </>
         );
     }

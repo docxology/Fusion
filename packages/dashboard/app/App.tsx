@@ -565,6 +565,10 @@ function AppInner() {
           modalManager.closeSettings();
           void refreshAppSettings();
         }}
+        onReopenOnboarding={() => {
+          modalManager.closeSettings();
+          modalManager.openModelOnboarding();
+        }}
       />
     </>
   );

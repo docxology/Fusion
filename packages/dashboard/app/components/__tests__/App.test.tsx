@@ -114,6 +114,21 @@ vi.mock("../../components/model-onboarding-state", () => ({
   clearOnboardingState: (...args: unknown[]) => mockClearOnboardingState(...args),
 }));
 
+// Mock CustomModelDropdown for onboarding modal tests
+vi.mock("../../components/CustomModelDropdown", () => ({
+  CustomModelDropdown: ({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) => (
+    <select
+      data-testid="mock-model-dropdown"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+    >
+      <option value="">{placeholder ?? "Select…"}</option>
+      <option value="anthropic/claude-sonnet-4-5">Claude Sonnet 4.5</option>
+      <option value="openai/gpt-4o">GPT-4o</option>
+    </select>
+  ),
+}));
+
 // Mock state holders for dynamic mocking
 const mockProjectsState = {
   projects: [] as any[],
@@ -177,7 +192,7 @@ vi.mock("../../hooks/useNodes", () => ({
 }));
 
 import { App } from "../../App";
-import { fetchAuthStatus, fetchSettings, fetchGlobalSettings, fetchTaskDetail, updateSettings, runScript, fetchScripts } from "../../api";
+import { fetchAuthStatus, fetchSettings, fetchGlobalSettings, fetchTaskDetail, updateSettings, runScript, fetchScripts, fetchModels } from "../../api";
 import * as apiNodeModule from "../../hooks/useRemoteNodeData";
 
 beforeEach(() => {
@@ -1981,5 +1996,176 @@ describe("App search query propagation to remote mode", () => {
     await waitFor(() => {
       expect(capturedSearchQuery).toBe("test search");
     });
+  });
+});
+
+describe("App onboarding reopen", () => {
+  beforeEach(() => {
+    // Reset mocks before each test
+    vi.clearAllMocks();
+  });
+
+  it("does not auto-open onboarding when modelOnboardingComplete is true and setup is complete", async () => {
+    // Mock fetchGlobalSettings to return complete onboarding with default model
+    (fetchGlobalSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+      modelOnboardingComplete: true,
+      defaultProvider: "anthropic",
+      defaultModelId: "claude-sonnet-4-5",
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(fetchSettings).toHaveBeenCalled();
+    });
+
+    // Wait for initial load
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    });
+
+    // Onboarding modal should NOT be open
+    expect(screen.queryByText("Set Up AI")).toBeNull();
+  });
+
+  it("opens Settings → Authentication → Reopen onboarding guide opens onboarding modal", async () => {
+    // Mock fetchGlobalSettings to return complete onboarding (to avoid auto-open on first call)
+    // and hydrated settings on subsequent calls
+    (fetchGlobalSettings as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({
+        modelOnboardingComplete: true,
+        defaultProvider: "anthropic",
+        defaultModelId: "claude-sonnet-4-5",
+      })
+      .mockResolvedValue({
+        modelOnboardingComplete: true,
+        defaultProvider: "anthropic",
+        defaultModelId: "claude-sonnet-4-5",
+      });
+
+    // Mock Settings and auth
+    (fetchSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+      maxConcurrent: 2,
+      maxWorktrees: 4,
+    });
+    (fetchAuthStatus as ReturnType<typeof vi.fn>).mockResolvedValue({
+      providers: [
+        { id: "anthropic", name: "Anthropic", authenticated: true },
+      ],
+    });
+    (fetchModels as ReturnType<typeof vi.fn>).mockResolvedValue({
+      models: [
+        { provider: "anthropic", id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5", reasoning: false, contextWindow: 200000 },
+      ],
+      favoriteProviders: [],
+      favoriteModels: [],
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(fetchSettings).toHaveBeenCalled();
+    });
+
+    // Wait for initial load
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    });
+
+    // Onboarding should NOT be open initially
+    expect(screen.queryByText("Set Up AI")).toBeNull();
+
+    // Open Settings via header
+    const settingsBtn = screen.getByRole("button", { name: /settings/i });
+    fireEvent.click(settingsBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText("Settings")).toBeTruthy();
+    });
+
+    // Navigate to Authentication section (it should be default or click to ensure)
+    const authSection = screen.getAllByText("Authentication")[0];
+    fireEvent.click(authSection);
+
+    await waitFor(() => {
+      expect(fetchAuthStatus).toHaveBeenCalled();
+    });
+
+    // Click Reopen onboarding guide button
+    const reopenBtn = screen.getByText("Reopen onboarding guide");
+    fireEvent.click(reopenBtn);
+
+    // Onboarding modal should now be open
+    await waitFor(() => {
+      expect(screen.getByText("Set Up AI")).toBeTruthy();
+    });
+  });
+
+  it("reopened modal shows hydrated model state from global settings", async () => {
+    // Mock fetchGlobalSettings to return hydrated settings
+    (fetchGlobalSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+      modelOnboardingComplete: true,
+      defaultProvider: "anthropic",
+      defaultModelId: "claude-sonnet-4-5",
+    });
+
+    // Mock Settings and auth
+    (fetchSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+      maxConcurrent: 2,
+      maxWorktrees: 4,
+    });
+    (fetchAuthStatus as ReturnType<typeof vi.fn>).mockResolvedValue({
+      providers: [
+        { id: "anthropic", name: "Anthropic", authenticated: true },
+      ],
+    });
+    (fetchModels as ReturnType<typeof vi.fn>).mockResolvedValue({
+      models: [
+        { provider: "anthropic", id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5", reasoning: false, contextWindow: 200000 },
+      ],
+      favoriteProviders: [],
+      favoriteModels: [],
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(fetchSettings).toHaveBeenCalled();
+    });
+
+    // Wait for initial load
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    });
+
+    // Open Settings via header
+    const settingsBtn = screen.getByRole("button", { name: /settings/i });
+    fireEvent.click(settingsBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText("Settings")).toBeTruthy();
+    });
+
+    // Navigate to Authentication section
+    const authSection = screen.getAllByText("Authentication")[0];
+    fireEvent.click(authSection);
+
+    await waitFor(() => {
+      expect(fetchAuthStatus).toHaveBeenCalled();
+    });
+
+    // Click Reopen onboarding guide button
+    const reopenBtn = screen.getByText("Reopen onboarding guide");
+    fireEvent.click(reopenBtn);
+
+    // Wait for onboarding modal to open
+    await waitFor(() => {
+      expect(screen.getByText("Set Up AI")).toBeTruthy();
+    });
+
+    // The model dropdown should be pre-populated with the saved default
+    // Check that the dropdown shows the saved model is selected
+    const dropdown = await screen.findByTestId("mock-model-dropdown");
+    expect((dropdown as HTMLSelectElement).value).toBe("anthropic/claude-sonnet-4-5");
   });
 });

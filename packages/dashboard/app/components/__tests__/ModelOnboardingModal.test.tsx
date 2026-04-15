@@ -10,6 +10,7 @@ const mockLogoutProvider = vi.fn();
 const mockSaveApiKey = vi.fn();
 const mockClearApiKey = vi.fn();
 const mockFetchModels = vi.fn();
+const mockFetchGlobalSettings = vi.fn();
 const mockUpdateGlobalSettings = vi.fn();
 
 vi.mock("../../api", () => ({
@@ -19,6 +20,7 @@ vi.mock("../../api", () => ({
   saveApiKey: (...args: unknown[]) => mockSaveApiKey(...args),
   clearApiKey: (...args: unknown[]) => mockClearApiKey(...args),
   fetchModels: (...args: unknown[]) => mockFetchModels(...args),
+  fetchGlobalSettings: (...args: unknown[]) => mockFetchGlobalSettings(...args),
   updateGlobalSettings: (...args: unknown[]) => mockUpdateGlobalSettings(...args),
 }));
 
@@ -81,6 +83,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockFetchAuthStatus.mockResolvedValue({ providers: defaultAuthProviders });
   mockFetchModels.mockResolvedValue({ models: defaultModels, favoriteProviders: [], favoriteModels: [] });
+  mockFetchGlobalSettings.mockResolvedValue({});
   mockUpdateGlobalSettings.mockResolvedValue({});
   mockLoginProvider.mockResolvedValue({ url: "https://auth.example.com/login" });
   mockLogoutProvider.mockResolvedValue({ success: true });
@@ -652,6 +655,59 @@ describe("ModelOnboardingModal", () => {
       await waitFor(() => {
         expect(screen.getByText("All Set!")).toBeTruthy();
       });
+    });
+  });
+
+  describe("global settings hydration", () => {
+    it("pre-populates selectedModel from global settings defaultProvider/defaultModelId", async () => {
+      // Mock global settings with a saved default model
+      mockFetchGlobalSettings.mockResolvedValueOnce({
+        defaultProvider: "anthropic",
+        defaultModelId: "claude-sonnet-4-5",
+        modelOnboardingComplete: true,
+      });
+
+      render(<ModelOnboardingModal onComplete={vi.fn()} addToast={vi.fn()} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Set Up AI")).toBeTruthy();
+      });
+
+      // The model dropdown should be pre-populated with the saved default
+      const dropdown = screen.getByTestId("mock-model-dropdown") as HTMLSelectElement;
+      expect(dropdown.value).toBe("anthropic/claude-sonnet-4-5");
+    });
+
+    it("leaves selectedModel empty when no default is configured in global settings", async () => {
+      // Mock global settings with no default model
+      mockFetchGlobalSettings.mockResolvedValueOnce({
+        modelOnboardingComplete: true,
+      });
+
+      render(<ModelOnboardingModal onComplete={vi.fn()} addToast={vi.fn()} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Set Up AI")).toBeTruthy();
+      });
+
+      // The model dropdown should be empty
+      const dropdown = screen.getByTestId("mock-model-dropdown") as HTMLSelectElement;
+      expect(dropdown.value).toBe("");
+    });
+
+    it("handles fetchGlobalSettings failure gracefully", async () => {
+      // Mock global settings fetch to fail
+      mockFetchGlobalSettings.mockRejectedValueOnce(new Error("Network error"));
+
+      render(<ModelOnboardingModal onComplete={vi.fn()} addToast={vi.fn()} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Set Up AI")).toBeTruthy();
+      });
+
+      // The modal should still render with empty dropdown
+      const dropdown = screen.getByTestId("mock-model-dropdown") as HTMLSelectElement;
+      expect(dropdown.value).toBe("");
     });
   });
 });

@@ -103,12 +103,26 @@ export function ModelOnboardingModal({
     }
   }, []);
 
+  // Load global settings to hydrate saved default model (for reopen flow)
+  const loadGlobalSettings = useCallback(async () => {
+    try {
+      const globalSettings = await fetchGlobalSettings();
+      // If a default model is configured, pre-select it
+      if (globalSettings.defaultProvider && globalSettings.defaultModelId) {
+        const defaultModelValue = `${globalSettings.defaultProvider}/${globalSettings.defaultModelId}`;
+        setSelectedModel(defaultModelValue);
+      }
+    } catch {
+      // Silently fail - onboarding still works without hydration
+    }
+  }, []);
+
   // Initial data load
   useEffect(() => {
-    Promise.all([loadAuthStatus(), loadModels()]).finally(() =>
+    Promise.all([loadAuthStatus(), loadModels(), loadGlobalSettings()]).finally(() =>
       setAuthLoading(false),
     );
-  }, [loadAuthStatus, loadModels]);
+  }, [loadAuthStatus, loadModels, loadGlobalSettings]);
 
   // Check if we have GitHub provider
   const githubProvider = authProviders.find((p) => p.id === "github");

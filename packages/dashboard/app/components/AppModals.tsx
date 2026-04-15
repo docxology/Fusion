@@ -55,6 +55,8 @@ interface AppModalsProps {
   };
   /** Optional override for the settings modal close handler. When provided, this is called instead of modalManager.closeSettings. */
   onSettingsClose?: () => void;
+  /** Optional callback to reopen the onboarding guide from Settings. Closes Settings and opens ModelOnboardingModal. */
+  onReopenOnboarding?: () => void;
 }
 
 export function AppModals({
@@ -72,6 +74,7 @@ export function AppModals({
   deepLink,
   settings,
   onSettingsClose,
+  onReopenOnboarding,
 }: AppModalsProps) {
   // Use the override handler if provided, otherwise fall back to modalManager.closeSettings
   const handleSettingsClose = onSettingsClose ?? modalManager.closeSettings;
@@ -110,6 +113,7 @@ export function AppModals({
             colorTheme={settings.colorTheme}
             onThemeModeChange={settings.setThemeMode}
             onColorThemeChange={settings.setColorTheme}
+            onReopenOnboarding={onReopenOnboarding}
           />
         </ModalErrorBoundary>
       )}
