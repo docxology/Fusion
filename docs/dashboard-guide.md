@@ -246,6 +246,29 @@ Roadmaps View includes one-click AI-powered milestone generation to help you qui
 - Suggestions are ephemeral (in-memory only) and don't persist to the database
 - The generate button is disabled when no roadmap is selected or prompt is empty
 
+### AI Feature Suggestions
+
+Within each milestone, you can generate AI-powered feature suggestions to quickly add features.
+
+**How to use:**
+
+1. Open a roadmap and select it
+2. Find the milestone you want to add features to
+3. Click the **AI Suggestions** button in the milestone's action bar
+4. Review the suggested features:
+   - Click the **check icon** on any suggestion to accept it as a feature
+   - Click **Accept All** to add all suggestions as features (in order)
+   - Click **Clear** to discard all suggestions
+
+**Key features:**
+
+- Features are generated using AI based on the milestone's context
+- Suggestions include existing features to avoid duplication
+- Accepted features appear immediately in the milestone
+- Features are created in the order displayed in the suggestion list
+- Suggestion state is scoped to each milestone (no cross-milestone leakage)
+- The AI Suggestions button shows "Generating..." while a request is in flight
+
 ### Empty States
 
 - **No roadmaps**: "No roadmaps yet. Click + to create one."

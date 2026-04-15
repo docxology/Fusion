@@ -4592,6 +4592,40 @@ export function generateMilestoneSuggestions(
   );
 }
 
+/** Response type for feature suggestions */
+export interface FeatureSuggestionsResponse {
+  suggestions: Array<{
+    title: string;
+    description?: string;
+  }>;
+}
+
+/** Input for generating feature suggestions */
+export interface GenerateFeatureSuggestionsInput {
+  /** Optional prompt to guide feature generation */
+  prompt?: string;
+  /** Number of features to generate (default 5, max 10) */
+  count?: number;
+}
+
+/** Generate feature suggestions for a milestone */
+export function generateFeatureSuggestions(
+  milestoneId: string,
+  input?: GenerateFeatureSuggestionsInput,
+  projectId?: string
+): Promise<FeatureSuggestionsResponse> {
+  return api<FeatureSuggestionsResponse>(
+    withProjectId(`/roadmaps/milestones/${encodeURIComponent(milestoneId)}/suggestions/features`, projectId),
+    {
+      method: "POST",
+      body: JSON.stringify({
+        ...(input?.prompt !== undefined ? { prompt: input.prompt.trim() } : {}),
+        ...(input?.count !== undefined ? { count: input.count } : {}),
+      }),
+    }
+  );
+}
+
 // ── AI Sessions (Background Tasks) ─────────────────────────────────────────
 
 export interface AiSessionSummary {

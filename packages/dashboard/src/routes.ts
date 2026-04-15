@@ -45,6 +45,8 @@ import { writeSSEEvent } from "./sse-buffer.js";
 import {
   generateMilestoneSuggestions,
   validateSuggestionInput,
+  generateFeatureSuggestions,
+  validateFeatureSuggestionInput,
   ValidationError as SuggestionValidationError,
   ParseError as SuggestionParseError,
   ServiceUnavailableError as SuggestionServiceUnavailableError,
@@ -2776,6 +2778,83 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         throw err;
       }
       rethrowAsApiError(err, "Failed to generate milestone suggestions");
+    }
+  });
+
+  // ── Roadmap Feature Suggestions ──────────────────────────────────────────
+
+  // Generate feature suggestions for a milestone
+  router.post("/roadmaps/milestones/:milestoneId/suggestions/features", async (req, res) => {
+    try {
+      const { store: scopedStore } = await getProjectContext(req);
+      const roadmapStore = scopedStore.getRoadmapStore();
+      const { milestoneId } = req.params;
+
+      // Get the milestone to find the roadmap
+      const milestone = roadmapStore.getMilestone(milestoneId);
+      if (!milestone) {
+        throw notFound(`Milestone ${milestoneId} not found`);
+      }
+
+      // Get the roadmap for context
+      const roadmap = roadmapStore.getRoadmap(milestone.roadmapId);
+      if (!roadmap) {
+        throw notFound(`Roadmap ${milestone.roadmapId} not found`);
+      }
+
+      // Get existing features for this milestone
+      const existingFeatures = roadmapStore.listFeatures(milestoneId);
+      const existingFeatureTitles = existingFeatures.map((f) => f.title);
+
+      // Validate input
+      let input: { prompt?: string; count?: number };
+      try {
+        validateFeatureSuggestionInput(req.body);
+        input = req.body as { prompt?: string; count?: number };
+      } catch (err) {
+        if (err instanceof SuggestionValidationError) {
+          throw badRequest(err.message);
+        }
+        throw err;
+      }
+
+      // Build the context for feature suggestion
+      const context = {
+        roadmapTitle: roadmap.title,
+        roadmapDescription: roadmap.description,
+        milestoneTitle: milestone.title,
+        milestoneDescription: milestone.description,
+        existingFeatureTitles,
+      };
+
+      // Get project root directory for AI context
+      const rootDir = scopedStore.getRootDir();
+
+      // Generate suggestions
+      try {
+        const suggestions = await generateFeatureSuggestions(
+          context,
+          input.count,
+          input.prompt,
+          rootDir
+        );
+
+        res.json({ suggestions });
+      } catch (err) {
+        if (err instanceof SuggestionParseError) {
+          throw internalError(err.message);
+        }
+        if (err instanceof SuggestionServiceUnavailableError) {
+          res.status(503).json({ error: err.message });
+          return;
+        }
+        throw err;
+      }
+    } catch (err: any) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      rethrowAsApiError(err, "Failed to generate feature suggestions");
     }
   });
 

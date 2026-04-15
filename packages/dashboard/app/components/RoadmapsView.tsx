@@ -1,7 +1,7 @@
 import { useState, useCallback } from "react";
-import { Plus, Pencil, Trash2, Check, X, GripVertical } from "lucide-react";
+import { Plus, Pencil, Trash2, Check, X, GripVertical, Sparkles } from "lucide-react";
 import type { ToastType } from "../hooks/useToast";
-import { useRoadmaps } from "../hooks/useRoadmaps";
+import { useRoadmaps, type FeatureSuggestion } from "../hooks/useRoadmaps";
 import type {
   Roadmap,
   RoadmapMilestone,
@@ -178,6 +178,13 @@ function MilestoneCard({
   onFeatureDrop,
   onFeatureDragLeave,
   onFeatureDropOnMilestone,
+  // Feature suggestion props
+  featureSuggestions,
+  isGeneratingFeatureSuggestions,
+  onGenerateFeatureSuggestions,
+  onAcceptFeatureSuggestion,
+  onAcceptAllFeatureSuggestions,
+  onClearFeatureSuggestions,
 }: {
   milestone: RoadmapMilestone;
   features: RoadmapFeature[];
@@ -215,6 +222,13 @@ function MilestoneCard({
   onFeatureDrop: (featureId: string, targetIndex: number) => void;
   onFeatureDragLeave: (e: React.DragEvent) => void;
   onFeatureDropOnMilestone: () => void;
+  // Feature suggestion props
+  featureSuggestions?: FeatureSuggestion[];
+  isGeneratingFeatureSuggestions?: boolean;
+  onGenerateFeatureSuggestions?: () => void;
+  onAcceptFeatureSuggestion?: (index: number) => void;
+  onAcceptAllFeatureSuggestions?: () => void;
+  onClearFeatureSuggestions?: () => void;
 }) {
   const isEditingMilestone = milestoneEdit?.milestoneId === milestone.id;
 
@@ -391,6 +405,20 @@ function MilestoneCard({
           <Plus size={12} />
           <span>Add Feature</span>
         </button>
+        <button
+          className="roadmaps-view__suggest-btn"
+          onClick={() => {
+            // Generate feature suggestions for this milestone
+            onGenerateFeatureSuggestions?.();
+          }}
+          disabled={isGeneratingFeatureSuggestions ?? false}
+          title="Generate feature suggestions with AI"
+          aria-label="Generate feature suggestions"
+          data-testid={`generate-features-${milestone.id}`}
+        >
+          <Sparkles size={12} />
+          <span>{isGeneratingFeatureSuggestions ? "Generating..." : "AI Suggestions"}</span>
+        </button>
       </div>
 
       <div
@@ -566,6 +594,60 @@ function MilestoneCard({
               </div>
             );
           })
+        )}
+
+        {/* Feature Suggestions Section */}
+        {featureSuggestions && featureSuggestions.length > 0 && (
+          <div className="roadmap-suggestion-section">
+            <div className="roadmap-suggestion-header">
+              <h4 className="roadmap-suggestion-title">AI Feature Suggestions</h4>
+              <div className="roadmap-suggestion-actions">
+                <button
+                  className="roadmap-suggestion-accept-all-btn"
+                  onClick={() => onAcceptAllFeatureSuggestions?.()}
+                  title="Accept all suggestions"
+                  aria-label="Accept all"
+                  data-testid={`accept-all-features-${milestone.id}`}
+                >
+                  Accept All
+                </button>
+                <button
+                  className="roadmap-suggestion-clear-btn"
+                  onClick={() => onClearFeatureSuggestions?.()}
+                  title="Clear suggestions"
+                  aria-label="Clear"
+                  data-testid={`clear-features-${milestone.id}`}
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+            <div className="roadmap-suggestion-list">
+              {featureSuggestions.map((suggestion, index) => (
+                <div
+                  key={`suggestion-${index}`}
+                  className="roadmap-suggestion-card"
+                  data-testid={`feature-suggestion-${milestone.id}-${index}`}
+                >
+                  <div className="roadmap-suggestion-content">
+                    <span className="roadmap-suggestion-card-title">{suggestion.title}</span>
+                    {suggestion.description && (
+                      <p className="roadmap-suggestion-card-desc">{suggestion.description}</p>
+                    )}
+                  </div>
+                  <button
+                    className="roadmap-suggestion-accept-btn"
+                    onClick={() => onAcceptFeatureSuggestion?.(index)}
+                    title="Accept this suggestion"
+                    aria-label="Accept"
+                    data-testid={`accept-feature-${milestone.id}-${index}`}
+                  >
+                    <Check size={12} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
       </div>
     </div>
@@ -789,6 +871,12 @@ export function RoadmapsView({ projectId, addToast }: RoadmapsViewProps) {
     acceptMilestoneSuggestion,
     acceptAllMilestoneSuggestions,
     clearMilestoneSuggestions,
+    featureSuggestionsByMilestoneId,
+    isGeneratingFeatureSuggestions,
+    generateFeatureSuggestions,
+    acceptFeatureSuggestion,
+    acceptAllFeatureSuggestions,
+    clearFeatureSuggestions,
   } = useRoadmaps({ projectId });
 
   // Goal prompt state for milestone suggestion generation
@@ -1290,6 +1378,56 @@ export function RoadmapsView({ projectId, addToast }: RoadmapsViewProps) {
     setGoalPrompt("");
   }, [clearMilestoneSuggestions]);
 
+  // Feature suggestion handlers
+  const handleGenerateFeatureSuggestions = useCallback(
+    async (milestoneId: string) => {
+      try {
+        await generateFeatureSuggestions(milestoneId, { count: 5 }, {
+          onError: (err) => addToast(err.message, "error"),
+        });
+      } catch {
+        // Error handled in callback
+      }
+    },
+    [generateFeatureSuggestions, addToast]
+  );
+
+  const handleAcceptFeatureSuggestion = useCallback(
+    async (milestoneId: string, index: number) => {
+      try {
+        await acceptFeatureSuggestion(milestoneId, index, {
+          onError: (err) => addToast(err.message, "error"),
+        });
+        addToast("Feature added", "success");
+      } catch {
+        // Error handled in callback
+      }
+    },
+    [acceptFeatureSuggestion, addToast]
+  );
+
+  const handleAcceptAllFeatureSuggestions = useCallback(
+    async (milestoneId: string) => {
+      const suggestions = featureSuggestionsByMilestoneId[milestoneId] || [];
+      try {
+        await acceptAllFeatureSuggestions(milestoneId, {
+          onError: (err) => addToast(err.message, "error"),
+        });
+        addToast(`${suggestions.length} features added`, "success");
+      } catch {
+        // Error handled in callback
+      }
+    },
+    [acceptAllFeatureSuggestions, featureSuggestionsByMilestoneId, addToast]
+  );
+
+  const handleClearFeatureSuggestions = useCallback(
+    (milestoneId: string) => {
+      clearFeatureSuggestions(milestoneId);
+    },
+    [clearFeatureSuggestions]
+  );
+
   const handleCreateFeature = useCallback(
     async (milestoneId: string, input: RoadmapFeatureCreateInput) => {
       try {
@@ -1606,6 +1744,13 @@ export function RoadmapsView({ projectId, addToast }: RoadmapsViewProps) {
                       onFeatureDrop={handleFeatureDrop}
                       onFeatureDragLeave={handleFeatureDragLeave}
                       onFeatureDropOnMilestone={handleFeatureDropOnMilestone}
+                      // Feature suggestion props
+                      featureSuggestions={featureSuggestionsByMilestoneId[milestone.id]}
+                      isGeneratingFeatureSuggestions={isGeneratingFeatureSuggestions(milestone.id)}
+                      onGenerateFeatureSuggestions={() => handleGenerateFeatureSuggestions(milestone.id)}
+                      onAcceptFeatureSuggestion={(index) => handleAcceptFeatureSuggestion(milestone.id, index)}
+                      onAcceptAllFeatureSuggestions={() => handleAcceptAllFeatureSuggestions(milestone.id)}
+                      onClearFeatureSuggestions={() => handleClearFeatureSuggestions(milestone.id)}
                     />
                   ))}
                 </>

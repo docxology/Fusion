@@ -26,6 +26,7 @@ vi.mock("../../api", () => ({
   reorderRoadmapMilestones: vi.fn(),
   reorderRoadmapFeatures: vi.fn(),
   moveRoadmapFeature: vi.fn(),
+  generateFeatureSuggestions: vi.fn(),
 }));
 
 // Mock lucide-react icons
@@ -38,6 +39,7 @@ vi.mock("lucide-react", () => ({
   Check: (props: unknown) => <span data-testid="check-icon" {...props}>Check</span>,
   X: (props: unknown) => <span data-testid="x-icon" {...props}>X</span>,
   GripVertical: (props: unknown) => <span data-testid="grip-icon" {...props}>Grip</span>,
+  Sparkles: (props: unknown) => <span data-testid="sparkles-icon" {...props}>Sparkles</span>,
 }));
 
 const mockRoadmaps: Roadmap[] = [
@@ -505,5 +507,25 @@ describe("RoadmapsView", () => {
     });
 
     expect(screen.getByText("Select a roadmap from the sidebar to view its milestones.")).toBeInTheDocument();
+  });
+
+  describe("Feature suggestions", () => {
+    it("shows AI Suggestions button when roadmap is selected", async () => {
+      render(<RoadmapsView addToast={mockAddToast} />);
+
+      // Wait for roadmap to load
+      await waitFor(() => {
+        expect(screen.getByText("Q2 Roadmap")).toBeInTheDocument();
+      });
+
+      // Select roadmap
+      const roadmapItem = screen.getByTestId("roadmap-item-RM-001");
+      fireEvent.click(roadmapItem);
+
+      // Wait for milestone to load and button to appear
+      await waitFor(() => {
+        expect(screen.getByTestId("generate-features-RMS-001")).toBeInTheDocument();
+      }, { timeout: 3000 });
+    });
   });
 });

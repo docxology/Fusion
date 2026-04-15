@@ -19,6 +19,12 @@ export interface MilestoneSuggestion {
   description?: string;
 }
 
+/** A suggested feature from AI generation */
+export interface FeatureSuggestion {
+  title: string;
+  description?: string;
+}
+
 export interface UseRoadmapsOptions {
   /** When provided, fetches roadmaps for this project */
   projectId?: string;
@@ -90,6 +96,20 @@ export interface UseRoadmapsResult {
   /** Clear all pending milestone suggestions */
   clearMilestoneSuggestions: () => void;
 
+  // Feature suggestion callbacks (ephemeral, scoped by milestone)
+  /** Pending feature suggestions by milestone ID (ephemeral, in-memory only) */
+  featureSuggestionsByMilestoneId: Record<string, FeatureSuggestion[]>;
+  /** Whether feature suggestions are being generated for a specific milestone */
+  isGeneratingFeatureSuggestions: (milestoneId: string) => boolean;
+  /** Generate feature suggestions for a specific milestone */
+  generateFeatureSuggestions: (milestoneId: string, input?: { prompt?: string; count?: number }, opts?: { onSuccess?: () => void; onError?: (err: Error) => void }) => Promise<void>;
+  /** Accept a single feature suggestion and create it as a feature */
+  acceptFeatureSuggestion: (milestoneId: string, index: number, opts?: { onSuccess?: () => void; onError?: (err: Error) => void }) => Promise<void>;
+  /** Accept all feature suggestions for a milestone (sequentially) */
+  acceptAllFeatureSuggestions: (milestoneId: string, opts?: { onSuccess?: () => void; onError?: (err: Error) => void }) => Promise<void>;
+  /** Clear pending feature suggestions for a specific milestone */
+  clearFeatureSuggestions: (milestoneId: string) => void;
+
   /** Refresh all roadmaps */
   refresh: () => Promise<void>;
 }
@@ -107,6 +127,17 @@ export function useRoadmaps(options?: UseRoadmapsOptions): UseRoadmapsResult {
   // Ephemeral milestone suggestion state (in-memory only, not persisted)
   const [milestoneSuggestions, setMilestoneSuggestions] = useState<MilestoneSuggestion[]>([]);
   const [isGeneratingSuggestions, setIsGeneratingSuggestions] = useState(false);
+
+  // Ephemeral feature suggestion state keyed by milestone ID (in-memory only, not persisted)
+  const [featureSuggestionsByMilestoneId, setFeatureSuggestionsByMilestoneId] = useState<Record<string, FeatureSuggestion[]>>({});
+  const [generatingFeatureSuggestions, setGeneratingFeatureSuggestions] = useState<Record<string, boolean>>({});
+
+  // Refs for feature suggestion state
+  const featureSuggestionsByMilestoneIdRef = useRef(featureSuggestionsByMilestoneId);
+  const generatingFeatureSuggestionsRef = useRef(generatingFeatureSuggestions);
+
+  featureSuggestionsByMilestoneIdRef.current = featureSuggestionsByMilestoneId;
+  generatingFeatureSuggestionsRef.current = generatingFeatureSuggestions;
 
   // Track previous projectId to detect changes
   const previousProjectIdRef = useRef<string | undefined>(projectId);
@@ -137,6 +168,8 @@ export function useRoadmaps(options?: UseRoadmapsOptions): UseRoadmapsResult {
       // Clear ephemeral suggestion state
       setMilestoneSuggestions([]);
       setIsGeneratingSuggestions(false);
+      setFeatureSuggestionsByMilestoneId({});
+      setGeneratingFeatureSuggestions({});
     }
   }, [projectId]);
 
@@ -719,6 +752,195 @@ export function useRoadmaps(options?: UseRoadmapsOptions): UseRoadmapsResult {
     setIsGeneratingSuggestions(false);
   }, []);
 
+  // ── Feature Suggestion Actions (Ephemeral, Milestone-Scoped) ───────────────────────────────────
+
+  const isGeneratingFeatureSuggestions = useCallback((milestoneId: string): boolean => {
+    return generatingFeatureSuggestionsRef.current[milestoneId] ?? false;
+  }, []);
+
+  const generateFeatureSuggestions = useCallback(async (
+    milestoneId: string,
+    input?: { prompt?: string; count?: number },
+    opts?: { onSuccess?: () => void; onError?: (err: Error) => void }
+  ) => {
+    // Capture project context version for stale-response protection
+    const contextVersionAtStart = projectContextVersionRef.current;
+    const requestProjectId = projectIdRef.current;
+
+    // Set loading state for this milestone
+    setGeneratingFeatureSuggestions((prev) => ({ ...prev, [milestoneId]: true }));
+
+    try {
+      const response = await api.generateFeatureSuggestions(
+        milestoneId,
+        input,
+        requestProjectId
+      );
+
+      // Check for stale response
+      if (projectContextVersionRef.current !== contextVersionAtStart) {
+        // Project context changed during fetch - discard response
+        return;
+      }
+
+      setFeatureSuggestionsByMilestoneId((prev) => ({
+        ...prev,
+        [milestoneId]: response.suggestions,
+      }));
+      opts?.onSuccess?.();
+    } catch (err) {
+      // Check for stale response
+      if (projectContextVersionRef.current !== contextVersionAtStart) {
+        // Project context changed during fetch - discard error
+        return;
+      }
+
+      const error = err instanceof Error ? err : new Error("Failed to generate feature suggestions");
+      opts?.onError?.(error);
+      throw error;
+    } finally {
+      // Only clear loading state if context hasn't changed
+      if (projectContextVersionRef.current === contextVersionAtStart) {
+        setGeneratingFeatureSuggestions((prev) => ({ ...prev, [milestoneId]: false }));
+      }
+    }
+  }, []);
+
+  const acceptFeatureSuggestion = useCallback(async (
+    milestoneId: string,
+    index: number,
+    opts?: { onSuccess?: () => void; onError?: (err: Error) => void }
+  ) => {
+    // Capture state for stale-response protection
+    const contextVersionAtStart = projectContextVersionRef.current;
+    const currentSuggestions = featureSuggestionsByMilestoneIdRef.current[milestoneId] || [];
+
+    if (index < 0 || index >= currentSuggestions.length) {
+      const error = new Error("Invalid suggestion index");
+      opts?.onError?.(error);
+      throw error;
+    }
+
+    const suggestion = currentSuggestions[index];
+
+    // Optimistic update: remove from suggestions immediately
+    setFeatureSuggestionsByMilestoneId((prev) => {
+      const milestoneSuggestions = prev[milestoneId] || [];
+      return {
+        ...prev,
+        [milestoneId]: milestoneSuggestions.filter((_, i) => i !== index),
+      };
+    });
+
+    try {
+      await api.createRoadmapFeature(
+        milestoneId,
+        { title: suggestion.title, description: suggestion.description },
+        projectIdRef.current
+      );
+
+      // Check for stale response
+      if (projectContextVersionRef.current !== contextVersionAtStart) {
+        // Project context changed - re-add to suggestions (optimistic rollback)
+        setFeatureSuggestionsByMilestoneId((prev) => {
+          const milestoneSuggestions = prev[milestoneId] || [];
+          const updated = [...milestoneSuggestions];
+          updated.splice(index, 0, suggestion);
+          return { ...prev, [milestoneId]: updated };
+        });
+        return;
+      }
+
+      // Refresh the roadmap to get the new feature
+      if (selectedRoadmapIdRef.current) {
+        void fetchSelectedRoadmap(selectedRoadmapIdRef.current);
+      }
+
+      opts?.onSuccess?.();
+    } catch (err) {
+      // Rollback: re-add to suggestions
+      setFeatureSuggestionsByMilestoneId((prev) => {
+        const milestoneSuggestions = prev[milestoneId] || [];
+        const updated = [...milestoneSuggestions];
+        updated.splice(index, 0, suggestion);
+        return { ...prev, [milestoneId]: updated };
+      });
+
+      const error = err instanceof Error ? err : new Error("Failed to accept suggestion");
+      opts?.onError?.(error);
+      throw error;
+    }
+  }, [fetchSelectedRoadmap]);
+
+  const acceptAllFeatureSuggestions = useCallback(async (
+    milestoneId: string,
+    opts?: { onSuccess?: () => void; onError?: (err: Error) => void }
+  ) => {
+    // Capture current suggestions (they will be cleared sequentially)
+    const suggestionsToAccept = [...(featureSuggestionsByMilestoneIdRef.current[milestoneId] || [])];
+    if (suggestionsToAccept.length === 0) {
+      return;
+    }
+
+    // Capture state for stale-response protection
+    const contextVersionAtStart = projectContextVersionRef.current;
+
+    // Clear suggestions for this milestone immediately (optimistic)
+    setFeatureSuggestionsByMilestoneId((prev) => ({
+      ...prev,
+      [milestoneId]: [],
+    }));
+
+    // Accept sequentially to preserve order
+    for (let i = 0; i < suggestionsToAccept.length; i++) {
+      // Check for stale response
+      if (projectContextVersionRef.current !== contextVersionAtStart) {
+        // Project context changed - stop accepting
+        break;
+      }
+
+      const suggestion = suggestionsToAccept[i];
+
+      try {
+        await api.createRoadmapFeature(
+          milestoneId,
+          { title: suggestion.title, description: suggestion.description },
+          projectIdRef.current
+        );
+      } catch (err) {
+        // On error, stop accepting and report
+        const error = err instanceof Error ? err : new Error("Failed to accept all suggestions");
+        opts?.onError?.(error);
+        throw error;
+      }
+    }
+
+    // Check for stale response
+    if (projectContextVersionRef.current !== contextVersionAtStart) {
+      return;
+    }
+
+    // Refresh the roadmap to get all new features
+    if (selectedRoadmapIdRef.current) {
+      void fetchSelectedRoadmap(selectedRoadmapIdRef.current);
+    }
+
+    opts?.onSuccess?.();
+  }, [fetchSelectedRoadmap]);
+
+  const clearFeatureSuggestions = useCallback((milestoneId: string) => {
+    setFeatureSuggestionsByMilestoneId((prev) => {
+      const updated = { ...prev };
+      delete updated[milestoneId];
+      return updated;
+    });
+    setGeneratingFeatureSuggestions((prev) => {
+      const updated = { ...prev };
+      delete updated[milestoneId];
+      return updated;
+    });
+  }, []);
+
   const refresh = useCallback(async () => {
     await fetchRoadmaps();
     if (selectedRoadmapIdRef.current) {
@@ -753,6 +975,12 @@ export function useRoadmaps(options?: UseRoadmapsOptions): UseRoadmapsResult {
     acceptMilestoneSuggestion,
     acceptAllMilestoneSuggestions,
     clearMilestoneSuggestions,
+    featureSuggestionsByMilestoneId,
+    isGeneratingFeatureSuggestions,
+    generateFeatureSuggestions,
+    acceptFeatureSuggestion,
+    acceptAllFeatureSuggestions,
+    clearFeatureSuggestions,
     refresh,
   };
 }

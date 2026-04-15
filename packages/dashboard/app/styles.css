@@ -30720,6 +30720,35 @@ html .column.drag-over * {
   border-color: var(--text-muted);
 }
 
+/* AI Suggestion button */
+.roadmaps-view__suggest-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-xs) var(--space-sm);
+  background: var(--accent, #58a6ff);
+  color: #fff;
+  border: 1px solid var(--accent, #58a6ff);
+  border-radius: var(--radius-md);
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: background var(--transition-fast), transform var(--transition-fast);
+}
+
+.roadmaps-view__suggest-btn:hover {
+  background: var(--accent-hover, #4c94e6);
+  border-color: var(--accent-hover, #4c94e6);
+}
+
+.roadmaps-view__suggest-btn:active {
+  transform: scale(0.97);
+}
+
+.roadmaps-view__suggest-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* Feature list */
 .roadmaps-view__feature-list {
   flex: 1;

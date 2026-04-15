@@ -4303,5 +4303,73 @@ describe("Settings API wrappers", () => {
       const [url] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
       expect(url).toBe("/api/roadmaps/features/RF-001/move?projectId=proj_xyz");
     });
+
+    it("generateFeatureSuggestions sends POST with milestone ID", async () => {
+      const { generateFeatureSuggestions } = await import("./api");
+
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        headers: {
+          get: (name: string) =>
+            name.toLowerCase() === "content-type" ? "application/json" : null,
+        },
+        json: () => Promise.resolve({ suggestions: [{ title: "Feature 1" }, { title: "Feature 2" }] }),
+        text: () => Promise.resolve(JSON.stringify({ suggestions: [{ title: "Feature 1" }, { title: "Feature 2" }] })),
+      } as unknown as Response);
+
+      const result = await generateFeatureSuggestions("RMS-001");
+
+      expect(result.suggestions).toHaveLength(2);
+      expect(result.suggestions[0].title).toBe("Feature 1");
+      const [url] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+      expect(url).toContain("/api/roadmaps/milestones/RMS-001/suggestions/features");
+    });
+
+    it("generateFeatureSuggestions includes input parameters in body", async () => {
+      const { generateFeatureSuggestions } = await import("./api");
+
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        headers: {
+          get: (name: string) =>
+            name.toLowerCase() === "content-type" ? "application/json" : null,
+        },
+        json: () => Promise.resolve({ suggestions: [] }),
+        text: () => Promise.resolve(JSON.stringify({ suggestions: [] })),
+      } as unknown as Response);
+
+      await generateFeatureSuggestions("RMS-001", { prompt: "Focus on auth", count: 3 });
+
+      const [, options] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+      const body = JSON.parse((options as RequestInit).body as string);
+      expect(body.prompt).toBe("Focus on auth");
+      expect(body.count).toBe(3);
+    });
+
+    it("generateFeatureSuggestions includes projectId when provided", async () => {
+      const { generateFeatureSuggestions } = await import("./api");
+
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        headers: {
+          get: (name: string) =>
+            name.toLowerCase() === "content-type" ? "application/json" : null,
+        },
+        json: () => Promise.resolve({ suggestions: [] }),
+        text: () => Promise.resolve(JSON.stringify({ suggestions: [] })),
+      } as unknown as Response);
+
+      await generateFeatureSuggestions("RMS-001", undefined, "proj_abc");
+
+      const [url] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+      expect(url).toContain("/api/roadmaps/milestones/RMS-001/suggestions/features");
+      expect(url).toContain("projectId=proj_abc");
+    });
   });
 });

@@ -19,6 +19,7 @@ vi.mock("../../api", () => ({
   reorderRoadmapMilestones: vi.fn(),
   reorderRoadmapFeatures: vi.fn(),
   moveRoadmapFeature: vi.fn(),
+  generateFeatureSuggestions: vi.fn(),
 }));
 
 const mockRoadmaps = [
@@ -678,6 +679,315 @@ describe("useRoadmaps", () => {
       await expect(
         result.current.moveFeature("NONEXISTENT", "RMS-002", 0, { onError })
       ).rejects.toThrow("Feature not found");
+    });
+  });
+
+  describe("Feature suggestions", () => {
+    it("generates feature suggestions for a milestone", async () => {
+      const mockSuggestions = [
+        { title: "Feature 1", description: "Description 1" },
+        { title: "Feature 2", description: "Description 2" },
+      ];
+
+      (api.generateFeatureSuggestions as ReturnType<typeof vi.fn>).mockResolvedValue({
+        suggestions: mockSuggestions,
+      });
+
+      const { result } = renderHook(() => useRoadmaps());
+
+      await waitFor(() => {
+        expect(result.current.loading).toBe(false);
+      });
+
+      result.current.selectRoadmap("RM-001");
+      await waitFor(() => {
+        expect(result.current.selectedRoadmapId).toBe("RM-001");
+      });
+
+      await result.current.generateFeatureSuggestions("RMS-001", { count: 5 });
+
+      await waitFor(() => {
+        expect(result.current.featureSuggestionsByMilestoneId["RMS-001"]).toEqual(mockSuggestions);
+      });
+
+      expect(api.generateFeatureSuggestions).toHaveBeenCalledWith(
+        "RMS-001",
+        { count: 5 },
+        undefined
+      );
+    });
+
+    it("generates feature suggestions with prompt", async () => {
+      (api.generateFeatureSuggestions as ReturnType<typeof vi.fn>).mockResolvedValue({
+        suggestions: [{ title: "Auth Feature" }],
+      });
+
+      const { result } = renderHook(() => useRoadmaps());
+
+      await waitFor(() => {
+        expect(result.current.loading).toBe(false);
+      });
+
+      await result.current.generateFeatureSuggestions("RMS-001", { prompt: "Focus on auth", count: 3 });
+
+      expect(api.generateFeatureSuggestions).toHaveBeenCalledWith(
+        "RMS-001",
+        { prompt: "Focus on auth", count: 3 },
+        undefined
+      );
+    });
+
+    it("accepts a feature suggestion", async () => {
+      const mockFeature = {
+        id: "RF-NEW",
+        milestoneId: "RMS-001",
+        title: "New Feature",
+        description: "New description",
+        orderIndex: 0,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      };
+
+      (api.createRoadmapFeature as ReturnType<typeof vi.fn>).mockResolvedValue(mockFeature);
+
+      const { result } = renderHook(() => useRoadmaps());
+
+      await waitFor(() => {
+        expect(result.current.loading).toBe(false);
+      });
+
+      result.current.selectRoadmap("RM-001");
+      await waitFor(() => {
+        expect(result.current.selectedRoadmapId).toBe("RM-001");
+      });
+
+      // Manually set suggestions (simulating what generateFeatureSuggestions would do)
+      (api.generateFeatureSuggestions as ReturnType<typeof vi.fn>).mockResolvedValue({
+        suggestions: [{ title: "New Feature", description: "New description" }],
+      });
+
+      await result.current.generateFeatureSuggestions("RMS-001");
+
+      await waitFor(() => {
+        expect(result.current.featureSuggestionsByMilestoneId["RMS-001"]).toHaveLength(1);
+      });
+
+      // Accept the suggestion
+      await result.current.acceptFeatureSuggestion("RMS-001", 0);
+
+      // API should be called with the correct arguments
+      expect(api.createRoadmapFeature).toHaveBeenCalledWith(
+        "RMS-001",
+        { title: "New Feature", description: "New description" },
+        undefined
+      );
+    });
+
+    it("accepts all feature suggestions sequentially", async () => {
+      const mockFeatures = [
+        {
+          id: "RF-NEW-1",
+          milestoneId: "RMS-001",
+          title: "Feature 1",
+          orderIndex: 0,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+        {
+          id: "RF-NEW-2",
+          milestoneId: "RMS-001",
+          title: "Feature 2",
+          orderIndex: 1,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+      ];
+
+      (api.createRoadmapFeature as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce(mockFeatures[0])
+        .mockResolvedValueOnce(mockFeatures[1]);
+
+      const { result } = renderHook(() => useRoadmaps());
+
+      await waitFor(() => {
+        expect(result.current.loading).toBe(false);
+      });
+
+      result.current.selectRoadmap("RM-001");
+      await waitFor(() => {
+        expect(result.current.selectedRoadmapId).toBe("RM-001");
+      });
+
+      // Set suggestions
+      (api.generateFeatureSuggestions as ReturnType<typeof vi.fn>).mockResolvedValue({
+        suggestions: [
+          { title: "Feature 1" },
+          { title: "Feature 2" },
+        ],
+      });
+
+      await result.current.generateFeatureSuggestions("RMS-001");
+
+      await waitFor(() => {
+        expect(result.current.featureSuggestionsByMilestoneId["RMS-001"]).toHaveLength(2);
+      });
+
+      // Capture suggestions before accepting
+      const suggestionsToAccept = [...(result.current.featureSuggestionsByMilestoneId["RMS-001"] || [])];
+      expect(suggestionsToAccept).toHaveLength(2);
+
+      // Accept all
+      await result.current.acceptAllFeatureSuggestions("RMS-001");
+
+      // Verify sequential calls (not parallel)
+      expect(api.createRoadmapFeature).toHaveBeenCalledTimes(2);
+      expect(api.createRoadmapFeature).toHaveBeenNthCalledWith(
+        1,
+        "RMS-001",
+        { title: "Feature 1", description: undefined },
+        undefined
+      );
+      expect(api.createRoadmapFeature).toHaveBeenNthCalledWith(
+        2,
+        "RMS-001",
+        { title: "Feature 2", description: undefined },
+        undefined
+      );
+    });
+
+    it("clears feature suggestions for a milestone", async () => {
+      const { result } = renderHook(() => useRoadmaps());
+
+      await waitFor(() => {
+        expect(result.current.loading).toBe(false);
+      });
+
+      result.current.selectRoadmap("RM-001");
+      await waitFor(() => {
+        expect(result.current.selectedRoadmapId).toBe("RM-001");
+      });
+
+      // Set suggestions
+      (api.generateFeatureSuggestions as ReturnType<typeof vi.fn>).mockResolvedValue({
+        suggestions: [{ title: "Feature 1" }, { title: "Feature 2" }],
+      });
+
+      await result.current.generateFeatureSuggestions("RMS-001");
+
+      await waitFor(() => {
+        expect(result.current.featureSuggestionsByMilestoneId["RMS-001"]).toHaveLength(2);
+      });
+
+      // Clear suggestions
+      result.current.clearFeatureSuggestions("RMS-001");
+
+      await waitFor(() => {
+        expect(result.current.featureSuggestionsByMilestoneId["RMS-001"]).toBeUndefined();
+      });
+    });
+
+    it("is isolated per milestone", async () => {
+      const { result } = renderHook(() => useRoadmaps());
+
+      await waitFor(() => {
+        expect(result.current.loading).toBe(false);
+      });
+
+      result.current.selectRoadmap("RM-001");
+      await waitFor(() => {
+        expect(result.current.selectedRoadmapId).toBe("RM-001");
+      });
+
+      // Set suggestions for milestone 1
+      (api.generateFeatureSuggestions as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        suggestions: [{ title: "MS1 Feature" }],
+      });
+
+      await result.current.generateFeatureSuggestions("RMS-001");
+
+      await waitFor(() => {
+        expect(result.current.featureSuggestionsByMilestoneId["RMS-001"]).toHaveLength(1);
+      });
+
+      // Set suggestions for milestone 2
+      (api.generateFeatureSuggestions as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        suggestions: [{ title: "MS2 Feature" }],
+      });
+
+      await result.current.generateFeatureSuggestions("RMS-002");
+
+      await waitFor(() => {
+        // Verify suggestions are isolated
+        expect(result.current.featureSuggestionsByMilestoneId["RMS-001"]).toHaveLength(1);
+        expect(result.current.featureSuggestionsByMilestoneId["RMS-001"][0].title).toBe("MS1 Feature");
+        expect(result.current.featureSuggestionsByMilestoneId["RMS-002"]).toHaveLength(1);
+        expect(result.current.featureSuggestionsByMilestoneId["RMS-002"][0].title).toBe("MS2 Feature");
+      });
+    });
+
+    it("returns correct loading state for feature suggestions", async () => {
+      let resolveGenerate: (value: { suggestions: Array<{ title: string }> }) => void;
+      (api.generateFeatureSuggestions as ReturnType<typeof vi.fn>).mockImplementation(() => {
+        return new Promise((resolve) => {
+          resolveGenerate = resolve;
+        });
+      });
+
+      const { result } = renderHook(() => useRoadmaps());
+
+      await waitFor(() => {
+        expect(result.current.loading).toBe(false);
+      });
+
+      // Start generating
+      const generatePromise = result.current.generateFeatureSuggestions("RMS-001");
+
+      // Wait for loading state to update
+      await waitFor(() => {
+        expect(result.current.isGeneratingFeatureSuggestions("RMS-001")).toBe(true);
+      });
+
+      // Complete generation
+      resolveGenerate!({ suggestions: [{ title: "Feature" }] });
+      await generatePromise;
+
+      await waitFor(() => {
+        // Check loading state is false
+        expect(result.current.isGeneratingFeatureSuggestions("RMS-001")).toBe(false);
+      });
+    });
+
+    it("clears feature suggestions when project changes", async () => {
+      const { result, rerender } = renderHook(
+        ({ projectId }: { projectId?: string }) => useRoadmaps({ projectId }),
+        { initialProps: { projectId: "proj-1" } }
+      );
+
+      await waitFor(() => {
+        expect(result.current.loading).toBe(false);
+      });
+
+      result.current.selectRoadmap("RM-001");
+      await waitFor(() => {
+        expect(result.current.selectedRoadmapId).toBe("RM-001");
+      });
+
+      // Set suggestions
+      (api.generateFeatureSuggestions as ReturnType<typeof vi.fn>).mockResolvedValue({
+        suggestions: [{ title: "Feature" }],
+      });
+
+      await result.current.generateFeatureSuggestions("RMS-001");
+
+      await waitFor(() => {
+        expect(result.current.featureSuggestionsByMilestoneId["RMS-001"]).toHaveLength(1);
+      });
+
+      // Change project
+      rerender({ projectId: "proj-2" });
+
+      // Suggestions should be cleared
+      expect(result.current.featureSuggestionsByMilestoneId["RMS-001"]).toBeUndefined();
     });
   });
 });
