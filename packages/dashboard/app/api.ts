@@ -420,8 +420,7 @@ export async function fetchAgentLogsWithMeta(
   const suffix = params.toString() ? `?${params.toString()}` : "";
   const url = withProjectId(`/tasks/${taskId}/logs${suffix}`, projectId);
 
-  // Call api function to get the fetch-compatible URL
-  const response = await fetch(url);
+  const response = await fetch(buildApiUrl(url));
 
   if (!response.ok) {
     const data = await response.json().catch(() => ({ error: "Failed to fetch agent logs" }));
