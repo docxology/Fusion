@@ -328,6 +328,39 @@ describe("Header", () => {
     expect(missionsBtn.getAttribute("aria-pressed")).toBe("false");
   });
 
+  // ── Roadmaps View Toggle ───────────────────────────────────────
+
+  it("renders roadmaps view button in view toggle when onChangeView is provided", () => {
+    const onChangeView = vi.fn();
+    render(<Header view="board" onChangeView={onChangeView} />);
+    const roadmapsBtn = screen.getByTitle("Roadmaps view");
+    expect(roadmapsBtn).toBeDefined();
+  });
+
+  it("calls onChangeView with 'roadmaps' when roadmaps view button is clicked", () => {
+    const onChangeView = vi.fn();
+    render(<Header view="board" onChangeView={onChangeView} />);
+    const roadmapsBtn = screen.getByTitle("Roadmaps view");
+    fireEvent.click(roadmapsBtn);
+    expect(onChangeView).toHaveBeenCalledWith("roadmaps");
+  });
+
+  it("marks roadmaps view button as active when view is 'roadmaps'", () => {
+    const onChangeView = vi.fn();
+    render(<Header view="roadmaps" onChangeView={onChangeView} />);
+    const roadmapsBtn = screen.getByTitle("Roadmaps view");
+    expect(roadmapsBtn.className).toContain("active");
+    expect(roadmapsBtn.getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("does not mark roadmaps view button as active when view is 'board'", () => {
+    const onChangeView = vi.fn();
+    render(<Header view="board" onChangeView={onChangeView} />);
+    const roadmapsBtn = screen.getByTitle("Roadmaps view");
+    expect(roadmapsBtn.className).not.toContain("active");
+    expect(roadmapsBtn.getAttribute("aria-pressed")).toBe("false");
+  });
+
   // ── Search Visibility by View ─────────────────────────────────────
 
   it("shows search toggle when view is 'board' on desktop", () => {

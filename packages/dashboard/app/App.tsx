@@ -8,6 +8,7 @@ import { AgentsView } from "./components/AgentsView";
 import { MissionManager } from "./components/MissionManager";
 import { NodesView } from "./components/NodesView";
 import { ChatView } from "./components/ChatView";
+import { RoadmapsView } from "./components/RoadmapsView";
 import { PageErrorBoundary } from "./components/ErrorBoundary";
 import { AppModals } from "./components/AppModals";
 import { DashboardLoader, type DashboardLoaderStage } from "./components/DashboardLoader";
@@ -317,6 +318,14 @@ function AppInner() {
       return (
         <PageErrorBoundary>
           <ChatView addToast={addToast} projectId={currentProject?.id} />
+        </PageErrorBoundary>
+      );
+    }
+
+    if (taskView === "roadmaps") {
+      return (
+        <PageErrorBoundary>
+          <RoadmapsView addToast={addToast} projectId={currentProject?.id} />
         </PageErrorBoundary>
       );
     }

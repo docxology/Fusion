@@ -20,15 +20,16 @@ import {
   Target,
   Terminal,
   Workflow,
+  Map,
 } from "lucide-react";
 import { fetchScripts } from "../api";
 import { useViewportMode } from "./Header";
 
 export interface MobileNavBarProps {
   /** Current task view mode */
-  view: "board" | "list" | "agents" | "missions" | "chat";
+  view: "board" | "list" | "agents" | "missions" | "chat" | "roadmaps";
   /** Change task view handler */
-  onChangeView: (view: "board" | "list" | "agents" | "missions" | "chat") => void;
+  onChangeView: (view: "board" | "list" | "agents" | "missions" | "chat" | "roadmaps") => void;
   /** Whether the ExecutorStatusBar footer is visible */
   footerVisible: boolean;
   /** Whether any full-screen modal is currently open (hides the tab bar) */
@@ -225,6 +226,18 @@ export function MobileNavBar({
         >
           <MessageSquare />
           <span className="mobile-nav-tab-label">Chat</span>
+        </button>
+
+        <button
+          type="button"
+          className={`mobile-nav-tab${view === "roadmaps" ? " mobile-nav-tab--active" : ""}`}
+          data-testid="mobile-nav-tab-roadmaps"
+          role="tab"
+          aria-selected={view === "roadmaps"}
+          onClick={() => onChangeView("roadmaps")}
+        >
+          <Map />
+          <span className="mobile-nav-tab-label">Roadmaps</span>
         </button>
 
         <button
@@ -450,6 +463,16 @@ export function MobileNavBar({
             >
               <MessageSquare />
               <span>Chat</span>
+            </button>
+
+            <button
+              type="button"
+              className="mobile-more-item"
+              data-testid="mobile-more-item-roadmaps"
+              onClick={() => handleMoreAction(() => onChangeView("roadmaps"))}
+            >
+              <Map />
+              <span>Roadmaps</span>
             </button>
 
             <div className="mobile-more-separator" />

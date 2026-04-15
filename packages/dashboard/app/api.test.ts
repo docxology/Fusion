@@ -3498,3 +3498,389 @@ describe("fetchMemoryBackendStatus", () => {
     expect(result.capabilities.supportsAtomicWrite).toBe(false);
   });
 });
+
+describe("Roadmap API wrappers", () => {
+  const originalFetch = globalThis.fetch;
+
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      headers: {
+        get: (name: string) =>
+          name.toLowerCase() === "content-type" ? "application/json" : null,
+      },
+      json: () => Promise.resolve([]),
+      text: () => Promise.resolve("[]"),
+    } as unknown as Response);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  const mockRoadmap = {
+    id: "RM-001",
+    title: "Q2 Roadmap",
+    description: "Q2 product roadmap",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+
+  const mockRoadmapHierarchy = {
+    ...mockRoadmap,
+    milestones: [
+      {
+        id: "RMS-001",
+        roadmapId: "RM-001",
+        title: "Milestone 1",
+        description: "First milestone",
+        orderIndex: 0,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        features: [
+          {
+            id: "RF-001",
+            milestoneId: "RMS-001",
+            title: "Feature 1",
+            description: "First feature",
+            orderIndex: 0,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          },
+        ],
+      },
+    ],
+  };
+
+  it("fetchRoadmaps sends GET and propagates projectId", async () => {
+    const { fetchRoadmaps } = await import("./api");
+
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      headers: {
+        get: (name: string) =>
+          name.toLowerCase() === "content-type" ? "application/json" : null,
+      },
+      json: () => Promise.resolve([mockRoadmap]),
+      text: () => Promise.resolve(JSON.stringify([mockRoadmap])),
+    } as unknown as Response);
+
+    const result = await fetchRoadmaps("proj_abc");
+
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("RM-001");
+    expect((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0]).toContain("/api/roadmaps");
+    expect((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0]).toContain("projectId=proj_abc");
+  });
+
+  it("createRoadmap sends POST with input payload", async () => {
+    const { createRoadmap } = await import("./api");
+
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      headers: {
+        get: (name: string) =>
+          name.toLowerCase() === "content-type" ? "application/json" : null,
+      },
+      json: () => Promise.resolve(mockRoadmap),
+      text: () => Promise.resolve(JSON.stringify(mockRoadmap)),
+    } as unknown as Response);
+
+    const result = await createRoadmap({ title: "Q2 Roadmap", description: "Q2 product roadmap" }, "proj_abc");
+
+    expect(result.id).toBe("RM-001");
+    expect((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0]).toContain("/api/roadmaps");
+    expect((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0]).toContain("projectId=proj_abc");
+    expect((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].method).toBe("POST");
+    const body = JSON.parse((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body);
+    expect(body.title).toBe("Q2 Roadmap");
+  });
+
+  it("fetchRoadmap returns roadmap with hierarchy", async () => {
+    const { fetchRoadmap } = await import("./api");
+
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      headers: {
+        get: (name: string) =>
+          name.toLowerCase() === "content-type" ? "application/json" : null,
+      },
+      json: () => Promise.resolve(mockRoadmapHierarchy),
+      text: () => Promise.resolve(JSON.stringify(mockRoadmapHierarchy)),
+    } as unknown as Response);
+
+    const result = await fetchRoadmap("RM-001");
+
+    expect(result.id).toBe("RM-001");
+    expect(result.milestones).toHaveLength(1);
+    expect(result.milestones[0].features).toHaveLength(1);
+    expect((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0]).toContain("/api/roadmaps/RM-001");
+  });
+
+  it("updateRoadmap sends PATCH with updates", async () => {
+    const { updateRoadmap } = await import("./api");
+
+    const updatedRoadmap = { ...mockRoadmap, title: "Updated Roadmap" };
+
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      headers: {
+        get: (name: string) =>
+          name.toLowerCase() === "content-type" ? "application/json" : null,
+      },
+      json: () => Promise.resolve(updatedRoadmap),
+      text: () => Promise.resolve(JSON.stringify(updatedRoadmap)),
+    } as unknown as Response);
+
+    const result = await updateRoadmap("RM-001", { title: "Updated Roadmap" });
+
+    expect(result.title).toBe("Updated Roadmap");
+    expect((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0]).toContain("/api/roadmaps/RM-001");
+    expect((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].method).toBe("PATCH");
+  });
+
+  it("deleteRoadmap sends DELETE and returns void", async () => {
+    const { deleteRoadmap } = await import("./api");
+
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      status: 204,
+      statusText: "No Content",
+      headers: {
+        get: (name: string) =>
+          name.toLowerCase() === "content-type" ? null : null,
+      },
+      json: () => Promise.resolve(undefined),
+      text: () => Promise.resolve(""),
+    } as unknown as Response);
+
+    const result = await deleteRoadmap("RM-001");
+
+    expect(result).toBeUndefined();
+    expect((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0]).toContain("/api/roadmaps/RM-001");
+    expect((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].method).toBe("DELETE");
+  });
+
+  it("createRoadmapMilestone sends POST with milestone input", async () => {
+    const { createRoadmapMilestone } = await import("./api");
+
+    const mockMilestone = {
+      id: "RMS-001",
+      roadmapId: "RM-001",
+      title: "Milestone 1",
+      orderIndex: 0,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      headers: {
+        get: (name: string) =>
+          name.toLowerCase() === "content-type" ? "application/json" : null,
+      },
+      json: () => Promise.resolve(mockMilestone),
+      text: () => Promise.resolve(JSON.stringify(mockMilestone)),
+    } as unknown as Response);
+
+    const result = await createRoadmapMilestone("RM-001", { title: "Milestone 1" });
+
+    expect(result.id).toBe("RMS-001");
+    expect(result.roadmapId).toBe("RM-001");
+    expect((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0]).toContain("/api/roadmaps/RM-001/milestones");
+    expect((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].method).toBe("POST");
+  });
+
+  it("updateRoadmapMilestone sends PATCH", async () => {
+    const { updateRoadmapMilestone } = await import("./api");
+
+    const updatedMilestone = {
+      id: "RMS-001",
+      roadmapId: "RM-001",
+      title: "Updated Milestone",
+      orderIndex: 0,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      headers: {
+        get: (name: string) =>
+          name.toLowerCase() === "content-type" ? "application/json" : null,
+      },
+      json: () => Promise.resolve(updatedMilestone),
+      text: () => Promise.resolve(JSON.stringify(updatedMilestone)),
+    } as unknown as Response);
+
+    const result = await updateRoadmapMilestone("RMS-001", { title: "Updated Milestone" });
+
+    expect(result.title).toBe("Updated Milestone");
+    expect((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0]).toContain("/api/roadmaps/milestones/RMS-001");
+    expect((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].method).toBe("PATCH");
+  });
+
+  it("deleteRoadmapMilestone sends DELETE", async () => {
+    const { deleteRoadmapMilestone } = await import("./api");
+
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      status: 204,
+      statusText: "No Content",
+      headers: {
+        get: (name: string) =>
+          name.toLowerCase() === "content-type" ? null : null,
+      },
+      json: () => Promise.resolve(undefined),
+      text: () => Promise.resolve(""),
+    } as unknown as Response);
+
+    const result = await deleteRoadmapMilestone("RMS-001");
+
+    expect(result).toBeUndefined();
+    expect((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0]).toContain("/api/roadmaps/milestones/RMS-001");
+    expect((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].method).toBe("DELETE");
+  });
+
+  it("createRoadmapFeature sends POST with feature input", async () => {
+    const { createRoadmapFeature } = await import("./api");
+
+    const mockFeature = {
+      id: "RF-001",
+      milestoneId: "RMS-001",
+      title: "Feature 1",
+      orderIndex: 0,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      headers: {
+        get: (name: string) =>
+          name.toLowerCase() === "content-type" ? "application/json" : null,
+      },
+      json: () => Promise.resolve(mockFeature),
+      text: () => Promise.resolve(JSON.stringify(mockFeature)),
+    } as unknown as Response);
+
+    const result = await createRoadmapFeature("RMS-001", { title: "Feature 1" });
+
+    expect(result.id).toBe("RF-001");
+    expect(result.milestoneId).toBe("RMS-001");
+    expect((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0]).toContain("/api/roadmaps/milestones/RMS-001/features");
+    expect((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].method).toBe("POST");
+  });
+
+  it("updateRoadmapFeature sends PATCH", async () => {
+    const { updateRoadmapFeature } = await import("./api");
+
+    const updatedFeature = {
+      id: "RF-001",
+      milestoneId: "RMS-001",
+      title: "Updated Feature",
+      orderIndex: 0,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      headers: {
+        get: (name: string) =>
+          name.toLowerCase() === "content-type" ? "application/json" : null,
+      },
+      json: () => Promise.resolve(updatedFeature),
+      text: () => Promise.resolve(JSON.stringify(updatedFeature)),
+    } as unknown as Response);
+
+    const result = await updateRoadmapFeature("RF-001", { title: "Updated Feature" });
+
+    expect(result.title).toBe("Updated Feature");
+    expect((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0]).toContain("/api/roadmaps/features/RF-001");
+    expect((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].method).toBe("PATCH");
+  });
+
+  it("deleteRoadmapFeature sends DELETE", async () => {
+    const { deleteRoadmapFeature } = await import("./api");
+
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      status: 204,
+      statusText: "No Content",
+      headers: {
+        get: (name: string) =>
+          name.toLowerCase() === "content-type" ? null : null,
+      },
+      json: () => Promise.resolve(undefined),
+      text: () => Promise.resolve(""),
+    } as unknown as Response);
+
+    const result = await deleteRoadmapFeature("RF-001");
+
+    expect(result).toBeUndefined();
+    expect((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0]).toContain("/api/roadmaps/features/RF-001");
+    expect((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].method).toBe("DELETE");
+  });
+
+  it("fetchRoadmapFeatures returns features for a milestone", async () => {
+    const { fetchRoadmapFeatures } = await import("./api");
+
+    const mockFeatures = [
+      {
+        id: "RF-001",
+        milestoneId: "RMS-001",
+        title: "Feature 1",
+        orderIndex: 0,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        id: "RF-002",
+        milestoneId: "RMS-001",
+        title: "Feature 2",
+        orderIndex: 1,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ];
+
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      headers: {
+        get: (name: string) =>
+          name.toLowerCase() === "content-type" ? "application/json" : null,
+      },
+      json: () => Promise.resolve(mockFeatures),
+      text: () => Promise.resolve(JSON.stringify(mockFeatures)),
+    } as unknown as Response);
+
+    const result = await fetchRoadmapFeatures("RMS-001");
+
+    expect(result).toHaveLength(2);
+    expect(result[0].id).toBe("RF-001");
+    expect((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0]).toContain("/api/roadmaps/milestones/RMS-001/features");
+  });
+});

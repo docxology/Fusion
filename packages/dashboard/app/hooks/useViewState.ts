@@ -4,7 +4,7 @@ import type { ProjectInfo } from "../api";
 import { getScopedItem, setScopedItem } from "../utils/projectStorage";
 
 export type ViewMode = "overview" | "project";
-export type TaskView = "board" | "list" | "agents" | "missions" | "chat";
+export type TaskView = "board" | "list" | "agents" | "missions" | "chat" | "roadmaps";
 
 interface UseViewStateOptions {
   projectsLoading: boolean;
@@ -48,7 +48,7 @@ export function useViewState(options: UseViewStateOptions): UseViewStateResult {
 
   const [taskView, setTaskView] = useState<TaskView>(() => {
     const saved = getScopedItem("kb-dashboard-task-view");
-    if (saved === "board" || saved === "list" || saved === "agents" || saved === "missions" || saved === "chat") return saved;
+    if (saved === "board" || saved === "list" || saved === "agents" || saved === "missions" || saved === "chat" || saved === "roadmaps") return saved as TaskView;
     return "board";
   });
 
@@ -58,8 +58,8 @@ export function useViewState(options: UseViewStateOptions): UseViewStateResult {
 
   useEffect(() => {
     const saved = getScopedItem("kb-dashboard-task-view", currentProject?.id);
-    if (saved === "board" || saved === "list" || saved === "agents" || saved === "missions" || saved === "chat") {
-      setTaskView(saved);
+    if (saved === "board" || saved === "list" || saved === "agents" || saved === "missions" || saved === "chat" || saved === "roadmaps") {
+      setTaskView(saved as TaskView);
       return;
     }
     setTaskView("board");

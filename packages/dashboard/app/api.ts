@@ -37,6 +37,16 @@ import type {
   AgentRatingInput,
   ChatSession,
   ChatMessage,
+  Roadmap,
+  RoadmapMilestone,
+  RoadmapFeature,
+  RoadmapCreateInput,
+  RoadmapUpdateInput,
+  RoadmapMilestoneCreateInput,
+  RoadmapMilestoneUpdateInput,
+  RoadmapFeatureCreateInput,
+  RoadmapFeatureUpdateInput,
+  RoadmapWithHierarchy,
 } from "@fusion/core";
 import type { PlanningQuestion, PlanningSummary } from "@fusion/core";
 import type { ScheduledTask, ScheduledTaskCreateInput, ScheduledTaskUpdateInput, AutomationRunResult, Routine, RoutineCreateInput, RoutineUpdateInput, RoutineExecutionResult } from "@fusion/core";
@@ -4383,6 +4393,97 @@ export async function previewEnrichedDescription(
     // If endpoint doesn't exist, throw to trigger fallback
     throw new Error("Preview endpoint not available");
   }
+}
+
+// ── Roadmap API ─────────────────────────────────────────────────────────────────
+
+/** Fetch all roadmaps */
+export function fetchRoadmaps(projectId?: string): Promise<Roadmap[]> {
+  return api<Roadmap[]>(withProjectId("/roadmaps", projectId));
+}
+
+/** Create a new roadmap */
+export function createRoadmap(input: RoadmapCreateInput, projectId?: string): Promise<Roadmap> {
+  return api<Roadmap>(withProjectId("/roadmaps", projectId), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+/** Fetch a single roadmap with full hierarchy (milestones and features) */
+export function fetchRoadmap(roadmapId: string, projectId?: string): Promise<RoadmapWithHierarchy> {
+  return api<RoadmapWithHierarchy>(withProjectId(`/roadmaps/${encodeURIComponent(roadmapId)}`, projectId));
+}
+
+/** Update roadmap metadata */
+export function updateRoadmap(roadmapId: string, updates: RoadmapUpdateInput, projectId?: string): Promise<Roadmap> {
+  return api<Roadmap>(withProjectId(`/roadmaps/${encodeURIComponent(roadmapId)}`, projectId), {
+    method: "PATCH",
+    body: JSON.stringify(updates),
+  });
+}
+
+/** Delete a roadmap */
+export function deleteRoadmap(roadmapId: string, projectId?: string): Promise<void> {
+  return api<void>(withProjectId(`/roadmaps/${encodeURIComponent(roadmapId)}`, projectId), {
+    method: "DELETE",
+  });
+}
+
+/** Fetch milestones for a roadmap */
+export function fetchRoadmapMilestones(roadmapId: string, projectId?: string): Promise<RoadmapMilestone[]> {
+  return api<RoadmapMilestone[]>(withProjectId(`/roadmaps/${encodeURIComponent(roadmapId)}/milestones`, projectId));
+}
+
+/** Create a milestone in a roadmap */
+export function createRoadmapMilestone(roadmapId: string, input: RoadmapMilestoneCreateInput, projectId?: string): Promise<RoadmapMilestone> {
+  return api<RoadmapMilestone>(withProjectId(`/roadmaps/${encodeURIComponent(roadmapId)}/milestones`, projectId), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+/** Update milestone metadata */
+export function updateRoadmapMilestone(milestoneId: string, updates: RoadmapMilestoneUpdateInput, projectId?: string): Promise<RoadmapMilestone> {
+  return api<RoadmapMilestone>(withProjectId(`/roadmaps/milestones/${encodeURIComponent(milestoneId)}`, projectId), {
+    method: "PATCH",
+    body: JSON.stringify(updates),
+  });
+}
+
+/** Delete a milestone */
+export function deleteRoadmapMilestone(milestoneId: string, projectId?: string): Promise<void> {
+  return api<void>(withProjectId(`/roadmaps/milestones/${encodeURIComponent(milestoneId)}`, projectId), {
+    method: "DELETE",
+  });
+}
+
+/** Fetch features for a milestone */
+export function fetchRoadmapFeatures(milestoneId: string, projectId?: string): Promise<RoadmapFeature[]> {
+  return api<RoadmapFeature[]>(withProjectId(`/roadmaps/milestones/${encodeURIComponent(milestoneId)}/features`, projectId));
+}
+
+/** Create a feature in a milestone */
+export function createRoadmapFeature(milestoneId: string, input: RoadmapFeatureCreateInput, projectId?: string): Promise<RoadmapFeature> {
+  return api<RoadmapFeature>(withProjectId(`/roadmaps/milestones/${encodeURIComponent(milestoneId)}/features`, projectId), {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+/** Update feature metadata */
+export function updateRoadmapFeature(featureId: string, updates: RoadmapFeatureUpdateInput, projectId?: string): Promise<RoadmapFeature> {
+  return api<RoadmapFeature>(withProjectId(`/roadmaps/features/${encodeURIComponent(featureId)}`, projectId), {
+    method: "PATCH",
+    body: JSON.stringify(updates),
+  });
+}
+
+/** Delete a feature */
+export function deleteRoadmapFeature(featureId: string, projectId?: string): Promise<void> {
+  return api<void>(withProjectId(`/roadmaps/features/${encodeURIComponent(featureId)}`, projectId), {
+    method: "DELETE",
+  });
 }
 
 // ── AI Sessions (Background Tasks) ─────────────────────────────────────────

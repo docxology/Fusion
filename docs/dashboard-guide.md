@@ -170,6 +170,42 @@ Manage mission hierarchy and progression state.
 
 ![Mission manager](./screenshots/mission-manager.png)
 
+## Roadmaps View
+
+Roadmaps provide a dedicated planning surface for organizing product development with hierarchical milestones and features.
+
+### Creating Roadmaps
+
+1. Click the **+** button in the Roadmaps sidebar to create a new roadmap
+2. Enter a title and optional description
+3. Click **Create** to save
+
+### Managing Milestones
+
+- Click **+ Add Milestone** to add milestones to the selected roadmap
+- Click the **pencil icon** to edit a milestone title inline (Enter to save, Escape to cancel)
+- Click the **trash icon** to delete a milestone (requires confirmation)
+
+### Managing Features
+
+- Click **+ Add Feature** within a milestone card to add features
+- Features are displayed in a scrollable list within each milestone
+- Hover over a feature to reveal edit and delete actions
+- Click the **pencil icon** to edit a feature title inline
+- Click the **trash icon** to delete a feature (requires confirmation)
+
+### Roadmap Actions
+
+- Click a roadmap in the sidebar to view its milestones and features
+- Use the header buttons to edit or delete the selected roadmap
+- Delete requires confirmation and removes all associated milestones and features
+
+### Empty States
+
+- **No roadmaps**: "No roadmaps yet. Click + to create one."
+- **No milestones**: "This roadmap has no milestones. Click + on a milestone lane to add one."
+- **No features**: "No features yet." displayed within each milestone card
+
 ## Task Detail Modal
 
 Inspect logs, step progress, workflow outcomes, and model overrides.
