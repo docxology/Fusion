@@ -135,6 +135,21 @@ vi.mock("../../components/CustomModelDropdown", () => ({
   ),
 }));
 
+// Mock CustomModelDropdown for onboarding modal tests
+vi.mock("../../components/CustomModelDropdown", () => ({
+  CustomModelDropdown: ({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) => (
+    <select
+      data-testid="mock-model-dropdown"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+    >
+      <option value="">{placeholder ?? "Select…"}</option>
+      <option value="anthropic/claude-sonnet-4-5">Claude Sonnet 4.5</option>
+      <option value="openai/gpt-4o">GPT-4o</option>
+    </select>
+  ),
+}));
+
 // Mock state holders for dynamic mocking
 const mockProjectsState = {
   projects: [] as any[],
