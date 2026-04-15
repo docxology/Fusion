@@ -49,6 +49,32 @@ vi.mock("../../api", () => ({
   updateRoutine: (...args: any[]) => mockUpdateRoutine(...args),
   deleteRoutine: (...args: any[]) => mockDeleteRoutine(...args),
   runRoutine: (...args: any[]) => mockRunRoutine(...args),
+  fetchModels: vi.fn().mockResolvedValue({
+    models: [
+      { provider: "openai", id: "gpt-4o", name: "GPT-4o", reasoning: false, contextWindow: 128000 },
+    ],
+    favoriteProviders: [],
+    favoriteModels: [],
+  }),
+}));
+
+// Mock CustomModelDropdown
+vi.mock("../CustomModelDropdown", () => ({
+  CustomModelDropdown: ({ value, onChange, disabled, models }: any) => (
+    <select
+      data-testid="model-dropdown"
+      value={value || ""}
+      onChange={(e) => onChange(e.target.value)}
+      disabled={disabled}
+    >
+      <option value="">Use default</option>
+      {models?.map((m: any) => (
+        <option key={`${m.provider}/${m.id}`} value={`${m.provider}/${m.id}`}>
+          {m.name}
+        </option>
+      ))}
+    </select>
+  ),
 }));
 
 function makeSchedule(overrides: Partial<ScheduledTask> = {}): ScheduledTask {

@@ -1,6 +1,9 @@
 import { useState, useCallback, useEffect } from "react";
 import type { ScheduledTask, ScheduledTaskCreateInput, ScheduleType, AutomationStep } from "@fusion/core";
 import { ScheduleStepsEditor } from "./ScheduleStepsEditor";
+import { CustomModelDropdown } from "./CustomModelDropdown";
+import { fetchModels } from "../api";
+import type { ModelInfo } from "../api";
 
 /** Mapping from preset schedule types to their cron expressions. Mirrored from @fusion/core. */
 const PRESET_CRON: Record<Exclude<ScheduleType, "custom">, string> = {
@@ -41,7 +44,19 @@ function isLikelyCron(expr: string): boolean {
   return parts.every((p) => /^[\d*,/\-]+$/.test(p));
 }
 
+/**
+ * Generate a unique step ID using crypto.randomUUID with fallback.
+ */
+function generateStepId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  // Deterministic fallback: timestamp + random hex
+  return `step-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+}
+
 type ScheduleMode = "simple" | "advanced";
+type SimpleType = "command" | "ai-prompt";
 
 interface ScheduleFormProps {
   /** Existing schedule for editing. Omit for create mode. */
@@ -56,7 +71,10 @@ export function ScheduleForm({ schedule, onSubmit, onCancel }: ScheduleFormProps
   const isEditing = !!schedule;
 
   // Determine initial mode based on whether the schedule has steps
-  const initialMode: ScheduleMode = schedule?.steps && schedule.steps.length > 0 ? "advanced" : "simple";
+  // But single ai-prompt steps from simple mode should show in simple mode
+  const isSimpleAiPrompt = schedule?.steps && schedule.steps.length === 1 && 
+    schedule.steps[0].type === "ai-prompt" && !schedule.command;
+  const initialMode: ScheduleMode = (schedule?.steps && schedule.steps.length > 0 && !isSimpleAiPrompt) ? "advanced" : "simple";
 
   const [mode, setMode] = useState<ScheduleMode>(initialMode);
   const [name, setName] = useState(schedule?.name ?? "");
@@ -69,6 +87,66 @@ export function ScheduleForm({ schedule, onSubmit, onCancel }: ScheduleFormProps
   const [steps, setSteps] = useState<AutomationStep[]>(schedule?.steps ?? []);
   const [hasEditingSteps, setHasEditingSteps] = useState(false);
 
+  // Simple mode type toggle state
+  const [simpleType, setSimpleType] = useState<SimpleType>(() => {
+    // Detect if editing a simple-mode AI prompt schedule
+    if (schedule?.steps && schedule.steps.length === 1 && schedule.steps[0].type === "ai-prompt" && !schedule.command) {
+      return "ai-prompt";
+    }
+    return "command";
+  });
+  const [prompt, setPrompt] = useState(() => {
+    if (schedule?.steps && schedule.steps.length === 1 && schedule.steps[0].type === "ai-prompt" && !schedule.command) {
+      return schedule.steps[0].prompt ?? "";
+    }
+    return "";
+  });
+  const [modelProvider, setModelProvider] = useState(() => {
+    if (schedule?.steps && schedule.steps.length === 1 && schedule.steps[0].type === "ai-prompt" && !schedule.command) {
+      return schedule.steps[0].modelProvider ?? "";
+    }
+    return "";
+  });
+  const [modelId, setModelId] = useState(() => {
+    if (schedule?.steps && schedule.steps.length === 1 && schedule.steps[0].type === "ai-prompt" && !schedule.command) {
+      return schedule.steps[0].modelId ?? "";
+    }
+    return "";
+  });
+
+  // Model dropdown state
+  const [models, setModels] = useState<ModelInfo[]>([]);
+  const [modelsLoading, setModelsLoading] = useState(false);
+  const [modelsError, setModelsError] = useState<string | null>(null);
+
+  // Fetch models for model dropdown
+  useEffect(() => {
+    let cancelled = false;
+    setModelsLoading(true);
+    setModelsError(null);
+
+    fetchModels()
+      .then((response) => {
+        if (!cancelled) {
+          setModels(response.models);
+        }
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setModelsError(err instanceof Error ? err.message : "Failed to load models");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setModelsLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
 
@@ -79,10 +157,45 @@ export function ScheduleForm({ schedule, onSubmit, onCancel }: ScheduleFormProps
     }
   }, [scheduleType]);
 
+  // Compute combined model value from separate fields
+  const modelValue = (modelProvider && modelId) ? `${modelProvider}/${modelId}` : "";
+
+  // Handle model selection from the dropdown
+  const handleModelChange = useCallback((value: string) => {
+    if (!value) {
+      setModelProvider("");
+      setModelId("");
+    } else {
+      const slashIdx = value.indexOf("/");
+      if (slashIdx !== -1) {
+        setModelProvider(value.slice(0, slashIdx));
+        setModelId(value.slice(slashIdx + 1));
+      }
+    }
+  }, []);
+
   const validate = useCallback((): boolean => {
     const e: Record<string, string> = {};
     if (!name.trim()) e.name = "Name is required";
-    if (mode === "simple" && !command.trim()) e.command = "Command is required";
+    
+    // Simple mode validation
+    if (mode === "simple") {
+      if (simpleType === "command") {
+        if (!command.trim()) e.command = "Command is required";
+      } else {
+        // AI Prompt mode
+        if (!prompt.trim()) e.prompt = "Prompt is required";
+        
+        // Model consistency check: both must be set or both must be empty
+        const hasProvider = !!modelProvider.trim();
+        const hasModelId = !!modelId.trim();
+        if (hasProvider !== hasModelId) {
+          e.model = "Both model provider and model ID must be set, or both must be empty";
+        }
+      }
+    }
+    
+    // Advanced mode validation
     if (mode === "advanced" && steps.length === 0) e.steps = "At least one step is required";
     
     // Validate step content in multi-step mode
@@ -124,7 +237,7 @@ export function ScheduleForm({ schedule, onSubmit, onCancel }: ScheduleFormProps
     }
     setErrors(e);
     return Object.keys(e).length === 0;
-  }, [name, command, mode, steps, scheduleType, cronExpression, timeoutMs, hasEditingSteps]);
+  }, [name, command, prompt, modelProvider, modelId, mode, simpleType, steps, scheduleType, cronExpression, timeoutMs, hasEditingSteps]);
 
   const handleSubmit = useCallback(
     async (e: React.FormEvent) => {
@@ -132,27 +245,68 @@ export function ScheduleForm({ schedule, onSubmit, onCancel }: ScheduleFormProps
       if (!validate()) return;
       setSubmitting(true);
       try {
-        await onSubmit({
-          name: name.trim(),
-          description: description.trim() || undefined,
-          scheduleType,
-          cronExpression: scheduleType === "custom" ? cronExpression.trim() : undefined,
-          command: mode === "simple" ? command.trim() : "",
-          enabled,
-          timeoutMs,
-          steps: mode === "advanced" ? steps : undefined,
-        });
+        let submitData: ScheduledTaskCreateInput;
+        
+        if (mode === "simple") {
+          if (simpleType === "command") {
+            submitData = {
+              name: name.trim(),
+              description: description.trim() || undefined,
+              scheduleType,
+              cronExpression: scheduleType === "custom" ? cronExpression.trim() : undefined,
+              command: command.trim(),
+              enabled,
+              timeoutMs,
+              steps: undefined,
+            };
+          } else {
+            // AI Prompt mode - create a single-step automation
+            const aiStep: AutomationStep = {
+              id: generateStepId(),
+              type: "ai-prompt",
+              name: name.trim(),
+              prompt: prompt.trim(),
+              modelProvider: modelProvider.trim() || undefined,
+              modelId: modelId.trim() || undefined,
+            };
+            submitData = {
+              name: name.trim(),
+              description: description.trim() || undefined,
+              scheduleType,
+              cronExpression: scheduleType === "custom" ? cronExpression.trim() : undefined,
+              command: "",
+              enabled,
+              timeoutMs,
+              steps: [aiStep],
+            };
+          }
+        } else {
+          submitData = {
+            name: name.trim(),
+            description: description.trim() || undefined,
+            scheduleType,
+            cronExpression: scheduleType === "custom" ? cronExpression.trim() : undefined,
+            command: "",
+            enabled,
+            timeoutMs,
+            steps,
+          };
+        }
+        
+        await onSubmit(submitData);
       } finally {
         setSubmitting(false);
       }
     },
-    [validate, onSubmit, name, description, scheduleType, cronExpression, command, enabled, timeoutMs, mode, steps],
+    [validate, onSubmit, name, description, scheduleType, cronExpression, command, prompt, modelProvider, modelId, enabled, timeoutMs, mode, simpleType, steps],
   );
 
   const cronFieldId = "schedule-cron";
   const cronErrorId = "schedule-cron-error";
   const nameErrorId = "schedule-name-error";
   const commandErrorId = "schedule-command-error";
+  const promptErrorId = "schedule-prompt-error";
+  const modelErrorId = "schedule-model-error";
   const timeoutErrorId = "schedule-timeout-error";
 
   return (
@@ -253,29 +407,97 @@ export function ScheduleForm({ schedule, onSubmit, onCancel }: ScheduleFormProps
         </div>
         <small>
           {mode === "simple"
-            ? "Run a single shell command"
+            ? "Run a single shell command or AI prompt"
             : "Run multiple steps sequentially (commands and AI prompts)"}
         </small>
       </div>
 
       {mode === "simple" ? (
-        <div className="form-group">
-          <label htmlFor="schedule-command">Command</label>
-          <input
-            id="schedule-command"
-            type="text"
-            placeholder="e.g. npm run update-deps"
-            value={command}
-            onChange={(e) => setCommand(e.target.value)}
-            aria-invalid={!!errors.command}
-            aria-describedby={errors.command ? commandErrorId : undefined}
-          />
-          {errors.command ? (
-            <small id={commandErrorId} className="field-error">{errors.command}</small>
+        <>
+          {/* Simple mode type toggle */}
+          <div className="form-group">
+            <label>Action Type</label>
+            <div className="schedule-mode-toggle" role="radiogroup" aria-label="Action type">
+              <button
+                type="button"
+                className={`schedule-mode-btn${simpleType === "command" ? " active" : ""}`}
+                onClick={() => setSimpleType("command")}
+                role="radio"
+                aria-checked={simpleType === "command"}
+              >
+                Command
+              </button>
+              <button
+                type="button"
+                className={`schedule-mode-btn${simpleType === "ai-prompt" ? " active" : ""}`}
+                onClick={() => setSimpleType("ai-prompt")}
+                role="radio"
+                aria-checked={simpleType === "ai-prompt"}
+              >
+                AI Prompt
+              </button>
+            </div>
+          </div>
+
+          {simpleType === "command" ? (
+            <div className="form-group">
+              <label htmlFor="schedule-command">Command</label>
+              <input
+                id="schedule-command"
+                type="text"
+                placeholder="e.g. npm run update-deps"
+                value={command}
+                onChange={(e) => setCommand(e.target.value)}
+                aria-invalid={!!errors.command}
+                aria-describedby={errors.command ? commandErrorId : undefined}
+              />
+              {errors.command ? (
+                <small id={commandErrorId} className="field-error">{errors.command}</small>
+              ) : (
+                <small>Shell command to execute. Runs with your user permissions.</small>
+              )}
+            </div>
           ) : (
-            <small>Shell command to execute. Runs with your user permissions.</small>
+            <>
+              <div className="form-group">
+                <label htmlFor="schedule-prompt">Prompt</label>
+                <textarea
+                  id="schedule-prompt"
+                  placeholder="e.g. Summarize recent git commits and identify action items"
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  rows={3}
+                  aria-invalid={!!errors.prompt}
+                  aria-describedby={errors.prompt ? promptErrorId : undefined}
+                />
+                {errors.prompt ? (
+                  <small id={promptErrorId} className="field-error">{errors.prompt}</small>
+                ) : (
+                  <small>AI prompt to execute. Provide clear instructions for the task.</small>
+                )}
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="schedule-model">Model (optional)</label>
+                <CustomModelDropdown
+                  id="schedule-model"
+                  label="Model"
+                  models={models}
+                  value={modelValue}
+                  onChange={handleModelChange}
+                  placeholder="Use default"
+                  disabled={modelsLoading}
+                />
+                {modelsError && <small className="field-error">{modelsError}</small>}
+                {errors.model ? (
+                  <small id={modelErrorId} className="field-error">{errors.model}</small>
+                ) : (
+                  <small>AI model for this prompt. Uses default if not selected.</small>
+                )}
+              </div>
+            </>
           )}
-        </div>
+        </>
       ) : (
         <>
           <ScheduleStepsEditor 
