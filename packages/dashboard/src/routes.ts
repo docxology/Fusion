@@ -969,10 +969,10 @@ async function getCommitDiff(hash: string, cwd?: string): Promise<{ stat: string
     // Validate the hash is a valid git object
     await runGitCommand(["cat-file", "-t", hash], cwd, 5000);
 
-    // Get diff stat
+    // Get diff stat (use --format= with empty string, not --format="")
     const stat = (await runGitCommand(["show", "--stat", "--format=", hash], cwd, 10000)).trim();
 
-    // Get patch
+    // Get patch (use --format= with empty string, not --format="")
     const patch = await runGitCommand(["show", "--format=", hash], cwd, 10000);
 
     return { stat, patch };
