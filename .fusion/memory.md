@@ -88,6 +88,13 @@ Reference: `useProjectHealth` in `packages/dashboard/app/hooks/useProjectHealth.
 
 ## Conventions
 
+- **LocalStorage completion state pattern (FN-1862)**: When implementing localStorage-based completion tracking that is distinct from dismissal, use a timestamp field (`completedAt`) to differentiate states:
+  - `markOnboardingCompleted()` — Sets `completedAt` timestamp, preserves state for timestamp queries
+  - `isOnboardingCompleted()` — Returns true only when `completedAt` is set
+  - `clearOnboardingState()` — Full removal (for explicit reset, not completion)
+  - Keep dismissed state separate from completed state: dismissal preserves step state without `completedAt`, completion sets `completedAt`
+  - Auto-open suppression should check both server-side flags AND localStorage completion state for resilience
+
 - When mocking function types with Vitest for the build (tsc), use `vi.fn().mockResolvedValue(x) as unknown as T` instead of `vi.fn<Parameters<T>, ReturnType<T>>()`. The generic syntax works at runtime but fails during `tsc` build.
 - `expect.any(Number)` does not work in Vitest matchers — use `expect(mockFn.mock.calls.length).toBeGreaterThanOrEqual(1)` or similar instead.
 - When mocking `AgentStore` for heartbeat execution tests, track `saveRun` calls in a local `Map<string, AgentHeartbeatRun>` and have `getRunDetail` read from it — this way `completeRun`'s saved state is reflected in the returned run.

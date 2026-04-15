@@ -10,6 +10,7 @@ export type OnboardingStep = "ai-setup" | "github" | "first-task" | "complete";
 interface OnboardingState {
   currentStep: OnboardingStep | string; // string allows for future unknown steps
   updatedAt: string; // ISO-8601 timestamp
+  completedAt?: string; // ISO-8601 timestamp when onboarding was marked complete (distinct from dismissed)
 }
 
 const STORAGE_KEY = "fusion_model_onboarding_state";
@@ -88,23 +89,69 @@ export function clearOnboardingState(): void {
 }
 
 /**
+ * Mark onboarding as completed by setting the completedAt timestamp.
+ * Unlike clearOnboardingState(), this preserves the state so the completion
+ * timestamp can be queried later. Call this when user completes onboarding
+ * (via Finish Setup, Create Task, or Import from GitHub).
+ */
+export function markOnboardingCompleted(): void {
+  if (typeof window === "undefined") return;
+
+  try {
+    const existing = getOnboardingState();
+    const state: OnboardingState = existing
+      ? { ...existing, completedAt: new Date().toISOString() }
+      : { currentStep: "complete", updatedAt: new Date().toISOString(), completedAt: new Date().toISOString() };
+
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    // Storage quota exceeded or private browsing - fail silently
+  }
+}
+
+/**
+ * Check if onboarding has been marked as completed.
+ * Returns true only when the persisted state exists AND completedAt is set.
+ * A dismissed (but not completed) onboarding returns false.
+ */
+export function isOnboardingCompleted(): boolean {
+  const state = getOnboardingState();
+  if (!state) return false;
+  return typeof state.completedAt === "string" && state.completedAt.length > 0;
+}
+
+/**
+ * Get the ISO-8601 timestamp when onboarding was marked complete.
+ * Returns null if onboarding has not been completed or no state exists.
+ */
+export function getOnboardingCompletedAt(): string | null {
+  const state = getOnboardingState();
+  if (!state || !state.completedAt) return null;
+  return state.completedAt;
+}
+
+/**
  * Determine if onboarding can be resumed.
- * Returns true only when persisted state exists and currentStep is not "complete".
+ * Returns true only when persisted state exists, currentStep is not "complete",
+ * and onboarding has not been marked as completed.
  */
 export function isOnboardingResumable(): boolean {
   const state = getOnboardingState();
   if (!state) return false;
+  // Reject if completed (completed onboarding is not resumable, only revisitable)
+  if (isOnboardingCompleted()) return false;
   // Reject if currentStep is "complete" or not a valid step identifier
   return state.currentStep !== "complete";
 }
 
 /**
  * Get the step info needed to display the resume card.
- * Returns null if no resumable state exists.
+ * Returns null if no resumable state exists (including if onboarding was completed).
  */
 export function getOnboardingResumeStep(): { currentStep: string; label: string } | null {
   const state = getOnboardingState();
-  if (!state || state.currentStep === "complete") {
+  // Return null if no state, completed, or step is "complete"
+  if (!state || isOnboardingCompleted() || state.currentStep === "complete") {
     return null;
   }
 

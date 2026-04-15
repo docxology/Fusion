@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { act, render, renderHook, screen, fireEvent, waitFor, within } from "@testing-library/react";
+import * as api from "../api";
 import { PlanningModeModal } from "./PlanningModeModal";
 import { TaskDetailModal } from "./TaskDetailModal";
 import { useSessionLock } from "../hooks/useSessionLock";

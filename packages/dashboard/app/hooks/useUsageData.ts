@@ -57,15 +57,14 @@ export function useUsageData(options: UseUsageDataOptions = {}) {
         error: null,
         lastUpdated: new Date(),
       });
-    } catch (err: unknown) {
+    } catch (err: any) {
       // Don't update state if the request was aborted
-      if (err instanceof Error && err.name === "AbortError") return;
+      if (err.name === "AbortError") return;
 
-      const message = err instanceof Error ? err.message : String(err);
       setState((prev) => ({
         ...prev,
         loading: false,
-        error: message || "Failed to fetch usage data",
+        error: err.message || "Failed to fetch usage data",
       }));
     }
   }, []);

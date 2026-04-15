@@ -56,10 +56,9 @@ export function useFileBrowser(taskId: string, enabled: boolean, projectId?: str
         if (!cancelled) {
           setEntries(response.entries);
         }
-      } catch (err: unknown) {
+      } catch (err: any) {
         if (!cancelled) {
-          const message = err instanceof Error ? err.message : String(err);
-          setError(message || "Failed to load files");
+          setError(err.message || "Failed to load files");
           setEntries([]);
         }
       } finally {

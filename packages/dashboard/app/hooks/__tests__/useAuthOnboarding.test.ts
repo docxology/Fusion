@@ -3,9 +3,16 @@ import { renderHook, waitFor } from "@testing-library/react";
 import { useAuthOnboarding } from "../useAuthOnboarding";
 import * as api from "../../api";
 
+// Mock model-onboarding-state for isOnboardingCompleted
+const mockIsOnboardingCompleted = vi.fn();
+
 vi.mock("../../api", () => ({
   fetchAuthStatus: vi.fn(),
   fetchGlobalSettings: vi.fn(),
+}));
+
+vi.mock("../../components/model-onboarding-state", () => ({
+  isOnboardingCompleted: (...args: unknown[]) => mockIsOnboardingCompleted(...args),
 }));
 
 const mockFetchAuthStatus = vi.mocked(api.fetchAuthStatus);
@@ -275,5 +282,64 @@ describe("useAuthOnboarding", () => {
     // Should NOT trigger again
     expect(openSettings).toHaveBeenCalledTimes(1);
     expect(newOpenSettings).not.toHaveBeenCalled();
+  });
+
+  // --- isOnboardingCompleted integration ---
+
+  it("auto-open is suppressed when isOnboardingCompleted() returns true even if modelOnboardingComplete is undefined", async () => {
+    mockFetchAuthStatus.mockResolvedValue({
+      providers: [{ id: "openai", name: "OpenAI", authenticated: false }],
+    });
+    mockFetchGlobalSettings.mockResolvedValue({
+      modelOnboardingComplete: undefined,
+      defaultProvider: undefined,
+      defaultModelId: undefined,
+    } as never);
+    // Simulate locally completed onboarding
+    mockIsOnboardingCompleted.mockReturnValue(true);
+
+    renderHook(() =>
+      useAuthOnboarding({
+        projectId: "proj_123",
+        openModelOnboarding,
+        openSettings,
+      }),
+    );
+
+    // Give time for any async calls to resolve
+    await waitFor(() => {
+      expect(mockFetchAuthStatus).toHaveBeenCalledTimes(1);
+    });
+
+    // Neither onboarding nor settings should open because local completion suppresses it
+    expect(openModelOnboarding).not.toHaveBeenCalled();
+    expect(openSettings).not.toHaveBeenCalled();
+  });
+
+  it("auto-open still fires when neither server nor local completion flag is set", async () => {
+    mockFetchAuthStatus.mockResolvedValue({
+      providers: [{ id: "openai", name: "OpenAI", authenticated: false }],
+    });
+    mockFetchGlobalSettings.mockResolvedValue({
+      modelOnboardingComplete: false,
+      defaultProvider: undefined,
+      defaultModelId: undefined,
+    } as never);
+    // No local completion
+    mockIsOnboardingCompleted.mockReturnValue(false);
+
+    renderHook(() =>
+      useAuthOnboarding({
+        projectId: "proj_123",
+        openModelOnboarding,
+        openSettings,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(openModelOnboarding).toHaveBeenCalledTimes(1);
+    });
+
+    expect(openSettings).not.toHaveBeenCalled();
   });
 });

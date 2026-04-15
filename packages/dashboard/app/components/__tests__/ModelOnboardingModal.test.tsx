@@ -43,11 +43,13 @@ vi.mock("../CustomModelDropdown", () => ({
 const mockGetOnboardingState = vi.fn();
 const mockSaveOnboardingState = vi.fn();
 const mockClearOnboardingState = vi.fn();
+const mockMarkOnboardingCompleted = vi.fn();
 
 vi.mock("../model-onboarding-state", () => ({
   getOnboardingState: (...args: unknown[]) => mockGetOnboardingState(...args),
   saveOnboardingState: (...args: unknown[]) => mockSaveOnboardingState(...args),
   clearOnboardingState: (...args: unknown[]) => mockClearOnboardingState(...args),
+  markOnboardingCompleted: (...args: unknown[]) => mockMarkOnboardingCompleted(...args),
 }));
 
 const defaultAuthProviders: AuthProvider[] = [
@@ -93,6 +95,7 @@ beforeEach(() => {
   mockGetOnboardingState.mockReturnValue(null);
   mockSaveOnboardingState.mockImplementation(() => {});
   mockClearOnboardingState.mockImplementation(() => {});
+  mockMarkOnboardingCompleted.mockImplementation(() => {});
 });
 
 afterEach(() => {
@@ -708,6 +711,138 @@ describe("ModelOnboardingModal", () => {
       // The modal should still render with empty dropdown
       const dropdown = screen.getByTestId("mock-model-dropdown") as HTMLSelectElement;
       expect(dropdown.value).toBe("");
+    });
+  });
+
+  describe("completion state tracking", () => {
+    it("completing onboarding (Finish Setup) calls markOnboardingCompleted instead of clearOnboardingState", async () => {
+      const onComplete = vi.fn();
+
+      mockFetchAuthStatus.mockResolvedValueOnce({
+        providers: [
+          { id: "anthropic", name: "Anthropic", authenticated: true, type: "oauth" },
+        ],
+      });
+
+      render(<ModelOnboardingModal onComplete={onComplete} addToast={vi.fn()} />);
+
+      await navigateToFirstTaskStep();
+
+      // Click Finish Setup
+      fireEvent.click(screen.getByText("Finish Setup"));
+
+      // Should show completion screen
+      await waitFor(() => {
+        expect(screen.getByText("All Set!")).toBeTruthy();
+      });
+
+      // Should call markOnboardingCompleted (not clearOnboardingState)
+      expect(mockMarkOnboardingCompleted).toHaveBeenCalled();
+      expect(mockClearOnboardingState).not.toHaveBeenCalled();
+    });
+
+    it("dismissing onboarding (Skip for now) does NOT call markOnboardingCompleted", async () => {
+      const onComplete = vi.fn();
+
+      render(<ModelOnboardingModal onComplete={onComplete} addToast={vi.fn()} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Skip for now")).toBeTruthy();
+      });
+
+      fireEvent.click(screen.getByText("Skip for now"));
+
+      await waitFor(() => {
+        expect(onComplete).toHaveBeenCalled();
+      });
+
+      // Should NOT call markOnboardingCompleted (dismiss is not completion)
+      expect(mockMarkOnboardingCompleted).not.toHaveBeenCalled();
+    });
+
+    it("dismissing onboarding (X button) does NOT call markOnboardingCompleted", async () => {
+      const onComplete = vi.fn();
+
+      render(<ModelOnboardingModal onComplete={onComplete} addToast={vi.fn()} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Set Up AI")).toBeTruthy();
+      });
+
+      // Click the X close button
+      const closeBtn = screen.getByLabelText("Skip onboarding");
+      fireEvent.click(closeBtn);
+
+      await waitFor(() => {
+        expect(onComplete).toHaveBeenCalled();
+      });
+
+      // Should NOT call markOnboardingCompleted (dismiss is not completion)
+      expect(mockMarkOnboardingCompleted).not.toHaveBeenCalled();
+    });
+
+    it("Create a New Task CTA calls markOnboardingCompleted", async () => {
+      const onComplete = vi.fn();
+      const onOpenNewTask = vi.fn();
+
+      mockFetchAuthStatus.mockResolvedValueOnce({
+        providers: [
+          { id: "anthropic", name: "Anthropic", authenticated: true, type: "oauth" },
+        ],
+      });
+
+      render(
+        <ModelOnboardingModal
+          onComplete={onComplete}
+          addToast={vi.fn()}
+          onOpenNewTask={onOpenNewTask}
+        />
+      );
+
+      await navigateToFirstTaskStep();
+
+      // Click Create a New Task
+      fireEvent.click(screen.getByText("Create a New Task"));
+
+      await waitFor(() => {
+        expect(onOpenNewTask).toHaveBeenCalled();
+      });
+
+      // Should call markOnboardingCompleted
+      expect(mockMarkOnboardingCompleted).toHaveBeenCalled();
+      expect(mockClearOnboardingState).not.toHaveBeenCalled();
+    });
+
+    it("Import from GitHub CTA calls markOnboardingCompleted", async () => {
+      const onComplete = vi.fn();
+      const onOpenGitHubImport = vi.fn();
+
+      mockFetchAuthStatus.mockResolvedValueOnce({
+        providers: [
+          { id: "anthropic", name: "Anthropic", authenticated: true, type: "oauth" },
+        ],
+      });
+
+      render(
+        <ModelOnboardingModal
+          onComplete={onComplete}
+          addToast={vi.fn()}
+          onOpenGitHubImport={onOpenGitHubImport}
+        />
+      );
+
+      await navigateToFirstTaskStep();
+
+      // Click Import from GitHub
+      fireEvent.click(screen.getByText("Import from GitHub"));
+
+      await waitFor(() => {
+        expect(onOpenGitHubImport).toHaveBeenCalled();
+      });
+
+      // Should call markOnboardingCompleted
+      expect(mockMarkOnboardingCompleted).toHaveBeenCalled();
+      expect(mockClearOnboardingState).not.toHaveBeenCalled();
     });
   });
 });

@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import type { Task } from "@fusion/core";
-import { AlertTriangle, Clock, Pause, Play, Zap } from "lucide-react";
+import { Activity, AlertTriangle, Clock, Pause, Play, Zap } from "lucide-react";
 import { useExecutorStats } from "../hooks/useExecutorStats";
 import type { ExecutorState, AiSessionSummary } from "../api";
 import { BackgroundTasksIndicator } from "./BackgroundTasksIndicator";

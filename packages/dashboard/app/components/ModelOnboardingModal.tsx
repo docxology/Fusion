@@ -17,6 +17,7 @@ import {
   getOnboardingState,
   saveOnboardingState,
   clearOnboardingState,
+  markOnboardingCompleted,
   type OnboardingStep,
 } from "./model-onboarding-state";
 import type { SectionId } from "./SettingsModal";
@@ -306,8 +307,8 @@ export function ModelOnboardingModal({
 
       await updateGlobalSettings(updates);
       setStep("complete");
-      // Clear persisted onboarding state now that onboarding is complete
-      clearOnboardingState();
+      // Mark onboarding as completed (preserves state for completion timestamp)
+      markOnboardingCompleted();
     } catch (err: unknown) {
       addToast(
         err instanceof Error ? err.message : "Failed to save settings",
@@ -346,8 +347,8 @@ export function ModelOnboardingModal({
       }
 
       await updateGlobalSettings(updates);
-      // Clear persisted onboarding state now that onboarding is complete
-      clearOnboardingState();
+      // Mark onboarding as completed (preserves state for completion timestamp)
+      markOnboardingCompleted();
     } catch {
       // Best-effort: continue even if save fails
     } finally {
@@ -388,8 +389,8 @@ export function ModelOnboardingModal({
       }
 
       await updateGlobalSettings(updates);
-      // Clear persisted onboarding state now that onboarding is complete
-      clearOnboardingState();
+      // Mark onboarding as completed (preserves state for completion timestamp)
+      markOnboardingCompleted();
     } catch {
       // Best-effort: continue even if save fails
     } finally {

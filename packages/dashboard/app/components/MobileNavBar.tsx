@@ -16,7 +16,6 @@ import {
   MessageSquare,
   MoreHorizontal,
   Play,
-  Server,
   Settings,
   Target,
   Terminal,
@@ -52,7 +51,6 @@ export interface MobileNavBarProps {
   onOpenUsage?: () => void;
   onRunScript?: (name: string, command: string) => void;
   onOpenQuickChat?: () => void;
-  onOpenNodes?: () => void;
   projectId?: string;
   onViewAllProjects?: () => void;
 }
@@ -97,7 +95,6 @@ export function MobileNavBar({
   onOpenUsage,
   onRunScript,
   onOpenQuickChat,
-  onOpenNodes,
   projectId,
   onViewAllProjects,
 }: MobileNavBarProps) {
@@ -284,16 +281,6 @@ export function MobileNavBar({
             >
               <GitBranch />
               <span>Git Manager</span>
-            </button>
-
-            <button
-              type="button"
-              className="mobile-more-item"
-              data-testid="mobile-more-item-nodes"
-              onClick={() => handleMoreAction(onOpenNodes)}
-            >
-              <Server />
-              <span>Nodes</span>
             </button>
 
             <div className="mobile-more-split-row">

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { X, History, Trash2, Filter, RefreshCw, CheckCircle, XCircle, ArrowRight, Plus, Settings, AlertCircle, Loader2, Folder } from "lucide-react";
 import { clearActivityLog, type ActivityLogEntry, type ActivityEventType, type ActivityFeedEntry } from "../api";
 import { useActivityLog } from "../hooks/useActivityLog";
@@ -81,7 +81,6 @@ export function ActivityLogModal({
   onProjectFilterChange,
   currentProject,
 }: ActivityLogModalProps) {
-  // tasks parameter reserved for future use when filtering activity by task
   const [filteredType, setFilteredType] = useState<ActivityEventType | "all">("all");
   const [filteredProjectId, setFilteredProjectId] = useState<string | "all">(projectId || "all");
   const [showConfirmClear, setShowConfirmClear] = useState(false);
@@ -137,7 +136,7 @@ export function ActivityLogModal({
       await clearActivityLog();
       refresh();
       setShowConfirmClear(false);
-    } catch {
+    } catch (err) {
       // Error handled by hook
       setShowConfirmClear(false);
     }

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { fetchAuthStatus, fetchGlobalSettings } from "../api";
+import { isOnboardingCompleted } from "../components/model-onboarding-state";
 import type { SectionId } from "../components/SettingsModal";
 
 export interface UseAuthOnboardingOptions {
@@ -56,11 +57,11 @@ export function useAuthOnboarding({
                 globalSettings.modelOnboardingComplete === undefined;
               const setupIncomplete = !hasAuthenticatedProvider || !hasDefaultModel;
 
-              if (onboardingIncomplete && setupIncomplete) {
+              if (onboardingIncomplete && setupIncomplete && !isOnboardingCompleted()) {
                 shouldOpenOnboarding = true;
-              } else if (!hasAuthenticatedProvider) {
+              } else if (!hasAuthenticatedProvider && !isOnboardingCompleted()) {
                 // Completed onboarding but no authenticated provider → fallback
-                // to Settings Authentication section
+                // to Settings Authentication section (only if not locally completed)
                 shouldOpenSettings = true;
               }
             });

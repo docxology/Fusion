@@ -68,12 +68,11 @@ export function useBatchBadgeFetch(projectId?: string): UseBatchBadgeFetchResult
       try {
         const results = await fetchBatchStatus(taskIds, projectId);
         return results;
-      } catch (err: unknown) {
-        const error = err instanceof Error ? err : new Error(String(err));
-        lastError = error;
+      } catch (err: any) {
+        lastError = err instanceof Error ? err : new Error(String(err));
 
         // If it's a 429 rate limit error, wait before retrying with exponential backoff
-        if (error.message.includes("429") || error.message.toLowerCase().includes("rate limit")) {
+        if (err?.message?.includes("429") || err?.message?.toLowerCase().includes("rate limit")) {
           const delayMs = Math.min(1000 * Math.pow(2, attempt), 30000); // Max 30s delay
           await new Promise((resolve) => setTimeout(resolve, delayMs));
           continue;
@@ -144,7 +143,7 @@ export function useBatchBadgeFetch(projectId?: string): UseBatchBadgeFetchResult
         batchBadgeStore.data.set(getScopedTaskKey(taskId, projectId), { result, timestamp });
       }
       batchBadgeStore.lastFetchTime = timestamp;
-    } catch {
+    } catch (err) {
       // Even on error, we don't throw - the hook handles errors gracefully
       // and partial results are still stored
     } finally {

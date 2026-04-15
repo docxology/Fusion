@@ -29,9 +29,6 @@ type ShareCapacitorResult = {
   activityType?: string;
 };
 
-/** Fallback listener type for untyped event handling */
-type FallbackListener = (...args: unknown[]) => void;
-
 export class ShareManager extends EventEmitter {
   private readonly deepLinkBaseUrl: string;
   private initialized = false;
@@ -46,8 +43,8 @@ export class ShareManager extends EventEmitter {
     event: K,
     listener: (payload: ShareEventMap[K]) => void,
   ): this;
-  override on(event: string | symbol, listener: FallbackListener): this;
-  override on(event: string | symbol, listener: FallbackListener): this {
+  override on(event: string | symbol, listener: (...args: any[]) => void): this;
+  override on(event: string | symbol, listener: (...args: any[]) => void): this {
     return super.on(event, listener);
   }
 
@@ -55,8 +52,8 @@ export class ShareManager extends EventEmitter {
     event: K,
     listener: (payload: ShareEventMap[K]) => void,
   ): this;
-  override off(event: string | symbol, listener: FallbackListener): this;
-  override off(event: string | symbol, listener: FallbackListener): this {
+  override off(event: string | symbol, listener: (...args: any[]) => void): this;
+  override off(event: string | symbol, listener: (...args: any[]) => void): this {
     return super.off(event, listener);
   }
 

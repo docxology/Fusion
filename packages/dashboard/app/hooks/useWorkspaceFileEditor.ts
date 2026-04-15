@@ -63,10 +63,9 @@ export function useWorkspaceFileEditor(
           setOriginalContent(response.content);
           setMtime(response.mtime);
         }
-      } catch (err: unknown) {
+      } catch (err: any) {
         if (!cancelled) {
-          const message = err instanceof Error ? err.message : String(err);
-          setError(message || "Failed to load file");
+          setError(err.message || "Failed to load file");
           setContentState("");
           setOriginalContent("");
           setMtime(null);
@@ -99,9 +98,8 @@ export function useWorkspaceFileEditor(
       const response: SaveFileResponse = await saveWorkspaceFileContent(workspace, filePath, content, projectId);
       setOriginalContent(content);
       setMtime(response.mtime);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      setError(message || "Failed to save file");
+    } catch (err: any) {
+      setError(err.message || "Failed to save file");
       throw err;
     } finally {
       setSaving(false);

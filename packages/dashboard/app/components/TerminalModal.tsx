@@ -69,9 +69,8 @@ export async function retryDynamicImport<T>(
 /** Whether the current device is likely mobile (touch-primary, small viewport). */
 function isMobileDevice(): boolean {
   if (typeof window === "undefined") return false;
-  const nav = navigator as Navigator & { maxTouchPoints?: number };
   const hasTouchScreen =
-    "ontouchstart" in window || (nav.maxTouchPoints ?? 0) > 0;
+    "ontouchstart" in window || (navigator as any).maxTouchPoints > 0;
   const isNarrow = window.innerWidth <= 768;
   return hasTouchScreen && isNarrow;
 }
@@ -602,9 +601,7 @@ export function TerminalModal({ isOpen, onClose, initialCommand, projectId }: Te
         if (xtermRef.current) {
           const currentSize = xtermRef.current.options.fontSize || 14;
           xtermRef.current.options.fontSize = Math.min(currentSize + 1, 32);
-          if (fitAddonRef.current) {
-            (fitAddonRef.current as InstanceType<typeof FitAddon>).fit();
-          }
+          fitAddonRef.current && (fitAddonRef.current as InstanceType<typeof FitAddon>).fit();
         }
         return;
       }
@@ -615,9 +612,7 @@ export function TerminalModal({ isOpen, onClose, initialCommand, projectId }: Te
         if (xtermRef.current) {
           const currentSize = xtermRef.current.options.fontSize || 14;
           xtermRef.current.options.fontSize = Math.max(currentSize - 1, 8);
-          if (fitAddonRef.current) {
-            (fitAddonRef.current as InstanceType<typeof FitAddon>).fit();
-          }
+          fitAddonRef.current && (fitAddonRef.current as InstanceType<typeof FitAddon>).fit();
         }
         return;
       }
@@ -627,9 +622,7 @@ export function TerminalModal({ isOpen, onClose, initialCommand, projectId }: Te
         e.preventDefault();
         if (xtermRef.current) {
           xtermRef.current.options.fontSize = 14;
-          if (fitAddonRef.current) {
-            (fitAddonRef.current as InstanceType<typeof FitAddon>).fit();
-          }
+          fitAddonRef.current && (fitAddonRef.current as InstanceType<typeof FitAddon>).fit();
         }
         return;
       }
@@ -733,9 +726,8 @@ export function TerminalModal({ isOpen, onClose, initialCommand, projectId }: Te
     // Restart the active tab's session
     try {
       await restartActiveTab();
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      setError(message || "Failed to restart terminal session");
+    } catch (err: any) {
+      setError(err.message || "Failed to restart terminal session");
     }
   }, [restartActiveTab]);
 

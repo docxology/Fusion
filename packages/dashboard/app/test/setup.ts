@@ -22,7 +22,7 @@ if (typeof window !== "undefined") {
 }
 
 // Mock fetch for project API tests
-const _originalFetch = globalThis.fetch;
+const originalFetch = globalThis.fetch;
 
 globalThis.fetch = vi.fn(async (url: RequestInfo | URL) => {
   const urlString = url.toString();

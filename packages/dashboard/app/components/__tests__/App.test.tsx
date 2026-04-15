@@ -105,6 +105,9 @@ const mockGetOnboardingResumeStep = vi.fn();
 const mockGetOnboardingState = vi.fn();
 const mockSaveOnboardingState = vi.fn();
 const mockClearOnboardingState = vi.fn();
+const mockIsOnboardingCompleted = vi.fn();
+const mockMarkOnboardingCompleted = vi.fn();
+const mockGetOnboardingCompletedAt = vi.fn();
 
 vi.mock("../../components/model-onboarding-state", () => ({
   isOnboardingResumable: (...args: unknown[]) => mockIsOnboardingResumable(...args),
@@ -112,6 +115,9 @@ vi.mock("../../components/model-onboarding-state", () => ({
   getOnboardingState: (...args: unknown[]) => mockGetOnboardingState(...args),
   saveOnboardingState: (...args: unknown[]) => mockSaveOnboardingState(...args),
   clearOnboardingState: (...args: unknown[]) => mockClearOnboardingState(...args),
+  isOnboardingCompleted: (...args: unknown[]) => mockIsOnboardingCompleted(...args),
+  markOnboardingCompleted: (...args: unknown[]) => mockMarkOnboardingCompleted(...args),
+  getOnboardingCompletedAt: (...args: unknown[]) => mockGetOnboardingCompletedAt(...args),
 }));
 
 // Mock CustomModelDropdown for onboarding modal tests
@@ -236,6 +242,11 @@ beforeEach(() => {
   mockGetOnboardingState.mockReturnValue(null);
   mockSaveOnboardingState.mockReset();
   mockClearOnboardingState.mockReset();
+  mockIsOnboardingCompleted.mockReset();
+  mockIsOnboardingCompleted.mockReturnValue(false);
+  mockMarkOnboardingCompleted.mockReset();
+  mockGetOnboardingCompletedAt.mockReset();
+  mockGetOnboardingCompletedAt.mockReturnValue(null);
 });
 
 describe("App deep link handling", () => {

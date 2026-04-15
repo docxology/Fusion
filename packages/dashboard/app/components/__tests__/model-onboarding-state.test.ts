@@ -5,6 +5,9 @@ import {
   clearOnboardingState,
   isOnboardingResumable,
   getOnboardingResumeStep,
+  markOnboardingCompleted,
+  isOnboardingCompleted,
+  getOnboardingCompletedAt,
   ONBOARDING_STEP_LABELS,
 } from "../model-onboarding-state";
 
@@ -189,6 +192,131 @@ describe("model-onboarding-state", () => {
       expect(ONBOARDING_STEP_LABELS["github"]).toBe("GitHub");
       expect(ONBOARDING_STEP_LABELS["first-task"]).toBe("First Task");
       expect(ONBOARDING_STEP_LABELS["complete"]).toBe("Complete");
+    });
+  });
+
+  describe("markOnboardingCompleted", () => {
+    it("sets completedAt on existing state", () => {
+      // Set up existing state
+      saveOnboardingState("first-task");
+      markOnboardingCompleted();
+      const stored = mockStore[STORAGE_KEY];
+      const parsed = JSON.parse(stored);
+      expect(parsed.currentStep).toBe("first-task");
+      expect(parsed.completedAt).toBeDefined();
+      expect(typeof parsed.completedAt).toBe("string");
+    });
+
+    it("creates minimal state when no state exists", () => {
+      markOnboardingCompleted();
+      const stored = mockStore[STORAGE_KEY];
+      const parsed = JSON.parse(stored);
+      expect(parsed.currentStep).toBe("complete");
+      expect(parsed.completedAt).toBeDefined();
+      expect(parsed.updatedAt).toBeDefined();
+    });
+
+    it("does not change currentStep if one is already set", () => {
+      saveOnboardingState("github");
+      markOnboardingCompleted();
+      const stored = mockStore[STORAGE_KEY];
+      const parsed = JSON.parse(stored);
+      expect(parsed.currentStep).toBe("github");
+      expect(parsed.completedAt).toBeDefined();
+    });
+
+    it("updates completedAt timestamp on subsequent calls", async () => {
+      saveOnboardingState("ai-setup");
+      markOnboardingCompleted();
+      const firstStored = mockStore[STORAGE_KEY];
+      const firstParsed = JSON.parse(firstStored);
+
+      // Wait a tiny bit to ensure timestamp difference
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      markOnboardingCompleted();
+      const secondStored = mockStore[STORAGE_KEY];
+      const secondParsed = JSON.parse(secondStored);
+      expect(secondParsed.completedAt).not.toBe(firstParsed.completedAt);
+    });
+  });
+
+  describe("isOnboardingCompleted", () => {
+    it("returns true when completedAt is set", () => {
+      const state = {
+        currentStep: "first-task" as const,
+        updatedAt: "2024-01-01T00:00:00.000Z",
+        completedAt: "2024-01-02T00:00:00.000Z"
+      };
+      mockStore[STORAGE_KEY] = JSON.stringify(state);
+      expect(isOnboardingCompleted()).toBe(true);
+    });
+
+    it("returns false when state has no completedAt", () => {
+      const state = { currentStep: "first-task" as const, updatedAt: "2024-01-01T00:00:00.000Z" };
+      mockStore[STORAGE_KEY] = JSON.stringify(state);
+      expect(isOnboardingCompleted()).toBe(false);
+    });
+
+    it("returns false when completedAt is empty string", () => {
+      const state = {
+        currentStep: "first-task" as const,
+        updatedAt: "2024-01-01T00:00:00.000Z",
+        completedAt: ""
+      };
+      mockStore[STORAGE_KEY] = JSON.stringify(state);
+      expect(isOnboardingCompleted()).toBe(false);
+    });
+
+    it("returns false when no state exists", () => {
+      expect(isOnboardingCompleted()).toBe(false);
+    });
+  });
+
+  describe("getOnboardingCompletedAt", () => {
+    it("returns timestamp when completed", () => {
+      const timestamp = "2024-01-02T00:00:00.000Z";
+      const state = {
+        currentStep: "first-task" as const,
+        updatedAt: "2024-01-01T00:00:00.000Z",
+        completedAt: timestamp
+      };
+      mockStore[STORAGE_KEY] = JSON.stringify(state);
+      expect(getOnboardingCompletedAt()).toBe(timestamp);
+    });
+
+    it("returns null when not completed (no completedAt)", () => {
+      const state = { currentStep: "first-task" as const, updatedAt: "2024-01-01T00:00:00.000Z" };
+      mockStore[STORAGE_KEY] = JSON.stringify(state);
+      expect(getOnboardingCompletedAt()).toBeNull();
+    });
+
+    it("returns null when no state exists", () => {
+      expect(getOnboardingCompletedAt()).toBeNull();
+    });
+  });
+
+  describe("isOnboardingResumable with completedAt", () => {
+    it("returns false when completedAt is set (completed onboarding is not resumable)", () => {
+      const state = {
+        currentStep: "first-task" as const,
+        updatedAt: "2024-01-01T00:00:00.000Z",
+        completedAt: "2024-01-02T00:00:00.000Z"
+      };
+      mockStore[STORAGE_KEY] = JSON.stringify(state);
+      expect(isOnboardingResumable()).toBe(false);
+    });
+  });
+
+  describe("getOnboardingResumeStep with completedAt", () => {
+    it("returns null when completedAt is set", () => {
+      const state = {
+        currentStep: "first-task" as const,
+        updatedAt: "2024-01-01T00:00:00.000Z",
+        completedAt: "2024-01-02T00:00:00.000Z"
+      };
+      mockStore[STORAGE_KEY] = JSON.stringify(state);
+      expect(getOnboardingResumeStep()).toBeNull();
     });
   });
 });
