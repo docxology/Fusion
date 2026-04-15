@@ -50,6 +50,10 @@ import type {
 } from "@fusion/core";
 import type { PlanningQuestion, PlanningSummary } from "@fusion/core";
 import type { ScheduledTask, ScheduledTaskCreateInput, ScheduledTaskUpdateInput, AutomationRunResult, Routine, RoutineCreateInput, RoutineUpdateInput, RoutineExecutionResult } from "@fusion/core";
+import type { DiscoveredSkill, CatalogEntry, CatalogFetchResult, ToggleSkillResult } from "@fusion/dashboard";
+
+// Re-export skills types for use by hooks and components
+export type { DiscoveredSkill, CatalogEntry, CatalogFetchResult, ToggleSkillResult };
 
 function looksLikeHtml(body: string): boolean {
   const trimmed = body.trim();
@@ -4903,6 +4907,39 @@ export async function reloadPlugin(id: string, projectId?: string): Promise<Plug
   return api<PluginInstallation>(withProjectId(`/plugins/${encodeURIComponent(id)}/reload`, projectId), {
     method: "POST",
   });
+}
+
+// ── Skills Management ─────────────────────────────────────────────────────────
+
+/** Fetch all discovered skills with their enabled state */
+export async function fetchDiscoveredSkills(projectId?: string): Promise<DiscoveredSkill[]> {
+  const response = await api<{ skills: DiscoveredSkill[] }>(withProjectId("/skills/discovered", projectId));
+  return response.skills;
+}
+
+/** Toggle a skill's enabled/disabled state */
+export async function toggleExecutionSkill(
+  skillId: string,
+  enabled: boolean,
+  projectId?: string,
+): Promise<ToggleSkillResult> {
+  return api<ToggleSkillResult>(withProjectId("/skills/execution", projectId), {
+    method: "PATCH",
+    body: JSON.stringify({ skillId, enabled }),
+  });
+}
+
+/** Fetch the skills.sh catalog */
+export async function fetchSkillsCatalog(
+  query?: string,
+  limit?: number,
+  projectId?: string,
+): Promise<CatalogFetchResult> {
+  const params = new URLSearchParams();
+  if (query) params.set("q", query);
+  if (limit !== undefined) params.set("limit", String(limit));
+  const suffix = params.size > 0 ? `?${params.toString()}` : "";
+  return api<CatalogFetchResult>(withProjectId(`/skills/catalog${suffix}`, projectId));
 }
 
 // ── Chat API ─────────────────────────────────────────────────────────────────
