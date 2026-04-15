@@ -14562,10 +14562,16 @@ html .column.drag-over * {
 }
 
 /* === New Task Modal === */
+.new-task-modal {
+  min-height: min(520px, 80vh);
+}
+
 .new-task-modal .modal-body {
   padding: 20px 24px;
   overflow-y: auto;
   max-height: calc(80vh - 120px);
+  flex: 1;
+  min-height: 0;
 }
 
 .new-task-modal .form-group {
