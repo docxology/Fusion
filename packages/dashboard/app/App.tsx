@@ -9,6 +9,7 @@ import { MissionManager } from "./components/MissionManager";
 import { NodesView } from "./components/NodesView";
 import { ChatView } from "./components/ChatView";
 import { RoadmapsView } from "./components/RoadmapsView";
+import { SkillsView } from "./components/SkillsView";
 import { PageErrorBoundary } from "./components/ErrorBoundary";
 import { AppModals } from "./components/AppModals";
 import { DashboardLoader, type DashboardLoaderStage } from "./components/DashboardLoader";
@@ -314,6 +315,14 @@ function AppInner() {
     }
 
     // Project view
+    if (taskView === "skills") {
+      return (
+        <PageErrorBoundary>
+          <SkillsView addToast={addToast} projectId={currentProject?.id} />
+        </PageErrorBoundary>
+      );
+    }
+
     if (taskView === "chat") {
       return (
         <PageErrorBoundary>

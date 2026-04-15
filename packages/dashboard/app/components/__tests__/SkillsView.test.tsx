@@ -1,0 +1,433 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
+import { SkillsView } from "../SkillsView";
+import * as apiModule from "../../api";
+import type { DiscoveredSkill, CatalogEntry } from "@fusion/dashboard";
+
+// Mock the API module
+vi.mock("../../api", () => ({
+  fetchDiscoveredSkills: vi.fn(),
+  toggleExecutionSkill: vi.fn(),
+  fetchSkillsCatalog: vi.fn(),
+}));
+
+const mockFetchDiscoveredSkills = vi.mocked(apiModule.fetchDiscoveredSkills);
+const mockToggleExecutionSkill = vi.mocked(apiModule.toggleExecutionSkill);
+const mockFetchSkillsCatalog = vi.mocked(apiModule.fetchSkillsCatalog);
+
+describe("SkillsView", () => {
+  const mockAddToast = vi.fn();
+  const projectId = "proj_123";
+  const onClose = vi.fn();
+
+  const mockDiscoveredSkills: DiscoveredSkill[] = [
+    {
+      id: "npm::skills/test-skill",
+      name: "test-skill",
+      path: "/project/.fusion/skills/test-skill",
+      relativePath: "skills/test-skill",
+      enabled: true,
+      metadata: {
+        source: "npm",
+        scope: "project",
+        origin: "top-level",
+      },
+    },
+    {
+      id: "github::skills/another-skill",
+      name: "another-skill",
+      path: "/project/.fusion/skills/another-skill",
+      relativePath: "skills/another-skill",
+      enabled: false,
+      metadata: {
+        source: "github",
+        scope: "project",
+        origin: "package",
+      },
+    },
+  ];
+
+  const mockCatalogEntries: CatalogEntry[] = [
+    {
+      id: "cat-001",
+      slug: "test-skill",
+      name: "Test Skill",
+      description: "A test skill for testing",
+      tags: ["testing", "example"],
+      installs: 1234,
+      installation: {
+        installed: false,
+        matchingSkillIds: [],
+        matchingPaths: [],
+      },
+    },
+    {
+      id: "cat-002",
+      slug: "another-skill",
+      name: "Another Skill",
+      description: "Another example skill",
+      tags: ["utility"],
+      installs: 5678,
+      installation: {
+        installed: true,
+        matchingSkillIds: ["npm::skills/another-skill"],
+        matchingPaths: ["skills/another-skill"],
+      },
+    },
+  ];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockFetchDiscoveredSkills.mockResolvedValue(mockDiscoveredSkills);
+    mockToggleExecutionSkill.mockResolvedValue({
+      settingsPath: "skills",
+      pattern: "+test-skill",
+      targetFile: "/project/.fusion/settings.json",
+    });
+    mockFetchSkillsCatalog.mockResolvedValue({
+      entries: mockCatalogEntries,
+      auth: {
+        mode: "unauthenticated",
+        tokenPresent: false,
+        fallbackUsed: false,
+      },
+    });
+  });
+
+  describe("rendering", () => {
+    it("renders the skills view with header", async () => {
+      render(<SkillsView addToast={mockAddToast} onClose={onClose} />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId("skills-view")).toBeTruthy();
+        expect(screen.getByText("Skills")).toBeTruthy();
+        expect(screen.getByText(/discovered/)).toBeTruthy();
+      });
+    });
+
+    it("renders both sections after data loads", async () => {
+      render(<SkillsView addToast={mockAddToast} onClose={onClose} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Discovered Skills")).toBeTruthy();
+        expect(screen.getByText("Skills Catalog")).toBeTruthy();
+      });
+    });
+
+    it("displays discovered skill count in header", async () => {
+      render(<SkillsView addToast={mockAddToast} onClose={onClose} />);
+
+      await waitFor(() => {
+        expect(screen.getByText(/2 discovered/)).toBeTruthy();
+      });
+    });
+
+    it("renders discovered skills list", async () => {
+      render(<SkillsView addToast={mockAddToast} onClose={onClose} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("test-skill")).toBeTruthy();
+        expect(screen.getByText("another-skill")).toBeTruthy();
+        expect(screen.getByText("skills/test-skill")).toBeTruthy();
+        expect(screen.getByText("skills/another-skill")).toBeTruthy();
+      });
+    });
+
+    it("renders source metadata for discovered skills", async () => {
+      render(<SkillsView addToast={mockAddToast} onClose={onClose} />);
+
+      await waitFor(() => {
+        const npmSources = screen.getAllByText("npm");
+        expect(npmSources.length).toBe(1);
+        const githubSources = screen.getAllByText("github");
+        expect(githubSources.length).toBe(1);
+      });
+    });
+
+    it("renders catalog entries as cards", async () => {
+      render(<SkillsView addToast={mockAddToast} onClose={onClose} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Test Skill")).toBeTruthy();
+        expect(screen.getByText("Another Skill")).toBeTruthy();
+        expect(screen.getByText("A test skill for testing")).toBeTruthy();
+        expect(screen.getByText("Another example skill")).toBeTruthy();
+      });
+    });
+
+    it("renders catalog tags as badges", async () => {
+      render(<SkillsView addToast={mockAddToast} onClose={onClose} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("testing")).toBeTruthy();
+        expect(screen.getByText("example")).toBeTruthy();
+        expect(screen.getByText("utility")).toBeTruthy();
+      });
+    });
+
+    it("renders install counts", async () => {
+      render(<SkillsView addToast={mockAddToast} onClose={onClose} />);
+
+      await waitFor(() => {
+        expect(screen.getByText(/1,234 installs/)).toBeTruthy();
+        expect(screen.getByText(/5,678 installs/)).toBeTruthy();
+      });
+    });
+
+    it("shows loading state while fetching discovered skills", async () => {
+      let resolveSkills: ((value: DiscoveredSkill[]) => void) | undefined;
+      mockFetchDiscoveredSkills.mockImplementation(
+        () => new Promise((resolve) => { resolveSkills = resolve as unknown as (value: DiscoveredSkill[]) => void; })
+      );
+
+      render(<SkillsView addToast={mockAddToast} onClose={onClose} />);
+
+      expect(screen.getByText("Loading discovered skills...")).toBeTruthy();
+
+      // Complete the fetch
+      await act(async () => {
+        resolveSkills!(mockDiscoveredSkills);
+      });
+    });
+
+    it("shows empty state when no discovered skills", async () => {
+      mockFetchDiscoveredSkills.mockResolvedValue([]);
+
+      render(<SkillsView addToast={mockAddToast} onClose={onClose} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("No skills discovered in this project.")).toBeTruthy();
+      });
+    });
+
+    it("shows empty state when no catalog entries", async () => {
+      mockFetchSkillsCatalog.mockResolvedValue({
+        entries: [],
+        auth: { mode: "unauthenticated", tokenPresent: false, fallbackUsed: false },
+      });
+
+      render(<SkillsView addToast={mockAddToast} onClose={onClose} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("No skills available in the catalog.")).toBeTruthy();
+      });
+    });
+  });
+
+  describe("toggle skill", () => {
+    it("calls toggleExecutionSkill when toggle is clicked", async () => {
+      render(<SkillsView addToast={mockAddToast} onClose={onClose} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("test-skill")).toBeTruthy();
+      });
+
+      // Find and click the toggle for test-skill (enabled skill)
+      const toggles = screen.getAllByRole("checkbox");
+      const enabledToggle = toggles.find(t => (t as HTMLInputElement).checked) as HTMLInputElement;
+      expect(enabledToggle).toBeTruthy();
+
+      await act(async () => {
+        fireEvent.click(enabledToggle);
+      });
+
+      expect(mockToggleExecutionSkill).toHaveBeenCalledWith(
+        "npm::skills/test-skill",
+        false,
+        undefined
+      );
+    });
+
+    it("updates checked state on successful toggle", async () => {
+      render(<SkillsView addToast={mockAddToast} onClose={onClose} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("test-skill")).toBeTruthy();
+      });
+
+      // Find and click the toggle for test-skill (enabled skill)
+      const toggles = screen.getAllByRole("checkbox");
+      const enabledToggle = toggles.find(t => (t as HTMLInputElement).checked) as HTMLInputElement;
+
+      await act(async () => {
+        fireEvent.click(enabledToggle);
+      });
+
+      await waitFor(() => {
+        expect((enabledToggle as HTMLInputElement).checked).toBe(false);
+      });
+    });
+
+    it("shows success toast on successful toggle", async () => {
+      render(<SkillsView addToast={mockAddToast} onClose={onClose} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("test-skill")).toBeTruthy();
+      });
+
+      const toggles = screen.getAllByRole("checkbox");
+      const enabledToggle = toggles.find(t => (t as HTMLInputElement).checked) as HTMLInputElement;
+
+      await act(async () => {
+        fireEvent.click(enabledToggle);
+      });
+
+      await waitFor(() => {
+        expect(mockAddToast).toHaveBeenCalledWith(
+          "Skill disabled",
+          "success"
+        );
+      });
+    });
+
+    it("reverts toggle and shows error toast on failed toggle", async () => {
+      mockToggleExecutionSkill.mockRejectedValue(new Error("Toggle failed"));
+
+      render(<SkillsView addToast={mockAddToast} onClose={onClose} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("test-skill")).toBeTruthy();
+      });
+
+      const toggles = screen.getAllByRole("checkbox");
+      const enabledToggle = toggles.find(t => (t as HTMLInputElement).checked) as HTMLInputElement;
+
+      await act(async () => {
+        fireEvent.click(enabledToggle);
+      });
+
+      await waitFor(() => {
+        expect(mockAddToast).toHaveBeenCalledWith(
+          expect.stringContaining("Failed to toggle skill"),
+          "error"
+        );
+      });
+
+      // Should revert to original state
+      expect((enabledToggle as HTMLInputElement).checked).toBe(true);
+    });
+  });
+
+  describe("catalog search", () => {
+    it("calls fetchSkillsCatalog with projectId when provided", async () => {
+      render(<SkillsView projectId={projectId} addToast={mockAddToast} onClose={onClose} />);
+
+      await waitFor(() => {
+        expect(mockFetchDiscoveredSkills).toHaveBeenCalledWith(projectId);
+      });
+
+      expect(mockFetchSkillsCatalog).toHaveBeenCalledWith("", 20, projectId);
+    });
+
+    it("shows search input and updates on change", async () => {
+      render(<SkillsView addToast={mockAddToast} onClose={onClose} />);
+
+      await waitFor(() => {
+        expect(screen.getByPlaceholderText("Search skills...")).toBeTruthy();
+      });
+
+      const searchInput = screen.getByPlaceholderText("Search skills...");
+      fireEvent.change(searchInput, { target: { value: "test" } });
+
+      expect((searchInput as HTMLInputElement).value).toBe("test");
+    });
+  });
+
+  describe("error handling", () => {
+    it("shows error message for catalog fetch with upstream error", async () => {
+      mockFetchSkillsCatalog.mockRejectedValue({
+        error: "Service unavailable",
+        code: "upstream_http_error",
+      });
+
+      render(<SkillsView addToast={mockAddToast} onClose={onClose} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Catalog is temporarily unavailable. Please try again later.")).toBeTruthy();
+      });
+    });
+
+    it("shows error toast when fetchDiscoveredSkills fails", async () => {
+      mockFetchDiscoveredSkills.mockRejectedValue(new Error("Failed to load"));
+
+      render(<SkillsView addToast={mockAddToast} onClose={onClose} />);
+
+      await waitFor(() => {
+        expect(mockAddToast).toHaveBeenCalledWith(
+          expect.stringContaining("Failed to load"),
+          "error"
+        );
+      });
+    });
+
+    it("shows Try Again button for catalog error", async () => {
+      mockFetchSkillsCatalog.mockRejectedValue({
+        error: "Service unavailable",
+        code: "upstream_http_error",
+      });
+
+      render(<SkillsView addToast={mockAddToast} onClose={onClose} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Try Again")).toBeTruthy();
+      });
+    });
+  });
+
+  describe("refresh functionality", () => {
+    it("refreshes discovered skills when refresh button is clicked", async () => {
+      render(<SkillsView addToast={mockAddToast} onClose={onClose} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Refresh")).toBeTruthy();
+      });
+
+      mockFetchDiscoveredSkills.mockClear();
+
+      await act(async () => {
+        fireEvent.click(screen.getByText("Refresh"));
+      });
+
+      expect(mockFetchDiscoveredSkills).toHaveBeenCalled();
+    });
+
+    it("refresh button is disabled while loading", async () => {
+      let resolveSkills: ((value: DiscoveredSkill[]) => void) | undefined;
+      mockFetchDiscoveredSkills.mockImplementation(
+        () => new Promise((resolve) => { resolveSkills = resolve as unknown as (value: DiscoveredSkill[]) => void; })
+      );
+
+      render(<SkillsView addToast={mockAddToast} onClose={onClose} />);
+
+      // Trigger refresh
+      await act(async () => {
+        fireEvent.click(screen.getByText("Refresh"));
+      });
+
+      // Button should be disabled during loading
+      expect(screen.getByText("Refresh").closest("button")?.hasAttribute("disabled")).toBe(true);
+      expect(document.querySelector(".spin")).toBeTruthy();
+
+      // Complete the fetch
+      await act(async () => {
+        resolveSkills!(mockDiscoveredSkills);
+      });
+    });
+  });
+
+  describe("close button", () => {
+    it("calls onClose when close button is clicked", async () => {
+      render(<SkillsView addToast={mockAddToast} onClose={onClose} />);
+
+      await waitFor(() => {
+        expect(screen.getByLabelText("Close skills view")).toBeTruthy();
+      });
+
+      await act(async () => {
+        fireEvent.click(screen.getByLabelText("Close skills view"));
+      });
+
+      expect(onClose).toHaveBeenCalled();
+    });
+  });
+});

@@ -56,13 +56,16 @@ describe("MobileNavBar", () => {
     mockViewport("mobile");
   });
 
-  it("renders five tab buttons (board + list + agents + missions + more)", () => {
+  it("renders eight tab buttons (board + list + agents + missions + chat + skills + roadmaps + more)", () => {
     render(<MobileNavBar {...createDefaultProps()} />);
 
     expect(screen.getByTestId("mobile-nav-tab-board")).toBeDefined();
     expect(screen.getByTestId("mobile-nav-tab-list")).toBeDefined();
     expect(screen.getByTestId("mobile-nav-tab-agents")).toBeDefined();
     expect(screen.getByTestId("mobile-nav-tab-missions")).toBeDefined();
+    expect(screen.getByTestId("mobile-nav-tab-chat")).toBeDefined();
+    expect(screen.getByTestId("mobile-nav-tab-skills")).toBeDefined();
+    expect(screen.getByTestId("mobile-nav-tab-roadmaps")).toBeDefined();
     expect(screen.getByTestId("mobile-nav-tab-more")).toBeDefined();
   });
 
@@ -122,6 +125,24 @@ describe("MobileNavBar", () => {
   it("missions tab is not active when view is 'board'", () => {
     render(<MobileNavBar {...createDefaultProps()} view="board" />);
     expect(screen.getByTestId("mobile-nav-tab-missions").className).not.toContain("mobile-nav-tab--active");
+  });
+
+  it("skills tab calls onChangeView with 'skills'", () => {
+    const props = createDefaultProps();
+    render(<MobileNavBar {...props} view="board" />);
+
+    fireEvent.click(screen.getByTestId("mobile-nav-tab-skills"));
+    expect(props.onChangeView).toHaveBeenCalledWith("skills");
+  });
+
+  it("skills tab is active when view is 'skills'", () => {
+    render(<MobileNavBar {...createDefaultProps()} view="skills" />);
+    expect(screen.getByTestId("mobile-nav-tab-skills").className).toContain("mobile-nav-tab--active");
+  });
+
+  it("skills tab is not active when view is 'board'", () => {
+    render(<MobileNavBar {...createDefaultProps()} view="board" />);
+    expect(screen.getByTestId("mobile-nav-tab-skills").className).not.toContain("mobile-nav-tab--active");
   });
 
   it("opens and toggles the more sheet", () => {

@@ -21,15 +21,16 @@ import {
   Terminal,
   Workflow,
   Map,
+  Zap,
 } from "lucide-react";
 import { fetchScripts } from "../api";
 import { useViewportMode } from "./Header";
 
 export interface MobileNavBarProps {
   /** Current task view mode */
-  view: "board" | "list" | "agents" | "missions" | "chat" | "roadmaps";
+  view: "board" | "list" | "agents" | "missions" | "chat" | "roadmaps" | "skills";
   /** Change task view handler */
-  onChangeView: (view: "board" | "list" | "agents" | "missions" | "chat" | "roadmaps") => void;
+  onChangeView: (view: "board" | "list" | "agents" | "missions" | "chat" | "roadmaps" | "skills") => void;
   /** Whether the ExecutorStatusBar footer is visible */
   footerVisible: boolean;
   /** Whether any full-screen modal is currently open (hides the tab bar) */
@@ -226,6 +227,18 @@ export function MobileNavBar({
         >
           <MessageSquare />
           <span className="mobile-nav-tab-label">Chat</span>
+        </button>
+
+        <button
+          type="button"
+          className={`mobile-nav-tab${view === "skills" ? " mobile-nav-tab--active" : ""}`}
+          data-testid="mobile-nav-tab-skills"
+          role="tab"
+          aria-selected={view === "skills"}
+          onClick={() => onChangeView("skills")}
+        >
+          <Zap />
+          <span className="mobile-nav-tab-label">Skills</span>
         </button>
 
         <button

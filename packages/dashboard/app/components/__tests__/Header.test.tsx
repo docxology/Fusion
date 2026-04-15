@@ -328,6 +328,39 @@ describe("Header", () => {
     expect(missionsBtn.getAttribute("aria-pressed")).toBe("false");
   });
 
+  // ── Skills View Toggle ─────────────────────────────────────────
+
+  it("renders skills view button in view toggle when onChangeView is provided", () => {
+    const onChangeView = vi.fn();
+    render(<Header view="board" onChangeView={onChangeView} />);
+    const skillsBtn = screen.getByTitle("Skills view");
+    expect(skillsBtn).toBeDefined();
+  });
+
+  it("calls onChangeView with 'skills' when skills view button is clicked", () => {
+    const onChangeView = vi.fn();
+    render(<Header view="board" onChangeView={onChangeView} />);
+    const skillsBtn = screen.getByTitle("Skills view");
+    fireEvent.click(skillsBtn);
+    expect(onChangeView).toHaveBeenCalledWith("skills");
+  });
+
+  it("marks skills view button as active when view is 'skills'", () => {
+    const onChangeView = vi.fn();
+    render(<Header view="skills" onChangeView={onChangeView} />);
+    const skillsBtn = screen.getByTitle("Skills view");
+    expect(skillsBtn.className).toContain("active");
+    expect(skillsBtn.getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("does not mark skills view button as active when view is 'board'", () => {
+    const onChangeView = vi.fn();
+    render(<Header view="board" onChangeView={onChangeView} />);
+    const skillsBtn = screen.getByTitle("Skills view");
+    expect(skillsBtn.className).not.toContain("active");
+    expect(skillsBtn.getAttribute("aria-pressed")).toBe("false");
+  });
+
   // ── Roadmaps View Toggle ───────────────────────────────────────
 
   it("renders roadmaps view button in view toggle when onChangeView is provided", () => {
@@ -488,6 +521,20 @@ describe("Header", () => {
     render(
       <Header
         view="missions"
+        onChangeView={vi.fn()}
+        searchQuery=""
+        onSearchChange={onSearchChange}
+      />
+    );
+    expect(screen.queryByPlaceholderText("Search tasks...")).toBeNull();
+    expect(screen.queryByTestId("desktop-header-search-btn")).toBeNull();
+  });
+
+  it("hides search input and toggle when view is 'skills'", () => {
+    const onSearchChange = vi.fn();
+    render(
+      <Header
+        view="skills"
         onChangeView={vi.fn()}
         searchQuery=""
         onSearchChange={onSearchChange}

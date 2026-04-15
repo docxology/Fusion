@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { Settings, Pause, Play, Square, LayoutGrid, List, Terminal, Lightbulb, Search, X, Activity, MoreHorizontal, Clock, Folder, History, GitBranch, Server, Workflow, Bot, ChevronLeft, Target, ChevronRight, FileCode, Loader2, Grid3X3, Mail, MessageSquare, ChevronDown, Check, Map } from "lucide-react";
+import { Settings, Pause, Play, Square, LayoutGrid, List, Terminal, Lightbulb, Search, X, Activity, MoreHorizontal, Clock, Folder, History, GitBranch, Server, Workflow, Bot, ChevronLeft, Target, ChevronRight, FileCode, Loader2, Grid3X3, Mail, MessageSquare, ChevronDown, Check, Map, Zap } from "lucide-react";
 import type { ProjectInfo } from "../api";
 import type { NodeConfig, ProjectStatus } from "@fusion/core";
 import { fetchScripts } from "../api";
@@ -180,8 +180,8 @@ export interface HeaderProps {
   enginePaused?: boolean;
   onToggleGlobalPause?: () => void;
   onToggleEnginePause?: () => void;
-  view?: "board" | "list" | "agents" | "missions" | "chat" | "roadmaps";
-  onChangeView?: (view: "board" | "list" | "agents" | "missions" | "chat" | "roadmaps") => void;
+  view?: "board" | "list" | "agents" | "missions" | "chat" | "roadmaps" | "skills";
+  onChangeView?: (view: "board" | "list" | "agents" | "missions" | "chat" | "roadmaps" | "skills") => void;
   searchQuery?: string;
   onSearchChange?: (query: string) => void;
   /** Multi-project props */
@@ -674,6 +674,15 @@ export function Header({
               aria-pressed={view === "chat"}
             >
               <MessageSquare size={16} />
+            </button>
+            <button
+              className={`view-toggle-btn${view === "skills" ? " active" : ""}`}
+              onClick={() => onChangeView("skills")}
+              title="Skills view"
+              aria-label="Skills view"
+              aria-pressed={view === "skills"}
+            >
+              <Zap size={16} />
             </button>
             <button
               className={`view-toggle-btn${view === "roadmaps" ? " active" : ""}`}
