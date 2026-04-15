@@ -667,6 +667,11 @@ export function useRoadmaps(options?: UseRoadmapsOptions): UseRoadmapsResult {
   }, []);
 
   const updateMilestoneSuggestionDraft = useCallback((draftId: string, patch: SuggestionDraftPatch) => {
+    // Update ref first for immediate visibility to acceptAll
+    const currentSuggestions = milestoneSuggestionsRef.current;
+    const updatedSuggestions = currentSuggestions.map((s) => (s.id === draftId ? { ...s, ...patch } : s));
+    milestoneSuggestionsRef.current = updatedSuggestions;
+    // Then update state for re-render
     setMilestoneSuggestions((prev) =>
       prev.map((s) => (s.id === draftId ? { ...s, ...patch } : s))
     );
@@ -755,8 +760,7 @@ export function useRoadmaps(options?: UseRoadmapsOptions): UseRoadmapsResult {
       throw error;
     }
 
-    // Capture current suggestions (they will be cleared sequentially)
-    // Order is deterministic: follows the current draft display order
+    // Read from ref - it's updated synchronously by updateMilestoneSuggestionDraft
     const suggestionsToAccept = [...milestoneSuggestionsRef.current];
     if (suggestionsToAccept.length === 0) {
       return;
@@ -874,6 +878,14 @@ export function useRoadmaps(options?: UseRoadmapsOptions): UseRoadmapsResult {
   }, []);
 
   const updateFeatureSuggestionDraft = useCallback((milestoneId: string, draftId: string, patch: SuggestionDraftPatch) => {
+    // Update ref first for immediate visibility to acceptAll
+    const currentSuggestions = featureSuggestionsByMilestoneIdRef.current[milestoneId] || [];
+    const updatedSuggestions = currentSuggestions.map((s) => (s.id === draftId ? { ...s, ...patch } : s));
+    featureSuggestionsByMilestoneIdRef.current = {
+      ...featureSuggestionsByMilestoneIdRef.current,
+      [milestoneId]: updatedSuggestions,
+    };
+    // Then update state for re-render
     setFeatureSuggestionsByMilestoneId((prev) => ({
       ...prev,
       [milestoneId]: prev[milestoneId]?.map((s) => (s.id === draftId ? { ...s, ...patch } : s)) || [],
@@ -956,8 +968,7 @@ export function useRoadmaps(options?: UseRoadmapsOptions): UseRoadmapsResult {
     milestoneId: string,
     opts?: { onSuccess?: () => void; onError?: (err: Error) => void }
   ) => {
-    // Capture current suggestions (they will be cleared sequentially)
-    // Order is deterministic: follows the current draft display order
+    // Read from ref - it's updated synchronously by updateFeatureSuggestionDraft
     const suggestionsToAccept = [...(featureSuggestionsByMilestoneIdRef.current[milestoneId] || [])];
     if (suggestionsToAccept.length === 0) {
       return;
@@ -971,14 +982,14 @@ export function useRoadmaps(options?: UseRoadmapsOptions): UseRoadmapsResult {
       throw error;
     }
 
-    // Capture state for stale-response protection
-    const contextVersionAtStart = projectContextVersionRef.current;
-
     // Clear suggestions for this milestone immediately (optimistic)
     setFeatureSuggestionsByMilestoneId((prev) => ({
       ...prev,
       [milestoneId]: [],
     }));
+
+    // Capture state for stale-response protection
+    const contextVersionAtStart = projectContextVersionRef.current;
 
     // Accept sequentially to preserve order
     for (let i = 0; i < suggestionsToAccept.length; i++) {

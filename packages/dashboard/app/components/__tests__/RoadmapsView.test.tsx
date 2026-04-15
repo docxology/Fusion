@@ -566,10 +566,7 @@ describe("RoadmapsView", () => {
         expect(screen.getByText("Original Title")).toBeInTheDocument();
       });
 
-      // Click edit button on the suggestion
-      const editBtn = screen.getByTestId("suggestion--title-input");
-      // The edit button doesn't exist yet - just look for the suggestion
-      // This test verifies the suggestion appears
+      // This test verifies the suggestion appears after generation
       expect(screen.getByText("Original Title")).toBeInTheDocument();
     });
 
