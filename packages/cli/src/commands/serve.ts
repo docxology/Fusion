@@ -336,6 +336,7 @@ export async function runServe(
   if (!cwdEngine) {
     console.error("[serve] No engine started for the current project — exiting");
     process.exit(1);
+    return; // unreachable in production, but needed for test mocks
   }
   const store = cwdEngine.getTaskStore();
 

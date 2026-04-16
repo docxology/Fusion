@@ -34,7 +34,7 @@ const PROJECT_FIXTURES = {
 // ── Capture arguments ───────────────────────────────────────────────
 
 // Minimal mock store backed by EventEmitter so `store.on` works
-function makeMockStore(projectId = "default") {
+function makeMockStore(projectId = "test") {
   const emitter = new EventEmitter();
   // runDashboard registers several independent settings listeners by design;
   // keep the test mock above Node's low default threshold while still checking

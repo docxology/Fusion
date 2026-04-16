@@ -62,7 +62,7 @@ const mocks = vi.hoisted(() => {
   const projectEngineInstances: any[] = [];
   const listenCalls: ListenCall[] = [];
 
-  function createTaskStoreMock(projectId = "default") {
+  function createTaskStoreMock(projectId = "") {
     const emitter = new EventEmitter();
     const missionStore = {
       listMissions: vi.fn().mockResolvedValue([]),
@@ -72,7 +72,7 @@ const mocks = vi.hoisted(() => {
       init: vi.fn().mockResolvedValue(undefined),
       watch: vi.fn().mockResolvedValue(undefined),
       close: vi.fn(),
-      getFusionDir: vi.fn().mockReturnValue(`/repo/${projectId}/.fusion`),
+      getFusionDir: vi.fn().mockReturnValue(`/repo${projectId ? `/${projectId}` : ""}/.fusion`),
       getMissionStore: vi.fn().mockReturnValue(missionStore),
       getSettings: vi.fn().mockResolvedValue({
         maxConcurrent: 2,
@@ -870,7 +870,7 @@ describe("runServe — Memory Insight Automation wiring", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
     mocks.reset();
 
@@ -888,6 +888,33 @@ describe("runServe — Memory Insight Automation wiring", () => {
       return process;
     }) as typeof process.on);
     process.exit = vi.fn() as never;
+
+    // Override listProjects to return only the primary project for these tests
+    const { CentralCore } = await import("@fusion/core");
+    const instance = {
+      init: vi.fn().mockResolvedValue(undefined),
+      close: vi.fn().mockResolvedValue(undefined),
+      getProjectByPath: vi.fn().mockImplementation((cwd: string) => {
+        if (getProjectByPathResolver) {
+          return Promise.resolve(getProjectByPathResolver(cwd));
+        }
+        return Promise.resolve({ ...PROJECT_FIXTURES.primary, path: cwd });
+      }),
+      getProject: vi.fn().mockImplementation((id: string) =>
+        Promise.resolve({ id, name: `Project ${id}`, path: `/repo/${id}`, status: "active", isolationMode: "in-process", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }),
+      ),
+      listProjects: vi.fn().mockResolvedValue([
+        { ...PROJECT_FIXTURES.primary, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+      ]),
+      listNodes: vi.fn().mockResolvedValue([
+        { id: "node-local", name: "local", type: "local", status: "offline" },
+      ]),
+      updateNode: vi.fn().mockResolvedValue(undefined),
+      startDiscovery: vi.fn().mockResolvedValue({}),
+      stopDiscovery: vi.fn(),
+    };
+    mocks.centralInstances.push(instance);
+    CentralCore.mockImplementation(() => instance);
   });
 
   afterEach(() => {
@@ -1007,7 +1034,7 @@ describe("runServe — Semaphore boundary (task lanes only)", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
     mocks.reset();
 
@@ -1021,6 +1048,34 @@ describe("runServe — Semaphore boundary (task lanes only)", () => {
       return process;
     }) as typeof process.on);
     process.exit = vi.fn() as never;
+
+    // Override listProjects to return only the primary project for semaphore tests
+    // These tests verify semaphore sharing across task lanes within a single engine
+    const { CentralCore } = await import("@fusion/core");
+    const instance = {
+      init: vi.fn().mockResolvedValue(undefined),
+      close: vi.fn().mockResolvedValue(undefined),
+      getProjectByPath: vi.fn().mockImplementation((cwd: string) => {
+        if (getProjectByPathResolver) {
+          return Promise.resolve(getProjectByPathResolver(cwd));
+        }
+        return Promise.resolve({ ...PROJECT_FIXTURES.primary, path: cwd });
+      }),
+      getProject: vi.fn().mockImplementation((id: string) =>
+        Promise.resolve({ id, name: `Project ${id}`, path: `/repo/${id}`, status: "active", isolationMode: "in-process", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }),
+      ),
+      listProjects: vi.fn().mockResolvedValue([
+        { ...PROJECT_FIXTURES.primary, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+      ]),
+      listNodes: vi.fn().mockResolvedValue([
+        { id: "node-local", name: "local", type: "local", status: "offline" },
+      ]),
+      updateNode: vi.fn().mockResolvedValue(undefined),
+      startDiscovery: vi.fn().mockResolvedValue({}),
+      stopDiscovery: vi.fn(),
+    };
+    mocks.centralInstances.push(instance);
+    CentralCore.mockImplementation(() => instance);
   });
 
   afterEach(() => {
@@ -1166,7 +1221,7 @@ describe("runServe — Peer exchange and discovery", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
     mocks.reset();
 
@@ -1181,6 +1236,37 @@ describe("runServe — Peer exchange and discovery", () => {
       return process;
     }) as typeof process.on);
     process.exit = vi.fn() as never;
+
+    // Override CentralCore to use original implementation that pushes to centralInstances
+    const { CentralCore } = await import("@fusion/core");
+    // Reset to the original constructor that creates and pushes instances
+    CentralCore.mockImplementation(() => {
+      const instance = {
+        init: vi.fn().mockResolvedValue(undefined),
+        close: vi.fn().mockResolvedValue(undefined),
+        getProjectByPath: vi.fn().mockImplementation((cwd: string) => {
+          if (getProjectByPathResolver) {
+            return Promise.resolve(getProjectByPathResolver(cwd));
+          }
+          return Promise.resolve({ ...PROJECT_FIXTURES.primary, path: cwd });
+        }),
+        getProject: vi.fn().mockImplementation((id: string) =>
+          Promise.resolve({ id, name: `Project ${id}`, path: `/repo/${id}`, status: "active", isolationMode: "in-process", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }),
+        ),
+        listProjects: vi.fn().mockResolvedValue([
+          { ...PROJECT_FIXTURES.primary, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+          { ...PROJECT_FIXTURES.secondary, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+        ]),
+        listNodes: vi.fn().mockResolvedValue([
+          { id: "node-local", name: "local", type: "local", status: "offline" },
+        ]),
+        updateNode: vi.fn().mockResolvedValue(undefined),
+        startDiscovery: vi.fn().mockResolvedValue({}),
+        stopDiscovery: vi.fn(),
+      };
+      mocks.centralInstances.push(instance);
+      return instance;
+    });
   });
 
   afterEach(() => {
@@ -1308,7 +1394,7 @@ describe("runServe --daemon flag", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
     mocks.reset();
 
@@ -1323,6 +1409,36 @@ describe("runServe --daemon flag", () => {
       return process;
     }) as typeof process.on);
     process.exit = vi.fn() as never;
+
+    // Override CentralCore to use original implementation that pushes to centralInstances
+    const { CentralCore } = await import("@fusion/core");
+    CentralCore.mockImplementation(() => {
+      const instance = {
+        init: vi.fn().mockResolvedValue(undefined),
+        close: vi.fn().mockResolvedValue(undefined),
+        getProjectByPath: vi.fn().mockImplementation((cwd: string) => {
+          if (getProjectByPathResolver) {
+            return Promise.resolve(getProjectByPathResolver(cwd));
+          }
+          return Promise.resolve({ ...PROJECT_FIXTURES.primary, path: cwd });
+        }),
+        getProject: vi.fn().mockImplementation((id: string) =>
+          Promise.resolve({ id, name: `Project ${id}`, path: `/repo/${id}`, status: "active", isolationMode: "in-process", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }),
+        ),
+        listProjects: vi.fn().mockResolvedValue([
+          { ...PROJECT_FIXTURES.primary, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+          { ...PROJECT_FIXTURES.secondary, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+        ]),
+        listNodes: vi.fn().mockResolvedValue([
+          { id: "node-local", name: "local", type: "local", status: "offline" },
+        ]),
+        updateNode: vi.fn().mockResolvedValue(undefined),
+        startDiscovery: vi.fn().mockResolvedValue({}),
+        stopDiscovery: vi.fn(),
+      };
+      mocks.centralInstances.push(instance);
+      return instance;
+    });
 
     // Clear env var before each test
     delete process.env.FUSION_DAEMON_TOKEN;
@@ -1469,7 +1585,7 @@ describe("runServe — multi-project cwd/default engine resolution", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
     mocks.reset();
     resetMultiProjectState();
@@ -1485,6 +1601,36 @@ describe("runServe — multi-project cwd/default engine resolution", () => {
       return process;
     }) as typeof process.on);
     process.exit = vi.fn() as never;
+
+    // Override CentralCore to use original implementation that pushes to centralInstances
+    const { CentralCore } = await import("@fusion/core");
+    CentralCore.mockImplementation(() => {
+      const instance = {
+        init: vi.fn().mockResolvedValue(undefined),
+        close: vi.fn().mockResolvedValue(undefined),
+        getProjectByPath: vi.fn().mockImplementation((cwd: string) => {
+          if (getProjectByPathResolver) {
+            return Promise.resolve(getProjectByPathResolver(cwd));
+          }
+          return Promise.resolve({ ...PROJECT_FIXTURES.primary, path: cwd });
+        }),
+        getProject: vi.fn().mockImplementation((id: string) =>
+          Promise.resolve({ id, name: `Project ${id}`, path: `/repo/${id}`, status: "active", isolationMode: "in-process", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }),
+        ),
+        listProjects: vi.fn().mockResolvedValue([
+          { ...PROJECT_FIXTURES.primary, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+          { ...PROJECT_FIXTURES.secondary, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+        ]),
+        listNodes: vi.fn().mockResolvedValue([
+          { id: "node-local", name: "local", type: "local", status: "offline" },
+        ]),
+        updateNode: vi.fn().mockResolvedValue(undefined),
+        startDiscovery: vi.fn().mockResolvedValue({}),
+        stopDiscovery: vi.fn(),
+      };
+      mocks.centralInstances.push(instance);
+      return instance;
+    });
 
     // Default: cwd resolves to primary project
     setupProjectByPath(null);
