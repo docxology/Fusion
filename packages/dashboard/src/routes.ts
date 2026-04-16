@@ -8074,6 +8074,8 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    * GET /api/chat/sessions
    * List chat sessions with optional filtering.
    * Query params: projectId?, status?, agentId?
+   *
+   * Response is enriched with lastMessagePreview and lastMessageAt for each session.
    */
   router.get("/chat/sessions", rateLimit(RATE_LIMITS.api), async (req, res) => {
     try {
@@ -8093,6 +8095,23 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         ...(status && { status: status as "active" | "archived" }),
         ...(agentId && { agentId }),
       });
+
+      // Enrich sessions with last message preview
+      if (sessions.length > 0) {
+        const sessionIds = sessions.map((s) => s.id);
+        const lastMessages = chatStore.getLastMessageForSessions(sessionIds);
+
+        for (const session of sessions) {
+          const lastMessage = lastMessages.get(session.id);
+          if (lastMessage) {
+            // Truncate content to 100 chars for preview
+            const content = lastMessage.content || "";
+            (session as any).lastMessagePreview =
+              content.length > 100 ? content.slice(0, 100) + "…" : content;
+            (session as any).lastMessageAt = lastMessage.createdAt;
+          }
+        }
+      }
 
       res.json({ sessions });
     } catch (err: unknown) {

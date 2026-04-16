@@ -88,9 +88,10 @@ describe("projectStorage", () => {
         "kb-subtask-last-description",
         "kb-mission-last-goal",
         "kb-usage-view-mode",
+        "kb-chat-active-session",
       ]),
     );
-    expect(PROJECT_STORAGE_KEYS).toHaveLength(14);
+    expect(PROJECT_STORAGE_KEYS).toHaveLength(15);
   });
 
   it("has no overlap between global and project-scoped keys", () => {

@@ -21,6 +21,7 @@ export const PROJECT_STORAGE_KEYS: string[] = [
   "kb-subtask-last-description",
   "kb-mission-last-goal",
   "kb-usage-view-mode",
+  "kb-chat-active-session",
 ];
 
 export function scopedKey(baseKey: string, projectId?: string): string {

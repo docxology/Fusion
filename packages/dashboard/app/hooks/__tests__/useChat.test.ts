@@ -23,6 +23,19 @@ vi.mock("../../api", () => ({
   ]),
 }));
 
+// Mock the projectStorage module
+vi.mock("../../utils/projectStorage", () => ({
+  getScopedItem: vi.fn(),
+  setScopedItem: vi.fn(),
+  removeScopedItem: vi.fn(),
+}));
+
+import * as projectStorageModule from "../../utils/projectStorage";
+
+const mockGetScopedItem = vi.mocked(projectStorageModule.getScopedItem);
+const mockSetScopedItem = vi.mocked(projectStorageModule.setScopedItem);
+const mockRemoveScopedItem = vi.mocked(projectStorageModule.removeScopedItem);
+
 const mockFetchChatSessions = vi.mocked(apiModule.fetchChatSessions);
 const mockCreateChatSession = vi.mocked(apiModule.createChatSession);
 const mockFetchChatMessages = vi.mocked(apiModule.fetchChatMessages);
@@ -540,6 +553,148 @@ describe("useChat", () => {
 
     await waitFor(() => {
       expect(result.current.sessions).toHaveLength(2);
+    });
+  });
+
+  describe("active session persistence", () => {
+    beforeEach(() => {
+      // Default: no saved session
+      mockGetScopedItem.mockReturnValue(null);
+    });
+
+    it("restores active session from localStorage when it matches a loaded session", async () => {
+      const session = makeSession({ id: "session-001", agentId: "agent-001" });
+      mockFetchChatSessions.mockResolvedValueOnce({ sessions: [session] });
+      mockFetchChatMessages.mockResolvedValueOnce({ messages: [] });
+
+      // Simulate a saved session in localStorage
+      mockGetScopedItem.mockReturnValue("session-001");
+
+      const { result } = renderHook(() => useChat());
+
+      await waitFor(() => {
+        expect(result.current.sessions).toHaveLength(1);
+      });
+
+      await waitFor(() => {
+        expect(result.current.activeSession?.id).toBe("session-001");
+      });
+
+      // Verify messages were loaded
+      await waitFor(() => {
+        expect(mockFetchChatMessages).toHaveBeenCalledWith("session-001", { limit: 50 }, undefined);
+      });
+    });
+
+    it("does not auto-select when saved session does not exist in loaded sessions", async () => {
+      mockFetchChatSessions.mockResolvedValueOnce({
+        sessions: [makeSession({ id: "session-001", agentId: "agent-001" })],
+      });
+
+      // Simulate a saved session that no longer exists
+      mockGetScopedItem.mockReturnValue("non-existent-session");
+
+      const { result } = renderHook(() => useChat());
+
+      await waitFor(() => {
+        expect(result.current.sessions).toHaveLength(1);
+      });
+
+      // Should not have an active session since the saved one doesn't exist
+      await waitFor(() => {
+        expect(result.current.activeSession).toBeNull();
+      });
+
+      // Messages should not be loaded since no session is selected
+      expect(mockFetchChatMessages).not.toHaveBeenCalled();
+    });
+
+    it("persists session ID to localStorage when selecting a session", async () => {
+      const session = makeSession({ id: "session-001", agentId: "agent-001" });
+      mockFetchChatSessions.mockResolvedValueOnce({ sessions: [session] });
+      mockFetchChatMessages.mockResolvedValue({ messages: [] });
+
+      const { result } = renderHook(() => useChat("proj-123"));
+
+      await waitFor(() => {
+        expect(result.current.sessions).toHaveLength(1);
+      });
+
+      act(() => {
+        result.current.selectSession("session-001");
+      });
+
+      await waitFor(() => {
+        expect(mockSetScopedItem).toHaveBeenCalledWith(
+          "kb-chat-active-session",
+          "session-001",
+          "proj-123",
+        );
+      });
+    });
+
+    it("removes session ID from localStorage when deselecting", async () => {
+      const session = makeSession({ id: "session-001", agentId: "agent-001" });
+      mockFetchChatSessions.mockResolvedValueOnce({ sessions: [session] });
+      mockFetchChatMessages.mockResolvedValue({ messages: [] });
+
+      const { result } = renderHook(() => useChat("proj-123"));
+
+      await waitFor(() => {
+        expect(result.current.sessions).toHaveLength(1);
+      });
+
+      // First select a session
+      act(() => {
+        result.current.selectSession("session-001");
+      });
+
+      await waitFor(() => {
+        expect(result.current.activeSession?.id).toBe("session-001");
+      });
+
+      // Reset the mock to track the removal call
+      mockSetScopedItem.mockClear();
+
+      // Now deselect
+      act(() => {
+        result.current.selectSession("");
+      });
+
+      await waitFor(() => {
+        expect(result.current.activeSession).toBeNull();
+      });
+
+      await waitFor(() => {
+        expect(mockRemoveScopedItem).toHaveBeenCalledWith(
+          "kb-chat-active-session",
+          "proj-123",
+        );
+      });
+    });
+
+    it("uses undefined projectId when not provided", async () => {
+      const session = makeSession({ id: "session-001", agentId: "agent-001" });
+      mockFetchChatSessions.mockResolvedValueOnce({ sessions: [session] });
+      mockFetchChatMessages.mockResolvedValue({ messages: [] });
+
+      const { result } = renderHook(() => useChat());
+
+      await waitFor(() => {
+        expect(result.current.sessions).toHaveLength(1);
+      });
+
+      act(() => {
+        result.current.selectSession("session-001");
+      });
+
+      await waitFor(() => {
+        expect(mockSetScopedItem).toHaveBeenCalledWith(
+          "kb-chat-active-session",
+          "session-001",
+          undefined,
+        );
+      });
     });
   });
 });

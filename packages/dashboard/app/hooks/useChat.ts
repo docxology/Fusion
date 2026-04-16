@@ -9,7 +9,10 @@ import {
   fetchAgents,
   type ChatSessionListResponse,
 } from "../api";
+import { getScopedItem, setScopedItem, removeScopedItem } from "../utils/projectStorage";
 import type { Agent } from "@fusion/core";
+
+const ACTIVE_SESSION_STORAGE_KEY = "kb-chat-active-session";
 
 export interface ChatSessionInfo {
   id: string;
@@ -133,6 +136,24 @@ export function useChat(projectId?: string): UseChatReturn {
     refreshSessions();
   }, [refreshSessions]);
 
+  // Restore active session from localStorage after initial load
+  // Uses a ref to avoid circular dependency with selectSession
+  const selectSessionRef = useRef<(id: string) => void>(() => {
+    /* noop - will be replaced after selectSession is defined */
+  });
+  useEffect(() => {
+    if (sessionsLoading) return; // Wait for sessions to load
+
+    const savedSessionId = getScopedItem(ACTIVE_SESSION_STORAGE_KEY, projectId);
+    if (savedSessionId) {
+      // Check if the saved session exists in the loaded sessions
+      const session = sessions.find((s) => s.id === savedSessionId);
+      if (session) {
+        selectSessionRef.current(savedSessionId);
+      }
+    }
+  }, [sessionsLoading, sessions, projectId]);
+
   // Load messages when active session changes
   const loadMessages = useCallback(
     async (sessionId: string, opts?: { offset?: number }) => {
@@ -180,9 +201,20 @@ export function useChat(projectId?: string): UseChatReturn {
       } else {
         setMessages([]);
       }
+
+      // Persist active session to localStorage
+      if (id) {
+        setScopedItem(ACTIVE_SESSION_STORAGE_KEY, id, projectId);
+      } else {
+        removeScopedItem(ACTIVE_SESSION_STORAGE_KEY, projectId);
+      }
     },
-    [sessions, loadMessages],
+    [sessions, loadMessages, projectId],
   );
+
+  // Update the ref to point to the actual selectSession function
+  // This is needed to avoid circular dependencies in useEffect
+  selectSessionRef.current = selectSession;
 
   // Create a new session
   const createSession = useCallback(

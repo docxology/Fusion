@@ -339,4 +339,39 @@ export class ChatStore extends EventEmitter<ChatStoreEvents> {
     if (!row) return undefined;
     return this.rowToMessage(row);
   }
+
+  /**
+   * Get the latest message for each session in the provided list.
+   * Uses a single SQL query with GROUP BY and MAX to efficiently fetch last messages.
+   *
+   * @param sessionIds - Array of session IDs to fetch last messages for
+   * @returns Map of sessionId -> latest ChatMessage for that session
+   */
+  getLastMessageForSessions(sessionIds: string[]): Map<string, ChatMessage> {
+    if (!sessionIds || sessionIds.length === 0) {
+      return new Map();
+    }
+
+    // Create placeholders for the IN clause
+    const placeholders = sessionIds.map(() => "?").join(", ");
+
+    // Use a subquery to get the latest message per session using MAX(createdAt)
+    // Then join back to get the full message row
+    const rows = this.db.prepare(`
+      SELECT cm.* FROM chat_messages cm
+      INNER JOIN (
+        SELECT sessionId, MAX(createdAt) as maxCreatedAt
+        FROM chat_messages
+        WHERE sessionId IN (${placeholders})
+        GROUP BY sessionId
+      ) latest ON cm.sessionId = latest.sessionId AND cm.createdAt = latest.maxCreatedAt
+    `).all(...sessionIds);
+
+    const result = new Map<string, ChatMessage>();
+    for (const row of rows as any[]) {
+      const message = this.rowToMessage(row);
+      result.set(message.sessionId, message);
+    }
+    return result;
+  }
 }

@@ -83,6 +83,7 @@ const mockDeleteSession = vi.fn();
 const mockAddMessage = vi.fn();
 const mockGetMessages = vi.fn();
 const mockGetMessage = vi.fn();
+const mockGetLastMessageForSessions = vi.fn().mockReturnValue(new Map());
 
 // Mock AgentStore
 const mockAgentStoreInit = vi.fn().mockResolvedValue(undefined);
@@ -101,6 +102,7 @@ vi.mock("@fusion/core", () => {
       addMessage = mockAddMessage;
       getMessages = mockGetMessages;
       getMessage = mockGetMessage;
+      getLastMessageForSessions = mockGetLastMessageForSessions;
     },
     AgentStore: class MockAgentStore {
       init = mockAgentStoreInit;
@@ -202,6 +204,7 @@ const mockChatStoreInstance = {
   addMessage: mockAddMessage,
   getMessages: mockGetMessages,
   getMessage: mockGetMessage,
+  getLastMessageForSessions: mockGetLastMessageForSessions,
   emit: vi.fn(),
   on: vi.fn(),
   off: vi.fn(),
@@ -252,6 +255,7 @@ describe("Chat API Routes", () => {
     mockAddMessage.mockReset();
     mockGetMessages.mockReset();
     mockGetMessage.mockReset();
+    mockGetLastMessageForSessions.mockReset();
     mockSendMessage.mockReset();
     mockAgentStoreInit.mockResolvedValue(undefined);
     mockAgentStoreGetAgent.mockReset();
@@ -260,6 +264,7 @@ describe("Chat API Routes", () => {
     // Setup default mocks
     mockListSessions.mockReturnValue([]);
     mockGetMessages.mockReturnValue([]);
+    mockGetLastMessageForSessions.mockReturnValue(new Map());
 
     // Default agent mock - agent with model config
     mockAgentStoreGetAgent.mockResolvedValue({
@@ -350,6 +355,75 @@ describe("Chat API Routes", () => {
 
       expect(response.status).toBe(200);
       expect((response.body as any).sessions).toHaveLength(0);
+    });
+
+    it("enriches sessions with lastMessagePreview and lastMessageAt", async () => {
+      const sessionWithId = { ...sampleSession, id: "chat-abc123" };
+      mockListSessions.mockReturnValue([sessionWithId]);
+
+      // Mock last message for the session
+      const mockLastMessage = {
+        id: "msg-001",
+        sessionId: "chat-abc123",
+        role: "assistant",
+        content: "Hello, how can I help you?",
+        thinkingOutput: null,
+        metadata: null,
+        createdAt: "2026-04-15T10:00:00.000Z",
+      };
+      mockGetLastMessageForSessions.mockReturnValue(
+        new Map([["chat-abc123", mockLastMessage]]),
+      );
+
+      const response = await request(app, "GET", "/api/chat/sessions");
+
+      expect(response.status).toBe(200);
+      expect(mockGetLastMessageForSessions).toHaveBeenCalledWith(["chat-abc123"]);
+      const enrichedSession = (response.body as any).sessions[0];
+      expect(enrichedSession.lastMessagePreview).toBe("Hello, how can I help you?");
+      expect(enrichedSession.lastMessageAt).toBe("2026-04-15T10:00:00.000Z");
+    });
+
+    it("truncates long lastMessagePreview to 100 chars", async () => {
+      const sessionWithId = { ...sampleSession, id: "chat-abc123" };
+      mockListSessions.mockReturnValue([sessionWithId]);
+
+      // Mock a long message
+      const longContent = "A".repeat(150);
+      const mockLastMessage = {
+        id: "msg-001",
+        sessionId: "chat-abc123",
+        role: "assistant",
+        content: longContent,
+        thinkingOutput: null,
+        metadata: null,
+        createdAt: "2026-04-15T10:00:00.000Z",
+      };
+      mockGetLastMessageForSessions.mockReturnValue(
+        new Map([["chat-abc123", mockLastMessage]]),
+      );
+
+      const response = await request(app, "GET", "/api/chat/sessions");
+
+      expect(response.status).toBe(200);
+      const enrichedSession = (response.body as any).sessions[0];
+      expect(enrichedSession.lastMessagePreview).toBe("A".repeat(100) + "…");
+      expect(enrichedSession.lastMessagePreview).toHaveLength(101);
+    });
+
+    it("does not add lastMessagePreview when session has no messages", async () => {
+      const sessionWithId = { ...sampleSession, id: "chat-abc123" };
+      mockListSessions.mockReturnValue([sessionWithId]);
+
+      // No messages for this session
+      mockGetLastMessageForSessions.mockReturnValue(new Map());
+
+      const response = await request(app, "GET", "/api/chat/sessions");
+
+      expect(response.status).toBe(200);
+      const enrichedSession = (response.body as any).sessions[0];
+      expect(enrichedSession.lastMessagePreview).toBeUndefined();
+      expect(enrichedSession.lastMessageAt).toBeUndefined();
     });
   });
 

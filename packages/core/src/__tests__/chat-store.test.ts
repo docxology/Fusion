@@ -449,6 +449,68 @@ describe("ChatStore", () => {
         expect(result).toBeUndefined();
       });
     });
+
+    describe("getLastMessageForSessions", () => {
+      it("returns the most recent message for each session", async () => {
+        const session1 = createTestSession(store);
+        const session2 = createTestSession(store);
+
+        // Add messages to session1
+        store.addMessage(session1.id, { role: "user", content: "Hello" });
+        await new Promise((r) => setTimeout(r, 5));
+        const latestMsg1 = store.addMessage(session1.id, {
+          role: "assistant",
+          content: "Latest for session 1",
+        });
+
+        // Add only one message to session2
+        const latestMsg2 = store.addMessage(session2.id, {
+          role: "assistant",
+          content: "Latest for session 2",
+        });
+
+        const result = store.getLastMessageForSessions([session1.id, session2.id]);
+
+        expect(result.size).toBe(2);
+        expect(result.get(session1.id)).toBeDefined();
+        expect(result.get(session1.id)!.content).toBe("Latest for session 1");
+        expect(result.get(session2.id)).toBeDefined();
+        expect(result.get(session2.id)!.content).toBe("Latest for session 2");
+      });
+
+      it("handles empty session list", () => {
+        const result = store.getLastMessageForSessions([]);
+        expect(result.size).toBe(0);
+      });
+
+      it("handles sessions with no messages", () => {
+        const session1 = createTestSession(store);
+        const session2 = createTestSession(store);
+
+        // Only add message to session1
+        store.addMessage(session1.id, { role: "user", content: "Hello" });
+
+        const result = store.getLastMessageForSessions([session1.id, session2.id]);
+
+        expect(result.size).toBe(1);
+        expect(result.has(session1.id)).toBe(true);
+        expect(result.has(session2.id)).toBe(false);
+      });
+
+      it("handles non-existent session IDs", () => {
+        const session = createTestSession(store);
+        store.addMessage(session.id, { role: "user", content: "Hello" });
+
+        const result = store.getLastMessageForSessions([
+          session.id,
+          "non-existent-1",
+          "non-existent-2",
+        ]);
+
+        expect(result.size).toBe(1);
+        expect(result.has(session.id)).toBe(true);
+      });
+    });
   });
 
   // ── Event Emission Tests ─────────────────────────────────────────
