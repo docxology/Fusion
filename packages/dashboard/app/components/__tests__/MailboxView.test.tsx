@@ -479,4 +479,100 @@ describe("MailboxView", () => {
     expect(screen.getByText("Test Agent 1")).toBeDefined();
     expect(screen.getByText("Test Agent 2")).toBeDefined();
   });
+
+  describe("mobile layout CSS regressions", () => {
+    it("defines .mailbox-view base flex layout with min-height: 0", async () => {
+      const fs = await import("fs");
+      const path = await import("path");
+      const cssPath = path.resolve(__dirname, "../../styles.css");
+      const css = fs.readFileSync(cssPath, "utf-8");
+
+      const viewBlockMatch = css.match(/\.mailbox-view\s*\{([^}]*)\}/);
+      expect(viewBlockMatch).toBeTruthy();
+      const viewBlock = viewBlockMatch![1];
+      expect(viewBlock).toContain("display: flex;");
+      expect(viewBlock).toContain("flex-direction: column;");
+      expect(viewBlock).toContain("height: 100%;");
+      expect(viewBlock).toContain("min-height: 0;");
+      expect(viewBlock).toContain("overflow: hidden;");
+    });
+
+    it("keeps mobile .mailbox-view overrides in the dedicated media-query section", async () => {
+      const fs = await import("fs");
+      const path = await import("path");
+      const cssPath = path.resolve(__dirname, "../../styles.css");
+      const css = fs.readFileSync(cssPath, "utf-8");
+
+      const sectionStart = css.indexOf("/* ── Mailbox — Mobile");
+      expect(sectionStart).toBeGreaterThan(-1);
+
+      const sectionEnd = css.indexOf("/* ── Message Composer", sectionStart);
+      expect(sectionEnd).toBeGreaterThan(sectionStart);
+
+      const mailboxMobileSection = css.slice(sectionStart, sectionEnd);
+
+      expect(mailboxMobileSection).toContain("@media (max-width: 768px)");
+      // Verify .mailbox-view selectors are in mobile section
+      expect(mailboxMobileSection).toContain(".mailbox-view .mailbox-header");
+      expect(mailboxMobileSection).toContain(".mailbox-view .mailbox-tabs");
+      expect(mailboxMobileSection).toContain(".mailbox-view .mailbox-content");
+      expect(mailboxMobileSection).toContain(".mailbox-view .mailbox-compose-fab");
+      expect(mailboxMobileSection).toContain(".mailbox-view .mailbox-empty");
+    });
+
+    it("uses mobile-specific values for .mailbox-view content and FAB", async () => {
+      const fs = await import("fs");
+      const path = await import("path");
+      const cssPath = path.resolve(__dirname, "../../styles.css");
+      const css = fs.readFileSync(cssPath, "utf-8");
+
+      const sectionStart = css.indexOf("/* ── Mailbox — Mobile");
+      expect(sectionStart).toBeGreaterThan(-1);
+
+      const sectionEnd = css.indexOf("/* ── Message Composer", sectionStart);
+      const mailboxMobileSection = css.slice(sectionStart, sectionEnd);
+
+      // Content should have max-height: none (not modal's calc)
+      expect(mailboxMobileSection).toContain(".mailbox-view .mailbox-content");
+      // Match descendant selector: .mailbox-view followed by space, then .mailbox-content
+      const contentRuleMatch = mailboxMobileSection.match(/\.mailbox-view\s+\.mailbox-content\s*\{[^}]*\}/);
+      expect(contentRuleMatch).toBeTruthy();
+      expect(contentRuleMatch![0]).toContain("max-height: none");
+
+      // Content should have padding-bottom accounting for mobile nav
+      expect(contentRuleMatch![0]).toContain("padding-bottom");
+
+      // FAB should account for mobile nav height
+      expect(mailboxMobileSection).toContain(".mailbox-view .mailbox-compose-fab");
+      const fabRuleMatch = mailboxMobileSection.match(/\.mailbox-view\s+\.mailbox-compose-fab\s*\{[^}]*\}/);
+      expect(fabRuleMatch).toBeTruthy();
+      expect(fabRuleMatch![0]).toContain("--mobile-nav-height");
+      expect(fabRuleMatch![0]).toContain("safe-area-inset-bottom");
+      expect(fabRuleMatch![0]).toContain("--standalone-bottom-gap");
+    });
+
+    it("renders structural elements that mobile CSS targets", async () => {
+      mockFetchInbox.mockResolvedValue({
+        messages: [mockMessage],
+        unreadCount: 1,
+      });
+
+      const { container } = render(<MailboxView {...defaultProps} />);
+
+      // Verify root element with data-testid
+      expect(screen.getByTestId("mailbox-view")).toBeDefined();
+
+      // Verify header
+      const header = container.querySelector(".mailbox-header");
+      expect(header).toBeTruthy();
+
+      // Verify tabs
+      const tabs = container.querySelector(".mailbox-tabs");
+      expect(tabs).toBeTruthy();
+
+      // Verify content
+      const content = container.querySelector(".mailbox-content");
+      expect(content).toBeTruthy();
+    });
+  });
 });
