@@ -17,7 +17,7 @@ import { tmpdir } from "node:os";
 import * as nodeFs from "node:fs";
 
 import { promisify } from "node:util";
-import type { TaskStore, Column, ScheduleType, ActivityEventType, ModelPreset, MessageType, ParticipantType, RoutineTriggerType } from "@fusion/core";
+import type { TaskStore, Column, ScheduleType, ActivityEventType, ModelPreset, MessageType, ParticipantType, RoutineTriggerType, ProjectSettings } from "@fusion/core";
 import { COLUMNS, VALID_TRANSITIONS, GLOBAL_SETTINGS_KEYS, type BatchStatusEntry, type BatchStatusResponse, type BatchStatusResult, type IssueInfo, type PrInfo, type Task, getCurrentRepo, isGhAuthenticated, AutomationStore, validateBackupSchedule, validateBackupRetention, validateBackupDir, syncBackupAutomation, exportSettings, importSettings, validateImportData, MessageStore, RoutineStore, isWebhookTrigger, resolveMemoryBackend, getMemoryBackendCapabilities, listMemoryBackendTypes, readMemory, writeMemory, MemoryBackendError } from "@fusion/core";
 import type { ServerOptions } from "./server.js";
 import { GitHubClient, parseBadgeUrl } from "./github.js";
@@ -2521,6 +2521,227 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
       }
 
       rethrowAsApiError(err, "Failed to compact memory");
+    }
+  });
+
+  // ── Inbound Settings Sync Endpoints ────────────────────────────────
+  // These endpoints are called by remote nodes to deliver settings or request auth data.
+  // They validate apiKey auth before accepting data.
+
+  /**
+   * POST /api/settings/sync-receive
+   * Receive pushed settings from a remote node.
+   * Body: SettingsSyncPayload with global, projects, exportedAt, checksum, version
+   * Returns: { success: true, appliedFields: string[], skippedFields: string[] }
+   */
+  router.post("/settings/sync-receive", async (req, res) => {
+    try {
+      const { CentralCore } = await import("@fusion/core");
+      const central = new CentralCore(store.getFusionDir());
+      await central.init();
+
+      // Validate auth - find local node and check apiKey
+      const authHeader = req.headers.authorization;
+      if (!authHeader || !authHeader.startsWith("Bearer ")) {
+        await central.close();
+        throw new ApiError(401, "Missing or invalid Authorization header");
+      }
+
+      const token = authHeader.slice(7);
+      const nodes = await central.listNodes();
+      const localNode = nodes.find((n: import("@fusion/core").NodeConfig) => n.type === "local");
+      if (!localNode) {
+        await central.close();
+        throw new ApiError(401, "Local node not configured");
+      }
+      if (localNode.apiKey !== token) {
+        await central.close();
+        throw new ApiError(401, "Invalid apiKey");
+      }
+
+      const payload = req.body;
+
+      // Validate required fields
+      if (!payload?.sourceNodeId) {
+        await central.close();
+        throw badRequest("Missing required field: sourceNodeId");
+      }
+      if (!payload?.exportedAt) {
+        await central.close();
+        throw badRequest("Missing required field: exportedAt");
+      }
+
+      // Apply remote settings
+      const result = await central.applyRemoteSettings(payload);
+
+      // Build applied/skipped field lists
+      const appliedFields = [
+        ...Object.keys(payload.global || {}),
+        ...Object.keys(payload.projects || {}),
+      ];
+      const skippedFields = result.error ? appliedFields : [];
+
+      await central.close();
+
+      res.json({
+        success: result.success,
+        appliedFields,
+        skippedFields,
+        error: result.error,
+      });
+    } catch (err: unknown) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      rethrowAsApiError(err);
+    }
+  });
+
+  /**
+   * POST /api/settings/auth-receive
+   * Receive auth credentials from a remote node.
+   * Body: { providers: Record<string, { type: string; key: string }>, sourceNodeId: string, timestamp: string }
+   * Returns: { success: true, receivedProviders: string[] }
+   */
+  router.post("/settings/auth-receive", async (req, res) => {
+    try {
+      const { CentralCore } = await import("@fusion/core");
+      const central = new CentralCore(store.getFusionDir());
+      await central.init();
+
+      // Validate auth
+      const authHeader = req.headers.authorization;
+      if (!authHeader || !authHeader.startsWith("Bearer ")) {
+        await central.close();
+        throw new ApiError(401, "Missing or invalid Authorization header");
+      }
+
+      const token = authHeader.slice(7);
+      const nodes = await central.listNodes();
+      const localNode = nodes.find((n: import("@fusion/core").NodeConfig) => n.type === "local");
+      if (!localNode) {
+        await central.close();
+        throw new ApiError(401, "Local node not configured");
+      }
+      if (localNode.apiKey !== token) {
+        await central.close();
+        throw new ApiError(401, "Invalid apiKey");
+      }
+
+      const { providers, sourceNodeId, timestamp } = req.body || {};
+
+      // Validate required fields
+      if (!providers || typeof providers !== "object") {
+        await central.close();
+        throw badRequest("Missing required field: providers");
+      }
+      if (!sourceNodeId) {
+        await central.close();
+        throw badRequest("Missing required field: sourceNodeId");
+      }
+      if (!timestamp) {
+        await central.close();
+        throw badRequest("Missing required field: timestamp");
+      }
+
+      // Import AuthStorage and write credentials
+      const { AuthStorage } = await import("@mariozechner/pi-coding-agent");
+      const authStorage = AuthStorage.create();
+
+      const receivedProviders: string[] = [];
+      for (const [providerId, credential] of Object.entries(providers)) {
+        if (typeof credential === "object" && credential !== null) {
+          const cred = credential as { type: string; key?: string; access?: string; refresh?: string; expires?: number; accountId?: string };
+          if (cred.type === "api_key" && cred.key) {
+            authStorage.set(providerId, { type: "api_key", key: cred.key });
+            receivedProviders.push(providerId);
+          }
+        }
+      }
+
+      // Log without actual credentials
+      console.error(`[settings-sync] Auth credentials received: providers=${receivedProviders.join(",")}, source=${sourceNodeId}`);
+
+      await central.close();
+
+      res.json({ success: true, receivedProviders });
+    } catch (err: unknown) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      rethrowAsApiError(err);
+    }
+  });
+
+  /**
+   * GET /api/settings/auth-export
+   * Export local auth credentials for a requesting remote node.
+   * Returns: { providers: Record<string, { type: string; key: string }>, sourceNodeId: string, timestamp: string }
+   */
+  router.get("/settings/auth-export", async (req, res) => {
+    try {
+      const { CentralCore } = await import("@fusion/core");
+      const central = new CentralCore(store.getFusionDir());
+      await central.init();
+
+      // Validate auth
+      const authHeader = req.headers.authorization;
+      if (!authHeader || !authHeader.startsWith("Bearer ")) {
+        await central.close();
+        throw new ApiError(401, "Missing or invalid Authorization header");
+      }
+
+      const token = authHeader.slice(7);
+      const nodes = await central.listNodes();
+      const localNode = nodes.find((n: import("@fusion/core").NodeConfig) => n.type === "local");
+      if (!localNode) {
+        await central.close();
+        throw new ApiError(401, "Local node not configured");
+      }
+      if (localNode.apiKey !== token) {
+        await central.close();
+        throw new ApiError(401, "Invalid apiKey");
+      }
+
+      // Get local node ID
+      const localPeerInfo = await central.getLocalPeerInfo();
+
+      // Import AuthStorage and read credentials
+      const { AuthStorage } = await import("@mariozechner/pi-coding-agent");
+      const authStorage = AuthStorage.create();
+
+      // Read auth.json directly
+      const authJsonPath = `${process.env.HOME || process.env.USERPROFILE}/.pi/agent/auth.json`;
+      let allProviders: Record<string, { type: string; key?: string; access?: string; refresh?: string; expires?: number; accountId?: string }> = {};
+
+      try {
+        const { readFileSync } = await import("node:fs");
+        const authContent = readFileSync(authJsonPath, "utf-8");
+        allProviders = JSON.parse(authContent);
+      } catch {
+        // Auth file doesn't exist - export empty
+      }
+
+      // Filter to only API-key-based providers (skip OAuth)
+      const apiKeyProviders: Record<string, { type: string; key: string }> = {};
+      for (const [providerId, cred] of Object.entries(allProviders)) {
+        if (cred.type === "api_key" && cred.key) {
+          apiKeyProviders[providerId] = { type: "api_key", key: cred.key };
+        }
+      }
+
+      await central.close();
+
+      res.json({
+        providers: apiKeyProviders,
+        sourceNodeId: localPeerInfo.nodeId,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err: unknown) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      rethrowAsApiError(err);
     }
   });
 
@@ -13750,6 +13971,89 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
     }
   });
 
+  // ── Remote Node Settings Sync Helpers ─────────────────────────────────────
+
+  /**
+   * Helper: Validate node and make an authenticated fetch call to a remote node.
+   * Returns parsed JSON on success, throws ApiError on failure.
+   */
+  async function fetchFromRemoteNode(
+    node: import("@fusion/core").NodeConfig,
+    path: string,
+    options?: { method?: string; body?: unknown; timeoutMs?: number },
+  ): Promise<unknown> {
+    // Validate node has URL (can't fetch from local node or node without URL)
+    if (!node.url) {
+      throw new ApiError(400, "Node has no URL configured");
+    }
+
+    // Validate node has apiKey (secure sync requires node authentication)
+    if (!node.apiKey) {
+      throw new ApiError(400, "Remote node requires an apiKey for authenticated sync");
+    }
+
+    const method = options?.method ?? "GET";
+    const timeoutMs = options?.timeoutMs ?? 15_000;
+
+    // Construct full URL
+    const targetUrl = new URL(path, node.url).toString();
+
+    // Build headers with auth
+    const headers: Record<string, string> = {
+      "Authorization": `Bearer ${node.apiKey}`,
+      "Content-Type": "application/json",
+    };
+
+    // Build fetch options
+    const fetchOptions: RequestInit = {
+      method,
+      headers,
+    };
+
+    if (options?.body !== undefined && method !== "GET") {
+      fetchOptions.body = JSON.stringify(options.body);
+    }
+
+    // Create AbortController for timeout
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    fetchOptions.signal = controller.signal;
+
+    try {
+      const response = await fetch(targetUrl, fetchOptions);
+      clearTimeout(timeout);
+
+      // Handle auth failures from remote
+      if (response.status === 401 || response.status === 403) {
+        throw new ApiError(502, "Remote node authentication failed");
+      }
+
+      // Handle other non-200 responses
+      if (!response.ok) {
+        throw new ApiError(502, `Remote node returned ${response.status}`);
+      }
+
+      // Parse and return JSON
+      return await response.json();
+    } catch (err: unknown) {
+      clearTimeout(timeout);
+
+      if (err instanceof ApiError) {
+        throw err;
+      }
+
+      if (err instanceof Error) {
+        if (err.name === "AbortError") {
+          throw new ApiError(504, "Remote node unreachable");
+        }
+        // Network errors (DNS, connection refused, etc.)
+        throw new ApiError(504, "Remote node unreachable");
+      }
+
+      throw new ApiError(502, "Remote node request failed");
+    }
+  }
+
   // ── Node Management Routes (Multi-Node Support) ───────────────────────────
 
   /**
@@ -14092,6 +14396,423 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
       await central.close();
 
       res.json(result);
+    } catch (err: unknown) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      rethrowAsApiError(err);
+    }
+  });
+
+  // ── Node Settings Sync Routes ────────────────────────────────────────────
+
+  /**
+   * GET /api/nodes/:id/settings
+   * Fetch settings from a remote node by proxying to the remote's /api/settings/scopes endpoint.
+   * Returns: { global: GlobalSettings, project: Partial<ProjectSettings> }
+   */
+  router.get("/nodes/:id/settings", async (req, res) => {
+    try {
+      const { CentralCore } = await import("@fusion/core");
+      const central = new CentralCore();
+      await central.init();
+
+      const node = await central.getNode(req.params.id);
+      await central.close();
+
+      if (!node) {
+        throw notFound("Node not found");
+      }
+
+      if (node.type === "local") {
+        throw badRequest("Cannot fetch settings from a local node");
+      }
+
+      const result = await fetchFromRemoteNode(node, "/api/settings/scopes");
+      res.json(result);
+    } catch (err: unknown) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      rethrowAsApiError(err);
+    }
+  });
+
+  /**
+   * POST /api/nodes/:id/settings/push
+   * Push local settings to a remote node.
+   * Body: {} (empty, uses local settings automatically)
+   * Returns: { success: true, syncedFields: string[] }
+   */
+  router.post("/nodes/:id/settings/push", async (req, res) => {
+    try {
+      const { CentralCore } = await import("@fusion/core");
+      const central = new CentralCore();
+      await central.init();
+
+      const node = await central.getNode(req.params.id);
+      if (!node) {
+        await central.close();
+        throw notFound("Node not found");
+      }
+
+      if (node.type === "local") {
+        await central.close();
+        throw badRequest("Cannot push settings to a local node");
+      }
+
+      // Get local project settings
+      const projectSettings = await store.getSettingsByScope();
+
+      // Get local global settings
+      const globalSettingsStore = store.getGlobalSettingsStore();
+      const globalSettings = await globalSettingsStore.getSettings();
+
+      // Get local node ID for source tracking
+      const localPeerInfo = await central.getLocalPeerInfo();
+
+      // Build sync payload
+      const payload = {
+        global: globalSettings,
+        projects: { [store.getRootDir().split("/").pop()!]: projectSettings.project },
+        exportedAt: new Date().toISOString(),
+        version: 1 as const,
+      };
+
+      // Compute checksum
+      const { createHash } = await import("node:crypto");
+      const checksum = createHash("sha256").update(JSON.stringify(payload)).digest("hex");
+
+      // Send to remote node
+      await fetchFromRemoteNode(node, "/api/settings/sync-receive", {
+        method: "POST",
+        body: { ...payload, checksum },
+      });
+
+      // Record sync
+      await central.updateSettingsSyncState(node.id, {
+        lastSyncedAt: new Date().toISOString(),
+        localChecksum: checksum,
+      });
+
+      await central.close();
+
+      // Collect synced field names
+      const syncedFields = [
+        ...Object.keys(globalSettings),
+        ...Object.keys(projectSettings.project),
+      ];
+
+      res.json({ success: true, syncedFields });
+    } catch (err: unknown) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      rethrowAsApiError(err);
+    }
+  });
+
+  /**
+   * POST /api/nodes/:id/settings/pull
+   * Pull settings from a remote node and apply locally.
+   * Body: { conflictResolution?: "last-write-wins" | "manual" }
+   * Returns (last-write-wins): { success: true, appliedFields: string[], skippedFields: string[] }
+   * Returns (manual): { diff: { global: string[], project: string[] }, remoteSettings, localSettings }
+   */
+  router.post("/nodes/:id/settings/pull", async (req, res) => {
+    try {
+      const { CentralCore } = await import("@fusion/core");
+      const central = new CentralCore();
+      await central.init();
+
+      const node = await central.getNode(req.params.id);
+      if (!node) {
+        await central.close();
+        throw notFound("Node not found");
+      }
+
+      if (node.type === "local") {
+        await central.close();
+        throw badRequest("Cannot pull settings from a local node");
+      }
+
+      const conflictResolution = req.body?.conflictResolution ?? "last-write-wins";
+      if (conflictResolution !== "last-write-wins" && conflictResolution !== "manual") {
+        await central.close();
+        throw badRequest("conflictResolution must be 'last-write-wins' or 'manual'");
+      }
+
+      // Fetch remote settings
+      const remoteSettings = await fetchFromRemoteNode(node, "/api/settings/scopes") as {
+        global: Record<string, unknown>;
+        project: Record<string, unknown>;
+      };
+
+      if (conflictResolution === "manual") {
+        // Get local settings for diff comparison
+        const localProjectSettings = await store.getSettingsByScope();
+        const localGlobalSettings = await store.getGlobalSettingsStore().getSettings();
+
+        // Compute diff: field names that differ between local and remote
+        const diffGlobal = Object.keys(remoteSettings.global || {}).filter(
+          (key) => JSON.stringify(remoteSettings.global?.[key]) !== JSON.stringify(localGlobalSettings[key as keyof typeof localGlobalSettings])
+        );
+        const diffProject = Object.keys(remoteSettings.project || {}).filter(
+          (key) => JSON.stringify(remoteSettings.project?.[key]) !== JSON.stringify(localProjectSettings.project?.[key as keyof typeof localProjectSettings.project])
+        );
+
+        await central.close();
+
+        res.json({
+          diff: { global: diffGlobal, project: diffProject },
+          remoteSettings,
+          localSettings: { global: localGlobalSettings, project: localProjectSettings.project },
+        });
+        return;
+      }
+
+      // last-write-wins: apply remote settings
+      // Build payload with checksum
+      const { createHash } = await import("node:crypto");
+      const exportedAt = new Date().toISOString();
+      const payloadWithoutChecksum = {
+        global: remoteSettings.global,
+        projects: remoteSettings.project as Record<string, ProjectSettings>,
+        exportedAt,
+        version: 1 as const,
+      };
+      const checksum = createHash("sha256").update(JSON.stringify(payloadWithoutChecksum)).digest("hex");
+
+      const result = await central.applyRemoteSettings({
+        ...payloadWithoutChecksum,
+        checksum,
+      });
+
+      // Record sync
+      await central.updateSettingsSyncState(node.id, {
+        lastSyncedAt: new Date().toISOString(),
+        remoteChecksum: checksum,
+      });
+
+      await central.close();
+
+      // Build applied/skipped field lists
+      const appliedFields = [
+        ...Object.keys(remoteSettings.global || {}),
+        ...Object.keys(remoteSettings.project || {}),
+      ];
+      const skippedFields = result.error ? Object.keys(remoteSettings.global || {}) : [];
+
+      res.json({
+        success: result.success,
+        appliedFields,
+        skippedFields,
+        error: result.error,
+      });
+    } catch (err: unknown) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      rethrowAsApiError(err);
+    }
+  });
+
+  /**
+   * GET /api/nodes/:id/settings/sync-status
+   * Returns last sync timestamp and diff summary between local and remote.
+   * Returns: {
+   *   lastSyncAt: string | null,
+   *   lastSyncDirection: string | null,
+   *   localUpdatedAt: string,
+   *   remoteReachable: boolean,
+   *   diff: { global: string[], project: string[] }
+   * }
+   */
+  router.get("/nodes/:id/settings/sync-status", async (req, res) => {
+    try {
+      const { CentralCore } = await import("@fusion/core");
+      const central = new CentralCore();
+      await central.init();
+
+      const node = await central.getNode(req.params.id);
+      if (!node) {
+        await central.close();
+        throw notFound("Node not found");
+      }
+
+      if (node.type === "local") {
+        await central.close();
+        throw badRequest("Cannot check sync status for a local node");
+      }
+
+      // Get sync state
+      const syncState = await central.getSettingsSyncState(node.id);
+
+      // Get local settings for comparison
+      const localProjectSettings = await store.getSettingsByScope();
+      const localGlobalSettings = await store.getGlobalSettingsStore().getSettings();
+
+      // Try to fetch remote settings
+      let remoteReachable = false;
+      let remoteSettings: { global: Record<string, unknown>; project: Record<string, unknown> } | null = null;
+      let diffGlobal: string[] = [];
+      let diffProject: string[] = [];
+
+      try {
+        remoteSettings = await fetchFromRemoteNode(node, "/api/settings/scopes") as {
+          global: Record<string, unknown>;
+          project: Record<string, unknown>;
+        };
+        remoteReachable = true;
+
+        // Compute diff
+        const rs = remoteSettings!;
+        diffGlobal = Object.keys(rs.global || {}).filter(
+          (key) => JSON.stringify(rs.global?.[key]) !== JSON.stringify(localGlobalSettings[key as keyof typeof localGlobalSettings])
+        );
+        diffProject = Object.keys(rs.project || {}).filter(
+          (key) => JSON.stringify(rs.project?.[key]) !== JSON.stringify(localProjectSettings.project?.[key as keyof typeof localProjectSettings.project])
+        );
+      } catch {
+        // Remote unreachable - diff will be empty arrays
+      }
+
+      await central.close();
+
+      res.json({
+        lastSyncAt: syncState?.lastSyncedAt ?? null,
+        lastSyncDirection: syncState ? "sync" : null, // Direction not tracked in new schema
+        localUpdatedAt: syncState?.updatedAt ?? new Date().toISOString(),
+        remoteReachable,
+        diff: { global: diffGlobal, project: diffProject },
+      });
+    } catch (err: unknown) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      rethrowAsApiError(err);
+    }
+  });
+
+  /**
+   * POST /api/nodes/:id/auth/sync
+   * Synchronize model auth credentials with a remote node.
+   * Body: { direction?: "push" | "pull" }
+   * Returns: { success: true, syncedProviders: string[] }
+   */
+  router.post("/nodes/:id/auth/sync", async (req, res) => {
+    try {
+      const { CentralCore } = await import("@fusion/core");
+      const central = new CentralCore();
+      await central.init();
+
+      const node = await central.getNode(req.params.id);
+      if (!node) {
+        await central.close();
+        throw notFound("Node not found");
+      }
+
+      if (node.type === "local") {
+        await central.close();
+        throw badRequest("Cannot sync auth with a local node");
+      }
+
+      if (!node.apiKey) {
+        await central.close();
+        throw badRequest("Remote node requires an apiKey for auth sync");
+      }
+
+      const direction = req.body?.direction ?? "push";
+      if (direction !== "push" && direction !== "pull") {
+        await central.close();
+        throw badRequest("direction must be 'push' or 'pull'");
+      }
+
+      // Get local node ID
+      const localPeerInfo = await central.getLocalPeerInfo();
+      const timestamp = new Date().toISOString();
+
+      // Import AuthStorage
+      const { AuthStorage } = await import("@mariozechner/pi-coding-agent");
+      const authStorage = AuthStorage.create();
+
+      if (direction === "push") {
+        // Get OAuth provider IDs to exclude
+        const oauthProviders = authStorage.getOAuthProviders();
+        const oauthIds = new Set(oauthProviders.map((p) => p.id));
+
+        // Read auth.json directly to get all providers
+        const authJsonPath = `${process.env.HOME || process.env.USERPROFILE}/.pi/agent/auth.json`;
+        let allProviders: Record<string, { type: string; key?: string; access?: string; refresh?: string; expires?: number; accountId?: string }> = {};
+
+        try {
+          const { readFileSync } = await import("node:fs");
+          const authContent = readFileSync(authJsonPath, "utf-8");
+          allProviders = JSON.parse(authContent);
+        } catch {
+          // Auth file doesn't exist or is unreadable - sync empty
+        }
+
+        // Filter to only API-key-based providers (skip OAuth)
+        const apiKeyProviders: Record<string, { type: string; key: string }> = {};
+        for (const [providerId, cred] of Object.entries(allProviders)) {
+          if (oauthIds.has(providerId)) continue;
+          if (cred.type === "api_key" && cred.key) {
+            apiKeyProviders[providerId] = { type: "api_key", key: cred.key };
+          }
+        }
+
+        // Send to remote
+        await fetchFromRemoteNode(node, "/api/settings/auth-receive", {
+          method: "POST",
+          body: {
+            providers: apiKeyProviders,
+            sourceNodeId: localPeerInfo.nodeId,
+            timestamp,
+          },
+        });
+
+        // Record sync
+        await central.updateSettingsSyncState(node.id, {
+          lastSyncedAt: timestamp,
+        });
+
+        await central.close();
+
+        // Log without actual credentials
+        const providerNames = Object.keys(apiKeyProviders);
+        console.error(`[settings-sync] Auth sync completed: direction=push, providers=${providerNames.join(",")}, targetNode=${node.id}`);
+
+        res.json({ success: true, syncedProviders: providerNames });
+      } else {
+        // Pull: fetch remote auth and apply locally
+        const remoteAuth = await fetchFromRemoteNode(node, "/api/settings/auth-export") as {
+          providers: Record<string, { type: string; key: string }>;
+          sourceNodeId: string;
+          timestamp: string;
+        };
+
+        // Write received credentials to local AuthStorage
+        const syncedProviders: string[] = [];
+        for (const [providerId, credential] of Object.entries(remoteAuth.providers || {})) {
+          if (credential.type === "api_key" && credential.key) {
+            authStorage.set(providerId, { type: "api_key", key: credential.key });
+            syncedProviders.push(providerId);
+          }
+        }
+
+        // Record sync
+        await central.updateSettingsSyncState(node.id, {
+          lastSyncedAt: timestamp,
+        });
+
+        await central.close();
+
+        // Log without actual credentials
+        console.error(`[settings-sync] Auth sync completed: direction=pull, providers=${syncedProviders.join(",")}, targetNode=${node.id}`);
+
+        res.json({ success: true, syncedProviders });
+      }
     } catch (err: unknown) {
       if (err instanceof ApiError) {
         throw err;

@@ -39,6 +39,7 @@
     "@codemirror/view": "^6.36.4",
     "@fusion/core": "workspace:*",
     "@fusion/engine": "workspace:*",
+    "@mariozechner/pi-coding-agent": "^0.62.0",
     "@types/multer": "^2.1.0",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/addon-search": "^0.15.0",

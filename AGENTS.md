@@ -92,6 +92,21 @@ const { stdout, stderr } = await execAsync(command, {
 
 Fusion has a Node Dashboard view for managing mesh network nodes. See [docs/architecture.md](./docs/architecture.md) for dashboard components and API endpoints.
 
+**Node Settings Sync API Endpoints:**
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/nodes/:id/settings` | Fetch settings from a remote node |
+| POST | `/api/nodes/:id/settings/push` | Push local settings to a remote node |
+| POST | `/api/nodes/:id/settings/pull` | Pull settings from a remote node |
+| GET | `/api/nodes/:id/settings/sync-status` | Get sync status and diff summary |
+| POST | `/api/nodes/:id/auth/sync` | Sync model auth credentials |
+| POST | `/api/settings/sync-receive` | Receive pushed settings (inbound) |
+| POST | `/api/settings/auth-receive` | Receive auth credentials (inbound) |
+| GET | `/api/settings/auth-export` | Export local auth credentials |
+
+All remote node endpoints require the target node to have an `apiKey` configured. Inbound endpoints validate the `Authorization: Bearer <apiKey>` header against the local node's apiKey.
+
 ## Pi Extension (`packages/cli/src/extension.ts`)
 
 The pi extension provides tools and a `/fn` command for interacting with fn from within a pi session. It ships as part of `@gsxdsm/fusion`.
