@@ -32,6 +32,8 @@ import type { AgentReflectionService } from "./agent-reflection.js";
 import { createRunAuditor, generateSyntheticRunId, type EngineRunContext } from "./run-audit.js";
 import { evaluateSpecStaleness, getPromptPath } from "./spec-staleness.js";
 import {
+  createDelegateTaskTool,
+  createListAgentsTool,
   createReflectOnPerformanceTool,
   createTaskCreateTool as sharedCreateTaskCreateTool,
   createTaskDocumentReadTool as sharedCreateTaskDocumentReadTool,
@@ -43,10 +45,14 @@ import { getTaskCompletionBlockerForStore } from "./task-completion.js";
 // Re-export for backward compatibility (tests import from executor.ts)
 export { summarizeToolArgs } from "./agent-logger.js";
 export {
+  createDelegateTaskTool,
+  createListAgentsTool,
   createTaskCreateTool,
   createTaskDocumentReadTool,
   createTaskDocumentWriteTool,
   createTaskLogTool,
+  delegateTaskParams,
+  listAgentsParams,
   taskCreateParams,
   taskLogParams,
 } from "./agent-tools.js";
@@ -1404,6 +1410,11 @@ export class TaskExecutor {
         this.createTaskDocumentReadTool(task.id),
         // Conditionally add agent self-reflection when enabled and task has an assigned agent.
         ...reflectionTools,
+        // Agent delegation tools — discover and delegate work to other agents.
+        ...(this.options.agentStore ? [
+          createListAgentsTool(this.options.agentStore),
+          createDelegateTaskTool(this.options.agentStore, this.store),
+        ] : []),
         // Add plugin tools from PluginRunner
         ...(this.options.pluginRunner?.getPluginTools() ?? []),
       ];

@@ -7,7 +7,8 @@
  * The parameter schemas are canonical here — executor.ts imports and reuses them.
  */
 
-import type { TaskDocument, TaskDocumentCreateInput, TaskStore, RunMutationContext } from "@fusion/core";
+import type { AgentStore, AgentState, AgentCapability, TaskDocument, TaskDocumentCreateInput, TaskStore, RunMutationContext } from "@fusion/core";
+import { isEphemeralAgent } from "@fusion/core";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import { Type, type Static } from "@mariozechner/pi-ai";
 import type { AgentReflectionService } from "./agent-reflection.js";
@@ -43,6 +44,26 @@ export const taskDocumentReadParams = Type.Object({
 export const reflectOnPerformanceParams = Type.Object({
   focus_area: Type.Optional(
     Type.String({ description: "Optional focus area for reflection (e.g., 'code quality', 'speed', 'testing')" }),
+  ),
+});
+
+export const listAgentsParams = Type.Object({
+  role: Type.Optional(
+    Type.String({ description: "Filter by agent role/capability (e.g., 'executor', 'reviewer', 'qa')" }),
+  ),
+  state: Type.Optional(
+    Type.String({ description: "Filter by agent state (e.g., 'idle', 'active', 'running')" }),
+  ),
+  includeEphemeral: Type.Optional(
+    Type.Boolean({ description: "Include ephemeral/runtime agents (default: false)" }),
+  ),
+});
+
+export const delegateTaskParams = Type.Object({
+  agent_id: Type.String({ description: "The agent ID to delegate work to" }),
+  description: Type.String({ description: "What needs to be done" }),
+  dependencies: Type.Optional(
+    Type.Array(Type.String(), { description: "Task IDs this new task depends on (e.g. [\"KB-001\"])" }),
   ),
 });
 
@@ -289,6 +310,118 @@ export function createReflectOnPerformanceTool(
       return {
         content: [{ type: "text" as const, text: formattedText }],
         details: {},
+      };
+    },
+  };
+}
+
+/**
+ * Create a `list_agents` tool that lists all available agents.
+ *
+ * @param agentStore - AgentStore for agent discovery
+ * @returns ToolDefinition for the `list_agents` tool
+ */
+export function createListAgentsTool(agentStore: AgentStore): ToolDefinition {
+  return {
+    name: "list_agents",
+    label: "List Agents",
+    description:
+      "List all available agents in the system. Shows each agent's name, role, state, " +
+      "personality (soul), and current assignment. Use this to discover which agents exist " +
+      "and what they specialize in before delegating work.",
+    parameters: listAgentsParams,
+    execute: async (_id: string, params: Static<typeof listAgentsParams>) => {
+      const filter: { role?: AgentCapability; state?: AgentState; includeEphemeral?: boolean } = {};
+      if (params.role) filter.role = params.role as AgentCapability;
+      if (params.state) filter.state = params.state as AgentState;
+      if (params.includeEphemeral !== undefined) filter.includeEphemeral = params.includeEphemeral;
+
+      const agents = await agentStore.listAgents(filter);
+
+      if (agents.length === 0) {
+        return {
+          content: [{ type: "text" as const, text: "No agents found matching the specified filters." }],
+          details: {},
+        };
+      }
+
+      const lines = agents.map((agent) => {
+        const parts: string[] = [
+          `ID: ${agent.id}`,
+          `Name: ${agent.name}`,
+          `Role: ${agent.role}`,
+          `State: ${agent.state}`,
+        ];
+
+        if (agent.title) parts.push(`Title: ${agent.title}`);
+        if (agent.soul) parts.push(`Soul: ${agent.soul.slice(0, 200)}`);
+        if (agent.instructionsText) {
+          const snippet = agent.instructionsText.slice(0, 100);
+          parts.push(`Custom Instructions: ${snippet}${agent.instructionsText.length > 100 ? "…" : ""}`);
+        }
+        if (agent.taskId) parts.push(`Current Task: ${agent.taskId}`);
+
+        return parts.join("\n");
+      });
+
+      return {
+        content: [{ type: "text" as const, text: `Available agents:\n\n${lines.join("\n\n")}` }],
+        details: { agents },
+      };
+    },
+  };
+}
+
+/**
+ * Create a `delegate_task` tool that creates and assigns a task to a specific agent.
+ *
+ * @param agentStore - AgentStore for agent lookup
+ * @param taskStore - TaskStore for task creation
+ * @returns ToolDefinition for the `delegate_task` tool
+ */
+export function createDelegateTaskTool(agentStore: AgentStore, taskStore: TaskStore): ToolDefinition {
+  return {
+    name: "delegate_task",
+    label: "Delegate Task",
+    description:
+      "Create a new task and assign it to a specific agent for execution. The task goes to " +
+      "'todo' and will be picked up by the target agent on their next heartbeat cycle. " +
+      "Use list_agents first to find available agents and their capabilities.",
+    parameters: delegateTaskParams,
+    execute: async (_id: string, params: Static<typeof delegateTaskParams>) => {
+      // Validate target agent exists
+      const agent = await agentStore.getAgent(params.agent_id);
+      if (!agent) {
+        return {
+          content: [{ type: "text" as const, text: `ERROR: Agent ${params.agent_id} not found` }],
+          details: {},
+        };
+      }
+
+      // Validate target agent is not ephemeral
+      if (isEphemeralAgent(agent)) {
+        return {
+          content: [{ type: "text" as const, text: `ERROR: Cannot delegate to ephemeral/runtime agent ${params.agent_id}` }],
+          details: {},
+        };
+      }
+
+      // Create task assigned to the target agent
+      const task = await taskStore.createTask({
+        description: params.description,
+        dependencies: params.dependencies,
+        column: "todo",
+        assignedAgentId: params.agent_id,
+      });
+
+      const deps = task.dependencies.length ? ` (depends on: ${task.dependencies.join(", ")})` : "";
+      return {
+        content: [{
+          type: "text" as const,
+          text: `Delegated to ${agent.name} (${agent.id}): Created ${task.id}${deps}. ` +
+            `The task will be picked up by ${agent.name} on their next heartbeat cycle.`,
+        }],
+        details: { taskId: task.id, agentId: agent.id, agentName: agent.name },
       };
     },
   };

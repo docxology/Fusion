@@ -153,6 +153,66 @@ The executor agent can spawn child agents that run in parallel. Each spawned age
 - Failures during agent creation or worktree setup return error results
 - State update failures are non-blocking (logged but don't prevent execution)
 
+## Agent Delegation Tools
+
+Two tools enable inter-agent delegation — discovering other agents and assigning work to them.
+
+### `list_agents` Tool
+
+List all available agents in the system. Shows each agent's name, role, state, personality (soul), and current assignment.
+
+**Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `role` | `string` (optional) | Filter by agent role/capability (e.g., `"executor"`, `"reviewer"`) |
+| `state` | `string` (optional) | Filter by agent state (e.g., `"idle"`, `"active"`, `"running"`) |
+| `includeEphemeral` | `boolean` (optional) | Include ephemeral/runtime agents (default: `false`) |
+
+**Example usage:**
+```
+// Find all idle executor agents
+list_agents({ role: "executor", state: "idle" })
+
+// See all agents including runtime task-workers
+list_agents({ includeEphemeral: true })
+```
+
+### `delegate_task` Tool
+
+Create a new task and assign it to a specific agent for execution. The task goes to `todo` and will be picked up by the target agent on their next heartbeat cycle.
+
+**Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `agent_id` | `string` (required) | The agent ID to delegate work to |
+| `description` | `string` (required) | What needs to be done |
+| `dependencies` | `string[]` (optional) | Task IDs this new task depends on |
+
+**Example workflow — CEO agent discovers QA agent and delegates testing:**
+
+```
+// 1. Discover available agents
+list_agents({ role: "qa" })
+// → Returns QA agent with id "qa-agent-001"
+
+// 2. Delegate the testing task
+delegate_task({
+  agent_id: "qa-agent-001",
+  description: "Run integration tests for the authentication module",
+  dependencies: ["FN-100"]  // depends on implementation being done
+})
+// → Created FN-105: Delegated to QA Agent (qa-agent-001).
+//   The task will be picked up on their next heartbeat cycle.
+```
+
+**Error cases:**
+- `"ERROR: Agent {agent_id} not found"` — The agent ID does not exist
+- `"ERROR: Cannot delegate to ephemeral/runtime agent {agent_id}"` — Cannot delegate to runtime task-worker agents (use `spawn_agent` for parallel worktree tasks instead)
+
+**Note:** The delegation tools are available to both executor agents and heartbeat agents when the agent store is configured. Use `list_agents` first to discover agent IDs and capabilities before delegating.
+
 ## Checkout Leasing
 
 Task ownership supports explicit checkout leases. Agents should be aware of:

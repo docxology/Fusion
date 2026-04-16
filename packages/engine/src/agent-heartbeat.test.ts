@@ -1631,14 +1631,16 @@ describe("HeartbeatMonitor", () => {
         expect(callArgs.cwd).toBe("/tmp/test");
         expect(callArgs.systemPrompt).toBe(HEARTBEAT_SYSTEM_PROMPT);
         expect(callArgs.tools).toBe("readonly");
-        // Tools: task_create, task_log, task_document_write, task_document_read, heartbeat_done
-        expect(callArgs.customTools).toHaveLength(5);
+        // Tools: task_create, task_log, task_document_write, task_document_read, list_agents, delegate_task, heartbeat_done
+        expect(callArgs.customTools).toHaveLength(7);
         expect(callArgs.customTools![0]!.name).toBe("task_create");
         expect(callArgs.customTools![1]!.name).toBe("task_log");
         expect(callArgs.customTools![2]!.name).toBe("task_document_write");
         expect(callArgs.customTools![3]!.name).toBe("task_document_read");
+        expect(callArgs.customTools![4]!.name).toBe("list_agents");
+        expect(callArgs.customTools![5]!.name).toBe("delegate_task");
         // heartbeat_done is last (terminal tool)
-        expect(callArgs.customTools![4]!.name).toBe("heartbeat_done");
+        expect(callArgs.customTools![6]!.name).toBe("heartbeat_done");
       });
 
       it("includes document tools in heartbeat session", async () => {
@@ -2388,11 +2390,13 @@ describe("HeartbeatMonitor", () => {
 
       const tools = monitor.createHeartbeatTools("agent-001", mockTaskStore, "FN-001");
 
-      expect(tools).toHaveLength(4);
+      expect(tools).toHaveLength(6);
       expect(tools[0]!.name).toBe("task_create");
       expect(tools[1]!.name).toBe("task_log");
       expect(tools[2]!.name).toBe("task_document_write");
       expect(tools[3]!.name).toBe("task_document_read");
+      expect(tools[4]!.name).toBe("list_agents");
+      expect(tools[5]!.name).toBe("delegate_task");
     });
 
     it("task_create tool creates a task in triage via TaskStore", async () => {

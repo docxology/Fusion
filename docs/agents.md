@@ -296,6 +296,15 @@ Behavior:
   - `maxSpawnedAgentsGlobal` (default 20)
 - Child sessions terminate when parent task ends
 
+## Agent Delegation
+
+Executor and heartbeat agents can discover and delegate work to other agents using two built-in tools:
+
+- **`list_agents`** — List available agents with optional filters (role, state, includeEphemeral)
+- **`delegate_task`** — Create a task and assign it to a specific agent; the task enters `todo` and the agent picks it up on their next heartbeat
+
+Delegation is designed for cross-agent handoff (e.g., an executor handing off to a QA agent). For parallel worktree-based parallelization, use `spawn_agent` instead.
+
 ## Heartbeat Monitoring and Trigger Scheduling
 
 Fusion's `HeartbeatTriggerScheduler` supports five trigger types:

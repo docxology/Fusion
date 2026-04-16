@@ -20,7 +20,7 @@
 import type { AgentStore, AgentHeartbeatRun, HeartbeatInvocationSource, AgentHeartbeatConfig, AgentBudgetStatus, Message, MessageStore, TaskStore, TaskDetail, AgentRole, Agent, InboxTask, BlockedStateSnapshot, RunMutationContext } from "@fusion/core";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import { Type, type Static } from "@mariozechner/pi-ai";
-import { createTaskCreateTool, createTaskLogToolWithContext, createTaskDocumentWriteTool, createTaskDocumentReadTool, taskCreateParams } from "./agent-tools.js";
+import { createTaskCreateTool, createTaskLogToolWithContext, createTaskDocumentWriteTool, createTaskDocumentReadTool, createListAgentsTool, createDelegateTaskTool, taskCreateParams } from "./agent-tools.js";
 import { AgentLogger } from "./agent-logger.js";
 import { heartbeatLog } from "./logger.js";
 import { createRunAuditor, type EngineRunContext } from "./run-audit.js";
@@ -1128,6 +1128,10 @@ export class HeartbeatMonitor {
     // Document tools for persisting durable findings
     tools.push(createTaskDocumentWriteTool(taskStore, taskId));
     tools.push(createTaskDocumentReadTool(taskStore, taskId));
+
+    // Agent delegation tools — discover and delegate work to other agents
+    tools.push(createListAgentsTool(this.store));
+    tools.push(createDelegateTaskTool(this.store, taskStore));
 
     return tools;
   }
