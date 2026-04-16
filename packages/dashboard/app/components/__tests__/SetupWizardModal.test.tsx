@@ -21,6 +21,20 @@ vi.mock("lucide-react", async () => {
   };
 });
 
+// Mock useNodes hook
+vi.mock("../../hooks/useNodes", () => ({
+  useNodes: vi.fn(() => ({
+    nodes: [],
+    loading: false,
+    error: null,
+    refresh: vi.fn(),
+    register: vi.fn(),
+    update: vi.fn(),
+    unregister: vi.fn(),
+    healthCheck: vi.fn(),
+  })),
+}));
+
 // Mock api module
 vi.mock("../../api", () => ({
   registerProject: vi.fn(),
@@ -32,8 +46,10 @@ vi.mock("../../api", () => ({
 }));
 
 import { registerProject } from "../../api";
+import { useNodes } from "../../hooks/useNodes";
 
 const mockRegisterProject = vi.mocked(registerProject);
+const mockUseNodes = vi.mocked(useNodes);
 
 describe("SetupWizardModal", () => {
   beforeEach(() => {
@@ -216,5 +232,172 @@ describe("SetupWizardModal", () => {
 
     fireEvent.click(childProcessRadio);
     expect(childProcessRadio.checked).toBe(true);
+  });
+
+  describe("node selector", () => {
+    const localNode = {
+      id: "local-1",
+      name: "Local Node",
+      type: "local" as const,
+      status: "online" as const,
+      maxConcurrent: 2,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    const remoteNode = {
+      id: "remote-1",
+      name: "Remote Node",
+      type: "remote" as const,
+      url: "http://localhost:3001",
+      status: "online" as const,
+      maxConcurrent: 2,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    it("node selector is present when nodes load", () => {
+      mockUseNodes.mockImplementation(() => ({
+        nodes: [localNode, remoteNode],
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+        register: vi.fn(),
+        update: vi.fn(),
+        unregister: vi.fn(),
+        healthCheck: vi.fn(),
+      }));
+
+      render(
+        <SetupWizardModal
+          onProjectRegistered={vi.fn()}
+          onClose={vi.fn()}
+        />
+      );
+
+      expect(screen.getByText("Runtime Node")).toBeDefined();
+      const select = screen.getByRole("combobox") as HTMLSelectElement;
+      expect(select.value).toBe("");
+
+      // Check options directly by querying the select's children
+      const options = Array.from(select.querySelectorAll("option"));
+      const optionValues = options.map((opt) => opt.value);
+      const optionLabels = options.map((opt) => opt.label);
+      expect(optionValues).toContain("local-1");
+      expect(optionValues).toContain("remote-1");
+    });
+
+    it("registration includes selected nodeId", async () => {
+      mockUseNodes.mockImplementation(() => ({
+        nodes: [localNode, remoteNode],
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+        register: vi.fn(),
+        update: vi.fn(),
+        unregister: vi.fn(),
+        healthCheck: vi.fn(),
+      }));
+
+      const mockProject = {
+        id: "proj_123",
+        name: "test-project",
+        path: "/home/user/project",
+        status: "active" as const,
+        isolationMode: "in-process" as const,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      mockRegisterProject.mockResolvedValueOnce(mockProject);
+
+      render(
+        <SetupWizardModal
+          onProjectRegistered={vi.fn()}
+          onClose={vi.fn()}
+        />
+      );
+
+      // Select the remote node
+      const select = screen.getByRole("combobox") as HTMLSelectElement;
+      fireEvent.change(select, { target: { value: "remote-1" } });
+
+      // Fill path and name
+      fireEvent.change(screen.getByPlaceholderText("/path/to/your/project"), {
+        target: { value: "/home/user/project" },
+      });
+      fireEvent.change(screen.getByPlaceholderText("my-project"), {
+        target: { value: "test-project" },
+      });
+
+      // Register
+      fireEvent.click(screen.getByText("Register Project"));
+
+      await waitFor(() => {
+        expect(mockRegisterProject).toHaveBeenCalledWith(
+          expect.objectContaining({
+            name: "test-project",
+            path: "/home/user/project",
+            isolationMode: "in-process",
+            nodeId: "remote-1",
+          })
+        );
+      });
+    });
+
+    it("registration includes undefined nodeId when local node selected", async () => {
+      mockUseNodes.mockImplementation(() => ({
+        nodes: [localNode],
+        loading: false,
+        error: null,
+        refresh: vi.fn(),
+        register: vi.fn(),
+        update: vi.fn(),
+        unregister: vi.fn(),
+        healthCheck: vi.fn(),
+      }));
+
+      const mockProject = {
+        id: "proj_123",
+        name: "test-project",
+        path: "/home/user/project",
+        status: "active" as const,
+        isolationMode: "in-process" as const,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      mockRegisterProject.mockResolvedValueOnce(mockProject);
+
+      render(
+        <SetupWizardModal
+          onProjectRegistered={vi.fn()}
+          onClose={vi.fn()}
+        />
+      );
+
+      // Local node is selected by default (empty value)
+      const select = screen.getByRole("combobox") as HTMLSelectElement;
+      expect(select.value).toBe("");
+
+      // Fill path and name
+      fireEvent.change(screen.getByPlaceholderText("/path/to/your/project"), {
+        target: { value: "/home/user/project" },
+      });
+      fireEvent.change(screen.getByPlaceholderText("my-project"), {
+        target: { value: "test-project" },
+      });
+
+      // Register
+      fireEvent.click(screen.getByText("Register Project"));
+
+      await waitFor(() => {
+        expect(mockRegisterProject).toHaveBeenCalledWith(
+          expect.objectContaining({
+            name: "test-project",
+            path: "/home/user/project",
+            isolationMode: "in-process",
+            nodeId: undefined,
+          })
+        );
+      });
+    });
   });
 });

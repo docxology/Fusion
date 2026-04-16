@@ -102,7 +102,7 @@ describe("DirectoryPicker", () => {
     fireEvent.click(screen.getByText("projects"));
 
     await waitFor(() => {
-      expect(mockBrowseDirectory).toHaveBeenCalledWith("/home/user/projects", false);
+      expect(mockBrowseDirectory).toHaveBeenCalledWith("/home/user/projects", false, undefined, undefined);
     });
   });
 
@@ -166,5 +166,71 @@ describe("DirectoryPicker", () => {
 
     fireEvent.click(screen.getByText("Browse"));
     expect(screen.queryByText("projects")).toBeNull();
+  });
+
+  it("browses remote node when nodeId is provided", async () => {
+    render(
+      <DirectoryPicker
+        value=""
+        onChange={vi.fn()}
+        nodeId="remote-1"
+        localNodeId="local-1"
+      />
+    );
+
+    fireEvent.click(screen.getByText("Browse"));
+
+    await waitFor(() => {
+      expect(mockBrowseDirectory).toHaveBeenCalledWith(undefined, false, "remote-1", "local-1");
+    });
+  });
+
+  it("falls back to local browsing when nodeId matches localNodeId", async () => {
+    render(
+      <DirectoryPicker
+        value=""
+        onChange={vi.fn()}
+        nodeId="local-1"
+        localNodeId="local-1"
+      />
+    );
+
+    fireEvent.click(screen.getByText("Browse"));
+
+    await waitFor(() => {
+      expect(mockBrowseDirectory).toHaveBeenCalledWith(undefined, false, "local-1", "local-1");
+    });
+  });
+
+  it("navigating directories passes nodeId", async () => {
+    render(
+      <DirectoryPicker
+        value=""
+        onChange={vi.fn()}
+        nodeId="remote-1"
+        localNodeId="local-1"
+      />
+    );
+
+    fireEvent.click(screen.getByText("Browse"));
+
+    await waitFor(() => {
+      expect(screen.getByText("projects")).toBeDefined();
+    });
+
+    // Navigate into projects directory
+    mockBrowseDirectory.mockResolvedValueOnce({
+      currentPath: "/home/user/projects",
+      parentPath: "/home/user",
+      entries: [
+        { name: "my-app", path: "/home/user/projects/my-app", hasChildren: true },
+      ],
+    });
+
+    fireEvent.click(screen.getByText("projects"));
+
+    await waitFor(() => {
+      expect(mockBrowseDirectory).toHaveBeenCalledWith("/home/user/projects", false, "remote-1", "local-1");
+    });
   });
 });

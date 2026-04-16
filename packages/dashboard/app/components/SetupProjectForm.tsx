@@ -1,7 +1,8 @@
 import { useState, useCallback, useMemo } from "react";
-import { Folder, Check, AlertCircle, Loader2 } from "lucide-react";
+import { Check, Loader2 } from "lucide-react";
 import { validateProjectPath, validateProjectName, suggestProjectName } from "../utils/projectDetection";
-import type { ProjectCreateInput } from "../api";
+import type { ProjectCreateInput, NodeInfo } from "../api";
+import { DirectoryPicker } from "./DirectoryPicker";
 
 export interface SetupProjectFormProps {
   /** Called when the form is submitted with valid data */
@@ -14,13 +15,18 @@ export interface SetupProjectFormProps {
   isSubmitting?: boolean;
   /** Optional default path value */
   defaultPath?: string;
+  /** Available nodes for the node selector */
+  nodes?: NodeInfo[];
+  /** Currently selected node ID (for controlled/default state) */
+  selectedNodeId?: string;
 }
 
 /**
  * SetupProjectForm - Manual project registration form
- * 
+ *
  * Form for manually registering a new project with:
- * - Path input with validation
+ * - Node selector for runtime node selection
+ * - Directory picker for path selection (node-aware)
  * - Name input with auto-suggestion
  * - Isolation mode selector
  * - Real-time validation
@@ -31,6 +37,8 @@ export function SetupProjectForm({
   existingProjects = [],
   isSubmitting = false,
   defaultPath = "",
+  nodes = [],
+  selectedNodeId,
 }: SetupProjectFormProps) {
   const [path, setPath] = useState(defaultPath);
   const [name, setName] = useState("");
@@ -38,6 +46,10 @@ export function SetupProjectForm({
   const [pathError, setPathError] = useState<string | null>(null);
   const [nameError, setNameError] = useState<string | null>(null);
   const [touched, setTouched] = useState({ path: false, name: false });
+  const [nodeId, setNodeId] = useState(selectedNodeId ?? "");
+
+  // Compute the local node ID from the nodes list
+  const localNodeId = useMemo(() => nodes.find((n) => n.type === "local")?.id, [nodes]);
 
   // Validate path
   const validatePath = useCallback((value: string) => {
@@ -57,9 +69,9 @@ export function SetupProjectForm({
   const handlePathChange = useCallback((value: string) => {
     setPath(value);
     setTouched((prev) => ({ ...prev, path: true }));
-    
+
     const isValid = validatePath(value);
-    
+
     // Auto-suggest name if name is empty and path is valid
     if (isValid && !name && value) {
       const suggested = suggestProjectName(value);
@@ -89,44 +101,55 @@ export function SetupProjectForm({
 
   const handleSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault();
-    
+
     const isPathValid = validatePath(path);
     const isNameValid = validateNameField(name);
-    
+
     if (isPathValid && isNameValid) {
       onSubmit({
         name,
         path,
         isolationMode,
+        nodeId: nodeId || undefined,
       });
     }
-  }, [path, name, isolationMode, onSubmit, validatePath, validateNameField]);
+  }, [path, name, isolationMode, nodeId, onSubmit, validatePath, validateNameField]);
 
   return (
     <form onSubmit={handleSubmit} className="setup-project-form">
+      {/* Node selector */}
+      <div className="form-group">
+        <div className="project-node-selector">
+          <span className="project-node-selector__label">Runtime Node</span>
+          <select
+            value={nodeId}
+            onChange={(e) => setNodeId(e.target.value)}
+            disabled={isSubmitting}
+          >
+            <option value="">Local node</option>
+            {nodes.map((node) => (
+              <option key={node.id} value={node.id}>
+                {node.name} ({node.type})
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
       {/* Path input */}
       <div className="form-group">
         <label htmlFor="project-path">
           Directory Path <span className="required">*</span>
         </label>
-        <div className={`input-wrapper ${pathError && touched.path ? "error" : ""}`}>
-          <Folder size={16} className="input-icon" />
-          <input
-            id="project-path"
-            type="text"
-            value={path}
-            onChange={(e) => handlePathChange(e.target.value)}
-            onBlur={() => {
-              setTouched((prev) => ({ ...prev, path: true }));
-              validatePath(path);
-            }}
-            placeholder="/path/to/your/project"
-            disabled={isSubmitting}
-          />
-        </div>
+        <DirectoryPicker
+          value={path}
+          onChange={handlePathChange}
+          nodeId={nodeId || undefined}
+          localNodeId={localNodeId}
+          placeholder="/path/to/your/project"
+        />
         {pathError && touched.path && (
           <div className="field-error">
-            <AlertCircle size={14} />
             <span>{pathError}</span>
           </div>
         )}
@@ -159,7 +182,6 @@ export function SetupProjectForm({
         </div>
         {nameError && touched.name && (
           <div className="field-error">
-            <AlertCircle size={14} />
             <span>{nameError}</span>
           </div>
         )}

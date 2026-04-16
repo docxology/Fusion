@@ -8,6 +8,10 @@ export interface DirectoryPickerProps {
   placeholder?: string;
   /** Optional keydown handler forwarded to the text input (e.g. Enter-to-submit). */
   onInputKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
+  /** Node ID of the target node for browsing. */
+  nodeId?: string;
+  /** Node ID of the local node (used to determine when to route through proxy). */
+  localNodeId?: string;
 }
 
 interface BrowserState {
@@ -20,7 +24,7 @@ interface BrowserState {
   showHidden: boolean;
 }
 
-export function DirectoryPicker({ value, onChange, placeholder, onInputKeyDown }: DirectoryPickerProps) {
+export function DirectoryPicker({ value, onChange, placeholder, onInputKeyDown, nodeId, localNodeId }: DirectoryPickerProps) {
   const [browser, setBrowser] = useState<BrowserState>({
     isOpen: false,
     loading: false,
@@ -34,7 +38,7 @@ export function DirectoryPicker({ value, onChange, placeholder, onInputKeyDown }
   const fetchEntries = useCallback(async (path?: string, showHidden = false) => {
     setBrowser((prev) => ({ ...prev, loading: true, error: null }));
     try {
-      const result = await browseDirectory(path, showHidden);
+      const result = await browseDirectory(path, showHidden, nodeId, localNodeId);
       setBrowser((prev) => ({
         ...prev,
         loading: false,
@@ -49,7 +53,7 @@ export function DirectoryPicker({ value, onChange, placeholder, onInputKeyDown }
         error: err instanceof Error ? err.message : "Failed to browse directory",
       }));
     }
-  }, []);
+  }, [nodeId, localNodeId]);
 
   const handleToggleBrowser = useCallback(() => {
     setBrowser((prev) => {
@@ -66,7 +70,7 @@ export function DirectoryPicker({ value, onChange, placeholder, onInputKeyDown }
     if (browser.isOpen && !browser.loading && browser.entries.length === 0 && !browser.error) {
       fetchEntries(value || undefined, browser.showHidden);
     }
-  }, [browser.isOpen, browser.loading, browser.entries.length, browser.error, value, browser.showHidden, fetchEntries]);
+  }, [browser.isOpen, browser.loading, browser.entries.length, browser.error, value, browser.showHidden, fetchEntries, nodeId, localNodeId]);
 
   const handleNavigate = useCallback(
     (path: string) => {

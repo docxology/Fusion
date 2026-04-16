@@ -4,6 +4,7 @@ import type { ProjectInfo, ProjectCreateInput } from "../api";
 import { registerProject } from "../api";
 import { DirectoryPicker } from "./DirectoryPicker";
 import { suggestProjectName } from "../utils/projectDetection";
+import { useNodes } from "../hooks/useNodes";
 
 export interface SetupWizardModalProps {
   /** Called when a single project is registered */
@@ -19,6 +20,7 @@ interface WizardState {
   manualPath: string;
   manualName: string;
   manualIsolationMode: "in-process" | "child-process";
+  manualNodeId: string;
   isRegistering: boolean;
   error: string | null;
 }
@@ -39,9 +41,13 @@ export function SetupWizardModal({
     manualPath: "",
     manualName: "",
     manualIsolationMode: "in-process",
+    manualNodeId: "",
     isRegistering: false,
     error: null,
   });
+
+  const { nodes, loading: nodesLoading } = useNodes();
+  const localNodeId = nodes.find((n) => n.type === "local")?.id;
 
   const handleClose = useCallback(() => {
     setIsOpen(false);
@@ -69,6 +75,7 @@ export function SetupWizardModal({
         name: state.manualName,
         path: state.manualPath,
         isolationMode: state.manualIsolationMode,
+        nodeId: state.manualNodeId || undefined,
       };
 
       const result = await registerProject(input);
@@ -86,7 +93,7 @@ export function SetupWizardModal({
         error: err instanceof Error ? err.message : "Failed to register project",
       }));
     }
-  }, [state.manualPath, state.manualName, state.manualIsolationMode, onProjectRegistered]);
+  }, [state.manualPath, state.manualName, state.manualIsolationMode, state.manualNodeId, onProjectRegistered]);
 
   if (!isOpen) return null;
 
@@ -119,14 +126,35 @@ export function SetupWizardModal({
                 <Sparkles size={32} />
               </div>
               <p className="welcome-text">
-                Let's set up your first project. Browse to your project directory or type the path manually.
+                Let&apos;s set up your first project. Browse to your project directory or type the path manually.
               </p>
+
+              {/* Node selector */}
+              <div className="form-group">
+                <div className="project-node-selector">
+                  <span className="project-node-selector__label">Runtime Node</span>
+                  <select
+                    value={state.manualNodeId}
+                    onChange={(e) => setState((prev) => ({ ...prev, manualNodeId: e.target.value }))}
+                    disabled={nodesLoading || state.isRegistering}
+                  >
+                    <option value="">Local node</option>
+                    {nodes.map((node) => (
+                      <option key={node.id} value={node.id}>
+                        {node.name} ({node.type})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
 
               <div className="form-group">
                 <label htmlFor="project-path">Project Directory</label>
                 <DirectoryPicker
                   value={state.manualPath}
                   onChange={handlePathChange}
+                  nodeId={state.manualNodeId || undefined}
+                  localNodeId={localNodeId}
                   placeholder="/path/to/your/project"
                 />
                 <p className="form-hint">
