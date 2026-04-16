@@ -2341,8 +2341,18 @@ describe("Mission API", () => {
       // Verify features are created
       expect(slice.features).toHaveLength(2);
 
-      // Verify assertions were created for each feature
-      expect(missionStore.addContractAssertion).toHaveBeenCalledTimes(2);
+      // Verify assertions were created at milestone + slice + feature levels
+      expect(missionStore.addContractAssertion).toHaveBeenCalledTimes(4);
+
+      const milestoneCall = (missionStore.addContractAssertion as ReturnType<typeof vi.fn>).mock.calls.find(
+        call => call[1].title === "Milestone: First Milestone"
+      );
+      expect(milestoneCall).toBeDefined();
+
+      const sliceCall = (missionStore.addContractAssertion as ReturnType<typeof vi.fn>).mock.calls.find(
+        call => call[1].title === "Slice: First Slice"
+      );
+      expect(sliceCall).toBeDefined();
 
       // Verify Feature One assertion uses acceptanceCriteria
       const featureOneCall = (missionStore.addContractAssertion as ReturnType<typeof vi.fn>).mock.calls.find(
@@ -2518,8 +2528,8 @@ describe("Mission API", () => {
 
       expect(res.status).toBe(201);
       expect(res.body.milestones[0].slices).toHaveLength(0);
-      // No assertions should be created for empty slices
-      expect(missionStore.addContractAssertion).toHaveBeenCalledTimes(0);
+      // Milestone-level assertion is still created even when there are no slices
+      expect(missionStore.addContractAssertion).toHaveBeenCalledTimes(1);
     });
 
     it("captures generated thinking for the next mission interview question", async () => {

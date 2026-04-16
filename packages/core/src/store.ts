@@ -128,6 +128,8 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
   private globalSettingsStore: GlobalSettingsStore;
   /** Polling interval for change detection */
   private pollInterval: ReturnType<typeof setInterval> | null = null;
+  /** Guard flag to prevent overlapping poll cycles */
+  private pollingInProgress = false;
   /** Last known modification timestamp for change detection */
   private lastKnownModified: number = 0;
   /** ISO timestamp of last poll — used to filter changed tasks */
@@ -2926,7 +2928,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
 
     // Poll for changes every second
     this.pollInterval = setInterval(() => {
-      this.checkForChanges();
+      void this.checkForChanges();
     }, 1000);
   }
 
@@ -2934,8 +2936,18 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
    * Check for changes by comparing lastModified timestamps.
    * Optimized: only loads tasks modified since the last poll instead of
    * doing a full table scan + JSON.stringify comparison every cycle.
+   *
+   * This method yields to the event loop between expensive SQLite operations
+   * to prevent blocking HTTP request handlers. Uses a pollingInProgress guard
+   * to skip overlapping poll cycles.
    */
-  private checkForChanges(): void {
+  private async checkForChanges(): Promise<void> {
+    const startTime = Date.now();
+
+    // Guard against overlapping poll cycles
+    if (this.pollingInProgress) return;
+    this.pollingInProgress = true;
+
     try {
       const currentModified = this.db.getLastModified();
       if (currentModified <= this.lastKnownModified) return;
@@ -2951,6 +2963,9 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
         }
       }
 
+      // Yield to event loop before the expensive SELECT query
+      await new Promise<void>((resolve) => setImmediate(resolve));
+
       // Only load tasks modified since our last known timestamp.
       // Use lastKnownPollTime (ISO string) to filter — much cheaper than full scan.
       const selectClause = this.getTaskSelectClause(true);
@@ -2959,7 +2974,8 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
         : this.db.prepare(`SELECT ${selectClause} FROM tasks`).all() as any[];
       this.lastPollTime = new Date().toISOString();
 
-      for (const row of changedRows) {
+      for (let i = 0; i < changedRows.length; i++) {
+        const row = changedRows[i];
         const task = this.rowToTask(row);
         const cached = this.taskCache.get(task.id);
         if (!cached) {
@@ -2973,9 +2989,21 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
           this.taskCache.set(task.id, { ...task });
           this.emit("task:updated", task);
         }
+
+        // Yield every ~50 rows to prevent blocking the event loop during large updates
+        if (i > 0 && i % 50 === 0) {
+          await new Promise<void>((resolve) => setImmediate(resolve));
+        }
+      }
+
+      const elapsed = Date.now() - startTime;
+      if (elapsed > 100) {
+        console.warn(`[TaskStore] checkForChanges took ${elapsed}ms — event loop may have been blocked`);
       }
     } catch {
       // Ignore polling errors
+    } finally {
+      this.pollingInProgress = false;
     }
   }
 

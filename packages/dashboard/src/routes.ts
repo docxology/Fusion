@@ -3116,8 +3116,8 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
       // Check for summarize flag in request
       const summarize = req.body.summarize === true;
 
-      // Get settings for auto-summarization
-      const settings = await scopedStore.getSettings();
+      // Get settings for auto-summarization (fast path — skips expensive workflow steps query)
+      const settings = await scopedStore.getSettingsFast();
 
       // Create onSummarize callback if summarization is enabled
       const onSummarize = (summarize || settings.autoSummarizeTitles)

@@ -770,8 +770,8 @@ describe("POST /tasks", () => {
   });
 
   it("passes onSummarize callback when autoSummarizeTitles is enabled", async () => {
-    // Mock getSettings to return autoSummarizeTitles: true
-    (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValue({ autoSummarizeTitles: true });
+    // Mock getSettingsFast to return autoSummarizeTitles: true
+    (store.getSettingsFast as ReturnType<typeof vi.fn>).mockResolvedValue({ autoSummarizeTitles: true });
 
     const createdTask = {
       ...FAKE_TASK_DETAIL,
@@ -805,8 +805,8 @@ describe("POST /tasks", () => {
   });
 
   it("does not create onSummarize callback when autoSummarizeTitles is disabled", async () => {
-    // Mock getSettings to return autoSummarizeTitles: false (default)
-    (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValue({ autoSummarizeTitles: false });
+    // Mock getSettingsFast to return autoSummarizeTitles: false (default)
+    (store.getSettingsFast as ReturnType<typeof vi.fn>).mockResolvedValue({ autoSummarizeTitles: false });
 
     const createdTask = {
       ...FAKE_TASK_DETAIL,
@@ -839,8 +839,8 @@ describe("POST /tasks", () => {
   });
 
   it("passes onSummarize callback when summarize flag is explicitly true", async () => {
-    // Mock getSettings to return autoSummarizeTitles: false
-    (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValue({ autoSummarizeTitles: false });
+    // Mock getSettingsFast to return autoSummarizeTitles: false
+    (store.getSettingsFast as ReturnType<typeof vi.fn>).mockResolvedValue({ autoSummarizeTitles: false });
 
     const createdTask = {
       ...FAKE_TASK_DETAIL,
@@ -911,8 +911,8 @@ describe("POST /tasks", () => {
   // The actual AI summarization behavior is tested separately.
 
   it("invokes onSummarize callback when autoSummarizeTitles is enabled", async () => {
-    // Mock project settings with autoSummarizeTitles: true
-    (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+    // Mock project settings with autoSummarizeTitles: true (using getSettingsFast)
+    (store.getSettingsFast as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       autoSummarizeTitles: true,
     });
 
@@ -945,8 +945,8 @@ describe("POST /tasks", () => {
   });
 
   it("passes correct settings to onSummarize callback when project title lane is configured", async () => {
-    // Mock project settings with titleSummarizerProvider + titleSummarizerModelId
-    (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+    // Mock project settings with titleSummarizerProvider + titleSummarizerModelId (using getSettingsFast)
+    (store.getSettingsFast as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       autoSummarizeTitles: true,
       titleSummarizerProvider: "anthropic",
       titleSummarizerModelId: "claude-sonnet-4-5",
@@ -980,8 +980,8 @@ describe("POST /tasks", () => {
   });
 
   it("passes correct settings to onSummarize callback when global title lane is configured", async () => {
-    // Mock project settings with global titleSummarizerGlobalProvider + titleSummarizerGlobalModelId
-    (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+    // Mock project settings with global titleSummarizerGlobalProvider + titleSummarizerGlobalModelId (using getSettingsFast)
+    (store.getSettingsFast as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       autoSummarizeTitles: true,
       titleSummarizerGlobalProvider: "openai",
       titleSummarizerGlobalModelId: "gpt-4o",
@@ -1014,8 +1014,8 @@ describe("POST /tasks", () => {
   });
 
   it("passes correct settings to onSummarize callback when default lane is configured", async () => {
-    // Mock project settings with only defaultProvider + defaultModelId
-    (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+    // Mock project settings with only defaultProvider + defaultModelId (using getSettingsFast)
+    (store.getSettingsFast as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       autoSummarizeTitles: true,
       defaultProvider: "mistral",
       defaultModelId: "mistral-large",

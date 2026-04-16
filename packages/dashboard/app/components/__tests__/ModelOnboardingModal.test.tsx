@@ -1494,10 +1494,12 @@ describe("ModelOnboardingModal", () => {
       }, { timeout: 3000 });
 
       // Check that login outcome was persisted
-      const saveCall = mockSaveOnboardingState.mock.calls.find(
-        (call) => call[1]?.stepData?.["ai-setup"]?.loginOutcomes?.anthropic === "success"
-      );
-      expect(saveCall).toBeDefined();
+      await waitFor(() => {
+        const saveCall = mockSaveOnboardingState.mock.calls.find(
+          (call) => call[1]?.stepData?.["ai-setup"]?.loginOutcomes?.anthropic === "success"
+        );
+        expect(saveCall).toBeDefined();
+      }, { timeout: 3000 });
     });
 
     it("login outcome persisted to stepData after successful login", async () => {

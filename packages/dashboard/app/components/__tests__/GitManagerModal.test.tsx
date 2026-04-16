@@ -1834,11 +1834,14 @@ describe("GitManagerModal", () => {
       expect(screen.getByTestId("remote-selector")).toBeInTheDocument();
     });
 
+    await waitFor(() => {
+      expect(within(screen.getByTestId("remote-selector")).getByText("upstream")).toBeInTheDocument();
+    });
+
     // Only origin has default badge — look for "default" text in selector
     const selector = screen.getByTestId("remote-selector");
     const badges = within(selector).getAllByText("default");
     expect(badges.length).toBe(1);
-    expect(within(selector).getByText("upstream")).toBeInTheDocument();
   });
 
   it("shows full URLs and edit controls only for selected remote", async () => {
