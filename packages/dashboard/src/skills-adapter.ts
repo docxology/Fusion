@@ -5,9 +5,22 @@
  * by integrating with the pi-coding-agent package manager and skills.sh API.
  */
 
-import { existsSync } from "node:fs";
+import { access } from "node:fs/promises";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join, relative, dirname } from "node:path";
+
+/**
+ * Check if a path exists asynchronously using access().
+ * Preferred over existsSync() to avoid blocking the Node event loop.
+ */
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Minimal interface matching pi-coding-agent's PathMetadata.
@@ -215,7 +228,7 @@ export function createSkillsAdapter(options: {
       // Load current settings to check enabled state
       const settingsPath = options.getSettingsPath(rootDir);
       let settings: { skills?: string[]; packages?: unknown[] } = {};
-      if (existsSync(settingsPath)) {
+      if (await pathExists(settingsPath)) {
         try {
           settings = JSON.parse(await readFile(settingsPath, "utf-8")) as typeof settings;
         } catch {
@@ -272,12 +285,12 @@ export function createSkillsAdapter(options: {
       // Load settings
       const settingsPath = options.getSettingsPath(rootDir);
       const settingsDir = dirname(settingsPath);
-      if (!existsSync(settingsDir)) {
+      if (!await pathExists(settingsDir)) {
         await mkdir(settingsDir, { recursive: true });
       }
 
       let settings: Record<string, unknown> = {};
-      if (existsSync(settingsPath)) {
+      if (await pathExists(settingsPath)) {
         try {
           settings = JSON.parse(await readFile(settingsPath, "utf-8")) as Record<string, unknown>;
         } catch {
@@ -582,7 +595,7 @@ function normalizeEntry(entry: unknown): CatalogEntry {
 export async function readProjectSettings(projectPath: string): Promise<Record<string, unknown>> {
   const fusionSettings = join(projectPath, ".fusion", "settings.json");
 
-  if (existsSync(fusionSettings)) {
+  if (await pathExists(fusionSettings)) {
     try {
       return JSON.parse(await readFile(fusionSettings, "utf-8")) as Record<string, unknown>;
     } catch {
@@ -600,7 +613,7 @@ export async function writeProjectSettings(projectPath: string, settings: Record
   const settingsDir = join(projectPath, ".fusion");
   const settingsPath = join(settingsDir, "settings.json");
 
-  if (!existsSync(settingsDir)) {
+  if (!await pathExists(settingsDir)) {
     await mkdir(settingsDir, { recursive: true });
   }
 

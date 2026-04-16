@@ -16,7 +16,7 @@
  */
 
 import { Router, type Request, type Response } from "express";
-import { existsSync, statSync } from "node:fs";
+import { access, stat, readFile } from "node:fs/promises";
 import { join, isAbsolute, dirname, basename } from "node:path";
 import type {
   PluginLoader,
@@ -97,26 +97,29 @@ export async function resolvePluginManifest(
   sourcePath: string,
 ): Promise<{ manifestDir: string; manifest: import("@fusion/core").PluginManifest }> {
   // Validate the path exists and is a directory
-  if (!existsSync(sourcePath)) {
+  try {
+    await access(sourcePath);
+  } catch {
     throw notFound(`Path does not exist: ${sourcePath}`);
   }
-  let stat;
+  let sourceStat;
   try {
-    stat = statSync(sourcePath);
+    sourceStat = await stat(sourcePath);
   } catch {
     throw badRequest(`Cannot access path: ${sourcePath}`);
   }
-  if (!stat.isDirectory()) {
+  if (!sourceStat.isDirectory()) {
     throw badRequest(`Path is not a directory: ${sourcePath}`);
   }
 
-  const { readFile } = await import("node:fs/promises");
-
   // 1. Try manifest.json directly in the provided path
   const directManifestPath = join(sourcePath, "manifest.json");
-  if (existsSync(directManifestPath)) {
-    const manifest = await readAndValidateManifest(readFile, directManifestPath);
+  try {
+    await access(directManifestPath);
+    const manifest = await readAndValidateManifest(directManifestPath);
     return { manifestDir: sourcePath, manifest };
+  } catch {
+    // Not found at direct path
   }
 
   // 2. If the selected dir is a well-known dist folder, check the parent
@@ -124,10 +127,13 @@ export async function resolvePluginManifest(
   if (DIST_DIR_NAMES.has(dirName)) {
     const parentDir = dirname(sourcePath);
     const parentManifestPath = join(parentDir, "manifest.json");
-    if (existsSync(parentManifestPath)) {
-      const manifest = await readAndValidateManifest(readFile, parentManifestPath);
+    try {
+      await access(parentManifestPath);
+      const manifest = await readAndValidateManifest(parentManifestPath);
       // Return the parent (package root) as the canonical install dir
       return { manifestDir: parentDir, manifest };
+    } catch {
+      // Not found at parent path
     }
   }
 
@@ -142,7 +148,6 @@ export async function resolvePluginManifest(
  * Read and validate a manifest.json file.
  */
 async function readAndValidateManifest(
-  readFile: (path: string, encoding: BufferEncoding) => Promise<string>,
   manifestPath: string,
 ): Promise<import("@fusion/core").PluginManifest> {
   let content: string;

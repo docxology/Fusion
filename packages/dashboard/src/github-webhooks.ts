@@ -78,7 +78,10 @@ export function getGitHubAppConfig(): GitHubAppConfig | null {
   if (process.env.FUSION_GITHUB_APP_PRIVATE_KEY) {
     privateKey = process.env.FUSION_GITHUB_APP_PRIVATE_KEY;
   } else if (process.env.FUSION_GITHUB_APP_PRIVATE_KEY_PATH) {
-    // Check cache before reading from disk
+    // Check cache before reading from disk.
+    // Intentionally synchronous: this is a one-time cold-load at server startup or
+    // on first webhook request. The result is cached in cachedPrivateKey, so the
+    // readFileSync only executes once per process lifetime.
     if (cachedPrivateKey === undefined) {
       try {
         cachedPrivateKey = readFileSync(process.env.FUSION_GITHUB_APP_PRIVATE_KEY_PATH, "utf-8");

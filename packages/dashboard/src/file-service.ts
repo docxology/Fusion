@@ -1,6 +1,5 @@
 import { join, resolve, relative, dirname, basename } from "node:path";
-import { readdir, readFile as fsReadFile, writeFile as fsWriteFile, stat, copyFile as fsCopyFile, rename as fsRename, rm as fsRm, mkdir } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { readdir, readFile as fsReadFile, writeFile as fsWriteFile, stat, copyFile as fsCopyFile, rename as fsRename, rm as fsRm, mkdir, access } from "node:fs/promises";
 import type { TaskStore } from "@fusion/core";
 
 /**
@@ -74,9 +73,14 @@ export type WorkspaceId = "project" | string;
 async function getTaskBasePath(store: TaskStore, taskId: string): Promise<string> {
   try {
     const task = await store.getTask(taskId);
-    // Use worktree if available and exists
-    if (task.worktree && existsSync(task.worktree)) {
-      return resolve(task.worktree);
+    // Use worktree if available and exists (check async to avoid blocking event loop)
+    if (task.worktree) {
+      try {
+        await access(task.worktree);
+        return resolve(task.worktree);
+      } catch {
+        // Worktree doesn't exist, fall back to task directory
+      }
     }
     // Fall back to task directory
     const rootDir = store.getRootDir();

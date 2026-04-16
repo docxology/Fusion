@@ -24,6 +24,10 @@ let ptyLoadError: Error | null = null;
 /**
  * Find the staged native assets directory for Bun-compiled binaries.
  * Looks for runtime/<platform-arch>/ next to the binary.
+ *
+ * NOTE: The existsSync() calls in this function run during service initialization
+ * (when terminal is first used). This is acceptable as it only executes once per
+ * service lifetime, not per-request.
  */
 function findStagedNativeDir(): string | null {
   const platform = process.platform === "darwin" ? "darwin" :

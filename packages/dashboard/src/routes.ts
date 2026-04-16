@@ -7,8 +7,8 @@ declare module "express" {
   }
 }
 import multer from "multer";
-import { createReadStream, createWriteStream, existsSync } from "node:fs";
-import { mkdtemp } from "node:fs/promises";
+import { createReadStream, createWriteStream } from "node:fs";
+import { mkdtemp, access, stat, mkdir, readdir, rm, readFile as fsReadFile } from "node:fs/promises";
 import { Readable } from "node:stream";
 import { pipeline as streamPipeline } from "node:stream/promises";
 import { execFile } from "node:child_process";
@@ -2710,13 +2710,12 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
       const { AuthStorage } = await import("@mariozechner/pi-coding-agent");
       const authStorage = AuthStorage.create();
 
-      // Read auth.json directly
+      // Read auth.json directly (async to avoid blocking event loop)
       const authJsonPath = `${process.env.HOME || process.env.USERPROFILE}/.pi/agent/auth.json`;
       let allProviders: Record<string, { type: string; key?: string; access?: string; refresh?: string; expires?: number; accountId?: string }> = {};
 
       try {
-        const { readFileSync } = await import("node:fs");
-        const authContent = readFileSync(authJsonPath, "utf-8");
+        const authContent = await fsReadFile(authJsonPath, "utf-8");
         allProviders = JSON.parse(authContent);
       } catch {
         // Auth file doesn't exist - export empty
@@ -3672,10 +3671,23 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
     try {
       const { store: scopedStore } = await getProjectContext(req);
       const task = await scopedStore.getTask(req.params.id);
-      if (!task.worktree || !nodeFs.existsSync(task.worktree)) {
+      // Check worktree existence asynchronously to avoid blocking event loop
+      if (!task.worktree) {
         res.json([]);
         return;
       }
+      let worktreeExists = false;
+      try {
+        await access(task.worktree);
+        worktreeExists = true;
+      } catch {
+        worktreeExists = false;
+      }
+      if (!worktreeExists) {
+        res.json([]);
+        return;
+      }
+      const worktree = task.worktree; // Capture after check
 
       const cached = sessionFilesCache.get(task.id);
       if (cached && cached.expiresAt > Date.now()) {
@@ -3687,30 +3699,30 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
 
       try {
         const fileSet = new Set<string>();
-        const baseRef = await resolveDiffBase(task, task.worktree);
+        const baseRef = await resolveDiffBase(task, worktree);
 
         if (baseRef) {
           // Committed changes since baseRef
-          const committedOutput = (await runGitCommand(["diff", "--name-only", `${baseRef}..HEAD`], task.worktree, 5000)).trim();
+          const committedOutput = (await runGitCommand(["diff", "--name-only", `${baseRef}..HEAD`], worktree, 5000)).trim();
           for (const file of committedOutput.split("\n").filter(Boolean)) {
             fileSet.add(file);
           }
         }
 
         // Staged changes (in git index)
-        const stagedOutput = (await runGitCommand(["diff", "--cached", "--name-only"], task.worktree, 5000)).trim();
+        const stagedOutput = (await runGitCommand(["diff", "--cached", "--name-only"], worktree, 5000)).trim();
         for (const file of stagedOutput.split("\n").filter(Boolean)) {
           fileSet.add(file);
         }
 
         // Unstaged working tree changes
-        const workingTreeOutput = (await runGitCommand(["diff", "--name-only"], task.worktree, 5000)).trim();
+        const workingTreeOutput = (await runGitCommand(["diff", "--name-only"], worktree, 5000)).trim();
         for (const file of workingTreeOutput.split("\n").filter(Boolean)) {
           fileSet.add(file);
         }
 
         // Untracked files (new files not yet staged)
-        const untrackedOutput = (await runGitCommand(["ls-files", "--others", "--exclude-standard"], task.worktree, 5000)).trim();
+        const untrackedOutput = (await runGitCommand(["ls-files", "--others", "--exclude-standard"], worktree, 5000)).trim();
         for (const file of untrackedOutput.split("\n").filter(Boolean)) {
           fileSet.add(file);
         }
@@ -7000,15 +7012,32 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
     try {
       const { store: scopedStore } = await getProjectContext(req);
       const tasks = await scopedStore.listTasks({ slim: true, includeArchived: false });
-      res.json({
-        project: scopedStore.getRootDir(),
-        tasks: tasks
-          .filter((task) => typeof task.worktree === "string" && task.worktree.length > 0 && existsSync(task.worktree))
-          .map((task) => ({
+
+      // Filter to tasks with valid worktrees, checking existence asynchronously
+      // to avoid blocking the event loop
+      const worktreeCheckPromises = tasks.map(async (task): Promise<{ id: string; title?: string; worktree: string } | null> => {
+        if (typeof task.worktree !== "string" || task.worktree.length === 0) {
+          return null;
+        }
+        try {
+          await access(task.worktree);
+          return {
             id: task.id,
             title: task.title,
-            worktree: task.worktree!,
-          })),
+            worktree: task.worktree,
+          };
+        } catch {
+          return null;
+        }
+      });
+
+      const workspaceTasks = (await Promise.all(worktreeCheckPromises)).filter(
+        (t): t is { id: string; title?: string; worktree: string } => t !== null
+      );
+
+      res.json({
+        project: scopedStore.getRootDir(),
+        tasks: workspaceTasks,
       });
     } catch (err: unknown) {
       if (err instanceof ApiError) {
@@ -10678,7 +10707,9 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         };
       } else if (typeof source === "string" && source.trim()) {
         const sourcePath = resolve(source);
-        if (!existsSync(sourcePath)) {
+        try {
+          await access(sourcePath);
+        } catch {
           throw badRequest(`source does not exist: ${sourcePath}`);
         }
 
@@ -10688,10 +10719,13 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
 
         if (isArchive) {
           pkg = await parseCompanyArchive(sourcePath);
-        } else if (nodeFs.statSync(sourcePath).isDirectory()) {
-          pkg = parseCompanyDirectory(sourcePath);
         } else {
-          throw badRequest("Source must be a server-side directory or archive path");
+          const sourceStat = await stat(sourcePath);
+          if (sourceStat.isDirectory()) {
+            pkg = parseCompanyDirectory(sourcePath);
+          } else {
+            throw badRequest("Source must be a server-side directory or archive path");
+          }
         }
       } else if (typeof manifest === "string") {
         const { manifest: singleAgent } = parseSingleAgentManifest(manifest);
@@ -10810,7 +10844,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
           // Extract the archive
           // The archive extracts to a subdirectory named after the repo
           const extractDir = join(tempDir, "extracted");
-          nodeFs.mkdirSync(extractDir, { recursive: true });
+          await mkdir(extractDir, { recursive: true });
 
           // Use tar to extract (available on Linux/macOS)
           const execFileAsync = promisify(execFile);
@@ -10826,14 +10860,15 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
           }
 
           // Find the extracted directory (GitHub archives extract to owner-repo-hash/)
-          const extractedEntries = nodeFs.readdirSync(extractDir);
+          const extractedEntries = await readdir(extractDir);
           if (extractedEntries.length === 0) {
             throw badRequest("Archive extracted to empty directory");
           }
 
           // The archive should have a single directory at the root
           const extractedDir = join(extractDir, extractedEntries[0]);
-          if (!nodeFs.statSync(extractedDir).isDirectory()) {
+          const extractedDirStat = await stat(extractedDir);
+          if (!extractedDirStat.isDirectory()) {
             throw badRequest("Archive did not extract to a directory");
           }
 
@@ -10842,10 +10877,23 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
           // subdirectories. If the extracted root doesn't contain COMPANY.md but has a
           // subdirectory matching the requested slug, descend into it.
           let companyDir = extractedDir;
-          if (!existsSync(join(extractedDir, "COMPANY.md"))) {
+          const companyMdPath = join(extractedDir, "COMPANY.md");
+          let companyMdExists = false;
+          try {
+            await access(companyMdPath);
+            companyMdExists = true;
+          } catch {
+            companyMdExists = false;
+          }
+          if (!companyMdExists) {
             const slugDir = join(extractedDir, importCompanySlug);
-            if (existsSync(slugDir) && nodeFs.statSync(slugDir).isDirectory()) {
-              companyDir = slugDir;
+            try {
+              const slugDirStat = await stat(slugDir);
+              if (slugDirStat.isDirectory()) {
+                companyDir = slugDir;
+              }
+            } catch {
+              // slugDir doesn't exist or isn't a directory
             }
           }
 
@@ -10862,7 +10910,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
           // Clean up temp directory
           if (tempDir) {
             try {
-              nodeFs.rmSync(tempDir, { recursive: true, force: true });
+              await rm(tempDir, { recursive: true, force: true });
             } catch {
               // Best-effort cleanup
             }
@@ -13665,13 +13713,20 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         throw badRequest("isolationMode must be 'in-process' or 'child-process'");
       }
       
-      // Check if path exists and has .fusion/ directory
-      const { existsSync } = await import("node:fs");
-      const { join } = await import("node:path");
-      if (!existsSync(path)) {
+      // Check if path exists and has .fusion/ directory (async to avoid blocking event loop)
+      try {
+        await access(path);
+      } catch {
         throw badRequest("Project path does not exist");
       }
-      const hasFusionDir = existsSync(join(path, ".fusion"));
+      let hasFusionDir = false;
+      const fusionDirPath = join(path, ".fusion");
+      try {
+        await access(fusionDirPath);
+        hasFusionDir = true;
+      } catch {
+        hasFusionDir = false;
+      }
       
       const { CentralCore } = await import("@fusion/core");
       const central = new CentralCore();
@@ -13710,14 +13765,14 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
   router.post("/projects/detect", async (req, res) => {
     try {
       const { basePath } = req.body;
-      const { existsSync } = await import("node:fs");
-      const { join } = await import("node:path");
-      const { readdir } = await import("node:fs/promises");
       
       // Default to home directory if no basePath provided
       const searchPath = basePath || process.env.HOME || process.env.USERPROFILE || ".";
       
-      if (!existsSync(searchPath)) {
+      // Check search path exists (async to avoid blocking event loop)
+      try {
+        await access(searchPath);
+      } catch {
         throw badRequest("Base path does not exist");
       }
 
@@ -13740,8 +13795,23 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
           if (!entry.isDirectory()) continue;
           
           const dirPath = join(searchPath, entry.name);
-          const hasKbDb = existsSync(join(dirPath, ".fusion", "fusion.db"));
-          const hasFusionDir = existsSync(join(dirPath, ".fusion"));
+          // Check for .fusion/fusion.db or .fusion directory (async to avoid blocking event loop)
+          let hasKbDb = false;
+          let hasFusionDir = false;
+          try {
+            await access(join(dirPath, ".fusion", "fusion.db"));
+            hasKbDb = true;
+          } catch {
+            hasKbDb = false;
+          }
+          if (!hasKbDb) {
+            try {
+              await access(join(dirPath, ".fusion"));
+              hasFusionDir = true;
+            } catch {
+              hasFusionDir = false;
+            }
+          }
           
           if (hasKbDb || hasFusionDir) {
             detected.push({
@@ -14804,13 +14874,12 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         const oauthProviders = authStorage.getOAuthProviders();
         const oauthIds = new Set(oauthProviders.map((p) => p.id));
 
-        // Read auth.json directly to get all providers
+        // Read auth.json directly to get all providers (async to avoid blocking event loop)
         const authJsonPath = `${process.env.HOME || process.env.USERPROFILE}/.pi/agent/auth.json`;
         let allProviders: Record<string, { type: string; key?: string; access?: string; refresh?: string; expires?: number; accountId?: string }> = {};
 
         try {
-          const { readFileSync } = await import("node:fs");
-          const authContent = readFileSync(authJsonPath, "utf-8");
+          const authContent = await fsReadFile(authJsonPath, "utf-8");
           allProviders = JSON.parse(authContent);
         } catch {
           // Auth file doesn't exist or is unreadable - sync empty
@@ -15530,11 +15599,22 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
       const worktree = typeof req.query.worktree === "string" ? req.query.worktree : undefined;
       const resolvedWorktree = worktree || task.worktree;
 
-      if (!resolvedWorktree || !nodeFs.existsSync(resolvedWorktree)) {
+      // Check worktree existence asynchronously to avoid blocking event loop
+      if (!resolvedWorktree) {
         res.json({ files: [], stats: { filesChanged: 0, additions: 0, deletions: 0 } });
         return;
       }
-
+      let worktreeExists = false;
+      try {
+        await access(resolvedWorktree);
+        worktreeExists = true;
+      } catch {
+        worktreeExists = false;
+      }
+      if (!worktreeExists) {
+        res.json({ files: [], stats: { filesChanged: 0, additions: 0, deletions: 0 } });
+        return;
+      }
       const cwd = resolvedWorktree;
 
       // Use resolveDiffBase for consistent diff base across all endpoints
@@ -15707,10 +15787,23 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         return;
       }
 
-      if (!task.worktree || !nodeFs.existsSync(task.worktree)) {
+      // Check worktree existence asynchronously to avoid blocking event loop
+      if (!task.worktree) {
         res.json([]);
         return;
       }
+      let worktreeExists = false;
+      try {
+        await access(task.worktree);
+        worktreeExists = true;
+      } catch {
+        worktreeExists = false;
+      }
+      if (!worktreeExists) {
+        res.json([]);
+        return;
+      }
+      const worktree = task.worktree; // Capture after check
 
       const cached = fileDiffsCache.get(task.id);
       if (cached && cached.expiresAt > Date.now()) {
@@ -15718,7 +15811,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         return;
       }
 
-      const cwd = task.worktree;
+      const cwd = worktree;
 
       // Resolve a diff base using the shared strategy so both endpoints
       // always agree on which files have changed.  Prefer task-scoped
