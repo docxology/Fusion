@@ -220,6 +220,11 @@ export function MailboxView({
     refreshUnreadCount();
   }, [refreshUnreadCount]);
 
+  // Load agents on mount so they're available for compose from any tab (not just agents tab)
+  useEffect(() => {
+    loadAgents();
+  }, [loadAgents]);
+
   // ── Actions ───────────────────────────────────────────────────────────
 
   const handleOpenMessage = useCallback(async (message: Message) => {

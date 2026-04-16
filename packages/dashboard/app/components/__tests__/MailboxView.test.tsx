@@ -445,4 +445,38 @@ describe("MailboxView", () => {
       expect(onUnreadCountChange).toHaveBeenCalledWith(5);
     });
   });
+
+  it("shows MessageComposer with agents when clicking compose FAB from inbox tab", async () => {
+    mockFetchInbox.mockResolvedValue({
+      messages: [],
+      unreadCount: 0,
+    });
+
+    render(<MailboxView {...defaultProps} />);
+
+    // Verify compose FAB is visible in inbox tab
+    await waitFor(() => {
+      expect(screen.getByTestId("mailbox-compose-fab")).toBeDefined();
+    });
+
+    // Click compose FAB
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("mailbox-compose-fab"));
+    });
+
+    // Verify MessageComposer is shown
+    await waitFor(() => {
+      expect(screen.getByTestId("message-composer")).toBeDefined();
+    });
+
+    // Verify agents are available (not "No agents available")
+    // The select should have agents as options, not just the placeholder
+    const recipientSelect = screen.getByTestId("message-composer-recipient");
+    expect(recipientSelect).toBeDefined();
+    // Should have agents option, not just "No agents available" placeholder
+    expect(screen.queryByText("No agents available")).toBeNull();
+    // Should show the mock agents
+    expect(screen.getByText("Test Agent 1")).toBeDefined();
+    expect(screen.getByText("Test Agent 2")).toBeDefined();
+  });
 });
