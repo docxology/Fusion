@@ -228,18 +228,6 @@ export function MobileNavBar({
 
         <button
           type="button"
-          className={`mobile-nav-tab${view === "documents" ? " mobile-nav-tab--active" : ""}`}
-          data-testid="mobile-nav-tab-documents"
-          role="tab"
-          aria-selected={view === "documents"}
-          onClick={() => onChangeView("documents")}
-        >
-          <FileText />
-          <span className="mobile-nav-tab-label">Documents</span>
-        </button>
-
-        <button
-          type="button"
           className={`mobile-nav-tab${view === "mailbox" ? " mobile-nav-tab--active" : ""}`}
           data-testid="mobile-nav-tab-mailbox"
           role="tab"
