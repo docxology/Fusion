@@ -10195,6 +10195,95 @@ describe("Automation routes", () => {
       expect(res.status).toBe(200);
       expect(res.body).toHaveLength(0);
     });
+
+    // ── Cross-project isolation and fallback path tests ─────────────────
+
+    it("cross-project isolation: scope=project never leaks global schedules into results", async () => {
+      const mockStore = createMockAutomationStore();
+      // Store returns mixed results
+      const globalSchedule = { ...FAKE_SCHEDULE, id: "sched-global-1", scope: "global" as const };
+      const projectSchedule = { ...FAKE_SCHEDULE, id: "sched-proj-a-1", scope: "project" as const };
+      mockStore.listSchedules.mockResolvedValue([globalSchedule, projectSchedule]);
+      const { app } = buildApp(mockStore);
+
+      // Request for project scope (simulating proj-a request)
+      const res = await GET(app, "/api/automations?scope=project");
+      expect(res.status).toBe(200);
+      // All results must be project-scoped - no leakage from global
+      expect(res.body.every((s: any) => s.scope === "project")).toBe(true);
+    });
+
+    it("cross-project isolation: scope=global never includes project schedules", async () => {
+      const mockStore = createMockAutomationStore();
+      const globalSchedule = { ...FAKE_SCHEDULE, id: "sched-global-1", scope: "global" as const };
+      const projectSchedule = { ...FAKE_SCHEDULE, id: "sched-proj-a-1", scope: "project" as const };
+      mockStore.listSchedules.mockResolvedValue([globalSchedule, projectSchedule]);
+      const { app } = buildApp(mockStore);
+
+      // Request for global scope (simulating global request)
+      const res = await GET(app, "/api/automations?scope=global");
+      expect(res.status).toBe(200);
+      // All results must be global-scoped - no leakage from project
+      expect(res.body.every((s: any) => s.scope === "global")).toBe(true);
+    });
+
+    it("no opportunistic lane hopping: scope=project with empty results does not fall back to global", async () => {
+      const mockStore = createMockAutomationStore();
+      // Store only has global-scoped schedules
+      const globalSchedule = { ...FAKE_SCHEDULE, id: "sched-global-1", scope: "global" as const };
+      mockStore.listSchedules.mockResolvedValue([globalSchedule]);
+      const { app } = buildApp(mockStore);
+
+      // Request for project scope - should return empty, NOT switch to global
+      const res = await GET(app, "/api/automations?scope=project");
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveLength(0);
+      // Results should NOT contain global schedules
+      expect(res.body.some((s: any) => s.scope === "global")).toBe(false);
+    });
+
+    it("returns empty array when automation store unavailable (scope=project) - legacy fallback", async () => {
+      // Build app WITHOUT automationStore option - routes return empty array for backward compatibility
+      const store = createMockStore();
+      const app = express();
+      app.use(express.json());
+      app.use("/api", createApiRoutes(store));
+
+      const res = await GET(app, "/api/automations?scope=project");
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual([]);
+    });
+
+    it("returns empty array when automation store unavailable (scope=global) - legacy fallback", async () => {
+      // Build app WITHOUT automationStore option - routes return empty array for backward compatibility
+      const store = createMockStore();
+      const app = express();
+      app.use(express.json());
+      app.use("/api", createApiRoutes(store));
+
+      const res = await GET(app, "/api/automations?scope=global");
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual([]);
+    });
+
+    it("mutations with scope=project do not call global lane", async () => {
+      const mockStore = createMockAutomationStore();
+      mockStore.createSchedule.mockResolvedValue({ ...FAKE_SCHEDULE, id: "sched-proj-1", scope: "project" as const });
+      const { app, automationStore } = buildApp(mockStore);
+
+      const res = await REQUEST(app, "POST", "/api/automations", JSON.stringify({
+        name: "Project Schedule",
+        command: "echo project",
+        scheduleType: "hourly",
+        scope: "project",
+      }), { "Content-Type": "application/json" });
+
+      expect(res.status).toBe(201);
+      // Verify scope was set to project (not global)
+      expect(automationStore.createSchedule).toHaveBeenCalledWith(
+        expect.objectContaining({ scope: "project" }),
+      );
+    });
   });
 });
 
@@ -11022,6 +11111,138 @@ describe("Routine routes", () => {
       const res = await GET(app, "/api/routines?scope=project");
       expect(res.status).toBe(200);
       expect(res.body).toHaveLength(0);
+    });
+
+    // ── Cross-project isolation and fallback path tests ─────────────────
+
+    it("cross-project isolation: scope=project never leaks global routines into results", async () => {
+      const mockStore = createMockRoutineStore();
+      // Store returns mixed results
+      const globalRoutine = { ...FAKE_ROUTINE, id: "routine-global-1", scope: "global" as const };
+      const projectRoutine = { ...FAKE_ROUTINE, id: "routine-proj-a-1", scope: "project" as const };
+      mockStore.listRoutines.mockResolvedValue([globalRoutine, projectRoutine]);
+      const { app } = buildRoutineApp(mockStore);
+
+      // Request for project scope (simulating proj-a request)
+      const res = await GET(app, "/api/routines?scope=project");
+      expect(res.status).toBe(200);
+      // All results must be project-scoped - no leakage from global
+      expect(res.body.every((r: any) => r.scope === "project")).toBe(true);
+    });
+
+    it("cross-project isolation: scope=global never includes project routines", async () => {
+      const mockStore = createMockRoutineStore();
+      const globalRoutine = { ...FAKE_ROUTINE, id: "routine-global-1", scope: "global" as const };
+      const projectRoutine = { ...FAKE_ROUTINE, id: "routine-proj-a-1", scope: "project" as const };
+      mockStore.listRoutines.mockResolvedValue([globalRoutine, projectRoutine]);
+      const { app } = buildRoutineApp(mockStore);
+
+      // Request for global scope (simulating global request)
+      const res = await GET(app, "/api/routines?scope=global");
+      expect(res.status).toBe(200);
+      // All results must be global-scoped - no leakage from project
+      expect(res.body.every((r: any) => r.scope === "global")).toBe(true);
+    });
+
+    it("no opportunistic lane hopping: scope=project with empty results does not fall back to global", async () => {
+      const mockStore = createMockRoutineStore();
+      // Store only has global-scoped routines
+      const globalRoutine = { ...FAKE_ROUTINE, id: "routine-global-1", scope: "global" as const };
+      mockStore.listRoutines.mockResolvedValue([globalRoutine]);
+      const { app } = buildRoutineApp(mockStore);
+
+      // Request for project scope - should return empty, NOT switch to global
+      const res = await GET(app, "/api/routines?scope=project");
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveLength(0);
+      // Results should NOT contain global routines
+      expect(res.body.some((r: any) => r.scope === "global")).toBe(false);
+    });
+
+    it("returns empty array when routine store unavailable (scope=project) - legacy fallback", async () => {
+      // Build app WITHOUT routineStore option - routes return empty array for backward compatibility
+      const store = createMockStore();
+      const app = express();
+      app.use(express.json());
+      app.use("/api", createApiRoutes(store));
+
+      const res = await GET(app, "/api/routines?scope=project");
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual([]);
+    });
+
+    it("returns empty array when routine store unavailable (scope=global) - legacy fallback", async () => {
+      // Build app WITHOUT routineStore option - routes return empty array for backward compatibility
+      const store = createMockStore();
+      const app = express();
+      app.use(express.json());
+      app.use("/api", createApiRoutes(store));
+
+      const res = await GET(app, "/api/routines?scope=global");
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual([]);
+    });
+
+    it("mutations with scope=project do not call global lane", async () => {
+      const mockStore = createMockRoutineStore();
+      mockStore.createRoutine.mockResolvedValue({ ...FAKE_ROUTINE, id: "routine-proj-1", scope: "project" as const });
+      const { app, routineStore } = buildRoutineApp(mockStore);
+
+      const res = await REQUEST(app, "POST", "/api/routines", JSON.stringify({
+        name: "Project Routine",
+        trigger: { type: "cron", cronExpression: "0 * * * *" },
+        scope: "project",
+      }), { "Content-Type": "application/json" });
+
+      expect(res.status).toBe(201);
+      // Verify scope was set to project (not global)
+      expect(routineStore.createRoutine).toHaveBeenCalledWith(
+        expect.objectContaining({ scope: "project" }),
+      );
+    });
+
+    it("POST /routines/:id/run with scope mismatch does NOT call RoutineRunner", async () => {
+      const mockStore = createMockRoutineStore();
+      const { app, routineRunner } = buildRoutineApp(mockStore);
+      // Routine is global-scoped
+      mockStore.getRoutine.mockResolvedValue({ ...FAKE_ROUTINE, scope: "global" as const });
+
+      // Request with scope=project but routine is global
+      const res = await REQUEST(app, "POST", "/api/routines/routine-001/run?scope=project");
+
+      expect(res.status).toBe(404);
+      // RoutineRunner should NOT be called for mismatched scope
+      expect(routineRunner.triggerManual).not.toHaveBeenCalled();
+    });
+
+    it("POST /routines/:id/run when routine is disabled returns 400", async () => {
+      const mockStore = createMockRoutineStore();
+      // Set scope to project to match the default FAKE_ROUTINE scope
+      mockStore.getRoutine.mockResolvedValue({ ...FAKE_ROUTINE, scope: "project" as const, enabled: false });
+      const { app, routineRunner } = buildRoutineApp(mockStore);
+
+      // Request without scope (defaults to project which matches the routine's scope)
+      const res = await REQUEST(app, "POST", "/api/routines/routine-001/run");
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain("disabled");
+      // RoutineRunner should NOT be called when routine is disabled
+      expect(routineRunner.triggerManual).not.toHaveBeenCalled();
+    });
+
+    it("POST /routines/:id/run when RoutineRunner unavailable returns 503", async () => {
+      const mockStore = createMockRoutineStore();
+      mockStore.getRoutine.mockResolvedValue({ ...FAKE_ROUTINE });
+      // Build app without routineRunner option
+      const store = createMockStore();
+      const app = express();
+      app.use(express.json());
+      app.use("/api", createApiRoutes(store, { routineStore: mockStore as any }));
+
+      const res = await REQUEST(app, "POST", "/api/routines/routine-001/run?scope=global");
+
+      expect(res.status).toBe(503);
+      expect(res.body.error).toContain("not available");
     });
   });
 });

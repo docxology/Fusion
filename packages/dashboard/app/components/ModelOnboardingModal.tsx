@@ -18,6 +18,7 @@ import {
   saveOnboardingState,
   clearOnboardingState,
   markOnboardingCompleted,
+  getStepData,
   type OnboardingStep,
 } from "./model-onboarding-state";
 import type { SectionId } from "./SettingsModal";
@@ -32,6 +33,12 @@ export interface ModelOnboardingModalProps {
   /** Optional callback when user wants to open GitHub import */
   onOpenGitHubImport?: () => void;
 }
+
+/** Outcome states for OAuth login attempts */
+export type LoginOutcome = "pending" | "success" | "timeout" | "failed" | "cancelled";
+
+/** Maximum number of poll cycles before timing out (150 × 2s = 5 minutes) */
+const MAX_POLL_CYCLES = 150;
 
 /**
  * Multi-step onboarding modal that guides users through:
@@ -67,6 +74,8 @@ export function ModelOnboardingModal({
   const [apiKeyInputs, setApiKeyInputs] = useState<Record<string, string>>({});
   const [apiKeyErrors, setApiKeyErrors] = useState<Record<string, string>>({});
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [loginOutcomes, setLoginOutcomes] = useState<Record<string, LoginOutcome>>({});
+  const pollCountRef = useRef<number>(0);
 
   // Step definitions for progress indicator
   const steps = [
@@ -126,6 +135,48 @@ export function ModelOnboardingModal({
     );
   }, [loadAuthStatus, loadModels, loadGlobalSettings]);
 
+  // Restore login outcomes from persisted state on mount
+  useEffect(() => {
+    const persistedStepData = getStepData("ai-setup");
+    if (persistedStepData?.loginOutcomes) {
+      const persistedOutcomes = persistedStepData.loginOutcomes as Record<string, LoginOutcome>;
+      // Filter out stale "pending" entries from previous sessions
+      const filteredOutcomes: Record<string, LoginOutcome> = {};
+      for (const [providerId, outcome] of Object.entries(persistedOutcomes)) {
+        if (outcome !== "pending") {
+          filteredOutcomes[providerId] = outcome;
+        }
+      }
+      if (Object.keys(filteredOutcomes).length > 0) {
+        setLoginOutcomes(filteredOutcomes);
+      }
+    }
+  }, []);
+
+  // Helper to persist login outcome to onboarding state
+  const persistLoginOutcome = useCallback((providerId: string, outcome: LoginOutcome) => {
+    saveOnboardingState(step, {
+      completedSteps,
+      stepData: {
+        "ai-setup": {
+          loginOutcomes: {
+            [providerId]: outcome,
+          },
+        },
+      },
+    });
+  }, [step, completedSteps]);
+
+  // Persist terminal login outcomes whenever they transition
+  useEffect(() => {
+    const terminalOutcomes = Object.entries(loginOutcomes).filter(
+      ([_, outcome]) => outcome !== "pending"
+    );
+    for (const [providerId, outcome] of terminalOutcomes) {
+      persistLoginOutcome(providerId, outcome);
+    }
+  }, [loginOutcomes, persistLoginOutcome]);
+
   // Check if we have GitHub provider
   const githubProvider = authProviders.find((p) => p.id === "github");
   const hasGithubProvider = !!githubProvider;
@@ -166,13 +217,41 @@ export function ModelOnboardingModal({
   // OAuth login handler
   const handleLogin = useCallback(
     async (providerId: string) => {
+      // Clear any previous terminal outcome before starting a new login attempt
+      setLoginOutcomes((prev) => {
+        const outcome = prev[providerId];
+        if (outcome && outcome !== "pending") {
+          const { [providerId]: _, ...rest } = prev;
+          return rest;
+        }
+        return prev;
+      });
+
+      // Set outcome to pending
+      setLoginOutcomes((prev) => ({ ...prev, [providerId]: "pending" }));
       setAuthActionInProgress(providerId);
+      pollCountRef.current = 0;
+
       try {
         const { url } = await loginProvider(providerId);
         window.open(url, "_blank");
 
         // Poll for auth completion
         pollIntervalRef.current = setInterval(async () => {
+          pollCountRef.current++;
+
+          // Check for timeout
+          if (pollCountRef.current >= MAX_POLL_CYCLES) {
+            if (pollIntervalRef.current) {
+              clearInterval(pollIntervalRef.current);
+              pollIntervalRef.current = null;
+            }
+            setAuthActionInProgress(null);
+            setLoginOutcomes((prev) => ({ ...prev, [providerId]: "timeout" }));
+            addToast("Login timed out. Please try again.", "warning");
+            return;
+          }
+
           try {
             const { providers } = await fetchAuthStatus();
             setAuthProviders(providers);
@@ -183,6 +262,7 @@ export function ModelOnboardingModal({
                 pollIntervalRef.current = null;
               }
               setAuthActionInProgress(null);
+              setLoginOutcomes((prev) => ({ ...prev, [providerId]: "success" }));
               addToast("Login successful", "success");
             }
           } catch {
@@ -190,15 +270,34 @@ export function ModelOnboardingModal({
           }
         }, 2000);
       } catch (err: unknown) {
-        addToast(
-          err instanceof Error ? err.message : "Login failed",
-          "error",
-        );
+        // Check for concurrent login (409) conflict
+        const isConcurrentLogin =
+          (err instanceof Error && err.message.includes("already in progress")) ||
+          (err && typeof err === "object" && "status" in err && (err as { status: number }).status === 409);
+
+        if (isConcurrentLogin) {
+          addToast("Login already in progress. Please wait or cancel the current attempt.", "warning");
+          setLoginOutcomes((prev) => ({ ...prev, [providerId]: "failed" }));
+        } else {
+          addToast(err instanceof Error ? err.message : "Login failed", "error");
+          setLoginOutcomes((prev) => ({ ...prev, [providerId]: "failed" }));
+        }
         setAuthActionInProgress(null);
       }
     },
     [addToast],
   );
+
+  // Cancellation handler for in-progress logins
+  const handleCancelLogin = useCallback((providerId: string) => {
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
+    setAuthActionInProgress(null);
+    pollCountRef.current = 0;
+    setLoginOutcomes((prev) => ({ ...prev, [providerId]: "cancelled" }));
+  }, []);
 
   // API key save handler
   const handleSaveApiKey = useCallback(
@@ -581,11 +680,20 @@ export function ModelOnboardingModal({
                       </div>
                       <div>
                         {authActionInProgress === provider.id ? (
-                          <button className="btn btn-sm" disabled>
-                            {provider.authenticated
-                              ? "Logging out…"
-                              : "Waiting for login…"}
-                          </button>
+                          <>
+                            <button className="btn btn-sm" disabled>
+                              {provider.authenticated
+                                ? "Logging out…"
+                                : "Waiting for login…"}
+                            </button>
+                            <button
+                              className="btn btn-sm"
+                              onClick={() => handleCancelLogin(provider.id)}
+                              style={{ marginLeft: 8 }}
+                            >
+                              Cancel
+                            </button>
+                          </>
                         ) : provider.authenticated ? (
                           <button
                             className="btn btn-sm"
@@ -602,6 +710,18 @@ export function ModelOnboardingModal({
                           </button>
                         )}
                       </div>
+                      {/* Show timeout message */}
+                      {loginOutcomes[provider.id] === "timeout" && authActionInProgress !== provider.id && (
+                        <p className="onboarding-helper-text" style={{ marginTop: 4 }}>
+                          Login timed out. Please try again.
+                        </p>
+                      )}
+                      {/* Show failure message */}
+                      {loginOutcomes[provider.id] === "failed" && authActionInProgress !== provider.id && (
+                        <p className="field-error" style={{ marginTop: 4 }}>
+                          Login failed. Please try again.
+                        </p>
+                      )}
                     </div>
                   ))}
 
@@ -758,11 +878,20 @@ export function ModelOnboardingModal({
                     </div>
                     <div>
                       {authActionInProgress === "github" ? (
-                        <button className="btn btn-sm" disabled>
-                          {isGithubAuthenticated
-                            ? "Logging out…"
-                            : "Waiting for login…"}
-                        </button>
+                        <>
+                          <button className="btn btn-sm" disabled>
+                            {isGithubAuthenticated
+                              ? "Logging out…"
+                              : "Waiting for login…"}
+                          </button>
+                          <button
+                            className="btn btn-sm"
+                            onClick={() => handleCancelLogin("github")}
+                            style={{ marginLeft: 8 }}
+                          >
+                            Cancel
+                          </button>
+                        </>
                       ) : isGithubAuthenticated ? (
                         <button
                           className="btn btn-sm"
@@ -779,6 +908,18 @@ export function ModelOnboardingModal({
                         </button>
                       )}
                     </div>
+                    {/* Show timeout message */}
+                    {loginOutcomes["github"] === "timeout" && authActionInProgress !== "github" && (
+                      <p className="onboarding-helper-text" style={{ marginTop: 4 }}>
+                        Login timed out. Please try again.
+                      </p>
+                    )}
+                    {/* Show failure message */}
+                    {loginOutcomes["github"] === "failed" && authActionInProgress !== "github" && (
+                      <p className="field-error" style={{ marginTop: 4 }}>
+                        Login failed. Please try again.
+                      </p>
+                    )}
                   </div>
                   {!isGithubAuthenticated && (
                     <p className="onboarding-helper-text">

@@ -44,12 +44,14 @@ const mockGetOnboardingState = vi.fn();
 const mockSaveOnboardingState = vi.fn();
 const mockClearOnboardingState = vi.fn();
 const mockMarkOnboardingCompleted = vi.fn();
+const mockGetStepData = vi.fn();
 
 vi.mock("../model-onboarding-state", () => ({
   getOnboardingState: (...args: unknown[]) => mockGetOnboardingState(...args),
   saveOnboardingState: (...args: unknown[]) => mockSaveOnboardingState(...args),
   clearOnboardingState: (...args: unknown[]) => mockClearOnboardingState(...args),
   markOnboardingCompleted: (...args: unknown[]) => mockMarkOnboardingCompleted(...args),
+  getStepData: (...args: unknown[]) => mockGetStepData(...args),
 }));
 
 const defaultAuthProviders: AuthProvider[] = [
@@ -83,7 +85,6 @@ async function navigateToFirstTaskStep() {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockFetchAuthStatus.mockResolvedValue({ providers: defaultAuthProviders });
   mockFetchModels.mockResolvedValue({ models: defaultModels, favoriteProviders: [], favoriteModels: [] });
   mockFetchGlobalSettings.mockResolvedValue({});
   mockUpdateGlobalSettings.mockResolvedValue({});
@@ -96,6 +97,10 @@ beforeEach(() => {
   mockSaveOnboardingState.mockImplementation(() => {});
   mockClearOnboardingState.mockImplementation(() => {});
   mockMarkOnboardingCompleted.mockImplementation(() => {});
+  mockGetStepData.mockReturnValue(null);
+  // Reset mockFetchAuthStatus to default - use mockImplementation for clear control
+  mockFetchAuthStatus.mockReset();
+  mockFetchAuthStatus.mockImplementation(() => Promise.resolve({ providers: defaultAuthProviders }));
 });
 
 afterEach(() => {
@@ -1226,6 +1231,298 @@ describe("ModelOnboardingModal", () => {
 
       // Helper text should NOT be visible when GitHub is connected
       expect(screen.queryByText("You can connect GitHub later from Settings → Authentication.")).toBeNull();
+    });
+  });
+
+  describe("Login action handling", () => {
+    it("shows Cancel button while login is in progress", async () => {
+      const mockWindowOpen = vi.fn();
+      vi.spyOn(window, "open").mockImplementation(mockWindowOpen);
+
+      render(<ModelOnboardingModal onComplete={vi.fn()} addToast={vi.fn()} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Login")).toBeTruthy();
+      });
+
+      fireEvent.click(screen.getByText("Login"));
+
+      await waitFor(() => {
+        expect(screen.getByText("Waiting for login…")).toBeTruthy();
+        expect(screen.getByText("Cancel")).toBeTruthy();
+      });
+    });
+
+    it("cancels login when Cancel button is clicked", async () => {
+      const mockWindowOpen = vi.fn();
+      vi.spyOn(window, "open").mockImplementation(mockWindowOpen);
+
+      render(<ModelOnboardingModal onComplete={vi.fn()} addToast={vi.fn()} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Login")).toBeTruthy();
+      });
+
+      fireEvent.click(screen.getByText("Login"));
+
+      await waitFor(() => {
+        expect(screen.getByText("Cancel")).toBeTruthy();
+      });
+
+      fireEvent.click(screen.getByText("Cancel"));
+
+      await waitFor(() => {
+        // Login button should be shown again
+        expect(screen.getByText("Login")).toBeTruthy();
+        // Waiting for login should no longer be shown
+        expect(screen.queryByText("Waiting for login…")).toBeNull();
+        // Cancel button should no longer be shown
+        expect(screen.queryByText("Cancel")).toBeNull();
+      });
+    });
+
+    it("login failure shows error toast and sets outcome to failed", async () => {
+      mockLoginProvider.mockRejectedValueOnce(new Error("Login failed: Invalid credentials"));
+
+      const addToast = vi.fn();
+      render(<ModelOnboardingModal onComplete={vi.fn()} addToast={addToast} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Login")).toBeTruthy();
+      });
+
+      fireEvent.click(screen.getByText("Login"));
+
+      await waitFor(() => {
+        expect(addToast).toHaveBeenCalledWith("Login failed: Invalid credentials", "error");
+      });
+
+      // Login button should be shown again
+      expect(screen.getByText("Login")).toBeTruthy();
+
+      // Error message should be shown
+      expect(screen.getByText("Login failed. Please try again.")).toBeTruthy();
+    });
+
+    it("409 concurrent login shows specific toast message", async () => {
+      const error = new Error("Login already in progress");
+      (error as unknown as { status: number }).status = 409;
+      mockLoginProvider.mockRejectedValueOnce(error);
+
+      const addToast = vi.fn();
+      render(<ModelOnboardingModal onComplete={vi.fn()} addToast={addToast} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Login")).toBeTruthy();
+      });
+
+      fireEvent.click(screen.getByText("Login"));
+
+      await waitFor(() => {
+        expect(addToast).toHaveBeenCalledWith(
+          "Login already in progress. Please wait or cancel the current attempt.",
+          "warning"
+        );
+      });
+    });
+
+    it("successful login shows success toast and persists outcome", async () => {
+      const mockWindowOpen = vi.fn();
+      vi.spyOn(window, "open").mockImplementation(mockWindowOpen);
+
+      // Track call count to return different values
+      let callCount = 0;
+      mockFetchAuthStatus.mockImplementation(() => {
+        callCount++;
+        // First call (initial load) - provider is NOT authenticated
+        // Subsequent calls (polling) - provider IS authenticated
+        return Promise.resolve({
+          providers: [
+            {
+              id: "anthropic",
+              name: "Anthropic",
+              authenticated: callCount > 1,
+              type: "oauth",
+            },
+          ],
+        });
+      });
+
+      const addToast = vi.fn();
+      render(<ModelOnboardingModal onComplete={vi.fn()} addToast={addToast} />);
+
+      // Wait for Login button to appear (provider not authenticated initially)
+      await waitFor(() => {
+        expect(screen.getByText("Login")).toBeTruthy();
+      });
+
+      // Click Login
+      fireEvent.click(screen.getByText("Login"));
+
+      // Wait for the login to complete (poll detects authenticated on 2nd call)
+      await waitFor(() => {
+        expect(addToast).toHaveBeenCalledWith("Login successful", "success");
+      }, { timeout: 3000 });
+
+      // Check that login outcome was persisted
+      const saveCall = mockSaveOnboardingState.mock.calls.find(
+        (call) => call[1]?.stepData?.["ai-setup"]?.loginOutcomes?.anthropic === "success"
+      );
+      expect(saveCall).toBeDefined();
+    });
+
+    it("login outcome persisted to stepData after successful login", async () => {
+      const mockWindowOpen = vi.fn();
+      vi.spyOn(window, "open").mockImplementation(mockWindowOpen);
+
+      // Track call count to return different values
+      let callCount = 0;
+      mockFetchAuthStatus.mockImplementation(() => {
+        callCount++;
+        // First call (initial load) - provider is NOT authenticated
+        // Subsequent calls (polling) - provider IS authenticated
+        return Promise.resolve({
+          providers: [
+            {
+              id: "anthropic",
+              name: "Anthropic",
+              authenticated: callCount > 1,
+              type: "oauth",
+            },
+          ],
+        });
+      });
+
+      render(<ModelOnboardingModal onComplete={vi.fn()} addToast={vi.fn()} />);
+
+      // Wait for Login button to appear
+      await waitFor(() => {
+        expect(screen.getByText("Login")).toBeTruthy();
+      });
+
+      // Click Login
+      fireEvent.click(screen.getByText("Login"));
+
+      // Wait for saveOnboardingState to be called with success outcome
+      await waitFor(() => {
+        const successCall = mockSaveOnboardingState.mock.calls.find(
+          (call) => call[1]?.stepData?.["ai-setup"]?.loginOutcomes?.anthropic === "success"
+        );
+        expect(successCall).toBeDefined();
+      }, { timeout: 3000 });
+    });
+
+    it("stale pending outcomes are filtered on mount", async () => {
+      // Mock getStepData to return a stale pending outcome
+      mockGetStepData.mockReturnValueOnce({
+        loginOutcomes: {
+          anthropic: "pending", // Stale - from previous session
+          openai: "success", // Valid terminal outcome
+        },
+      });
+
+      render(<ModelOnboardingModal onComplete={vi.fn()} addToast={vi.fn()} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Set Up AI")).toBeTruthy();
+      });
+
+      // Navigate to trigger a save that would persist the filtered outcomes
+      // The pending outcome should NOT be persisted (filtered out)
+      const saveCalls = mockSaveOnboardingState.mock.calls;
+      const hasAnthropicPending = saveCalls.some((call) => {
+        const stepData = call[1]?.stepData;
+        return stepData?.["ai-setup"]?.loginOutcomes?.anthropic === "pending";
+      });
+      expect(hasAnthropicPending).toBe(false);
+    });
+
+    it("retry after timeout shows Login button again", async () => {
+      // Set up getStepData to return a timeout outcome
+      mockGetStepData.mockReturnValueOnce({
+        loginOutcomes: {
+          anthropic: "timeout",
+        },
+      });
+
+      const addToast = vi.fn();
+
+      await act(async () => {
+        render(<ModelOnboardingModal onComplete={vi.fn()} addToast={addToast} />);
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText("Set Up AI")).toBeTruthy();
+      });
+
+      // The timeout message should be shown (rendered from persisted outcome)
+      // Note: This test verifies the persistence layer works - the timeout message
+      // appears based on loginOutcomes state, not current auth status
+      expect(screen.getByText("Login timed out. Please try again.")).toBeTruthy();
+
+      // Cancel button should not be shown (no login in progress)
+      expect(screen.queryByText("Cancel")).toBeNull();
+    });
+
+    it("navigation remains enabled during login", async () => {
+      const mockWindowOpen = vi.fn();
+      vi.spyOn(window, "open").mockImplementation(mockWindowOpen);
+
+      render(<ModelOnboardingModal onComplete={vi.fn()} addToast={vi.fn()} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Login")).toBeTruthy();
+      });
+
+      fireEvent.click(screen.getByText("Login"));
+
+      await waitFor(() => {
+        expect(screen.getByText("Waiting for login…")).toBeTruthy();
+      });
+
+      // Navigation buttons should NOT be disabled during login
+      const nextButton = screen.getByText("Next →") as HTMLButtonElement;
+      expect(nextButton.disabled).toBe(false);
+
+      const skipButton = screen.getByText("Skip setup →");
+      expect(skipButton).toBeTruthy();
+    });
+
+    it("login timeout after max polls (simulated with fake timers)", async () => {
+      // This test verifies the timeout mechanism works correctly
+      // Using vi.useFakeTimers for deterministic timing
+      vi.useFakeTimers();
+
+      const mockWindowOpen = vi.fn();
+      vi.spyOn(window, "open").mockImplementation(mockWindowOpen);
+
+      const addToast = vi.fn();
+
+      // Use act to render with fake timers
+      await act(async () => {
+        render(<ModelOnboardingModal onComplete={vi.fn()} addToast={addToast} />);
+      });
+
+      // Click Login to start the login flow
+      await act(async () => {
+        fireEvent.click(screen.getByText("Login"));
+      });
+
+      expect(screen.getByText("Waiting for login…")).toBeTruthy();
+
+      // Advance time past MAX_POLL_CYCLES * 2000ms = 300000ms
+      // MAX_POLL_CYCLES = 150, so 151 polls to trigger timeout
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(302000);
+      });
+
+      // Should show timeout toast
+      expect(addToast).toHaveBeenCalledWith("Login timed out. Please try again.", "warning");
+
+      // Cancel button should not be shown after timeout
+      expect(screen.queryByText("Cancel")).toBeNull();
+
+      vi.useRealTimers();
     });
   });
 });
