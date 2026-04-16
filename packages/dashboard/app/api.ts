@@ -18,6 +18,7 @@ import type {
   WorkflowStepInput,
   WorkflowStepResult,
   PluginInstallation,
+  PluginUiSlotDefinition,
   TaskDocument,
   TaskDocumentRevision,
   TaskDocumentWithTask,
@@ -5121,6 +5122,17 @@ export async function reloadPlugin(id: string, projectId?: string): Promise<Plug
   return api<PluginInstallation>(withProjectId(`/plugins/${encodeURIComponent(id)}/reload`, projectId), {
     method: "POST",
   });
+}
+
+/** A UI slot entry returned by GET /api/plugins/ui-slots */
+export interface PluginUiSlotEntry {
+  pluginId: string;
+  slot: PluginUiSlotDefinition;
+}
+
+/** Fetch all UI slot definitions from active plugins */
+export async function fetchPluginUiSlots(projectId?: string): Promise<PluginUiSlotEntry[]> {
+  return api<PluginUiSlotEntry[]>(withProjectId("/plugins/ui-slots", projectId));
 }
 
 // ── Skills Management ─────────────────────────────────────────────────────────
