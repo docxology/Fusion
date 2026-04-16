@@ -2208,19 +2208,20 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
     });
   };
 
-  // Scheduler config (includes persisted settings — only needs maxConcurrent/maxWorktrees)
+  // Scheduler config (includes persisted settings — only needs maxConcurrent/maxTriageConcurrent/maxWorktrees)
   router.get("/config", async (req, res) => {
     try {
       const { store: scopedStore } = await getProjectContext(req);
       const settings = await scopedStore.getSettingsFast();
       res.json({
         maxConcurrent: settings.maxConcurrent ?? options?.maxConcurrent ?? 2,
+        maxTriageConcurrent: settings.maxTriageConcurrent ?? settings.maxConcurrent ?? 2,
         maxWorktrees: settings.maxWorktrees ?? 4,
         rootDir: scopedStore.getRootDir(),
       });
     } catch {
       const { store: scopedStore } = await getProjectContext(req);
-      res.json({ maxConcurrent: options?.maxConcurrent ?? 2, maxWorktrees: 4, rootDir: scopedStore.getRootDir() });
+      res.json({ maxConcurrent: options?.maxConcurrent ?? 2, maxTriageConcurrent: options?.maxConcurrent ?? 2, maxWorktrees: 4, rootDir: scopedStore.getRootDir() });
     }
   });
 

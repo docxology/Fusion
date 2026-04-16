@@ -100,7 +100,7 @@ export async function getTaskCompletionBlocker(
 
   for (const dependencyId of dependencies) {
     const dependency = await options.resolveTask(dependencyId);
-    if (!dependency || (dependency.column !== "done" && dependency.column !== "archived")) {
+    if (!dependency || (dependency.column !== "done" && dependency.column !== "in-review" && dependency.column !== "archived")) {
       unresolvedDependencies.push(dependencyId);
     }
   }

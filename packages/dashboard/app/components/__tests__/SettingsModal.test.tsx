@@ -7,6 +7,7 @@ import type { Settings, ThemeMode, ColorTheme } from "@fusion/core";
 
 const defaultSettings: Settings = {
   maxConcurrent: 2,
+  maxTriageConcurrent: 2,
   maxWorktrees: 4,
   pollIntervalMs: 15000,
   groupOverlappingFiles: false,

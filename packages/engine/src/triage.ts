@@ -545,16 +545,15 @@ export class TriageProcessor {
           && !(t.nextRecoveryAt && new Date(t.nextRecoveryAt).getTime() > now),
       );
 
-      // Respect both per-project maxConcurrent and the global semaphore.
-      // Count all active agent slots: in-progress tasks + already-specifying tasks.
-      const maxConcurrent = settings.maxConcurrent ?? 2;
-      const inProgress = allTasks.filter((t) => t.column === "in-progress").length;
+      // Respect both per-project maxTriageConcurrent and the global semaphore.
+      // Only specifying tasks count against the triage limit; execution is governed by maxConcurrent.
+      const maxTriageConcurrent = settings.maxTriageConcurrent ?? settings.maxConcurrent ?? 2;
       const specifying = allTasks.filter(
         (t) => t.column === "triage" && t.status === "specifying" && !t.paused,
       ).length;
-      const activeAgents = inProgress + specifying;
+      const activeAgents = specifying;
 
-      const perProjectAvailable = Math.max(0, maxConcurrent - activeAgents);
+      const perProjectAvailable = Math.max(0, maxTriageConcurrent - activeAgents);
       const semaphoreAvailable = this.options.semaphore
         ? Math.max(0, this.options.semaphore.availableCount)
         : Infinity;
@@ -562,7 +561,7 @@ export class TriageProcessor {
 
       if (maxToStart <= 0 && triageTasks.length > 0) {
         triageLog.log(
-          `Triage throttled: ${activeAgents} active agents (${inProgress} executing, ${specifying} specifying), limit ${maxConcurrent}`,
+          `Triage throttled: ${activeAgents} specifying agents, limit ${maxTriageConcurrent}`,
         );
       }
 

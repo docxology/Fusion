@@ -107,7 +107,7 @@ export function SettingsModal({
   onColorThemeChange,
   onReopenOnboarding,
 }: SettingsModalProps) {
-  const [form, setForm] = useState<Settings & { worktreeInitCommand?: string }>({ maxConcurrent: 2, maxWorktrees: 4, pollIntervalMs: 15000, groupOverlappingFiles: true, autoMerge: true, mergeStrategy: "direct", recycleWorktrees: false, worktreeNaming: "random", includeTaskIdInCommit: true, worktreeInitCommand: "", ntfyEnabled: false, ntfyTopic: undefined });
+  const [form, setForm] = useState<Settings & { worktreeInitCommand?: string }>({ maxConcurrent: 2, maxTriageConcurrent: 2, maxWorktrees: 4, pollIntervalMs: 15000, groupOverlappingFiles: true, autoMerge: true, mergeStrategy: "direct", recycleWorktrees: false, worktreeNaming: "random", includeTaskIdInCommit: true, worktreeInitCommand: "", ntfyEnabled: false, ntfyTopic: undefined });
   const [loading, setLoading] = useState(true);
   // Track initial values to detect explicit clears for null-as-delete semantics
   const [initialValues, setInitialValues] = useState<Settings | null>(null);
@@ -1567,6 +1567,21 @@ export function SettingsModal({
                   setForm((f) => ({ ...f, maxConcurrent: val === "" ? undefined : Number(val) } as any));
                 }}
               />
+            </div>
+            <div className="form-group">
+              <label htmlFor="maxTriageConcurrent">Max Triage Concurrent</label>
+              <input
+                id="maxTriageConcurrent"
+                type="number"
+                min={1}
+                max={10}
+                value={form.maxTriageConcurrent ?? ""}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setForm((f) => ({ ...f, maxTriageConcurrent: val === "" ? undefined : Number(val) } as any));
+                }}
+              />
+              <small>Maximum concurrent triage/specification agents</small>
             </div>
             <div className="form-group">
               <label htmlFor="pollIntervalMs">Poll Interval (ms)</label>

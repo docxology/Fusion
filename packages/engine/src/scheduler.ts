@@ -503,27 +503,13 @@ export class Scheduler {
 
       const inProgress = tasks.filter((t) => t.column === "in-progress");
 
-      // Specifying tasks (triage column, status "specifying") run full PI
-      // agent sessions that consume the same resources as execution agents,
-      // so they must occupy concurrency slots alongside in-progress tasks.
-      // Paused specifying tasks don't count toward slots.
-      const specifying = tasks.filter(
-        (t) => t.column === "triage" && t.status === "specifying" && !t.paused,
-      );
-
-      // When a semaphore is provided, it is the single source of truth for
-      // global concurrency — its availableCount already accounts for ALL
-      // slot holders (executors, specifiers, mergers). Counting specifying
-      // tasks in agentSlots as well would double-count them. Without a
-      // semaphore (fallback mode), count specifying tasks directly.
-      const agentSlots = this.options.semaphore
-        ? inProgress.length
-        : inProgress.length + specifying.length;
+      // Execution tasks occupy concurrency slots governed by maxConcurrent.
+      // Triage/specification tasks have their own limit (maxTriageConcurrent)
+      // and do not count against this slot.
+      const agentSlots = inProgress.length;
 
       // When a semaphore is provided, factor in its available slots so we
-      // don't schedule more tasks than the global limit allows. Triage and
-      // merge agents also hold semaphore slots, so availableCount may be
-      // lower than what maxConcurrent - inProgress.length would suggest.
+      // don't schedule more tasks than the global limit allows.
       const semaphoreAvailable = this.options.semaphore
         ? this.options.semaphore.availableCount
         : Infinity;

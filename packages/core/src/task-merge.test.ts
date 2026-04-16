@@ -234,4 +234,94 @@ describe("getTaskCompletionBlocker", () => {
     }, { resolveTask }))
       .resolves.toBeUndefined();
   });
+
+  // ── in-review as resolved dependency ───────────────────────────────────
+
+  it("returns undefined when a dependency is in-review", async () => {
+    const resolveTask = async (taskId: string) => {
+      if (taskId === "FN-001") {
+        return { id: "FN-001", column: "in-review" as const };
+      }
+      return null;
+    };
+
+    await expect(getTaskCompletionBlocker({
+      ...baseCompletionTask,
+      dependencies: ["FN-001"],
+    }, { resolveTask }))
+      .resolves.toBeUndefined();
+  });
+
+  it("returns undefined when dependencies are a mix of done and in-review", async () => {
+    const resolveTask = async (taskId: string) => {
+      if (taskId === "FN-001") {
+        return { id: "FN-001", column: "done" as const };
+      }
+      if (taskId === "FN-002") {
+        return { id: "FN-002", column: "in-review" as const };
+      }
+      return null;
+    };
+
+    await expect(getTaskCompletionBlocker({
+      ...baseCompletionTask,
+      dependencies: ["FN-001", "FN-002"],
+    }, { resolveTask }))
+      .resolves.toBeUndefined();
+  });
+
+  it("returns a reason when a dependency is in-progress", async () => {
+    const resolveTask = async (taskId: string) => {
+      if (taskId === "FN-001") {
+        return { id: "FN-001", column: "in-progress" as const };
+      }
+      return null;
+    };
+
+    await expect(getTaskCompletionBlocker({
+      ...baseCompletionTask,
+      dependencies: ["FN-001"],
+    }, { resolveTask }))
+      .resolves.toBe("task has unresolved dependencies: FN-001");
+  });
+
+  it("returns a reason when a dependency is in triage", async () => {
+    const resolveTask = async (taskId: string) => {
+      if (taskId === "FN-001") {
+        return { id: "FN-001", column: "triage" as const };
+      }
+      return null;
+    };
+
+    await expect(getTaskCompletionBlocker({
+      ...baseCompletionTask,
+      dependencies: ["FN-001"],
+    }, { resolveTask }))
+      .resolves.toBe("task has unresolved dependencies: FN-001");
+  });
+
+  it("returns a reason when a dependency is in todo", async () => {
+    const resolveTask = async (taskId: string) => {
+      if (taskId === "FN-001") {
+        return { id: "FN-001", column: "todo" as const };
+      }
+      return null;
+    };
+
+    await expect(getTaskCompletionBlocker({
+      ...baseCompletionTask,
+      dependencies: ["FN-001"],
+    }, { resolveTask }))
+      .resolves.toBe("task has unresolved dependencies: FN-001");
+  });
+
+  it("returns a reason when a dependency task does not exist", async () => {
+    const resolveTask = async (_taskId: string) => null;
+
+    await expect(getTaskCompletionBlocker({
+      ...baseCompletionTask,
+      dependencies: ["FN-999"],
+    }, { resolveTask }))
+      .resolves.toBe("task has unresolved dependencies: FN-999");
+  });
 });
