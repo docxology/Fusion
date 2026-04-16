@@ -154,6 +154,41 @@ Fusion uses a dual-scope model hierarchy with five independent lanes. Global set
 
 For full settings documentation, see [Settings Reference](./docs/settings-reference.md).
 
+### Scheduled Tasks / Automations
+
+Fusion supports scheduled task automation via the `/api/automations` endpoints. Automations can run shell commands or multi-step workflows on a configurable schedule.
+
+**Scope:** Automations support scope-aware routing with `?scope=global` or `?scope=project` query parameter (or `scope` field in request body). When scope is omitted, the legacy default behavior applies (backward compatible).
+
+| Endpoint | Method | Description |
+|---------|--------|-------------|
+| `/api/automations` | GET | List all automations (filtered by scope if specified) |
+| `/api/automations` | POST | Create automation (scope defaults to `project`) |
+| `/api/automations/:id` | GET | Get automation by ID |
+| `/api/automations/:id` | PATCH | Update automation |
+| `/api/automations/:id` | DELETE | Delete automation |
+| `/api/automations/:id/run` | POST | Trigger manual run |
+| `/api/automations/:id/toggle` | POST | Toggle enabled/disabled |
+| `/api/automations/:id/steps/reorder` | POST | Reorder automation steps |
+
+### Routines
+
+Routines are AI agent tasks triggered by cron schedules, webhooks, or manual execution.
+
+**Scope:** Routines support scope-aware routing with `?scope=global` or `?scope=project` query parameter (or `scope` field in request body). When scope is omitted, the legacy default behavior applies (backward compatible).
+
+| Endpoint | Method | Description |
+|---------|--------|-------------|
+| `/api/routines` | GET | List all routines (filtered by scope if specified) |
+| `/api/routines` | POST | Create routine (scope defaults to `project`) |
+| `/api/routines/:id` | GET | Get routine by ID |
+| `/api/routines/:id` | PATCH | Update routine |
+| `/api/routines/:id` | DELETE | Delete routine |
+| `/api/routines/:id/run` | POST | Manual trigger |
+| `/api/routines/:id/trigger` | POST | Canonical manual trigger |
+| `/api/routines/:id/runs` | GET | Get execution history |
+| `/api/routines/:id/webhook` | POST | Webhook trigger (signature verification supported) |
+
 ### Quick Examples
 
 ```bash

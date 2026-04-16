@@ -1784,6 +1784,120 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
     return { store: scopedStore, engine: undefined, projectId };
   }
 
+  // ── Scope Parsing for Automation/Routine Routes ─────────────────────
+
+  /**
+   * Valid scope values for automation/routine routes.
+   * When scope is omitted, the route defaults to "project" for backward compatibility.
+   */
+  type ScopeValue = "global" | "project";
+
+  /**
+   * Parse and validate the scope parameter from request query/body.
+   * Accepts scope in query param `?scope=global|project` or in body `{ scope: "global"|"project" }`.
+   *
+   * @returns The parsed scope value, or undefined if scope is omitted (legacy default)
+   * @throws ApiError(400) if scope is present but invalid
+   */
+  function parseScopeParam(req: Request): ScopeValue | undefined {
+    // Check query param first, then body
+    const rawScope =
+      (typeof req.query.scope === "string" ? req.query.scope : undefined) ??
+      (req.body && typeof req.body.scope === "string" ? req.body.scope : undefined);
+
+    // If scope is not provided, return undefined (legacy default behavior)
+    if (rawScope === undefined || rawScope === "") {
+      return undefined;
+    }
+
+    // Validate scope value
+    if (rawScope !== "global" && rawScope !== "project") {
+      throw new ApiError(400, `Invalid scope value "${rawScope}". Must be "global" or "project".`);
+    }
+
+    return rawScope;
+  }
+
+  /**
+   * Resolve the AutomationStore for the given scope.
+   *
+   * Scope resolution:
+   * - "global": Returns the default AutomationStore from options (process-level)
+   * - "project": Returns the project-scoped AutomationStore from engine or project-store resolver
+   * - undefined (legacy): Returns the default AutomationStore for backward compatibility
+   *
+   * @throws ApiError(503) if the store is unavailable for the requested scope
+   */
+  function resolveAutomationStore(req: Request, scope: ScopeValue | undefined): import("@fusion/core").AutomationStore {
+    const defaultStore = options?.automationStore;
+
+    if (scope === "global" || scope === undefined) {
+      // Global scope: use the default process-level store
+      if (!defaultStore) {
+        throw new ApiError(503, "Automation store not available");
+      }
+      return defaultStore;
+    }
+
+    // Project scope: resolve from engine or fallback to project store
+    // Project-scoped stores don't have a separate AutomationStore instance in the current design;
+    // they use the same store with scope filtering in queries.
+    // For now, fall back to the default store (scope filtering happens at query time).
+    if (!defaultStore) {
+      throw new ApiError(503, "Automation store not available");
+    }
+    return defaultStore;
+  }
+
+  /**
+   * Resolve the RoutineStore for the given scope.
+   *
+   * Scope resolution:
+   * - "global": Returns the default RoutineStore from options (process-level)
+   * - "project": Returns the project-scoped RoutineStore from engine or project-store resolver
+   * - undefined (legacy): Returns the default RoutineStore for backward compatibility
+   *
+   * @throws ApiError(503) if the store is unavailable for the requested scope
+   */
+  function resolveRoutineStore(req: Request, scope: ScopeValue | undefined): import("@fusion/core").RoutineStore {
+    const defaultStore = options?.routineStore;
+
+    if (scope === "global" || scope === undefined) {
+      // Global scope: use the default process-level store
+      if (!defaultStore) {
+        throw new ApiError(503, "Routine store not available");
+      }
+      return defaultStore;
+    }
+
+    // Project scope: resolve from engine or fallback to project store
+    // Project-scoped stores don't have a separate RoutineStore instance in the current design;
+    // they use the same store with scope filtering in queries.
+    // For now, fall back to the default store (scope filtering happens at query time).
+    if (!defaultStore) {
+      throw new ApiError(503, "Routine store not available");
+    }
+    return defaultStore;
+  }
+
+  /**
+   * Resolve the RoutineRunner for the given scope.
+   * The RoutineRunner handles execution and must be scoped consistently with store lookups.
+   *
+   * @throws ApiError(503) if the runner is unavailable for the requested scope
+   */
+  function resolveRoutineRunner(req: Request, scope: ScopeValue | undefined): NonNullable<ServerOptions["routineRunner"]> {
+    const runner = options?.routineRunner;
+
+    if (!runner) {
+      throw new ApiError(503, "Routine execution not available");
+    }
+
+    // For now, the routine runner is process-level and not scoped
+    // This maintains backward compatibility while scope isolation is enforced at the store level
+    return runner;
+  }
+
   if (process.env.FUSION_DEBUG_PLANNING_ROUTES === "1") {
     const planningRoutes = [
       "POST /planning/start",
@@ -8286,17 +8400,37 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
   });
 
   // ── Automation / Scheduled Task Routes ────────────────────────────
+  //
+  // Scope-aware endpoints: Accept `scope=global|project` query param or body field.
+  // - When scope=global: Operations target the global automation store
+  // - When scope=project: Operations target project-scoped automations (filtered by scope)
+  // - When scope is omitted: Legacy default behavior (global store, backward compatible)
+  //
+  // Error codes:
+  // - 400: Invalid scope value or validation failure
+  // - 404: Schedule not found
+  // - 503: Automation store unavailable
 
-  const automationStore = options?.automationStore;
-
-  // GET /automations — list all scheduled tasks
-  router.get("/automations", async (_req: Request, res: Response) => {
-    if (!automationStore) {
+  // GET /automations — list all scheduled tasks (optionally filtered by scope)
+  router.get("/automations", async (req: Request, res: Response) => {
+    // Return empty array when no store available (legacy backward-compatible behavior)
+    if (!options?.automationStore) {
       return res.json([]);
     }
+
     try {
-      const schedules = await automationStore.listSchedules();
-      res.json(schedules);
+      const scope = parseScopeParam(req);
+      const automationStore = resolveAutomationStore(req, scope);
+
+      // Get all schedules and filter by scope if specified
+      // When scope is omitted, return all schedules (legacy behavior)
+      const allSchedules = await automationStore.listSchedules();
+      if (scope) {
+        const filteredSchedules = allSchedules.filter((s) => s.scope === scope);
+        res.json(filteredSchedules);
+      } else {
+        res.json(allSchedules);
+      }
     } catch (err: any) {
       if (err instanceof ApiError) {
         throw err;
@@ -8305,11 +8439,11 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
     }
   });
 
-  // POST /automations — create a new schedule
+  // POST /automations — create a new schedule (with optional scope)
   router.post("/automations", async (req: Request, res: Response) => {
-    if (!automationStore) {
-      throw new ApiError(503, "Automation store not available");
-    }
+    const scope = parseScopeParam(req);
+    const automationStore = resolveAutomationStore(req, scope);
+
     try {
       const { name, description, scheduleType, cronExpression, command, enabled, timeoutMs, steps } = req.body;
 
@@ -8341,6 +8475,10 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         }
       }
 
+      // Determine scope for the new schedule
+      // Default to "project" for backward compatibility when scope is omitted
+      const scheduleScope = scope ?? "project";
+
       const schedule = await automationStore.createSchedule({
         name,
         description,
@@ -8350,6 +8488,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         enabled,
         timeoutMs,
         steps: hasSteps ? steps : undefined,
+        scope: scheduleScope,
       });
       res.status(201).json(schedule);
     } catch (err: any) {
@@ -8361,13 +8500,19 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
   });
 
   // GET /automations/:id — get a single schedule
-  router.get("/automations/:id", async (req, res) => {
-    if (!automationStore) {
-      throw new ApiError(503, "Automation store not available");
-    }
+  router.get("/automations/:id", async (req: Request, res: Response) => {
+    const scope = parseScopeParam(req);
+    const automationStore = resolveAutomationStore(req, scope);
+
     try {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
       const schedule = await automationStore.getSchedule(id);
+
+      // Scope isolation: if scope is specified, verify the schedule belongs to that scope
+      if (scope && schedule.scope !== scope) {
+        throw notFound("Schedule not found");
+      }
+
       res.json(schedule);
     } catch (err: any) {
       if (err instanceof ApiError) {
@@ -8381,12 +8526,22 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
   });
 
   // PATCH /automations/:id — update a schedule
-  router.patch("/automations/:id", async (req, res) => {
-    if (!automationStore) {
-      throw new ApiError(503, "Automation store not available");
-    }
+  router.patch("/automations/:id", async (req: Request, res: Response) => {
+    const scope = parseScopeParam(req);
+    const automationStore = resolveAutomationStore(req, scope);
+
     try {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+      // Scope isolation: if scope is specified, verify the schedule belongs to that scope
+      // by fetching it first (can't filter in update without scope support in store)
+      if (scope) {
+        const existing = await automationStore.getSchedule(id);
+        if (existing.scope !== scope) {
+          throw notFound("Schedule not found");
+        }
+      }
+
       const { name, description, scheduleType, cronExpression, command, enabled, timeoutMs, steps } = req.body;
 
       // Validate cron if switching to custom
@@ -8430,12 +8585,21 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
   });
 
   // DELETE /automations/:id — delete a schedule
-  router.delete("/automations/:id", async (req, res) => {
-    if (!automationStore) {
-      throw new ApiError(503, "Automation store not available");
-    }
+  router.delete("/automations/:id", async (req: Request, res: Response) => {
+    const scope = parseScopeParam(req);
+    const automationStore = resolveAutomationStore(req, scope);
+
     try {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+      // Scope isolation: if scope is specified, verify the schedule belongs to that scope
+      if (scope) {
+        const existing = await automationStore.getSchedule(id);
+        if (existing.scope !== scope) {
+          throw notFound("Schedule not found");
+        }
+      }
+
       const deleted = await automationStore.deleteSchedule(id);
       res.json(deleted);
     } catch (err: any) {
@@ -8450,13 +8614,18 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
   });
 
   // POST /automations/:id/run — trigger a manual run
-  router.post("/automations/:id/run", async (req, res) => {
-    if (!automationStore) {
-      throw new ApiError(503, "Automation store not available");
-    }
+  router.post("/automations/:id/run", async (req: Request, res: Response) => {
+    const scope = parseScopeParam(req);
+    const automationStore = resolveAutomationStore(req, scope);
+
     try {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
       const schedule = await automationStore.getSchedule(id);
+
+      // Scope isolation: if scope is specified, verify the schedule belongs to that scope
+      if (scope && schedule.scope !== scope) {
+        throw notFound("Schedule not found");
+      }
 
       const startedAt = new Date().toISOString();
       let result: import("@fusion/core").AutomationRunResult;
@@ -8484,13 +8653,19 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
   });
 
   // POST /automations/:id/toggle — toggle enabled/disabled
-  router.post("/automations/:id/toggle", async (req, res) => {
-    if (!automationStore) {
-      throw new ApiError(503, "Automation store not available");
-    }
+  router.post("/automations/:id/toggle", async (req: Request, res: Response) => {
+    const scope = parseScopeParam(req);
+    const automationStore = resolveAutomationStore(req, scope);
+
     try {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
       const schedule = await automationStore.getSchedule(id);
+
+      // Scope isolation: if scope is specified, verify the schedule belongs to that scope
+      if (scope && schedule.scope !== scope) {
+        throw notFound("Schedule not found");
+      }
+
       const updated = await automationStore.updateSchedule(id, {
         enabled: !schedule.enabled,
       });
@@ -8507,12 +8682,21 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
   });
 
   // POST /automations/:id/steps/reorder — reorder steps
-  router.post("/automations/:id/steps/reorder", async (req, res) => {
-    if (!automationStore) {
-      throw new ApiError(503, "Automation store not available");
-    }
+  router.post("/automations/:id/steps/reorder", async (req: Request, res: Response) => {
+    const scope = parseScopeParam(req);
+    const automationStore = resolveAutomationStore(req, scope);
+
     try {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+      // Scope isolation: if scope is specified, verify the schedule belongs to that scope
+      if (scope) {
+        const existing = await automationStore.getSchedule(id);
+        if (existing.scope !== scope) {
+          throw notFound("Schedule not found");
+        }
+      }
+
       const { stepIds } = req.body;
       if (!Array.isArray(stepIds)) {
         throw badRequest("stepIds must be an array");
@@ -8534,18 +8718,39 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
   });
 
   // ── Routine Routes ──────────────────────────────────────────────────
+  //
+  // Scope-aware endpoints: Accept `scope=global|project` query param or body field.
+  // - When scope=global: Operations target the global routine store
+  // - When scope=project: Operations target project-scoped routines (filtered by scope)
+  // - When scope is omitted: Legacy default behavior (global store, backward compatible)
+  //
+  // Error codes:
+  // - 400: Invalid scope value or validation failure
+  // - 401: Webhook signature verification failed
+  // - 403: Webhook disabled/forbidden
+  // - 404: Routine not found
+  // - 503: Routine store or runner unavailable
 
-  const routineStore = options?.routineStore;
-  const routineRunner = options?.routineRunner;
-
-  // GET /routines — list all routines
-  router.get("/routines", async (_req: Request, res: Response) => {
-    if (!routineStore) {
+  // GET /routines — list all routines (optionally filtered by scope)
+  router.get("/routines", async (req: Request, res: Response) => {
+    // Return empty array when no store available (legacy backward-compatible behavior)
+    if (!options?.routineStore) {
       return res.json([]);
     }
+
     try {
-      const routines = await routineStore.listRoutines();
-      res.json(routines);
+      const scope = parseScopeParam(req);
+      const routineStore = resolveRoutineStore(req, scope);
+
+      // Get all routines and filter by scope if specified
+      // When scope is omitted, return all routines (legacy behavior)
+      const allRoutines = await routineStore.listRoutines();
+      if (scope) {
+        const filteredRoutines = allRoutines.filter((r) => r.scope === scope);
+        res.json(filteredRoutines);
+      } else {
+        res.json(allRoutines);
+      }
     } catch (err: any) {
       if (err instanceof ApiError) {
         throw err;
@@ -8554,11 +8759,11 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
     }
   });
 
-  // POST /routines — create a new routine
+  // POST /routines — create a new routine (with optional scope)
   router.post("/routines", async (req: Request, res: Response) => {
-    if (!routineStore) {
-      throw new ApiError(503, "Routine store not available");
-    }
+    const scope = parseScopeParam(req);
+    const routineStore = resolveRoutineStore(req, scope);
+
     try {
       const { name, agentId, description, trigger, catchUpPolicy, executionPolicy, enabled } = req.body;
 
@@ -8597,6 +8802,10 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         }
       }
 
+      // Determine scope for the new routine
+      // Default to "project" for backward compatibility when scope is omitted
+      const routineScope = scope ?? "project";
+
       const routine = await routineStore.createRoutine({
         name: name.trim(),
         agentId: typeof agentId === "string" ? agentId.trim() : "",
@@ -8605,6 +8814,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         catchUpPolicy,
         executionPolicy,
         enabled,
+        scope: routineScope,
       });
       res.status(201).json(routine);
     } catch (err: any) {
@@ -8617,12 +8827,18 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
 
   // GET /routines/:id — get a single routine
   router.get("/routines/:id", async (req: Request, res: Response) => {
-    if (!routineStore) {
-      throw new ApiError(503, "Routine store not available");
-    }
+    const scope = parseScopeParam(req);
+    const routineStore = resolveRoutineStore(req, scope);
+
     try {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
       const routine = await routineStore.getRoutine(id);
+
+      // Scope isolation: if scope is specified, verify the routine belongs to that scope
+      if (scope && routine.scope !== scope) {
+        throw notFound("Routine not found");
+      }
+
       res.json(routine);
     } catch (err: any) {
       if (err instanceof ApiError) {
@@ -8637,11 +8853,20 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
 
   // PATCH /routines/:id — update a routine
   router.patch("/routines/:id", async (req: Request, res: Response) => {
-    if (!routineStore) {
-      throw new ApiError(503, "Routine store not available");
-    }
+    const scope = parseScopeParam(req);
+    const routineStore = resolveRoutineStore(req, scope);
+
     try {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+      // Scope isolation: if scope is specified, verify the routine belongs to that scope
+      if (scope) {
+        const existing = await routineStore.getRoutine(id);
+        if (existing.scope !== scope) {
+          throw notFound("Routine not found");
+        }
+      }
+
       const { name, description, trigger, catchUpPolicy, executionPolicy, enabled } = req.body;
 
       // Validate name if provided
@@ -8689,11 +8914,20 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
 
   // DELETE /routines/:id — delete a routine
   router.delete("/routines/:id", async (req: Request, res: Response) => {
-    if (!routineStore) {
-      throw new ApiError(503, "Routine store not available");
-    }
+    const scope = parseScopeParam(req);
+    const routineStore = resolveRoutineStore(req, scope);
+
     try {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+      // Scope isolation: if scope is specified, verify the routine belongs to that scope
+      if (scope) {
+        const existing = await routineStore.getRoutine(id);
+        if (existing.scope !== scope) {
+          throw notFound("Routine not found");
+        }
+      }
+
       const deleted = await routineStore.deleteRoutine(id);
       res.json(deleted);
     } catch (err: any) {
@@ -8709,15 +8943,18 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
 
   // POST /routines/:id/run — manual trigger (backward-compatible alias for /trigger)
   router.post("/routines/:id/run", async (req: Request, res: Response) => {
-    if (!routineStore) {
-      throw new ApiError(503, "Routine store not available");
-    }
-    if (!routineRunner) {
-      throw new ApiError(503, "Routine execution not available");
-    }
+    const scope = parseScopeParam(req);
+    const routineStore = resolveRoutineStore(req, scope);
+    const routineRunner = resolveRoutineRunner(req, scope);
+
     try {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
       const routine = await routineStore.getRoutine(id);
+
+      // Scope isolation: if scope is specified, verify the routine belongs to that scope
+      if (scope && routine.scope !== scope) {
+        throw notFound("Routine not found");
+      }
 
       // Validate routine is enabled
       if (!routine.enabled) {
@@ -8742,15 +8979,18 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
   // POST /routines/:id/trigger — canonical manual trigger (uses RoutineRunner)
   // POST /routines/:id/run is a backward-compatible alias with identical behavior
   router.post("/routines/:id/trigger", async (req: Request, res: Response) => {
-    if (!routineStore) {
-      throw new ApiError(503, "Routine store not available");
-    }
-    if (!routineRunner) {
-      throw new ApiError(503, "Routine execution not available");
-    }
+    const scope = parseScopeParam(req);
+    const routineStore = resolveRoutineStore(req, scope);
+    const routineRunner = resolveRoutineRunner(req, scope);
+
     try {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
       const routine = await routineStore.getRoutine(id);
+
+      // Scope isolation: if scope is specified, verify the routine belongs to that scope
+      if (scope && routine.scope !== scope) {
+        throw notFound("Routine not found");
+      }
 
       // Validate routine is enabled
       if (!routine.enabled) {
@@ -8774,12 +9014,18 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
 
   // GET /routines/:id/runs — get execution history
   router.get("/routines/:id/runs", async (req: Request, res: Response) => {
-    if (!routineStore) {
-      throw new ApiError(503, "Routine store not available");
-    }
+    const scope = parseScopeParam(req);
+    const routineStore = resolveRoutineStore(req, scope);
+
     try {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
       const routine = await routineStore.getRoutine(id);
+
+      // Scope isolation: if scope is specified, verify the routine belongs to that scope
+      if (scope && routine.scope !== scope) {
+        throw notFound("Routine not found");
+      }
+
       res.json(routine.runHistory);
     } catch (err: any) {
       if (err instanceof ApiError) {
@@ -8793,13 +9039,15 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
   });
 
   // POST /routines/:id/webhook — incoming webhook trigger
+  // Note: Webhook routes do NOT use scope params from the request - webhooks are triggered
+  // externally and the routine's own scope determines which store to use.
+  // The webhook URL should include the scope implicitly via the routine ID.
   router.post("/routines/:id/webhook", async (req: Request, res: Response) => {
-    if (!routineStore) {
-      throw new ApiError(503, "Routine store not available");
-    }
-    if (!routineRunner) {
-      throw new ApiError(503, "Routine execution not available");
-    }
+    // Webhook triggers don't accept scope params from the request
+    // The routine's scope field determines which store to use
+    const routineStore = resolveRoutineStore(req, undefined);
+    const routineRunner = resolveRoutineRunner(req, undefined);
+
     try {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
       const routine = await routineStore.getRoutine(id);

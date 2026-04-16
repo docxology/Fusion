@@ -9214,6 +9214,7 @@ describe("Automation routes", () => {
     nextRunAt: "2026-04-01T00:00:00.000Z",
     createdAt: "2026-03-30T00:00:00.000Z",
     updatedAt: "2026-03-30T00:00:00.000Z",
+    scope: "project" as const,
   };
 
   function createMockAutomationStore() {
@@ -9409,6 +9410,175 @@ describe("Automation routes", () => {
       expect(mockStore.updateSchedule).toHaveBeenCalledWith("sched-001", { enabled: false });
     });
   });
+
+  // ── Scope-aware automation tests ─────────────────────────────────────
+
+  describe("Scope-aware automation routes", () => {
+    it("returns 400 for invalid scope value in query param", async () => {
+      const { app } = buildApp();
+      const res = await GET(app, "/api/automations?scope=invalid");
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('Invalid scope value "invalid"');
+    });
+
+    it("returns 400 for invalid scope value in body", async () => {
+      const { app } = buildApp();
+      const res = await REQUEST(app, "POST", "/api/automations", JSON.stringify({
+        name: "Test",
+        command: "echo test",
+        scheduleType: "hourly",
+        scope: "invalid",
+      }), { "Content-Type": "application/json" });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('Invalid scope value "invalid"');
+    });
+
+    it("GET /automations filters by scope when scope=global is specified", async () => {
+      const mockStore = createMockAutomationStore();
+      const globalSchedule = { ...FAKE_SCHEDULE, scope: "global" as const };
+      const projectSchedule = { ...FAKE_SCHEDULE, id: "sched-002", scope: "project" as const };
+      mockStore.listSchedules.mockResolvedValue([globalSchedule, projectSchedule]);
+      const { app } = buildApp(mockStore);
+      const res = await GET(app, "/api/automations?scope=global");
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveLength(1);
+      expect(res.body[0].scope).toBe("global");
+    });
+
+    it("GET /automations filters by scope when scope=project is specified", async () => {
+      const mockStore = createMockAutomationStore();
+      const globalSchedule = { ...FAKE_SCHEDULE, scope: "global" as const };
+      const projectSchedule = { ...FAKE_SCHEDULE, id: "sched-002", scope: "project" as const };
+      mockStore.listSchedules.mockResolvedValue([globalSchedule, projectSchedule]);
+      const { app } = buildApp(mockStore);
+      const res = await GET(app, "/api/automations?scope=project");
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveLength(1);
+      expect(res.body[0].scope).toBe("project");
+    });
+
+    it("POST /automations creates schedule with project scope when scope=project is specified", async () => {
+      const mockStore = createMockAutomationStore();
+      const { app, automationStore } = buildApp(mockStore);
+      const res = await REQUEST(app, "POST", "/api/automations", JSON.stringify({
+        name: "Test",
+        command: "echo test",
+        scheduleType: "hourly",
+        scope: "project",
+      }), { "Content-Type": "application/json" });
+      expect(res.status).toBe(201);
+      expect(automationStore.createSchedule).toHaveBeenCalledWith(
+        expect.objectContaining({ scope: "project" }),
+      );
+    });
+
+    it("POST /automations creates schedule with global scope when scope=global is specified", async () => {
+      const mockStore = createMockAutomationStore();
+      const { app, automationStore } = buildApp(mockStore);
+      const res = await REQUEST(app, "POST", "/api/automations", JSON.stringify({
+        name: "Test",
+        command: "echo test",
+        scheduleType: "hourly",
+        scope: "global",
+      }), { "Content-Type": "application/json" });
+      expect(res.status).toBe(201);
+      expect(automationStore.createSchedule).toHaveBeenCalledWith(
+        expect.objectContaining({ scope: "global" }),
+      );
+    });
+
+    it("GET /automations/:id returns 404 for schedule with wrong scope", async () => {
+      const mockStore = createMockAutomationStore();
+      mockStore.getSchedule.mockResolvedValue({ ...FAKE_SCHEDULE, scope: "project" as const });
+      const { app } = buildApp(mockStore);
+      // Request with scope=global but schedule is project-scoped
+      const res = await GET(app, "/api/automations/sched-001?scope=global");
+      expect(res.status).toBe(404);
+      expect(res.body.error).toContain("Schedule not found");
+    });
+
+    it("GET /automations/:id returns schedule when scope matches", async () => {
+      const mockStore = createMockAutomationStore();
+      mockStore.getSchedule.mockResolvedValue({ ...FAKE_SCHEDULE, scope: "global" as const });
+      const { app } = buildApp(mockStore);
+      const res = await GET(app, "/api/automations/sched-001?scope=global");
+      expect(res.status).toBe(200);
+      expect(res.body.id).toBe("sched-001");
+    });
+
+    it("PATCH /automations/:id returns 404 for schedule with wrong scope", async () => {
+      const mockStore = createMockAutomationStore();
+      mockStore.getSchedule.mockResolvedValue({ ...FAKE_SCHEDULE, scope: "project" as const });
+      const { app } = buildApp(mockStore);
+      const res = await REQUEST(app, "PATCH", "/api/automations/sched-001?scope=global", JSON.stringify({
+        name: "Updated",
+      }), { "Content-Type": "application/json" });
+      expect(res.status).toBe(404);
+      expect(res.body.error).toContain("Schedule not found");
+    });
+
+    it("DELETE /automations/:id returns 404 for schedule with wrong scope", async () => {
+      const mockStore = createMockAutomationStore();
+      mockStore.getSchedule.mockResolvedValue({ ...FAKE_SCHEDULE, scope: "project" as const });
+      const { app } = buildApp(mockStore);
+      const res = await REQUEST(app, "DELETE", "/api/automations/sched-001?scope=global");
+      expect(res.status).toBe(404);
+      expect(res.body.error).toContain("Schedule not found");
+    });
+
+    it("POST /automations/:id/run returns 404 for schedule with wrong scope", async () => {
+      const mockStore = createMockAutomationStore();
+      mockStore.getSchedule.mockResolvedValue({ ...FAKE_SCHEDULE, scope: "project" as const });
+      const { app } = buildApp(mockStore);
+      const res = await REQUEST(app, "POST", "/api/automations/sched-001/run?scope=global");
+      expect(res.status).toBe(404);
+      expect(res.body.error).toContain("Schedule not found");
+    });
+
+    it("POST /automations/:id/toggle returns 404 for schedule with wrong scope", async () => {
+      const mockStore = createMockAutomationStore();
+      mockStore.getSchedule.mockResolvedValue({ ...FAKE_SCHEDULE, scope: "project" as const });
+      const { app } = buildApp(mockStore);
+      const res = await REQUEST(app, "POST", "/api/automations/sched-001/toggle?scope=global");
+      expect(res.status).toBe(404);
+      expect(res.body.error).toContain("Schedule not found");
+    });
+
+    it("POST /automations/:id/steps/reorder returns 404 for schedule with wrong scope", async () => {
+      const mockStore = createMockAutomationStore();
+      mockStore.getSchedule.mockResolvedValue({ ...FAKE_SCHEDULE, scope: "project" as const });
+      const { app } = buildApp(mockStore);
+      const res = await REQUEST(app, "POST", "/api/automations/sched-001/steps/reorder?scope=global", JSON.stringify({
+        stepIds: ["step-1", "step-2"],
+      }), { "Content-Type": "application/json" });
+      expect(res.status).toBe(404);
+      expect(res.body.error).toContain("Schedule not found");
+    });
+
+    it("omitted scope defaults to project for POST /automations", async () => {
+      const mockStore = createMockAutomationStore();
+      const { app, automationStore } = buildApp(mockStore);
+      const res = await REQUEST(app, "POST", "/api/automations", JSON.stringify({
+        name: "Test",
+        command: "echo test",
+        scheduleType: "hourly",
+        // No scope specified - should default to "project"
+      }), { "Content-Type": "application/json" });
+      expect(res.status).toBe(201);
+      expect(automationStore.createSchedule).toHaveBeenCalledWith(
+        expect.objectContaining({ scope: "project" }),
+      );
+    });
+
+    it("omitted scope calls listSchedules without scope argument (legacy behavior)", async () => {
+      const mockStore = createMockAutomationStore();
+      const { app, automationStore } = buildApp(mockStore);
+      const res = await GET(app, "/api/automations");
+      expect(res.status).toBe(200);
+      // Without scope, listSchedules should be called without scope argument
+      expect(automationStore.listSchedules).toHaveBeenCalledWith();
+    });
+  });
 });
 
 describe("Routine routes", () => {
@@ -9425,6 +9595,7 @@ describe("Routine routes", () => {
     nextRunAt: "2026-04-01T00:00:00.000Z",
     createdAt: "2026-03-30T00:00:00.000Z",
     updatedAt: "2026-03-30T00:00:00.000Z",
+    scope: "project" as const,
   };
 
   function createMockRoutineStore() {
@@ -9994,6 +10165,169 @@ describe("Routine routes", () => {
       const sig = `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`;
       const result = verifyWebhookSignature(body, sig, secret);
       expect(result.valid).toBe(true);
+    });
+  });
+
+  // ── Scope-aware routine tests ─────────────────────────────────────
+
+  describe("Scope-aware routine routes", () => {
+    it("returns 400 for invalid scope value in query param", async () => {
+      const { app } = buildRoutineApp();
+      const res = await GET(app, "/api/routines?scope=invalid");
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('Invalid scope value "invalid"');
+    });
+
+    it("returns 400 for invalid scope value in body", async () => {
+      const { app } = buildRoutineApp();
+      const res = await REQUEST(app, "POST", "/api/routines", JSON.stringify({
+        name: "Test",
+        trigger: { type: "cron", cronExpression: "0 * * * *" },
+        scope: "invalid",
+      }), { "Content-Type": "application/json" });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('Invalid scope value "invalid"');
+    });
+
+    it("GET /routines filters by scope when scope=global is specified", async () => {
+      const mockStore = createMockRoutineStore();
+      const globalRoutine = { ...FAKE_ROUTINE, scope: "global" as const };
+      const projectRoutine = { ...FAKE_ROUTINE, id: "routine-002", scope: "project" as const };
+      mockStore.listRoutines.mockResolvedValue([globalRoutine, projectRoutine]);
+      const { app } = buildRoutineApp(mockStore);
+      const res = await GET(app, "/api/routines?scope=global");
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveLength(1);
+      expect(res.body[0].scope).toBe("global");
+    });
+
+    it("GET /routines filters by scope when scope=project is specified", async () => {
+      const mockStore = createMockRoutineStore();
+      const globalRoutine = { ...FAKE_ROUTINE, scope: "global" as const };
+      const projectRoutine = { ...FAKE_ROUTINE, id: "routine-002", scope: "project" as const };
+      mockStore.listRoutines.mockResolvedValue([globalRoutine, projectRoutine]);
+      const { app } = buildRoutineApp(mockStore);
+      const res = await GET(app, "/api/routines?scope=project");
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveLength(1);
+      expect(res.body[0].scope).toBe("project");
+    });
+
+    it("POST /routines creates routine with project scope when scope=project is specified", async () => {
+      const mockStore = createMockRoutineStore();
+      const { app, routineStore } = buildRoutineApp(mockStore);
+      const res = await REQUEST(app, "POST", "/api/routines", JSON.stringify({
+        name: "Test",
+        trigger: { type: "cron", cronExpression: "0 * * * *" },
+        scope: "project",
+      }), { "Content-Type": "application/json" });
+      expect(res.status).toBe(201);
+      expect(routineStore.createRoutine).toHaveBeenCalledWith(
+        expect.objectContaining({ scope: "project" }),
+      );
+    });
+
+    it("POST /routines creates routine with global scope when scope=global is specified", async () => {
+      const mockStore = createMockRoutineStore();
+      const { app, routineStore } = buildRoutineApp(mockStore);
+      const res = await REQUEST(app, "POST", "/api/routines", JSON.stringify({
+        name: "Test",
+        trigger: { type: "cron", cronExpression: "0 * * * *" },
+        scope: "global",
+      }), { "Content-Type": "application/json" });
+      expect(res.status).toBe(201);
+      expect(routineStore.createRoutine).toHaveBeenCalledWith(
+        expect.objectContaining({ scope: "global" }),
+      );
+    });
+
+    it("GET /routines/:id returns 404 for routine with wrong scope", async () => {
+      const mockStore = createMockRoutineStore();
+      mockStore.getRoutine.mockResolvedValue({ ...FAKE_ROUTINE, scope: "project" as const });
+      const { app } = buildRoutineApp(mockStore);
+      // Request with scope=global but routine is project-scoped
+      const res = await GET(app, "/api/routines/routine-001?scope=global");
+      expect(res.status).toBe(404);
+      expect(res.body.error).toContain("Routine not found");
+    });
+
+    it("GET /routines/:id returns routine when scope matches", async () => {
+      const mockStore = createMockRoutineStore();
+      mockStore.getRoutine.mockResolvedValue({ ...FAKE_ROUTINE, scope: "global" as const });
+      const { app } = buildRoutineApp(mockStore);
+      const res = await GET(app, "/api/routines/routine-001?scope=global");
+      expect(res.status).toBe(200);
+      expect(res.body.id).toBe("routine-001");
+    });
+
+    it("PATCH /routines/:id returns 404 for routine with wrong scope", async () => {
+      const mockStore = createMockRoutineStore();
+      mockStore.getRoutine.mockResolvedValue({ ...FAKE_ROUTINE, scope: "project" as const });
+      const { app } = buildRoutineApp(mockStore);
+      const res = await REQUEST(app, "PATCH", "/api/routines/routine-001?scope=global", JSON.stringify({
+        name: "Updated",
+      }), { "Content-Type": "application/json" });
+      expect(res.status).toBe(404);
+      expect(res.body.error).toContain("Routine not found");
+    });
+
+    it("DELETE /routines/:id returns 404 for routine with wrong scope", async () => {
+      const mockStore = createMockRoutineStore();
+      mockStore.getRoutine.mockResolvedValue({ ...FAKE_ROUTINE, scope: "project" as const });
+      const { app } = buildRoutineApp(mockStore);
+      const res = await REQUEST(app, "DELETE", "/api/routines/routine-001?scope=global");
+      expect(res.status).toBe(404);
+      expect(res.body.error).toContain("Routine not found");
+    });
+
+    it("POST /routines/:id/run returns 404 for routine with wrong scope", async () => {
+      const mockStore = createMockRoutineStore();
+      mockStore.getRoutine.mockResolvedValue({ ...FAKE_ROUTINE, scope: "project" as const });
+      const { app } = buildRoutineApp(mockStore);
+      const res = await REQUEST(app, "POST", "/api/routines/routine-001/run?scope=global");
+      expect(res.status).toBe(404);
+      expect(res.body.error).toContain("Routine not found");
+    });
+
+    it("POST /routines/:id/trigger returns 404 for routine with wrong scope", async () => {
+      const mockStore = createMockRoutineStore();
+      mockStore.getRoutine.mockResolvedValue({ ...FAKE_ROUTINE, scope: "project" as const });
+      const { app } = buildRoutineApp(mockStore);
+      const res = await REQUEST(app, "POST", "/api/routines/routine-001/trigger?scope=global");
+      expect(res.status).toBe(404);
+      expect(res.body.error).toContain("Routine not found");
+    });
+
+    it("GET /routines/:id/runs returns 404 for routine with wrong scope", async () => {
+      const mockStore = createMockRoutineStore();
+      mockStore.getRoutine.mockResolvedValue({ ...FAKE_ROUTINE, scope: "project" as const });
+      const { app } = buildRoutineApp(mockStore);
+      const res = await GET(app, "/api/routines/routine-001/runs?scope=global");
+      expect(res.status).toBe(404);
+      expect(res.body.error).toContain("Routine not found");
+    });
+
+    it("omitted scope defaults to project for POST /routines", async () => {
+      const mockStore = createMockRoutineStore();
+      const { app, routineStore } = buildRoutineApp(mockStore);
+      const res = await REQUEST(app, "POST", "/api/routines", JSON.stringify({
+        name: "Test",
+        trigger: { type: "cron", cronExpression: "0 * * * *" },
+        // No scope specified - should default to "project"
+      }), { "Content-Type": "application/json" });
+      expect(res.status).toBe(201);
+      expect(routineStore.createRoutine).toHaveBeenCalledWith(
+        expect.objectContaining({ scope: "project" }),
+      );
+    });
+
+    it("omitted scope calls listRoutines without scope argument (legacy behavior)", async () => {
+      const mockStore = createMockRoutineStore();
+      const { app, routineStore } = buildRoutineApp(mockStore);
+      const res = await GET(app, "/api/routines");
+      expect(res.status).toBe(200);
+      // Without scope, listRoutines should be called without scope argument
+      expect(routineStore.listRoutines).toHaveBeenCalledWith();
     });
   });
 });
