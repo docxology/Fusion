@@ -138,4 +138,33 @@ describe("core modals mobile css coverage", () => {
     expect(actionsMenuAnchorMatch).not.toBeNull();
     expect(moveMenuAnchorMatch).not.toBeNull();
   });
+
+  it("TaskForm / TaskEditModal: description textarea capped at 200px height with scroll on mobile", () => {
+    const css = fs.readFileSync(stylesPath, "utf-8");
+    const mobileBlock = getMainMobileBlock(css);
+
+    // Modal edit form textarea (TaskEditModal)
+    const modalEditBlockMatch = mobileBlock.match(
+      /\.modal-edit-form \.form-group textarea\s*\{[^}]+\}/,
+    );
+    expect(modalEditBlockMatch).not.toBeNull();
+    expect(modalEditBlockMatch![0]).toContain("max-height: 200px");
+    expect(modalEditBlockMatch![0]).toContain("overflow-y: auto");
+    expect(modalEditBlockMatch![0]).toContain("-webkit-overflow-scrolling: touch");
+
+    // TaskForm description textarea
+    const taskFormBlockMatch = mobileBlock.match(
+      /\.task-form-primary-section \.description-with-refine textarea\s*\{[^}]+\}/,
+    );
+    expect(taskFormBlockMatch).not.toBeNull();
+    expect(taskFormBlockMatch![0]).toContain("max-height: 200px");
+    expect(taskFormBlockMatch![0]).toContain("overflow-y: auto");
+
+    // Fullscreen variant restores unbounded height on mobile
+    const fullscreenBlockMatch = mobileBlock.match(
+      /\.task-form-primary-section \.description-with-refine\.description--fullscreen textarea\s*\{[^}]+\}/,
+    );
+    expect(fullscreenBlockMatch).not.toBeNull();
+    expect(fullscreenBlockMatch![0]).toContain("max-height: unset");
+  });
 });

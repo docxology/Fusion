@@ -7146,6 +7146,24 @@ body {
     padding: 0;
   }
 
+  /* Task edit modal: cap description textarea height on mobile so form stays visible */
+  .modal-edit-form .form-group textarea {
+    max-height: 200px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* TaskForm: cap description textarea height on mobile, restore in fullscreen */
+  .task-form-primary-section .description-with-refine textarea {
+    max-height: 200px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .task-form-primary-section .description-with-refine.description--fullscreen textarea {
+    max-height: unset;
+  }
+
   /* New task + task form: stacked mobile fields and bounded popovers */
   .new-task-modal {
     display: flex;
