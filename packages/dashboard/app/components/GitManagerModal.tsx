@@ -837,6 +837,7 @@ export function GitManagerModal({ isOpen, onClose, tasks, addToast, projectId }:
                 onPush={handlePush}
                 addToast={addToast}
                 projectId={projectId}
+                copyToClipboard={copyToClipboard}
               />
             )}
           </div>
@@ -1638,7 +1639,7 @@ function StashesPanel({
   );
 }
 
-/** Enhanced Remotes panel with full remote management capabilities */
+/** Enhanced Remotes panel with two-column layout */
 function RemotesPanel({
   status,
   remoteLoading,
@@ -1648,6 +1649,7 @@ function RemotesPanel({
   onPush,
   addToast,
   projectId,
+  copyToClipboard,
 }: {
   status: GitStatus | null;
   remoteLoading: string | null;
@@ -1657,7 +1659,17 @@ function RemotesPanel({
   onPush: () => void;
   addToast: (message: string, type?: ToastType) => void;
   projectId?: string;
+  copyToClipboard: (text: string, label?: string) => void;
 }) {
+  /** Extract hostname from remote URL */
+  const getHostFromUrl = (url: string): string => {
+    try {
+      return new URL(url).hostname;
+    } catch {
+      return url.replace(/^git@/, "").split(":")[0] || url;
+    }
+  };
+
   const [remotes, setRemotes] = useState<GitRemoteDetailed[]>([]);
   const [loading, setLoading] = useState(false);
   const [remoteActionLoading, setRemoteActionLoading] = useState<string | null>(null);
@@ -1677,6 +1689,9 @@ function RemotesPanel({
   const [remoteCommits, setRemoteCommits] = useState<GitCommit[]>([]);
   const [loadingRemoteCommits, setLoadingRemoteCommits] = useState(false);
   const [remoteCommitsError, setRemoteCommitsError] = useState<string | null>(null);
+
+  // Derived state for selected remote
+  const selectedRemoteData = remotes.find((r) => r.name === selectedRemote);
 
   // Inline commit diff expansion (one per list context)
   const [expandedAheadCommit, setExpandedAheadCommit] = useState<string | null>(null);
@@ -1887,272 +1902,255 @@ function RemotesPanel({
 
   return (
     <div className="gm-panel gm-remotes-panel" data-testid="remotes-panel">
-      <div className="gm-panel-header">
-        <h4>Remote Management</h4>
-        <button
-          className="btn btn-sm btn-primary"
-          onClick={() => setShowAddForm(!showAddForm)}
-          disabled={remoteActionLoading !== null}
-        >
-          {showAddForm ? <X size={14} /> : <Plus size={14} />}
-          {showAddForm ? "Cancel" : "Add Remote"}
-        </button>
-      </div>
-
-      {/* Add Remote Form */}
-      {showAddForm && (
-        <form className="gm-remote-form" onSubmit={handleAddRemote}>
-          <div className="gm-form-row">
-            <input
-              type="text"
-              placeholder="Remote name (e.g., origin)"
-              value={newRemoteName}
-              onChange={(e) => setNewRemoteName(e.target.value)}
-              disabled={remoteActionLoading === "add"}
-              className="gm-input"
-            />
-            <input
-              type="text"
-              placeholder="Repository URL"
-              value={newRemoteUrl}
-              onChange={(e) => setNewRemoteUrl(e.target.value)}
-              disabled={remoteActionLoading === "add"}
-              className="gm-input gm-input-url"
-            />
+      {/* Two-column layout */}
+      <div className="gm-remotes-layout">
+        {/* ── Left Column: Remote Selector ── */}
+        <div className="gm-remote-selector" data-testid="remote-selector">
+          <div className="gm-remote-selector-header">
+            <span className="gm-remote-selector-title">Remotes</span>
             <button
-              type="submit"
-              className="btn btn-primary"
-              disabled={!newRemoteName.trim() || !newRemoteUrl.trim() || remoteActionLoading === "add"}
+              className="btn btn-sm"
+              onClick={() => setShowAddForm(!showAddForm)}
+              disabled={remoteActionLoading !== null}
+              title={showAddForm ? "Cancel" : "Add Remote"}
             >
-              {remoteActionLoading === "add" ? (
-                <Loader2 size={14} className="spin" />
-              ) : (
-                <Plus size={14} />
-              )}
-              Add
+              {showAddForm ? <X size={14} /> : <Plus size={14} />}
             </button>
           </div>
-        </form>
-      )}
 
-      {/* Remote Operations (Fetch/Pull/Push) */}
-      <div className="gm-remote-operations">
-        {/* Commits to Push */}
-        {status && status.ahead > 0 && (
-          <div className="gm-commits-to-push" data-testid="commits-to-push">
-            <div className="gm-section-subheader">
-              <h5>
-                <ArrowUp size={14} />
-                Commits to Push ({status.ahead})
-              </h5>
+          {/* Add Remote Form - collapsible */}
+          {showAddForm && (
+            <form className="gm-remote-form" onSubmit={handleAddRemote}>
+              <input
+                type="text"
+                placeholder="Remote name"
+                value={newRemoteName}
+                onChange={(e) => setNewRemoteName(e.target.value)}
+                disabled={remoteActionLoading === "add"}
+                className="gm-input"
+              />
+              <input
+                type="text"
+                placeholder="Repository URL"
+                value={newRemoteUrl}
+                onChange={(e) => setNewRemoteUrl(e.target.value)}
+                disabled={remoteActionLoading === "add"}
+                className="gm-input gm-input-url"
+              />
+              <button
+                type="submit"
+                className="btn btn-sm btn-primary"
+                disabled={!newRemoteName.trim() || !newRemoteUrl.trim() || remoteActionLoading === "add"}
+              >
+                {remoteActionLoading === "add" ? (
+                  <Loader2 size={12} className="spin" />
+                ) : (
+                  <Plus size={12} />
+                )}
+                Add
+              </button>
+            </form>
+          )}
+
+          {/* Remote list */}
+          {loading ? (
+            <div className="gm-loading">
+              <Loader2 size={16} className="spin" />
+              Loading...
             </div>
-            {loadingAhead ? (
-              <div className="gm-loading">
-                <Loader2 size={14} className="spin" />
-                Loading...
+          ) : remotes.length === 0 ? (
+            <div className="gm-empty">No remotes</div>
+          ) : (
+            remotes.map((remote) => (
+              <div
+                key={remote.name}
+                className={`gm-remote-selector-item${selectedRemote === remote.name ? " selected" : ""}`}
+                onClick={() => setSelectedRemote(remote.name)}
+                role="button"
+                tabIndex={0}
+              >
+                <div className="gm-remote-selector-info">
+                  <span className="gm-remote-selector-name">
+                    {remote.name}
+                    {remote.name === "origin" && (
+                      <span className="gm-remote-default-badge">default</span>
+                    )}
+                  </span>
+                  <span className="gm-remote-selector-host">
+                    {getHostFromUrl(remote.fetchUrl)}
+                  </span>
+                </div>
+                <button
+                  className="btn btn-icon btn-sm"
+                  onClick={(e) => { e.stopPropagation(); handleRemoveRemote(remote.name); }}
+                  disabled={remoteActionLoading !== null}
+                  title="Remove remote"
+                >
+                  <Trash2 size={14} />
+                </button>
               </div>
-            ) : aheadCommits.length > 0 ? (
-              <div className="gm-ahead-commits-list" data-testid="ahead-commits-list">
-                {aheadCommits.map((commit) => (
-                  <div key={commit.hash} className="gm-commit-item-compact-wrapper">
-                    <div
-                      className="gm-commit-item-compact gm-commit-clickable"
-                      onClick={() => handleCompactCommitClick(commit.hash, "ahead")}
-                      role="button"
-                      tabIndex={0}
-                      title="Click to view diff"
-                    >
-                      <div className="gm-commit-compact-hash">
-                        <code className="gm-hash">{commit.shortHash}</code>
-                      </div>
-                      <div className="gm-commit-compact-info">
-                        <span className="gm-commit-message" title={commit.message}>
-                          {commit.message}
-                        </span>
-                        <span className="gm-commit-meta">
-                          <span>{commit.author}</span>
-                          <span>•</span>
-                          <span>{relativeDate(commit.date)}</span>
-                        </span>
-                      </div>
-                      <span className="gm-commit-expand-icon">
-                        {expandedAheadCommit === commit.hash ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                      </span>
+            ))
+          )}
+        </div>
+
+        {/* ── Right Column: Detail Panel ── */}
+        <div className="gm-remote-detail" data-testid="remote-detail-panel">
+          {selectedRemote && selectedRemoteData ? (
+            <>
+              {/* Sync Status Card */}
+              <div className="gm-remote-sync-card" data-testid="remote-sync-card">
+                <div className="gm-remote-sync-card-header">
+                  <span className="gm-remote-sync-card-title">{selectedRemote}</span>
+                  {status && (status.ahead > 0 || status.behind > 0) && (
+                    <div className="gm-remote-status">
+                      {status.ahead > 0 && (
+                        <div className="gm-remote-indicator ahead">
+                          <ArrowUp size={14} />
+                          {status.ahead} to push
+                        </div>
+                      )}
+                      {status.behind > 0 && (
+                        <div className="gm-remote-indicator behind">
+                          <ArrowDown size={14} />
+                          {status.behind} to pull
+                        </div>
+                      )}
                     </div>
-                    {expandedAheadCommit === commit.hash && (
-                      <div className="gm-commit-diff gm-commit-diff-compact">
-                        {loadingAheadCommitDiff ? (
-                          <div className="gm-diff-loading">
-                            <Loader2 size={16} className="spin" />
-                            Loading diff...
-                          </div>
-                        ) : aheadCommitDiff ? (
-                          <>
-                            {commit.message && (
-                              <div className="gm-commit-message-full">{commit.message}</div>
-                            )}
-                            {aheadCommitDiff.stat && <pre className="gm-diff-stat">{aheadCommitDiff.stat}</pre>}
-                            <pre className="gm-diff-patch">{aheadCommitDiff.patch}</pre>
-                          </>
-                        ) : (
-                          <div className="gm-diff-error">Failed to load diff</div>
-                        )}
+                  )}
+                </div>
+                <div className="gm-remote-actions">
+                  <button
+                    className="btn btn-primary"
+                    onClick={onFetch}
+                    disabled={remoteLoading !== null || loading}
+                  >
+                    {remoteLoading === "fetch" ? (
+                      <Loader2 size={14} className="spin" />
+                    ) : (
+                      <RefreshCw size={14} />
+                    )}
+                    Fetch
+                  </button>
+                  <button
+                    className="btn btn-primary"
+                    onClick={onPull}
+                    disabled={remoteLoading !== null || loading}
+                  >
+                    {remoteLoading === "pull" ? (
+                      <Loader2 size={14} className="spin" />
+                    ) : (
+                      <GitPullRequest size={14} />
+                    )}
+                    Pull
+                  </button>
+                  <button
+                    className="btn btn-primary"
+                    onClick={onPush}
+                    disabled={remoteLoading !== null || loading}
+                  >
+                    {remoteLoading === "push" ? (
+                      <Loader2 size={14} className="spin" />
+                    ) : (
+                      <ArrowUp size={14} />
+                    )}
+                    Push
+                  </button>
+                </div>
+              </div>
+
+              {/* Remote Detail Card */}
+              <div className="gm-remote-detail-card" data-testid="remote-detail-card">
+                <div className="gm-remote-detail-urls">
+                  {/* Fetch URL */}
+                  <div className="gm-remote-detail-url-row">
+                    <span className="gm-url-label">Fetch:</span>
+                    {editingRemote === `url-${selectedRemote}` ? (
+                      <div className="gm-remote-edit">
+                        <input
+                          type="text"
+                          value={editUrlValue}
+                          onChange={(e) => setEditUrlValue(e.target.value)}
+                          className="gm-input"
+                          autoFocus
+                        />
+                        <button
+                          className="btn btn-sm btn-primary"
+                          onClick={() => handleUpdateUrl(selectedRemote)}
+                          disabled={remoteActionLoading === `url-${selectedRemote}`}
+                        >
+                          {remoteActionLoading === `url-${selectedRemote}` ? (
+                            <Loader2 size={12} className="spin" />
+                          ) : (
+                            <Check size={12} />
+                          )}
+                        </button>
+                        <button
+                          className="btn btn-sm"
+                          onClick={() => { setEditingRemote(null); setEditUrlValue(""); }}
+                          title="Cancel"
+                        >
+                          <X size={12} />
+                        </button>
                       </div>
+                    ) : (
+                      <>
+                        <span className="gm-url-value" title={selectedRemoteData.fetchUrl}>
+                          {selectedRemoteData.fetchUrl}
+                        </span>
+                        <button
+                          className="btn btn-icon btn-sm"
+                          onClick={() => copyToClipboard(selectedRemoteData.fetchUrl, "fetch URL")}
+                          title="Copy fetch URL"
+                        >
+                          <Copy size={14} />
+                        </button>
+                        <button
+                          className="btn btn-icon btn-sm"
+                          onClick={() => startEditingUrl(selectedRemoteData)}
+                          disabled={remoteActionLoading !== null}
+                          title="Edit remote URL"
+                        >
+                          <Pencil size={14} />
+                        </button>
+                      </>
                     )}
                   </div>
-                ))}
-              </div>
-            ) : (
-              <div className="gm-empty">
-                No ahead commits found (may need to fetch first)
-              </div>
-            )}
-          </div>
-        )}
 
-        {/* Ahead/Behind indicators */}
-        {status && (status.ahead > 0 || status.behind > 0) && (
-          <div className="gm-remote-status">
-            {status.ahead > 0 && (
-              <div className="gm-remote-indicator ahead">
-                <ArrowUp size={16} />
-                {status.ahead} commit(s) to push
-              </div>
-            )}
-            {status.behind > 0 && (
-              <div className="gm-remote-indicator behind">
-                <ArrowDown size={16} />
-                {status.behind} commit(s) to pull
-              </div>
-            )}
-          </div>
-        )}
+                  {/* Push URL */}
+                  {selectedRemoteData.pushUrl && selectedRemoteData.pushUrl !== selectedRemoteData.fetchUrl && (
+                    <div className="gm-remote-detail-url-row">
+                      <span className="gm-url-label">Push:</span>
+                      <span className="gm-url-value" title={selectedRemoteData.pushUrl}>
+                        {selectedRemoteData.pushUrl}
+                      </span>
+                      <button
+                        className="btn btn-icon btn-sm"
+                        onClick={() => copyToClipboard(selectedRemoteData.pushUrl!, "push URL")}
+                        title="Copy push URL"
+                      >
+                        <Copy size={14} />
+                      </button>
+                    </div>
+                  )}
+                </div>
 
-        <div className="gm-remote-actions">
-          <button
-            className="btn btn-primary"
-            onClick={onFetch}
-            disabled={remoteLoading !== null || loading}
-          >
-            {remoteLoading === "fetch" ? (
-              <Loader2 size={14} className="spin" />
-            ) : (
-              <RefreshCw size={14} />
-            )}
-            Fetch
-          </button>
-          <button
-            className="btn btn-primary"
-            onClick={onPull}
-            disabled={remoteLoading !== null || loading}
-          >
-            {remoteLoading === "pull" ? (
-              <Loader2 size={14} className="spin" />
-            ) : (
-              <GitPullRequest size={14} />
-            )}
-            Pull
-          </button>
-          <button
-            className="btn btn-primary"
-            onClick={onPush}
-            disabled={remoteLoading !== null || loading}
-          >
-            {remoteLoading === "push" ? (
-              <Loader2 size={14} className="spin" />
-            ) : (
-              <ArrowUp size={14} />
-            )}
-            Push
-          </button>
-        </div>
-      </div>
-
-      {/* Remotes List */}
-      <div className="gm-remote-list">
-        {loading ? (
-          <div className="gm-loading">
-            <Loader2 size={20} className="spin" />
-            Loading remotes...
-          </div>
-        ) : remotes.length === 0 ? (
-          <div className="gm-empty">No remotes configured</div>
-        ) : (
-          remotes.map((remote) => (
-            <div
-              key={remote.name}
-              className={`gm-remote-item${selectedRemote === remote.name ? " selected" : ""}`}
-              onClick={() => setSelectedRemote(remote.name)}
-              role="button"
-              tabIndex={0}
-            >
-              <div className="gm-remote-info">
-                {editingRemote === `name-${remote.name}` ? (
-                  <div className="gm-remote-edit">
-                    <input
-                      type="text"
-                      value={editNameValue}
-                      onChange={(e) => setEditNameValue(e.target.value)}
-                      className="gm-input"
-                      autoFocus
-                    />
-                    <button
-                      className="btn btn-sm btn-primary"
-                      onClick={() => handleRenameRemote(remote.name)}
-                      disabled={remoteActionLoading === `rename-${remote.name}`}
-                    >
-                      {remoteActionLoading === `rename-${remote.name}` ? (
-                        <Loader2 size={12} className="spin" />
-                      ) : (
-                        <Check size={12} />
-                      )}
-                    </button>
-                    <button
-                      className="btn btn-sm"
-                      onClick={() => {
-                        setEditingRemote(null);
-                        setEditNameValue("");
-                      }}
-                    >
-                      <X size={12} />
-                    </button>
-                  </div>
-                ) : (
-                  <div className="gm-remote-name-row">
-                    <span className="gm-remote-name">{remote.name}</span>
-                    <button
-                      className="btn btn-icon gm-remote-edit-btn"
-                      onClick={(e) => { e.stopPropagation(); startEditingName(remote); }}
-                      disabled={remoteActionLoading !== null}
-                      title="Edit remote name"
-                    >
-                      <Pencil size={16} />
-                    </button>
-                  </div>
-                )}
-
-                <div className="gm-remote-urls">
-                  <div className="gm-remote-url">
-                    <span className="gm-url-label">Fetch:</span>
-                    <span className="gm-url-value" title={remote.fetchUrl}>
-                      {remote.fetchUrl}
-                    </span>
-                  </div>
-                  {editingRemote === `url-${remote.name}` ? (
-                    <div className="gm-remote-edit gm-url-edit">
+                {/* Name editing */}
+                <div className="gm-remote-detail-name-row">
+                  {editingRemote === `name-${selectedRemote}` ? (
+                    <div className="gm-remote-edit">
                       <input
                         type="text"
-                        value={editUrlValue}
-                        onChange={(e) => setEditUrlValue(e.target.value)}
+                        value={editNameValue}
+                        onChange={(e) => setEditNameValue(e.target.value)}
                         className="gm-input"
                         autoFocus
                       />
                       <button
                         className="btn btn-sm btn-primary"
-                        onClick={() => handleUpdateUrl(remote.name)}
-                        disabled={remoteActionLoading === `url-${remote.name}`}
+                        onClick={() => handleRenameRemote(selectedRemote)}
+                        disabled={remoteActionLoading === `rename-${selectedRemote}`}
                       >
-                        {remoteActionLoading === `url-${remote.name}` ? (
+                        {remoteActionLoading === `rename-${selectedRemote}` ? (
                           <Loader2 size={12} className="spin" />
                         ) : (
                           <Check size={12} />
@@ -2160,135 +2158,187 @@ function RemotesPanel({
                       </button>
                       <button
                         className="btn btn-sm"
-                        onClick={() => {
-                          setEditingRemote(null);
-                          setEditUrlValue("");
-                        }}
+                        onClick={() => { setEditingRemote(null); setEditNameValue(""); }}
+                        title="Cancel"
                       >
                         <X size={12} />
                       </button>
                     </div>
                   ) : (
-                    <div className="gm-remote-url gm-push-url">
-                      <span className="gm-url-label">Push:</span>
-                      <span className="gm-url-value" title={remote.pushUrl}>
-                        {remote.pushUrl || remote.fetchUrl}
-                      </span>
-                      <button
-                        className="btn btn-icon gm-remote-edit-btn"
-                        onClick={(e) => { e.stopPropagation(); startEditingUrl(remote); }}
-                        disabled={remoteActionLoading !== null}
-                        title="Edit remote URL"
-                      >
-                        <Pencil size={16} />
-                      </button>
-                    </div>
+                    <button
+                      className="btn btn-icon btn-sm"
+                      onClick={() => startEditingName(selectedRemoteData)}
+                      disabled={remoteActionLoading !== null}
+                      title="Edit remote name"
+                    >
+                      <Pencil size={14} />
+                    </button>
                   )}
                 </div>
               </div>
 
-              <div className="gm-remote-actions-inline">
-                <button
-                  className="btn btn-sm btn-danger"
-                  onClick={(e) => { e.stopPropagation(); handleRemoveRemote(remote.name); }}
-                  disabled={remoteActionLoading !== null}
-                  title="Remove remote"
-                >
-                  {remoteActionLoading === `remove-${remote.name}` ? (
-                    <Loader2 size={14} className="spin" />
-                  ) : (
-                    <Trash2 size={14} />
-                  )}
-                </button>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-
-      {/* Selected Remote Commits */}
-      {selectedRemote && (
-        <div className="gm-remote-commits-section" data-testid="remote-commits-section">
-          <div className="gm-section-subheader">
-            <h5>
-              <Radio size={14} />
-              Recent commits on {selectedRemote}
-            </h5>
-          </div>
-          {loadingRemoteCommits ? (
-            <div className="gm-loading">
-              <Loader2 size={14} className="spin" />
-              Loading commits...
-            </div>
-          ) : remoteCommitsError ? (
-            <div className="gm-error">
-              <AlertCircle size={14} />
-              {remoteCommitsError}
-            </div>
-          ) : remoteCommits.length === 0 ? (
-            <div className="gm-empty">
-              No commits found on {selectedRemote}. Try fetching first.
-            </div>
-          ) : (
-            <div className="gm-remote-commits-list" data-testid="remote-commits-list">
-              {remoteCommits.map((commit) => (
-                <div key={commit.hash} className="gm-commit-item-compact-wrapper">
-                  <div
-                    className="gm-commit-item-compact gm-commit-clickable"
-                    onClick={() => handleCompactCommitClick(commit.hash, "remote")}
-                    role="button"
-                    tabIndex={0}
-                    title="Click to view diff"
-                  >
-                    <div className="gm-commit-compact-hash">
-                      <code className="gm-hash">{commit.shortHash}</code>
-                    </div>
-                    <div className="gm-commit-compact-info">
-                      <span className="gm-commit-message" title={commit.message}>
-                        {commit.message}
-                      </span>
-                      <span className="gm-commit-meta">
-                        <span>{commit.author}</span>
-                        <span>•</span>
-                        <span>{relativeDate(commit.date)}</span>
-                      </span>
-                    </div>
-                    <span className="gm-commit-expand-icon">
-                      {expandedRemoteCommit === commit.hash ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                    </span>
+              {/* Commits to Push Section */}
+              {status && status.ahead > 0 && (
+                <div className="gm-remote-section" data-testid="commits-to-push">
+                  <div className="gm-section-subheader">
+                    <h5>
+                      <ArrowUp size={14} />
+                      Commits to Push ({status.ahead})
+                    </h5>
                   </div>
-                  {expandedRemoteCommit === commit.hash && (
-                    <div className="gm-commit-diff gm-commit-diff-compact">
-                      {loadingRemoteCommitDiff ? (
-                        <div className="gm-diff-loading">
-                          <Loader2 size={16} className="spin" />
-                          Loading diff...
-                        </div>
-                      ) : remoteCommitDiff ? (
-                        <>
-                          {commit.message && (
-                            <div className="gm-commit-message-full">{commit.message}</div>
+                  {loadingAhead ? (
+                    <div className="gm-loading">
+                      <Loader2 size={14} className="spin" />
+                      Loading...
+                    </div>
+                  ) : aheadCommits.length > 0 ? (
+                    <div className="gm-ahead-commits-list" data-testid="ahead-commits-list">
+                      {aheadCommits.map((commit) => (
+                        <div key={commit.hash} className="gm-commit-item-compact-wrapper">
+                          <div
+                            className="gm-commit-item-compact gm-commit-clickable"
+                            onClick={() => handleCompactCommitClick(commit.hash, "ahead")}
+                            role="button"
+                            tabIndex={0}
+                            title="Click to view diff"
+                          >
+                            <div className="gm-commit-compact-hash">
+                              <code className="gm-hash">{commit.shortHash}</code>
+                            </div>
+                            <div className="gm-commit-compact-info">
+                              <span className="gm-commit-message" title={commit.message}>
+                                {commit.message}
+                              </span>
+                              <span className="gm-commit-meta">
+                                <span>{commit.author}</span>
+                                <span>•</span>
+                                <span>{relativeDate(commit.date)}</span>
+                              </span>
+                            </div>
+                            <span className="gm-commit-expand-icon">
+                              {expandedAheadCommit === commit.hash ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                            </span>
+                          </div>
+                          {expandedAheadCommit === commit.hash && (
+                            <div className="gm-commit-diff gm-commit-diff-compact">
+                              {loadingAheadCommitDiff ? (
+                                <div className="gm-diff-loading">
+                                  <Loader2 size={16} className="spin" />
+                                  Loading diff...
+                                </div>
+                              ) : aheadCommitDiff ? (
+                                <>
+                                  {commit.message && (
+                                    <div className="gm-commit-message-full">{commit.message}</div>
+                                  )}
+                                  {aheadCommitDiff.stat && <pre className="gm-diff-stat">{aheadCommitDiff.stat}</pre>}
+                                  <pre className="gm-diff-patch">{aheadCommitDiff.patch}</pre>
+                                </>
+                              ) : (
+                                <div className="gm-diff-error">Failed to load diff</div>
+                              )}
+                            </div>
                           )}
-                          {remoteCommitDiff.stat && <pre className="gm-diff-stat">{remoteCommitDiff.stat}</pre>}
-                          <pre className="gm-diff-patch">{remoteCommitDiff.patch}</pre>
-                        </>
-                      ) : (
-                        <div className="gm-diff-error">Failed to load diff</div>
-                      )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="gm-empty">
+                      No ahead commits found (may need to fetch first)
                     </div>
                   )}
                 </div>
-              ))}
+              )}
+
+              {/* Recent Remote Commits Section */}
+              <div className="gm-remote-section" data-testid="remote-commits-section">
+                <div className="gm-section-subheader">
+                  <h5>
+                    <Radio size={14} />
+                    Recent commits on {selectedRemote}
+                  </h5>
+                </div>
+                {loadingRemoteCommits ? (
+                  <div className="gm-loading">
+                    <Loader2 size={14} className="spin" />
+                    Loading commits...
+                  </div>
+                ) : remoteCommitsError ? (
+                  <div className="gm-error">
+                    <AlertCircle size={14} />
+                    {remoteCommitsError}
+                  </div>
+                ) : remoteCommits.length === 0 ? (
+                  <div className="gm-empty">
+                    No commits found on {selectedRemote}. Try fetching first.
+                  </div>
+                ) : (
+                  <div className="gm-remote-commits-list" data-testid="remote-commits-list">
+                    {remoteCommits.map((commit) => (
+                      <div key={commit.hash} className="gm-commit-item-compact-wrapper">
+                        <div
+                          className="gm-commit-item-compact gm-commit-clickable"
+                          onClick={() => handleCompactCommitClick(commit.hash, "remote")}
+                          role="button"
+                          tabIndex={0}
+                          title="Click to view diff"
+                        >
+                          <div className="gm-commit-compact-hash">
+                            <code className="gm-hash">{commit.shortHash}</code>
+                          </div>
+                          <div className="gm-commit-compact-info">
+                            <span className="gm-commit-message" title={commit.message}>
+                              {commit.message}
+                            </span>
+                            <span className="gm-commit-meta">
+                              <span>{commit.author}</span>
+                              <span>•</span>
+                              <span>{relativeDate(commit.date)}</span>
+                            </span>
+                          </div>
+                          <span className="gm-commit-expand-icon">
+                            {expandedRemoteCommit === commit.hash ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                          </span>
+                        </div>
+                        {expandedRemoteCommit === commit.hash && (
+                          <div className="gm-commit-diff gm-commit-diff-compact">
+                            {loadingRemoteCommitDiff ? (
+                              <div className="gm-diff-loading">
+                                <Loader2 size={16} className="spin" />
+                                Loading diff...
+                              </div>
+                            ) : remoteCommitDiff ? (
+                              <>
+                                {commit.message && (
+                                  <div className="gm-commit-message-full">{commit.message}</div>
+                                )}
+                                {remoteCommitDiff.stat && <pre className="gm-diff-stat">{remoteCommitDiff.stat}</pre>}
+                                <pre className="gm-diff-patch">{remoteCommitDiff.patch}</pre>
+                              </>
+                            ) : (
+                              <div className="gm-diff-error">Failed to load diff</div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            <div className="gm-empty">
+              Select a remote to view details
+            </div>
+          )}
+
+          {lastRemoteResult && (
+            <div className="gm-remote-result">
+              {lastRemoteResult.message}
             </div>
           )}
         </div>
-      )}
-
-      {lastRemoteResult && (
-        <div className="gm-remote-result">
-          {lastRemoteResult.message}
-        </div>
-      )}
+      </div>
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { GitManagerModal } from "../GitManagerModal";
 import type { Task } from "@fusion/core";
@@ -1025,27 +1025,36 @@ describe("GitManagerModal", () => {
 
   // ── Remotes Panel ──────────────────────────────────────────
 
-  it("shows remote operation buttons", async () => {
+  it("shows remote operation buttons in sync card", async () => {
     render(
       <GitManagerModal isOpen={true} onClose={vi.fn()} tasks={mockTasks} addToast={mockAddToast} />
     );
     fireEvent.click(screen.getByRole("tab", { name: /remotes/i }));
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /fetch/i })).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: /pull/i })).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: /push/i })).toBeInTheDocument();
+      expect(screen.getByTestId("remote-sync-card")).toBeInTheDocument();
     });
+
+    const syncCard = screen.getByTestId("remote-sync-card");
+    expect(syncCard.textContent).toContain("Fetch");
+    expect(syncCard.textContent).toContain("Pull");
+    expect(syncCard.textContent).toContain("Push");
   });
 
   it("calls fetchRemote when Fetch button clicked", async () => {
     const user = userEvent.setup();
+    (fetchGitRemotesDetailed as any).mockResolvedValue([
+      { name: "origin", fetchUrl: "https://github.com/test/repo.git", pushUrl: "" },
+    ]);
+
     render(
       <GitManagerModal isOpen={true} onClose={vi.fn()} tasks={mockTasks} addToast={mockAddToast} />
     );
     fireEvent.click(screen.getByRole("tab", { name: /remotes/i }));
 
-    const fetchButton = await screen.findByRole("button", { name: /fetch/i });
+    // Wait for sync card and scope button search within it to avoid matching the Refresh button
+    const syncCard = await screen.findByTestId("remote-sync-card");
+    const fetchButton = within(syncCard).getByRole("button", { name: /fetch/i });
     await user.click(fetchButton);
 
     await waitFor(() => {
@@ -1060,7 +1069,9 @@ describe("GitManagerModal", () => {
     );
     fireEvent.click(screen.getByRole("tab", { name: /remotes/i }));
 
-    const pullButton = await screen.findByRole("button", { name: /pull/i });
+    // Wait for sync card and scope button search within it
+    const syncCard = await screen.findByTestId("remote-sync-card");
+    const pullButton = within(syncCard).getByRole("button", { name: /pull/i });
     await user.click(pullButton);
 
     await waitFor(() => {
@@ -1075,7 +1086,9 @@ describe("GitManagerModal", () => {
     );
     fireEvent.click(screen.getByRole("tab", { name: /remotes/i }));
 
-    const pushButton = await screen.findByRole("button", { name: /push/i });
+    // Wait for sync card and scope button search within it
+    const syncCard = await screen.findByTestId("remote-sync-card");
+    const pushButton = within(syncCard).getByRole("button", { name: /push/i });
     await user.click(pushButton);
 
     await waitFor(() => {
@@ -1085,6 +1098,9 @@ describe("GitManagerModal", () => {
 
   it("shows error toast when fetch fails", async () => {
     const user = userEvent.setup();
+    (fetchGitRemotesDetailed as any).mockResolvedValue([
+      { name: "origin", fetchUrl: "https://github.com/test/repo.git", pushUrl: "" },
+    ]);
     (fetchRemote as any).mockRejectedValue(new Error("Network error"));
 
     render(
@@ -1092,7 +1108,9 @@ describe("GitManagerModal", () => {
     );
     fireEvent.click(screen.getByRole("tab", { name: /remotes/i }));
 
-    const fetchButton = await screen.findByRole("button", { name: /fetch/i });
+    // Wait for sync card and scope button search within it
+    const syncCard = await screen.findByTestId("remote-sync-card");
+    const fetchButton = within(syncCard).getByRole("button", { name: /fetch/i });
     await user.click(fetchButton);
 
     await waitFor(() => {
@@ -1100,7 +1118,7 @@ describe("GitManagerModal", () => {
     });
   });
 
-  it("shows ahead/behind remote indicators", async () => {
+  it("shows ahead/behind indicators in sync card", async () => {
     (fetchGitStatus as any).mockResolvedValue({
       branch: "main",
       commit: "abc1234",
@@ -1115,9 +1133,12 @@ describe("GitManagerModal", () => {
     fireEvent.click(screen.getByRole("tab", { name: /remotes/i }));
 
     await waitFor(() => {
-      expect(screen.getByText("2 commit(s) to push")).toBeInTheDocument();
-      expect(screen.getByText("3 commit(s) to pull")).toBeInTheDocument();
+      expect(screen.getByTestId("remote-sync-card")).toBeInTheDocument();
     });
+
+    const syncCard = screen.getByTestId("remote-sync-card");
+    expect(syncCard.textContent).toContain("2 to push");
+    expect(syncCard.textContent).toContain("3 to pull");
   });
 
   // ── Remote Management Tests ───────────────────────────────────
@@ -1148,7 +1169,7 @@ describe("GitManagerModal", () => {
     fireEvent.click(screen.getByRole("tab", { name: /remotes/i }));
 
     await waitFor(() => {
-      expect(screen.getByText("Loading remotes...")).toBeInTheDocument();
+      expect(screen.getByText("Loading...")).toBeInTheDocument();
     });
   });
 
@@ -1163,29 +1184,29 @@ describe("GitManagerModal", () => {
     fireEvent.click(screen.getByRole("tab", { name: /remotes/i }));
 
     await waitFor(() => {
-      expect(screen.getByText("Add Remote")).toBeInTheDocument();
+      expect(screen.getByTestId("remote-selector")).toBeInTheDocument();
     });
 
-    await user.click(screen.getByText("Add Remote"));
+    await user.click(screen.getByTitle("Add Remote"));
 
-    const nameInput = screen.getByPlaceholderText("Remote name (e.g., origin)");
+    const nameInput = screen.getByPlaceholderText("Remote name");
     const urlInput = screen.getByPlaceholderText("Repository URL");
 
-    await user.type(nameInput, "origin");
+    await user.type(nameInput, "newremote");
     await user.type(urlInput, "https://github.com/test/repo.git");
 
     await user.click(screen.getByRole("button", { name: /^add$/i }));
 
     await waitFor(() => {
-      expectLatestCallStartsWith(addGitRemote as any, "origin", "https://github.com/test/repo.git");
-      expect(mockAddToast).toHaveBeenCalledWith("Remote 'origin' added successfully", "success");
+      expectLatestCallStartsWith(addGitRemote as any, "newremote", "https://github.com/test/repo.git");
+      expect(mockAddToast).toHaveBeenCalledWith("Remote 'newremote' added successfully", "success");
     });
   });
 
   it("shows error when adding remote fails", async () => {
     const user = userEvent.setup();
     (fetchGitRemotesDetailed as any).mockResolvedValue([]);
-    (addGitRemote as any).mockRejectedValue(new Error("Remote 'origin' already exists"));
+    (addGitRemote as any).mockRejectedValue(new Error("Remote 'newremote' already exists"));
 
     render(
       <GitManagerModal isOpen={true} onClose={vi.fn()} tasks={mockTasks} addToast={mockAddToast} />
@@ -1193,21 +1214,21 @@ describe("GitManagerModal", () => {
     fireEvent.click(screen.getByRole("tab", { name: /remotes/i }));
 
     await waitFor(() => {
-      expect(screen.getByText("Add Remote")).toBeInTheDocument();
+      expect(screen.getByTestId("remote-selector")).toBeInTheDocument();
     });
 
-    await user.click(screen.getByText("Add Remote"));
+    await user.click(screen.getByTitle("Add Remote"));
 
-    const nameInput = screen.getByPlaceholderText("Remote name (e.g., origin)");
+    const nameInput = screen.getByPlaceholderText("Remote name");
     const urlInput = screen.getByPlaceholderText("Repository URL");
 
-    await user.type(nameInput, "origin");
+    await user.type(nameInput, "newremote");
     await user.type(urlInput, "https://github.com/test/repo.git");
 
     await user.click(screen.getByRole("button", { name: /^add$/i }));
 
     await waitFor(() => {
-      expect(mockAddToast).toHaveBeenCalledWith("Remote 'origin' already exists", "error");
+      expect(mockAddToast).toHaveBeenCalledWith("Remote 'newremote' already exists", "error");
     });
   });
 
@@ -1238,7 +1259,7 @@ describe("GitManagerModal", () => {
     });
   });
 
-  it("renames a remote", async () => {
+  it("renames a remote in detail panel", async () => {
     const user = userEvent.setup();
     (fetchGitRemotesDetailed as any).mockResolvedValue([
       { name: "origin", fetchUrl: "https://github.com/dustinbyrne/kb.git", pushUrl: "https://github.com/dustinbyrne/kb.git" },
@@ -1251,13 +1272,12 @@ describe("GitManagerModal", () => {
     fireEvent.click(screen.getByRole("tab", { name: /remotes/i }));
 
     await waitFor(() => {
-      expect(screen.getByText("origin")).toBeInTheDocument();
+      expect(screen.getByTestId("remote-detail-card")).toBeInTheDocument();
     });
 
     const renameButton = screen.getByTitle("Edit remote name");
     await user.click(renameButton);
 
-    // The input should appear - find it by its autoFocus or by looking for an input
     const nameInput = screen.getByDisplayValue("origin");
     await user.clear(nameInput);
     await user.type(nameInput, "upstream");
@@ -1272,7 +1292,7 @@ describe("GitManagerModal", () => {
     });
   });
 
-  it("updates remote URL", async () => {
+  it("updates remote URL in detail panel", async () => {
     const user = userEvent.setup();
     (fetchGitRemotesDetailed as any).mockResolvedValue([
       { name: "origin", fetchUrl: "https://old-url.com/repo.git", pushUrl: "https://old-url.com/repo.git" },
@@ -1285,7 +1305,7 @@ describe("GitManagerModal", () => {
     fireEvent.click(screen.getByRole("tab", { name: /remotes/i }));
 
     await waitFor(() => {
-      expect(screen.getByText("origin")).toBeInTheDocument();
+      expect(screen.getByTestId("remote-detail-card")).toBeInTheDocument();
     });
 
     const editButton = screen.getByTitle("Edit remote URL");
@@ -1307,7 +1327,7 @@ describe("GitManagerModal", () => {
 
   // ── Edit Affordance Regression ──────────────────────────────────
 
-  it("shows editor-style icon for remote name edit action", async () => {
+  it("shows editor-style icon for remote name edit action in detail panel", async () => {
     (fetchGitRemotesDetailed as any).mockResolvedValue([
       { name: "origin", fetchUrl: "https://github.com/a/b.git", pushUrl: "https://github.com/a/b.git" },
     ]);
@@ -1318,23 +1338,17 @@ describe("GitManagerModal", () => {
     fireEvent.click(screen.getByRole("tab", { name: /remotes/i }));
 
     await waitFor(() => {
-      expect(screen.getByText("origin")).toBeInTheDocument();
+      expect(screen.getByTestId("remote-detail-card")).toBeInTheDocument();
     });
 
-    // The name edit button should have an accessible title distinguishing it as a name edit
     const nameEditBtn = screen.getByTitle("Edit remote name");
     expect(nameEditBtn).toBeInTheDocument();
     expect(nameEditBtn).toBeVisible();
-
-    // Verify it does not propagate clicks to row selection
-    const remoteItem = nameEditBtn.closest(".gm-remote-item");
-    const selectedBefore = remoteItem?.classList.contains("selected");
     fireEvent.click(nameEditBtn);
-    // After clicking, the editing state activates (input appears), selection should not change unexpectedly
     expect(screen.getByDisplayValue("origin")).toBeInTheDocument();
   });
 
-  it("shows editor-style icon for remote URL edit action", async () => {
+  it("shows editor-style icon for remote URL edit action in detail panel", async () => {
     (fetchGitRemotesDetailed as any).mockResolvedValue([
       { name: "origin", fetchUrl: "https://github.com/a/b.git", pushUrl: "https://github.com/a/b.git" },
     ]);
@@ -1345,17 +1359,13 @@ describe("GitManagerModal", () => {
     fireEvent.click(screen.getByRole("tab", { name: /remotes/i }));
 
     await waitFor(() => {
-      expect(screen.getByText("origin")).toBeInTheDocument();
+      expect(screen.getByTestId("remote-detail-card")).toBeInTheDocument();
     });
 
-    // The URL edit button should have an accessible title distinguishing it as a URL edit
     const urlEditBtn = screen.getByTitle("Edit remote URL");
     expect(urlEditBtn).toBeInTheDocument();
     expect(urlEditBtn).toBeVisible();
-
-    // Verify it does not propagate clicks to row selection
     fireEvent.click(urlEditBtn);
-    // After clicking, the URL editing state activates
     expect(screen.getByDisplayValue("https://github.com/a/b.git")).toBeInTheDocument();
   });
 
@@ -1369,25 +1379,26 @@ describe("GitManagerModal", () => {
     );
     fireEvent.click(screen.getByRole("tab", { name: /remotes/i }));
 
+    // Wait for both cards to appear
     await waitFor(() => {
-      expect(screen.getByText("origin")).toBeInTheDocument();
+      expect(screen.getByTestId("remote-sync-card")).toBeInTheDocument();
+      expect(screen.getByTestId("remote-detail-card")).toBeInTheDocument();
     });
 
-    // Both edit controls should be present and distinguishable by title
-    const nameEditBtn = screen.getByTitle("Edit remote name");
-    const urlEditBtn = screen.getByTitle("Edit remote URL");
+    // Both edit buttons are in the detail card
+    const detailCard = screen.getByTestId("remote-detail-card");
+    const nameEditBtn = within(detailCard).getByTitle("Edit remote name");
+    const urlEditBtn = within(detailCard).getByTitle("Edit remote URL");
     expect(nameEditBtn).not.toBe(urlEditBtn);
 
-    // Each enters the correct edit mode
     fireEvent.click(nameEditBtn);
     expect(screen.getByDisplayValue("origin")).toBeInTheDocument();
 
-    // Cancel name edit
-    const cancelBtn = nameEditBtn.closest(".gm-remote-edit")?.querySelector(".btn.btn-sm:not(.btn-primary)");
+    // After clicking edit, the button is replaced with input + cancel button inside .gm-remote-edit
+    const cancelBtn = screen.getByTitle("Cancel");
     expect(cancelBtn).toBeTruthy();
-    fireEvent.click(cancelBtn as HTMLButtonElement);
+    fireEvent.click(cancelBtn);
 
-    // Now click URL edit
     fireEvent.click(urlEditBtn);
     expect(screen.getByDisplayValue("https://github.com/a/b.git")).toBeInTheDocument();
   });
@@ -1405,14 +1416,12 @@ describe("GitManagerModal", () => {
     fireEvent.click(screen.getByRole("tab", { name: /remotes/i }));
 
     await waitFor(() => {
-      expect(screen.getByText("origin")).toBeInTheDocument();
+      expect(screen.getByTestId("remote-detail-card")).toBeInTheDocument();
     });
 
-    // Click the name edit affordance
     const nameEditBtn = screen.getByTitle("Edit remote name");
     await user.click(nameEditBtn);
 
-    // Edit the name and save
     const nameInput = screen.getByDisplayValue("origin");
     await user.clear(nameInput);
     await user.type(nameInput, "upstream");
@@ -1439,14 +1448,12 @@ describe("GitManagerModal", () => {
     fireEvent.click(screen.getByRole("tab", { name: /remotes/i }));
 
     await waitFor(() => {
-      expect(screen.getByText("origin")).toBeInTheDocument();
+      expect(screen.getByTestId("remote-detail-card")).toBeInTheDocument();
     });
 
-    // Click the URL edit affordance
     const urlEditBtn = screen.getByTitle("Edit remote URL");
     await user.click(urlEditBtn);
 
-    // Edit the URL and save
     const urlInput = screen.getByDisplayValue("https://old-url.com/repo.git");
     await user.clear(urlInput);
     await user.type(urlInput, "https://new-url.com/repo.git");
@@ -1458,37 +1465,6 @@ describe("GitManagerModal", () => {
     await waitFor(() => {
       expectLatestCallStartsWith(updateGitRemoteUrl as any, "origin", "https://new-url.com/repo.git");
     });
-  });
-
-  it("applies mobile-friendly edit button class for touch targets", async () => {
-    (fetchGitRemotesDetailed as any).mockResolvedValue([
-      { name: "origin", fetchUrl: "https://github.com/a/b.git", pushUrl: "https://github.com/a/b.git" },
-    ]);
-
-    render(
-      <GitManagerModal isOpen={true} onClose={vi.fn()} tasks={mockTasks} addToast={mockAddToast} />
-    );
-    fireEvent.click(screen.getByRole("tab", { name: /remotes/i }));
-
-    await waitFor(() => {
-      expect(screen.getByText("origin")).toBeInTheDocument();
-    });
-
-    // Both edit buttons should have the mobile-friendly class for adequate touch targets
-    const nameEditBtn = screen.getByTitle("Edit remote name");
-    const urlEditBtn = screen.getByTitle("Edit remote URL");
-
-    expect(nameEditBtn.classList.contains("gm-remote-edit-btn")).toBe(true);
-    expect(urlEditBtn.classList.contains("gm-remote-edit-btn")).toBe(true);
-
-    // Both should be visible and have 16px icons
-    expect(nameEditBtn).toBeVisible();
-    expect(urlEditBtn).toBeVisible();
-
-    const nameSvg = nameEditBtn.querySelector("svg");
-    const urlSvg = urlEditBtn.querySelector("svg");
-    expect(nameSvg).toBeTruthy();
-    expect(urlSvg).toBeTruthy();
   });
 
   it("handles API errors gracefully", async () => {
@@ -1783,13 +1759,13 @@ describe("GitManagerModal", () => {
     fireEvent.click(screen.getByRole("tab", { name: /remotes/i }));
 
     await waitFor(() => {
-      expect(screen.getByText("No remotes configured")).toBeInTheDocument();
+      expect(screen.getByText("No remotes")).toBeInTheDocument();
     });
 
     expect(screen.queryByTestId("remote-commits-section")).not.toBeInTheDocument();
   });
 
-  it("highlights selected remote in the list", async () => {
+  it("highlights selected remote in selector", async () => {
     (fetchGitRemotesDetailed as any).mockResolvedValue([
       { name: "origin", fetchUrl: "https://github.com/a/b.git", pushUrl: "https://github.com/a/b.git" },
       { name: "upstream", fetchUrl: "https://github.com/c/d.git", pushUrl: "https://github.com/c/d.git" },
@@ -1800,11 +1776,18 @@ describe("GitManagerModal", () => {
     );
     fireEvent.click(screen.getByRole("tab", { name: /remotes/i }));
 
-    // First remote (origin) should be auto-selected
     await waitFor(() => {
-      const originItem = screen.getByText("origin").closest(".gm-remote-item");
-      expect(originItem?.classList.contains("selected")).toBe(true);
+      expect(screen.getByTestId("remote-selector")).toBeInTheDocument();
     });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("remote-sync-card")).toBeInTheDocument();
+    });
+
+    const remoteSelector = screen.getByTestId("remote-selector");
+    const selectorItems = remoteSelector.querySelectorAll(".gm-remote-selector-item");
+    expect(selectorItems.length).toBe(2);
+    expect(selectorItems[0].classList.contains("selected")).toBe(true);
   });
 
   // ── Refresh Button ─────────────────────────────────────────
@@ -2112,6 +2095,10 @@ describe("GitManagerModal", () => {
 
     it("passes projectId to fetchRemote when Fetch is clicked", async () => {
       const user = userEvent.setup();
+      // Ensure remotes are available for selection
+      (fetchGitRemotesDetailed as any).mockResolvedValue([
+        { name: "origin", fetchUrl: "https://github.com/dustinbyrne/kb.git", pushUrl: "https://github.com/dustinbyrne/kb.git" },
+      ]);
       render(
         <GitManagerModal
           isOpen={true}
@@ -2123,7 +2110,11 @@ describe("GitManagerModal", () => {
       );
       fireEvent.click(screen.getByRole("tab", { name: /remotes/i }));
 
-      const fetchButton = await screen.findByRole("button", { name: /fetch/i });
+      // Wait for the sync card to appear (indicates remote is selected)
+      const syncCard = await screen.findByTestId("remote-sync-card");
+
+      // Scope button search within the sync card to avoid matching the Refresh button
+      const fetchButton = within(syncCard).getByRole("button", { name: /fetch/i });
       await user.click(fetchButton);
 
       await waitFor(() => {
@@ -2212,12 +2203,12 @@ describe("GitManagerModal", () => {
       fireEvent.click(screen.getByRole("tab", { name: /remotes/i }));
 
       await waitFor(() => {
-        expect(screen.getByText("Add Remote")).toBeInTheDocument();
+        expect(screen.getByTitle("Add Remote")).toBeInTheDocument();
       });
 
-      await user.click(screen.getByText("Add Remote"));
+      await user.click(screen.getByTitle("Add Remote"));
 
-      const nameInput = screen.getByPlaceholderText("Remote name (e.g., origin)");
+      const nameInput = screen.getByPlaceholderText("Remote name");
       const urlInput = screen.getByPlaceholderText("Repository URL");
 
       await user.type(nameInput, "newremote");
@@ -2288,10 +2279,11 @@ describe("GitManagerModal", () => {
       fireEvent.click(screen.getByRole("tab", { name: /remotes/i }));
 
       await waitFor(() => {
-        expect(screen.getByText("origin")).toBeInTheDocument();
+        expect(screen.getByTestId("remote-detail-card")).toBeInTheDocument();
       });
 
-      const renameButton = screen.getByTitle("Edit remote name");
+      const detailCard = screen.getByTestId("remote-detail-card");
+      const renameButton = within(detailCard).getByTitle("Edit remote name");
       await user.click(renameButton);
 
       const nameInput = screen.getByDisplayValue("origin");
