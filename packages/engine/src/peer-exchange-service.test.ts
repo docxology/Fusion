@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import type { CentralCore, NodeConfig, PeerInfo } from "@fusion/core";
+import type { CentralCore, NodeConfig, PeerInfo, SettingsSyncPayload } from "@fusion/core";
 import { PeerExchangeService } from "./peer-exchange-service.js";
 
 function makeNode(overrides: Partial<NodeConfig> = {}): NodeConfig {
@@ -30,6 +30,16 @@ function makePeerInfo(overrides: Partial<PeerInfo> = {}): PeerInfo {
   };
 }
 
+function makeSettingsPayload(overrides: Partial<SettingsSyncPayload> = {}): SettingsSyncPayload {
+  return {
+    exportedAt: "2026-04-01T00:00:00.000Z",
+    checksum: "abc123def456",
+    version: 1,
+    global: {},
+    ...overrides,
+  };
+}
+
 describe("PeerExchangeService", () => {
   let mockCentralCore: CentralCore;
   let mockFetch: ReturnType<typeof vi.fn>;
@@ -37,6 +47,8 @@ describe("PeerExchangeService", () => {
   let mockGetAllKnownPeerInfo: ReturnType<typeof vi.fn>;
   let mockMergePeers: ReturnType<typeof vi.fn>;
   let mockReportMeshState: ReturnType<typeof vi.fn>;
+  let mockGetSettingsForSync: ReturnType<typeof vi.fn>;
+  let mockApplyRemoteSettings: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     vi.useFakeTimers();
@@ -47,12 +59,16 @@ describe("PeerExchangeService", () => {
     mockGetAllKnownPeerInfo = vi.fn();
     mockMergePeers = vi.fn();
     mockReportMeshState = vi.fn();
+    mockGetSettingsForSync = vi.fn();
+    mockApplyRemoteSettings = vi.fn();
 
     mockCentralCore = {
       listNodes: mockListNodes,
       getAllKnownPeerInfo: mockGetAllKnownPeerInfo,
       mergePeers: mockMergePeers,
       reportMeshState: mockReportMeshState,
+      getSettingsForSync: mockGetSettingsForSync,
+      applyRemoteSettings: mockApplyRemoteSettings,
     } as unknown as CentralCore;
 
     mockFetch = vi.fn();
@@ -64,6 +80,26 @@ describe("PeerExchangeService", () => {
     vi.restoreAllMocks();
   });
 
+  function setupSuccessfulSync(node: NodeConfig = makeNode()) {
+    mockListNodes.mockResolvedValue([
+      makeNode({ id: "node_local", type: "local", status: "online" }),
+    ]);
+    mockGetAllKnownPeerInfo.mockResolvedValue([makePeerInfo({ nodeId: "node_local", nodeName: "local" })]);
+    mockMergePeers.mockResolvedValue({ added: [], updated: [] });
+    mockReportMeshState.mockResolvedValue({});
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        senderNodeId: node.id,
+        senderNodeUrl: node.url,
+        knownPeers: [],
+        newPeers: [],
+        timestamp: "2026-04-01T12:00:00.000Z",
+      }),
+    });
+  }
+
   describe("constructor", () => {
     it("should create service instance", () => {
       const service = new PeerExchangeService(mockCentralCore);
@@ -73,6 +109,38 @@ describe("PeerExchangeService", () => {
     it("should accept custom sync interval", () => {
       const service = new PeerExchangeService(mockCentralCore, { syncIntervalMs: 30_000 });
       expect(service).toBeDefined();
+    });
+
+    it("should default settingsSyncEnabled to false", async () => {
+      const service = new PeerExchangeService(mockCentralCore);
+      setupSuccessfulSync();
+      await service.syncWithNode(makeNode());
+      expect(mockGetSettingsForSync).not.toHaveBeenCalled();
+    });
+
+    it("should accept settingsSyncEnabled option", async () => {
+      mockGetSettingsForSync.mockResolvedValue(makeSettingsPayload());
+      const service = new PeerExchangeService(mockCentralCore, { settingsSyncEnabled: true });
+      setupSuccessfulSync();
+      await service.syncWithNode(makeNode());
+      expect(mockGetSettingsForSync).toHaveBeenCalled();
+    });
+
+    it("should default settingsSyncThrottleMs to 300000 (5 minutes)", async () => {
+      mockGetSettingsForSync.mockResolvedValue(makeSettingsPayload());
+      const service = new PeerExchangeService(mockCentralCore, { settingsSyncEnabled: true });
+      setupSuccessfulSync();
+
+      // First sync - should include settings
+      await service.syncWithNode(makeNode());
+      expect(mockGetSettingsForSync).toHaveBeenCalledTimes(1);
+
+      // Advance time by 1 minute (less than 5 minute throttle)
+      vi.advanceTimersByTime(60_000);
+
+      // Second sync - should be throttled (getSettingsForSync not called again)
+      await service.syncWithNode(makeNode());
+      expect(mockGetSettingsForSync).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -273,6 +341,419 @@ describe("PeerExchangeService", () => {
       const results = await service.triggerSync();
 
       expect(mockFetch).toHaveBeenCalled();
+    });
+  });
+
+  describe("settings sync - when disabled", () => {
+    it("should NOT call getSettingsForSync", async () => {
+      const service = new PeerExchangeService(mockCentralCore);
+      setupSuccessfulSync();
+      await service.syncWithNode(makeNode());
+      expect(mockGetSettingsForSync).not.toHaveBeenCalled();
+    });
+
+    it("should NOT include settings in request body", async () => {
+      const service = new PeerExchangeService(mockCentralCore);
+      setupSuccessfulSync();
+      await service.syncWithNode(makeNode());
+      const call = mockFetch.mock.calls[0];
+      const body = JSON.parse(call[1].body);
+      expect(body.settings).toBeUndefined();
+    });
+
+    it("should NOT have settingsApplied or settingsVersion in result", async () => {
+      const service = new PeerExchangeService(mockCentralCore);
+      setupSuccessfulSync();
+      const result = await service.syncWithNode(makeNode());
+      expect(result.settingsApplied).toBeUndefined();
+      expect(result.settingsVersion).toBeUndefined();
+    });
+  });
+
+  describe("settings sync - when enabled", () => {
+    it("should call getSettingsForSync and include settings in request", async () => {
+      const service = new PeerExchangeService(mockCentralCore, { settingsSyncEnabled: true });
+      const payload = makeSettingsPayload({ checksum: "local-checksum-123" });
+      mockGetSettingsForSync.mockResolvedValue(payload);
+      setupSuccessfulSync();
+
+      await service.syncWithNode(makeNode());
+
+      expect(mockGetSettingsForSync).toHaveBeenCalled();
+      const call = mockFetch.mock.calls[0];
+      const body = JSON.parse(call[1].body);
+      expect(body.settings).toBeDefined();
+      expect(body.settings.checksum).toBe("local-checksum-123");
+    });
+
+    it("should include settings on first sync with a node (no throttle entry)", async () => {
+      const service = new PeerExchangeService(mockCentralCore, { settingsSyncEnabled: true });
+      const payload = makeSettingsPayload({ checksum: "first-sync-checksum" });
+      mockGetSettingsForSync.mockResolvedValue(payload);
+      setupSuccessfulSync();
+
+      await service.syncWithNode(makeNode());
+
+      const call = mockFetch.mock.calls[0];
+      const body = JSON.parse(call[1].body);
+      expect(body.settings).toBeDefined();
+      expect(body.settings.checksum).toBe("first-sync-checksum");
+    });
+
+    it("should NOT include settings when within throttle window and checksum unchanged", async () => {
+      const service = new PeerExchangeService(mockCentralCore, {
+        settingsSyncEnabled: true,
+        settingsSyncThrottleMs: 300_000, // 5 minutes
+      });
+      // Use same checksum for local and remote so settings won't be applied (checksums match)
+      const localPayload = makeSettingsPayload({ checksum: "same-checksum" });
+      const remotePayload = makeSettingsPayload({ checksum: "same-checksum" });
+      mockGetSettingsForSync.mockResolvedValue(localPayload);
+      mockApplyRemoteSettings.mockResolvedValue({ success: true, globalCount: 1, projectCount: 0, authCount: 0 });
+      setupSuccessfulSync();
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          senderNodeId: "node_remote",
+          senderNodeUrl: "https://remote.example.com",
+          knownPeers: [],
+          newPeers: [],
+          timestamp: "2026-04-01T12:00:00.000Z",
+          settings: remotePayload,
+        }),
+      });
+
+      // First sync
+      await service.syncWithNode(makeNode());
+      expect(mockGetSettingsForSync).toHaveBeenCalledTimes(1);
+
+      // Advance time by 1 minute (within throttle window)
+      vi.advanceTimersByTime(60_000);
+
+      // Second sync should be throttled - cache is used, getSettingsForSync NOT called
+      await service.syncWithNode(makeNode());
+
+      // getSettingsForSync should NOT be called again because cache is populated
+      expect(mockGetSettingsForSync).toHaveBeenCalledTimes(1);
+
+      // Settings should NOT be in the request because within throttle window
+      const call = mockFetch.mock.calls[1];
+      const body = JSON.parse(call[1].body);
+      expect(body.settings).toBeUndefined();
+    });
+
+    it("should include settings when throttle window expires", async () => {
+      const service = new PeerExchangeService(mockCentralCore, {
+        settingsSyncEnabled: true,
+        settingsSyncThrottleMs: 300_000, // 5 minutes
+      });
+      const localPayload = makeSettingsPayload({ checksum: "stable-checksum" });
+      mockGetSettingsForSync.mockResolvedValue(localPayload);
+      mockApplyRemoteSettings.mockResolvedValue({ success: true, globalCount: 1, projectCount: 0, authCount: 0 });
+      setupSuccessfulSync();
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          senderNodeId: "node_remote",
+          senderNodeUrl: "https://remote.example.com",
+          knownPeers: [],
+          newPeers: [],
+          timestamp: "2026-04-01T12:00:00.000Z",
+          settings: localPayload,
+        }),
+      });
+
+      // First sync
+      await service.syncWithNode(makeNode());
+      expect(mockGetSettingsForSync).toHaveBeenCalledTimes(1);
+
+      // Advance time by 6 minutes (past throttle window)
+      vi.advanceTimersByTime(6 * 60_000);
+
+      // Second sync should include settings (throttle expired) - cache is still used
+      await service.syncWithNode(makeNode());
+
+      // getSettingsForSync should NOT be called again because cache is populated
+      expect(mockGetSettingsForSync).toHaveBeenCalledTimes(1);
+
+      // But settings SHOULD be in the request because throttle expired
+      const call = mockFetch.mock.calls[1];
+      const body = JSON.parse(call[1].body);
+      expect(body.settings).toBeDefined();
+    });
+
+    it("should bypass throttle when local checksum changes via updateGlobalSettings", async () => {
+      const service = new PeerExchangeService(mockCentralCore, {
+        settingsSyncEnabled: true,
+        settingsSyncThrottleMs: 300_000, // 5 minutes
+      });
+      const payload1 = makeSettingsPayload({ checksum: "old-checksum" });
+      const payload2 = makeSettingsPayload({ checksum: "new-checksum" });
+      mockGetSettingsForSync.mockResolvedValue(payload1);
+      setupSuccessfulSync();
+
+      // First sync with old checksum
+      await service.syncWithNode(makeNode());
+      expect(mockGetSettingsForSync).toHaveBeenCalledTimes(1);
+
+      // Advance time by 1 minute (within throttle window)
+      vi.advanceTimersByTime(60_000);
+
+      // Manually invalidate cache to simulate settings change
+      service.updateGlobalSettings({});
+
+      // Mock should return new payload for next call
+      mockGetSettingsForSync.mockResolvedValue(payload2);
+
+      // Second sync should include settings (version changed bypasses throttle)
+      await service.syncWithNode(makeNode());
+
+      // getSettingsForSync SHOULD be called because cache was invalidated
+      expect(mockGetSettingsForSync).toHaveBeenCalledTimes(2);
+
+      const call = mockFetch.mock.calls[1];
+      const body = JSON.parse(call[1].body);
+      expect(body.settings).toBeDefined();
+      expect(body.settings.checksum).toBe("new-checksum");
+    });
+  });
+
+  describe("settings sync - applying remote settings", () => {
+    it("should apply remote settings when remote checksum differs", async () => {
+      const service = new PeerExchangeService(mockCentralCore, { settingsSyncEnabled: true });
+      const localPayload = makeSettingsPayload({ checksum: "local-checksum" });
+      const remotePayload = makeSettingsPayload({ checksum: "remote-checksum" });
+      mockGetSettingsForSync.mockResolvedValue(localPayload);
+      mockApplyRemoteSettings.mockResolvedValue({
+        success: true,
+        globalCount: 5,
+        projectCount: 2,
+        authCount: 1,
+      });
+      setupSuccessfulSync();
+
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          senderNodeId: "node_remote",
+          senderNodeUrl: "https://remote.example.com",
+          knownPeers: [],
+          newPeers: [],
+          timestamp: "2026-04-01T12:00:00.000Z",
+          settings: remotePayload,
+        }),
+      });
+
+      const result = await service.syncWithNode(makeNode());
+
+      expect(mockApplyRemoteSettings).toHaveBeenCalledWith(remotePayload);
+      expect(result.settingsApplied).toBe(true);
+      expect(result.settingsVersion).toBe("remote-checksum");
+    });
+
+    it("should NOT apply remote settings when checksums match", async () => {
+      const service = new PeerExchangeService(mockCentralCore, { settingsSyncEnabled: true });
+      const samePayload = makeSettingsPayload({ checksum: "same-checksum" });
+      mockGetSettingsForSync.mockResolvedValue(samePayload);
+      setupSuccessfulSync();
+
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          senderNodeId: "node_remote",
+          senderNodeUrl: "https://remote.example.com",
+          knownPeers: [],
+          newPeers: [],
+          timestamp: "2026-04-01T12:00:00.000Z",
+          settings: samePayload,
+        }),
+      });
+
+      const result = await service.syncWithNode(makeNode());
+
+      expect(mockApplyRemoteSettings).not.toHaveBeenCalled();
+      expect(result.settingsApplied).toBe(false);
+    });
+
+    it("should apply remote settings when local cache is null (first sync)", async () => {
+      const service = new PeerExchangeService(mockCentralCore, { settingsSyncEnabled: true });
+      const remotePayload = makeSettingsPayload({ checksum: "remote-only-checksum" });
+      mockGetSettingsForSync.mockResolvedValue(makeSettingsPayload({ checksum: "local-checksum" }));
+      mockApplyRemoteSettings.mockResolvedValue({
+        success: true,
+        globalCount: 3,
+        projectCount: 1,
+        authCount: 0,
+      });
+      setupSuccessfulSync();
+
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          senderNodeId: "node_remote",
+          senderNodeUrl: "https://remote.example.com",
+          knownPeers: [],
+          newPeers: [],
+          timestamp: "2026-04-01T12:00:00.000Z",
+          settings: remotePayload,
+        }),
+      });
+
+      const result = await service.syncWithNode(makeNode());
+
+      expect(mockApplyRemoteSettings).toHaveBeenCalled();
+      expect(result.settingsApplied).toBe(true);
+    });
+
+    it("should update throttle tracking after receiving settings", async () => {
+      const service = new PeerExchangeService(mockCentralCore, {
+        settingsSyncEnabled: true,
+        settingsSyncThrottleMs: 300_000,
+      });
+      // Use same checksum so settings are NOT applied (but throttle tracking is updated)
+      const payload = makeSettingsPayload({ checksum: "same-checksum" });
+      mockGetSettingsForSync.mockResolvedValue(payload);
+      mockApplyRemoteSettings.mockResolvedValue({ success: true, globalCount: 1, projectCount: 0, authCount: 0 });
+      setupSuccessfulSync();
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          senderNodeId: "node_remote",
+          senderNodeUrl: "https://remote.example.com",
+          knownPeers: [],
+          newPeers: [],
+          timestamp: "2026-04-01T12:00:00.000Z",
+          settings: payload,
+        }),
+      });
+
+      // First sync
+      await service.syncWithNode(makeNode());
+      expect(mockGetSettingsForSync).toHaveBeenCalledTimes(1);
+
+      // Advance time by 1 minute
+      vi.advanceTimersByTime(60_000);
+
+      // Second sync should be throttled - cache exists and within window
+      await service.syncWithNode(makeNode());
+
+      // getSettingsForSync should NOT be called because cache is populated
+      // and within throttle window
+      expect(mockGetSettingsForSync).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("settings sync - error resilience", () => {
+    it("should continue peer sync when getSettingsForSync throws", async () => {
+      const service = new PeerExchangeService(mockCentralCore, { settingsSyncEnabled: true });
+      mockGetSettingsForSync.mockRejectedValue(new Error("Settings unavailable"));
+      setupSuccessfulSync();
+
+      const result = await service.syncWithNode(makeNode());
+
+      // Peer sync should still succeed
+      expect(result.success).toBe(true);
+      // settingsApplied should be false since settings sync failed
+      expect(result.settingsApplied).toBe(false);
+    });
+
+    it("should continue peer sync when applyRemoteSettings throws", async () => {
+      const service = new PeerExchangeService(mockCentralCore, { settingsSyncEnabled: true });
+      const localPayload = makeSettingsPayload({ checksum: "local" });
+      const remotePayload = makeSettingsPayload({ checksum: "remote" });
+      mockGetSettingsForSync.mockResolvedValue(localPayload);
+      mockApplyRemoteSettings.mockRejectedValue(new Error("Failed to apply settings"));
+      setupSuccessfulSync();
+
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          senderNodeId: "node_remote",
+          senderNodeUrl: "https://remote.example.com",
+          knownPeers: [],
+          newPeers: [],
+          timestamp: "2026-04-01T12:00:00.000Z",
+          settings: remotePayload,
+        }),
+      });
+
+      const result = await service.syncWithNode(makeNode());
+
+      // Peer sync should still succeed even though settings apply failed
+      expect(result.success).toBe(true);
+      expect(result.settingsApplied).toBe(false);
+    });
+
+    it("should continue peer sync when applyRemoteSettings returns error result", async () => {
+      const service = new PeerExchangeService(mockCentralCore, { settingsSyncEnabled: true });
+      const localPayload = makeSettingsPayload({ checksum: "local" });
+      const remotePayload = makeSettingsPayload({ checksum: "remote" });
+      mockGetSettingsForSync.mockResolvedValue(localPayload);
+      mockApplyRemoteSettings.mockResolvedValue({
+        success: false,
+        globalCount: 0,
+        projectCount: 0,
+        authCount: 0,
+        error: "Checksum mismatch",
+      });
+      setupSuccessfulSync();
+
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          senderNodeId: "node_remote",
+          senderNodeUrl: "https://remote.example.com",
+          knownPeers: [],
+          newPeers: [],
+          timestamp: "2026-04-01T12:00:00.000Z",
+          settings: remotePayload,
+        }),
+      });
+
+      const result = await service.syncWithNode(makeNode());
+
+      // Peer sync should still succeed
+      expect(result.success).toBe(true);
+      expect(result.settingsApplied).toBe(false);
+    });
+  });
+
+  describe("updateGlobalSettings", () => {
+    it("should invalidate cached settings payload", async () => {
+      const service = new PeerExchangeService(mockCentralCore, { settingsSyncEnabled: true });
+      const oldPayload = makeSettingsPayload({ checksum: "old-checksum" });
+      const newPayload = makeSettingsPayload({ checksum: "new-checksum" });
+      mockGetSettingsForSync.mockResolvedValue(oldPayload);
+      setupSuccessfulSync();
+
+      // First sync
+      await service.syncWithNode(makeNode());
+      expect(mockGetSettingsForSync).toHaveBeenCalledTimes(1);
+
+      // Update global settings - invalidates cache
+      service.updateGlobalSettings({});
+
+      // Advance time within throttle window
+      vi.advanceTimersByTime(60_000);
+
+      // Mock should return new payload for next call
+      mockGetSettingsForSync.mockResolvedValue(newPayload);
+
+      // Second sync should fetch fresh settings (cache invalidated)
+      await service.syncWithNode(makeNode());
+
+      expect(mockGetSettingsForSync).toHaveBeenCalledTimes(2);
+      const call = mockFetch.mock.calls[1];
+      const body = JSON.parse(call[1].body);
+      expect(body.settings.checksum).toBe("new-checksum");
     });
   });
 });

@@ -1,10 +1,20 @@
-import type { CentralCore } from "@fusion/core";
+import type { CentralCore, GlobalSettings, SettingsSyncPayload } from "@fusion/core";
 import type { NodeConfig, PeerSyncRequest, PeerSyncResponse } from "@fusion/core";
 import { peerExchangeLog } from "./logger.js";
 
 export interface PeerExchangeServiceOptions {
   /** Interval between peer sync cycles in milliseconds. Default: 60000 (1 minute) */
   syncIntervalMs?: number;
+  /** When true, include settings and model auth data in peer sync exchanges. Default: false. */
+  settingsSyncEnabled?: boolean;
+  /** Minimum interval between settings syncs with the same node in milliseconds.
+   *  Prevents redundant transfers when the remote version hasn't changed.
+   *  Default: 300000 (5 minutes). Only applies when settingsSyncEnabled is true. */
+  settingsSyncThrottleMs?: number;
+  /** Global settings to include in settings sync. Required when settingsSyncEnabled is true. */
+  globalSettings?: GlobalSettings;
+  /** Provider auth credentials to include in settings sync. */
+  providerAuth?: Record<string, { type: "api_key" | "oauth"; key?: string; accessToken?: string; authenticated?: boolean }>;
 }
 
 /**
@@ -21,6 +31,10 @@ export interface SyncResult {
   updated: number;
   /** Error message if sync failed */
   error?: string;
+  /** Whether remote settings were applied during this sync. */
+  settingsApplied?: boolean;
+  /** The settings version (checksum) observed on the remote node. */
+  settingsVersion?: string;
 }
 
 /**
@@ -35,6 +49,18 @@ export class PeerExchangeService {
   private interval: ReturnType<typeof setInterval> | null = null;
   private activeSync: Promise<void> | null = null;
   private stopped = false;
+  /** Whether settings sync is enabled. Default: false. */
+  private settingsSyncEnabled: boolean;
+  /** Minimum interval between settings syncs with the same node in ms. Default: 5 minutes. */
+  private settingsSyncThrottleMs: number;
+  /** Tracks last settings sync by nodeId: version (checksum) + timestamp. */
+  private lastSettingsSyncByNode = new Map<string, { version: string; timestamp: number }>();
+  /** Cached settings payload from the last successful getSettingsForSync call. */
+  private cachedSettingsPayload: SettingsSyncPayload | null = null;
+  /** Global settings provided via options. */
+  private globalSettings?: GlobalSettings;
+  /** Provider auth credentials provided via options. */
+  private providerAuth?: Record<string, { type: "api_key" | "oauth"; key?: string; accessToken?: string; authenticated?: boolean }>;
 
   /**
    * Create a PeerExchangeService.
@@ -45,6 +71,22 @@ export class PeerExchangeService {
   constructor(centralCore: CentralCore, options: PeerExchangeServiceOptions = {}) {
     this.centralCore = centralCore;
     this.syncIntervalMs = options.syncIntervalMs ?? 60_000; // 1 minute default
+    this.settingsSyncEnabled = options.settingsSyncEnabled ?? false;
+    this.settingsSyncThrottleMs = options.settingsSyncThrottleMs ?? 300_000; // 5 minutes default
+    this.globalSettings = options.globalSettings;
+    this.providerAuth = options.providerAuth;
+  }
+
+  /**
+   * Update the global settings used for settings sync.
+   * Call this when global settings change to ensure fresh data is included in the next sync.
+   *
+   * @param settings - Updated global settings
+   */
+  updateGlobalSettings(settings: GlobalSettings): void {
+    this.globalSettings = settings;
+    // Invalidate cache to ensure fresh payload on next sync
+    this.cachedSettingsPayload = null;
   }
 
   /**
@@ -175,7 +217,9 @@ export class PeerExchangeService {
   /**
    * Sync with a single remote node.
    *
-   * Sends our known peers and merges the response.
+   * Sends our known peers and merges the response. When settingsSyncEnabled is true,
+   * also exchanges settings and model auth data using checksum-based version comparison
+   * and throttling to prevent redundant transfers.
    *
    * @param node - Remote node configuration
    * @returns Sync result with counts and any errors
@@ -203,6 +247,60 @@ export class PeerExchangeService {
         timestamp: new Date().toISOString(),
       };
 
+      // ── Settings sync: decide whether to include settings in request ──
+      let shouldIncludeSettings = false;
+      let currentVersion: string | undefined;
+
+      if (this.settingsSyncEnabled) {
+        try {
+          // Get or refresh cached settings payload
+          if (!this.cachedSettingsPayload) {
+            this.cachedSettingsPayload = await this.centralCore.getSettingsForSync(
+              this.globalSettings ?? {},
+              this.providerAuth ? { providerAuth: this.providerAuth } : undefined
+            );
+          }
+
+          const storedSync = this.lastSettingsSyncByNode.get(node.id);
+          const now = Date.now();
+
+          if (!storedSync) {
+            // First sync with this node - always include settings
+            shouldIncludeSettings = true;
+            peerExchangeLog.log(`Including settings in sync request to ${node.name} (first sync)`);
+          } else if (storedSync.version !== this.cachedSettingsPayload.checksum) {
+            // Local settings have changed - bypass throttle
+            shouldIncludeSettings = true;
+            peerExchangeLog.log(
+              `Including settings in sync request to ${node.name} (version changed: ${storedSync.version} → ${this.cachedSettingsPayload.checksum})`
+            );
+          } else {
+            const elapsed = now - storedSync.timestamp;
+            if (elapsed >= this.settingsSyncThrottleMs) {
+              // Throttle window expired - include settings
+              shouldIncludeSettings = true;
+              peerExchangeLog.log(
+                `Including settings in sync request to ${node.name} (throttle expired after ${elapsed}ms)`
+              );
+            } else {
+              // Throttled - skip settings
+              peerExchangeLog.log(
+                `Settings sync throttled for ${node.name} (version: ${storedSync.version}, ${elapsed}ms ago, throttle: ${this.settingsSyncThrottleMs}ms)`
+              );
+            }
+          }
+
+          if (shouldIncludeSettings) {
+            currentVersion = this.cachedSettingsPayload.checksum;
+            request.settings = this.cachedSettingsPayload;
+          }
+        } catch (err) {
+          // Log error but continue with peer sync
+          const error = err instanceof Error ? err : String(err);
+          peerExchangeLog.warn(`Failed to get settings for sync with ${node.name}: ${error}`);
+        }
+      }
+
       // Build headers
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
@@ -214,6 +312,9 @@ export class PeerExchangeService {
       // Send the sync request with 10-second timeout
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10_000);
+
+      let settingsApplied = false;
+      let settingsVersion: string | undefined;
 
       try {
         const response = await fetch(`${node.url}/api/mesh/sync`, {
@@ -241,17 +342,67 @@ export class PeerExchangeService {
         // This ensures we get updates for existing peers too
         const mergeResult = await this.centralCore.mergePeers(peerResponse.knownPeers);
 
+        // ── Process remote settings if included in response ──
+        if (peerResponse.settings && this.settingsSyncEnabled) {
+          settingsVersion = peerResponse.settings.checksum;
+
+          // Check if we should apply remote settings
+          // Apply if remote checksum is different from our cached checksum
+          const localChecksum = this.cachedSettingsPayload?.checksum ?? "";
+
+          if (peerResponse.settings.checksum !== localChecksum) {
+            try {
+              const applyResult = await this.centralCore.applyRemoteSettings(peerResponse.settings);
+
+              if (applyResult.success) {
+                settingsApplied = true;
+                peerExchangeLog.log(
+                  `Applied remote settings from ${node.name} (version: ${peerResponse.settings.checksum}, ` +
+                  `global: ${applyResult.globalCount}, projects: ${applyResult.projectCount}, auth: ${applyResult.authCount})`
+                );
+                // Invalidate cache to ensure fresh data on next sync
+                this.cachedSettingsPayload = null;
+              } else {
+                peerExchangeLog.warn(
+                  `Failed to apply remote settings from ${node.name}: ${applyResult.error}`
+                );
+              }
+            } catch (err) {
+              const error = err instanceof Error ? err.message : String(err);
+              peerExchangeLog.warn(`Settings sync error with ${node.name}: ${error}`);
+            }
+          } else {
+            peerExchangeLog.log(
+              `Remote settings from ${node.name} are up-to-date (version: ${peerResponse.settings.checksum})`
+            );
+          }
+
+          // Update throttle tracking
+          this.lastSettingsSyncByNode.set(node.id, {
+            version: peerResponse.settings.checksum,
+            timestamp: Date.now(),
+          });
+        }
+
         peerExchangeLog.log(
           `Synced with ${node.name}: ${mergeResult.added.length} new, ${mergeResult.updated.length} updated, ` +
           `${peerResponse.newPeers.length} new to sender`
         );
 
-        return {
+        const result: SyncResult = {
           nodeId: node.id,
           success: true,
           added: mergeResult.added.length,
           updated: mergeResult.updated.length,
         };
+
+        // Only include settings fields when settingsSyncEnabled is true
+        if (this.settingsSyncEnabled) {
+          result.settingsApplied = settingsApplied;
+          result.settingsVersion = settingsVersion;
+        }
+
+        return result;
       } catch (fetchError) {
         clearTimeout(timeoutId);
         throw fetchError;

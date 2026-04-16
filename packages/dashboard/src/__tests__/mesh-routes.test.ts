@@ -21,6 +21,14 @@ const mockGetLocalPeerInfo = vi.fn();
 const mockGetNode = vi.fn();
 const mockUpdateNode = vi.fn();
 const mockGetLocalNode = vi.fn();
+const mockGetSettingsForSync = vi.fn();
+const mockApplyRemoteSettings = vi.fn();
+
+// Mock GlobalSettingsStore
+const mockGetSettings = vi.fn().mockResolvedValue({});
+const mockGlobalSettingsStore = {
+  getSettings: mockGetSettings,
+};
 
 vi.mock("@fusion/core", async () => {
   const actual = await vi.importActual<typeof import("@fusion/core")>("@fusion/core");
@@ -35,6 +43,8 @@ vi.mock("@fusion/core", async () => {
       getNode: mockGetNode,
       updateNode: mockUpdateNode,
       getLocalNode: mockGetLocalNode,
+      getSettingsForSync: mockGetSettingsForSync,
+      applyRemoteSettings: mockApplyRemoteSettings,
     })),
   };
 });
@@ -69,6 +79,10 @@ class MockStore extends EventEmitter {
       deleteTemplate: vi.fn(),
       instantiateMission: vi.fn(),
     };
+  }
+
+  getGlobalSettingsStore() {
+    return mockGlobalSettingsStore;
   }
 
   async listTasks(): Promise<Task[]> {
@@ -379,5 +393,193 @@ describe("POST /api/mesh/sync", () => {
     expect(newPeerIds).toContain("node_c");
     expect(newPeerIds).not.toContain("node_a");
     expect(newPeerIds).not.toContain("node_b");
+  });
+
+  describe("settings sync", () => {
+    function makeSettingsPayload(overrides: Partial<Record<string, unknown>> = {}) {
+      return {
+        exportedAt: "2026-04-01T00:00:00.000Z",
+        checksum: "abc123def456",
+        version: 1,
+        global: {},
+        ...overrides,
+      };
+    }
+
+    beforeEach(() => {
+      mockGetSettingsForSync.mockReset();
+      mockApplyRemoteSettings.mockReset();
+      mockGetSettings.mockReset();
+    });
+
+    it("should apply settings when remote checksum differs", async () => {
+      const remotePayload = makeSettingsPayload({ checksum: "remote-checksum" });
+      const localPayload = makeSettingsPayload({ checksum: "local-checksum" });
+
+      mockGetSettings.mockResolvedValue({});
+      mockGetSettingsForSync.mockResolvedValue(localPayload);
+      mockApplyRemoteSettings.mockResolvedValue({
+        success: true,
+        globalCount: 5,
+        projectCount: 2,
+        authCount: 1,
+      });
+
+      const response = await request(
+        app,
+        "POST",
+        "/api/mesh/sync",
+        JSON.stringify({
+          senderNodeId: "node_remote",
+          senderNodeUrl: "https://remote.example.com",
+          knownPeers: [],
+          timestamp: "2026-04-01T12:00:00.000Z",
+          settings: remotePayload,
+        }),
+        { "Content-Type": "application/json" }
+      );
+
+      expect(response.status).toBe(200);
+      expect(mockApplyRemoteSettings).toHaveBeenCalledWith(remotePayload);
+      expect(mockGetSettingsForSync).toHaveBeenCalled();
+      expect((response.body as any).settings).toBeDefined();
+      expect((response.body as any).settings.checksum).toBe("local-checksum");
+    });
+
+    it("should skip applying settings when checksums match", async () => {
+      const samePayload = makeSettingsPayload({ checksum: "same-checksum" });
+
+      mockGetSettings.mockResolvedValue({});
+      mockGetSettingsForSync.mockResolvedValue(samePayload);
+
+      const response = await request(
+        app,
+        "POST",
+        "/api/mesh/sync",
+        JSON.stringify({
+          senderNodeId: "node_remote",
+          senderNodeUrl: "https://remote.example.com",
+          knownPeers: [],
+          timestamp: "2026-04-01T12:00:00.000Z",
+          settings: samePayload,
+        }),
+        { "Content-Type": "application/json" }
+      );
+
+      expect(response.status).toBe(200);
+      expect(mockApplyRemoteSettings).not.toHaveBeenCalled();
+      expect((response.body as any).settings).toBeDefined();
+    });
+
+    it("should respond with settings when request includes settings", async () => {
+      const remotePayload = makeSettingsPayload({ checksum: "remote-checksum" });
+      const localPayload = makeSettingsPayload({ checksum: "local-checksum" });
+
+      mockGetSettings.mockResolvedValue({});
+      mockGetSettingsForSync.mockResolvedValue(localPayload);
+      mockApplyRemoteSettings.mockResolvedValue({
+        success: true,
+        globalCount: 1,
+        projectCount: 0,
+        authCount: 0,
+      });
+
+      const response = await request(
+        app,
+        "POST",
+        "/api/mesh/sync",
+        JSON.stringify({
+          senderNodeId: "node_remote",
+          senderNodeUrl: "https://remote.example.com",
+          knownPeers: [],
+          timestamp: "2026-04-01T12:00:00.000Z",
+          settings: remotePayload,
+        }),
+        { "Content-Type": "application/json" }
+      );
+
+      expect(response.status).toBe(200);
+      expect((response.body as any).settings).toBeDefined();
+      expect((response.body as any).settings.checksum).toBe("local-checksum");
+    });
+
+    it("should NOT include settings in response when request does not include settings", async () => {
+      const response = await request(
+        app,
+        "POST",
+        "/api/mesh/sync",
+        JSON.stringify({
+          senderNodeId: "node_remote",
+          senderNodeUrl: "https://remote.example.com",
+          knownPeers: [],
+          timestamp: "2026-04-01T12:00:00.000Z",
+        }),
+        { "Content-Type": "application/json" }
+      );
+
+      expect(response.status).toBe(200);
+      expect((response.body as any).settings).toBeUndefined();
+      expect(mockGetSettingsForSync).not.toHaveBeenCalled();
+    });
+
+    it("should not fail sync when settings apply fails", async () => {
+      const remotePayload = makeSettingsPayload({ checksum: "remote-checksum" });
+      const localPayload = makeSettingsPayload({ checksum: "local-checksum" });
+
+      mockGetSettings.mockResolvedValue({});
+      mockGetSettingsForSync.mockResolvedValue(localPayload);
+      mockApplyRemoteSettings.mockResolvedValue({
+        success: false,
+        globalCount: 0,
+        projectCount: 0,
+        authCount: 0,
+        error: "Checksum mismatch",
+      });
+
+      const response = await request(
+        app,
+        "POST",
+        "/api/mesh/sync",
+        JSON.stringify({
+          senderNodeId: "node_remote",
+          senderNodeUrl: "https://remote.example.com",
+          knownPeers: [],
+          timestamp: "2026-04-01T12:00:00.000Z",
+          settings: remotePayload,
+        }),
+        { "Content-Type": "application/json" }
+      );
+
+      // Sync should still succeed even if settings apply failed
+      expect(response.status).toBe(200);
+      expect(mockMergePeers).toHaveBeenCalled();
+      expect((response.body as any).knownPeers).toBeDefined();
+    });
+
+    it("should not fail sync when getSettingsForSync throws", async () => {
+      const remotePayload = makeSettingsPayload({ checksum: "remote-checksum" });
+
+      mockGetSettings.mockRejectedValue(new Error("Settings unavailable"));
+
+      const response = await request(
+        app,
+        "POST",
+        "/api/mesh/sync",
+        JSON.stringify({
+          senderNodeId: "node_remote",
+          senderNodeUrl: "https://remote.example.com",
+          knownPeers: [],
+          timestamp: "2026-04-01T12:00:00.000Z",
+          settings: remotePayload,
+        }),
+        { "Content-Type": "application/json" }
+      );
+
+      // Sync should still succeed even if getting settings failed
+      expect(response.status).toBe(200);
+      expect(mockMergePeers).toHaveBeenCalled();
+      expect((response.body as any).knownPeers).toBeDefined();
+      expect((response.body as any).settings).toBeUndefined();
+    });
   });
 });

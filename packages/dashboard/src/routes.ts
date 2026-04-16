@@ -14881,8 +14881,8 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    * POST /api/mesh/sync
    * Exchange peer information with another node for gossip protocol.
    *
-   * Request body: PeerSyncRequest
-   * Response body: PeerSyncResponse
+   * Request body: PeerSyncRequest (may include optional settings field)
+   * Response body: PeerSyncResponse (may include optional settings field)
    */
   router.post("/mesh/sync", async (req, res) => {
     try {
@@ -14943,16 +14943,56 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
       // Get local node info
       const localPeer = await central.getLocalPeerInfo();
 
+      // ── Settings sync: handle incoming settings and prepare response ──
+      let responseSettings: import("@fusion/core").SettingsSyncPayload | undefined;
+      const remoteSettings = req.body?.settings;
+
+      if (remoteSettings) {
+        try {
+          // Get local settings from the dashboard's GlobalSettingsStore
+          const localGlobal = await store.getGlobalSettingsStore().getSettings();
+          const localPayload = await central.getSettingsForSync(localGlobal);
+          const localChecksum = localPayload.checksum;
+
+          // Apply remote settings if checksum differs (remote is newer/different)
+          if (remoteSettings.checksum !== localChecksum) {
+            const applyResult = await central.applyRemoteSettings(remoteSettings);
+
+            if (applyResult.success) {
+              console.log(
+                `[mesh/sync] Applied remote settings from ${senderNodeId}: ` +
+                `global=${applyResult.globalCount}, projects=${applyResult.projectCount}, auth=${applyResult.authCount}`
+              );
+            } else {
+              console.warn(`[mesh/sync] Failed to apply remote settings: ${applyResult.error}`);
+            }
+          }
+
+          // Always respond with our settings if sender included theirs
+          responseSettings = localPayload;
+        } catch (err) {
+          // Log but don't fail the sync - peers are more important
+          console.error("[mesh/sync] Settings sync error:", err);
+        }
+      }
+
       await central.close();
 
       // Return sync response
-      res.json({
+      const response: Record<string, unknown> = {
         senderNodeId: localPeer.nodeId,
         senderNodeUrl: localPeer.nodeUrl,
         knownPeers: allKnownPeers,
         newPeers,
         timestamp: new Date().toISOString(),
-      });
+      };
+
+      // Include settings in response if sender sent settings
+      if (responseSettings) {
+        response.settings = responseSettings;
+      }
+
+      res.json(response);
     } catch (err: unknown) {
       if (err instanceof ApiError) {
         throw err;
