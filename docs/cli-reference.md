@@ -57,7 +57,7 @@ fn dashboard --dev
 Start Fusion as a headless node (API server + AI engine, no frontend UI).
 
 ```bash
-fn serve [--port <port>] [--host <host>] [--paused]
+fn serve [--port <port>] [--host <host>] [--paused] [--daemon]
 fn serve --interactive
 ```
 
@@ -66,6 +66,26 @@ fn serve --interactive
 | `--port`, `-p` | Port for the API server (default `4040`). |
 | `--host` | Host to bind (default `0.0.0.0`, all interfaces). |
 | `--paused` | Start with engine paused (automation disabled). |
+| `--interactive` | Interactive port selection. |
+| `--daemon` | Enable bearer token authentication for CLI client connections. |
+
+---
+
+## `fn daemon`
+
+Start Fusion daemon (API server + AI engine, always requires bearer token authentication).
+
+```bash
+fn daemon [--port <port>] [--host <host>] [--token <token>] [--paused] [--token-only]
+```
+
+| Option | Description |
+|---|---|
+| `--port`, `-p` | Port for the daemon server (default: auto-assigned). |
+| `--host` | Host to bind (default `0.0.0.0`, all interfaces). |
+| `--token` | Set a specific daemon token. If not provided, a random token is generated and printed. |
+| `--paused` | Start with engine paused (automation disabled). |
+| `--token-only` | Only generate/show the token without starting the server. |
 | `--interactive` | Interactive port selection. |
 
 ---

@@ -53,6 +53,9 @@ Defaults from `DEFAULT_GLOBAL_SETTINGS`; key scope from `GLOBAL_SETTINGS_KEYS`.
 | `validatorGlobalModelId` | `string` | `undefined` | Global baseline AI model ID for validator/reviewer. |
 | `titleSummarizerGlobalProvider` | `string` | `undefined` | Global baseline AI provider for title summarization. Project `titleSummarizerProvider` overrides this. |
 | `titleSummarizerGlobalModelId` | `string` | `undefined` | Global baseline AI model ID for title summarization. |
+| `daemonToken` | `string` | `undefined` | The daemon authentication token (format: `fn_<32 hex chars>`). Used for authenticating CLI clients to the daemon server. |
+| `daemonPort` | `number` | `4040` | Port for daemon mode server binding. |
+| `daemonHost` | `string` | `"0.0.0.0"` | Host for daemon mode server binding (all interfaces by default). |
 
 ### Additional GlobalSettings fields
 
@@ -75,6 +78,8 @@ Defaults from `DEFAULT_PROJECT_SETTINGS`; key scope from `PROJECT_SETTINGS_KEYS`
 | `globalPause` | `boolean` | `false` | Hard stop: terminate active engine sessions and pause scheduling. |
 | `enginePaused` | `boolean` | `false` | Soft pause: stop dispatching new work but allow active sessions to finish. |
 | `maxConcurrent` | `number` | `2` | Max concurrent task-lane AI agents (triage, executor, merge). Utility AI workflows run on a separate control-plane lane and are not gated by this limit. |
+| `maxTriageConcurrent` | `number` | `2` | Max concurrent triage/specification agents. When undefined, falls back to `maxConcurrent`. |
+| `globalMaxConcurrent` | `number` | `4` | System-wide maximum concurrent agents across ALL projects. When multiple projects are active, the sum of their in-flight agents will not exceed this limit. |
 | `maxWorktrees` | `number` | `4` | Max git worktrees. |
 | `pollIntervalMs` | `number` | `15000` | Scheduler poll interval (ms). |
 | `groupOverlappingFiles` | `boolean` | `true` | Serialize execution when file scopes overlap. |
@@ -87,6 +92,9 @@ Defaults from `DEFAULT_PROJECT_SETTINGS`; key scope from `PROJECT_SETTINGS_KEYS`
 | `worktreeNaming` | `"random" \| "task-id" \| "task-title"` | `"random"` | Naming mode for fresh worktree directories. |
 | `taskPrefix` | `string` | `"FN"` | Prefix for generated task IDs. |
 | `includeTaskIdInCommit` | `boolean` | `true` | Include task ID in commit message scope. |
+| `commitAuthorEnabled` | `boolean` | `true` | When true, Fusion adds `--author` attribution to all commits it creates. |
+| `commitAuthorName` | `string` | `"Fusion"` | Name used in the git `--author` flag for Fusion commits. Only used when `commitAuthorEnabled` is true. |
+| `commitAuthorEmail` | `string` | `"noreply@runfusion.ai"` | Email used in the git `--author` flag for Fusion commits. Only used when `commitAuthorEnabled` is true. |
 | `defaultProviderOverride` | `string` | `undefined` | Project-level override for base default provider. Overrides global `defaultProvider`. |
 | `defaultModelIdOverride` | `string` | `undefined` | Project-level override for base default model ID. |
 | `executionProvider` | `string` | `undefined` | AI provider for task execution. Overrides `executionGlobalProvider`. |
@@ -106,6 +114,7 @@ Defaults from `DEFAULT_PROJECT_SETTINGS`; key scope from `PROJECT_SETTINGS_KEYS`
 | `smartConflictResolution` | `boolean` | `true` | Alias/preferred flag for smart merge conflict handling. |
 | `strictScopeEnforcement` | `boolean` | `false` | Block merges on out-of-scope file changes. |
 | `buildRetryCount` | `number` | `0` | Build retry attempts during merge. |
+| `verificationFixRetries` | `number` | `1` | Number of automatic retry attempts when deterministic verification fails during merge. |
 | `buildTimeoutMs` | `number` | `300000` | Build timeout in ms (5 minutes). |
 | `requirePlanApproval` | `boolean` | `false` | Require manual approval before triage → todo. |
 | `reviewHandoffPolicy` | `"disabled" \| "comment-triggered" \| "always"` | `"disabled"` | Policy for agent-to-user review handoff. |

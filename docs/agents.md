@@ -48,6 +48,16 @@ These fields are managed by the engine and cannot be directly edited:
 - `totalInputTokens` / `totalOutputTokens` — Token usage totals (managed by engine)
 - `createdAt` / `updatedAt` / `lastHeartbeatAt` — Timestamps (managed by system)
 - `lastError` — Last error message (managed by engine)
+- `pauseReason` — Reason for paused state (managed by engine)
+
+### Update-Only Fields
+
+These fields can only be set during update (not on create):
+
+- `pauseReason` — Why the agent is paused
+- `lastError` — Last error message
+- `totalInputTokens` — Accumulated input token count
+- `totalOutputTokens` — Accumulated output token count
 
 ## Agents View (Dashboard)
 
@@ -82,6 +92,23 @@ Agents can be configured with:
 - Custom instructions
 - Heartbeat interval/timeout limits
 - Max concurrent heartbeat runs
+- Budget governance settings
+- Model overrides for heartbeat sessions
+
+### Runtime Configuration Fields
+
+The `runtimeConfig` field on agents supports the following options:
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `enabled` | `boolean` | `true` | Whether heartbeat triggers are enabled for this agent |
+| `heartbeatIntervalMs` | `number` | — | How often the agent should wake up for heartbeat checks (ms) |
+| `heartbeatTimeoutMs` | `number` | — | Time without heartbeat before agent is considered unresponsive (ms) |
+| `maxConcurrentRuns` | `number` | `1` | Max concurrent heartbeat runs for this agent |
+| `messageResponseMode` | `"immediate" \| "on-heartbeat"` | `"immediate"` | How the agent responds to messages |
+| `modelProvider` | `string` | — | AI provider override for heartbeat session |
+| `modelId` | `string` | — | AI model ID override for heartbeat session |
+| `budgetConfig` | `AgentBudgetConfig` | — | Token budget governance settings |
 
 Heartbeat values are validated and minimum-clamped.
 
@@ -271,11 +298,13 @@ Behavior:
 
 ## Heartbeat Monitoring and Trigger Scheduling
 
-Fusion's `HeartbeatTriggerScheduler` supports three trigger types:
+Fusion's `HeartbeatTriggerScheduler` supports five trigger types:
 
 - `timer` — periodic wake based on heartbeat interval
 - `assignment` — wake when task is assigned to agent
 - `on_demand` — manual run trigger (`POST /api/agents/:id/runs`)
+- `automation` — triggered by scheduled automation jobs
+- `routine` — triggered by routine execution
 
 All triggers respect per-agent `maxConcurrentRuns` and produce structured wake context metadata.
 
@@ -313,7 +342,7 @@ The dashboard displays agent health status in AgentsView, AgentListModal, and Ag
 | **Terminated** | Agent state is "terminated" |
 | **Error** | Agent state is "error" (uses lastError if available) |
 | **Paused** | Agent state is "paused" (uses pauseReason if available) |
-| **Running** | Agent state is "running" |
+| **Running** | Agent state is "running" (task workers with `active` state also display "Running") |
 | **Disabled** | `runtimeConfig.enabled === false` |
 | **Starting...** | State is "active" with no lastHeartbeatAt |
 | **Idle** | Non-active state with no lastHeartbeatAt |
@@ -385,6 +414,100 @@ POST /api/agents/:id/runs/stop → 200 { ok: true, runId: "run-xxx" }
 ```
 
 If there's no active run, returns `{ ok: true, message: "No active run" }`.
+
+## Budget Governance
+
+Per-agent token budget tracking controls costs and prevents runaway AI spending. Budget configuration is stored in `runtimeConfig.budgetConfig`.
+
+### Budget Configuration Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `tokenBudget` | `number` | Maximum tokens allowed per budget period |
+| `usageThreshold` | `number` (0-1) | Percentage threshold (0.8 = 80%) to trigger warning/warning state |
+| `budgetPeriod` | `"daily" \| "weekly" \| "monthly" \| "total"` | Reset interval for budget tracking |
+| `resetDay` | `number` (0-6) | Day of week for weekly reset (0=Sunday) |
+
+### Budget Status Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `isOverBudget` | `boolean` | Budget limit exceeded |
+| `isOverThreshold` | `boolean` | Usage exceeded warning threshold |
+| `periodStart` | `string` | ISO timestamp when current period started |
+| `inputTokens` | `number` | Tokens used in current period |
+| `outputTokens` | `number` | Tokens generated in current period |
+| `totalTokens` | `number` | Combined input + output tokens |
+
+### Enforcement Behavior
+
+Budget enforcement happens at multiple points:
+
+- `HeartbeatMonitor.executeHeartbeat()` checks budget before creating sessions; skips when `isOverBudget: true` or `isOverThreshold: true` (for timer triggers)
+- `HeartbeatTriggerScheduler.onTimerTick()` skips timer ticks when budget is exceeded
+
+Agents can be paused by budget exhaustion. Timer-triggered heartbeats skip when over threshold to avoid runaway costs, but assignment-triggered and on-demand runs may still execute for responsiveness.
+
+### Budget API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/agents/:id/budget` | Get current budget status |
+| `POST` | `/api/agents/:id/budget/reset` | Reset budget counters for current period |
+
+## Agent Performance Ratings
+
+Agent performance ratings allow users and agents to provide feedback that influences future behavior through system prompt injection.
+
+### Rating API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/agents/:id/ratings` | List all ratings for an agent |
+| `POST` | `/api/agents/:id/ratings` | Submit a new rating |
+| `GET` | `/api/agents/:id/ratings/summary` | Get aggregated rating summary |
+| `DELETE` | `/api/agents/:id/ratings/:ratingId` | Delete a specific rating |
+
+### Rating Structure
+
+Ratings use a 1-5 scale:
+
+| Value | Meaning |
+|-------|---------|
+| 1 | Poor — consistently fails or produces low-quality output |
+| 2 | Below average — often needs correction |
+| 3 | Average — meets expectations with occasional issues |
+| 4 | Good — reliable with minor improvements possible |
+| 5 | Excellent — exceeds expectations consistently |
+
+### Rating Summary
+
+The summary endpoint returns aggregated statistics:
+
+```json
+{
+  "agentId": "AGENT-001",
+  "averageRating": 4.2,
+  "totalRatings": 15,
+  "ratingDistribution": { "1": 0, "2": 1, "3": 2, "4": 8, "5": 4 },
+  "trend": "improving"
+}
+```
+
+The `trend` field indicates rating trajectory: `"improving"`, `"declining"`, or `"stable"`.
+
+### Input Format
+
+To submit a rating:
+
+```
+POST /api/agents/:id/ratings
+{
+  "rating": 4,
+  "comment": "Agent completed the task efficiently with minimal corrections needed",
+  "taskId": "FN-123"
+}
+```
 
 ## Related Docs
 

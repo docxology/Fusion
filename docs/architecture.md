@@ -357,6 +357,25 @@ Key server capabilities:
   - `SubtaskBreakdownModal.tsx`
 - Multi-task creation endpoints are wired under planning/subtask routes in `routes.ts`
 
+### Health and monitoring endpoints
+- **Health check**: `GET /api/health`
+  - Returns liveness status for load balancers and monitoring
+  - Response: `{ status: "ok", version: string, uptime: number }`
+  - No authentication required
+
+### Run Audit API
+The run-audit system records every mutation performed by the engine across three domains:
+- **Database** — task:create, task:update, task:move, etc.
+- **Git** — worktree:create, commit:create, merge:resolve, etc.
+- **Filesystem** — file:write, prompt:write, attachment:create, etc.
+
+Events are tied to specific run IDs for end-to-end traceability.
+
+**Run audit endpoint:**
+- `GET /api/agents/:id/runs/:runId/audit` — Returns audit trail for a specific agent run
+  - Query params: `?domain=database|git|filesystem` for filtering
+  - Requires agent ownership or admin access
+
 ---
 
 ## 7) CLI Package (`@gsxdsm/fusion`)
