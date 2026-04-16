@@ -23536,6 +23536,31 @@ html .column.drag-over * {
   line-height: 1.4;
 }
 
+/* === Skip-state informational banners === */
+.onboarding-skip-banner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: var(--space-sm) var(--space-md);
+  margin-bottom: var(--space-md);
+  border-radius: var(--radius-md);
+  border-left: 3px solid var(--color-warning);
+  background: color-mix(in srgb, var(--color-warning) 8%, transparent);
+}
+
+.onboarding-skip-banner strong {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.onboarding-skip-banner p {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 0;
+  line-height: 1.4;
+}
+
 /* === OnboardingDisclosure === */
 .onboarding-disclosure {
   display: flex;

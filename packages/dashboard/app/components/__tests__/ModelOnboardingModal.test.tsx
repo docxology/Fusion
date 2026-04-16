@@ -2104,4 +2104,147 @@ describe("ModelOnboardingModal progressive disclosure", () => {
       expect(screen.getByTestId("onboarding-auth-status-github")).toHaveClass("auth-status-badge");
     });
   });
+
+  describe("Skip-state messaging", () => {
+    it("shows AI provider skip banner on GitHub step when no provider connected", async () => {
+      // Start at ai-setup with no AI providers connected
+      mockFetchAuthStatus.mockResolvedValueOnce({
+        providers: [
+          { id: "anthropic", name: "Anthropic", authenticated: false, type: "oauth" },
+          { id: "github", name: "GitHub", authenticated: false, type: "oauth" },
+        ],
+      });
+
+      render(<ModelOnboardingModal onComplete={vi.fn()} addToast={vi.fn()} />);
+
+      await navigateToGitHubStep();
+
+      // Should show skip banner about AI provider
+      const banners = screen.getAllByRole("status");
+      expect(banners.some(b => b.classList.contains("onboarding-skip-banner"))).toBe(true);
+
+      const skipBanner = screen.getByText("No AI provider connected").closest(".onboarding-skip-banner");
+      expect(skipBanner).toBeTruthy();
+      expect(skipBanner).toHaveTextContent(/AI features like task planning and code generation won't be available/);
+    });
+
+    it("does not show AI provider skip banner on GitHub step when provider is connected", async () => {
+      // Start with an AI provider already connected
+      mockFetchAuthStatus.mockResolvedValueOnce({
+        providers: [
+          { id: "anthropic", name: "Anthropic", authenticated: true, type: "oauth" },
+          { id: "github", name: "GitHub", authenticated: false, type: "oauth" },
+        ],
+      });
+
+      render(<ModelOnboardingModal onComplete={vi.fn()} addToast={vi.fn()} />);
+
+      await navigateToGitHubStep();
+
+      // Should NOT show skip banner about AI provider
+      expect(screen.queryByText("No AI provider connected")).toBeNull();
+    });
+
+    it("shows GitHub skip banner on First Task step when GitHub not connected", async () => {
+      // AI provider connected but GitHub not connected
+      mockFetchAuthStatus.mockResolvedValueOnce({
+        providers: [
+          { id: "anthropic", name: "Anthropic", authenticated: true, type: "oauth" },
+          { id: "github", name: "GitHub", authenticated: false, type: "oauth" },
+        ],
+      });
+
+      render(<ModelOnboardingModal onComplete={vi.fn()} addToast={vi.fn()} />);
+
+      await navigateToFirstTaskStep();
+
+      // Should show skip banner about GitHub
+      const skipBanner = screen.getByText("GitHub not connected").closest(".onboarding-skip-banner");
+      expect(skipBanner).toBeTruthy();
+      expect(skipBanner).toHaveTextContent(/won't be able to import issues from GitHub/);
+    });
+
+    it("does not show GitHub skip banner on First Task step when GitHub is connected", async () => {
+      // Both AI and GitHub connected - mock for all auth status calls
+      mockFetchAuthStatus.mockResolvedValue({
+        providers: [
+          { id: "anthropic", name: "Anthropic", authenticated: true, type: "oauth" },
+          { id: "github", name: "GitHub", authenticated: true, type: "oauth" },
+        ],
+      });
+
+      render(<ModelOnboardingModal onComplete={vi.fn()} addToast={vi.fn()} />);
+
+      await navigateToFirstTaskStep();
+
+      // Should NOT show skip banner about GitHub (use querySelector to avoid matching the auth badge)
+      const skipBanners = document.querySelectorAll(".onboarding-skip-banner");
+      const githubSkipBanner = Array.from(skipBanners).find(
+        (banner) => banner.textContent?.includes("GitHub not connected")
+      );
+      expect(githubSkipBanner).toBeUndefined();
+    });
+
+    it("shows both skip banners on First Task step when both AI and GitHub are skipped", async () => {
+      // Neither AI nor GitHub connected
+      mockFetchAuthStatus.mockResolvedValueOnce({
+        providers: [
+          { id: "anthropic", name: "Anthropic", authenticated: false, type: "oauth" },
+          { id: "github", name: "GitHub", authenticated: false, type: "oauth" },
+        ],
+      });
+
+      render(<ModelOnboardingModal onComplete={vi.fn()} addToast={vi.fn()} />);
+
+      await navigateToFirstTaskStep();
+
+      // Should show BOTH skip banners
+      expect(screen.getByText("GitHub not connected")).toBeTruthy();
+      expect(screen.getByText("No AI provider connected")).toBeTruthy();
+
+      // Both should have the skip-banner class
+      const githubBanner = screen.getByText("GitHub not connected").closest(".onboarding-skip-banner");
+      const aiBanner = screen.getByText("No AI provider connected").closest(".onboarding-skip-banner");
+      expect(githubBanner).toBeTruthy();
+      expect(aiBanner).toBeTruthy();
+    });
+
+    it("does not show any skip banner on AI Setup step", async () => {
+      // No providers connected
+      mockFetchAuthStatus.mockResolvedValueOnce({
+        providers: [
+          { id: "anthropic", name: "Anthropic", authenticated: false, type: "oauth" },
+        ],
+      });
+
+      render(<ModelOnboardingModal onComplete={vi.fn()} addToast={vi.fn()} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Set Up AI")).toBeTruthy();
+      });
+
+      // Should NOT show any skip banners on AI Setup step
+      expect(screen.queryByText("onboarding-skip-banner")).toBeNull();
+      const skipBanners = document.querySelectorAll(".onboarding-skip-banner");
+      expect(skipBanners.length).toBe(0);
+    });
+
+    it("skip banners have role=status for accessibility", async () => {
+      // Set up with no AI provider connected
+      mockFetchAuthStatus.mockResolvedValueOnce({
+        providers: [
+          { id: "anthropic", name: "Anthropic", authenticated: false, type: "oauth" },
+          { id: "github", name: "GitHub", authenticated: false, type: "oauth" },
+        ],
+      });
+
+      render(<ModelOnboardingModal onComplete={vi.fn()} addToast={vi.fn()} />);
+
+      await navigateToGitHubStep();
+
+      // Check that skip banner has role="status"
+      const skipBanner = screen.getByText("No AI provider connected").closest(".onboarding-skip-banner");
+      expect(skipBanner).toHaveAttribute("role", "status");
+    });
+  });
 });

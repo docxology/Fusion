@@ -690,6 +690,14 @@ export function ModelOnboardingModal({
   const aiOauthProviders = oauthProviders.filter((p) => p.id !== "github");
   const aiApiKeyProviders = apiKeyProviders.filter((p) => p.id !== "github");
 
+  // Skip-state detection: derived state for informational banners
+  // Detects whether at least one AI provider is connected (excludes GitHub)
+  const hasAiProvider = authProviders.some((p) => p.id !== "github" && p.authenticated);
+  // True when on GitHub step but skipped AI setup (no AI provider connected)
+  const aiSetupSkipped = step === "github" && !hasAiProvider;
+  // True when on First Task step but skipped GitHub
+  const githubSkipped = step === "first-task" && !isGithubAuthenticated;
+
   return (
     <div
       className="modal-overlay open"
@@ -1078,6 +1086,17 @@ export function ModelOnboardingModal({
                 Fusion works without it.
               </p>
 
+              {/* Skip-state banner: shown when AI setup was skipped */}
+              {aiSetupSkipped && (
+                <div className="onboarding-skip-banner" role="status">
+                  <strong>No AI provider connected</strong>
+                  <p>
+                    AI features like task planning and code generation won&apos;t be available until you connect one.
+                    You can set this up later in Settings.
+                  </p>
+                </div>
+              )}
+
               <OnboardingDisclosure summary="What does GitHub integration do?">
                 <p className="onboarding-helper-text">
                   Connecting GitHub lets you import issues as tasks, track pull requests,
@@ -1177,6 +1196,28 @@ export function ModelOnboardingModal({
               <p className="model-onboarding-description">
                 Your workspace is ready. Here's how to get started:
               </p>
+
+              {/* Skip-state banner: shown when GitHub was skipped */}
+              {githubSkipped && (
+                <div className="onboarding-skip-banner" role="status">
+                  <strong>GitHub not connected</strong>
+                  <p>
+                    You won&apos;t be able to import issues from GitHub, but you can still create tasks manually.
+                    Connect GitHub later from Settings.
+                  </p>
+                </div>
+              )}
+
+              {/* Skip-state banner: shown when AI setup was also skipped */}
+              {!hasAiProvider && (
+                <div className="onboarding-skip-banner" role="status">
+                  <strong>No AI provider connected</strong>
+                  <p>
+                    AI agents won&apos;t be able to work on tasks until you connect a provider.
+                    Set one up later in Settings → AI Setup.
+                  </p>
+                </div>
+              )}
 
               <OnboardingDisclosure summary="What happens when I create a task?">
                 <p className="onboarding-helper-text">
