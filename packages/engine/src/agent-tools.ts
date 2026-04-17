@@ -9,7 +9,7 @@
 
 import { appendFile } from "node:fs/promises";
 import type { AgentStore, AgentState, AgentCapability, TaskDocument, TaskDocumentCreateInput, TaskStore, RunMutationContext, MessageStore, Message } from "@fusion/core";
-import { dailyMemoryPath, ensureOpenClawMemoryFiles, getMemoryBackendCapabilities, getProjectMemory, isEphemeralAgent, memoryLongTermPath, searchProjectMemory } from "@fusion/core";
+import { dailyMemoryPath, ensureOpenClawMemoryFiles, getMemoryBackendCapabilities, getProjectMemory, isEphemeralAgent, memoryLongTermPath, resolveMemoryBackend, scheduleQmdProjectMemoryRefresh, searchProjectMemory } from "@fusion/core";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import { Type, type Static } from "@mariozechner/pi-ai";
 import type { AgentReflectionService } from "./agent-reflection.js";
@@ -361,7 +361,7 @@ export function createMemoryGetTool(rootDir: string, settings?: MemoryToolSettin
   };
 }
 
-export function createMemoryAppendTool(rootDir: string): ToolDefinition {
+export function createMemoryAppendTool(rootDir: string, settings?: MemoryToolSettings): ToolDefinition {
   return {
     name: "memory_append",
     label: "Append Memory",
@@ -378,6 +378,9 @@ export function createMemoryAppendTool(rootDir: string): ToolDefinition {
       }
 
       await appendFile(targetPath, `\n${content}\n`, "utf-8");
+      if (resolveMemoryBackend(settings).type === "qmd") {
+        scheduleQmdProjectMemoryRefresh(rootDir);
+      }
       return {
         content: [{ type: "text" as const, text: `Appended to ${params.layer} memory.` }],
         details: { layer: params.layer },
@@ -395,7 +398,7 @@ export function createMemoryTools(rootDir: string, settings?: MemoryToolSettings
     createMemoryGetTool(rootDir, settings),
   ];
   if (getMemoryBackendCapabilities(settings).writable) {
-    tools.push(createMemoryAppendTool(rootDir));
+    tools.push(createMemoryAppendTool(rootDir, settings));
   }
   return tools;
 }

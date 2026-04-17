@@ -18,7 +18,7 @@ import * as nodeFs from "node:fs";
 
 import { promisify } from "node:util";
 import type { TaskStore, Column, ScheduleType, ActivityEventType, ModelPreset, MessageType, ParticipantType, RoutineTriggerType, ProjectSettings } from "@fusion/core";
-import { COLUMNS, VALID_TRANSITIONS, GLOBAL_SETTINGS_KEYS, type BatchStatusEntry, type BatchStatusResponse, type BatchStatusResult, type IssueInfo, type PrInfo, type Task, type PiExtensionEntry, type PiExtensionSettings, getCurrentRepo, isGhAuthenticated, AutomationStore, validateBackupSchedule, validateBackupRetention, validateBackupDir, syncBackupRoutine, exportSettings, importSettings, validateImportData, MessageStore, RoutineStore, isWebhookTrigger, resolveMemoryBackend, getMemoryBackendCapabilities, listMemoryBackendTypes, listProjectMemoryFiles, readProjectMemoryFile, readProjectMemoryFileContent, writeProjectMemoryFile, readMemory, writeMemory, searchProjectMemory, isQmdAvailable, QMD_INSTALL_COMMAND, MemoryBackendError, discoverPiExtensions, updatePiExtensionDisabledIds, getFusionAgentDir, getLegacyPiAgentDir } from "@fusion/core";
+import { COLUMNS, VALID_TRANSITIONS, GLOBAL_SETTINGS_KEYS, type BatchStatusEntry, type BatchStatusResponse, type BatchStatusResult, type IssueInfo, type PrInfo, type Task, type PiExtensionEntry, type PiExtensionSettings, getCurrentRepo, isGhAuthenticated, AutomationStore, validateBackupSchedule, validateBackupRetention, validateBackupDir, syncBackupRoutine, exportSettings, importSettings, validateImportData, MessageStore, RoutineStore, isWebhookTrigger, resolveMemoryBackend, getMemoryBackendCapabilities, listMemoryBackendTypes, listProjectMemoryFiles, readProjectMemoryFile, readProjectMemoryFileContent, writeProjectMemoryFile, readMemory, writeMemory, searchProjectMemory, isQmdAvailable, installQmd, refreshQmdProjectMemoryIndex, QMD_INSTALL_COMMAND, MemoryBackendError, scheduleQmdProjectMemoryRefresh, discoverPiExtensions, updatePiExtensionDisabledIds, getFusionAgentDir, getLegacyPiAgentDir } from "@fusion/core";
 import type { ServerOptions } from "./server.js";
 import { GitHubClient, parseBadgeUrl } from "./github.js";
 import { githubRateLimiter } from "./github-poll.js";
@@ -2596,6 +2596,9 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
 
       const rootDir = scopedStore.getRootDir();
       await writeProjectMemoryFile(rootDir, path, content);
+      if (backend.type === "qmd") {
+        scheduleQmdProjectMemoryRefresh(rootDir);
+      }
       res.json({ success: true });
     } catch (err: unknown) {
       if (err instanceof ApiError) {
@@ -2656,21 +2659,18 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
     }
   });
 
-  router.post("/memory/install-qmd", async (_req, res) => {
+  router.post("/memory/install-qmd", async (req, res) => {
     try {
-      const [command, ...args] = QMD_INSTALL_COMMAND.split(" ");
-      if (!command || args.length === 0) {
-        throw new Error("qmd install command is not configured");
+      const { store: scopedStore } = await getProjectContext(req);
+      const installed = await installQmd();
+      const qmdAvailable = await isQmdAvailable();
+      if (installed && qmdAvailable) {
+        scheduleQmdProjectMemoryRefresh(scopedStore.getRootDir());
       }
 
-      await execFileAsync(command, args, {
-        timeout: 120_000,
-        maxBuffer: 1024 * 1024,
-      });
-
       res.json({
-        success: true,
-        qmdAvailable: await isQmdAvailable(),
+        success: installed,
+        qmdAvailable,
         qmdInstallCommand: QMD_INSTALL_COMMAND,
       });
     } catch (err: unknown) {
@@ -2690,6 +2690,9 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         ? req.body.query.trim()
         : "project memory";
       const qmdAvailable = await isQmdAvailable();
+      if (qmdAvailable) {
+        await refreshQmdProjectMemoryIndex(rootDir, { force: true });
+      }
       const results = await searchProjectMemory(
         rootDir,
         { query, limit: 5 },
@@ -2768,6 +2771,9 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
 
       // Write compacted content back to the same selected memory file.
       await writeProjectMemoryFile(rootDir, result.path, compacted);
+      if (backend.type === "qmd") {
+        scheduleQmdProjectMemoryRefresh(rootDir);
+      }
 
       res.json({ path: result.path, content: compacted });
     } catch (err: unknown) {

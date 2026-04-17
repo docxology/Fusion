@@ -64,7 +64,7 @@ const TABS: { id: TabId; label: string; icon: typeof Activity }[] = [
   { id: "employees", label: "Employees", icon: GitBranch },
   { id: "soul", label: "Soul", icon: Heart },
   { id: "instructions", label: "Instructions", icon: BookOpen },
-  { id: "memory", label: "Memory", icon: FileText },
+  { id: "memory", label: "Agent Memory", icon: FileText },
   { id: "reflections", label: "Reflections", icon: BarChart3 },
   { id: "performance", label: "Performance", icon: Star },
   { id: "config", label: "Settings", icon: Settings },
@@ -1697,9 +1697,9 @@ function MemoryTab({
   return (
     <div className="config-tab">
       <div className="config-section">
-        <h3>Memory</h3>
+        <h3>Agent Memory</h3>
         <p className="config-description">
-          Store accumulated context and learnings for this agent.
+          Store context that belongs to this agent only. Workspace memory, daily notes, dreams, and qmd search live in project settings under Project Memory.
         </p>
         {isReadOnly && (
           <p className="config-hint" style={{ marginBottom: 12 }}>
@@ -1714,7 +1714,7 @@ function MemoryTab({
               id="agent-memory"
               className="input"
               rows={15}
-              placeholder="Agent's accumulated knowledge, learnings, and preferences..."
+              placeholder="Durable preferences, operating habits, and context this agent should carry across tasks..."
               value={memory}
               readOnly={isReadOnly}
               onChange={(e) => {
@@ -1723,7 +1723,7 @@ function MemoryTab({
               }}
               style={{ fontFamily: "monospace", fontSize: "0.875rem", resize: "vertical" }}
             />
-            <span className="config-hint">Per-agent memory — stores learnings and context the agent has gathered. Max 50,000 characters.</span>
+            <span className="config-hint">This is injected as Agent Memory in the prompt and kept separate from workspace Project Memory. Max 50,000 characters.</span>
           </div>
         </div>
 

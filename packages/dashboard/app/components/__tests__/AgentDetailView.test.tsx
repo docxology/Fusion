@@ -486,7 +486,7 @@ describe("AgentDetailView", () => {
       expect(screen.getByText("Employees")).toBeInTheDocument();
       expect(screen.getByText("Soul")).toBeInTheDocument();
       expect(screen.getByText("Instructions")).toBeInTheDocument();
-      expect(screen.getByText("Memory")).toBeInTheDocument();
+      expect(screen.getByText("Agent Memory")).toBeInTheDocument();
       expect(screen.getByText("Settings")).toBeInTheDocument();
     });
   });

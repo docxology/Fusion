@@ -3522,7 +3522,7 @@ describe("installQmd", () => {
     const response = {
       success: true,
       qmdAvailable: true,
-      qmdInstallCommand: "bun add -g qmd",
+      qmdInstallCommand: "bun install -g @tobilu/qmd",
     };
 
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
@@ -3551,7 +3551,7 @@ describe("installQmd", () => {
     const response = {
       success: true,
       qmdAvailable: true,
-      qmdInstallCommand: "bun add -g qmd",
+      qmdInstallCommand: "bun install -g @tobilu/qmd",
     };
 
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({

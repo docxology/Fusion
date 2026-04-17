@@ -2271,7 +2271,7 @@ export function SettingsModal({
               <div className="settings-empty-state memory-status-message">
                 <span>
                   qmd is not installed. Search will use local files.
-                  Install indexed retrieval: <code>{backendStatus.qmdInstallCommand || "bun add -g qmd"}</code>
+                  Install indexed retrieval: <code>{backendStatus.qmdInstallCommand || "bun install -g @tobilu/qmd"}</code>
                 </span>
                 <button
                   type="button"

@@ -120,7 +120,7 @@ async function getMemoryBackendUtils() {
     getMemoryBackendCapabilities: module.getMemoryBackendCapabilities,
     MEMORY_BACKEND_SETTINGS_KEYS: module.MEMORY_BACKEND_SETTINGS_KEYS,
     DEFAULT_MEMORY_BACKEND: module.DEFAULT_MEMORY_BACKEND,
-    scheduleQmdProjectMemoryRefresh: module.scheduleQmdProjectMemoryRefresh,
+    scheduleQmdInstallAndRefresh: module.scheduleQmdInstallAndRefresh,
   };
 }
 
@@ -163,6 +163,21 @@ export interface MemoryInstructionContext {
 export function resolveMemoryInstructionContext(
   settings?: MemorySettings,
 ): MemoryInstructionContext {
+  if (settings?.memoryEnabled === false) {
+    return {
+      backendType: "disabled",
+      backendName: "Disabled",
+      capabilities: {
+        readable: false,
+        writable: false,
+        supportsAtomicWrite: false,
+        hasConflictResolution: false,
+        persistent: false,
+      },
+      instructionPathHint: null,
+    };
+  }
+
   // Synchronous resolution using getMemoryBackendCapabilities
   // This avoids the async import but requires synchronous access to capabilities
   // For file backend (default), we can inline the capabilities
@@ -244,7 +259,7 @@ export async function ensureMemoryFileWithBackend(
     resolveMemoryBackend,
     MEMORY_BACKEND_SETTINGS_KEYS,
     DEFAULT_MEMORY_BACKEND,
-    scheduleQmdProjectMemoryRefresh,
+    scheduleQmdInstallAndRefresh,
   } = await getMemoryBackendUtils();
 
   const backendType =
@@ -253,7 +268,7 @@ export async function ensureMemoryFileWithBackend(
   const backend = resolveMemoryBackend(settings);
   const refreshQmdIfNeeded = () => {
     if (backend.type === "qmd" || backendType === "qmd") {
-      scheduleQmdProjectMemoryRefresh(rootDir);
+      scheduleQmdInstallAndRefresh(rootDir);
     }
   };
 

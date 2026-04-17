@@ -11,6 +11,7 @@ import {
   ensureMemoryFileWithBackend,
   buildTriageMemoryInstructions,
   buildExecutionMemoryInstructions,
+  buildReviewerMemoryInstructions,
   readProjectMemory,
   readProjectMemoryWithBackend,
   searchProjectMemory,
@@ -67,6 +68,22 @@ describe("project-memory", () => {
     it("starts with a top-level heading", () => {
       const scaffold = getDefaultMemoryScaffold();
       expect(scaffold).toMatch(/^# Project Memory/);
+    });
+  });
+
+  describe("buildReviewerMemoryInstructions", () => {
+    it("gives reviewers read-only project memory guidance", () => {
+      const instructions = buildReviewerMemoryInstructions(testDir, { memoryBackendType: "qmd" });
+
+      expect(instructions).toContain("## Project Memory");
+      expect(instructions).toContain("memory_search");
+      expect(instructions).toContain("memory_get");
+      expect(instructions).toContain("review evidence");
+      expect(instructions).toContain("Do not update memory during review");
+    });
+
+    it("omits reviewer memory guidance when memory is disabled", () => {
+      expect(buildReviewerMemoryInstructions(testDir, { memoryEnabled: false })).toBe("");
     });
   });
 

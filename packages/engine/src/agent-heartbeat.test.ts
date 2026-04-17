@@ -1989,23 +1989,29 @@ describe("HeartbeatMonitor", () => {
         expect(callArgs.systemPrompt).toContain(HEARTBEAT_SYSTEM_PROMPT);
         expect(callArgs.systemPrompt).toContain("## Soul");
         expect(callArgs.systemPrompt).toContain("Act like a practical teammate who prioritizes clarity.");
-        expect(callArgs.systemPrompt).toContain("## Memory");
+        expect(callArgs.systemPrompt).toContain("## Agent Memory");
         expect(callArgs.systemPrompt).toContain("Recent runs found flaky tests in integration suites.");
         expect(callArgs.systemPrompt).toContain("Always log blockers with actionable next steps.");
+        expect(callArgs.systemPrompt).toContain("## Project Memory");
+        expect(callArgs.systemPrompt).toContain("memory_search");
         expect(callArgs.tools).toBe("readonly");
-        // Tools: task_create, task_log, task_document_write, task_document_read, list_agents, delegate_task, heartbeat_done
-        expect(callArgs.customTools).toHaveLength(7);
+        // Tools: task_create, task_log, task_document_write, task_document_read, list_agents, delegate_task,
+        // memory_search, memory_get, memory_append, heartbeat_done
+        expect(callArgs.customTools).toHaveLength(10);
         expect(callArgs.customTools![0]!.name).toBe("task_create");
         expect(callArgs.customTools![1]!.name).toBe("task_log");
         expect(callArgs.customTools![2]!.name).toBe("task_document_write");
         expect(callArgs.customTools![3]!.name).toBe("task_document_read");
         expect(callArgs.customTools![4]!.name).toBe("list_agents");
         expect(callArgs.customTools![5]!.name).toBe("delegate_task");
+        expect(callArgs.customTools![6]!.name).toBe("memory_search");
+        expect(callArgs.customTools![7]!.name).toBe("memory_get");
+        expect(callArgs.customTools![8]!.name).toBe("memory_append");
         // heartbeat_done is last (terminal tool)
-        expect(callArgs.customTools![6]!.name).toBe("heartbeat_done");
+        expect(callArgs.customTools![9]!.name).toBe("heartbeat_done");
       });
 
-      it("falls back to the base heartbeat prompt when agent has no custom instructions", async () => {
+      it("includes memory instructions even when agent has no custom instructions", async () => {
         const store = createStoreWithAgentForExec({
           soul: undefined,
           memory: undefined,
@@ -2022,7 +2028,30 @@ describe("HeartbeatMonitor", () => {
         await monitor.executeHeartbeat({ agentId: "agent-001", source: "timer" });
 
         const callArgs = mockedCreateKbAgent.mock.calls[0]![0];
-        expect(callArgs.systemPrompt).toBe(HEARTBEAT_SYSTEM_PROMPT);
+        expect(callArgs.systemPrompt).toContain(HEARTBEAT_SYSTEM_PROMPT);
+        expect(callArgs.systemPrompt).toContain("## Project Memory");
+      });
+
+      it("omits memory tools and instructions when project memory is disabled", async () => {
+        const store = createStoreWithAgentForExec();
+        const taskStore = createMockTaskStore({
+          getSettings: vi.fn().mockResolvedValue({ memoryEnabled: false }),
+        } as Partial<TaskStore>);
+        const mockSession = createMockAgentSession();
+        mockedCreateKbAgent.mockResolvedValue({
+          session: mockSession as any,
+        });
+
+        const monitor = new HeartbeatMonitor({ store, taskStore, rootDir: "/tmp/test" });
+
+        await monitor.executeHeartbeat({ agentId: "agent-001", source: "timer" });
+
+        const callArgs = mockedCreateKbAgent.mock.calls[0]![0];
+        const toolNames = callArgs.customTools!.map((tool: any) => tool.name);
+        expect(callArgs.systemPrompt).not.toContain("## Project Memory");
+        expect(toolNames).not.toContain("memory_search");
+        expect(toolNames).not.toContain("memory_get");
+        expect(toolNames).not.toContain("memory_append");
       });
 
       it("includes document tools in heartbeat session", async () => {

@@ -2358,6 +2358,7 @@ export class TaskExecutor {
               agentPrompts: settings.agentPrompts,
               agentStore: this.options.agentStore,
               rootDir: this.rootDir,
+              settings,
             },
           );
 

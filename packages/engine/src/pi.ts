@@ -190,12 +190,12 @@ function compactMarkdownMemorySection(sectionBody: string): string {
   return [
     compacted,
     "",
-    `<!-- Project memory compacted from ${sectionBody.length} characters to avoid context overflow. Read .fusion/memory.md later only if essential. -->`,
+    `<!-- Memory compacted from ${sectionBody.length} characters to avoid context overflow. Use memory tools or the selected memory file later only if essential. -->`,
   ].join("\n").trim();
 }
 
 function compactPromptMemory(prompt: string): string | null {
-  const sectionPattern = /(^|\n)(## (?:Project Memory|Memory)\n\n)([\s\S]*?)(?=\n## [^#]|\n# [^#]|$)/g;
+  const sectionPattern = /(^|\n)(## (?:Project Memory|Agent Memory|Memory)\n\n)([\s\S]*?)(?=\n## [^#]|\n# [^#]|$)/g;
   let changed = false;
   const compactedPrompt = prompt.replace(sectionPattern, (match, prefix: string, heading: string, body: string) => {
     const trimmedBody = body.trim();

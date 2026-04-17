@@ -215,7 +215,7 @@ describe("promptWithFallback context recovery", () => {
     expect(prompt).toHaveBeenCalledTimes(2);
     expect(compact).not.toHaveBeenCalled();
     expect(prompts[1]!.length).toBeLessThan(prompts[0]!.length);
-    expect(prompts[1]).toContain("Project memory compacted");
+    expect(prompts[1]).toContain("Memory compacted");
     expect(prompts[1]).toContain("## Begin");
   });
 

@@ -17,10 +17,11 @@
  * - onTerminated: Called when an unresponsive agent is terminated
  */
 
-import type { AgentStore, AgentHeartbeatRun, HeartbeatInvocationSource, AgentHeartbeatConfig, AgentBudgetStatus, Message, MessageStore, TaskStore, TaskDetail, AgentRole, Agent, InboxTask, BlockedStateSnapshot, RunMutationContext } from "@fusion/core";
+import type { AgentStore, AgentHeartbeatRun, HeartbeatInvocationSource, AgentHeartbeatConfig, AgentBudgetStatus, Message, MessageStore, TaskStore, TaskDetail, AgentRole, Agent, InboxTask, BlockedStateSnapshot, RunMutationContext, Settings } from "@fusion/core";
+import { buildExecutionMemoryInstructions } from "@fusion/core";
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import { Type, type Static } from "@mariozechner/pi-ai";
-import { createTaskCreateTool, createTaskLogToolWithContext, createTaskDocumentWriteTool, createTaskDocumentReadTool, createListAgentsTool, createDelegateTaskTool, createSendMessageTool, createReadMessagesTool, taskCreateParams } from "./agent-tools.js";
+import { createTaskCreateTool, createTaskLogToolWithContext, createTaskDocumentWriteTool, createTaskDocumentReadTool, createListAgentsTool, createDelegateTaskTool, createSendMessageTool, createReadMessagesTool, createMemoryTools, taskCreateParams } from "./agent-tools.js";
 import { AgentLogger } from "./agent-logger.js";
 import { resolveAgentInstructionsWithRatings, buildSystemPromptWithInstructions } from "./agent-instructions.js";
 import { heartbeatLog } from "./logger.js";
@@ -139,6 +140,13 @@ You have readonly file access plus task_create, task_log, and task_document tool
 **Task Documents:** Save important findings with task_document_write(key="...", content="...").
 Documents persist across sessions and are visible in the dashboard's Documents tab.
 
+## Memory Boundaries
+
+You may receive an Agent Memory section and a Project Memory section.
+- Agent Memory is specific to you, including imported and user-created agents such as CEO-style coordinator agents. Use it for your durable operating preferences and role context.
+- Project Memory is the workspace memory system under .fusion/memory/ with long-term memory, daily notes, dreams, and qmd-backed retrieval.
+- Keep these separate: do not copy personal agent operating notes into Project Memory unless they are genuinely useful to every future agent in this workspace.
+
 ## Processing Messages
 
 When you are woken by an incoming message (source includes "wake-on-message"), you should:
@@ -158,6 +166,14 @@ When sending messages:
 const heartbeatDoneParams = Type.Object({
   summary: Type.Optional(Type.String({ description: "Summary of what was accomplished this heartbeat" })),
 });
+
+async function getHeartbeatMemorySettings(taskStore: TaskStore): Promise<Settings | undefined> {
+  const maybeGetSettings = (taskStore as { getSettings?: () => Promise<Settings> }).getSettings;
+  if (!maybeGetSettings) {
+    return undefined;
+  }
+  return maybeGetSettings.call(taskStore);
+}
 
 /**
  * HeartbeatMonitor monitors agents via periodic polling.
@@ -926,6 +942,14 @@ export class HeartbeatMonitor {
         // Build tools with task creation tracking and run context for mutation correlation
         // Pass messageStore for messaging tools (send_message, read_messages)
         const heartbeatTools = this.createHeartbeatTools(agentId, taskStore, taskId, runContext, audit, this.messageStore);
+        let memorySettings: Settings | undefined;
+        try {
+          memorySettings = await getHeartbeatMemorySettings(taskStore);
+          heartbeatTools.push(...createMemoryTools(rootDir, memorySettings));
+        } catch (memorySettingsError) {
+          const message = memorySettingsError instanceof Error ? memorySettingsError.message : String(memorySettingsError);
+          heartbeatLog.warn(`Failed to configure heartbeat memory tools for ${agentId}: ${message}`);
+        }
         heartbeatTools.push(heartbeatDoneTool);
 
         agentLogger = new AgentLogger({
@@ -940,7 +964,13 @@ export class HeartbeatMonitor {
         let systemPrompt = HEARTBEAT_SYSTEM_PROMPT;
         try {
           const agentInstructions = await resolveAgentInstructionsWithRatings(agent, rootDir, this.store);
-          systemPrompt = buildSystemPromptWithInstructions(HEARTBEAT_SYSTEM_PROMPT, agentInstructions);
+          const memoryInstructions = memorySettings?.memoryEnabled === false
+            ? ""
+            : buildExecutionMemoryInstructions(rootDir, memorySettings);
+          systemPrompt = buildSystemPromptWithInstructions(
+            HEARTBEAT_SYSTEM_PROMPT,
+            [agentInstructions, memoryInstructions].filter((part) => part.trim()).join("\n\n"),
+          );
         } catch (instructionError) {
           const message = instructionError instanceof Error ? instructionError.message : String(instructionError);
           heartbeatLog.warn(`Failed to enrich heartbeat system prompt for ${agentId}: ${message}`);

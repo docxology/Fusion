@@ -69,12 +69,12 @@ vi.mock("../../api", () => ({
   })),
   fetchMemoryFile: vi.fn((path = ".fusion/memory/DREAMS.md") => Promise.resolve({ path, content: "" })),
   saveMemoryFile: vi.fn(() => Promise.resolve({ success: true })),
-  installQmd: vi.fn(() => Promise.resolve({ success: true, qmdAvailable: true, qmdInstallCommand: "bun add -g qmd" })),
+  installQmd: vi.fn(() => Promise.resolve({ success: true, qmdAvailable: true, qmdInstallCommand: "bun install -g @tobilu/qmd" })),
   testMemoryRetrieval: vi.fn(() => Promise.resolve({
     query: "project memory",
     qmdAvailable: true,
     usedFallback: false,
-    qmdInstallCommand: "bun add -g qmd",
+    qmdInstallCommand: "bun install -g @tobilu/qmd",
     results: [],
   })),
   fetchGlobalConcurrency: vi.fn(() => Promise.resolve({ globalMaxConcurrent: 4, currentlyActive: 0, queuedCount: 0, projectsActive: {} })),
@@ -90,7 +90,7 @@ vi.mock("../../api", () => ({
     },
     availableBackends: ["file", "readonly", "qmd"],
     qmdAvailable: true,
-    qmdInstallCommand: "bun add -g qmd",
+    qmdInstallCommand: "bun install -g @tobilu/qmd",
   })),
 }));
 
@@ -107,7 +107,7 @@ vi.mock("../../hooks/useMemoryBackendStatus", () => ({
       },
       availableBackends: ["file", "readonly", "qmd"],
       qmdAvailable: true,
-      qmdInstallCommand: "bun add -g qmd",
+      qmdInstallCommand: "bun install -g @tobilu/qmd",
     },
     currentBackend: "file",
     capabilities: {

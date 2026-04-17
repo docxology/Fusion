@@ -129,13 +129,13 @@ describe("SettingsModal", () => {
       query: "pattern",
       qmdAvailable: true,
       usedFallback: false,
-      qmdInstallCommand: "bun add -g qmd",
+      qmdInstallCommand: "bun install -g @tobilu/qmd",
       results: [],
     });
     mockInstallQmd.mockResolvedValue({
       success: true,
       qmdAvailable: true,
-      qmdInstallCommand: "bun add -g qmd",
+      qmdInstallCommand: "bun install -g @tobilu/qmd",
     });
     mockImportSettings.mockResolvedValue({ success: true, globalCount: 0, projectCount: 0 });
     mockFetchGlobalConcurrency.mockResolvedValue({ globalMaxConcurrent: 4, currentlyActive: 0, queuedCount: 0, projectsActive: {} });
@@ -151,7 +151,7 @@ describe("SettingsModal", () => {
       },
       availableBackends: ["file", "readonly", "qmd"],
       qmdAvailable: true,
-      qmdInstallCommand: "bun add -g qmd",
+      qmdInstallCommand: "bun install -g @tobilu/qmd",
     });
     mockUseMemoryBackendStatus.mockReturnValue({
       status: {
@@ -165,7 +165,7 @@ describe("SettingsModal", () => {
         },
         availableBackends: ["file", "readonly", "qmd"],
         qmdAvailable: true,
-        qmdInstallCommand: "bun add -g qmd",
+        qmdInstallCommand: "bun install -g @tobilu/qmd",
       },
       currentBackend: "file",
       capabilities: {
@@ -459,7 +459,7 @@ describe("SettingsModal", () => {
           },
           availableBackends: ["file", "readonly", "qmd"],
           qmdAvailable: false,
-          qmdInstallCommand: "bun add -g qmd",
+          qmdInstallCommand: "bun install -g @tobilu/qmd",
         },
         currentBackend: "qmd",
         capabilities: {

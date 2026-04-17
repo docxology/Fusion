@@ -146,6 +146,39 @@ describe("reviewStep — spec review type", () => {
     expect(opts.systemPrompt).toContain("Mission clarity");
   });
 
+  it("injects read-only memory instructions and tools when project memory is enabled", async () => {
+    mockedCreateHaiAgent.mockResolvedValue(
+      createMockSession("### Verdict: APPROVE\n### Summary\nGood spec."),
+    );
+
+    await reviewStep(
+      "/tmp/worktree", "FN-050", 0, "Spec Review", "spec", "# Task: KB-050",
+      undefined,
+      { rootDir: "/tmp/project", settings: { memoryBackendType: "qmd" } as any },
+    );
+
+    const opts = mockedCreateHaiAgent.mock.calls[0][0];
+    expect(opts.systemPrompt).toContain("## Project Memory");
+    expect(opts.systemPrompt).toContain("Do not update memory during review");
+    expect(opts.customTools?.map((tool: any) => tool.name)).toEqual(["memory_search", "memory_get"]);
+  });
+
+  it("omits reviewer memory tools and instructions when memory is disabled", async () => {
+    mockedCreateHaiAgent.mockResolvedValue(
+      createMockSession("### Verdict: APPROVE\n### Summary\nGood spec."),
+    );
+
+    await reviewStep(
+      "/tmp/worktree", "FN-050", 0, "Spec Review", "spec", "# Task: KB-050",
+      undefined,
+      { rootDir: "/tmp/project", settings: { memoryEnabled: false } as any },
+    );
+
+    const opts = mockedCreateHaiAgent.mock.calls[0][0];
+    expect(opts.systemPrompt).not.toContain("## Project Memory");
+    expect(opts.customTools).toBeUndefined();
+  });
+
   it("builds review request with spec-specific instructions", async () => {
     let capturedPrompt = "";
     mockedCreateHaiAgent.mockResolvedValue({

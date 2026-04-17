@@ -326,12 +326,12 @@ export function NewAgentDialog({ isOpen, onClose, onCreated, projectId }: NewAge
                 />
               </div>
               <div className="agent-dialog-field">
-                <label htmlFor="agent-memory">Memory <span className="agent-dialog-optional">(optional)</span></label>
+                <label htmlFor="agent-memory">Agent Memory <span className="agent-dialog-optional">(optional)</span></label>
                 <textarea
                   id="agent-memory"
                   className="input"
                   rows={2}
-                  placeholder="Per-agent memory — stores learnings and context the agent has gathered..."
+                  placeholder="Private to this agent — durable preferences, operating habits, and context it should carry across tasks..."
                   value={memory}
                   onChange={e => setMemory(e.target.value)}
                 />

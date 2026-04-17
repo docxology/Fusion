@@ -18,8 +18,15 @@ import {
   memoryExists,
   MEMORY_BACKEND_SETTINGS_KEYS,
   DEFAULT_MEMORY_BACKEND,
+  QMD_INSTALL_COMMAND,
   buildQmdSearchArgs,
+  buildQmdCollectionAddArgs,
+  buildQmdRefreshCommands,
+  refreshQmdProjectMemoryIndex,
+  installQmd,
+  ensureQmdInstalled,
   qmdMemoryCollectionName,
+  QMD_REFRESH_INTERVAL_MS,
 } from "./memory-backend.js";
 import type { MemoryBackend } from "./memory-backend.js";
 
@@ -415,6 +422,103 @@ describe("memory-backend", () => {
           "-n",
           "7",
         ]);
+      });
+
+      it("builds qmd collection args for the project memory workspace", () => {
+        const args = buildQmdCollectionAddArgs(tempDir);
+
+        expect(args).toEqual([
+          "collection",
+          "add",
+          join(tempDir, ".fusion", "memory"),
+          "--name",
+          qmdMemoryCollectionName(tempDir),
+          "--mask",
+          "**/*.md",
+        ]);
+      });
+
+      it("builds qmd refresh commands in update then embed order", () => {
+        expect(buildQmdRefreshCommands(tempDir)).toEqual([
+          buildQmdCollectionAddArgs(tempDir),
+          ["update"],
+          ["embed"],
+        ]);
+      });
+
+      it("refreshQmdProjectMemoryIndex runs collection add, update, and embed", async () => {
+        const calls: Array<{ file: string; args: readonly string[] }> = [];
+        const execFileAsync = vi.fn(async (file: string, args: readonly string[]) => {
+          calls.push({ file, args });
+          return { stdout: "", stderr: "" };
+        });
+
+        await refreshQmdProjectMemoryIndex(tempDir, { force: true, execFileAsync });
+
+        expect(calls).toEqual([
+          { file: "qmd", args: buildQmdCollectionAddArgs(tempDir) },
+          { file: "qmd", args: ["update"] },
+          { file: "qmd", args: ["embed"] },
+        ]);
+      });
+
+      it("refreshQmdProjectMemoryIndex is throttled to the refresh interval", async () => {
+        vi.useFakeTimers();
+        const execFileAsync = vi.fn(async () => ({ stdout: "", stderr: "" }));
+
+        try {
+          await refreshQmdProjectMemoryIndex(tempDir, { force: true, execFileAsync });
+          await refreshQmdProjectMemoryIndex(tempDir, { execFileAsync });
+
+          expect(execFileAsync).toHaveBeenCalledTimes(3);
+
+          vi.advanceTimersByTime(QMD_REFRESH_INTERVAL_MS + 1);
+          await refreshQmdProjectMemoryIndex(tempDir, { execFileAsync });
+
+          expect(execFileAsync).toHaveBeenCalledTimes(6);
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+
+      it("uses the OpenClaw qmd package install command", () => {
+        expect(QMD_INSTALL_COMMAND).toBe("bun install -g @tobilu/qmd");
+      });
+
+      it("installQmd runs the configured package install command", async () => {
+        const execFileAsync = vi.fn(async () => ({ stdout: "", stderr: "" }));
+
+        await expect(installQmd({ execFileAsync })).resolves.toBe(true);
+
+        expect(execFileAsync).toHaveBeenCalledWith("bun", ["install", "-g", "@tobilu/qmd"], {
+          timeout: 120_000,
+          maxBuffer: 1024 * 1024,
+        });
+      });
+
+      it("ensureQmdInstalled skips install when qmd is already available", async () => {
+        const execFileAsync = vi.fn(async () => ({ stdout: "", stderr: "" }));
+        const isAvailable = vi.fn(async () => true);
+
+        await expect(ensureQmdInstalled({ execFileAsync, isAvailable })).resolves.toBe(true);
+
+        expect(isAvailable).toHaveBeenCalledOnce();
+        expect(execFileAsync).not.toHaveBeenCalled();
+      });
+
+      it("ensureQmdInstalled installs qmd when it is missing", async () => {
+        const execFileAsync = vi.fn(async () => ({ stdout: "", stderr: "" }));
+        const isAvailable = vi.fn()
+          .mockResolvedValueOnce(false)
+          .mockResolvedValueOnce(true);
+
+        await expect(ensureQmdInstalled({ execFileAsync, isAvailable })).resolves.toBe(true);
+
+        expect(isAvailable).toHaveBeenCalledTimes(2);
+        expect(execFileAsync).toHaveBeenCalledWith("bun", ["install", "-g", "@tobilu/qmd"], {
+          timeout: 120_000,
+          maxBuffer: 1024 * 1024,
+        });
       });
 
       it("clamps qmd result limits", () => {

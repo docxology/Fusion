@@ -97,7 +97,13 @@ function formatMemorySection(memory: string, agentId: string): string {
   if (!trimmed) {
     return "";
   }
-  return `## Memory\n\n${trimmed}`;
+  return [
+    "## Agent Memory",
+    "",
+    "This is memory for this agent only. Keep it separate from workspace Project Memory; use it for durable preferences, operating habits, and context that should follow this agent across tasks.",
+    "",
+    trimmed,
+  ].join("\n");
 }
 
 function formatPerformanceFeedbackSection(ratingSummary: AgentRatingSummary): string {

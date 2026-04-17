@@ -8,8 +8,8 @@
  * - Verdict + feedback is returned to the worker
  */
 
-import type { TaskStore, TaskComment, AgentPromptsConfig } from "@fusion/core";
-import { resolveAgentPrompt } from "@fusion/core";
+import type { TaskStore, TaskComment, AgentPromptsConfig, Settings } from "@fusion/core";
+import { buildReviewerMemoryInstructions, resolveAgentPrompt } from "@fusion/core";
 import { createKbAgent, describeModel, promptWithFallback } from "./pi.js";
 import { buildSessionSkillContext } from "./session-skill-context.js";
 import { AgentLogger } from "./agent-logger.js";
@@ -228,6 +228,8 @@ export interface ReviewOptions {
   agentStore?: import("@fusion/core").AgentStore;
   /** Project root directory for resolving relative instructionsPath files. */
   rootDir?: string;
+  /** Project settings used for backend-aware memory tools and instructions. */
+  settings?: Settings;
 }
 
 /**
@@ -305,8 +307,12 @@ export async function reviewStep(
       // Graceful fallback
     }
   }
+  const reviewerBasePrompt = resolveAgentPrompt("reviewer", options.agentPrompts) || REVIEWER_SYSTEM_PROMPT;
+  const memorySection = options.rootDir && options.settings?.memoryEnabled !== false
+    ? "\n" + buildReviewerMemoryInstructions(options.rootDir, options.settings)
+    : "";
   const reviewerSystemPrompt = buildSystemPromptWithInstructions(
-    resolveAgentPrompt("reviewer", options.agentPrompts) || REVIEWER_SYSTEM_PROMPT,
+    reviewerBasePrompt + memorySection,
     reviewerInstructions,
   );
 
@@ -326,14 +332,17 @@ export async function reviewStep(
   }
 
   // Spawn a reviewer agent with read-only tools
+  const memoryTools = options.rootDir && options.settings?.memoryEnabled !== false
+    ? [
+        createMemorySearchTool(options.rootDir, options.settings),
+        createMemoryGetTool(options.rootDir, options.settings),
+      ]
+    : undefined;
   const { session } = await createKbAgent({
     cwd,
     systemPrompt: reviewerSystemPrompt,
     tools: "readonly",
-    customTools: options.rootDir ? [
-      createMemorySearchTool(options.rootDir),
-      createMemoryGetTool(options.rootDir),
-    ] : undefined,
+    customTools: memoryTools,
     onText: agentLogger ? agentLogger.onText : (delta) => options.onText?.(delta),
     onThinking: agentLogger?.onThinking,
     onToolStart: agentLogger?.onToolStart,

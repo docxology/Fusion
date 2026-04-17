@@ -88,14 +88,16 @@ describe("resolveAgentInstructions", () => {
   it("returns memory section when memory is set", async () => {
     const agent = makeAgent({ memory: "Remember to keep CI green." });
     const result = await resolveAgentInstructions(agent, testDir);
-    expect(result).toBe("## Memory\n\nRemember to keep CI green.");
+    expect(result).toContain("## Agent Memory");
+    expect(result).toContain("memory for this agent only");
+    expect(result).toContain("Remember to keep CI green.");
   });
 
   it("omits memory section when memory is empty", async () => {
     const agent = makeAgent({ instructionsText: "Base instructions", memory: "   " });
     const result = await resolveAgentInstructions(agent, testDir);
     expect(result).toBe("Base instructions");
-    expect(result).not.toContain("## Memory");
+    expect(result).not.toContain("## Agent Memory");
   });
 
   it("returns instructionsText when set", async () => {
@@ -249,12 +251,13 @@ describe("resolveAgentInstructions", () => {
     const instructionsTextIndex = result.indexOf("Inline instructions.");
     const instructionsFileIndex = result.indexOf("File-based instructions here.");
     const soulIndex = result.indexOf("## Soul");
-    const memoryIndex = result.indexOf("## Memory");
+    const memoryIndex = result.indexOf("## Agent Memory");
 
     expect(instructionsTextIndex).toBeLessThan(soulIndex);
     expect(instructionsFileIndex).toBeLessThan(soulIndex);
     expect(soulIndex).toBeLessThan(memoryIndex);
-    expect(result).toContain("## Memory\n\nRemember that this repository uses pnpm workspaces.");
+    expect(result).toContain("## Agent Memory");
+    expect(result).toContain("Remember that this repository uses pnpm workspaces.");
   });
 });
 
@@ -311,13 +314,13 @@ describe("resolveAgentInstructions with rating summary", () => {
     // Verify section order: instructionsText → soul → memory → Performance Feedback
     const instructionsIndex = result.indexOf("Implement the feature.");
     const soulIndex = result.indexOf("## Soul");
-    const memoryIndex = result.indexOf("## Memory");
+    const memoryIndex = result.indexOf("## Agent Memory");
     const feedbackIndex = result.indexOf("## Performance Feedback");
 
     expect(instructionsIndex).toBeLessThan(soulIndex);
     expect(soulIndex).toBeLessThan(memoryIndex);
     expect(memoryIndex).toBeLessThan(feedbackIndex);
-    expect(result).toContain("## Memory");
+    expect(result).toContain("## Agent Memory");
     expect(result).toContain("## Performance Feedback");
   });
 
@@ -522,7 +525,8 @@ describe("buildAgentChatPrompt", () => {
     );
     expect(prompt).toContain("Always include focused tests.");
     expect(prompt).toContain("## Soul\n\nBe calm, direct, and empathetic.");
-    expect(prompt).toContain("## Memory\n\nThe team values short progress updates.");
+    expect(prompt).toContain("## Agent Memory");
+    expect(prompt).toContain("The team values short progress updates.");
     expect(prompt).toContain("## Project Memory\n\nProject preference: avoid force pushes.");
   });
 });

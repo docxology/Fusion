@@ -34,6 +34,7 @@ type ExecFileAsync = (
 ) => Promise<{ stdout: string; stderr: string }>;
 
 const qmdRefreshState = new Map<string, { lastStartedAt: number; inFlight?: Promise<void> }>();
+let qmdInstallPromise: Promise<boolean> | null = null;
 
 // ── Type Definitions ────────────────────────────────────────────────
 
@@ -972,9 +973,7 @@ export function scheduleQmdProjectMemoryRefresh(rootDir: string): void {
 
 export async function isQmdAvailable(): Promise<boolean> {
   try {
-    const { execFile } = await import("node:child_process");
-    const { promisify } = await import("node:util");
-    const execFileAsync = promisify(execFile);
+    const execFileAsync = await getDefaultExecFileAsync();
     await execFileAsync("qmd", ["--help"], {
       timeout: 3000,
       maxBuffer: 128 * 1024,
@@ -983,6 +982,56 @@ export async function isQmdAvailable(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+export async function installQmd(
+  options?: { execFileAsync?: ExecFileAsync },
+): Promise<boolean> {
+  const execFileAsync = options?.execFileAsync ?? await getDefaultExecFileAsync();
+  const [command, ...args] = QMD_INSTALL_COMMAND.split(" ");
+  if (!command || args.length === 0) {
+    throw new MemoryBackendError("BACKEND_UNAVAILABLE", "qmd install command is not configured", "qmd");
+  }
+  await execFileAsync(command, args, {
+    timeout: 120_000,
+    maxBuffer: 1024 * 1024,
+  });
+  return true;
+}
+
+export async function ensureQmdInstalled(
+  options?: {
+    execFileAsync?: ExecFileAsync;
+    isAvailable?: () => Promise<boolean>;
+  },
+): Promise<boolean> {
+  const checkAvailable = options?.isAvailable ?? isQmdAvailable;
+  if (await checkAvailable()) {
+    return true;
+  }
+
+  if (!qmdInstallPromise) {
+    qmdInstallPromise = installQmd({ execFileAsync: options?.execFileAsync })
+      .then(async () => checkAvailable())
+      .finally(() => {
+        qmdInstallPromise = null;
+      });
+  }
+
+  return qmdInstallPromise;
+}
+
+export async function ensureQmdInstalledAndRefresh(rootDir: string): Promise<void> {
+  const available = await ensureQmdInstalled();
+  if (available) {
+    await refreshQmdProjectMemoryIndex(rootDir, { force: true });
+  }
+}
+
+export function scheduleQmdInstallAndRefresh(rootDir: string): void {
+  void ensureQmdInstalledAndRefresh(rootDir).catch(() => {
+    // qmd remains optional at runtime. Search falls back to local file scanning.
+  });
 }
 
 // ── Backend Registration ─────────────────────────────────────────────
