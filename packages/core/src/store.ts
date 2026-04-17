@@ -973,6 +973,41 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
   }
 
   /**
+   * Fast-path version of `getSettingsByScope()` that skips the expensive
+   * `listWorkflowSteps()` query.
+   *
+   * This method reads only the `settings` column from the SQLite config row
+   * (avoiding `readConfig()` which always calls `listWorkflowSteps()`), and
+   * uses the cached global settings from `GlobalSettingsStore`. Use this for
+   * read-heavy paths like the settings page that don't need workflow steps.
+   *
+   * Settings are canonicalized to resolve legacy defaults (e.g., `.kb/backups` → `.fusion/backups`).
+   */
+  async getSettingsByScopeFast(): Promise<{ global: GlobalSettings; project: Partial<ProjectSettings> }> {
+    const [globalSettings, row] = await Promise.all([
+      this.globalSettingsStore.getSettings(),
+      this.db.prepare("SELECT settings FROM config WHERE id = 1").get() as { settings?: string } | undefined,
+    ]);
+
+    const projectSettings = row?.settings ? fromJson<Settings>(row.settings) : undefined;
+
+    // Extract only project-level keys from config.settings
+    const projectScoped: Partial<ProjectSettings> = {};
+    if (projectSettings) {
+      for (const key of Object.keys(projectSettings)) {
+        if (!isGlobalSettingsKey(key)) {
+          (projectScoped as any)[key] = (projectSettings as any)[key];
+        }
+      }
+    }
+
+    // Apply canonicalization to the project settings
+    const canonicalizedProject = canonicalizeSettings(projectScoped as Settings);
+
+    return { global: globalSettings, project: canonicalizedProject };
+  }
+
+  /**
    * Update project-level settings in `.fusion/config.json`.
    *
    * Accepts `Partial<Settings>` for backward compatibility. Any global-only
