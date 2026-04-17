@@ -9,17 +9,20 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { userEvent } from "@testing-library/user-event";
 import { ChatView } from "../ChatView";
+import type { DiscoveredSkill } from "@fusion/dashboard";
 
 const stylesPath = path.resolve(__dirname, "../../styles.css");
 
 // Mock scrollIntoView for JSDOM
 Element.prototype.scrollIntoView = vi.fn();
 import * as useChatModule from "../../hooks/useChat";
+import * as apiModule from "../../api";
 
 // Mock the hooks
 vi.mock("../../hooks/useChat");
 
 const mockUseChat = vi.mocked(useChatModule.useChat);
+const mockFetchDiscoveredSkills = vi.mocked(apiModule.fetchDiscoveredSkills);
 
 // Mock lucide-react icons - spread actual module and override specific icons
 vi.mock("lucide-react", async (importOriginal) => {
@@ -77,6 +80,7 @@ vi.mock("../../api", () => ({
     { id: "agent-001", name: "Alpha", role: "executor", state: "idle", icon: undefined, createdAt: "2026-04-08T00:00:00.000Z", updatedAt: "2026-04-08T00:00:00.000Z", metadata: {} },
     { id: "agent-002", name: "Beta", role: "reviewer", state: "idle", icon: undefined, createdAt: "2026-04-08T00:00:00.000Z", updatedAt: "2026-04-08T00:00:00.000Z", metadata: {} },
   ]),
+  fetchDiscoveredSkills: vi.fn().mockResolvedValue([]),
 }));
 
 const defaultChatState = {
@@ -99,21 +103,48 @@ const defaultChatState = {
   setSearchQuery: vi.fn(),
   filteredSessions: [],
   refreshSessions: vi.fn(),
+  agentsMap: new Map(),
 };
+
+const activeSessionFixture = {
+  id: "session-001",
+  agentId: "agent-001",
+  status: "active",
+  title: "Test Chat",
+  updatedAt: "2026-04-08T00:00:00.000Z",
+};
+
+function createMockSkill(overrides: Partial<DiscoveredSkill>): DiscoveredSkill {
+  return {
+    id: "skill-id",
+    name: "skill/name",
+    path: "/tmp/skills/skill.md",
+    relativePath: "skills/skill.md",
+    enabled: true,
+    metadata: {
+      source: "*",
+      scope: "project",
+      origin: "top-level",
+    },
+    ...overrides,
+  };
+}
 
 function setupMockChat(overrides: Partial<typeof defaultChatState> = {}) {
   const state = { ...defaultChatState, ...overrides };
   mockUseChat.mockReturnValue(state as any);
 }
 
-describe("ChatView", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
+beforeEach(() => {
+  vi.clearAllMocks();
+  mockFetchDiscoveredSkills.mockResolvedValue([]);
+});
 
-  afterEach(() => {
-    vi.clearAllMocks();
-  });
+afterEach(() => {
+  vi.clearAllMocks();
+});
+
+describe("ChatView", () => {
 
   it("renders empty state when no session is selected", () => {
     setupMockChat({ sessions: [] });
@@ -389,6 +420,169 @@ describe("ChatView", () => {
     await userEvent.type(textarea, "Hello world{Shift>}{Enter}{/Shift}");
 
     expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  describe("slash skill autocomplete", () => {
+    it("shows the skill menu when typing slash in the chat input", async () => {
+      mockFetchDiscoveredSkills.mockResolvedValueOnce([
+        createMockSkill({ id: "skill-refactor", name: "refactor/code", relativePath: "skills/refactor/code.md" }),
+      ]);
+      setupMockChat({ activeSession: activeSessionFixture, messages: [] });
+
+      render(<ChatView projectId="proj-123" addToast={vi.fn()} />);
+
+      const textarea = screen.getByTestId("chat-input");
+      await userEvent.type(textarea, "/");
+
+      expect(await screen.findByTestId("chat-skill-menu")).toBeInTheDocument();
+      expect(screen.getByText("refactor/code")).toBeInTheDocument();
+    });
+
+    it("filters discovered skills from slash input", async () => {
+      mockFetchDiscoveredSkills.mockResolvedValueOnce([
+        createMockSkill({ id: "skill-review", name: "review/pr", relativePath: "skills/review/pr.md" }),
+        createMockSkill({ id: "skill-deploy", name: "deploy/app", relativePath: "skills/deploy/app.md" }),
+      ]);
+      setupMockChat({ activeSession: activeSessionFixture, messages: [] });
+
+      render(<ChatView projectId="proj-123" addToast={vi.fn()} />);
+
+      const textarea = screen.getByTestId("chat-input");
+      await userEvent.type(textarea, "/re");
+
+      expect(await screen.findByText("review/pr")).toBeInTheDocument();
+      expect(screen.queryByText("deploy/app")).not.toBeInTheDocument();
+    });
+
+    it("inserts /skill command when clicking a menu item", async () => {
+      mockFetchDiscoveredSkills.mockResolvedValueOnce([
+        createMockSkill({ id: "skill-review", name: "review/pr", relativePath: "skills/review/pr.md" }),
+      ]);
+      setupMockChat({ activeSession: activeSessionFixture, messages: [] });
+
+      render(<ChatView projectId="proj-123" addToast={vi.fn()} />);
+
+      const textarea = screen.getByTestId("chat-input");
+      await userEvent.type(textarea, "/re");
+
+      await userEvent.click(await screen.findByRole("option", { name: /review\/pr/i }));
+
+      expect(textarea).toHaveValue("/skill:review/pr ");
+      expect(screen.queryByTestId("chat-skill-menu")).not.toBeInTheDocument();
+    });
+
+    it("supports arrow navigation with wrapping and Enter selection", async () => {
+      mockFetchDiscoveredSkills.mockResolvedValueOnce([
+        createMockSkill({ id: "skill-alpha", name: "alpha", relativePath: "skills/alpha.md" }),
+        createMockSkill({ id: "skill-beta", name: "beta", relativePath: "skills/beta.md" }),
+        createMockSkill({ id: "skill-gamma", name: "gamma", relativePath: "skills/gamma.md" }),
+      ]);
+      setupMockChat({ activeSession: activeSessionFixture, messages: [] });
+
+      render(<ChatView projectId="proj-123" addToast={vi.fn()} />);
+
+      const textarea = screen.getByTestId("chat-input");
+      await userEvent.type(textarea, "/");
+      await screen.findByRole("option", { name: /alpha/i });
+
+      // Wrap to bottom from the first item.
+      await userEvent.keyboard("{ArrowUp}");
+      expect(screen.getByRole("option", { name: /gamma/i })).toHaveClass(
+        "chat-skill-menu-item--highlighted",
+      );
+
+      await userEvent.keyboard("{Enter}");
+      expect(textarea).toHaveValue("/skill:gamma ");
+    });
+
+    it("supports selecting highlighted skill with Tab", async () => {
+      mockFetchDiscoveredSkills.mockResolvedValueOnce([
+        createMockSkill({ id: "skill-alpha", name: "alpha", relativePath: "skills/alpha.md" }),
+        createMockSkill({ id: "skill-beta", name: "beta", relativePath: "skills/beta.md" }),
+      ]);
+      setupMockChat({ activeSession: activeSessionFixture, messages: [] });
+
+      render(<ChatView projectId="proj-123" addToast={vi.fn()} />);
+
+      const textarea = screen.getByTestId("chat-input");
+      await userEvent.type(textarea, "/");
+      await screen.findByRole("option", { name: /alpha/i });
+
+      await userEvent.keyboard("{ArrowDown}");
+      expect(screen.getByRole("option", { name: /beta/i })).toHaveClass(
+        "chat-skill-menu-item--highlighted",
+      );
+
+      await userEvent.keyboard("{Tab}");
+      expect(textarea).toHaveValue("/skill:beta ");
+    });
+
+    it("closes the menu when pressing Escape", async () => {
+      mockFetchDiscoveredSkills.mockResolvedValueOnce([
+        createMockSkill({ id: "skill-review", name: "review/pr", relativePath: "skills/review/pr.md" }),
+      ]);
+      setupMockChat({ activeSession: activeSessionFixture, messages: [] });
+
+      render(<ChatView projectId="proj-123" addToast={vi.fn()} />);
+
+      const textarea = screen.getByTestId("chat-input");
+      await userEvent.type(textarea, "/");
+      expect(await screen.findByTestId("chat-skill-menu")).toBeInTheDocument();
+
+      await userEvent.keyboard("{Escape}");
+      expect(screen.queryByTestId("chat-skill-menu")).not.toBeInTheDocument();
+    });
+
+    it("closes the menu when slash trigger pattern no longer matches", async () => {
+      mockFetchDiscoveredSkills.mockResolvedValueOnce([
+        createMockSkill({ id: "skill-review", name: "review/pr", relativePath: "skills/review/pr.md" }),
+      ]);
+      setupMockChat({ activeSession: activeSessionFixture, messages: [] });
+
+      render(<ChatView projectId="proj-123" addToast={vi.fn()} />);
+
+      const textarea = screen.getByTestId("chat-input");
+      await userEvent.type(textarea, "/re");
+      expect(await screen.findByTestId("chat-skill-menu")).toBeInTheDocument();
+
+      await userEvent.type(textarea, " ");
+      expect(screen.queryByTestId("chat-skill-menu")).not.toBeInTheDocument();
+    });
+
+    it("shows loading indicator while discovered skills are still loading", async () => {
+      let resolveSkills: ((skills: DiscoveredSkill[]) => void) | undefined;
+      mockFetchDiscoveredSkills.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveSkills = resolve;
+          }),
+      );
+      setupMockChat({ activeSession: activeSessionFixture, messages: [] });
+
+      render(<ChatView projectId="proj-123" addToast={vi.fn()} />);
+
+      const textarea = screen.getByTestId("chat-input");
+      await userEvent.type(textarea, "/");
+
+      expect(await screen.findByText("Loading skills…")).toBeInTheDocument();
+
+      resolveSkills?.([createMockSkill({ id: "skill-review", name: "review/pr", relativePath: "skills/review/pr.md" })]);
+      await waitFor(() => {
+        expect(screen.getByText("review/pr")).toBeInTheDocument();
+      });
+    });
+
+    it("does not crash when discovered skills fail to load", async () => {
+      mockFetchDiscoveredSkills.mockRejectedValueOnce(new Error("skills endpoint unavailable"));
+      setupMockChat({ activeSession: activeSessionFixture, messages: [] });
+
+      render(<ChatView projectId="proj-123" addToast={vi.fn()} />);
+
+      const textarea = screen.getByTestId("chat-input");
+      await userEvent.type(textarea, "/");
+
+      expect(await screen.findByText("No skills available")).toBeInTheDocument();
+    });
   });
 
   it("disables send button when input is empty", () => {

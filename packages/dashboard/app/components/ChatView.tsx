@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   MessageSquare,
   Send,
@@ -11,8 +11,9 @@ import {
 } from "lucide-react";
 import { useChat } from "../hooks/useChat";
 import { useViewportMode } from "./Header";
-import { fetchAgents, fetchModels } from "../api";
+import { fetchAgents, fetchDiscoveredSkills, fetchModels } from "../api";
 import type { Agent } from "@fusion/core";
+import type { DiscoveredSkill } from "@fusion/dashboard";
 import type { ModelInfo } from "../api";
 import { CustomModelDropdown } from "./CustomModelDropdown";
 
@@ -109,6 +110,22 @@ function formatModelTag(provider?: string | null, modelId?: string | null): stri
  * of the agentId stored on the session. This ID serves as metadata only.
  */
 const KB_AGENT_ID = "__kb_agent__";
+
+function getSkillTriggerMatch(value: string): { filter: string; start: number; end: number } | null {
+  const triggerMatch = /(^|[\s])\/([^\s]*)$/.exec(value);
+  if (!triggerMatch) {
+    return null;
+  }
+
+  const prefix = triggerMatch[1] ?? "";
+  const filter = triggerMatch[2] ?? "";
+  const start = triggerMatch.index + prefix.length;
+  return {
+    filter,
+    start,
+    end: value.length,
+  };
+}
 
 interface NewChatDialogProps {
   onClose: () => void;
@@ -263,12 +280,38 @@ export function ChatView({ projectId, addToast }: ChatViewProps) {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [agentsMap, setAgentsMap] = useState<Map<string, Agent>>(new Map());
+  const [discoveredSkills, setDiscoveredSkills] = useState<DiscoveredSkill[]>([]);
+  const [skillsLoading, setSkillsLoading] = useState(true);
+  const [showSkillMenu, setShowSkillMenu] = useState(false);
+  const [skillFilter, setSkillFilter] = useState("");
+  const [highlightedSkillIndex, setHighlightedSkillIndex] = useState(0);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const hideSkillMenuTimeoutRef = useRef<number | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const mode = useViewportMode();
   const isMobile = mode === "mobile";
+
+  const filteredSkills = useMemo(() => {
+    const normalizedFilter = skillFilter.trim().toLowerCase();
+    const matchingSkills = normalizedFilter
+      ? discoveredSkills.filter((skill) => skill.name.toLowerCase().includes(normalizedFilter))
+      : discoveredSkills;
+    return matchingSkills.slice(0, 10);
+  }, [discoveredSkills, skillFilter]);
+
+  useEffect(() => {
+    setHighlightedSkillIndex(0);
+  }, [filteredSkills]);
+
+  useEffect(() => {
+    return () => {
+      if (hideSkillMenuTimeoutRef.current !== null) {
+        window.clearTimeout(hideSkillMenuTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Scroll to bottom on new messages or streaming
   useEffect(() => {
@@ -299,6 +342,33 @@ export function ChatView({ projectId, addToast }: ChatViewProps) {
       });
   }, []);
 
+  // Fetch discovered skills for slash command autocomplete
+  useEffect(() => {
+    let cancelled = false;
+    setSkillsLoading(true);
+
+    fetchDiscoveredSkills(projectId)
+      .then((skills) => {
+        if (!cancelled) {
+          setDiscoveredSkills(skills);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setDiscoveredSkills([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setSkillsLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+
   // Handle create session
   const handleCreateSession = useCallback(
     async (input: { agentId: string; modelProvider?: string; modelId?: string }) => {
@@ -319,6 +389,8 @@ export function ChatView({ projectId, addToast }: ChatViewProps) {
     const trimmed = messageInput.trim();
     if (!trimmed || isStreaming || !activeSession) return;
     setMessageInput("");
+    setShowSkillMenu(false);
+    setSkillFilter("");
     try {
       await sendMessage(trimmed);
     } catch {
@@ -326,23 +398,114 @@ export function ChatView({ projectId, addToast }: ChatViewProps) {
     }
   }, [messageInput, isStreaming, activeSession, sendMessage, addToast]);
 
+  const handleSkillSelect = useCallback(
+    (skill: DiscoveredSkill) => {
+      setMessageInput((currentInput) => {
+        const triggerMatch = getSkillTriggerMatch(currentInput);
+        if (!triggerMatch) {
+          return currentInput;
+        }
+
+        const replacement = `/skill:${skill.name} `;
+        const nextInput =
+          currentInput.slice(0, triggerMatch.start) + replacement + currentInput.slice(triggerMatch.end);
+
+        window.requestAnimationFrame(() => {
+          if (!inputRef.current) return;
+          inputRef.current.style.height = "auto";
+          inputRef.current.style.height = `${Math.min(inputRef.current.scrollHeight, 120)}px`;
+          inputRef.current.focus();
+        });
+
+        return nextInput;
+      });
+
+      setShowSkillMenu(false);
+      setSkillFilter("");
+      setHighlightedSkillIndex(0);
+    },
+    [],
+  );
+
   // Handle input key down
   const handleInputKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (showSkillMenu && e.key === "ArrowDown") {
+        e.preventDefault();
+        if (filteredSkills.length > 0) {
+          setHighlightedSkillIndex((prev) => (prev + 1) % filteredSkills.length);
+        }
+        return;
+      }
+
+      if (showSkillMenu && e.key === "ArrowUp") {
+        e.preventDefault();
+        if (filteredSkills.length > 0) {
+          setHighlightedSkillIndex((prev) =>
+            prev === 0 ? filteredSkills.length - 1 : prev - 1,
+          );
+        }
+        return;
+      }
+
+      if (showSkillMenu && (e.key === "Enter" || e.key === "Tab") && filteredSkills.length > 0) {
+        e.preventDefault();
+        const skillToSelect = filteredSkills[highlightedSkillIndex] ?? filteredSkills[0];
+        if (skillToSelect) {
+          handleSkillSelect(skillToSelect);
+        }
+        return;
+      }
+
+      if (showSkillMenu && e.key === "Escape") {
+        e.preventDefault();
+        setShowSkillMenu(false);
+        return;
+      }
+
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         void handleSend();
       }
     },
-    [handleSend],
+    [showSkillMenu, filteredSkills, highlightedSkillIndex, handleSkillSelect, handleSend],
   );
 
   // Handle textarea resize
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const textarea = e.target;
-    setMessageInput(textarea.value);
+    const nextValue = textarea.value;
+    setMessageInput(nextValue);
+
+    const triggerMatch = getSkillTriggerMatch(nextValue);
+    if (triggerMatch) {
+      setShowSkillMenu(true);
+      setSkillFilter(triggerMatch.filter);
+    } else {
+      setShowSkillMenu(false);
+      setSkillFilter("");
+    }
+
     textarea.style.height = "auto";
     textarea.style.height = `${Math.min(textarea.scrollHeight, 120)}px`;
+  }, []);
+
+  const handleInputBlur = useCallback(() => {
+    if (hideSkillMenuTimeoutRef.current !== null) {
+      window.clearTimeout(hideSkillMenuTimeoutRef.current);
+    }
+
+    hideSkillMenuTimeoutRef.current = window.setTimeout(() => {
+      setShowSkillMenu(false);
+      hideSkillMenuTimeoutRef.current = null;
+    }, 120);
+  }, []);
+
+  const handleInputFocus = useCallback(() => {
+    if (hideSkillMenuTimeoutRef.current !== null) {
+      window.clearTimeout(hideSkillMenuTimeoutRef.current);
+      hideSkillMenuTimeoutRef.current = null;
+    }
   }, []);
 
   // Handle archive
@@ -621,6 +784,35 @@ export function ChatView({ projectId, addToast }: ChatViewProps) {
         {/* Input */}
         {activeSession && (
           <div className="chat-input-area">
+            {showSkillMenu && (
+              <div className="chat-skill-menu" data-testid="chat-skill-menu" role="listbox" aria-label="Skill suggestions">
+                {skillsLoading ? (
+                  <div className="chat-skill-menu-empty">Loading skills…</div>
+                ) : filteredSkills.length === 0 ? (
+                  <div className="chat-skill-menu-empty">
+                    {skillFilter ? "No skills found" : "No skills available"}
+                  </div>
+                ) : (
+                  filteredSkills.map((skill, index) => (
+                    <button
+                      key={skill.id}
+                      type="button"
+                      role="option"
+                      aria-selected={index === highlightedSkillIndex}
+                      className={`chat-skill-menu-item${index === highlightedSkillIndex ? " chat-skill-menu-item--highlighted" : ""}`}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onMouseEnter={() => setHighlightedSkillIndex(index)}
+                      onClick={() => handleSkillSelect(skill)}
+                    >
+                      <span className="chat-skill-menu-item-name">{skill.name}</span>
+                      <span className="chat-skill-menu-item-description" title={skill.relativePath}>
+                        {skill.relativePath}
+                      </span>
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
             <textarea
               ref={inputRef}
               className="chat-input-textarea"
@@ -628,6 +820,8 @@ export function ChatView({ projectId, addToast }: ChatViewProps) {
               value={messageInput}
               onChange={handleInputChange}
               onKeyDown={handleInputKeyDown}
+              onBlur={handleInputBlur}
+              onFocus={handleInputFocus}
               disabled={isStreaming}
               rows={1}
               data-testid="chat-input"
