@@ -23995,34 +23995,82 @@ html .column.drag-over * {
   align-items: center;
 }
 
-.onboarding-apikey-actions {
+.onboarding-provider-key-icon {
+  margin-right: var(--space-xs);
+}
+
+.onboarding-provider-card__actions--api-key {
+  align-items: stretch;
+  width: min(calc(var(--space-2xl) * 10), 100%);
+}
+
+/* === Onboarding API Key Form === */
+.onboarding-apikey-form {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  align-items: flex-end;
+  gap: var(--space-sm);
+}
+
+.onboarding-apikey-connected-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+}
+
+.onboarding-apikey-field-label {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
 }
 
 .onboarding-apikey-input-row {
   display: flex;
-  gap: 8px;
   align-items: center;
+  gap: var(--space-sm);
 }
 
 .onboarding-apikey-input {
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--text);
-  padding: 6px 10px;
-  font-size: 13px;
-  width: 220px;
-  font-family: monospace;
+  width: 100%;
+  min-height: 36px;
+  font-family: var(--font-mono);
 }
 
 .onboarding-apikey-input:focus {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+  box-shadow: var(--focus-ring);
+}
+
+.onboarding-apikey-instructions {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.onboarding-apikey-dashboard-link {
+  color: var(--color-info);
+  font-size: 12px;
+  text-decoration: none;
+  transition: color var(--transition-fast);
+}
+
+.onboarding-apikey-dashboard-link:hover {
+  text-decoration: underline;
+}
+
+.onboarding-apikey-dashboard-link:focus-visible {
+  outline: var(--focus-ring-strong);
+  border-radius: var(--radius-sm);
+}
+
+.onboarding-apikey-usage {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 12px;
+  font-style: italic;
+  line-height: 1.4;
 }
 
 /* Model selector in onboarding */
@@ -24384,18 +24432,28 @@ html .column.drag-over * {
     justify-content: flex-end;
   }
 
-  .onboarding-apikey-input {
+  .onboarding-provider-card__actions--api-key {
     width: 100%;
   }
 
-  .onboarding-apikey-actions {
-    align-items: stretch;
+  .onboarding-apikey-input {
     width: 100%;
+    min-height: 36px;
   }
 
   .onboarding-apikey-input-row {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .onboarding-apikey-input-row .btn {
+    min-height: 36px;
+  }
+
+  .onboarding-apikey-dashboard-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 36px;
   }
 
   .model-onboarding-footer {

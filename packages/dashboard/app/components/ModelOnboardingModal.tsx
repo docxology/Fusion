@@ -15,22 +15,115 @@ import type { ToastType } from "../hooks/useToast";
 import { CustomModelDropdown } from "./CustomModelDropdown";
 import { ProviderIcon } from "./ProviderIcon";
 
+/** Provider-specific API key setup metadata for onboarding form rendering */
+interface ApiKeyInfo {
+  /** Label shown above the input field, e.g. "OpenAI API Key" */
+  fieldLabel: string;
+  /** Brief setup instructions: where to find/create the key */
+  setupInstructions: string;
+  /** URL to the provider's API key dashboard (optional) */
+  dashboardUrl?: string;
+  /** Hint text shown inside the input via placeholder */
+  inputPlaceholder?: string;
+  /** Brief text explaining where Fusion uses this key */
+  usageDescription: string;
+}
+
+interface ProviderInfo {
+  description: string;
+  apiKeyInfo?: ApiKeyInfo;
+}
+
 /** Provider metadata with plain-language descriptions for the onboarding UI */
-const PROVIDER_INFO: Record<string, { description: string }> = {
+const PROVIDER_INFO: Record<string, ProviderInfo> = {
   anthropic: { description: "Claude models — strong at reasoning, analysis, and code" },
-  openai: { description: "GPT models — versatile for a wide range of tasks" },
+  openai: {
+    description: "GPT models — versatile for a wide range of tasks",
+    apiKeyInfo: {
+      fieldLabel: "OpenAI API Key",
+      setupInstructions: "Create an API key from your OpenAI dashboard under API keys.",
+      dashboardUrl: "https://platform.openai.com/api-keys",
+      inputPlaceholder: "sk-...",
+      usageDescription: "Used for GPT models in task execution and planning",
+    },
+  },
   "openai-codex": { description: "Codex models by OpenAI — optimized for coding tasks" },
   google: { description: "Gemini models — multimodal with strong reasoning" },
   gemini: { description: "Gemini models — multimodal with strong reasoning" },
-  ollama: { description: "Run open-source models locally on your machine" },
-  minimax: { description: "MiniMax models — cost-effective for high-volume usage" },
-  zai: { description: "GLM models by Zhipu AI — strong multilingual support" },
+  ollama: {
+    description: "Run open-source models locally on your machine",
+    apiKeyInfo: {
+      fieldLabel: "Ollama Endpoint",
+      setupInstructions: "Enter your Ollama endpoint URL (for example http://localhost:11434).",
+      inputPlaceholder: "http://localhost:11434",
+      usageDescription: "Connects to your local Ollama instance",
+    },
+  },
+  minimax: {
+    description: "MiniMax models — cost-effective for high-volume usage",
+    apiKeyInfo: {
+      fieldLabel: "MiniMax API Key",
+      setupInstructions: "Generate an API key from the MiniMax platform developer console.",
+      dashboardUrl: "https://platform.minimaxi.com/",
+      inputPlaceholder: "Enter your MiniMax API key",
+      usageDescription: "Used for MiniMax models in task execution",
+    },
+  },
+  zai: {
+    description: "GLM models by Zhipu AI — strong multilingual support",
+    apiKeyInfo: {
+      fieldLabel: "Zhipu AI API Key",
+      setupInstructions: "Create an API key in the Zhipu AI open platform account settings.",
+      dashboardUrl: "https://open.bigmodel.cn/",
+      inputPlaceholder: "Enter your Zhipu AI API key",
+      usageDescription: "Used for GLM models in task execution",
+    },
+  },
   kimi: { description: "Kimi by Moonshot AI — long-context capabilities" },
   moonshot: { description: "Kimi by Moonshot AI — long-context capabilities" },
+  "kimi-coding": {
+    description: "Kimi by Moonshot AI — long-context capabilities",
+    apiKeyInfo: {
+      fieldLabel: "Kimi API Key",
+      setupInstructions: "Create your API key in the Moonshot platform account settings.",
+      dashboardUrl: "https://platform.moonshot.cn/",
+      inputPlaceholder: "Enter your Kimi API key",
+      usageDescription: "Used for Kimi/Moonshot AI models in task execution and planning",
+    },
+  },
+  openrouter: {
+    description: "OpenRouter — route requests across multiple AI providers",
+    apiKeyInfo: {
+      fieldLabel: "OpenRouter API Key",
+      setupInstructions: "Create an API key from your OpenRouter account key management page.",
+      dashboardUrl: "https://openrouter.ai/keys",
+      inputPlaceholder: "sk-or-v1-...",
+      usageDescription: "Routes to multiple AI model providers through a single key",
+    },
+  },
+};
+
+const API_KEY_INFO_FALLBACK: ApiKeyInfo = {
+  fieldLabel: "API Key",
+  setupInstructions: "Enter your API key for this provider.",
+  inputPlaceholder: "Enter API key",
+  usageDescription: "Used by Fusion to authenticate requests to this provider",
 };
 
 /** Fallback description for providers not in the map */
-const PROVIDER_INFO_FALLBACK = { description: "AI provider — connect to start using AI models" };
+const PROVIDER_INFO_FALLBACK: ProviderInfo = {
+  description: "AI provider — connect to start using AI models",
+  apiKeyInfo: API_KEY_INFO_FALLBACK,
+};
+
+function getProviderInfo(providerId: string): ProviderInfo {
+  return PROVIDER_INFO[providerId] ?? PROVIDER_INFO_FALLBACK;
+}
+
+function getApiKeyInfo(provider: AuthProvider): ApiKeyInfo {
+  const info = getProviderInfo(provider.id);
+  return info.apiKeyInfo ?? API_KEY_INFO_FALLBACK;
+}
 
 /** Props for OnboardingDisclosure component */
 interface OnboardingDisclosureProps {
@@ -66,6 +159,100 @@ function OnboardingDisclosure({ summary, children, className = "" }: OnboardingD
           {children}
         </div>
       )}
+    </div>
+  );
+}
+
+interface ApiKeyEntryFormProps {
+  provider: AuthProvider;
+  apiKeyInfo: ApiKeyInfo;
+  inputValue: string;
+  isSaving: boolean;
+  error?: string;
+  isConnected: boolean;
+  onInputChange: (providerId: string, key: string) => void;
+  onSave: (providerId: string, key: string) => void | Promise<void>;
+  onClear: (providerId: string) => void | Promise<void>;
+}
+
+function ApiKeyEntryForm({
+  provider,
+  apiKeyInfo,
+  inputValue,
+  isSaving,
+  error,
+  isConnected,
+  onInputChange,
+  onSave,
+  onClear,
+}: ApiKeyEntryFormProps) {
+  const inputId = `onboarding-apikey-input-${provider.id}`;
+  const saveDisabled = isSaving || !inputValue.trim();
+
+  if (isConnected) {
+    return (
+      <div className="onboarding-apikey-form" data-testid={`onboarding-apikey-form-${provider.id}`}>
+        <div className="onboarding-apikey-connected-header">
+          <strong className="onboarding-provider-card__name">{apiKeyInfo.fieldLabel}</strong>
+          <span className="auth-status-badge connected">✓ API key saved</span>
+        </div>
+        <button
+          className="btn btn-sm"
+          onClick={() => onClear(provider.id)}
+          disabled={isSaving}
+        >
+          {isSaving ? "Removing…" : "Remove Key"}
+        </button>
+        <p className="onboarding-apikey-usage">{apiKeyInfo.usageDescription}</p>
+        {error && <small className="field-error">{error}</small>}
+      </div>
+    );
+  }
+
+  return (
+    <div className="onboarding-apikey-form" data-testid={`onboarding-apikey-form-${provider.id}`}>
+      <label htmlFor={inputId} className="onboarding-apikey-field-label">
+        {apiKeyInfo.fieldLabel}
+      </label>
+      <div className="onboarding-apikey-input-row">
+        <input
+          id={inputId}
+          type="password"
+          className="input onboarding-apikey-input"
+          placeholder={apiKeyInfo.inputPlaceholder ?? "Enter API key"}
+          value={inputValue}
+          onChange={(e) => onInputChange(provider.id, e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              onSave(provider.id, inputValue);
+            }
+          }}
+          data-testid={inputId}
+        />
+        <button
+          className="btn btn-primary btn-sm"
+          onClick={() => onSave(provider.id, inputValue)}
+          disabled={saveDisabled}
+          data-testid={`onboarding-apikey-save-${provider.id}`}
+        >
+          {isSaving ? "Saving…" : "Save"}
+        </button>
+      </div>
+      {error && <small className="field-error">{error}</small>}
+      <p className="onboarding-apikey-instructions">{apiKeyInfo.setupInstructions}</p>
+      {apiKeyInfo.dashboardUrl && (
+        <a
+          href={apiKeyInfo.dashboardUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="onboarding-apikey-dashboard-link"
+        >
+          Get your API key →
+        </a>
+      )}
+      <OnboardingDisclosure summary="Where is this key used?">
+        <p className="onboarding-apikey-usage">{apiKeyInfo.usageDescription}</p>
+      </OnboardingDisclosure>
     </div>
   );
 }
@@ -452,10 +639,26 @@ export function ModelOnboardingModal({
     setLoginOutcomes((prev) => ({ ...prev, [providerId]: "cancelled" }));
   }, []);
 
+  // API key input update handler
+  const handleApiKeyInputChange = useCallback((providerId: string, value: string) => {
+    setApiKeyInputs((prev) => ({
+      ...prev,
+      [providerId]: value,
+    }));
+    setApiKeyErrors((prev) => {
+      if (!prev[providerId]) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next[providerId];
+      return next;
+    });
+  }, []);
+
   // API key save handler
   const handleSaveApiKey = useCallback(
-    async (providerId: string) => {
-      const key = apiKeyInputs[providerId]?.trim();
+    async (providerId: string, keyValue?: string) => {
+      const key = (keyValue ?? apiKeyInputs[providerId] ?? "").trim();
       if (!key) {
         setApiKeyErrors((prev) => ({
           ...prev,
@@ -881,7 +1084,7 @@ export function ModelOnboardingModal({
                       <div className="onboarding-provider-card__body">
                         <strong className="onboarding-provider-card__name">{provider.name}</strong>
                         <span className="onboarding-provider-card__description">
-                          {PROVIDER_INFO[provider.id]?.description ?? PROVIDER_INFO_FALLBACK.description}
+                          {getProviderInfo(provider.id).description}
                         </span>
                         <ProviderStatusBadge status={getProviderStatus(provider)} />
                       </div>
@@ -945,78 +1148,43 @@ export function ModelOnboardingModal({
               {/* API Key Providers */}
               {aiApiKeyProviders.length > 0 && (
                 <>
-                  {aiApiKeyProviders.map((provider) => (
-                    <div
-                      key={provider.id}
-                      className={`onboarding-provider-card${provider.authenticated ? " onboarding-provider-card--connected" : ""}`}
-                    >
-                      <div className="onboarding-provider-card__icon">
-                        <ProviderIcon provider={provider.id} size="md" />
+                  {aiApiKeyProviders.map((provider) => {
+                    const providerInfo = getProviderInfo(provider.id);
+                    const apiKeyInfo = getApiKeyInfo(provider);
+                    return (
+                      <div
+                        key={provider.id}
+                        className={`onboarding-provider-card${provider.authenticated ? " onboarding-provider-card--connected" : ""}`}
+                      >
+                        <div className="onboarding-provider-card__icon">
+                          <ProviderIcon provider={provider.id} size="md" />
+                        </div>
+                        <div className="onboarding-provider-card__body">
+                          <strong className="onboarding-provider-card__name">
+                            <Key size={14} className="onboarding-provider-key-icon" />
+                            {provider.name}
+                          </strong>
+                          <span className="onboarding-provider-card__description">
+                            {providerInfo.description}
+                          </span>
+                          <ProviderStatusBadge status={getProviderStatus(provider)} />
+                        </div>
+                        <div className="onboarding-provider-card__actions onboarding-provider-card__actions--api-key">
+                          <ApiKeyEntryForm
+                            provider={provider}
+                            apiKeyInfo={apiKeyInfo}
+                            inputValue={apiKeyInputs[provider.id] ?? ""}
+                            isSaving={authActionInProgress === provider.id}
+                            error={apiKeyErrors[provider.id]}
+                            isConnected={provider.authenticated}
+                            onInputChange={handleApiKeyInputChange}
+                            onSave={handleSaveApiKey}
+                            onClear={handleClearApiKey}
+                          />
+                        </div>
                       </div>
-                      <div className="onboarding-provider-card__body">
-                        <strong className="onboarding-provider-card__name">
-                          <Key size={14} style={{ marginRight: 4 }} />
-                          {provider.name}
-                        </strong>
-                        <span className="onboarding-provider-card__description">
-                          {PROVIDER_INFO[provider.id]?.description ?? PROVIDER_INFO_FALLBACK.description}
-                        </span>
-                        <ProviderStatusBadge status={getProviderStatus(provider)} />
-                      </div>
-                      <div className="onboarding-provider-card__actions">
-                        {provider.authenticated ? (
-                          <button
-                            className="btn btn-sm"
-                            onClick={() => handleClearApiKey(provider.id)}
-                            disabled={authActionInProgress === provider.id}
-                          >
-                            {authActionInProgress === provider.id
-                              ? "Removing…"
-                              : "Remove Key"}
-                          </button>
-                        ) : (
-                          <div className="onboarding-apikey-input-row">
-                            <input
-                              type="password"
-                              className="onboarding-apikey-input"
-                              placeholder={`Enter ${provider.name} API key`}
-                              value={apiKeyInputs[provider.id] ?? ""}
-                              onChange={(e) =>
-                                setApiKeyInputs((prev) => ({
-                                  ...prev,
-                                  [provider.id]: e.target.value,
-                                }))
-                              }
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") {
-                                  handleSaveApiKey(provider.id);
-                                }
-                              }}
-                              data-testid={`onboarding-apikey-input-${provider.id}`}
-                            />
-                            <button
-                              className="btn btn-primary btn-sm"
-                              onClick={() => handleSaveApiKey(provider.id)}
-                              disabled={
-                                authActionInProgress === provider.id ||
-                                !apiKeyInputs[provider.id]?.trim()
-                              }
-                              data-testid={`onboarding-apikey-save-${provider.id}`}
-                            >
-                              {authActionInProgress === provider.id
-                                ? "Saving…"
-                                : "Save"}
-                            </button>
-                          </div>
-                        )}
-                        {apiKeyErrors[provider.id] && (
-                          <small className="field-error">
-                            {apiKeyErrors[provider.id]}
-                          </small>
-                        )}
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
 
                   {/* API key disclosure */}
                   <OnboardingDisclosure summary="What is an API key?">

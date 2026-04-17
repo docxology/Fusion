@@ -216,6 +216,30 @@ describe("ModelOnboardingModal", () => {
       expect(screen.getByTestId("onboarding-apikey-save-openai")).toBeTruthy();
     });
 
+    it("shows provider-specific API key field label and setup instructions", async () => {
+      render(<ModelOnboardingModal onComplete={vi.fn()} addToast={vi.fn()} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("OpenAI API Key")).toBeTruthy();
+      });
+
+      expect(
+        screen.getByText("Create an API key from your OpenAI dashboard under API keys."),
+      ).toBeTruthy();
+    });
+
+    it("shows usage disclosure and dashboard link for API key provider", async () => {
+      render(<ModelOnboardingModal onComplete={vi.fn()} addToast={vi.fn()} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Where is this key used?")).toBeTruthy();
+      });
+
+      const keyLink = screen.getByRole("link", { name: "Get your API key →" });
+      expect(keyLink.getAttribute("href")).toBe("https://platform.openai.com/api-keys");
+      expect(keyLink.getAttribute("target")).toBe("_blank");
+    });
+
     it("renders OAuth and API key providers at the same time", async () => {
       render(<ModelOnboardingModal onComplete={vi.fn()} addToast={vi.fn()} />);
 
@@ -287,6 +311,22 @@ describe("ModelOnboardingModal", () => {
       });
     });
 
+    it("submits API key when Enter is pressed", async () => {
+      render(<ModelOnboardingModal onComplete={vi.fn()} addToast={vi.fn()} />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId("onboarding-apikey-input-openai")).toBeTruthy();
+      });
+
+      const input = screen.getByTestId("onboarding-apikey-input-openai");
+      fireEvent.change(input, { target: { value: "sk-enter-submit" } });
+      fireEvent.keyDown(input, { key: "Enter" });
+
+      await waitFor(() => {
+        expect(mockSaveApiKey).toHaveBeenCalledWith("openai", "sk-enter-submit");
+      });
+    });
+
     it("shows Save button as disabled when API key input is empty", async () => {
       render(<ModelOnboardingModal onComplete={vi.fn()} addToast={vi.fn()} />);
 
@@ -298,7 +338,7 @@ describe("ModelOnboardingModal", () => {
       expect(saveBtn.disabled).toBe(true);
     });
 
-    it("clears API key when Remove Key is clicked for authenticated provider", async () => {
+    it("shows saved status and clears API key when Remove Key is clicked for authenticated provider", async () => {
       mockFetchAuthStatus.mockResolvedValueOnce({
         providers: [
           { id: "anthropic", name: "Anthropic", authenticated: false, type: "oauth" },
@@ -309,9 +349,10 @@ describe("ModelOnboardingModal", () => {
       render(<ModelOnboardingModal onComplete={vi.fn()} addToast={vi.fn()} />);
 
       await waitFor(() => {
-        expect(screen.getByText("✓ Connected")).toBeTruthy();
+        expect(screen.getByText("✓ API key saved")).toBeTruthy();
       });
 
+      expect(screen.getByText("Remove Key")).toBeTruthy();
       fireEvent.click(screen.getByText("Remove Key"));
 
       await waitFor(() => {
@@ -429,6 +470,22 @@ describe("ModelOnboardingModal", () => {
       await waitFor(() => {
         expect(screen.getByText("AI provider — connect to start using AI models")).toBeTruthy();
       });
+    });
+
+    it("uses fallback API key instructions for unknown API-key provider", async () => {
+      mockFetchAuthStatus.mockResolvedValueOnce({
+        providers: [
+          { id: "mystery-provider", name: "Mystery AI", authenticated: false, type: "api_key" },
+        ],
+      });
+
+      render(<ModelOnboardingModal onComplete={vi.fn()} addToast={vi.fn()} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("API Key")).toBeTruthy();
+      });
+
+      expect(screen.getByText("Enter your API key for this provider.")).toBeTruthy();
     });
   });
 
