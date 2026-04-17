@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { useWorkspaces } from "../useWorkspaces";
 import * as api from "../../api";
 
@@ -16,6 +16,7 @@ describe("useWorkspaces", () => {
 
   afterEach(() => {
     vi.clearAllMocks();
+    vi.useRealTimers();
   });
 
   it("loads project and task workspaces", async () => {
@@ -41,6 +42,7 @@ describe("useWorkspaces", () => {
   });
 
   it("polls for workspace updates", async () => {
+    vi.useFakeTimers();
     mockFetchWorkspaces
       .mockResolvedValueOnce({ project: "/repo", tasks: [] })
       .mockResolvedValueOnce({
@@ -48,17 +50,23 @@ describe("useWorkspaces", () => {
         tasks: [{ id: "FN-200", title: "Later", worktree: "/repo/.worktrees/kb-200" }],
       });
 
-    const { result } = renderHook(() => useWorkspaces());
+    const { result, unmount } = renderHook(() => useWorkspaces());
 
-    await waitFor(() => expect(result.current.loading).toBe(false));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(result.current.loading).toBe(false);
     expect(result.current.workspaces).toEqual([]);
 
-    // Wait for the polling interval (10 seconds) - use real timers
-    await new Promise((resolve) => setTimeout(resolve, 10000));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10000);
+    });
 
-    await waitFor(() => expect(result.current.workspaces).toHaveLength(1));
+    expect(result.current.workspaces).toHaveLength(1);
     expect(mockFetchWorkspaces).toHaveBeenCalledTimes(2);
-  }, 15000);
+    unmount();
+  });
 
   it("surfaces fetch errors", async () => {
     mockFetchWorkspaces.mockRejectedValueOnce(new Error("Failed to load workspaces"));

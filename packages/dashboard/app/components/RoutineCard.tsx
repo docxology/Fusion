@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { Play, Pause, Pencil, Trash2, Clock, CheckCircle, XCircle, ChevronDown, ChevronUp, Calendar, Webhook, Code, Zap, Globe, Folder } from "lucide-react";
+import { Play, Pause, Pencil, Trash2, Clock, CheckCircle, XCircle, ChevronDown, ChevronUp, Calendar, Webhook, Code, Zap, Globe, Folder, Layers } from "lucide-react";
 import type { Routine, RoutineExecutionResult, RoutineTriggerType, RoutineCatchUpPolicy, RoutineExecutionPolicy } from "@fusion/core";
 
 /**
@@ -224,6 +224,17 @@ export function RoutineCard({ routine, onEdit, onDelete, onRun, onToggle, runnin
       </div>
 
       <div className="routine-card-meta">
+        {routine.steps && routine.steps.length > 0 ? (
+          <div className="routine-meta-item">
+            <Layers size={12} />
+            <span className="routine-policy-badge">{routine.steps.length} step{routine.steps.length === 1 ? "" : "s"}</span>
+          </div>
+        ) : routine.command ? (
+          <div className="routine-meta-item routine-meta-command-preview" title={routine.command}>
+            <code className="routine-cron">{routine.command}</code>
+          </div>
+        ) : null}
+
         {/* Cron expression for cron triggers */}
         {routine.trigger.type === "cron" && cronExpression && (
           <div className="routine-meta-item">

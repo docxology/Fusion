@@ -109,6 +109,9 @@ export class RoutineStore extends EventEmitter<RoutineStoreEvents> {
       name: row.name,
       description: row.description || undefined,
       trigger,
+      command: row.command || undefined,
+      steps: fromJson<Routine["steps"]>(row.steps),
+      timeoutMs: row.timeoutMs ?? undefined,
       catchUpPolicy: (row.catchUpPolicy as Routine["catchUpPolicy"]) || "run_one",
       executionPolicy: (row.executionPolicy as Routine["executionPolicy"]) || "queue",
       enabled: row.enabled === 1,
@@ -148,10 +151,11 @@ export class RoutineStore extends EventEmitter<RoutineStoreEvents> {
     this.db.prepare(`
       INSERT OR REPLACE INTO routines (
         id, agentId, name, description, triggerType, triggerConfig,
+        command, steps, timeoutMs,
         catchUpPolicy, executionPolicy, catchUpLimit, enabled,
         lastRunAt, lastRunResult, nextRunAt,
         runCount, runHistory, scope, createdAt, updatedAt
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       routine.id,
       routine.agentId,
@@ -159,6 +163,9 @@ export class RoutineStore extends EventEmitter<RoutineStoreEvents> {
       routine.description ?? null,
       trigger.type,
       JSON.stringify(triggerConfig),
+      routine.command ?? null,
+      routine.steps ? JSON.stringify(routine.steps) : null,
+      routine.timeoutMs ?? null,
       routine.catchUpPolicy,
       routine.executionPolicy,
       routine.catchUpLimit ?? 5,
@@ -254,6 +261,9 @@ export class RoutineStore extends EventEmitter<RoutineStoreEvents> {
       name: input.name.trim(),
       description: input.description?.trim() || undefined,
       trigger: input.trigger,
+      command: input.command?.trim() || undefined,
+      steps: input.steps && input.steps.length > 0 ? input.steps : undefined,
+      timeoutMs: input.timeoutMs,
       catchUpPolicy: input.catchUpPolicy ?? "run_one",
       executionPolicy: input.executionPolicy ?? "queue",
       enabled,
@@ -315,6 +325,15 @@ export class RoutineStore extends EventEmitter<RoutineStoreEvents> {
           }
         }
         routine.trigger = updates.trigger;
+      }
+      if (updates.command !== undefined) {
+        routine.command = updates.command?.trim() || undefined;
+      }
+      if (updates.steps !== undefined) {
+        routine.steps = updates.steps.length > 0 ? updates.steps : undefined;
+      }
+      if (updates.timeoutMs !== undefined) {
+        routine.timeoutMs = updates.timeoutMs;
       }
       if (updates.catchUpPolicy !== undefined) {
         routine.catchUpPolicy = updates.catchUpPolicy;
@@ -405,17 +424,19 @@ export class RoutineStore extends EventEmitter<RoutineStoreEvents> {
    */
   async completeRoutineExecution(
     id: string,
-    meta: { completedAt: string; success: boolean; resultJson?: Record<string, unknown>; error?: string },
+    meta: { completedAt: string; success: boolean; resultJson?: Record<string, unknown>; error?: string; output?: string; triggerType?: RoutineTriggerType; stepResults?: RoutineExecutionResult["stepResults"] },
   ): Promise<void> {
     await this.withRoutineLock(id, async () => {
       const routine = await this.getRoutine(id);
       const result: RoutineExecutionResult = {
         routineId: id,
         success: meta.success,
-        output: meta.success ? JSON.stringify(meta.resultJson ?? {}) : "",
+        output: meta.output ?? (meta.success ? JSON.stringify(meta.resultJson ?? {}) : ""),
         error: meta.error,
         startedAt: routine.lastRunAt ?? meta.completedAt,
         completedAt: meta.completedAt,
+        triggerType: meta.triggerType,
+        stepResults: meta.stepResults,
       };
 
       routine.lastRunAt = result.startedAt;

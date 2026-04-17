@@ -445,3 +445,53 @@ export async function syncBackupAutomation(
     });
   }
 }
+
+/**
+ * Synchronizes the database backup routine with project settings.
+ *
+ * This is the combined routine/schedule model: cron scheduling comes from the
+ * routine trigger, while the backup action is stored as a command on the same
+ * record.
+ */
+export async function syncBackupRoutine(
+  routineStore: import("./routine-store.js").RoutineStore,
+  settings: ProjectSettings,
+): Promise<import("./routine.js").Routine | undefined> {
+  const { RoutineStore } = await import("./routine-store.js");
+
+  const routines = await routineStore.listRoutines();
+  const existingRoutine = routines.find((routine) => routine.name === BACKUP_SCHEDULE_NAME);
+
+  if (!settings.autoBackupEnabled) {
+    if (existingRoutine) {
+      await routineStore.deleteRoutine(existingRoutine.id);
+    }
+    return undefined;
+  }
+
+  const schedule = settings.autoBackupSchedule || "0 2 * * *";
+  if (!RoutineStore.isValidCron(schedule)) {
+    throw new Error(`Invalid backup schedule: ${schedule}`);
+  }
+
+  const command = "fn backup --create";
+  const input = {
+    name: BACKUP_SCHEDULE_NAME,
+    description: "Automatic database backup based on project settings",
+    agentId: "",
+    trigger: { type: "cron" as const, cronExpression: schedule },
+    command,
+    enabled: true,
+    scope: "project" as const,
+  };
+
+  if (existingRoutine) {
+    return await routineStore.updateRoutine(existingRoutine.id, {
+      trigger: input.trigger,
+      command,
+      enabled: true,
+    });
+  }
+
+  return await routineStore.createRoutine(input);
+}

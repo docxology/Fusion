@@ -130,6 +130,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   // Clean up localStorage
   localStorage.removeItem("kb-onboarding-state");
 });
@@ -1486,20 +1487,22 @@ describe("ModelOnboardingModal", () => {
       });
 
       // Click Login
+      vi.useFakeTimers();
       fireEvent.click(screen.getByText("Login"));
 
+      await act(async () => {
+        await Promise.resolve();
+        await vi.advanceTimersByTimeAsync(2000);
+      });
+
       // Wait for the login to complete (poll detects authenticated on 2nd call)
-      await waitFor(() => {
-        expect(addToast).toHaveBeenCalledWith("Login successful", "success");
-      }, { timeout: 3000 });
+      expect(addToast).toHaveBeenCalledWith("Login successful", "success");
 
       // Check that login outcome was persisted
-      await waitFor(() => {
-        const saveCall = mockSaveOnboardingState.mock.calls.find(
-          (call) => call[1]?.stepData?.["ai-setup"]?.loginOutcomes?.anthropic === "success"
-        );
-        expect(saveCall).toBeDefined();
-      }, { timeout: 3000 });
+      const saveCall = mockSaveOnboardingState.mock.calls.find(
+        (call) => call[1]?.stepData?.["ai-setup"]?.loginOutcomes?.anthropic === "success"
+      );
+      expect(saveCall).toBeDefined();
     });
 
     it("login outcome persisted to stepData after successful login", async () => {
@@ -1532,15 +1535,19 @@ describe("ModelOnboardingModal", () => {
       });
 
       // Click Login
+      vi.useFakeTimers();
       fireEvent.click(screen.getByText("Login"));
 
+      await act(async () => {
+        await Promise.resolve();
+        await vi.advanceTimersByTimeAsync(2000);
+      });
+
       // Wait for saveOnboardingState to be called with success outcome
-      await waitFor(() => {
-        const successCall = mockSaveOnboardingState.mock.calls.find(
-          (call) => call[1]?.stepData?.["ai-setup"]?.loginOutcomes?.anthropic === "success"
-        );
-        expect(successCall).toBeDefined();
-      }, { timeout: 3000 });
+      const successCall = mockSaveOnboardingState.mock.calls.find(
+        (call) => call[1]?.stepData?.["ai-setup"]?.loginOutcomes?.anthropic === "success"
+      );
+      expect(successCall).toBeDefined();
     });
 
     it("stale pending outcomes are filtered on mount", async () => {

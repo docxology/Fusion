@@ -3184,6 +3184,10 @@ describe("usage", () => {
   });
 
   describe("withTimeout", () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
     it("resolves with provider result when fetch completes within timeout", async () => {
       const provider: ProviderUsage = {
         name: "TestProvider",
@@ -3197,31 +3201,39 @@ describe("usage", () => {
     });
 
     it("returns error provider when fetch exceeds timeout", async () => {
+      vi.useFakeTimers();
       const slowPromise = new Promise<ProviderUsage>((resolve) => {
         setTimeout(() => resolve({ name: "Slow", icon: "🐌", status: "ok", windows: [] }), 10000);
       });
-      const result = await withTimeout(slowPromise, "Slow", 50); // 50ms timeout
+      const resultPromise = withTimeout(slowPromise, "Slow", 50);
+      await vi.advanceTimersByTimeAsync(50);
+      const result = await resultPromise;
       expect(result.status).toBe("error");
       expect(result.error).toBe("Timed out after 0s");
       expect(result.name).toBe("Slow");
     });
 
     it("includes timeout duration in error message for different durations", async () => {
+      vi.useFakeTimers();
       // 100ms => "0s"
-      const result100 = await withTimeout(
+      const result100Promise = withTimeout(
         new Promise<ProviderUsage>(() => {}),
         "Test",
         100,
       );
+      await vi.advanceTimersByTimeAsync(100);
+      const result100 = await result100Promise;
       expect(result100.error).toBe("Timed out after 0s");
 
       // 10_000ms is too long to actually wait, but we can verify the format
       // by using a 1050ms timeout (rounds to 1s)
-      const result1s = await withTimeout(
+      const result1sPromise = withTimeout(
         new Promise<ProviderUsage>(() => {}),
         "Test",
         1050,
       );
+      await vi.advanceTimersByTimeAsync(1050);
+      const result1s = await result1sPromise;
       expect(result1s.error).toBe("Timed out after 1s");
     });
 

@@ -18,7 +18,7 @@ import * as nodeFs from "node:fs";
 
 import { promisify } from "node:util";
 import type { TaskStore, Column, ScheduleType, ActivityEventType, ModelPreset, MessageType, ParticipantType, RoutineTriggerType, ProjectSettings } from "@fusion/core";
-import { COLUMNS, VALID_TRANSITIONS, GLOBAL_SETTINGS_KEYS, type BatchStatusEntry, type BatchStatusResponse, type BatchStatusResult, type IssueInfo, type PrInfo, type Task, type PiExtensionEntry, type PiExtensionSettings, getCurrentRepo, isGhAuthenticated, AutomationStore, validateBackupSchedule, validateBackupRetention, validateBackupDir, syncBackupAutomation, exportSettings, importSettings, validateImportData, MessageStore, RoutineStore, isWebhookTrigger, resolveMemoryBackend, getMemoryBackendCapabilities, listMemoryBackendTypes, readMemory, writeMemory, MemoryBackendError, discoverPiExtensions, updatePiExtensionDisabledIds, getFusionAgentDir, getLegacyPiAgentDir } from "@fusion/core";
+import { COLUMNS, VALID_TRANSITIONS, GLOBAL_SETTINGS_KEYS, type BatchStatusEntry, type BatchStatusResponse, type BatchStatusResult, type IssueInfo, type PrInfo, type Task, type PiExtensionEntry, type PiExtensionSettings, getCurrentRepo, isGhAuthenticated, AutomationStore, validateBackupSchedule, validateBackupRetention, validateBackupDir, syncBackupRoutine, exportSettings, importSettings, validateImportData, MessageStore, RoutineStore, isWebhookTrigger, resolveMemoryBackend, getMemoryBackendCapabilities, listMemoryBackendTypes, readMemory, writeMemory, MemoryBackendError, discoverPiExtensions, updatePiExtensionDisabledIds, getFusionAgentDir, getLegacyPiAgentDir } from "@fusion/core";
 import type { ServerOptions } from "./server.js";
 import { GitHubClient, parseBadgeUrl } from "./github.js";
 import { githubRateLimiter } from "./github-poll.js";
@@ -2409,14 +2409,14 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
 
       const settings = await scopedStore.updateSettings(clientSettings);
       
-      // Sync backup automation schedule when backup settings change
-      const automationStoreForProject = engine?.getAutomationStore() ?? options?.automationStore;
-      if (automationStoreForProject) {
+      // Sync backup routine when backup settings change.
+      const routineStoreForProject = engine?.getRoutineStore() ?? options?.routineStore;
+      if (routineStoreForProject) {
         try {
-          await syncBackupAutomation(automationStoreForProject, settings);
+          await syncBackupRoutine(routineStoreForProject, settings);
         } catch (err) {
-          // Log but don't fail the settings update if automation sync fails
-          console.error("Failed to sync backup automation:", err);
+          // Log but don't fail the settings update if routine sync fails
+          console.error("Failed to sync backup routine:", err);
         }
       }
       
@@ -9553,7 +9553,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
     const routineStore = resolveRoutineStore(req, scope);
 
     try {
-      const { name, agentId, description, trigger, catchUpPolicy, executionPolicy, enabled } = req.body;
+      const { name, agentId, description, trigger, command, steps, timeoutMs, catchUpPolicy, executionPolicy, enabled } = req.body;
 
       // Validation
       if (!name?.trim()) {
@@ -9575,6 +9575,14 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         }
         if (!RoutineStore.isValidCron(trigger.cronExpression)) {
           throw badRequest(`Invalid cron expression: "${trigger.cronExpression}"`);
+        }
+      }
+      const hasSteps = Array.isArray(steps) && steps.length > 0;
+      const hasCommand = typeof command === "string" && command.trim().length > 0;
+      if (hasSteps) {
+        const stepErr = validateAutomationSteps(steps);
+        if (stepErr) {
+          throw badRequest(stepErr);
         }
       }
       if (catchUpPolicy !== undefined) {
@@ -9599,6 +9607,9 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         agentId: typeof agentId === "string" ? agentId.trim() : "",
         description,
         trigger,
+        command: hasCommand ? command : undefined,
+        steps: hasSteps ? steps : undefined,
+        timeoutMs,
         catchUpPolicy,
         executionPolicy,
         enabled,
@@ -9655,7 +9666,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         }
       }
 
-      const { name, description, trigger, catchUpPolicy, executionPolicy, enabled } = req.body;
+      const { name, description, trigger, command, steps, timeoutMs, catchUpPolicy, executionPolicy, enabled } = req.body;
 
       // Validate name if provided
       if (name !== undefined && !name.trim()) {
@@ -9676,11 +9687,20 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
           }
         }
       }
+      if (Array.isArray(steps) && steps.length > 0) {
+        const stepErr = validateAutomationSteps(steps);
+        if (stepErr) {
+          throw badRequest(stepErr);
+        }
+      }
 
       const routine = await routineStore.updateRoutine(id, {
         name: name !== undefined ? name.trim() : undefined,
         description,
         trigger,
+        command: command !== undefined ? command : undefined,
+        steps: steps !== undefined ? steps : undefined,
+        timeoutMs,
         catchUpPolicy,
         executionPolicy,
         enabled,
@@ -17021,8 +17041,8 @@ function validateAutomationSteps(steps: unknown[]): string | null {
     if (!step.id || typeof step.id !== "string") {
       return `Step ${i + 1}: id is required`;
     }
-    if (!step.type || (step.type !== "command" && step.type !== "ai-prompt")) {
-      return `Step ${i + 1}: type must be "command" or "ai-prompt"`;
+    if (!step.type || (step.type !== "command" && step.type !== "ai-prompt" && step.type !== "create-task")) {
+      return `Step ${i + 1}: type must be "command", "ai-prompt", or "create-task"`;
     }
     if (!step.name || typeof step.name !== "string" || !step.name.trim()) {
       return `Step ${i + 1}: name is required`;
@@ -17035,6 +17055,11 @@ function validateAutomationSteps(steps: unknown[]): string | null {
     if (step.type === "ai-prompt") {
       if (!step.prompt || typeof step.prompt !== "string" || !step.prompt.trim()) {
         return `Step ${i + 1}: prompt is required for ai-prompt steps`;
+      }
+    }
+    if (step.type === "create-task") {
+      if (!step.taskDescription || typeof step.taskDescription !== "string" || !step.taskDescription.trim()) {
+        return `Step ${i + 1}: taskDescription is required for create-task steps`;
       }
     }
     // Validate model fields are both present or both absent

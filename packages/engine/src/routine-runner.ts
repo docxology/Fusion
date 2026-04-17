@@ -8,15 +8,28 @@
  */
 
 import { CronExpressionParser } from "cron-parser";
+import { exec } from "node:child_process";
+import { promisify } from "node:util";
 import type {
   RoutineStore,
   Routine,
   RoutineExecutionResult,
+  AutomationRunResult,
+  AutomationStep,
+  AutomationStepResult,
+  Column,
+  TaskCreateInput,
+  TaskStore,
 } from "@fusion/core";
 import type { HeartbeatMonitor } from "./agent-heartbeat.js";
+import type { AiPromptExecutor } from "./cron-runner.js";
 import { createLogger } from "./logger.js";
 
 const log = createLogger("routine-runner");
+const execAsync = promisify(exec);
+const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
+const MAX_BUFFER = 1024 * 1024;
+const MAX_OUTPUT_LENGTH = 10 * 1024;
 
 /** Options for RoutineRunner constructor */
 export interface RoutineRunnerOptions {
@@ -26,6 +39,10 @@ export interface RoutineRunnerOptions {
   heartbeatMonitor: HeartbeatMonitor;
   /** Project root directory */
   rootDir: string;
+  /** Optional task store used when routines execute schedule-style actions. */
+  taskStore?: TaskStore;
+  /** Optional AI prompt executor for ai-prompt action steps. */
+  aiPromptExecutor?: AiPromptExecutor;
 }
 
 /**
@@ -77,7 +94,7 @@ export class RoutineRunner {
       throw new Error(`Routine '${routineId}' is disabled`);
     }
 
-    if (!routine.agentId) {
+    if (!this.hasRoutineAction(routine) && !routine.agentId) {
       throw new Error(`Routine '${routineId}' has no assigned agent`);
     }
 
@@ -138,47 +155,29 @@ export class RoutineRunner {
     const routineId = routine.id;
 
     try {
-      // Execute via heartbeat monitor
-      const run = await this.options.heartbeatMonitor.executeHeartbeat({
-        agentId: routine.agentId,
-        source: "routine",
-        triggerDetail: `routine:${routine.id}:${triggerType}`,
-        contextSnapshot: {
-          routineId: routine.id,
-          routineName: routine.name,
-          triggerType,
-          ...context,
-        },
-      });
+      const actionResult = this.hasRoutineAction(routine)
+        ? await this.executeRoutineAction(routine, startedAt)
+        : await this.executeAgentRoutine(routine, triggerType, context);
 
-      // Determine status from run
-      let success = true;
-      let output = "";
-      let error: string | undefined;
-
-      if (run.status === "failed" || run.status === "terminated") {
-        success = false;
-        error = run.stderrExcerpt || `Run ${run.status}`;
-        output = error;
-      } else {
-        output = run.resultJson ? JSON.stringify(run.resultJson) : "Routine completed successfully";
-      }
-
-      // Complete the execution
       await this.options.routineStore.completeRoutineExecution(routineId, {
-        completedAt: new Date().toISOString(),
-        success,
-        resultJson: run.resultJson,
-        error,
+        completedAt: actionResult.completedAt,
+        success: actionResult.success,
+        resultJson: actionResult.success ? { output: actionResult.output } : undefined,
+        output: actionResult.output,
+        error: actionResult.error,
+        triggerType: triggerType as RoutineExecutionResult["triggerType"],
+        stepResults: actionResult.stepResults,
       });
 
       return {
         routineId,
-        success,
-        output,
+        success: actionResult.success,
+        output: actionResult.output,
         startedAt,
-        completedAt: new Date().toISOString(),
-        error,
+        completedAt: actionResult.completedAt,
+        error: actionResult.error,
+        triggerType: triggerType as RoutineExecutionResult["triggerType"],
+        stepResults: actionResult.stepResults,
       };
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
@@ -204,6 +203,205 @@ export class RoutineRunner {
         error: errorMessage,
       };
     }
+  }
+
+  private hasRoutineAction(routine: Routine): boolean {
+    return Boolean((routine.steps && routine.steps.length > 0) || routine.command?.trim());
+  }
+
+  private async executeAgentRoutine(
+    routine: Routine,
+    triggerType: string,
+    context: Record<string, unknown> | undefined,
+  ): Promise<AutomationRunResult> {
+    const run = await this.options.heartbeatMonitor.executeHeartbeat({
+      agentId: routine.agentId,
+      source: "routine",
+      triggerDetail: `routine:${routine.id}:${triggerType}`,
+      contextSnapshot: {
+        routineId: routine.id,
+        routineName: routine.name,
+        triggerType,
+        ...context,
+      },
+    });
+
+    if (run.status === "failed" || run.status === "terminated") {
+      const error = run.stderrExcerpt || `Run ${run.status}`;
+      return {
+        success: false,
+        output: error,
+        error,
+        startedAt: new Date().toISOString(),
+        completedAt: new Date().toISOString(),
+      };
+    }
+
+    return {
+      success: true,
+      output: run.resultJson ? JSON.stringify(run.resultJson) : "Routine completed successfully",
+      startedAt: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
+    };
+  }
+
+  private async executeRoutineAction(
+    routine: Routine,
+    startedAt: string,
+  ): Promise<AutomationRunResult> {
+    if (routine.steps && routine.steps.length > 0) {
+      return this.executeSteps(routine, startedAt);
+    }
+    return this.executeCommand(routine.command ?? "", routine.timeoutMs, startedAt);
+  }
+
+  private async executeCommand(
+    command: string,
+    timeoutMs: number | undefined,
+    startedAt: string,
+  ): Promise<AutomationRunResult> {
+    try {
+      const { stdout, stderr } = await execAsync(command, {
+        timeout: timeoutMs ?? DEFAULT_TIMEOUT_MS,
+        maxBuffer: MAX_BUFFER,
+        shell: "/bin/sh",
+      });
+
+      return {
+        success: true,
+        output: truncateOutput(stdout, stderr),
+        startedAt,
+        completedAt: new Date().toISOString(),
+      };
+    } catch (err: any) {
+      const stdout = err.stdout ?? "";
+      const stderr = err.stderr ?? "";
+      const error = err.killed
+        ? `Command timed out after ${(timeoutMs ?? DEFAULT_TIMEOUT_MS) / 1000}s`
+        : err.message ?? String(err);
+      return {
+        success: false,
+        output: truncateOutput(stdout, stderr),
+        error,
+        startedAt,
+        completedAt: new Date().toISOString(),
+      };
+    }
+  }
+
+  private async executeSteps(routine: Routine, startedAt: string): Promise<AutomationRunResult> {
+    const steps = routine.steps ?? [];
+    const stepResults: AutomationStepResult[] = [];
+    let overallSuccess = true;
+    let stoppedEarly = false;
+
+    for (let i = 0; i < steps.length; i++) {
+      const step = steps[i];
+      const result = await this.executeStep(routine, step, i);
+      stepResults.push(result);
+
+      if (!result.success) {
+        overallSuccess = false;
+        if (!step.continueOnFailure) {
+          stoppedEarly = true;
+          break;
+        }
+      }
+    }
+
+    const outputParts: string[] = [];
+    for (const sr of stepResults) {
+      outputParts.push(`=== Step ${sr.stepIndex + 1}: ${sr.stepName} (${sr.success ? "success" : "FAILED"}) ===`);
+      if (sr.output) outputParts.push(sr.output);
+      if (sr.error) outputParts.push(`Error: ${sr.error}`);
+    }
+    const failedSteps = stepResults.filter((sr) => !sr.success);
+
+    return {
+      success: overallSuccess,
+      output: truncateOutput(outputParts.join("\n"), ""),
+      error: failedSteps.length > 0
+        ? `${failedSteps.length} step(s) failed: ${failedSteps.map((s) => s.stepName).join(", ")}${stoppedEarly ? " (execution stopped)" : ""}`
+        : undefined,
+      startedAt,
+      completedAt: new Date().toISOString(),
+      stepResults,
+    };
+  }
+
+  private async executeStep(
+    routine: Routine,
+    step: AutomationStep,
+    stepIndex: number,
+  ): Promise<AutomationStepResult> {
+    const startedAt = new Date().toISOString();
+    const timeoutMs = step.timeoutMs ?? routine.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+
+    if (step.type === "command") {
+      const result = await this.executeCommand(step.command ?? "", timeoutMs, startedAt);
+      return {
+        stepId: step.id,
+        stepName: step.name,
+        stepIndex,
+        success: result.success,
+        output: result.output,
+        error: result.error,
+        startedAt,
+        completedAt: result.completedAt,
+      };
+    }
+
+    if (step.type === "ai-prompt") {
+      if (!step.prompt?.trim()) {
+        return { stepId: step.id, stepName: step.name, stepIndex, success: false, output: "", error: "AI prompt step has no prompt specified", startedAt, completedAt: new Date().toISOString() };
+      }
+      if (!this.options.aiPromptExecutor) {
+        return { stepId: step.id, stepName: step.name, stepIndex, success: false, output: "", error: "AI execution is not configured", startedAt, completedAt: new Date().toISOString() };
+      }
+      try {
+        const output = await Promise.race([
+          this.options.aiPromptExecutor(step.prompt, step.modelProvider, step.modelId),
+          new Promise<never>((_resolve, reject) => setTimeout(() => reject(new Error(`AI prompt step timed out after ${timeoutMs / 1000}s`)), timeoutMs)),
+        ]);
+        return { stepId: step.id, stepName: step.name, stepIndex, success: true, output: truncateOutput(output, ""), startedAt, completedAt: new Date().toISOString() };
+      } catch (err) {
+        return { stepId: step.id, stepName: step.name, stepIndex, success: false, output: "", error: err instanceof Error ? err.message : String(err), startedAt, completedAt: new Date().toISOString() };
+      }
+    }
+
+    if (step.type === "create-task") {
+      if (!this.options.taskStore) {
+        return { stepId: step.id, stepName: step.name, stepIndex, success: false, output: "", error: "Task creation is not configured", startedAt, completedAt: new Date().toISOString() };
+      }
+      if (!step.taskDescription?.trim()) {
+        return { stepId: step.id, stepName: step.name, stepIndex, success: false, output: "", error: "Create-task step has no task description specified", startedAt, completedAt: new Date().toISOString() };
+      }
+
+      const taskInput: TaskCreateInput = {
+        title: step.taskTitle?.trim() || undefined,
+        description: step.taskDescription.trim(),
+        column: (step.taskColumn as Column) || "triage",
+        modelProvider: step.modelProvider?.trim() || undefined,
+        modelId: step.modelId?.trim() || undefined,
+      };
+      try {
+        const task = await this.options.taskStore.createTask(taskInput);
+        return { stepId: step.id, stepName: step.name, stepIndex, success: true, output: `Created task ${task.id}: ${task.title || task.description.slice(0, 80)}`, startedAt, completedAt: new Date().toISOString() };
+      } catch (err) {
+        return { stepId: step.id, stepName: step.name, stepIndex, success: false, output: "", error: err instanceof Error ? err.message : String(err), startedAt, completedAt: new Date().toISOString() };
+      }
+    }
+
+    return {
+      stepId: step.id,
+      stepName: step.name,
+      stepIndex,
+      success: false,
+      output: "",
+      error: `Unknown step type: "${(step as any).type}"`,
+      startedAt,
+      completedAt: new Date().toISOString(),
+    };
   }
 
   /**
@@ -331,4 +529,16 @@ export class RoutineRunner {
   isRoutineRunning(routineId: string): boolean {
     return this.inFlightExecutions.has(routineId);
   }
+}
+
+function truncateOutput(stdout: string, stderr: string): string {
+  let output = stdout;
+  if (stderr) {
+    output += stdout ? "\n--- stderr ---\n" : "";
+    output += stderr;
+  }
+  if (output.length > MAX_OUTPUT_LENGTH) {
+    return `${output.slice(0, MAX_OUTPUT_LENGTH)}\n[output truncated]`;
+  }
+  return output;
 }

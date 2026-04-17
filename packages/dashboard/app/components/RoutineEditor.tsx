@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Calendar, Webhook, Code, Zap, Globe, Folder } from "lucide-react";
 import type {
   Routine,
@@ -12,7 +12,11 @@ import type {
   RoutineManualTrigger,
   RoutineCatchUpPolicy,
   RoutineExecutionPolicy,
+  AutomationStep,
 } from "@fusion/core";
+import { ScheduleStepsEditor } from "./ScheduleStepsEditor";
+import { CustomModelDropdown } from "./CustomModelDropdown";
+import { fetchModels, type ModelInfo } from "../api";
 
 type CronPresetType = "hourly" | "daily" | "weekly" | "monthly" | "custom";
 
@@ -141,6 +145,16 @@ const CATCH_UP_POLICY_OPTIONS: { value: RoutineCatchUpPolicy; label: string }[] 
   { value: "run", label: "Run all missed runs" },
 ];
 
+function generateStepId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `step-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+}
+
+type ActionMode = "simple" | "advanced";
+type SimpleActionType = "command" | "ai-prompt" | "create-task";
+
 interface RoutineEditorProps {
   /** Existing routine for editing. Omit for create mode. */
   routine?: Routine;
@@ -184,9 +198,71 @@ export function RoutineEditor({ routine, onSubmit, onCancel, scope: formScope, p
     routine?.catchUpPolicy ?? "run_one"
   );
   const [enabled, setEnabled] = useState(routine?.enabled ?? true);
+  const isSimpleAiPrompt = routine?.steps && routine.steps.length === 1 &&
+    routine.steps[0].type === "ai-prompt" && !routine.command;
+  const isSimpleCreateTask = routine?.steps && routine.steps.length === 1 &&
+    routine.steps[0].type === "create-task" && !routine.command;
+  const [actionMode, setActionMode] = useState<ActionMode>(
+    routine?.steps && routine.steps.length > 0 && !isSimpleAiPrompt && !isSimpleCreateTask ? "advanced" : "simple"
+  );
+  const [simpleActionType, setSimpleActionType] = useState<SimpleActionType>(() => {
+    if (isSimpleAiPrompt) return "ai-prompt";
+    if (isSimpleCreateTask) return "create-task";
+    return "command";
+  });
+  const [command, setCommand] = useState(routine?.command ?? "");
+  const [steps, setSteps] = useState<AutomationStep[]>(routine?.steps ?? []);
+  const [hasEditingSteps, setHasEditingSteps] = useState(false);
+  const [timeoutMs, setTimeoutMs] = useState<number>(routine?.timeoutMs ?? 300000);
+  const [prompt, setPrompt] = useState(isSimpleAiPrompt ? routine.steps?.[0]?.prompt ?? "" : "");
+  const [taskTitle, setTaskTitle] = useState(isSimpleCreateTask ? routine.steps?.[0]?.taskTitle ?? "" : "");
+  const [taskDescription, setTaskDescription] = useState(isSimpleCreateTask ? routine.steps?.[0]?.taskDescription ?? "" : "");
+  const [taskColumn, setTaskColumn] = useState(isSimpleCreateTask ? routine.steps?.[0]?.taskColumn ?? "triage" : "triage");
+  const [modelProvider, setModelProvider] = useState(
+    isSimpleAiPrompt || isSimpleCreateTask ? routine.steps?.[0]?.modelProvider ?? "" : ""
+  );
+  const [modelId, setModelId] = useState(
+    isSimpleAiPrompt || isSimpleCreateTask ? routine.steps?.[0]?.modelId ?? "" : ""
+  );
+  const [models, setModels] = useState<ModelInfo[]>([]);
+  const [modelsLoading, setModelsLoading] = useState(false);
+  const [modelsError, setModelsError] = useState<string | null>(null);
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setModelsLoading(true);
+    setModelsError(null);
+    fetchModels()
+      .then((response) => {
+        if (!cancelled) setModels(response.models);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setModelsError(err instanceof Error ? err.message : "Failed to load models");
+      })
+      .finally(() => {
+        if (!cancelled) setModelsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const modelValue = modelProvider && modelId ? `${modelProvider}/${modelId}` : "";
+  const handleModelChange = useCallback((value: string) => {
+    if (!value) {
+      setModelProvider("");
+      setModelId("");
+      return;
+    }
+    const slashIdx = value.indexOf("/");
+    if (slashIdx !== -1) {
+      setModelProvider(value.slice(0, slashIdx));
+      setModelId(value.slice(slashIdx + 1));
+    }
+  }, []);
 
   const validate = useCallback((): boolean => {
     const e: Record<string, string> = {};
@@ -210,9 +286,29 @@ export function RoutineEditor({ routine, onSubmit, onCancel, scope: formScope, p
     if (triggerType === "api" && !endpoint.trim()) {
       e.endpoint = "API endpoint is required";
     }
+    if (actionMode === "simple") {
+      if (simpleActionType === "command" && !command.trim()) e.command = "Command is required";
+      if (simpleActionType === "ai-prompt" && !prompt.trim()) e.prompt = "Prompt is required";
+      if (simpleActionType === "create-task" && !taskDescription.trim()) e.taskDescription = "Task description is required";
+      if ((modelProvider.trim() && !modelId.trim()) || (!modelProvider.trim() && modelId.trim())) {
+        e.model = "Both model provider and model ID must be set, or both must be empty";
+      }
+    } else {
+      if (steps.length === 0) e.steps = "At least one step is required";
+      if (hasEditingSteps) e.stepsEditing = "Please save or cancel all step edits before saving the routine";
+      const incompleteSteps: string[] = [];
+      steps.forEach((step, index) => {
+        if (!step.name?.trim()) incompleteSteps.push(`Step ${index + 1}: Name is required`);
+        if (step.type === "command" && !step.command?.trim()) incompleteSteps.push(`Step ${index + 1}: Command is required`);
+        if (step.type === "ai-prompt" && !step.prompt?.trim()) incompleteSteps.push(`Step ${index + 1}: Prompt is required`);
+        if (step.type === "create-task" && !step.taskDescription?.trim()) incompleteSteps.push(`Step ${index + 1}: Task description is required`);
+      });
+      if (incompleteSteps.length > 0) e.steps = incompleteSteps.join("; ");
+    }
+    if (timeoutMs < 1000) e.timeoutMs = "Timeout must be at least 1 second (1000ms)";
     setErrors(e);
     return Object.keys(e).length === 0;
-  }, [name, triggerType, cronExpression, cronPreset, webhookPath, endpoint, formScope, projectId]);
+  }, [name, triggerType, cronExpression, cronPreset, webhookPath, endpoint, formScope, projectId, actionMode, simpleActionType, command, prompt, taskDescription, modelProvider, modelId, steps, hasEditingSteps, timeoutMs]);
 
   const handleSubmit = useCallback(
     async (e: React.FormEvent) => {
@@ -228,11 +324,43 @@ export function RoutineEditor({ routine, onSubmit, onCancel, scope: formScope, p
         }
         
         const trigger = buildTrigger(triggerType, cronExpression, webhookPath, webhookSecret, endpoint);
+        let actionCommand: string | undefined;
+        let actionSteps: AutomationStep[] | undefined;
+        if (actionMode === "simple") {
+          if (simpleActionType === "command") {
+            actionCommand = command.trim() || undefined;
+          } else if (simpleActionType === "ai-prompt") {
+            actionSteps = [{
+              id: generateStepId(),
+              type: "ai-prompt",
+              name: name.trim(),
+              prompt: prompt.trim(),
+              modelProvider: modelProvider.trim() || undefined,
+              modelId: modelId.trim() || undefined,
+            }];
+          } else {
+            actionSteps = [{
+              id: generateStepId(),
+              type: "create-task",
+              name: name.trim(),
+              taskTitle: taskTitle.trim() || undefined,
+              taskDescription: taskDescription.trim(),
+              taskColumn,
+              modelProvider: modelProvider.trim() || undefined,
+              modelId: modelId.trim() || undefined,
+            }];
+          }
+        } else {
+          actionSteps = steps;
+        }
         const input: RoutineCreateInput = {
           name: name.trim(),
           agentId: routine?.agentId ?? "",
           description: description.trim() || undefined,
           trigger,
+          command: actionCommand,
+          steps: actionSteps,
+          timeoutMs,
           executionPolicy,
           catchUpPolicy,
           enabled,
@@ -243,13 +371,18 @@ export function RoutineEditor({ routine, onSubmit, onCancel, scope: formScope, p
         setSubmitting(false);
       }
     },
-    [validate, onSubmit, name, description, triggerType, cronExpression, webhookPath, webhookSecret, endpoint, executionPolicy, catchUpPolicy, enabled, formScope, projectId, routine?.scope],
+    [validate, onSubmit, name, description, triggerType, cronExpression, webhookPath, webhookSecret, endpoint, actionMode, simpleActionType, command, prompt, modelProvider, modelId, taskTitle, taskDescription, taskColumn, steps, timeoutMs, executionPolicy, catchUpPolicy, enabled, formScope, projectId, routine?.scope, routine?.agentId],
   );
 
   const nameErrorId = "routine-name-error";
   const cronErrorId = "routine-cron-error";
   const webhookErrorId = "routine-webhook-error";
   const endpointErrorId = "routine-endpoint-error";
+  const commandErrorId = "routine-command-error";
+  const promptErrorId = "routine-prompt-error";
+  const taskDescriptionErrorId = "routine-task-description-error";
+  const modelErrorId = "routine-model-error";
+  const timeoutErrorId = "routine-timeout-error";
 
   const handleCronPresetChange = useCallback((preset: CronPresetType) => {
     setCronPreset(preset);
@@ -480,6 +613,103 @@ export function RoutineEditor({ routine, onSubmit, onCancel, scope: formScope, p
           </small>
         </div>
       )}
+
+      <div className="form-group">
+        <label>Action Mode</label>
+        <div className="schedule-mode-toggle" role="radiogroup" aria-label="Action mode">
+          <button
+            type="button"
+            className={`schedule-mode-btn${actionMode === "simple" ? " active" : ""}`}
+            onClick={() => setActionMode("simple")}
+            role="radio"
+            aria-checked={actionMode === "simple"}
+          >
+            Simple
+          </button>
+          <button
+            type="button"
+            className={`schedule-mode-btn${actionMode === "advanced" ? " active" : ""}`}
+            onClick={() => setActionMode("advanced")}
+            role="radio"
+            aria-checked={actionMode === "advanced"}
+          >
+            Multi-Step
+          </button>
+        </div>
+        <small>{actionMode === "simple" ? "Run one command, prompt, or task creation action" : "Run multiple actions sequentially"}</small>
+      </div>
+
+      {actionMode === "simple" ? (
+        <>
+          <div className="form-group">
+            <label>Action Type</label>
+            <div className="schedule-mode-toggle" role="radiogroup" aria-label="Action type">
+              <button type="button" className={`schedule-mode-btn${simpleActionType === "command" ? " active" : ""}`} onClick={() => setSimpleActionType("command")} role="radio" aria-checked={simpleActionType === "command"}>Command</button>
+              <button type="button" className={`schedule-mode-btn${simpleActionType === "ai-prompt" ? " active" : ""}`} onClick={() => setSimpleActionType("ai-prompt")} role="radio" aria-checked={simpleActionType === "ai-prompt"}>AI Prompt</button>
+              <button type="button" className={`schedule-mode-btn${simpleActionType === "create-task" ? " active" : ""}`} onClick={() => setSimpleActionType("create-task")} role="radio" aria-checked={simpleActionType === "create-task"}>Create Task</button>
+            </div>
+          </div>
+
+          {simpleActionType === "command" ? (
+            <div className="form-group">
+              <label htmlFor="routine-command">Command</label>
+              <input id="routine-command" type="text" placeholder="e.g. fn backup --create" value={command} onChange={(e) => setCommand(e.target.value)} aria-invalid={!!errors.command} aria-describedby={errors.command ? commandErrorId : undefined} />
+              {errors.command ? <small id={commandErrorId} className="field-error">{errors.command}</small> : <small>Shell command to execute.</small>}
+            </div>
+          ) : simpleActionType === "ai-prompt" ? (
+            <>
+              <div className="form-group">
+                <label htmlFor="routine-prompt">Prompt</label>
+                <textarea id="routine-prompt" placeholder="e.g. Summarize recent activity and create action items" value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={3} aria-invalid={!!errors.prompt} aria-describedby={errors.prompt ? promptErrorId : undefined} />
+                {errors.prompt ? <small id={promptErrorId} className="field-error">{errors.prompt}</small> : <small>AI prompt to execute.</small>}
+              </div>
+              <div className="form-group">
+                <label htmlFor="routine-model">Model (optional)</label>
+                <CustomModelDropdown id="routine-model" label="Model" models={models} value={modelValue} onChange={handleModelChange} placeholder="Use default" disabled={modelsLoading} />
+                {modelsError && <small className="field-error">{modelsError}</small>}
+                {errors.model && <small id={modelErrorId} className="field-error">{errors.model}</small>}
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="form-group">
+                <label htmlFor="routine-task-title">Task Title (optional)</label>
+                <input id="routine-task-title" type="text" placeholder="e.g. Review weekly dependencies" value={taskTitle} onChange={(e) => setTaskTitle(e.target.value)} />
+              </div>
+              <div className="form-group">
+                <label htmlFor="routine-task-description">Task Description</label>
+                <textarea id="routine-task-description" placeholder="e.g. Check npm dependencies for security vulnerabilities" value={taskDescription} onChange={(e) => setTaskDescription(e.target.value)} rows={4} aria-invalid={!!errors.taskDescription} aria-describedby={errors.taskDescription ? taskDescriptionErrorId : undefined} />
+                {errors.taskDescription ? <small id={taskDescriptionErrorId} className="field-error">{errors.taskDescription}</small> : <small>Describes the task that will be created.</small>}
+              </div>
+              <div className="form-group">
+                <label htmlFor="routine-task-column">Target Column</label>
+                <select id="routine-task-column" value={taskColumn} onChange={(e) => setTaskColumn(e.target.value)}>
+                  <option value="triage">Triage</option>
+                  <option value="todo">To Do</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label htmlFor="routine-task-model">Executor Model (optional)</label>
+                <CustomModelDropdown id="routine-task-model" label="Executor Model" models={models} value={modelValue} onChange={handleModelChange} placeholder="Use default" disabled={modelsLoading} />
+                {modelsError && <small className="field-error">{modelsError}</small>}
+                {errors.model && <small id={modelErrorId} className="field-error">{errors.model}</small>}
+              </div>
+            </>
+          )}
+        </>
+      ) : (
+        <>
+          <ScheduleStepsEditor steps={steps} onChange={setSteps} onEditingChange={setHasEditingSteps} />
+          {errors.steps && <small className="field-error">{errors.steps}</small>}
+          {errors.stepsEditing && <small className="field-error">{errors.stepsEditing}</small>}
+        </>
+      )}
+
+      <div className="form-group">
+        <label htmlFor="routine-timeout">Timeout (ms)</label>
+        <input id="routine-timeout" type="number" min={1000} step={1000} value={timeoutMs} onChange={(e) => setTimeoutMs(Number(e.target.value))} aria-invalid={!!errors.timeoutMs} aria-describedby={errors.timeoutMs ? timeoutErrorId : undefined} />
+        {errors.timeoutMs ? <small id={timeoutErrorId} className="field-error">{errors.timeoutMs}</small> : <small>Maximum execution time in milliseconds.</small>}
+      </div>
 
       {/* Execution Policy */}
       <div className="form-group">

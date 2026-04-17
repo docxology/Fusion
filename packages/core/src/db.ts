@@ -59,7 +59,7 @@ export function fromJson<T>(json: string | null | undefined): T | undefined {
 
 // ── Schema Definition ────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 35;
+const SCHEMA_VERSION = 36;
 
 function normalizeTaskComments(
   steeringComments: SteeringComment[] | undefined,
@@ -403,6 +403,9 @@ CREATE TABLE IF NOT EXISTS routines (
   description TEXT,
   triggerType TEXT NOT NULL,
   triggerConfig TEXT NOT NULL,
+  command TEXT,
+  steps TEXT,
+  timeoutMs INTEGER,
   catchUpPolicy TEXT NOT NULL DEFAULT 'run_one',
   executionPolicy TEXT NOT NULL DEFAULT 'queue',
   catchUpLimit INTEGER DEFAULT 5,
@@ -1085,6 +1088,9 @@ export class Database {
             description TEXT,
             triggerType TEXT NOT NULL,
             triggerConfig TEXT NOT NULL,
+            command TEXT,
+            steps TEXT,
+            timeoutMs INTEGER,
             catchUpPolicy TEXT NOT NULL DEFAULT 'run_one',
             executionPolicy TEXT NOT NULL DEFAULT 'queue',
             catchUpLimit INTEGER DEFAULT 5,
@@ -1449,6 +1455,15 @@ export class Database {
         }
       });
     }
+
+    if (version < 36) {
+      this.applyMigration(36, () => {
+        this.addColumnIfMissing("routines", "command", "TEXT");
+        this.addColumnIfMissing("routines", "steps", "TEXT");
+        this.addColumnIfMissing("routines", "timeoutMs", "INTEGER");
+      });
+    }
+
   }
 
   /**

@@ -137,6 +137,7 @@ export {
   validateBackupDir,
   runBackupCommand,
   syncBackupAutomation,
+  syncBackupRoutine,
   BACKUP_SCHEDULE_NAME,
 } from "./backup.js";
 export type { BackupInfo, BackupOptions } from "./backup.js";

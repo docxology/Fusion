@@ -11,7 +11,9 @@ import {
   validateBackupRetention,
   validateBackupDir,
   runBackupCommand,
+  syncBackupRoutine,
 } from "./backup.js";
+import { RoutineStore } from "./routine-store.js";
 import type { ProjectSettings } from "./types.js";
 
 describe("BackupManager", () => {
@@ -435,6 +437,90 @@ describe("createBackupManager", () => {
 
     vi.useRealTimers();
     await rm(tempDir, { recursive: true, force: true });
+  });
+});
+
+describe("syncBackupRoutine", () => {
+  let tempDir: string;
+  let routineStore: RoutineStore;
+
+  const baseSettings: ProjectSettings = {
+    maxConcurrent: 2,
+    maxWorktrees: 4,
+    pollIntervalMs: 15000,
+    groupOverlappingFiles: false,
+    autoMerge: true,
+  };
+
+  beforeEach(async () => {
+    vi.useRealTimers();
+    tempDir = mkdtempSync(join(tmpdir(), "kb-backup-routine-test-"));
+    routineStore = new RoutineStore(tempDir);
+    await routineStore.init();
+  });
+
+  afterEach(async () => {
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  it("creates a command-backed routine for automatic database backups", async () => {
+    const routine = await syncBackupRoutine(routineStore, {
+      ...baseSettings,
+      autoBackupEnabled: true,
+      autoBackupSchedule: "0 3 * * *",
+    });
+
+    expect(routine).toBeDefined();
+    expect(routine?.name).toBe("Database Backup");
+    expect(routine?.trigger).toEqual({ type: "cron", cronExpression: "0 3 * * *" });
+    expect(routine?.command).toBe("fn backup --create");
+    expect(routine?.agentId).toBe("");
+    expect(routine?.scope).toBe("project");
+  });
+
+  it("updates the existing backup routine when settings change", async () => {
+    await syncBackupRoutine(routineStore, {
+      ...baseSettings,
+      autoBackupEnabled: true,
+      autoBackupSchedule: "0 2 * * *",
+    });
+
+    const updated = await syncBackupRoutine(routineStore, {
+      ...baseSettings,
+      autoBackupEnabled: true,
+      autoBackupSchedule: "30 4 * * *",
+    });
+    const routines = await routineStore.listRoutines();
+
+    expect(routines).toHaveLength(1);
+    expect(updated?.trigger).toEqual({ type: "cron", cronExpression: "30 4 * * *" });
+    expect(updated?.command).toBe("fn backup --create");
+    expect(updated?.enabled).toBe(true);
+  });
+
+  it("deletes the backup routine when automatic backups are disabled", async () => {
+    await syncBackupRoutine(routineStore, {
+      ...baseSettings,
+      autoBackupEnabled: true,
+      autoBackupSchedule: "0 2 * * *",
+    });
+
+    await syncBackupRoutine(routineStore, {
+      ...baseSettings,
+      autoBackupEnabled: false,
+    });
+
+    expect(await routineStore.listRoutines()).toEqual([]);
+  });
+
+  it("rejects invalid backup schedules before creating a routine", async () => {
+    await expect(syncBackupRoutine(routineStore, {
+      ...baseSettings,
+      autoBackupEnabled: true,
+      autoBackupSchedule: "bad-cron",
+    })).rejects.toThrow("Invalid backup schedule");
+
+    expect(await routineStore.listRoutines()).toEqual([]);
   });
 });
 

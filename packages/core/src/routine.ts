@@ -5,7 +5,7 @@
  * (cron, webhook, API, manual) with configurable execution and catch-up policies.
  */
 
-import type { AutomationRunResult } from "./automation.js";
+import type { AutomationRunResult, AutomationStep } from "./automation.js";
 
 // ── Trigger Types ─────────────────────────────────────────────────────
 
@@ -115,6 +115,12 @@ export interface Routine {
   description?: string;
   /** The trigger configuration. */
   trigger: RoutineTrigger;
+  /** Shell command to execute when this routine uses command action mode. */
+  command?: string;
+  /** Multi-step workflow to execute when present. */
+  steps?: AutomationStep[];
+  /** Per-routine execution timeout in milliseconds. */
+  timeoutMs?: number;
   /** Catch-up policy for missed runs. Default: "run_one". */
   catchUpPolicy: RoutineCatchUpPolicy;
   /** Execution policy for concurrent runs. Default: "queue". */
@@ -155,6 +161,12 @@ export interface RoutineCreateInput {
   description?: string;
   /** Trigger configuration. Required. */
   trigger: RoutineTrigger;
+  /** Shell command action. Required when `steps` is omitted and no agent is assigned. */
+  command?: string;
+  /** Multi-step workflow action. When provided, `command` is ignored. */
+  steps?: AutomationStep[];
+  /** Per-routine execution timeout in milliseconds. */
+  timeoutMs?: number;
   /** Catch-up policy. Default: "run_one". */
   catchUpPolicy?: RoutineCatchUpPolicy;
   /** Execution policy. Default: "queue". */
@@ -173,6 +185,12 @@ export interface RoutineUpdateInput {
   description?: string;
   /** Trigger configuration. */
   trigger?: RoutineTrigger;
+  /** Shell command action. */
+  command?: string;
+  /** Multi-step workflow action. */
+  steps?: AutomationStep[];
+  /** Per-routine execution timeout in milliseconds. */
+  timeoutMs?: number;
   /** Catch-up policy. */
   catchUpPolicy?: RoutineCatchUpPolicy;
   /** Execution policy. */

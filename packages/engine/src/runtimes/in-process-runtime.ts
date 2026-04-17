@@ -18,6 +18,7 @@ import { AgentSemaphore } from "../concurrency.js";
 import { HeartbeatMonitor, HeartbeatTriggerScheduler, type WakeContext } from "../agent-heartbeat.js";
 import { RoutineRunner, type RoutineRunnerOptions } from "../routine-runner.js";
 import { RoutineScheduler } from "../routine-scheduler.js";
+import { createAiPromptExecutor } from "../cron-runner.js";
 import type {
   ProjectRuntime,
   ProjectRuntimeConfig,
@@ -467,10 +468,13 @@ export class InProcessRuntime
           this.routineStore = routineStore;
 
           if (this.heartbeatMonitor) {
+            const aiPromptExecutor = await createAiPromptExecutor(this.config.workingDirectory);
             const routineRunnerOptions: RoutineRunnerOptions = {
               routineStore,
               heartbeatMonitor: this.heartbeatMonitor,
               rootDir: this.config.workingDirectory,
+              taskStore: this.taskStore,
+              aiPromptExecutor,
             };
             this.routineRunner = new RoutineRunner(routineRunnerOptions);
 

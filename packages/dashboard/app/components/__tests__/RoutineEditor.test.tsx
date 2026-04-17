@@ -22,6 +22,7 @@ function makeRoutine(overrides: Partial<Routine> = {}): Routine {
     name: "Test Routine",
     description: "A test routine",
     trigger: { type: "cron", cronExpression: "0 * * * *" },
+    command: "echo test",
     executionPolicy: "parallel",
     catchUpPolicy: "skip",
     enabled: true,
@@ -36,6 +37,10 @@ function makeRoutine(overrides: Partial<Routine> = {}): Routine {
 describe("RoutineEditor", () => {
   const onSubmit = vi.fn().mockResolvedValue(undefined);
   const onCancel = vi.fn();
+
+  const fillCommand = (value = "echo test") => {
+    fireEvent.change(screen.getByLabelText("Command"), { target: { value } });
+  };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -286,6 +291,7 @@ describe("RoutineEditor", () => {
     it("calls onSubmit with correct RoutineCreateInput shape on valid create", async () => {
       render(<RoutineEditor onSubmit={onSubmit} onCancel={onCancel} />);
       fireEvent.change(screen.getByLabelText("Name"), { target: { value: "New Routine" } });
+      fillCommand();
       fireEvent.click(screen.getByText("Create Routine"));
       await waitFor(() => {
         expect(onSubmit).toHaveBeenCalledWith(
@@ -304,6 +310,7 @@ describe("RoutineEditor", () => {
       render(<RoutineEditor onSubmit={onSubmit} onCancel={onCancel} />);
       fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Weekly Routine" } });
       fireEvent.change(screen.getByLabelText("Frequency"), { target: { value: "weekly" } });
+      fillCommand();
       fireEvent.click(screen.getByText("Create Routine"));
 
       await waitFor(() => {
@@ -335,6 +342,7 @@ describe("RoutineEditor", () => {
       const slowSubmit = vi.fn().mockImplementation(() => new Promise((resolve) => setTimeout(resolve, 100)));
       render(<RoutineEditor onSubmit={slowSubmit} onCancel={onCancel} />);
       fireEvent.change(screen.getByLabelText("Name"), { target: { value: "New Routine" } });
+      fillCommand();
 
       // Use role and name to find the submit button specifically
       const submitButton = screen.getByRole("button", { name: "Create Routine" });
@@ -349,6 +357,7 @@ describe("RoutineEditor", () => {
     it("re-enables submit button after submission completes", async () => {
       render(<RoutineEditor onSubmit={onSubmit} onCancel={onCancel} />);
       fireEvent.change(screen.getByLabelText("Name"), { target: { value: "New Routine" } });
+      fillCommand();
       fireEvent.click(screen.getByText("Create Routine"));
 
       await waitFor(() => {
@@ -364,6 +373,7 @@ describe("RoutineEditor", () => {
       fireEvent.click(screen.getByText("Webhook"));
       fireEvent.change(screen.getByLabelText("Webhook Path"), { target: { value: "/trigger/my-hook" } });
       fireEvent.change(screen.getByLabelText("Webhook Secret (optional)"), { target: { value: "my-secret" } });
+      fillCommand();
       fireEvent.click(screen.getByText("Create Routine"));
 
       await waitFor(() => {
@@ -384,6 +394,7 @@ describe("RoutineEditor", () => {
       fireEvent.change(screen.getByLabelText("Name"), { target: { value: "API Routine" } });
       fireEvent.click(screen.getByText("API"));
       fireEvent.change(screen.getByLabelText("API Endpoint"), { target: { value: "/api/my-routine" } });
+      fillCommand();
       fireEvent.click(screen.getByText("Create Routine"));
 
       await waitFor(() => {
@@ -402,6 +413,7 @@ describe("RoutineEditor", () => {
       render(<RoutineEditor onSubmit={onSubmit} onCancel={onCancel} />);
       fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Manual Routine" } });
       fireEvent.click(screen.getByText("Manual"));
+      fillCommand();
       fireEvent.click(screen.getByText("Create Routine"));
 
       await waitFor(() => {
