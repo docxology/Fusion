@@ -337,6 +337,82 @@ describe("TaskDetailModal", () => {
       expect(onRetryTask).toHaveBeenCalledWith("FN-099");
     });
 
+    it("shows exactly one success toast when retry succeeds", async () => {
+      const onClose = vi.fn();
+      const onRetryTask = vi.fn(async () => ({}) as Task);
+      const addToast = vi.fn();
+
+      render(
+        <TaskDetailModal
+          task={makeTask({ column: "in-review", status: "failed" })}
+          onClose={onClose}
+          onMoveTask={noopMove}
+          onDeleteTask={noopDelete}
+          onMergeTask={noopMerge}
+          onOpenDetail={noopOpenDetail}
+          onRetryTask={onRetryTask}
+          addToast={addToast}
+        />,
+      );
+
+      // Open Actions dropdown and click Retry
+      const actionsBtn = screen.getByRole("button", { name: /actions/i });
+      await act(async () => {
+        fireEvent.click(actionsBtn);
+      });
+
+      const retryBtn = screen.getByRole("menuitem", { name: "Retry" });
+      await act(async () => {
+        fireEvent.click(retryBtn);
+      });
+
+      // Wait for the promise to resolve
+      await act(async () => {});
+
+      // Only one toast — the success toast, no info toast
+      expect(addToast).toHaveBeenCalledTimes(1);
+      expect(addToast).toHaveBeenCalledWith("Retried FN-099", "success");
+    });
+
+    it("shows exactly one error toast when retry fails", async () => {
+      const onClose = vi.fn();
+      const onRetryTask = vi.fn(async () => {
+        throw new Error("Server error");
+      });
+      const addToast = vi.fn();
+
+      render(
+        <TaskDetailModal
+          task={makeTask({ column: "in-review", status: "failed" })}
+          onClose={onClose}
+          onMoveTask={noopMove}
+          onDeleteTask={noopDelete}
+          onMergeTask={noopMerge}
+          onOpenDetail={noopOpenDetail}
+          onRetryTask={onRetryTask}
+          addToast={addToast}
+        />,
+      );
+
+      // Open Actions dropdown and click Retry
+      const actionsBtn = screen.getByRole("button", { name: /actions/i });
+      await act(async () => {
+        fireEvent.click(actionsBtn);
+      });
+
+      const retryBtn = screen.getByRole("menuitem", { name: "Retry" });
+      await act(async () => {
+        fireEvent.click(retryBtn);
+      });
+
+      // Wait for the promise to reject
+      await act(async () => {});
+
+      // Only one toast — the error toast
+      expect(addToast).toHaveBeenCalledTimes(1);
+      expect(addToast).toHaveBeenCalledWith("Server error", "error");
+    });
+
   it("shows 'Move to Todo' in Move dropdown for in-review tasks (not 'Retry')", () => {
       render(
         <TaskDetailModal

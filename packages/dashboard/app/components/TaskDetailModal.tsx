@@ -716,10 +716,9 @@ export function TaskDetailModal({
   const handleRetry = useCallback(() => {
     if (!onRetryTask) return;
     onClose();
-    addToast(`Retrying ${task.id}...`, "info");
     onRetryTask(task.id)
       .then(() => {
-        addToast(`Retry started for ${task.id}`, "success");
+        addToast(`Retried ${task.id}`, "success");
       })
       .catch((err: any) => {
         addToast(err.message, "error");
