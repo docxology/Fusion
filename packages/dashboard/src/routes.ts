@@ -140,6 +140,91 @@ const upload = multer({
 
 const execFileAsync = promisify(execFile);
 
+function readJsonObject(path: string): Record<string, any> {
+  if (!nodeFs.existsSync(path)) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(nodeFs.readFileSync(path, "utf-8"));
+    return parsed && typeof parsed === "object" ? parsed as Record<string, any> : {};
+  } catch {
+    return {};
+  }
+}
+
+function hasPackageManagerSettings(settings: Record<string, any>): boolean {
+  return Array.isArray(settings.packages) || Array.isArray(settings.npmCommand);
+}
+
+function getPiPackageManagerAgentDir(): string {
+  const fusionAgentDir = getFusionAgentDir();
+  const legacyAgentDir = getLegacyPiAgentDir();
+  const fusionSettings = readJsonObject(join(fusionAgentDir, "settings.json"));
+  const legacySettings = readJsonObject(join(legacyAgentDir, "settings.json"));
+
+  if (hasPackageManagerSettings(fusionSettings) || !nodeFs.existsSync(legacyAgentDir)) {
+    return fusionAgentDir;
+  }
+  if (hasPackageManagerSettings(legacySettings)) {
+    return legacyAgentDir;
+  }
+  return nodeFs.existsSync(fusionAgentDir) ? fusionAgentDir : legacyAgentDir;
+}
+
+function packageExtensionName(extensionPath: string, source: string): string {
+  const base = resolve(extensionPath).split(sep).pop()?.replace(/\.(ts|js)$/i, "") || source;
+  if (base !== "index") {
+    return base;
+  }
+  return source.replace(/^(npm:|git:)/, "").split(/[/:@#]/).filter(Boolean).pop() || base;
+}
+
+async function discoverDashboardPiExtensions(cwd: string): Promise<PiExtensionSettings> {
+  const settings = discoverPiExtensions(cwd);
+  const disabled = new Set(settings.disabledIds.map((id) => resolve(id)));
+  const byPath = new Map(settings.extensions.map((entry) => [entry.id, entry]));
+
+  try {
+    const { DefaultPackageManager } = await import("@mariozechner/pi-coding-agent");
+    const agentDir = getPiPackageManagerAgentDir();
+    const globalSettings = readJsonObject(join(agentDir, "settings.json"));
+    const projectSettings = readJsonObject(join(cwd, ".fusion", "settings.json"));
+    const mergedSettings = { ...globalSettings, ...projectSettings };
+    const packageManager = new DefaultPackageManager({
+      cwd,
+      agentDir,
+      settingsManager: {
+        getGlobalSettings: () => structuredClone(globalSettings),
+        getProjectSettings: () => structuredClone(projectSettings),
+        getNpmCommand: () => Array.isArray(mergedSettings.npmCommand)
+          ? [...mergedSettings.npmCommand]
+          : undefined,
+      } as any,
+    });
+    const resolved = await packageManager.resolve(async () => "skip");
+
+    for (const extension of resolved.extensions) {
+      const id = resolve(extension.path);
+      const source = extension.metadata?.source || "package";
+      byPath.set(id, {
+        id,
+        name: packageExtensionName(id, source),
+        path: id,
+        source: "package",
+        enabled: extension.enabled && !disabled.has(id),
+      } satisfies PiExtensionEntry);
+    }
+  } catch {
+    // Filesystem-discovered extensions are still useful if package resolution fails.
+  }
+
+  return {
+    ...settings,
+    extensions: [...byPath.values()].sort((a, b) => a.name.localeCompare(b.name) || a.path.localeCompare(b.path)),
+  };
+}
+
 // Dynamic import fallback for @fusion/engine with injectable override for tests.
 let createKbAgentForRefine: typeof import("@fusion/engine").createKbAgent | undefined;
 
@@ -2845,7 +2930,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
   router.get("/settings/pi-extensions", async (req, res) => {
     try {
       const { store: scopedStore } = await getProjectContext(req);
-      res.json(discoverPiExtensions(scopedStore.getRootDir()));
+      res.json(await discoverDashboardPiExtensions(scopedStore.getRootDir()));
     } catch (err: unknown) {
       if (err instanceof ApiError) {
         throw err;
@@ -2866,7 +2951,14 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
       }
 
       const { store: scopedStore } = await getProjectContext(req);
-      res.json(updatePiExtensionDisabledIds(scopedStore.getRootDir(), disabledIds));
+      const currentSettings = await discoverDashboardPiExtensions(scopedStore.getRootDir());
+      updatePiExtensionDisabledIds(
+        scopedStore.getRootDir(),
+        disabledIds,
+        undefined,
+        currentSettings.extensions.map((extension) => extension.id),
+      );
+      res.json(await discoverDashboardPiExtensions(scopedStore.getRootDir()));
     } catch (err: unknown) {
       if (err instanceof ApiError) {
         throw err;
