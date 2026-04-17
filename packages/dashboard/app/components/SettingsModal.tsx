@@ -196,6 +196,7 @@ export function SettingsModal({
 
   // Global concurrency state
   const [globalMaxConcurrent, setGlobalMaxConcurrent] = useState<number | undefined>(4);
+  const initialGlobalMaxConcurrentRef = useRef<number | undefined>(4);
 
   // Import/Export state
   const [importDialogOpen, setImportDialogOpen] = useState(false);
@@ -256,7 +257,10 @@ export function SettingsModal({
 
   useEffect(() => {
     fetchGlobalConcurrency()
-      .then((state) => setGlobalMaxConcurrent(state.globalMaxConcurrent))
+      .then((state) => {
+        setGlobalMaxConcurrent(state.globalMaxConcurrent);
+        initialGlobalMaxConcurrentRef.current = state.globalMaxConcurrent;
+      })
       .catch(() => {
         // Silently fail — global concurrency may not be available
       });
@@ -867,7 +871,9 @@ export function SettingsModal({
       await Promise.all([
         Object.keys(globalPatch).length > 0 ? updateGlobalSettings(globalPatch) : Promise.resolve(),
         Object.keys(projectPatch).length > 0 ? updateSettings(projectPatch, projectId) : Promise.resolve(),
-        updateGlobalConcurrency({ globalMaxConcurrent: globalMaxConcurrent ?? 4 }),
+        globalMaxConcurrent !== initialGlobalMaxConcurrentRef.current
+          ? updateGlobalConcurrency({ globalMaxConcurrent: globalMaxConcurrent ?? 4 })
+          : Promise.resolve(),
       ]);
 
       addToast("Settings saved", "success");

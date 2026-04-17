@@ -907,6 +907,48 @@ describe("SettingsModal", () => {
     expect(projectPayload.globalMaxConcurrent).toBeUndefined();
   });
 
+  it("does not call updateGlobalConcurrency when value is unchanged", async () => {
+    // Initial fetch returns 8, user saves without changing it
+    (fetchGlobalConcurrency as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      globalMaxConcurrent: 8,
+      currentlyActive: 3,
+      queuedCount: 0,
+      projectsActive: {},
+    });
+
+    render(<SettingsModal onClose={onClose} addToast={addToast} initialSection="scheduling" />);
+    await waitFor(() => expect(fetchGlobalConcurrency).toHaveBeenCalled());
+
+    // Change a project-scoped setting (not globalMaxConcurrent)
+    const input = screen.getByLabelText("Max Concurrent Tasks") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "3" } });
+
+    fireEvent.click(screen.getByText("Save"));
+
+    await waitFor(() => expect(updateSettings).toHaveBeenCalled());
+    expect(updateGlobalConcurrency).not.toHaveBeenCalled();
+  });
+
+  it("calls updateGlobalConcurrency when value changes from initial", async () => {
+    (fetchGlobalConcurrency as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      globalMaxConcurrent: 8,
+      currentlyActive: 3,
+      queuedCount: 0,
+      projectsActive: {},
+    });
+
+    render(<SettingsModal onClose={onClose} addToast={addToast} initialSection="scheduling" />);
+    await waitFor(() => expect(fetchGlobalConcurrency).toHaveBeenCalled());
+
+    // Change globalMaxConcurrent from 8 to 12
+    const input = screen.getByLabelText("Global Max Concurrent") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "12" } });
+
+    fireEvent.click(screen.getByText("Save"));
+
+    await waitFor(() => expect(updateGlobalConcurrency).toHaveBeenCalledWith({ globalMaxConcurrent: 12 }));
+  });
+
   it("saving in General section updates project settings with task prefix", async () => {
     render(<SettingsModal onClose={onClose} addToast={addToast} />);
     await waitFor(() => expect(fetchSettings).toHaveBeenCalled());

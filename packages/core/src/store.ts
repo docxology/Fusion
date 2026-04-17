@@ -1024,7 +1024,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
     }
 
     return this.withConfigLock(async () => {
-      const config = await this.readConfig();
+      const config = this.readConfigFast();
 
       // Handle null values as "delete this key from settings"
       // This allows the frontend to explicitly clear a setting by sending null
@@ -1132,10 +1132,8 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
    */
   async updateGlobalSettings(patch: Partial<GlobalSettings>): Promise<Settings> {
     // Read previous state BEFORE writing so the diff is correct
-    const [previousGlobal, config] = await Promise.all([
-      this.globalSettingsStore.getSettings(),
-      this.readConfig(),
-    ]);
+    const previousGlobal = await this.globalSettingsStore.getSettings();
+    const config = this.readConfigFast();
     const previous: Settings = { ...DEFAULT_SETTINGS, ...previousGlobal, ...config.settings } as Settings;
 
     const updatedGlobal = await this.globalSettingsStore.updateSettings(patch);

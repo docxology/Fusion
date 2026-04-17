@@ -115,4 +115,18 @@ describe("useAppSettings", () => {
     // Verify fetchSettings was called again with correct projectId
     expect(mockFetchSettings).toHaveBeenCalledWith("proj_123");
   });
+
+  it("refresh() tolerates partial fetch failure", async () => {
+    mockFetchConfig.mockRejectedValueOnce(new Error("network"));
+
+    const { result } = renderHook(() => useAppSettings("proj_123"));
+
+    // settings should still be set even though config failed
+    await waitFor(() => {
+      expect(result.current.autoMerge).toBe(false);
+    });
+
+    // config defaults remain (maxConcurrent stays at initial 2)
+    expect(result.current.maxConcurrent).toBe(2);
+  });
 });

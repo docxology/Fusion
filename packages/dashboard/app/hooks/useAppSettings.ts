@@ -39,24 +39,24 @@ export function useAppSettings(projectId?: string): UseAppSettingsResult {
    * Shared between the mount-time useEffect and the refresh() function.
    */
   const refresh = useCallback(async () => {
-    try {
-      const cfg = await fetchConfig(projectId);
-      setMaxConcurrent(cfg.maxConcurrent);
-      setRootDir(cfg.rootDir);
-    } catch {
-      // Keep current state on fetch failure.
+    const [configResult, settingsResult] = await Promise.allSettled([
+      fetchConfig(projectId),
+      fetchSettings(projectId),
+    ]);
+
+    if (configResult.status === "fulfilled") {
+      setMaxConcurrent(configResult.value.maxConcurrent);
+      setRootDir(configResult.value.rootDir);
     }
 
-    try {
-      const settings = await fetchSettings(projectId);
+    if (settingsResult.status === "fulfilled") {
+      const settings = settingsResult.value;
       setAutoMerge(Boolean(settings.autoMerge));
       setGlobalPaused(Boolean(settings.globalPause));
       setEnginePaused(Boolean(settings.enginePaused));
       setGithubTokenConfigured(Boolean(settings.githubTokenConfigured));
       setTaskStuckTimeoutMs(settings.taskStuckTimeoutMs);
       setShowQuickChatFAB(settings.showQuickChatFAB === true);
-    } catch {
-      // Keep current state on fetch failure.
     }
   }, [projectId]);
 
