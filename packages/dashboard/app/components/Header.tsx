@@ -183,6 +183,8 @@ export interface HeaderProps {
   onToggleEnginePause?: () => void;
   view?: "board" | "list" | "agents" | "missions" | "chat" | "documents" | "roadmaps" | "skills" | "mailbox" | "insights";
   onChangeView?: (view: "board" | "list" | "agents" | "missions" | "chat" | "documents" | "roadmaps" | "skills" | "mailbox" | "insights") => void;
+  /** Whether to show the skills tab in the view toggle */
+  showSkillsTab?: boolean;
   searchQuery?: string;
   onSearchChange?: (query: string) => void;
   /** Multi-project props */
@@ -229,6 +231,7 @@ export function Header({
   onToggleEnginePause,
   view = "board",
   onChangeView,
+  showSkillsTab,
   searchQuery = "",
   onSearchChange,
   projects = [],
@@ -730,15 +733,17 @@ export function Header({
             >
               <Mail size={16} />
             </button>
-            <button
-              className={`view-toggle-btn${view === "skills" ? " active" : ""}`}
-              onClick={() => onChangeView("skills")}
-              title="Skills view"
-              aria-label="Skills view"
-              aria-pressed={view === "skills"}
-            >
-              <Zap size={16} />
-            </button>
+            {showSkillsTab && (
+              <button
+                className={`view-toggle-btn${view === "skills" ? " active" : ""}`}
+                onClick={() => onChangeView("skills")}
+                title="Skills view"
+                aria-label="Skills view"
+                aria-pressed={view === "skills"}
+              >
+                <Zap size={16} />
+              </button>
+            )}
             <button
               className={`view-toggle-btn${view === "roadmaps" ? " active" : ""}`}
               onClick={() => onChangeView("roadmaps")}

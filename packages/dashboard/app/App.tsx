@@ -189,11 +189,14 @@ function AppInner() {
     taskStuckTimeoutMs,
     showQuickChatFAB,
     githubTokenConfigured,
+    experimentalFeatures,
     toggleAutoMerge,
     toggleGlobalPause,
     toggleEnginePause,
     refresh: refreshAppSettings,
   } = useAppSettings(currentProject?.id);
+
+  const skillsEnabled = experimentalFeatures.skillsView === true;
   const {
     availableModels,
     favoriteProviders,
@@ -344,6 +347,11 @@ function AppInner() {
 
     // Project view
     if (taskView === "skills") {
+      if (!skillsEnabled) {
+        // Redirect to board if skills view is not enabled
+        handleChangeTaskView("board");
+        return null;
+      }
       return (
         <PageErrorBoundary>
           <SkillsView
@@ -551,6 +559,7 @@ function AppInner() {
         onToggleEnginePause={toggleEnginePause}
         view={taskView}
         onChangeView={viewMode === "project" && currentProject ? handleTaskViewChange : undefined}
+        showSkillsTab={skillsEnabled}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         projects={effectiveProjects}
@@ -630,6 +639,7 @@ function AppInner() {
         onRunScript={modalManager.runScript}
         onOpenQuickChat={() => setQuickChatOpen(true)}
         projectId={currentProject?.id}
+        showSkillsTab={skillsEnabled}
       />
       {viewMode === "project" && currentProject && taskView !== "chat" && taskView !== "mailbox" && taskView !== "insights" && (
         <QuickChatFAB

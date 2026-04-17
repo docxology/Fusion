@@ -56,6 +56,8 @@ export interface MobileNavBarProps {
   onOpenQuickChat?: () => void;
   projectId?: string;
   onViewAllProjects?: () => void;
+  /** Whether to show the skills tab */
+  showSkillsTab?: boolean;
 }
 
 function GitHubLogo({ size = 20 }: { size?: number }) {
@@ -100,6 +102,7 @@ export function MobileNavBar({
   onOpenQuickChat,
   projectId,
   onViewAllProjects,
+  showSkillsTab,
 }: MobileNavBarProps) {
   const mode = useViewportMode();
   const [isMoreOpen, setIsMoreOpen] = useState(false);
@@ -241,17 +244,19 @@ export function MobileNavBar({
           )}
         </button>
 
-        <button
-          type="button"
-          className={`mobile-nav-tab${view === "skills" ? " mobile-nav-tab--active" : ""}`}
-          data-testid="mobile-nav-tab-skills"
-          role="tab"
-          aria-selected={view === "skills"}
-          onClick={() => onChangeView("skills")}
-        >
-          <Zap />
-          <span className="mobile-nav-tab-label">Skills</span>
-        </button>
+        {showSkillsTab && (
+          <button
+            type="button"
+            className={`mobile-nav-tab${view === "skills" ? " mobile-nav-tab--active" : ""}`}
+            data-testid="mobile-nav-tab-skills"
+            role="tab"
+            aria-selected={view === "skills"}
+            onClick={() => onChangeView("skills")}
+          >
+            <Zap />
+            <span className="mobile-nav-tab-label">Skills</span>
+          </button>
+        )}
 
         <button
           type="button"

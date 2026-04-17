@@ -344,14 +344,14 @@ describe("Header", () => {
 
   it("renders skills view button in view toggle when onChangeView is provided", () => {
     const onChangeView = vi.fn();
-    render(<Header view="board" onChangeView={onChangeView} />);
+    render(<Header view="board" onChangeView={onChangeView} showSkillsTab={true} />);
     const skillsBtn = screen.getByTitle("Skills view");
     expect(skillsBtn).toBeDefined();
   });
 
   it("calls onChangeView with 'skills' when skills view button is clicked", () => {
     const onChangeView = vi.fn();
-    render(<Header view="board" onChangeView={onChangeView} />);
+    render(<Header view="board" onChangeView={onChangeView} showSkillsTab={true} />);
     const skillsBtn = screen.getByTitle("Skills view");
     fireEvent.click(skillsBtn);
     expect(onChangeView).toHaveBeenCalledWith("skills");
@@ -359,7 +359,7 @@ describe("Header", () => {
 
   it("marks skills view button as active when view is 'skills'", () => {
     const onChangeView = vi.fn();
-    render(<Header view="skills" onChangeView={onChangeView} />);
+    render(<Header view="skills" onChangeView={onChangeView} showSkillsTab={true} />);
     const skillsBtn = screen.getByTitle("Skills view");
     expect(skillsBtn.className).toContain("active");
     expect(skillsBtn.getAttribute("aria-pressed")).toBe("true");
@@ -367,10 +367,22 @@ describe("Header", () => {
 
   it("does not mark skills view button as active when view is 'board'", () => {
     const onChangeView = vi.fn();
-    render(<Header view="board" onChangeView={onChangeView} />);
+    render(<Header view="board" onChangeView={onChangeView} showSkillsTab={true} />);
     const skillsBtn = screen.getByTitle("Skills view");
     expect(skillsBtn.className).not.toContain("active");
     expect(skillsBtn.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("does not render skills view button when showSkillsTab is false", () => {
+    const onChangeView = vi.fn();
+    render(<Header view="board" onChangeView={onChangeView} showSkillsTab={false} />);
+    expect(screen.queryByTitle("Skills view")).toBeNull();
+  });
+
+  it("does not render skills view button when showSkillsTab is omitted", () => {
+    const onChangeView = vi.fn();
+    render(<Header view="board" onChangeView={onChangeView} />);
+    expect(screen.queryByTitle("Skills view")).toBeNull();
   });
 
   // ── Chat View Toggle ─────────────────────────────────────────

@@ -13,6 +13,7 @@ export interface UseAppSettingsResult {
   taskStuckTimeoutMs: number | undefined;
   showQuickChatFAB: boolean;
   githubTokenConfigured: boolean;
+  experimentalFeatures: Record<string, boolean>;
   toggleAutoMerge: () => Promise<void>;
   toggleGlobalPause: () => Promise<void>;
   toggleEnginePause: () => Promise<void>;
@@ -33,6 +34,7 @@ export function useAppSettings(projectId?: string): UseAppSettingsResult {
   const [taskStuckTimeoutMs, setTaskStuckTimeoutMs] = useState<number | undefined>(undefined);
   const [showQuickChatFAB, setShowQuickChatFAB] = useState(false);
   const [githubTokenConfigured, setGithubTokenConfigured] = useState(false);
+  const [experimentalFeatures, setExperimentalFeatures] = useState<Record<string, boolean>>({});
 
   /**
    * Fetches config and settings from the backend and updates local state.
@@ -57,6 +59,7 @@ export function useAppSettings(projectId?: string): UseAppSettingsResult {
       setGithubTokenConfigured(Boolean(settings.githubTokenConfigured));
       setTaskStuckTimeoutMs(settings.taskStuckTimeoutMs);
       setShowQuickChatFAB(settings.showQuickChatFAB === true);
+      setExperimentalFeatures(settings.experimentalFeatures ?? {});
     }
   }, [projectId]);
 
@@ -117,6 +120,7 @@ export function useAppSettings(projectId?: string): UseAppSettingsResult {
     taskStuckTimeoutMs,
     showQuickChatFAB,
     githubTokenConfigured,
+    experimentalFeatures,
     toggleAutoMerge,
     toggleGlobalPause,
     toggleEnginePause,

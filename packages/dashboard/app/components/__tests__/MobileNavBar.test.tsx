@@ -56,8 +56,8 @@ describe("MobileNavBar", () => {
     mockViewport("mobile");
   });
 
-  it("renders eight tab buttons (tasks + agents + missions + chat + mailbox + skills + roadmaps + more)", () => {
-    render(<MobileNavBar {...createDefaultProps()} />);
+  it("renders eight tab buttons (tasks + agents + missions + chat + mailbox + skills + roadmaps + more) when showSkillsTab is true", () => {
+    render(<MobileNavBar {...createDefaultProps()} showSkillsTab={true} />);
 
     expect(screen.getByTestId("mobile-nav-tab-tasks")).toBeDefined();
     expect(screen.getByTestId("mobile-nav-tab-agents")).toBeDefined();
@@ -67,6 +67,16 @@ describe("MobileNavBar", () => {
     expect(screen.getByTestId("mobile-nav-tab-skills")).toBeDefined();
     expect(screen.getByTestId("mobile-nav-tab-roadmaps")).toBeDefined();
     expect(screen.getByTestId("mobile-nav-tab-more")).toBeDefined();
+  });
+
+  it("does not render skills tab when showSkillsTab is false", () => {
+    render(<MobileNavBar {...createDefaultProps()} showSkillsTab={false} />);
+    expect(screen.queryByTestId("mobile-nav-tab-skills")).toBeNull();
+  });
+
+  it("does not render skills tab when showSkillsTab is omitted", () => {
+    render(<MobileNavBar {...createDefaultProps()} />);
+    expect(screen.queryByTestId("mobile-nav-tab-skills")).toBeNull();
   });
 
   it("active tab is highlighted for mailbox", () => {
@@ -153,19 +163,19 @@ describe("MobileNavBar", () => {
 
   it("skills tab calls onChangeView with 'skills'", () => {
     const props = createDefaultProps();
-    render(<MobileNavBar {...props} view="board" />);
+    render(<MobileNavBar {...props} view="board" showSkillsTab={true} />);
 
     fireEvent.click(screen.getByTestId("mobile-nav-tab-skills"));
     expect(props.onChangeView).toHaveBeenCalledWith("skills");
   });
 
   it("skills tab is active when view is 'skills'", () => {
-    render(<MobileNavBar {...createDefaultProps()} view="skills" />);
+    render(<MobileNavBar {...createDefaultProps()} view="skills" showSkillsTab={true} />);
     expect(screen.getByTestId("mobile-nav-tab-skills").className).toContain("mobile-nav-tab--active");
   });
 
   it("skills tab is not active when view is 'board'", () => {
-    render(<MobileNavBar {...createDefaultProps()} view="board" />);
+    render(<MobileNavBar {...createDefaultProps()} view="board" showSkillsTab={true} />);
     expect(screen.getByTestId("mobile-nav-tab-skills").className).not.toContain("mobile-nav-tab--active");
   });
 
