@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createReadOnlyAuthFileStorage, wrapAuthStorageWithApiKeyProviders } from "./provider-auth.js";
+import { createReadOnlyAuthFileStorage, mergeAuthStorageReads, wrapAuthStorageWithApiKeyProviders } from "./provider-auth.js";
 
 function makeAuthStorage(credentials: Record<string, { type: string; key?: string }> = {}) {
   return {
@@ -18,6 +18,8 @@ function makeAuthStorage(credentials: Record<string, { type: string; key?: strin
       delete credentials[provider];
     }),
     get: vi.fn((provider: string) => credentials[provider]),
+    getAll: vi.fn(() => ({ ...credentials })),
+    list: vi.fn(() => Object.keys(credentials)),
     getApiKey: vi.fn(async (provider: string) => credentials[provider]?.key),
   } as any;
 }
@@ -66,6 +68,23 @@ describe("wrapAuthStorageWithApiKeyProviders", () => {
     expect(fusionAuth.reload).toHaveBeenCalledTimes(1);
     expect(legacyAuth.reload).toHaveBeenCalledTimes(1);
   });
+
+  it("creates an AuthStorage-compatible merged reader for ModelRegistry", async () => {
+    const fusionAuth = makeAuthStorage({
+      openrouter: { type: "api_key", key: "fusion-key" },
+    });
+    const legacyAuth = makeAuthStorage({
+      minimax: { type: "api_key", key: "legacy-minimax-key" },
+    });
+
+    const merged = mergeAuthStorageReads(fusionAuth, [legacyAuth]);
+
+    expect(await merged.getApiKey("openrouter")).toBe("fusion-key");
+    expect(await merged.getApiKey("minimax")).toBe("legacy-minimax-key");
+    expect(merged.get("minimax")).toEqual({ type: "api_key", key: "legacy-minimax-key" });
+    expect(merged.list()).toEqual(expect.arrayContaining(["openrouter", "minimax"]));
+  });
+
 
   it("reads legacy auth JSON without creating missing files", async () => {
     const tempDir = join(tmpdir(), `fusion-provider-auth-${process.pid}-${Date.now()}`);

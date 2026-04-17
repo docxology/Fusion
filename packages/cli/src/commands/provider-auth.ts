@@ -25,6 +25,8 @@ interface ReadFallbackAuthStorage {
   hasAuth(provider: string): boolean;
   getApiKey(providerId: string): Promise<string | undefined>;
   get(providerId: string): { type?: string; key?: string } | undefined;
+  getAll(): Record<string, { type?: string; key?: string }>;
+  list(): string[];
 }
 
 const BUILT_IN_API_KEY_PROVIDERS: Array<{ id: string; name: string }> = [
@@ -54,32 +56,21 @@ export function wrapAuthStorageWithApiKeyProviders(
   modelRegistry: ModelRegistry,
   readFallbackAuthStorages: ReadFallbackAuthStorage[] = [],
 ): DashboardAuthStorage {
-  const readAuthStorages = [authStorage, ...readFallbackAuthStorages];
-  const getCredential = (providerId: string) => {
-    for (const storage of readAuthStorages) {
-      const credential = storage.get(providerId);
-      if (credential) return credential;
-    }
-    return undefined;
-  };
+  const mergedAuthStorage = mergeAuthStorageReads(authStorage, readFallbackAuthStorages);
 
   return {
-    reload: () => {
-      for (const storage of readAuthStorages) {
-        storage.reload();
-      }
-    },
+    reload: () => mergedAuthStorage.reload(),
     getOAuthProviders: () =>
-      authStorage
+      mergedAuthStorage
         .getOAuthProviders()
         .map((provider) => ({ id: provider.id, name: provider.name })),
-    hasAuth: (provider) => readAuthStorages.some((storage) => storage.hasAuth(provider)),
+    hasAuth: (provider) => mergedAuthStorage.hasAuth(provider),
     login: (providerId, callbacks) =>
-      authStorage.login(providerId as Parameters<AuthStorage["login"]>[0], callbacks),
-    logout: (provider) => authStorage.logout(provider),
+      mergedAuthStorage.login(providerId as Parameters<AuthStorage["login"]>[0], callbacks),
+    logout: (provider) => mergedAuthStorage.logout(provider),
     getApiKeyProviders: () => {
       const oauthProviderIds = new Set(
-        authStorage.getOAuthProviders().map((provider) => provider.id),
+        mergedAuthStorage.getOAuthProviders().map((provider) => provider.id),
       );
       const providers = new Map<string, string>();
 
@@ -102,24 +93,82 @@ export function wrapAuthStorageWithApiKeyProviders(
       );
     },
     setApiKey: (providerId, apiKey) => {
-      authStorage.set(providerId, { type: "api_key", key: apiKey });
+      mergedAuthStorage.set(providerId, { type: "api_key", key: apiKey });
     },
     clearApiKey: (providerId) => {
-      authStorage.remove(providerId);
+      mergedAuthStorage.remove(providerId);
     },
     hasApiKey: (providerId) => {
-      const credential = getCredential(providerId);
+      const credential = mergedAuthStorage.get(providerId);
       return credential?.type === "api_key" && !!credential.key;
     },
-    getApiKey: async (providerId) => {
-      for (const storage of readAuthStorages) {
-        const apiKey = await storage.getApiKey(providerId);
-        if (apiKey) return apiKey;
-      }
-      return undefined;
-    },
-    get: getCredential,
+    getApiKey: (providerId) => mergedAuthStorage.getApiKey(providerId),
+    get: (providerId) => mergedAuthStorage.get(providerId),
   };
+}
+
+export function mergeAuthStorageReads(
+  authStorage: AuthStorage,
+  readFallbackAuthStorages: ReadFallbackAuthStorage[] = [],
+): AuthStorage {
+  const readAuthStorages = [authStorage, ...readFallbackAuthStorages];
+  const getCredential = (providerId: string) => {
+    for (const storage of readAuthStorages) {
+      const credential = storage.get(providerId);
+      if (credential) return credential;
+    }
+    return undefined;
+  };
+
+  return new Proxy(authStorage, {
+    get(target, prop, receiver) {
+      if (prop === "reload") {
+        return () => {
+          for (const storage of readAuthStorages) {
+            storage.reload();
+          }
+        };
+      }
+
+      if (prop === "get") {
+        return getCredential;
+      }
+
+      if (prop === "has") {
+        return (provider: string) => readAuthStorages.some((storage) => Boolean(storage.get(provider)));
+      }
+
+      if (prop === "hasAuth") {
+        return (provider: string) => readAuthStorages.some((storage) => storage.hasAuth(provider));
+      }
+
+      if (prop === "getAll") {
+        return () => ({
+          ...readFallbackAuthStorages.reduce(
+            (merged, storage) => ({ ...merged, ...storage.getAll() }),
+            {} as Record<string, { type?: string; key?: string }>,
+          ),
+          ...target.getAll(),
+        });
+      }
+
+      if (prop === "list") {
+        return () => Array.from(new Set(readAuthStorages.flatMap((storage) => storage.list())));
+      }
+
+      if (prop === "getApiKey") {
+        return async (providerId: string) => {
+          for (const storage of readAuthStorages) {
+            const apiKey = await storage.getApiKey(providerId);
+            if (apiKey) return apiKey;
+          }
+          return undefined;
+        };
+      }
+
+      return Reflect.get(target, prop, receiver);
+    },
+  }) as AuthStorage;
 }
 
 export function createReadOnlyAuthFileStorage(authPaths: string[]): ReadFallbackAuthStorage {
@@ -149,6 +198,8 @@ export function createReadOnlyAuthFileStorage(authPaths: string[]): ReadFallback
     reload,
     hasAuth: (provider) => Boolean(credentials[provider]),
     get: (provider) => credentials[provider],
+    getAll: () => ({ ...credentials }),
+    list: () => Object.keys(credentials),
     getApiKey: async (provider) => {
       const credential = credentials[provider];
       return credential?.type === "api_key" ? credential.key : undefined;

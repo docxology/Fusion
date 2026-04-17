@@ -3263,6 +3263,8 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         error: null,
         worktree: null,
         branch: null,
+        baseBranch: null,
+        baseCommitSha: null,
         stuckKillCount: 0,
         recoveryRetryCount: null,
         nextRecoveryAt: null,

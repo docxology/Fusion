@@ -9,7 +9,7 @@ import {
 } from "./task-lifecycle.js";
 import { promptForPort } from "./port-prompt.js";
 import { createReadOnlyProviderSettingsView, createProjectSettingsPersistence } from "./provider-settings.js";
-import { createReadOnlyAuthFileStorage, wrapAuthStorageWithApiKeyProviders } from "./provider-auth.js";
+import { createReadOnlyAuthFileStorage, mergeAuthStorageReads, wrapAuthStorageWithApiKeyProviders } from "./provider-auth.js";
 import { getFusionAuthPath, getLegacyAuthPaths } from "./auth-paths.js";
 
 // Re-export for backward compatibility with tests
@@ -363,9 +363,10 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
   // Passing these to createServer enables the dashboard's Authentication
   // tab (login/logout) and Model selector.
   const authStorage = AuthStorage.create(getFusionAuthPath());
-  const modelRegistry = new ModelRegistry(authStorage);
   const legacyAuthStorage = createReadOnlyAuthFileStorage(getLegacyAuthPaths());
-  const dashboardAuthStorage = wrapAuthStorageWithApiKeyProviders(authStorage, modelRegistry, [legacyAuthStorage]);
+  const mergedAuthStorage = mergeAuthStorageReads(authStorage, [legacyAuthStorage]);
+  const modelRegistry = new ModelRegistry(mergedAuthStorage);
+  const dashboardAuthStorage = wrapAuthStorageWithApiKeyProviders(mergedAuthStorage, modelRegistry);
 
   // PackageManager may be used for skills adapter even if extension loading fails
   let packageManager: DefaultPackageManager | undefined;

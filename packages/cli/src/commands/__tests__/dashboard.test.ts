@@ -452,13 +452,15 @@ describe("runDashboard — AuthStorage & ModelRegistry wiring", () => {
     expect(AuthStorage.create).toHaveBeenCalledTimes(1);
   });
 
-  it("creates ModelRegistry with the authStorage instance", async () => {
+  it("creates ModelRegistry with a merged auth storage reader", async () => {
     const { ModelRegistry } = await import("@mariozechner/pi-coding-agent");
 
     await runDashboard(0, {});
 
     expect(ModelRegistry).toHaveBeenCalledTimes(1);
-    expect(ModelRegistry).toHaveBeenCalledWith(mockAuthStorage);
+    const registryAuthStorage = (ModelRegistry as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(registryAuthStorage).not.toBe(mockAuthStorage);
+    expect(registryAuthStorage.getApiKey).toBeTypeOf("function");
   });
 
   it("discovers extensions and registers extension providers", async () => {

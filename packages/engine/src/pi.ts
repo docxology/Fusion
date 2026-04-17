@@ -1,7 +1,7 @@
 /**
  * Shared pi SDK setup for fn engine agents.
  *
- * Uses the user's existing pi auth (API keys / OAuth from ~/.pi/agent/auth.json).
+ * Uses Fusion auth for writes and legacy pi auth as a read-only fallback.
  * Provides factory functions for creating triage and executor agent sessions.
  */
 
@@ -13,7 +13,6 @@ import { join, relative, isAbsolute, resolve } from "node:path";
 
 const execAsync = promisify(exec);
 import {
-  AuthStorage,
   createAgentSession,
   createCodingTools,
   createExtensionRuntime,
@@ -34,6 +33,7 @@ import {
   type SkillSelectionContext,
 } from "./skill-resolver.js";
 import { isContextLimitError } from "./context-limit-detector.js";
+import { createFusionAuthStorage } from "./auth-storage.js";
 
 export interface AgentResult {
   session: AgentSession;
@@ -474,7 +474,7 @@ export function wrapToolsWithBoundary(
  */
 export async function createKbAgent(options: AgentOptions): Promise<AgentResult> {
   console.error(`[pi] createKbAgent called (cwd=${options.cwd}, tools=${options.tools}, provider=${options.defaultProvider}, model=${options.defaultModelId})`);
-  const authStorage = AuthStorage.create();
+  const authStorage = createFusionAuthStorage();
   const modelRegistry = new ModelRegistry(authStorage, join(getAgentDir(), "models.json"));
   await registerExtensionProviders(options.cwd, modelRegistry);
 

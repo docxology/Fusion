@@ -639,8 +639,17 @@ export async function runTaskRetry(id: string, projectName?: string) {
     throw new Error(`Task ${id} is not in a retryable state (status: ${task.status || 'none'})`);
   }
   
-  // Clear failure state
-  await store.updateTask(id, { status: null, error: null });
+  // Clear failure state and stale branch refs so retry can choose a fresh base.
+  await store.updateTask(id, {
+    status: null,
+    error: null,
+    worktree: null,
+    branch: null,
+    baseBranch: null,
+    baseCommitSha: null,
+    recoveryRetryCount: null,
+    nextRecoveryAt: null,
+  });
   
   // Move to todo column
   await store.moveTask(id, 'todo');
