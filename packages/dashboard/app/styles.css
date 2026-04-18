@@ -16565,6 +16565,17 @@ html .column.drag-over * {
 
 /* ── Scheduled Tasks ──────────────────────────────────────────────── */
 
+/* Automation count summary in scheduled tasks modal */
+.scheduling-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-sm) var(--space-lg);
+  font-size: var(--text-xs, 12px);
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+
 .schedule-modal-content {
   padding: var(--space-lg) 20px;
   overflow-y: auto;
