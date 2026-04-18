@@ -36982,6 +36982,46 @@ html .column.drag-over * {
   margin-top: var(--space-lg);
 }
 
+.memory-config-section {
+  margin-top: var(--space-lg);
+  padding-top: var(--space-lg);
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.memory-settings-group {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  padding: var(--space-sm) 0;
+}
+
+.memory-qmd-card {
+  border-style: solid;
+}
+
+.memory-retrieval-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.memory-retrieval-input-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.memory-retrieval-input-row .input {
+  flex: 1;
+}
+
+.memory-retrieval-card .memory-test-result {
+  margin-top: var(--space-sm);
+}
+
 /* Mobile responsive for file mention popup */
 @media (max-width: 768px) {
   .file-mention-popup {
@@ -37031,5 +37071,19 @@ html .column.drag-over * {
 
   .memory-engine-card {
     padding: var(--space-md);
+  }
+
+  .memory-retrieval-input-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .memory-settings-group {
+    padding: var(--space-xs) 0;
+  }
+
+  .memory-config-section {
+    margin-top: var(--space-md);
+    padding-top: var(--space-md);
   }
 }

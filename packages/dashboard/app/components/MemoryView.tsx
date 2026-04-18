@@ -1,7 +1,8 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
+import { Loader2 } from "lucide-react";
+import type { MemoryFileInfo, MemoryRetrievalTestResult } from "../api";
 import { FileEditor } from "./FileEditor";
 import { useMemoryData } from "../hooks/useMemoryData";
-import { Loader2 } from "lucide-react";
 
 interface MemoryViewProps {
   projectId?: string;
@@ -17,6 +18,20 @@ const CATEGORY_HEADERS: Record<string, string> = {
   "Conventions": "convention",
   "Pitfalls": "pitfall",
   "Context": "context",
+};
+
+const MEMORY_LAYER_NAMES: Record<MemoryFileInfo["layer"], string> = {
+  "long-term": "Long-term",
+  daily: "Daily",
+  dreams: "Dreams",
+  legacy: "Legacy",
+};
+
+const MEMORY_LAYER_DESCRIPTIONS: Record<MemoryFileInfo["layer"], string> = {
+  "long-term": "Curated durable decisions, conventions, constraints, and pitfalls promoted from dreams.",
+  daily: "Raw daily observations, open loops, and running context for dream processing.",
+  dreams: "Synthesized patterns and open loops promoted from daily memory.",
+  legacy: "Compatibility mirror for older agents and tools.",
 };
 
 interface ParsedInsightCategory {
@@ -107,19 +122,27 @@ export function MemoryView({ projectId, addToast }: MemoryViewProps) {
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   const [editingInsights, setEditingInsights] = useState(false);
   const [insightsEditorContent, setInsightsEditorContent] = useState<string | null>(null);
+  const [memorySettingsDraft, setMemorySettingsDraft] = useState({
+    memoryEnabled: true,
+    memoryAutoSummarizeEnabled: false,
+    memoryAutoSummarizeThresholdChars: 50_000,
+    memoryAutoSummarizeSchedule: "0 3 * * *",
+    memoryDreamsEnabled: false,
+    memoryDreamsSchedule: "0 4 * * *",
+  });
+  const [memoryTestQuery, setMemoryTestQuery] = useState("");
+  const [memoryTestLoading, setMemoryTestLoading] = useState(false);
+  const [memoryTestResult, setMemoryTestResult] = useState<MemoryRetrievalTestResult | null>(null);
 
   const {
-    workingMemory,
-    workingMemoryLoading,
-    workingMemoryDirty,
-    setWorkingMemory,
-    saveWorkingMemory,
-    savingWorkingMemory,
     insightsContent,
     insightsLoading,
     insightsExists,
-    refreshInsights,
     saveInsights,
+    memorySettings,
+    settingsLoading,
+    saveMemorySettings,
+    savingMemorySettings,
     backendStatus,
     backendLoading,
     extractInsights,
@@ -129,22 +152,57 @@ export function MemoryView({ projectId, addToast }: MemoryViewProps) {
     refreshAudit,
     compactMemory,
     compacting,
+    installQmdAction,
+    installingQmd,
+    testRetrieval,
+    memoryFiles,
+    memoryFilesLoading,
+    selectedFilePath,
+    selectedFileContent,
+    selectedFileLoading,
+    selectedFileDirty,
+    setSelectedFileContent,
+    selectFile,
+    saveSelectedFile,
+    savingSelectedFile,
   } = useMemoryData({ projectId });
+
+  useEffect(() => {
+    setMemorySettingsDraft(memorySettings);
+  }, [memorySettings]);
+
+  const memorySettingsDirty = useMemo(() => (
+    memorySettingsDraft.memoryEnabled !== memorySettings.memoryEnabled
+    || memorySettingsDraft.memoryAutoSummarizeEnabled !== memorySettings.memoryAutoSummarizeEnabled
+    || memorySettingsDraft.memoryAutoSummarizeThresholdChars !== memorySettings.memoryAutoSummarizeThresholdChars
+    || memorySettingsDraft.memoryAutoSummarizeSchedule !== memorySettings.memoryAutoSummarizeSchedule
+    || memorySettingsDraft.memoryDreamsEnabled !== memorySettings.memoryDreamsEnabled
+    || memorySettingsDraft.memoryDreamsSchedule !== memorySettings.memoryDreamsSchedule
+  ), [memorySettingsDraft, memorySettings]);
+
+  const selectedMemoryFile = useMemo(
+    () => memoryFiles.find((file) => file.path === selectedFilePath),
+    [memoryFiles, selectedFilePath],
+  );
+
+  const selectedLayerDescription = selectedMemoryFile
+    ? MEMORY_LAYER_DESCRIPTIONS[selectedMemoryFile.layer]
+    : "Edits the selected memory file.";
 
   // Parse insights content
   const parsedCategories = useMemo(
     () => parseInsightsContent(insightsContent),
-    [insightsContent]
+    [insightsContent],
   );
 
   const totalInsights = useMemo(
     () => countTotalInsights(parsedCategories),
-    [parsedCategories]
+    [parsedCategories],
   );
 
   const lastUpdated = useMemo(
     () => parseLastUpdated(insightsContent),
-    [insightsContent]
+    [insightsContent],
   );
 
   // Toggle category expansion
@@ -160,25 +218,96 @@ export function MemoryView({ projectId, addToast }: MemoryViewProps) {
     });
   }, []);
 
-  // Handle save working memory
-  const handleSaveWorkingMemory = useCallback(async () => {
+  const handleSelectMemoryFile = useCallback(async (path: string) => {
     try {
-      await saveWorkingMemory();
-      addToast("Working memory saved", "success");
+      await selectFile(path);
     } catch {
-      addToast("Failed to save working memory", "error");
+      addToast("Failed to load memory file", "error");
     }
-  }, [saveWorkingMemory, addToast]);
+  }, [selectFile, addToast]);
+
+  const handleSaveSelectedFile = useCallback(async () => {
+    try {
+      await saveSelectedFile();
+      addToast("Memory saved", "success");
+    } catch {
+      addToast("Failed to save memory", "error");
+    }
+  }, [saveSelectedFile, addToast]);
+
+  const handleSaveMemorySettings = useCallback(async () => {
+    if (!memorySettingsDirty) {
+      return;
+    }
+
+    const patch: Partial<typeof memorySettingsDraft> = {};
+
+    if (memorySettingsDraft.memoryEnabled !== memorySettings.memoryEnabled) {
+      patch.memoryEnabled = memorySettingsDraft.memoryEnabled;
+    }
+    if (memorySettingsDraft.memoryAutoSummarizeEnabled !== memorySettings.memoryAutoSummarizeEnabled) {
+      patch.memoryAutoSummarizeEnabled = memorySettingsDraft.memoryAutoSummarizeEnabled;
+    }
+    if (memorySettingsDraft.memoryAutoSummarizeThresholdChars !== memorySettings.memoryAutoSummarizeThresholdChars) {
+      patch.memoryAutoSummarizeThresholdChars = memorySettingsDraft.memoryAutoSummarizeThresholdChars;
+    }
+    if (memorySettingsDraft.memoryAutoSummarizeSchedule !== memorySettings.memoryAutoSummarizeSchedule) {
+      patch.memoryAutoSummarizeSchedule = memorySettingsDraft.memoryAutoSummarizeSchedule;
+    }
+    if (memorySettingsDraft.memoryDreamsEnabled !== memorySettings.memoryDreamsEnabled) {
+      patch.memoryDreamsEnabled = memorySettingsDraft.memoryDreamsEnabled;
+    }
+    if (memorySettingsDraft.memoryDreamsSchedule !== memorySettings.memoryDreamsSchedule) {
+      patch.memoryDreamsSchedule = memorySettingsDraft.memoryDreamsSchedule;
+    }
+
+    try {
+      await saveMemorySettings(patch);
+      addToast("Memory settings saved", "success");
+    } catch {
+      addToast("Failed to save memory settings", "error");
+    }
+  }, [memorySettingsDirty, memorySettingsDraft, memorySettings, saveMemorySettings, addToast]);
+
+  const handleInstallQmd = useCallback(async () => {
+    try {
+      const result = await installQmdAction();
+      addToast(
+        result.qmdAvailable ? "qmd installed successfully" : "qmd install finished, but qmd is still unavailable",
+        result.qmdAvailable ? "success" : "info",
+      );
+    } catch {
+      addToast("Failed to install qmd", "error");
+    }
+  }, [installQmdAction, addToast]);
+
+  const handleTestRetrieval = useCallback(async () => {
+    setMemoryTestLoading(true);
+    setMemoryTestResult(null);
+
+    try {
+      const result = await testRetrieval(memoryTestQuery);
+      setMemoryTestResult(result);
+      addToast(
+        result.qmdAvailable ? "Memory retrieval test complete" : "qmd is not installed; local fallback was used",
+        result.qmdAvailable ? "success" : "info",
+      );
+    } catch {
+      addToast("Failed to test memory retrieval", "error");
+    } finally {
+      setMemoryTestLoading(false);
+    }
+  }, [memoryTestQuery, testRetrieval, addToast]);
 
   // Handle compact memory
   const handleCompactMemory = useCallback(async () => {
     try {
-      await compactMemory();
-      addToast("Memory compacted successfully", "success");
+      await compactMemory(selectedFilePath);
+      addToast("Memory file compacted", "success");
     } catch {
       addToast("Failed to compact memory", "error");
     }
-  }, [compactMemory, addToast]);
+  }, [compactMemory, selectedFilePath, addToast]);
 
   // Handle extract insights
   const handleExtractInsights = useCallback(async () => {
@@ -274,31 +403,71 @@ export function MemoryView({ projectId, addToast }: MemoryViewProps) {
               </div>
             )}
 
-            {workingMemoryLoading ? (
+            {memoryFilesLoading || selectedFileLoading ? (
               <div className="memory-empty-state">
                 <Loader2 size={20} className="animate-spin" />
-                <span>Loading working memory…</span>
+                <span>Loading memory file…</span>
               </div>
             ) : (
               <>
-                <div className="memory-editor-container">
-                  <FileEditor
-                    content={workingMemory}
-                    onChange={setWorkingMemory}
-                    readOnly={!isWritable}
-                    filePath=".fusion/memory/MEMORY.md"
-                  />
+                <div className="memory-editor-section">
+                  <div className="form-group">
+                    <label htmlFor="memoryViewFilePath">Memory File</label>
+                    <select
+                      id="memoryViewFilePath"
+                      className="select"
+                      value={selectedFilePath}
+                      onChange={(event) => {
+                        void handleSelectMemoryFile(event.target.value);
+                      }}
+                      disabled={selectedFileDirty}
+                    >
+                      {memoryFiles.map((file) => (
+                        <option key={file.path} value={file.path}>
+                          {file.label} - {file.path}
+                        </option>
+                      ))}
+                    </select>
+                    <small>
+                      {selectedFileDirty
+                        ? "Save or discard the current edits before switching files."
+                        : "Choose any project memory file to view or edit."}
+                    </small>
+                  </div>
+
+                  {selectedMemoryFile && (
+                    <div className="memory-file-summary">
+                      <span>{MEMORY_LAYER_NAMES[selectedMemoryFile.layer]}</span>
+                      <strong>{selectedMemoryFile.path}</strong>
+                      <small>
+                        {selectedMemoryFile.size.toLocaleString()} bytes · updated {new Date(selectedMemoryFile.updatedAt).toLocaleString()}
+                      </small>
+                    </div>
+                  )}
+
+                  <div className="form-group">
+                    <label>{selectedMemoryFile?.label || "Memory Editor"}</label>
+                    <small>{selectedLayerDescription}</small>
+                    <div className="memory-editor-container">
+                      <FileEditor
+                        content={selectedFileContent}
+                        onChange={setSelectedFileContent}
+                        readOnly={!isWritable}
+                        filePath={selectedFilePath}
+                      />
+                    </div>
+                  </div>
                 </div>
 
                 <div className="memory-action-bar">
-                  <span className="memory-char-count">{workingMemory.length} characters</span>
+                  <span className="memory-char-count">{selectedFileContent.length} characters</span>
                   <div style={{ flex: 1 }} />
-                  {isWritable && workingMemory.length > 0 && (
+                  {isWritable && selectedFileContent.length > 0 && (
                     <button
                       type="button"
                       className="btn btn-secondary btn-sm"
                       onClick={handleCompactMemory}
-                      disabled={compacting}
+                      disabled={compacting || selectedFileDirty}
                     >
                       {compacting ? (
                         <>
@@ -306,18 +475,18 @@ export function MemoryView({ projectId, addToast }: MemoryViewProps) {
                           Compacting…
                         </>
                       ) : (
-                        "Compact Memory"
+                        "Compact Selected File"
                       )}
                     </button>
                   )}
-                  {workingMemoryDirty && isWritable && (
+                  {selectedFileDirty && isWritable && (
                     <button
                       type="button"
                       className="btn btn-primary btn-sm"
-                      onClick={handleSaveWorkingMemory}
-                      disabled={savingWorkingMemory}
+                      onClick={handleSaveSelectedFile}
+                      disabled={savingSelectedFile}
                     >
-                      {savingWorkingMemory ? (
+                      {savingSelectedFile ? (
                         <>
                           <Loader2 size={14} className="animate-spin" />
                           Saving…
@@ -326,6 +495,138 @@ export function MemoryView({ projectId, addToast }: MemoryViewProps) {
                         "Save"
                       )}
                     </button>
+                  )}
+                </div>
+
+                <div className="memory-config-section">
+                  <div className="memory-settings-group">
+                    <div className="form-group">
+                      <label htmlFor="memoryDreamsEnabled" className="checkbox-label">
+                        <input
+                          id="memoryDreamsEnabled"
+                          type="checkbox"
+                          checked={memorySettingsDraft.memoryDreamsEnabled}
+                          onChange={(event) => {
+                            setMemorySettingsDraft((prev) => ({
+                              ...prev,
+                              memoryDreamsEnabled: event.target.checked,
+                            }));
+                          }}
+                          disabled={!memorySettingsDraft.memoryEnabled || settingsLoading}
+                        />
+                        Process dreams from daily memory
+                      </label>
+                      <small>Turns daily notes into DREAMS.md and promotes reusable lessons into MEMORY.md.</small>
+                    </div>
+
+                    {memorySettingsDraft.memoryEnabled && memorySettingsDraft.memoryDreamsEnabled && (
+                      <div className="form-group">
+                        <label htmlFor="memoryDreamsSchedule">Dream Schedule</label>
+                        <input
+                          id="memoryDreamsSchedule"
+                          type="text"
+                          className="input"
+                          value={memorySettingsDraft.memoryDreamsSchedule}
+                          onChange={(event) => {
+                            setMemorySettingsDraft((prev) => ({
+                              ...prev,
+                              memoryDreamsSchedule: event.target.value,
+                            }));
+                          }}
+                          placeholder="0 4 * * *"
+                          disabled={settingsLoading}
+                        />
+                        <small>Cron expression for dream processing.</small>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="memory-settings-group">
+                    <div className="form-group">
+                      <label htmlFor="memoryAutoSummarizeEnabled" className="checkbox-label">
+                        <input
+                          id="memoryAutoSummarizeEnabled"
+                          type="checkbox"
+                          checked={memorySettingsDraft.memoryAutoSummarizeEnabled}
+                          onChange={(event) => {
+                            setMemorySettingsDraft((prev) => ({
+                              ...prev,
+                              memoryAutoSummarizeEnabled: event.target.checked,
+                            }));
+                          }}
+                          disabled={!memorySettingsDraft.memoryEnabled || settingsLoading}
+                        />
+                        Auto-Summarize Memory
+                      </label>
+                      <small>Automatically compact memory when it exceeds the threshold on a schedule</small>
+                    </div>
+
+                    {memorySettingsDraft.memoryEnabled && memorySettingsDraft.memoryAutoSummarizeEnabled && (
+                      <>
+                        <div className="form-group">
+                          <label htmlFor="memoryAutoSummarizeThresholdChars">Compaction Threshold (chars)</label>
+                          <input
+                            id="memoryAutoSummarizeThresholdChars"
+                            type="number"
+                            className="input"
+                            value={memorySettingsDraft.memoryAutoSummarizeThresholdChars}
+                            onChange={(event) => {
+                              setMemorySettingsDraft((prev) => ({
+                                ...prev,
+                                memoryAutoSummarizeThresholdChars: parseInt(event.target.value, 10) || 50000,
+                              }));
+                            }}
+                            min={1000}
+                            disabled={settingsLoading}
+                          />
+                          <small>Memory will be compacted when it exceeds this character count</small>
+                        </div>
+                        <div className="form-group">
+                          <label htmlFor="memoryAutoSummarizeSchedule">Schedule (cron)</label>
+                          <input
+                            id="memoryAutoSummarizeSchedule"
+                            type="text"
+                            className="input"
+                            value={memorySettingsDraft.memoryAutoSummarizeSchedule}
+                            onChange={(event) => {
+                              setMemorySettingsDraft((prev) => ({
+                                ...prev,
+                                memoryAutoSummarizeSchedule: event.target.value,
+                              }));
+                            }}
+                            placeholder="0 3 * * *"
+                            disabled={settingsLoading}
+                          />
+                          <small>Cron expression for auto-summarize schedule (default: daily at 3 AM)</small>
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  {!memorySettingsDraft.memoryEnabled && (
+                    <div className="settings-empty-state memory-status-message">
+                      Memory is currently disabled. Enable memory tools in Settings to edit these automations.
+                    </div>
+                  )}
+
+                  {memorySettingsDirty && (
+                    <div className="memory-action-bar">
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-sm"
+                        onClick={handleSaveMemorySettings}
+                        disabled={savingMemorySettings || settingsLoading}
+                      >
+                        {savingMemorySettings ? (
+                          <>
+                            <Loader2 size={14} className="animate-spin" />
+                            Saving…
+                          </>
+                        ) : (
+                          "Save Settings"
+                        )}
+                      </button>
+                    </div>
                   )}
                 </div>
               </>
@@ -489,6 +790,94 @@ export function MemoryView({ projectId, addToast }: MemoryViewProps) {
               </div>
             ) : (
               <>
+                {/* QMD Integration Card */}
+                <div className="memory-engine-card memory-qmd-card">
+                  <h3>QMD Integration</h3>
+                  {backendStatus?.qmdAvailable ? (
+                    <div className="memory-engine-status">
+                      <span className="memory-health-badge memory-health-badge--healthy">Installed</span>
+                      <span className="memory-char-count">qmd is available on PATH.</span>
+                    </div>
+                  ) : (
+                    <div className="settings-empty-state memory-status-message">
+                      <span>
+                        qmd is not installed. Search will use local files. Install indexed retrieval: <code>{backendStatus?.qmdInstallCommand || "bun install -g @tobilu/qmd"}</code>
+                      </span>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={handleInstallQmd}
+                        disabled={installingQmd}
+                      >
+                        {installingQmd ? "Installing…" : "Install qmd"}
+                      </button>
+                    </div>
+                  )}
+                  <div style={{ display: "flex", gap: "var(--space-xs)", marginTop: "var(--space-sm)", flexWrap: "wrap" }}>
+                    {backendStatus?.capabilities?.readable && (
+                      <span className="memory-capability-badge">Readable</span>
+                    )}
+                    {backendStatus?.capabilities?.writable && (
+                      <span className="memory-capability-badge">Writable</span>
+                    )}
+                    {backendStatus?.capabilities?.supportsAtomicWrite && (
+                      <span className="memory-capability-badge">Atomic Writes</span>
+                    )}
+                    {backendStatus?.capabilities?.persistent && (
+                      <span className="memory-capability-badge">Persistent</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Memory Retrieval Test Card */}
+                <div className="memory-engine-card memory-retrieval-card">
+                  <h3>Test Memory Search</h3>
+                  <div className="memory-retrieval-input-row">
+                    <input
+                      type="text"
+                      className="input"
+                      value={memoryTestQuery}
+                      onChange={(event) => setMemoryTestQuery(event.target.value)}
+                      placeholder="Search memory with qmd"
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={handleTestRetrieval}
+                      disabled={memoryTestLoading}
+                    >
+                      {memoryTestLoading ? "Testing…" : "Test Retrieval"}
+                    </button>
+                  </div>
+                  <small className="settings-muted">
+                    Runs the same qmd-backed memory_search path agents use.
+                  </small>
+
+                  {memoryTestResult && (
+                    <div className="memory-test-result">
+                      <strong>
+                        {memoryTestResult.results.length} result{memoryTestResult.results.length === 1 ? "" : "s"}
+                        {" "}for "{memoryTestResult.query}"
+                      </strong>
+                      <small>
+                        qmd {memoryTestResult.qmdAvailable ? "available" : "missing"} · {memoryTestResult.usedFallback ? "local fallback used" : "qmd path used"}
+                      </small>
+                      {memoryTestResult.results.length > 0 ? (
+                        <ul>
+                          {memoryTestResult.results.map((result, index) => (
+                            <li key={`${result.path}-${result.lineStart}-${index}`}>
+                              <span>{result.path}:{result.lineStart}</span>
+                              <p>{result.snippet}</p>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <small>No matching memory found.</small>
+                      )}
+                    </div>
+                  )}
+                </div>
+
                 {/* Backend Card */}
                 <div className="memory-engine-card">
                   <h3>Current Backend</h3>
