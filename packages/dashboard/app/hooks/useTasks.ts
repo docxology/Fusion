@@ -170,6 +170,9 @@ export function useTasks(options?: UseTasksOptions) {
     // (e.g., sseEnabled flipped to false during a pending reconnect timer in sse-bus).
     let active = true;
 
+    // Guard against stale callbacks: when sseEnabled flips false or the
+    // effect unmounts, these handlers must not fire refreshTasks into a
+    // missions-only view where the SSE should be inactive.
     const handleCreated = (e: MessageEvent) => {
       if (isStale()) return;
       const task = normalizeTask(JSON.parse(e.data) as Task);
@@ -267,6 +270,8 @@ export function useTasks(options?: UseTasksOptions) {
         "task:deleted": handleDeleted,
         "task:merged": handleMerged,
       },
+      // Guard onReconnect against stale SSE callbacks: do not call refreshTasks
+      // if the SSE was disabled or the effect unmounted while reconnect was pending.
       onReconnect: () => {
         if (!active) return;
         if (isStale()) return;

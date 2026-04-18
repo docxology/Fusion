@@ -1,16 +1,17 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import type { ProjectInfo } from "../api";
 import {
-  fetchProjects,
+  fetchProjectsAcrossNodes,
   registerProject,
   unregisterProject,
   updateProject,
   type ProjectCreateInput,
+  type ProjectInfoWithSource,
 } from "../api";
 
 export interface UseProjectsResult {
-  /** List of all registered projects */
-  projects: ProjectInfo[];
+  /** List of all registered projects (local + remote) */
+  projects: ProjectInfoWithSource[];
   /** Loading state for initial fetch */
   loading: boolean;
   /** Error message if fetch failed */
@@ -35,7 +36,7 @@ const VISIBILITY_REFRESH_DEBOUNCE_MS = 1000;
  * Provides optimistic updates for UI responsiveness.
  */
 export function useProjects(): UseProjectsResult {
-  const [projects, setProjects] = useState<ProjectInfo[]>([]);
+  const [projects, setProjects] = useState<ProjectInfoWithSource[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -44,7 +45,7 @@ export function useProjects(): UseProjectsResult {
   const refresh = useCallback(async () => {
     try {
       setError(null);
-      const data = await fetchProjects();
+      const data = await fetchProjectsAcrossNodes();
       setProjects(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to fetch projects");
@@ -59,7 +60,7 @@ export function useProjects(): UseProjectsResult {
     async function load() {
       setLoading(true);
       try {
-        const data = await fetchProjects();
+        const data = await fetchProjectsAcrossNodes();
         if (!cancelled) {
           setProjects(data);
           setError(null);

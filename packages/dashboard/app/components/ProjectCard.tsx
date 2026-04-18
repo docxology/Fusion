@@ -11,6 +11,8 @@ export interface ProjectCardProps {
   onResume: (project: RegisteredProject) => void;
   onRemove: (project: RegisteredProject) => void;
   node?: NodeInfo;
+  /** Fallback node name when the node object is not available (e.g., for remote projects) */
+  nodeNameFallback?: string;
   isLoading?: boolean;
 }
 
@@ -71,7 +73,11 @@ function areProjectCardPropsEqual(previous: ProjectCardProps, next: ProjectCardP
 
   const prevNode = previous.node;
   const nextNode = next.node;
-  if (!prevNode && !nextNode) return true;
+  if (!prevNode && !nextNode) {
+    // Compare fallback names
+    if (previous.nodeNameFallback !== next.nodeNameFallback) return false;
+    return true;
+  }
   if (!prevNode || !nextNode) return false;
 
   return (
@@ -90,6 +96,7 @@ function ProjectCardInner({
   onResume,
   onRemove,
   node,
+  nodeNameFallback,
   isLoading = false,
 }: ProjectCardProps) {
   const [removeArmed, setRemoveArmed] = useState(false);
@@ -147,9 +154,9 @@ function ProjectCardInner({
           <h3 className="project-card-name" title={project.name}>
             {project.name}
           </h3>
-          {node && (
-            <span className="node-badge" title={`Assigned node: ${node.name}`}>
-              on: {node.name}
+          {(node || nodeNameFallback) && (
+            <span className="node-badge" title={`Assigned node: ${node?.name ?? nodeNameFallback}`}>
+              on: {node?.name ?? nodeNameFallback}
             </span>
           )}
           <span className="project-card-path" title={project.path}>

@@ -2399,6 +2399,42 @@ body {
   box-shadow: var(--focus-ring);
 }
 
+/* --- Node Filter Dropdown --- */
+.project-node-filter {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.project-node-filter-select {
+  appearance: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  font-size: 13px;
+  padding: 6px 28px 6px 10px;
+  cursor: pointer;
+  font-family: var(--font-primary);
+  transition:
+    border-color var(--transition-fast),
+    color var(--transition-fast);
+  background-image: none;
+}
+
+.project-node-filter-select:hover {
+  border-color: var(--text-dim);
+  color: var(--text);
+}
+
+.project-node-filter-select:focus {
+  outline: none;
+  border-color: var(--todo);
+  box-shadow: var(--focus-ring);
+}
+
 /* --- Project Grid --- */
 .project-grid {
   display: grid;
@@ -2705,6 +2741,16 @@ body {
   }
 
   .project-sort-select {
+    flex: 1;
+    margin-left: var(--space-sm);
+  }
+
+  .project-node-filter {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .project-node-filter-select {
     flex: 1;
     margin-left: var(--space-sm);
   }

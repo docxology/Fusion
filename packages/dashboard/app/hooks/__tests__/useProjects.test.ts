@@ -2,16 +2,16 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
 import { useProjects } from "../useProjects";
 import * as api from "../../api";
-import type { ProjectInfo } from "../../api";
+import type { ProjectInfo, ProjectInfoWithSource } from "../../api";
 
 vi.mock("../../api", () => ({
-  fetchProjects: vi.fn(),
+  fetchProjectsAcrossNodes: vi.fn(),
   registerProject: vi.fn(),
   unregisterProject: vi.fn(),
   updateProject: vi.fn(),
 }));
 
-const mockFetchProjects = vi.mocked(api.fetchProjects);
+const mockFetchProjectsAcrossNodes = vi.mocked(api.fetchProjectsAcrossNodes);
 const mockUpdateProject = vi.mocked(api.updateProject);
 const mockRegisterProject = vi.mocked(api.registerProject);
 const mockUnregisterProject = vi.mocked(api.unregisterProject);
@@ -24,7 +24,7 @@ async function flushPromises(): Promise<void> {
 describe("useProjects", () => {
   beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    mockFetchProjects.mockReset();
+    mockFetchProjectsAcrossNodes.mockReset();
     mockUpdateProject.mockReset();
     mockRegisterProject.mockReset();
     mockUnregisterProject.mockReset();
@@ -45,7 +45,6 @@ describe("useProjects", () => {
       if (originalVisibilityState) {
         Object.defineProperty(document, "visibilityState", originalVisibilityState);
       } else {
-         
         delete (document as any).visibilityState;
       }
     });
@@ -68,7 +67,7 @@ describe("useProjects", () => {
     it("refetches projects when visibility changes from hidden to visible", async () => {
       vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
 
-      const initialProject: ProjectInfo = {
+      const initialProject: ProjectInfoWithSource = {
         id: "proj_001",
         name: "Initial Project",
         path: "/initial/path",
@@ -77,7 +76,7 @@ describe("useProjects", () => {
         createdAt: "2026-01-01T00:00:00.000Z",
         updatedAt: "2026-01-01T00:00:00.000Z",
       };
-      const refreshedProject: ProjectInfo = {
+      const refreshedProject: ProjectInfoWithSource = {
         id: "proj_001",
         name: "Updated Project",
         path: "/initial/path",
@@ -87,7 +86,7 @@ describe("useProjects", () => {
         updatedAt: "2026-01-02T00:00:00.000Z",
       };
 
-      mockFetchProjects.mockResolvedValueOnce([initialProject]).mockResolvedValueOnce([refreshedProject]);
+      mockFetchProjectsAcrossNodes.mockResolvedValueOnce([initialProject]).mockResolvedValueOnce([refreshedProject]);
 
       const { result } = renderHook(() => useProjects());
 
@@ -110,11 +109,11 @@ describe("useProjects", () => {
       });
 
       expect(result.current.projects[0].name).toBe("Updated Project");
-      expect(mockFetchProjects).toHaveBeenCalledTimes(2);
+      expect(mockFetchProjectsAcrossNodes).toHaveBeenCalledTimes(2);
     });
 
     it("does not refetch when visibility changes to hidden", async () => {
-      const initialProject: ProjectInfo = {
+      const initialProject: ProjectInfoWithSource = {
         id: "proj_001",
         name: "Test Project",
         path: "/test/path",
@@ -123,7 +122,7 @@ describe("useProjects", () => {
         createdAt: "2026-01-01T00:00:00.000Z",
         updatedAt: "2026-01-01T00:00:00.000Z",
       };
-      mockFetchProjects.mockResolvedValueOnce([initialProject]);
+      mockFetchProjectsAcrossNodes.mockResolvedValueOnce([initialProject]);
 
       renderHook(() => useProjects());
 
@@ -131,18 +130,18 @@ describe("useProjects", () => {
         await flushPromises();
       });
 
-      mockFetchProjects.mockClear();
+      mockFetchProjectsAcrossNodes.mockClear();
 
       setVisibilityState("hidden");
       await dispatchVisibilityChange();
 
-      expect(mockFetchProjects).not.toHaveBeenCalled();
+      expect(mockFetchProjectsAcrossNodes).not.toHaveBeenCalled();
     });
 
     it("debounces rapid visibility changes (minimum 1 second between fetches)", async () => {
       vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
 
-      const initialProject: ProjectInfo = {
+      const initialProject: ProjectInfoWithSource = {
         id: "proj_001",
         name: "Test Project",
         path: "/test/path",
@@ -151,7 +150,7 @@ describe("useProjects", () => {
         createdAt: "2026-01-01T00:00:00.000Z",
         updatedAt: "2026-01-01T00:00:00.000Z",
       };
-      mockFetchProjects.mockResolvedValue([initialProject]);
+      mockFetchProjectsAcrossNodes.mockResolvedValue([initialProject]);
 
       renderHook(() => useProjects());
 
@@ -159,7 +158,7 @@ describe("useProjects", () => {
         await flushPromises();
       });
 
-      mockFetchProjects.mockClear();
+      mockFetchProjectsAcrossNodes.mockClear();
 
       vi.setSystemTime(new Date("2026-01-01T00:00:01.100Z"));
       setVisibilityState("hidden");
@@ -168,7 +167,7 @@ describe("useProjects", () => {
       setVisibilityState("visible");
       await dispatchVisibilityChange();
 
-      expect(mockFetchProjects).toHaveBeenCalledTimes(1);
+      expect(mockFetchProjectsAcrossNodes).toHaveBeenCalledTimes(1);
 
       for (let i = 0; i < 5; i++) {
         setVisibilityState("hidden");
@@ -178,7 +177,7 @@ describe("useProjects", () => {
         await dispatchVisibilityChange();
       }
 
-      expect(mockFetchProjects).toHaveBeenCalledTimes(1);
+      expect(mockFetchProjectsAcrossNodes).toHaveBeenCalledTimes(1);
 
       vi.setSystemTime(new Date("2026-01-01T00:00:02.200Z"));
       setVisibilityState("hidden");
@@ -187,18 +186,18 @@ describe("useProjects", () => {
       setVisibilityState("visible");
       await dispatchVisibilityChange();
 
-      expect(mockFetchProjects).toHaveBeenCalledTimes(2);
+      expect(mockFetchProjectsAcrossNodes).toHaveBeenCalledTimes(2);
     });
 
     it("cleans up visibility change listener on unmount", async () => {
-      mockFetchProjects.mockResolvedValueOnce([]);
+      mockFetchProjectsAcrossNodes.mockResolvedValueOnce([]);
 
       const removeEventListenerSpy = vi.spyOn(document, "removeEventListener");
 
       const { unmount } = renderHook(() => useProjects());
 
       await waitFor(() => {
-        expect(mockFetchProjects).toHaveBeenCalledTimes(1);
+        expect(mockFetchProjectsAcrossNodes).toHaveBeenCalledTimes(1);
       });
 
       unmount();
@@ -210,8 +209,8 @@ describe("useProjects", () => {
   });
 
   describe("basic functionality", () => {
-    it("fetches projects on mount", async () => {
-      const mockProjects: ProjectInfo[] = [
+    it("fetches projects on mount using cross-node endpoint", async () => {
+      const mockProjects: ProjectInfoWithSource[] = [
         {
           id: "proj_001",
           name: "Test Project",
@@ -222,7 +221,7 @@ describe("useProjects", () => {
           updatedAt: "2026-01-01T00:00:00.000Z",
         },
       ];
-      mockFetchProjects.mockResolvedValueOnce(mockProjects);
+      mockFetchProjectsAcrossNodes.mockResolvedValueOnce(mockProjects);
 
       const { result } = renderHook(() => useProjects());
 
@@ -236,7 +235,7 @@ describe("useProjects", () => {
     });
 
     it("handles errors gracefully", async () => {
-      mockFetchProjects.mockRejectedValueOnce(new Error("Failed to fetch"));
+      mockFetchProjectsAcrossNodes.mockRejectedValueOnce(new Error("Failed to fetch"));
 
       const { result } = renderHook(() => useProjects());
 
@@ -258,7 +257,7 @@ describe("useProjects", () => {
         createdAt: "2026-01-01T00:00:00.000Z",
         updatedAt: "2026-01-01T00:00:00.000Z",
       };
-      mockFetchProjects.mockResolvedValueOnce([]);
+      mockFetchProjectsAcrossNodes.mockResolvedValueOnce([]);
       mockRegisterProject.mockResolvedValueOnce(newProject);
 
       const { result } = renderHook(() => useProjects());
@@ -278,7 +277,7 @@ describe("useProjects", () => {
     });
 
     it("unregister removes project optimistically", async () => {
-      const mockProjects: ProjectInfo[] = [
+      const mockProjects: ProjectInfoWithSource[] = [
         {
           id: "proj_001",
           name: "Test Project",
@@ -289,7 +288,7 @@ describe("useProjects", () => {
           updatedAt: "2026-01-01T00:00:00.000Z",
         },
       ];
-      mockFetchProjects.mockResolvedValueOnce(mockProjects);
+      mockFetchProjectsAcrossNodes.mockResolvedValueOnce(mockProjects);
       mockUnregisterProject.mockResolvedValueOnce(undefined);
 
       const { result } = renderHook(() => useProjects());
@@ -308,7 +307,7 @@ describe("useProjects", () => {
     });
 
     it("update modifies project optimistically", async () => {
-      const mockProjects: ProjectInfo[] = [
+      const mockProjects: ProjectInfoWithSource[] = [
         {
           id: "proj_001",
           name: "Test Project",
@@ -323,7 +322,7 @@ describe("useProjects", () => {
         ...mockProjects[0],
         name: "Updated Name",
       };
-      mockFetchProjects.mockResolvedValueOnce(mockProjects);
+      mockFetchProjectsAcrossNodes.mockResolvedValueOnce(mockProjects);
       mockUpdateProject.mockResolvedValueOnce(updatedProject);
 
       const { result } = renderHook(() => useProjects());
@@ -342,7 +341,7 @@ describe("useProjects", () => {
     });
 
     it("refresh manually refetches projects", async () => {
-      const initialProject: ProjectInfo = {
+      const initialProject: ProjectInfoWithSource = {
         id: "proj_001",
         name: "Initial",
         path: "/test/path",
@@ -351,11 +350,11 @@ describe("useProjects", () => {
         createdAt: "2026-01-01T00:00:00.000Z",
         updatedAt: "2026-01-01T00:00:00.000Z",
       };
-      const refreshedProject: ProjectInfo = {
+      const refreshedProject: ProjectInfoWithSource = {
         ...initialProject,
         name: "Refreshed",
       };
-      mockFetchProjects.mockResolvedValueOnce([initialProject]).mockResolvedValueOnce([refreshedProject]);
+      mockFetchProjectsAcrossNodes.mockResolvedValueOnce([initialProject]).mockResolvedValueOnce([refreshedProject]);
 
       const { result } = renderHook(() => useProjects());
 
@@ -370,6 +369,48 @@ describe("useProjects", () => {
       });
 
       expect(result.current.projects[0].name).toBe("Refreshed");
+    });
+
+    it("returns projects with _sourceNodeName from aggregated endpoint", async () => {
+      const mockProjects: ProjectInfoWithSource[] = [
+        {
+          id: "proj_local",
+          name: "Local Project",
+          path: "/local/path",
+          status: "active",
+          isolationMode: "in-process",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+        {
+          id: "proj_remote",
+          name: "Remote Project",
+          path: "/remote/path",
+          status: "active",
+          isolationMode: "child-process",
+          nodeId: "node_alpha",
+          _sourceNodeName: "Alpha Node",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+      ];
+      mockFetchProjectsAcrossNodes.mockResolvedValueOnce(mockProjects);
+
+      const { result } = renderHook(() => useProjects());
+
+      await act(async () => {
+        await flushPromises();
+      });
+
+      expect(result.current.projects).toHaveLength(2);
+
+      const localProject = result.current.projects.find((p) => p.id === "proj_local");
+      expect(localProject?._sourceNodeName).toBeUndefined();
+      expect(localProject?.nodeId).toBeUndefined();
+
+      const remoteProject = result.current.projects.find((p) => p.id === "proj_remote");
+      expect(remoteProject?._sourceNodeName).toBe("Alpha Node");
+      expect(remoteProject?.nodeId).toBe("node_alpha");
     });
   });
 });

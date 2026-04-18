@@ -55,6 +55,12 @@ function forceReconnect(channel: Channel): void {
   if (channel.closed) return;
   if (channel.subscribers.size === 0 || channel.reconnectTimer) return;
 
+  // Guard against calling onReconnect callbacks for a channel that has been
+  // closed while the heartbeat timer fired. This prevents stale SSE events from
+  // firing into unsubscribed/mounted-out consumers during rapid view switches.
+  const ch = channels.get(channel.url);
+  if (!ch || ch !== channel) return;
+
   // A teardown means events may have been missed while the stream was
   // down. Signal resync to each subscriber so they can refetch
   // authoritative state.
@@ -63,7 +69,12 @@ function forceReconnect(channel: Channel): void {
   channel.reconnectTimer = setTimeout(() => {
     channel.reconnectTimer = null;
     if (channel.closed) return;
-    if (channel.subscribers.size > 0) openChannel(channel);
+    // Re-check after timer fires — the channel may have been closed or
+    // the subscription count changed during the delay.
+    const current = channels.get(channel.url);
+    if (current && current === channel && channel.subscribers.size > 0) {
+      openChannel(channel);
+    }
   }, RECONNECT_DELAY_MS);
 }
 

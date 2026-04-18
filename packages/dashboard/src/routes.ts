@@ -14200,6 +14200,116 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
   });
 
   /**
+   * GET /api/projects/across-nodes
+   * List all registered projects from all nodes (local + remote).
+   * Fetches projects from online remote nodes and merges with local projects.
+   * Returns: Array of projects with nodeId and _sourceNodeName for remote projects.
+   */
+  router.get("/projects/across-nodes", async (_req, res) => {
+    try {
+      const { CentralCore } = await import("@fusion/core");
+      const central = new CentralCore();
+      await central.init();
+
+      // Reconcile stale "initializing" projects before listing
+      await central.reconcileProjectStatuses();
+
+      // Get local projects
+      const localProjects = await central.listProjects();
+
+      // Get all registered nodes
+      const allNodes = await central.listNodes();
+
+      // Filter to online remote nodes with URLs
+      const remoteNodes = allNodes.filter(
+        (node) => node.type === "remote" && node.status === "online" && node.url
+      );
+
+      // Fetch projects from all remote nodes in parallel
+      const remoteProjectArrays = await Promise.allSettled(
+        remoteNodes.map(async (node) => {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+          try {
+            const response = await fetch(`${node.url}/api/projects`, {
+              headers: {
+                Authorization: `Bearer ${node.apiKey}`,
+              },
+              signal: controller.signal,
+            });
+
+            if (!response.ok) {
+              throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            const projects = (await response.json()) as Array<{
+              id: string;
+              name: string;
+              path: string;
+              status: "active" | "paused" | "errored" | "initializing";
+              isolationMode: "in-process" | "child-process";
+              nodeId?: string;
+              createdAt: string;
+              updatedAt: string;
+              lastActivityAt?: string;
+            }>;
+
+            // Tag each remote project with the source node info
+            return projects.map((project) => ({
+              ...project,
+              nodeId: node.id,
+              _sourceNodeName: node.name,
+            }));
+          } finally {
+            clearTimeout(timeoutId);
+          }
+        })
+      );
+
+      // Collect successful remote projects, log failures
+      type RemoteProject = {
+        id: string;
+        name: string;
+        path: string;
+        status: "active" | "paused" | "errored" | "initializing";
+        isolationMode: "in-process" | "child-process";
+        nodeId: string;
+        _sourceNodeName: string;
+        createdAt: string;
+        updatedAt: string;
+        lastActivityAt?: string;
+      };
+      const remoteProjects = remoteProjectArrays
+        .filter((result): result is PromiseFulfilledResult<RemoteProject[]> => result.status === "fulfilled")
+        .flatMap((result) => result.value);
+
+      // Log failures for any unreachable nodes
+      remoteProjectArrays.forEach((result, index) => {
+        if (result.status === "rejected") {
+          const node = remoteNodes[index];
+          console.warn(`[projects:across-nodes] Failed to fetch projects from node ${node?.id}: ${result.reason?.message ?? result.reason}`);
+        }
+      });
+
+      // Merge local and remote projects
+      const mergedProjects = [...localProjects, ...remoteProjects];
+
+      // Apply directory prioritization
+      const prioritizedProjects = prioritizeProjectsForCurrentDirectory(mergedProjects);
+
+      await central.close();
+
+      res.json(prioritizedProjects);
+    } catch (err: unknown) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      rethrowAsApiError(err);
+    }
+  });
+
+  /**
    * POST /api/projects
    * Register a new project.
    * Body: { name: string, path: string, isolationMode?: "in-process" | "child-process" }

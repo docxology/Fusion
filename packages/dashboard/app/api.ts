@@ -3280,6 +3280,17 @@ export function fetchProjects(): Promise<ProjectInfo[]> {
   return api<ProjectInfo[]>("/projects");
 }
 
+/** Project info with source node metadata (added by server for remote projects) */
+export interface ProjectInfoWithSource extends ProjectInfo {
+  /** Name of the source node (added by server for remote projects) */
+  _sourceNodeName?: string;
+}
+
+/** Fetch all registered projects from all nodes (local + remote) */
+export function fetchProjectsAcrossNodes(): Promise<ProjectInfoWithSource[]> {
+  return api<ProjectInfoWithSource[]>("/projects/across-nodes");
+}
+
 /** Fetch all registered nodes */
 export function fetchNodes(): Promise<NodeInfo[]> {
   return api<NodeInfo[]>("/nodes");

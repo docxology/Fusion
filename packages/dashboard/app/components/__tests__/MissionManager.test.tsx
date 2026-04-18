@@ -143,7 +143,111 @@ const mockMilestoneValidationRollup = {
   blockedAssertions: 0,
   pendingAssertions: 0,
   unlinkedAssertions: 0,
-  state: "not_started",
+  state: "not_started" as const,
+};
+
+/** Extended mock telemetry for parity tests — mirrors FN-1569 schema */
+const mockMilestoneValidationTelemetryWithRounds = {
+  validationContract: {
+    assertions: [
+      { id: "CA-001", title: "Auth works", assertion: "Users can log in", status: "pending" as const, orderIndex: 0 },
+      { id: "CA-002", title: "Session persists", assertion: "Token refresh works", status: "pending" as const, orderIndex: 1 },
+    ],
+    featureFulfillment: {
+      "F-001": { assertionIds: ["CA-001"], featureTitle: "User model", featureStatus: "in-progress" },
+    },
+  },
+  validationTelemetry: {
+    validationRounds: [
+      {
+        roundId: "VR-001",
+        featureId: "F-001",
+        featureTitle: "User model",
+        validatorStatus: "failed" as const,
+        implementationAttempt: 1,
+        validatorAttempt: 2, // retry count (validatorAttempt = retry count)
+        failedAssertionIds: ["CA-001"],
+        generatedFixFeatureIds: [],
+        startedAt: "2026-04-10T09:00:00.000Z",
+        completedAt: "2026-04-10T09:05:00.000Z",
+      },
+      {
+        roundId: "VR-002",
+        featureId: "F-001",
+        featureTitle: "User model",
+        validatorStatus: "failed" as const,
+        implementationAttempt: 2,
+        validatorAttempt: 3, // higher retry count — iterating surface
+        failedAssertionIds: ["CA-002"],
+        generatedFixFeatureIds: [],
+        startedAt: "2026-04-10T09:10:00.000Z",
+        completedAt: "2026-04-10T09:15:00.000Z",
+      },
+    ],
+    lastValidatorStatus: "failed" as const,
+    totalRuns: 2,
+  },
+  fixFeatures: [
+    {
+      id: "FF-001",
+      title: "Fix: token refresh",
+      sourceFeatureId: "F-001",
+      runId: "VR-001",
+      failedAssertionIds: ["CA-001"],
+      status: "defined" as const,
+      loopState: "idle" as const,
+    },
+  ],
+  rollup: {
+    milestoneId: "MS-001",
+    totalAssertions: 2,
+    passedAssertions: 0,
+    failedAssertions: 2,
+    blockedAssertions: 0,
+    pendingAssertions: 0,
+    unlinkedAssertions: 0,
+    state: "failed" as const,
+  },
+};
+
+/** Blocked milestone telemetry — mirrors FN-1569 blocked state */
+const mockBlockedMilestoneTelemetry = {
+  validationContract: {
+    assertions: [
+      { id: "CA-003", title: "API reachable", assertion: "External API responds", status: "blocked" as const, orderIndex: 0 },
+    ],
+    featureFulfillment: {},
+  },
+  validationTelemetry: {
+    validationRounds: [
+      {
+        roundId: "VR-BLK",
+        featureId: "F-BLK",
+        featureTitle: "API integration",
+        validatorStatus: "blocked" as const,
+        implementationAttempt: 1,
+        validatorAttempt: 1,
+        failedAssertionIds: ["CA-003"],
+        generatedFixFeatureIds: [],
+        blockedReason: "External API unavailable — connection refused after 3 retries",
+        startedAt: "2026-04-10T10:00:00.000Z",
+        completedAt: "2026-04-10T10:01:00.000Z",
+      },
+    ],
+    lastValidatorStatus: "blocked" as const,
+    totalRuns: 1,
+  },
+  fixFeatures: [],
+  rollup: {
+    milestoneId: "MS-001",
+    totalAssertions: 1,
+    passedAssertions: 0,
+    failedAssertions: 0,
+    blockedAssertions: 1,
+    pendingAssertions: 0,
+    unlinkedAssertions: 0,
+    state: "blocked" as const,
+  },
 };
 
 const mockMilestoneValidationTelemetry = {
@@ -292,9 +396,10 @@ function parseMissionEventsResponse(url: string, events = mockMissionEvents) {
   };
 }
 
-function getValidationApiMock(url: string): unknown | null {
+function getValidationApiMock(url: string, telemetryOverride?: unknown): unknown | null {
+  const telemetry = telemetryOverride ?? mockMilestoneValidationTelemetry;
   if (url.includes("/validation-telemetry")) {
-    return mockMilestoneValidationTelemetry;
+    return telemetry;
   }
 
   if (url.includes("/validation-runs")) {
@@ -414,6 +519,73 @@ function createDetailFetchMock(events = mockMissionEvents) {
     }
 
     const validationResponse = getValidationApiMock(url);
+    if (validationResponse !== null) {
+      return Promise.resolve(mockApiResponse(validationResponse));
+    }
+
+    if (url.includes("/api/missions/") && !url.includes("/milestones") && !url.includes("/status")) {
+      const missionId = extractMissionId(url);
+      if (missionId === "M-001") {
+        return Promise.resolve(mockApiResponse(mockMissionDetail));
+      }
+    }
+
+    return Promise.resolve(mockApiResponse(mockMissions));
+  });
+}
+
+function createFetchMockWithTelemetry(telemetryOverride: unknown) {
+  return vi.fn().mockImplementation((url: string) => {
+    if (url.includes("/missions/health")) {
+      return Promise.resolve(mockApiResponse(mockMissionHealthById));
+    }
+
+    if (url.includes("/events")) {
+      return Promise.resolve(mockApiResponse(parseMissionEventsResponse(url)));
+    }
+
+    if (url.includes("/health")) {
+      const missionId = extractMissionId(url) ?? "M-001";
+      return Promise.resolve(mockApiResponse(getMockMissionHealth(missionId)));
+    }
+
+    if (url.includes("/autopilot")) {
+      return Promise.resolve(mockApiResponse(mockAutopilotStatus));
+    }
+
+    const validationResponse = getValidationApiMock(url, telemetryOverride);
+    if (validationResponse !== null) {
+      return Promise.resolve(mockApiResponse(validationResponse));
+    }
+
+    if (url.includes("/api/missions/") && !url.includes("/milestones") && !url.includes("/status")) {
+      return Promise.resolve(mockApiResponse(mockMissionDetail));
+    }
+
+    return Promise.resolve(mockApiResponse(mockMissions));
+  });
+}
+
+function createDetailFetchMockWithTelemetry(events: unknown[], telemetryOverride: unknown) {
+  return vi.fn().mockImplementation((url: string) => {
+    if (url.includes("/missions/health")) {
+      return Promise.resolve(mockApiResponse(mockMissionHealthById));
+    }
+
+    if (url.includes("/events")) {
+      return Promise.resolve(mockApiResponse(parseMissionEventsResponse(url, events as typeof mockMissionEvents)));
+    }
+
+    if (url.includes("/health")) {
+      const missionId = extractMissionId(url) ?? "M-001";
+      return Promise.resolve(mockApiResponse(getMockMissionHealth(missionId)));
+    }
+
+    if (url.includes("/autopilot")) {
+      return Promise.resolve(mockApiResponse(mockAutopilotStatus));
+    }
+
+    const validationResponse = getValidationApiMock(url, telemetryOverride);
     if (validationResponse !== null) {
       return Promise.resolve(mockApiResponse(validationResponse));
     }
@@ -2413,6 +2585,194 @@ describe("MissionManager", () => {
         const dot = document.querySelector(".mission-detail__autopilot-dot");
         expect(dot).toBeDefined();
       });
+    });
+  });
+
+  // ── Step 2: Factory parity — contract/telemetry/fix-feature coverage ────────
+  //
+  // Validates FN-1569 schema parity from API telemetry payloads through UI rendering.
+  // Extends test fixtures with validationContract, validationTelemetry, and fixFeatures
+  // mirroring the exact schema fields used by MissionManager.tsx telemetry section.
+  describe("Factory parity — contract/telemetry/fix-feature coverage", () => {
+    it("renders validation telemetry section in detail view after API response", async () => {
+      globalThis.fetch = createDetailFetchMockWithTelemetry(mockMissionEvents, mockMilestoneValidationTelemetryWithRounds);
+      render(<MissionManager isOpen={true} onClose={vi.fn()} addToast={vi.fn()} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Build Auth System")).toBeDefined();
+      });
+      fireEvent.click(screen.getByText("Build Auth System"));
+
+      await waitFor(() => {
+        expect(screen.getByTestId("mission-back-btn")).toBeDefined();
+      });
+
+      // After async telemetry loads, validation telemetry section should appear
+      await waitFor(() => {
+        expect(screen.getByText("Validation Telemetry")).toBeDefined();
+      }, { timeout: 3000 });
+
+      // Total runs shown in header meta
+      await waitFor(() => {
+        expect(screen.getByText(/2 rounds/)).toBeDefined();
+      }, { timeout: 3000 });
+
+      // Last validator status shown in header meta
+      await waitFor(() => {
+        expect(screen.getByText(/Last failed/)).toBeDefined();
+      }, { timeout: 3000 });
+    });
+
+    it("shows blocked reason surface when validation round is blocked", async () => {
+      globalThis.fetch = createDetailFetchMockWithTelemetry(mockMissionEvents, mockBlockedMilestoneTelemetry);
+      render(<MissionManager isOpen={true} onClose={vi.fn()} addToast={vi.fn()} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Build Auth System")).toBeDefined();
+      });
+      fireEvent.click(screen.getByText("Build Auth System"));
+
+      // Wait for telemetry to load
+      await waitFor(() => {
+        expect(screen.getByText("Validation Telemetry")).toBeDefined();
+      }, { timeout: 3000 });
+
+      // Last validator status shows blocked
+      await waitFor(() => {
+        expect(screen.getByText(/Last blocked/)).toBeDefined();
+      }, { timeout: 3000 });
+
+      // Blocked reason surface should appear (.mission-blocked-reason class)
+      await waitFor(() => {
+        expect(document.querySelector(".mission-blocked-reason")).not.toBeNull();
+      }, { timeout: 3000 });
+
+      // Blocked reason text should be visible (use getAllByText since it may appear in both milestone-blocked-reason and round-blocked-reason)
+      await waitFor(() => {
+        const matches = screen.getAllByText(/External API unavailable/);
+        expect(matches.length).toBeGreaterThan(0);
+      }, { timeout: 3000 });
+    });
+
+    it("does not show blocked-reason surface for failed (non-blocked) rounds", async () => {
+      // Regression: failed rounds should NOT show blocked-reason surface
+      globalThis.fetch = createDetailFetchMockWithTelemetry(mockMissionEvents, mockMilestoneValidationTelemetryWithRounds);
+      render(<MissionManager isOpen={true} onClose={vi.fn()} addToast={vi.fn()} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Build Auth System")).toBeDefined();
+      });
+      fireEvent.click(screen.getByText("Build Auth System"));
+
+      // Wait for telemetry to load
+      await waitFor(() => {
+        expect(screen.getByText("Validation Telemetry")).toBeDefined();
+      }, { timeout: 3000 });
+
+      // Blocked reason text from the blocked telemetry should NOT appear
+      // (the mockMissionDetail has a milestone without blocked telemetry)
+      expect(screen.queryByText(/External API unavailable/)).toBeNull();
+    });
+
+    it("displays fix-features with source linkage in telemetry section", async () => {
+      globalThis.fetch = createDetailFetchMockWithTelemetry(mockMissionEvents, mockMilestoneValidationTelemetryWithRounds);
+      render(<MissionManager isOpen={true} onClose={vi.fn()} addToast={vi.fn()} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Build Auth System")).toBeDefined();
+      });
+      fireEvent.click(screen.getByText("Build Auth System"));
+
+      // Wait for telemetry to load
+      await waitFor(() => {
+        expect(screen.getByText(/Validation Telemetry/)).toBeDefined();
+      }, { timeout: 3000 });
+
+      // Fix features should appear with their source linkage
+      await waitFor(() => {
+        expect(screen.getByText("Fix: token refresh")).toBeDefined();
+      }, { timeout: 3000 });
+
+      // Source feature ID should be visible (clickable link to source feature)
+      await waitFor(() => {
+        expect(screen.getByText("F-001")).toBeDefined();
+      }, { timeout: 3000 });
+    });
+
+    it("blocked mission exposes resume affordance with aria-label", async () => {
+      // Test that a mission with blocked status shows the Resume button
+      const blockedMission = {
+        ...mockMissionDetail,
+        status: "blocked" as const,
+      };
+
+      globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+        if (url.includes("/missions/health")) {
+          return Promise.resolve(mockApiResponse(mockMissionHealthById));
+        }
+        if (url.includes("/events")) {
+          return Promise.resolve(mockApiResponse(parseMissionEventsResponse(url)));
+        }
+        if (url.includes("/health")) {
+          const missionId = extractMissionId(url) ?? "M-001";
+          return Promise.resolve(mockApiResponse(getMockMissionHealth(missionId)));
+        }
+        if (url.includes("/autopilot")) {
+          return Promise.resolve(mockApiResponse(mockAutopilotStatus));
+        }
+        const validationResponse = getValidationApiMock(url);
+        if (validationResponse !== null) {
+          return Promise.resolve(mockApiResponse(validationResponse));
+        }
+        if (url.includes("/api/missions/") && !url.includes("/milestones") && !url.includes("/status")) {
+          return Promise.resolve(mockApiResponse(blockedMission));
+        }
+        return Promise.resolve(mockApiResponse(mockMissions));
+      });
+
+      render(<MissionManager isOpen={true} onClose={vi.fn()} addToast={vi.fn()} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Build Auth System")).toBeDefined();
+      });
+      fireEvent.click(screen.getByText("Build Auth System"));
+
+      await waitFor(() => {
+        expect(screen.getByTestId("mission-back-btn")).toBeDefined();
+      });
+
+      // Resume button with aria-label="Resume mission" should appear for blocked mission
+      await waitFor(() => {
+        const resumeButton = screen.getByLabelText("Resume mission");
+        expect(resumeButton).toBeDefined();
+      }, { timeout: 3000 });
+    });
+
+    it("activity tab metadata toggle still works after telemetry changes", async () => {
+      // Regression: mission events metadata toggle (mission-event-metadata-*) must remain functional
+      // Uses same pattern as existing passing test (lines ~912-923)
+      globalThis.fetch = createDetailFetchMockWithTelemetry(mockMissionEvents, mockMilestoneValidationTelemetryWithRounds);
+      render(<MissionManager isOpen={true} onClose={vi.fn()} addToast={vi.fn()} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Build Auth System")).toBeDefined();
+      });
+      fireEvent.click(screen.getByText("Build Auth System"));
+
+      await waitFor(() => {
+        expect(screen.getByTestId("mission-tab-activity")).toBeDefined();
+      });
+
+      fireEvent.click(screen.getByTestId("mission-tab-activity"));
+
+      await waitFor(() => {
+        expect(screen.getByTestId("mission-activity-events")).toBeDefined();
+        expect(screen.getByText("Mission started")).toBeDefined();
+      });
+
+      // Toggle metadata for event E-002 which has metadata { queueDepth: 4 }
+      fireEvent.click(screen.getByTestId("mission-event-metadata-E-002"));
+      expect(screen.getByText(/"queueDepth": 4/)).toBeDefined();
     });
   });
 });

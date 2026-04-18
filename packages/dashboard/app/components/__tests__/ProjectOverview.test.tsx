@@ -4,6 +4,11 @@ import { ProjectOverview } from "../ProjectOverview";
 import type { ProjectInfo, ProjectHealth } from "@fusion/core";
 import { useProjectHealth } from "../../hooks/useProjectHealth";
 
+// Extended type with source node info for cross-node tests
+interface ProjectInfoWithSource extends ProjectInfo {
+  _sourceNodeName?: string;
+}
+
 // Default mock implementation
 function createDefaultHealthMap(projectIds: string[]): Record<string, ProjectHealth> {
   return projectIds.reduce((acc, id) => {
@@ -45,14 +50,31 @@ vi.mock("lucide-react", async () => {
     AlertCircle: () => <span data-testid="alert-icon">⚠</span>,
     Folder: () => <span data-testid="folder-icon">📁</span>,
     Inbox: () => <span data-testid="inbox-icon">📥</span>,
+    Server: () => <span data-testid="server-icon">🖥</span>,
   };
 });
 
 // Mock ProjectCard
 vi.mock("../ProjectCard", () => ({
-  ProjectCard: ({ project, onSelect }: { project: ProjectInfo; onSelect: (p: ProjectInfo) => void }) => (
-    <div data-testid={`project-card-${project.id}`} onClick={() => onSelect(project)}>
+  ProjectCard: ({ 
+    project, 
+    onSelect,
+    node,
+    nodeNameFallback,
+  }: { 
+    project: ProjectInfo; 
+    onSelect: (p: ProjectInfo) => void;
+    node?: { id: string; name: string };
+    nodeNameFallback?: string;
+  }) => (
+    <div 
+      data-testid={`project-card-${project.id}`} 
+      data-node={node?.name ?? nodeNameFallback ?? "none"}
+      onClick={() => onSelect(project)}
+    >
       {project.name}
+      {node && <span className="node-badge">{node.name}</span>}
+      {nodeNameFallback && !node && <span className="node-badge">{nodeNameFallback}</span>}
     </div>
   ),
 }));
@@ -62,7 +84,7 @@ vi.mock("../ProjectGridSkeleton", () => ({
   ProjectGridSkeleton: () => <div data-testid="project-grid-skeleton">Loading...</div>,
 }));
 
-function makeProject(overrides: Partial<ProjectInfo> = {}): ProjectInfo {
+function makeProject(overrides: Partial<ProjectInfoWithSource> = {}): ProjectInfoWithSource {
   return {
     id: "proj_abc123",
     name: "Test Project",
@@ -354,6 +376,171 @@ describe("ProjectOverview", () => {
     expect(erroredTab?.className).toContain("has-errors");
   });
 
+  describe("FN-1850: Node filter and badges", () => {
+    it("shows node badge for project with node association", () => {
+      const localNode = { id: "node_local", name: "Local", type: "local" as const, status: "online" as const, maxConcurrent: 2, createdAt: "", updatedAt: "" };
+      
+      render(
+        <ProjectOverview
+          projects={[makeProject({ id: "proj_1", nodeId: "node_local" })]}
+          nodes={[localNode]}
+          onSelectProject={noop}
+          onAddProject={noop}
+          onPauseProject={noop}
+          onResumeProject={noop}
+          onRemoveProject={noop}
+        />
+      );
+
+      const card = screen.getByTestId("project-card-proj_1");
+      expect(card.getAttribute("data-node")).toBe("Local");
+    });
+
+    it("renders node name fallback for remote projects without local node object", () => {
+      // Remote project with _sourceNodeName but no matching local node
+      render(
+        <ProjectOverview
+          projects={[
+            makeProject({ 
+              id: "proj_remote", 
+              nodeId: "node_remote_abc",
+              _sourceNodeName: "Remote Alpha",
+            }),
+          ]}
+          nodes={[]} // No matching local node
+          onSelectProject={noop}
+          onAddProject={noop}
+          onPauseProject={noop}
+          onResumeProject={noop}
+          onRemoveProject={noop}
+        />
+      );
+
+      const card = screen.getByTestId("project-card-proj_remote");
+      expect(card.getAttribute("data-node")).toBe("Remote Alpha");
+    });
+
+    it("shows node filter dropdown when projects have multiple nodes", () => {
+      render(
+        <ProjectOverview
+          projects={[
+            makeProject({ id: "proj_1", nodeId: "node_1" }),
+            makeProject({ id: "proj_2", nodeId: "node_2" }),
+          ]}
+          nodes={[
+            { id: "node_1", name: "Node One", type: "remote" as const, status: "online" as const, maxConcurrent: 4, createdAt: "", updatedAt: "" },
+            { id: "node_2", name: "Node Two", type: "remote" as const, status: "online" as const, maxConcurrent: 4, createdAt: "", updatedAt: "" },
+          ]}
+          onSelectProject={noop}
+          onAddProject={noop}
+          onPauseProject={noop}
+          onResumeProject={noop}
+          onRemoveProject={noop}
+        />
+      );
+
+      // Node filter dropdown should be present
+      expect(screen.getByLabelText("Filter by node")).toBeDefined();
+    });
+
+    it("node filter dropdown filters projects by node", async () => {
+      render(
+        <ProjectOverview
+          projects={[
+            makeProject({ id: "proj_1", name: "Project One", nodeId: "node_alpha" }),
+            makeProject({ id: "proj_2", name: "Project Two", nodeId: "node_beta" }),
+          ]}
+          nodes={[
+            { id: "node_alpha", name: "Alpha", type: "remote" as const, status: "online" as const, maxConcurrent: 4, createdAt: "", updatedAt: "" },
+            { id: "node_beta", name: "Beta", type: "remote" as const, status: "online" as const, maxConcurrent: 4, createdAt: "", updatedAt: "" },
+          ]}
+          onSelectProject={noop}
+          onAddProject={noop}
+          onPauseProject={noop}
+          onResumeProject={noop}
+          onRemoveProject={noop}
+        />
+      );
+
+      // Initially shows both projects
+      expect(screen.getByTestId("project-card-proj_1")).toBeDefined();
+      expect(screen.getByTestId("project-card-proj_2")).toBeDefined();
+
+      // Select "Alpha" from the node filter
+      const nodeFilter = screen.getByLabelText("Filter by node");
+      fireEvent.change(nodeFilter, { target: { value: "node_alpha" } });
+
+      // Should only show Alpha project
+      await waitFor(() => {
+        expect(screen.getByTestId("project-card-proj_1")).toBeDefined();
+      });
+      expect(screen.queryByTestId("project-card-proj_2")).toBeNull();
+    });
+
+    it("shows nodes stat in header when projects span multiple nodes", () => {
+      render(
+        <ProjectOverview
+          projects={[
+            makeProject({ id: "proj_1", nodeId: "node_1" }),
+            makeProject({ id: "proj_2", nodeId: "node_2" }),
+          ]}
+          nodes={[
+            { id: "node_1", name: "Node One", type: "remote" as const, status: "online" as const, maxConcurrent: 4, createdAt: "", updatedAt: "" },
+            { id: "node_2", name: "Node Two", type: "remote" as const, status: "online" as const, maxConcurrent: 4, createdAt: "", updatedAt: "" },
+          ]}
+          onSelectProject={noop}
+          onAddProject={noop}
+          onPauseProject={noop}
+          onResumeProject={noop}
+          onRemoveProject={noop}
+        />
+      );
+
+      // Nodes stat should be visible
+      const nodesStats = screen.getByText("Nodes").closest(".project-stat__content");
+      expect(nodesStats?.querySelector(".project-stat__value")?.textContent).toBe("2");
+    });
+
+    it("does not show node filter when all projects are local", () => {
+      render(
+        <ProjectOverview
+          projects={[
+            makeProject({ id: "proj_1" }), // No nodeId - local project
+            makeProject({ id: "proj_2" }),
+          ]}
+          nodes={[]}
+          onSelectProject={noop}
+          onAddProject={noop}
+          onPauseProject={noop}
+          onResumeProject={noop}
+          onRemoveProject={noop}
+        />
+      );
+
+      // Node filter should not be present
+      expect(screen.queryByLabelText("Filter by node")).toBeNull();
+    });
+
+    it("does not show nodes stat when only one node (or no node ID)", () => {
+      render(
+        <ProjectOverview
+          projects={[
+            makeProject({ id: "proj_1" }), // No nodeId
+          ]}
+          nodes={[]}
+          onSelectProject={noop}
+          onAddProject={noop}
+          onPauseProject={noop}
+          onResumeProject={noop}
+          onRemoveProject={noop}
+        />
+      );
+
+      // Nodes stat should not be present
+      expect(screen.queryByText("Nodes")).toBeNull();
+    });
+  });
+
   describe("mobile responsive structure", () => {
     it("renders overview with correct class structure for mobile CSS targets", () => {
       const { container } = render(
@@ -435,6 +622,30 @@ describe("ProjectOverview", () => {
       expect(container.querySelector(".project-sort")).not.toBeNull();
       expect(container.querySelector(".project-sort-select")).not.toBeNull();
       expect(screen.getByLabelText("Sort projects")).toBeDefined();
+    });
+
+    it("renders node filter select with correct classes for mobile", () => {
+      const { container } = render(
+        <ProjectOverview
+          projects={[
+            makeProject({ id: "proj_1", nodeId: "node_1" }),
+            makeProject({ id: "proj_2", nodeId: "node_2" }),
+          ]}
+          nodes={[
+            { id: "node_1", name: "Node One", type: "remote" as const, status: "online" as const, maxConcurrent: 4, createdAt: "", updatedAt: "" },
+            { id: "node_2", name: "Node Two", type: "remote" as const, status: "online" as const, maxConcurrent: 4, createdAt: "", updatedAt: "" },
+          ]}
+          onSelectProject={noop}
+          onAddProject={noop}
+          onPauseProject={noop}
+          onResumeProject={noop}
+          onRemoveProject={noop}
+        />
+      );
+
+      expect(container.querySelector(".project-node-filter")).not.toBeNull();
+      expect(container.querySelector(".project-node-filter-select")).not.toBeNull();
+      expect(screen.getByLabelText("Filter by node")).toBeDefined();
     });
   });
 

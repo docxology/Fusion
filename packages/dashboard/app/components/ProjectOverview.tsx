@@ -1,13 +1,13 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
-import { Plus, LayoutGrid, Filter, ArrowUpDown, Activity, CheckCircle, AlertCircle, Folder, Inbox } from "lucide-react";
-import type { ProjectInfo, ProjectHealth, NodeInfo } from "../api";
+import { Plus, LayoutGrid, Filter, ArrowUpDown, Activity, CheckCircle, AlertCircle, Folder, Inbox, Server } from "lucide-react";
+import type { ProjectInfo, ProjectHealth, NodeInfo, ProjectInfoWithSource } from "../api";
 import type { ProjectStatus } from "@fusion/core";
 import { ProjectCard } from "./ProjectCard";
 import { ProjectGridSkeleton } from "./ProjectGridSkeleton";
 import { useProjectHealth } from "../hooks/useProjectHealth";
 
 export interface ProjectOverviewProps {
-  projects: ProjectInfo[];
+  projects: ProjectInfoWithSource[];
   loading?: boolean;
   onSelectProject: (project: ProjectInfo) => void;
   onAddProject: () => void;
@@ -22,7 +22,7 @@ type FilterTab = "all" | "active" | "paused" | "errored";
 type SortOption = "name" | "activity" | "status";
 
 interface ProjectWithHealth {
-  project: ProjectInfo;
+  project: ProjectInfoWithSource;
   health: ProjectHealth | null;
 }
 
@@ -47,6 +47,7 @@ export function ProjectOverview({
   nodes = [],
 }: ProjectOverviewProps) {
   const [activeFilter, setActiveFilter] = useState<FilterTab>("all");
+  const [activeNodeFilter, setActiveNodeFilter] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<SortOption>("activity");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
 
@@ -88,8 +89,13 @@ export function ProjectOverview({
       filtered = filtered.filter(({ project }) => project.status === activeFilter);
     }
 
+    // Filter by node if a node filter is active
+    if (activeNodeFilter !== null) {
+      filtered = filtered.filter(({ project }) => project.nodeId === activeNodeFilter);
+    }
+
     return filtered;
-  }, [projectsWithHealth, activeFilter]);
+  }, [projectsWithHealth, activeFilter, activeNodeFilter]);
 
   // Sort projects
   const sortedProjects = useMemo(() => {
@@ -130,6 +136,15 @@ export function ProjectOverview({
     const activeProjects = projects.filter((p) => p.status === "active").length;
     const erroredProjects = projects.filter((p) => p.status === "errored").length;
 
+    // Count unique nodes with projects (local + remote)
+    const nodesWithProjects = new Set<string | undefined>();
+    projects.forEach((p) => {
+      if (p.nodeId) {
+        nodesWithProjects.add(p.nodeId);
+      }
+    });
+    const totalNodes = nodesWithProjects.size || (totalProjects > 0 ? 1 : 0);
+
     let totalActiveTasks = 0;
     let totalCompletedTasks = 0;
     let totalInFlightAgents = 0;
@@ -146,6 +161,7 @@ export function ProjectOverview({
       totalProjects,
       activeProjects,
       erroredProjects,
+      totalNodes,
       totalActiveTasks,
       totalCompletedTasks,
       totalInFlightAgents,
@@ -161,6 +177,31 @@ export function ProjectOverview({
       errored: projects.filter((p) => p.status === "errored").length,
     };
   }, [projects]);
+
+  // Node filter options with project counts
+  const nodeFilterOptions = useMemo(() => {
+    const nodeCounts = new Map<string | undefined, { name: string; count: number }>();
+    
+    projects.forEach((p) => {
+      const nodeId = p.nodeId;
+      const existing = nodeCounts.get(nodeId);
+      
+      if (existing) {
+        existing.count++;
+      } else {
+        // Get the node name from the nodes list or use _sourceNodeName for remote projects
+        const localNode = nodes.find((n) => n.id === nodeId);
+        const nodeName = localNode?.name ?? p._sourceNodeName ?? "Local";
+        nodeCounts.set(nodeId, { name: nodeName, count: 1 });
+      }
+    });
+    
+    return Array.from(nodeCounts.entries()).map(([nodeId, { name, count }]) => ({
+      nodeId: nodeId ?? null,
+      name,
+      count,
+    }));
+  }, [projects, nodes]);
 
   // Handle sort change
   const handleSort = useCallback((option: SortOption) => {
@@ -267,6 +308,17 @@ export function ProjectOverview({
               </div>
             </div>
           )}
+          {stats.totalNodes > 1 && (
+            <div className="project-stat project-stat--nodes">
+              <div className="project-stat__icon">
+                <Server size={16} />
+              </div>
+              <div className="project-stat__content">
+                <span className="project-stat__value">{stats.totalNodes}</span>
+                <span className="project-stat__label">Nodes</span>
+              </div>
+            </div>
+          )}
         </div>
         <button
           className="btn btn-primary project-overview__add-btn"
@@ -310,6 +362,28 @@ export function ProjectOverview({
           </button>
         </div>
 
+        {/* Node filter dropdown */}
+        {nodeFilterOptions.length > 1 && (
+          <div className="project-node-filter">
+            <Server size={14} />
+            <select
+              value={activeNodeFilter ?? ""}
+              onChange={(e) => {
+                setActiveNodeFilter(e.target.value || null);
+              }}
+              className="project-node-filter-select"
+              aria-label="Filter by node"
+            >
+              <option value="">All Nodes</option>
+              {nodeFilterOptions.map(({ nodeId, name, count }) => (
+                <option key={nodeId ?? "local"} value={nodeId ?? ""}>
+                  {name} ({count})
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
         {/* Sort dropdown */}
         <div className="project-sort">
           <Filter size={14} />
@@ -338,12 +412,15 @@ export function ProjectOverview({
       <div className="project-grid">
         {sortedProjects.map(({ project, health }) => {
           const projectNode = nodes.find((node) => node.id === project.nodeId);
+          // Fallback: use server-provided _sourceNodeName for remote projects
+          const nodeNameFallback = !projectNode ? project._sourceNodeName : undefined;
           return (
             <ProjectCard
               key={project.id}
               project={project}
               health={health}
               node={projectNode}
+              nodeNameFallback={nodeNameFallback}
               onSelect={handleSelectProject}
               onPause={onPauseProject}
               onResume={onResumeProject}
