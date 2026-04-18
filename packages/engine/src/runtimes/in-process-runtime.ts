@@ -575,6 +575,7 @@ export class InProcessRuntime
       this.selfHealingManager = new SelfHealingManager(this.taskStore, {
         rootDir: this.config.workingDirectory,
         recoverCompletedTask: (task) => this.executor.recoverCompletedTask(task),
+        recoverFailedPreMergeStep: (task) => this.executor.recoverFailedPreMergeWorkflowStep(task),
         getExecutingTaskIds: () => this.executor.getExecutingTaskIds(),
         recoverApprovedTriageTask: (task) => this.triageProcessor?.recoverApprovedTask(task) ?? Promise.resolve(false),
         getSpecifyingTaskIds: () => this.triageProcessor?.getProcessingTaskIds() ?? new Set<string>(),

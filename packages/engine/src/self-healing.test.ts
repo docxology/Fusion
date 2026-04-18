@@ -1249,6 +1249,184 @@ describe("SelfHealingManager", () => {
     });
   });
 
+  describe("recoverReviewTasksWithFailedPreMergeSteps", () => {
+    const baseTask = {
+      id: "FN-1572",
+      column: "in-review" as const,
+      paused: false,
+      status: null as string | null,
+      worktree: "/tmp/test-project/.worktrees/fn-1572",
+      steps: [
+        { name: "Preflight", status: "done" as const },
+        { name: "Implementation", status: "done" as const },
+      ],
+      workflowStepResults: [
+        {
+          workflowStepId: "WS-004",
+          workflowStepName: "Browser Verification",
+          phase: "pre-merge" as const,
+          status: "failed" as const,
+          output: "SSE reconnect leaks /api/events connections when view toggles.",
+          startedAt: "2026-04-17T21:08:24.135Z",
+          completedAt: "2026-04-17T21:35:32.036Z",
+        },
+      ],
+      postReviewFixCount: 0,
+      log: [],
+    };
+
+    it("sends a review task back for fix when a pre-merge workflow step failed and budget remains", async () => {
+      const recoverFn = vi.fn().mockResolvedValue(true);
+      const managerWithRecovery = new SelfHealingManager(store, {
+        rootDir: "/tmp/test-project",
+        recoverFailedPreMergeStep: recoverFn,
+      });
+      (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+        maxPostReviewFixes: 1,
+      });
+      (store.listTasks as ReturnType<typeof vi.fn>).mockResolvedValue([{ ...baseTask }]);
+
+      const result = await managerWithRecovery.recoverReviewTasksWithFailedPreMergeSteps();
+
+      expect(result).toBe(1);
+      expect(store.updateTask).toHaveBeenCalledWith("FN-1572", { postReviewFixCount: 1 });
+      expect(recoverFn).toHaveBeenCalledWith(expect.objectContaining({ id: "FN-1572" }));
+      expect(store.logEntry).toHaveBeenCalledWith(
+        "FN-1572",
+        expect.stringContaining("Auto-reviving in-review task"),
+      );
+
+      managerWithRecovery.stop();
+    });
+
+    it("skips tasks whose postReviewFixCount has reached maxPostReviewFixes", async () => {
+      const recoverFn = vi.fn().mockResolvedValue(true);
+      const managerWithRecovery = new SelfHealingManager(store, {
+        rootDir: "/tmp/test-project",
+        recoverFailedPreMergeStep: recoverFn,
+      });
+      (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+        maxPostReviewFixes: 2,
+      });
+      (store.listTasks as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { ...baseTask, postReviewFixCount: 2 },
+      ]);
+
+      const result = await managerWithRecovery.recoverReviewTasksWithFailedPreMergeSteps();
+
+      expect(result).toBe(0);
+      expect(recoverFn).not.toHaveBeenCalled();
+      expect(store.updateTask).not.toHaveBeenCalled();
+
+      managerWithRecovery.stop();
+    });
+
+    it("no-ops when recoverFailedPreMergeStep callback is not supplied", async () => {
+      const managerWithoutCallback = new SelfHealingManager(store, {
+        rootDir: "/tmp/test-project",
+      });
+      (store.listTasks as ReturnType<typeof vi.fn>).mockResolvedValue([{ ...baseTask }]);
+
+      const result = await managerWithoutCallback.recoverReviewTasksWithFailedPreMergeSteps();
+
+      expect(result).toBe(0);
+      expect(store.listTasks).not.toHaveBeenCalled();
+      expect(store.updateTask).not.toHaveBeenCalled();
+
+      managerWithoutCallback.stop();
+    });
+
+    it("skips tasks without a worktree (cannot re-execute safely)", async () => {
+      const recoverFn = vi.fn().mockResolvedValue(true);
+      const managerWithRecovery = new SelfHealingManager(store, {
+        rootDir: "/tmp/test-project",
+        recoverFailedPreMergeStep: recoverFn,
+      });
+      (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+        maxPostReviewFixes: 1,
+      });
+      (store.listTasks as ReturnType<typeof vi.fn>).mockResolvedValue([
+        { ...baseTask, worktree: undefined },
+      ]);
+
+      const result = await managerWithRecovery.recoverReviewTasksWithFailedPreMergeSteps();
+
+      expect(result).toBe(0);
+      expect(recoverFn).not.toHaveBeenCalled();
+
+      managerWithRecovery.stop();
+    });
+
+    it("skips tasks already executing (avoid double-send-back while a run is in flight)", async () => {
+      const recoverFn = vi.fn().mockResolvedValue(true);
+      const managerWithRecovery = new SelfHealingManager(store, {
+        rootDir: "/tmp/test-project",
+        recoverFailedPreMergeStep: recoverFn,
+        getExecutingTaskIds: () => new Set(["FN-1572"]),
+      });
+      (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+        maxPostReviewFixes: 1,
+      });
+      (store.listTasks as ReturnType<typeof vi.fn>).mockResolvedValue([{ ...baseTask }]);
+
+      const result = await managerWithRecovery.recoverReviewTasksWithFailedPreMergeSteps();
+
+      expect(result).toBe(0);
+      expect(recoverFn).not.toHaveBeenCalled();
+
+      managerWithRecovery.stop();
+    });
+
+    it("leaves tasks with non-pre-merge blockers alone (e.g. incomplete steps)", async () => {
+      const recoverFn = vi.fn().mockResolvedValue(true);
+      const managerWithRecovery = new SelfHealingManager(store, {
+        rootDir: "/tmp/test-project",
+        recoverFailedPreMergeStep: recoverFn,
+      });
+      (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+        maxPostReviewFixes: 1,
+      });
+      (store.listTasks as ReturnType<typeof vi.fn>).mockResolvedValue([
+        {
+          ...baseTask,
+          // Task has a failed WS *and* an incomplete step — the "incomplete
+          // steps" blocker wins in getTaskMergeBlocker, so this scan should
+          // defer to recoverStaleIncompleteReviewTasks instead.
+          steps: [
+            { name: "Preflight", status: "done" as const },
+            { name: "Implementation", status: "in-progress" as const },
+          ],
+        },
+      ]);
+
+      const result = await managerWithRecovery.recoverReviewTasksWithFailedPreMergeSteps();
+
+      expect(result).toBe(0);
+      expect(recoverFn).not.toHaveBeenCalled();
+
+      managerWithRecovery.stop();
+    });
+
+    it("disables itself when maxPostReviewFixes is 0", async () => {
+      const recoverFn = vi.fn().mockResolvedValue(true);
+      const managerWithRecovery = new SelfHealingManager(store, {
+        rootDir: "/tmp/test-project",
+        recoverFailedPreMergeStep: recoverFn,
+      });
+      (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+        maxPostReviewFixes: 0,
+      });
+      (store.listTasks as ReturnType<typeof vi.fn>).mockResolvedValue([{ ...baseTask }]);
+
+      const result = await managerWithRecovery.recoverReviewTasksWithFailedPreMergeSteps();
+
+      expect(result).toBe(0);
+      expect(recoverFn).not.toHaveBeenCalled();
+
+      managerWithRecovery.stop();
+    });
+  });
+
   describe("recoverOrphanedExecutions", () => {
     it("requeues in-progress tasks whose reserved worktree is missing", async () => {
       const getExecuting = vi.fn().mockReturnValue(new Set<string>());

@@ -59,7 +59,7 @@ export function fromJson<T>(json: string | null | undefined): T | undefined {
 
 // ── Schema Definition ────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 37;
+const SCHEMA_VERSION = 38;
 
 function normalizeTaskComments(
   steeringComments: SteeringComment[] | undefined,
@@ -1467,6 +1467,15 @@ export class Database {
     if (version < 37) {
       this.applyMigration(37, () => {
         this.addColumnIfMissing("mission_validator_runs", "taskId", "TEXT");
+      });
+    }
+
+    if (version < 38) {
+      // Tracks self-healing auto-revivals of in-review tasks whose pre-merge
+      // workflow steps failed. Bounded by settings.maxPostReviewFixes so a
+      // persistently-failing verifier cannot ping-pong a task forever.
+      this.applyMigration(38, () => {
+        this.addColumnIfMissing("tasks", "postReviewFixCount", "INTEGER DEFAULT 0");
       });
     }
 

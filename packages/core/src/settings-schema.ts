@@ -103,6 +103,7 @@ export const DEFAULT_PROJECT_SETTINGS = {
   autoUnpauseBaseDelayMs: 300_000,
   autoUnpauseMaxDelayMs: 3_600_000,
   maxStuckKills: 6,
+  maxPostReviewFixes: 1,
   maxSpawnedAgentsPerParent: 5,
   maxSpawnedAgentsGlobal: 20,
   maintenanceIntervalMs: 900_000,

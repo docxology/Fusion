@@ -820,6 +820,55 @@ export class TaskExecutor {
   }
 
   /**
+   * Auto-revive an `in-review` task whose pre-merge workflow step(s) failed, by
+   * replaying the same send-back-for-fix flow the executor uses during a live
+   * run. Invoked by SelfHealingManager's `recoverReviewTasksWithFailedPreMergeSteps`
+   * scan when a task is parked in review with a failed pre-merge step and no
+   * active session.
+   *
+   * Picks the latest failed pre-merge workflow step result (there is usually only
+   * one, but if several ran we want the most recent), injects its feedback into
+   * `PROMPT.md`, resets steps, and schedules todo → in-progress. The call site
+   * is responsible for enforcing the `maxPostReviewFixes` budget before invoking
+   * this method — this method itself does no accounting.
+   *
+   * @returns true when the task was sent back, false when no eligible failed
+   *          step exists (caller should skip).
+   */
+  async recoverFailedPreMergeWorkflowStep(task: Task): Promise<boolean> {
+    try {
+      const failed = (task.workflowStepResults ?? [])
+        .filter((r) => (r.phase || "pre-merge") === "pre-merge" && r.status === "failed")
+        .sort((a, b) => {
+          const aTs = Date.parse(a.completedAt || a.startedAt || "");
+          const bTs = Date.parse(b.completedAt || b.startedAt || "");
+          return (Number.isFinite(bTs) ? bTs : 0) - (Number.isFinite(aTs) ? aTs : 0);
+        });
+      const target = failed[0];
+      if (!target) {
+        executorLog.warn(`${task.id}: no failed pre-merge workflow step to recover from`);
+        return false;
+      }
+
+      const feedback = target.output?.trim() || "(no feedback captured)";
+      const stepName = target.workflowStepName || target.workflowStepId || "Unknown";
+
+      await this.sendTaskBackForFix(
+        task,
+        task.worktree ?? "",
+        feedback,
+        stepName,
+        `Auto-revived from in-review: pre-merge workflow step "${stepName}" had failed`,
+      );
+      return true;
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      executorLog.error(`Failed to recover failed pre-merge workflow step for ${task.id}: ${errorMessage}`);
+      return false;
+    }
+  }
+
+  /**
    * Resume orphaned in-progress tasks (e.g., after crash/restart).
    * Call once after engine startup.
    *

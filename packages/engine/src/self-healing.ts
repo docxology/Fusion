@@ -59,6 +59,14 @@ export interface SelfHealingOptions {
    * Called before recovery checks so stale entries don't block recovery.
    */
   evictStaleTriageProcessing?: () => Set<string>;
+  /**
+   * Auto-revive an `in-review` task whose pre-merge workflow step failed.
+   * Delegates to the executor, which injects the failure feedback into
+   * `PROMPT.md`, resets steps, and schedules todo → in-progress.
+   *
+   * Should return true if the task was successfully sent back, false otherwise.
+   */
+  recoverFailedPreMergeStep?: (task: Task) => Promise<boolean>;
 }
 
 const APPROVED_TRIAGE_RECOVERY_GRACE_MS = 60_000;
@@ -143,6 +151,7 @@ export class SelfHealingManager {
     await this.recoverNoProgressNoTaskDoneFailures();
     await this.recoverCompletedTasks();
     await this.recoverStaleIncompleteReviewTasks();
+    await this.recoverReviewTasksWithFailedPreMergeSteps();
     await this.recoverInterruptedMergingTasks();
     await this.recoverMisclassifiedFailures();
     await this.recoverOrphanedExecutions();
@@ -477,6 +486,7 @@ export class SelfHealingManager {
       const batch2Results = await Promise.allSettled([
         this.recoverCompletedTasks(),
         this.recoverStaleIncompleteReviewTasks(),
+        this.recoverReviewTasksWithFailedPreMergeSteps(),
         this.recoverInterruptedMergingTasks(),
         this.recoverMergeableReviewTasks(),
         this.recoverMergedReviewTasks(),
@@ -662,6 +672,106 @@ export class SelfHealingManager {
       return recovered;
     } catch (err: unknown) { const errorMessage = err instanceof Error ? err.message : String(err);
       log.error(`Mergeable review recovery failed: ${errorMessage}`);
+      return 0;
+    }
+  }
+
+  /**
+   * Recover `in-review` tasks parked by a failed pre-merge workflow step.
+   *
+   * When a pre-merge workflow step (e.g. Browser Verification) fails during an
+   * active executor run, `executor.handleWorkflowStepFailure` retries up to
+   * `MAX_WORKFLOW_STEP_RETRIES` times in-session. If all retries exhaust the
+   * task ends up in `in-review` with the failed workflow step result still on
+   * record, which `getTaskMergeBlocker` correctly treats as a merge block —
+   * leaving the task stranded with no live session to un-stick it.
+   *
+   * This scan delegates back to the executor's `recoverFailedPreMergeWorkflowStep`
+   * path (which reuses the same `sendTaskBackForFix` flow the executor uses
+   * internally) so the agent gets another attempt with the failure feedback
+   * injected into `PROMPT.md`. Bounded by `settings.maxPostReviewFixes` and the
+   * per-task `postReviewFixCount` so a persistently-failing verifier cannot
+   * ping-pong a task forever.
+   *
+   * @returns Number of tasks sent back for fix
+   */
+  async recoverReviewTasksWithFailedPreMergeSteps(): Promise<number> {
+    const recoverFn = this.options.recoverFailedPreMergeStep;
+    if (!recoverFn) return 0;
+
+    try {
+      const settings = await this.store.getSettings();
+      const maxFixes = settings.maxPostReviewFixes ?? 1;
+      if (!Number.isFinite(maxFixes) || maxFixes <= 0) return 0;
+
+      const tasks = await this.store.listTasks({ column: "in-review" });
+      const executingIds = this.options.getExecutingTaskIds?.() ?? new Set<string>();
+
+      const candidates = tasks.filter((task) => {
+        if (task.column !== "in-review") return false;
+        if (task.paused) return false;
+        // Preserve terminal/human-handoff statuses (failed, awaiting-user-review,
+        // merging, etc.). Only revive tasks that are otherwise idle.
+        if (task.status) return false;
+        if (executingIds.has(task.id)) return false;
+        if ((task.postReviewFixCount ?? 0) >= maxFixes) return false;
+
+        // Must have at least one failed pre-merge workflow step result.
+        const hasFailedPreMerge = (task.workflowStepResults ?? []).some(
+          (r) => (r.phase || "pre-merge") === "pre-merge" && r.status === "failed",
+        );
+        if (!hasFailedPreMerge) return false;
+
+        // Merge must be blocked *specifically* by the failed pre-merge step —
+        // not by an unrelated condition (incomplete steps, etc.) that is
+        // already handled by a dedicated scan.
+        const blocker = getTaskMergeBlocker(task);
+        if (blocker !== "task has failed pre-merge workflow steps") return false;
+
+        // The retry flow injects into PROMPT.md + re-executes on the worktree.
+        // If the worktree was cleaned up we can't reliably resume here; leave
+        // such tasks for human intervention.
+        if (!task.worktree) return false;
+
+        return true;
+      });
+
+      if (candidates.length === 0) return 0;
+
+      log.warn(`Found ${candidates.length} in-review task(s) with failed pre-merge workflow steps — auto-reviving`);
+
+      let recovered = 0;
+      for (const task of candidates) {
+        const nextCount = (task.postReviewFixCount ?? 0) + 1;
+        try {
+          // Increment the counter BEFORE delegating so that even if the
+          // executor path crashes or races, the budget is still consumed and
+          // we can't enter an infinite revival loop.
+          await this.store.updateTask(task.id, { postReviewFixCount: nextCount });
+          await this.store.logEntry(
+            task.id,
+            `Auto-reviving in-review task with failed pre-merge workflow step (attempt ${nextCount}/${maxFixes})`,
+          );
+          const sentBack = await recoverFn(task);
+          if (sentBack) {
+            log.log(`Revived ${task.id}: sent back for fix (${nextCount}/${maxFixes})`);
+            recovered++;
+          } else {
+            log.warn(`Revival of ${task.id} was skipped by executor — budget already consumed`);
+          }
+        } catch (err: unknown) {
+          const errorMessage = err instanceof Error ? err.message : String(err);
+          log.error(`Failed to revive ${task.id}: ${errorMessage}`);
+        }
+      }
+
+      if (recovered > 0) {
+        log.log(`Auto-revived ${recovered} in-review task(s) for pre-merge workflow step fix`);
+      }
+      return recovered;
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      log.error(`Failed pre-merge workflow step revival failed: ${errorMessage}`);
       return 0;
     }
   }

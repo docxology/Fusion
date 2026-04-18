@@ -723,6 +723,12 @@ export interface Task {
    *  Incremented by the self-healing manager on each stuck kill. When this reaches
    *  `maxStuckKills`, the task is marked as permanently failed instead of re-queued. */
   stuckKillCount?: number;
+  /** Number of times the self-healing manager has auto-revived this task from
+   *  `in-review` after a failed pre-merge workflow step. Incremented each time the
+   *  `recoverReviewTasksWithFailedPreMergeSteps` scan sends the task back with the
+   *  failure feedback injected. Capped by `maxPostReviewFixes`; when exhausted the
+   *  task remains parked in `in-review` for human intervention. */
+  postReviewFixCount?: number;
   /** Number of bounded recovery retry attempts for transient executor/triage failures.
    *  Distinct from `mergeRetries` (merge-conflict-specific). Incremented by the
    *  recovery-policy module on each recoverable failure; cleared when work restarts
@@ -1185,6 +1191,11 @@ export interface ProjectSettings {
   /** Maximum number of times the stuck-task detector can kill and re-queue a task
    *  before it is marked as permanently failed. Default: 6. */
   maxStuckKills?: number;
+  /** Maximum number of times the self-healing manager may auto-revive a task parked
+   *  in `in-review` with a failed pre-merge workflow step. Each revival injects the
+   *  failure feedback into `PROMPT.md`, resets steps, and sends the task back through
+   *  the normal todo → in-progress flow. Set to 0 to disable. Default: 1. */
+  maxPostReviewFixes?: number;
   /** Maximum number of child agents a single parent agent can spawn.
    *  Limits the fan-out per executor task to prevent resource exhaustion.
    *  Default: 5. */
