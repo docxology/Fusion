@@ -13,6 +13,8 @@ import { CustomModelDropdown } from "./CustomModelDropdown";
 import { AgentMentionPopup } from "./AgentMentionPopup";
 import { KB_AGENT_ID, useQuickChat, type ChatMessageInfo } from "../hooks/useQuickChat";
 import { useAgents } from "../hooks/useAgents";
+import { FileMentionPopup } from "./FileMentionPopup";
+import { useFileMention } from "../hooks/useFileMention";
 
 interface QuickChatFABProps {
   projectId?: string;
@@ -329,6 +331,26 @@ export function QuickChatFAB({
   const [mentionHighlightIndex, setMentionHighlightIndex] = useState(0);
   const [mentionStartPos, setMentionStartPos] = useState(-1);
 
+  // File mention state and hook
+  const [fileMentionPopupVisible, setFileMentionPopupVisible] = useState(false);
+  const [fileMentionPosition, setFileMentionPosition] = useState({ top: 0, left: 0 });
+  const fileMention = useFileMention({ projectId });
+
+  // Calculate popup position based on caret position in input
+  const updateFileMentionPosition = useCallback((input: HTMLInputElement | null) => {
+    if (!input || !fileMention.mentionActive) return;
+
+    // Get input position
+    const rect = input.getBoundingClientRect();
+
+    // Position above the input, using viewport coordinates
+    // The popup is absolutely positioned, so we use window coordinates
+    setFileMentionPosition({
+      top: rect.top - 260, // Popup appears above with gap (accounting for popup height)
+      left: rect.left + 8, // Small left offset
+    });
+  }, [fileMention.mentionActive]);
+
   // Track if we just finished a drag (to prevent click from firing after drag)
   const didDragRef = useRef(false);
   const modelsRequestedRef = useRef(false);
@@ -621,8 +643,15 @@ export function QuickChatFAB({
       mentionCursorPosRef.current = cursorPos;
       setMessageInput(nextValue);
       updateMentionState(nextValue, cursorPos);
+
+      // Detect file mentions
+      fileMention.detectMention(nextValue, cursorPos);
+      setFileMentionPopupVisible(fileMention.mentionActive);
+      if (fileMention.mentionActive) {
+        updateFileMentionPosition(event.target);
+      }
     },
-    [updateMentionState],
+    [updateMentionState, fileMention, updateFileMentionPosition],
   );
 
   const handleInputBlur = useCallback(() => {
@@ -634,9 +663,11 @@ export function QuickChatFAB({
       setMentionPopupVisible(false);
       setMentionFilter("");
       setMentionStartPos(-1);
+      setFileMentionPopupVisible(false);
+      fileMention.dismissMention();
       hideMentionPopupTimeoutRef.current = null;
     }, 120);
-  }, []);
+  }, [fileMention]);
 
   const handleInputFocus = useCallback(() => {
     if (hideMentionPopupTimeoutRef.current !== null) {
@@ -651,8 +682,15 @@ export function QuickChatFAB({
       const cursorPos = input.selectionStart ?? input.value.length;
       mentionCursorPosRef.current = cursorPos;
       updateMentionState(input.value, cursorPos);
+
+      // Detect file mentions
+      fileMention.detectMention(input.value, cursorPos);
+      setFileMentionPopupVisible(fileMention.mentionActive);
+      if (fileMention.mentionActive) {
+        updateFileMentionPosition(input);
+      }
     },
-    [updateMentionState],
+    [updateMentionState, fileMention, updateFileMentionPosition],
   );
 
   const handleInputKeyUp = useCallback(
@@ -712,6 +750,22 @@ export function QuickChatFAB({
     (event: ReactKeyboardEvent<HTMLInputElement>) => {
       mentionCursorPosRef.current = event.currentTarget.selectionStart ?? mentionCursorPosRef.current;
 
+      // Handle file mention popup keyboard navigation first
+      if (fileMention.mentionActive && fileMention.files.length > 0) {
+        fileMention.handleKeyDown(event, messageInput);
+        if (event.key === "Enter" || event.key === "Tab") {
+          // Select the highlighted file
+          const file = fileMention.files[fileMention.selectedIndex];
+          if (file) {
+            const newText = fileMention.selectFile(file, messageInput);
+            setMessageInput(newText);
+            fileMention.dismissMention();
+            setFileMentionPopupVisible(false);
+          }
+        }
+        return;
+      }
+
       if (mentionPopupVisible && event.key === "ArrowDown") {
         event.preventDefault();
         if (filteredMentionAgents.length > 0) {
@@ -758,6 +812,8 @@ export function QuickChatFAB({
       mentionHighlightIndex,
       handleMentionSelect,
       handleSendMessage,
+      fileMention,
+      messageInput,
     ],
   );
 
@@ -953,6 +1009,20 @@ export function QuickChatFAB({
                 visible={mentionPopupVisible}
                 onSelect={handleMentionSelect}
                 position="above"
+              />
+              <FileMentionPopup
+                visible={fileMention.mentionActive && !mentionPopupVisible}
+                position={fileMentionPosition}
+                files={fileMention.files}
+                selectedIndex={fileMention.selectedIndex}
+                onSelect={(file) => {
+                  const newText = fileMention.selectFile(file, messageInput);
+                  setMessageInput(newText);
+                  fileMention.dismissMention();
+                  setFileMentionPopupVisible(false);
+                  inputRef.current?.focus();
+                }}
+                loading={fileMention.loading}
               />
             </div>
             <button

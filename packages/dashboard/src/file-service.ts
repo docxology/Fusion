@@ -1,5 +1,6 @@
 import { join, resolve, relative, dirname, basename } from "node:path";
 import { readdir, readFile as fsReadFile, writeFile as fsWriteFile, stat, copyFile as fsCopyFile, rename as fsRename, rm as fsRm, mkdir, access } from "node:fs/promises";
+import type { Dirent } from "node:fs";
 import type { TaskStore } from "@fusion/core";
 
 /**
@@ -886,6 +887,84 @@ export async function getWorkspaceFolderForZip(
     absolutePath: resolvedPath,
     dirName: basename(resolvedPath),
   };
+}
+
+/**
+ * File search result.
+ */
+export interface FileSearchResult {
+  files: Array<{ path: string; name: string }>;
+}
+
+/**
+ * Search for files matching a query in a workspace.
+ *
+ * @param store - The TaskStore instance
+ * @param workspace - The workspace identifier ("project" or task ID)
+ * @param query - Case-insensitive substring match on filename
+ * @returns File search results with path and name
+ * @throws FileServiceError on validation or filesystem errors
+ */
+export async function searchWorkspaceFiles(
+  store: TaskStore,
+  workspace: WorkspaceId,
+  query: string,
+): Promise<FileSearchResult> {
+  const workspaceBase = await getWorkspaceBasePath(store, workspace);
+
+  // Excluded directories that should not be traversed
+  const EXCLUDED_DIRS = new Set([
+    "node_modules",
+    ".git",
+    "dist",
+    ".fusion",
+    "__pycache__",
+    ".next",
+    ".cache",
+  ]);
+
+  const MAX_RESULTS = 50;
+  const results: Array<{ path: string; name: string }> = [];
+  const lowerQuery = query.toLowerCase();
+
+  async function walkDir(dir: string, relativeDir: string): Promise<void> {
+    if (results.length >= MAX_RESULTS) return;
+
+    let entries: Dirent[];
+    try {
+      entries = await readdir(dir, { withFileTypes: true });
+    } catch {
+      return; // Skip inaccessible directories
+    }
+
+    for (const entry of entries) {
+      if (results.length >= MAX_RESULTS) return;
+
+      // Skip excluded directories
+      if (entry.isDirectory() && EXCLUDED_DIRS.has(entry.name as string)) {
+        continue;
+      }
+
+      const fullPath = join(dir, entry.name);
+      const relPath = join(relativeDir, entry.name);
+
+      if (entry.isFile()) {
+        // Case-insensitive substring match on filename
+        if ((entry.name as string).toLowerCase().includes(lowerQuery)) {
+          results.push({
+            path: relPath.replace(/\\/g, "/"), // Normalize backslashes for cross-platform
+            name: entry.name as string,
+          });
+        }
+      } else if (entry.isDirectory()) {
+        await walkDir(fullPath, relPath);
+      }
+    }
+  }
+
+  await walkDir(workspaceBase, "");
+
+  return { files: results };
 }
 
 /**

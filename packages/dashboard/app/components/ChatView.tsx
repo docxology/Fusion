@@ -17,6 +17,8 @@ import type { DiscoveredSkill } from "@fusion/dashboard";
 import type { ModelInfo } from "../api";
 import { CustomModelDropdown } from "./CustomModelDropdown";
 import { AgentMentionPopup } from "./AgentMentionPopup";
+import { FileMentionPopup } from "./FileMentionPopup";
+import { useFileMention } from "../hooks/useFileMention";
 
 export interface ChatViewProps {
   projectId?: string;
@@ -339,6 +341,28 @@ export function ChatView({ projectId, addToast }: ChatViewProps) {
   const [mentionHighlightIndex, setMentionHighlightIndex] = useState(0);
   const [mentionStartPos, setMentionStartPos] = useState(-1);
 
+  // File mention state and hook
+  const [fileMentionPopupVisible, setFileMentionPopupVisible] = useState(false);
+  const [fileMentionPosition, setFileMentionPosition] = useState({ top: 0, left: 0 });
+  const fileMentionRef = useRef<HTMLDivElement>(null);
+
+  const fileMention = useFileMention({ projectId });
+
+  // Calculate popup position based on caret position in textarea
+  const updateFileMentionPosition = useCallback((textarea: HTMLTextAreaElement | null) => {
+    if (!textarea || !fileMention.mentionActive) return;
+
+    // Get textarea position
+    const rect = textarea.getBoundingClientRect();
+
+    // Position above the textarea, using viewport coordinates
+    // The popup is absolutely positioned, so we use window coordinates
+    setFileMentionPosition({
+      top: rect.top - 260, // Popup appears above with gap (accounting for popup height)
+      left: rect.left + 8, // Small left offset
+    });
+  }, [fileMention.mentionActive]);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const hideSkillMenuTimeoutRef = useRef<number | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -583,6 +607,22 @@ export function ChatView({ projectId, addToast }: ChatViewProps) {
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
       mentionCursorPosRef.current = e.currentTarget.selectionStart ?? mentionCursorPosRef.current;
 
+      // Handle file mention popup keyboard navigation first
+      if (fileMention.mentionActive && fileMention.files.length > 0) {
+        fileMention.handleKeyDown(e, messageInput);
+        if (e.key === "Enter" || e.key === "Tab") {
+          // Select the highlighted file
+          const file = fileMention.files[fileMention.selectedIndex];
+          if (file) {
+            const newText = fileMention.selectFile(file, messageInput);
+            setMessageInput(newText);
+            fileMention.dismissMention();
+            setFileMentionPopupVisible(false);
+          }
+        }
+        return;
+      }
+
       if (mentionPopupVisible && e.key === "ArrowDown") {
         e.preventDefault();
         if (filteredMentionAgents.length > 0) {
@@ -666,6 +706,8 @@ export function ChatView({ projectId, addToast }: ChatViewProps) {
       highlightedSkillIndex,
       handleSkillSelect,
       handleSend,
+      fileMention,
+      messageInput,
     ],
   );
 
@@ -703,6 +745,13 @@ export function ChatView({ projectId, addToast }: ChatViewProps) {
 
     updateMentionState(nextValue, cursorPos);
 
+    // Detect file mentions
+    fileMention.detectMention(nextValue, cursorPos);
+    setFileMentionPopupVisible(fileMention.mentionActive);
+    if (fileMention.mentionActive) {
+      updateFileMentionPosition(textarea);
+    }
+
     textarea.style.height = "auto";
     textarea.style.height = `${Math.min(textarea.scrollHeight, 120)}px`;
   }, [updateMentionState]);
@@ -713,8 +762,15 @@ export function ChatView({ projectId, addToast }: ChatViewProps) {
       const cursorPos = textarea.selectionStart ?? textarea.value.length;
       mentionCursorPosRef.current = cursorPos;
       updateMentionState(textarea.value, cursorPos);
+
+      // Detect file mentions
+      fileMention.detectMention(textarea.value, cursorPos);
+      setFileMentionPopupVisible(fileMention.mentionActive);
+      if (fileMention.mentionActive) {
+        updateFileMentionPosition(textarea);
+      }
     },
-    [updateMentionState],
+    [updateMentionState, fileMention, updateFileMentionPosition],
   );
 
   const handleInputKeyUp = useCallback(
@@ -737,9 +793,11 @@ export function ChatView({ projectId, addToast }: ChatViewProps) {
       setMentionPopupVisible(false);
       setMentionFilter("");
       setMentionStartPos(-1);
+      setFileMentionPopupVisible(false);
+      fileMention.dismissMention();
       hideSkillMenuTimeoutRef.current = null;
     }, 120);
-  }, []);
+  }, [fileMention]);
 
   const handleInputFocus = useCallback(() => {
     if (hideSkillMenuTimeoutRef.current !== null) {
@@ -1083,6 +1141,20 @@ export function ChatView({ projectId, addToast }: ChatViewProps) {
                 visible={mentionPopupVisible}
                 onSelect={handleMentionSelect}
                 position="below"
+              />
+              <FileMentionPopup
+                visible={fileMention.mentionActive && !mentionPopupVisible}
+                position={fileMentionPosition}
+                files={fileMention.files}
+                selectedIndex={fileMention.selectedIndex}
+                onSelect={(file) => {
+                  const newText = fileMention.selectFile(file, messageInput);
+                  setMessageInput(newText);
+                  fileMention.dismissMention();
+                  setFileMentionPopupVisible(false);
+                  inputRef.current?.focus();
+                }}
+                loading={fileMention.loading}
               />
             </div>
             <button

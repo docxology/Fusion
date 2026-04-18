@@ -31658,13 +31658,126 @@ html .column.drag-over * {
   color: var(--text-dim);
 }
 
-.chat-mention-chip {
-  display: inline;
-  background: color-mix(in srgb, var(--accent) 15%, transparent);
+.file-mention-popup-loading .spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border);
+  border-top-color: var(--text-muted);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* === FileMentionPopup === */
+.file-mention-popup {
+  position: absolute;
+  z-index: 250;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  min-width: 220px;
+  max-width: 320px;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: var(--space-xs) 0;
+}
+
+.file-mention-popup-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.file-mention-popup-item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  cursor: pointer;
   color: var(--text);
-  padding: 1px 4px;
-  border-radius: var(--radius-sm);
+  font-size: 13px;
+}
+
+.file-mention-popup-item:hover {
+  background: var(--card-hover);
+}
+
+.file-mention-popup-item--selected {
+  background: color-mix(in srgb, var(--todo) 15%, transparent);
+}
+
+.file-mention-popup-item:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  background: var(--card-hover);
+}
+
+.file-mention-popup-icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+
+.file-mention-popup-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
+
+.file-mention-popup-item-name {
   font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-mention-popup-item-path {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-mention-popup-empty {
+  padding: var(--space-lg) var(--space-md);
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.file-mention-popup-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-lg) var(--space-md);
+}
+
+.file-mention-popup-loading .spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border);
+  border-top-color: var(--text-muted);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @media (max-width: 768px) {
@@ -36603,7 +36716,26 @@ html .column.drag-over * {
   margin-top: var(--space-lg);
 }
 
-/* Mobile responsive */
+/* Mobile responsive for file mention popup */
+@media (max-width: 768px) {
+  .file-mention-popup {
+    max-height: 200px;
+  }
+
+  .file-mention-popup-item {
+    min-height: 36px;
+    padding: 10px 12px;
+  }
+
+  .agent-mention-popup {
+    max-width: 280px;
+    min-width: 200px;
+  }
+}
+
+/* === Memory View Styles === */
+
+/* Mobile responsive for memory view */
 @media (max-width: 768px) {
   .memory-view {
     padding: var(--space-md);

@@ -24,7 +24,7 @@ import { GitHubClient, parseBadgeUrl } from "./github.js";
 import { githubRateLimiter } from "./github-poll.js";
 import { terminalSessionManager } from "./terminal.js";
 import { getTerminalService } from "./terminal-service.js";
-import { listFiles, readFile, writeFile, listWorkspaceFiles, readWorkspaceFile, writeWorkspaceFile, copyWorkspaceFile, moveWorkspaceFile, deleteWorkspaceFile, renameWorkspaceFile, getWorkspaceFileForDownload, getWorkspaceFolderForZip, FileServiceError } from "./file-service.js";
+import { listFiles, readFile, writeFile, listWorkspaceFiles, readWorkspaceFile, writeWorkspaceFile, searchWorkspaceFiles, copyWorkspaceFile, moveWorkspaceFile, deleteWorkspaceFile, renameWorkspaceFile, getWorkspaceFileForDownload, getWorkspaceFolderForZip, FileServiceError } from "./file-service.js";
 import { clearUsageCache, fetchAllProviderUsage } from "./usage.js";
 import {
   getGitHubAppConfig,
@@ -7788,6 +7788,43 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
       const { path: subPath, workspace } = req.query;
       const workspaceId = typeof workspace === "string" && workspace.length > 0 ? workspace : "project";
       const result = await listWorkspaceFiles(scopedStore, workspaceId, typeof subPath === "string" ? subPath : undefined);
+      res.json(result);
+    } catch (err: unknown) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      if (err instanceof FileServiceError) {
+        const status = err.code === "ENOTASK" ? 404
+          : err.code === "ENOENT" ? 404
+          : err.code === "EACCES" ? 403
+          : 400;
+        throw new ApiError(status, err.message, { code: err.code });
+      } else {
+        rethrowAsApiError(err, "Internal server error");
+      }
+    }
+  });
+
+  /**
+   * GET /api/files/search
+   * Search for files matching a query in a workspace.
+   * Query params: q (required, search query), workspace (default "project"), projectId (optional)
+   * Returns: { files: Array<{ path: string; name: string }> }
+   */
+  router.get("/files/search", async (req, res) => {
+    try {
+      const { store: scopedStore } = await getProjectContext(req);
+      const q = req.query.q;
+
+      if (!q || typeof q !== "string" || q.trim().length === 0) {
+        throw new ApiError(400, "Query parameter 'q' is required and must be a non-empty string");
+      }
+
+      const workspace = typeof req.query.workspace === "string" && req.query.workspace.length > 0
+        ? req.query.workspace
+        : "project";
+
+      const result = await searchWorkspaceFiles(scopedStore, workspace, q);
       res.json(result);
     } catch (err: unknown) {
       if (err instanceof ApiError) {

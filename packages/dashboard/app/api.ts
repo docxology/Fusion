@@ -1588,6 +1588,23 @@ export function saveWorkspaceFileContent(workspace: string, filePath: string, co
   });
 }
 
+/** File search result. */
+export interface FileSearchResult {
+  files: Array<{ path: string; name: string }>;
+}
+
+/** Search for files matching a query in a workspace. */
+export function searchFiles(query: string, workspace?: string, projectId?: string): Promise<FileSearchResult> {
+  const params = new URLSearchParams({ q: query });
+  if (workspace) {
+    params.set("workspace", workspace);
+  }
+  if (projectId) {
+    params.set("projectId", projectId);
+  }
+  return api<FileSearchResult>(`/files/search?${params.toString()}`);
+}
+
 // --- Workspace File Operations API (Copy, Move, Delete, Rename, Download) ---
 
 /** File operation response for copy/move/delete/rename operations */

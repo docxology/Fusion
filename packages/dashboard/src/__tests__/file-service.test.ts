@@ -10,6 +10,7 @@ import {
   listWorkspaceFiles,
   readWorkspaceFile,
   writeWorkspaceFile,
+  searchWorkspaceFiles,
   copyWorkspaceFile,
   moveWorkspaceFile,
   deleteWorkspaceFile,
@@ -1311,5 +1312,121 @@ describe("moveWorkspaceFile EXDEV fallback", () => {
     expect(result.message).toContain("Moved");
     expect(mockCopyFile).toHaveBeenCalledWith("/project/file.ts", "/project/moved.ts");
     expect(mockRm).toHaveBeenCalledWith("/project/file.ts");
+  });
+});
+
+describe("searchWorkspaceFiles", () => {
+  const mockGetRootDir = vi.fn();
+  const mockStore = {
+    getRootDir: mockGetRootDir,
+  } as unknown as TaskStore;
+
+  beforeEach(() => {
+    mockGetRootDir.mockReset();
+    mockReaddir.mockReset();
+  });
+
+  it("returns matching files filtered by query", async () => {
+    mockGetRootDir.mockReturnValue("/project");
+
+    // Mock: root has one subdir and one file
+    mockReaddir.mockResolvedValueOnce([
+      { name: "src", isDirectory: () => true, isFile: () => false },
+      { name: "file.ts", isDirectory: () => false, isFile: () => true },
+    ] as Awaited<ReturnType<typeof import("node:fs/promises").readdir>>);
+
+    // Mock: src directory has a matching file
+    mockReaddir.mockResolvedValueOnce([
+      { name: "index.ts", isDirectory: () => false, isFile: () => true },
+    ] as Awaited<ReturnType<typeof import("node:fs/promises").readdir>>);
+
+    const result = await searchWorkspaceFiles(mockStore, "project", "index");
+    expect(result.files).toContainEqual({ path: "src/index.ts", name: "index.ts" });
+    expect(result.files).not.toContainEqual({ path: "file.ts", name: "file.ts" });
+  });
+
+  it("excludes common directories (node_modules, .git, etc.)", async () => {
+    mockGetRootDir.mockReturnValue("/project");
+
+    // Root has a subdir that will be excluded
+    mockReaddir.mockResolvedValueOnce([
+      { name: "node_modules", isDirectory: () => true, isFile: () => false },
+      { name: ".git", isDirectory: () => true, isFile: () => false },
+      { name: "src", isDirectory: () => true, isFile: () => false },
+    ] as Awaited<ReturnType<typeof import("node:fs/promises").readdir>>);
+
+    // Only src should be walked
+    mockReaddir.mockResolvedValueOnce([
+      { name: "app.ts", isDirectory: () => false, isFile: () => true },
+    ] as Awaited<ReturnType<typeof import("node:fs/promises").readdir>>);
+
+    const result = await searchWorkspaceFiles(mockStore, "project", "app");
+    expect(result.files).toContainEqual({ path: "src/app.ts", name: "app.ts" });
+    expect(mockReaddir).toHaveBeenCalledTimes(2); // root + src only
+  });
+
+  it("limits results to 50 matches maximum", async () => {
+    mockGetRootDir.mockReturnValue("/project");
+
+    // Return 60 files to test the limit
+    const manyFiles = Array.from({ length: 60 }, (_, i) => ({
+      name: `file${i}.ts`,
+      isDirectory: () => false,
+      isFile: () => true,
+    }));
+    mockReaddir.mockResolvedValueOnce(manyFiles as Awaited<ReturnType<typeof import("node:fs/promises").readdir>>);
+
+    const result = await searchWorkspaceFiles(mockStore, "project", "file");
+    expect(result.files.length).toBe(50);
+  });
+
+  it("does not throw when a subdirectory cannot be read", async () => {
+    mockGetRootDir.mockReturnValue("/project");
+
+    // Root has two directories
+    mockReaddir.mockResolvedValueOnce([
+      { name: "good", isDirectory: () => true, isFile: () => false },
+      { name: "bad", isDirectory: () => true, isFile: () => false },
+    ] as Awaited<ReturnType<typeof import("node:fs/promises").readdir>>);
+
+    // good/ directory is accessible and has a matching file
+    mockReaddir.mockResolvedValueOnce([
+      { name: "target.ts", isDirectory: () => false, isFile: () => true },
+    ] as Awaited<ReturnType<typeof import("node:fs/promises").readdir>>);
+
+    // bad/ directory throws EACCES
+    mockReaddir.mockRejectedValueOnce({ code: "EACCES" });
+
+    // Should complete without throwing
+    const result = await searchWorkspaceFiles(mockStore, "project", "target");
+    expect(result.files).toContainEqual({ path: "good/target.ts", name: "target.ts" });
+  });
+
+  it("returns empty array when no files match", async () => {
+    mockGetRootDir.mockReturnValue("/project");
+
+    mockReaddir.mockResolvedValueOnce([
+      { name: "src", isDirectory: () => true, isFile: () => false },
+    ] as Awaited<ReturnType<typeof import("node:fs/promises").readdir>>);
+
+    // src directory has no matching files
+    mockReaddir.mockResolvedValueOnce([
+      { name: "other.ts", isDirectory: () => false, isFile: () => true },
+    ] as Awaited<ReturnType<typeof import("node:fs/promises").readdir>>);
+
+    const result = await searchWorkspaceFiles(mockStore, "project", "nonexistent");
+    expect(result.files).toEqual([]);
+  });
+
+  it("supports case-insensitive matching", async () => {
+    mockGetRootDir.mockReturnValue("/project");
+
+    mockReaddir.mockResolvedValueOnce([
+      { name: "MyComponent.tsx", isDirectory: () => false, isFile: () => true },
+      { name: "another.ts", isDirectory: () => false, isFile: () => true },
+    ] as Awaited<ReturnType<typeof import("node:fs/promises").readdir>>);
+
+    const result = await searchWorkspaceFiles(mockStore, "project", "mycomp");
+    expect(result.files).toContainEqual({ path: "MyComponent.tsx", name: "MyComponent.tsx" });
   });
 });

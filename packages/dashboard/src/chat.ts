@@ -22,6 +22,8 @@ import type {
 } from "@fusion/core";
 import { summarizeTitle } from "@fusion/core";
 import { EventEmitter } from "node:events";
+import { join, resolve, relative } from "node:path";
+import { readFile } from "node:fs/promises";
 
 import { SessionEventBuffer } from "./sse-buffer.js";
 
@@ -75,6 +77,9 @@ const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 /** Max messages per IP per minute */
 const MAX_MESSAGES_PER_IP_PER_MINUTE = 30;
 
+/** Maximum file size for # mentions (50KB). Files larger than this are skipped. */
+const MAX_REFERENCED_FILE_SIZE = 50 * 1024;
+
 // ── Types ───────────────────────────────────────────────────────────────────
 
 /** SSE event types for chat streaming */
@@ -96,6 +101,105 @@ interface RateLimitEntry {
 
 /** Rate limiting state indexed by IP */
 const rateLimits = new Map<string, RateLimitEntry>();
+
+// ── File Reference Resolution ───────────────────────────────────────────────
+
+/**
+ * Validate that a resolved path stays within the base directory.
+ * Prevents path traversal attacks (e.g., ../../../etc/passwd).
+ * Mirrors the logic from file-service.ts validatePath().
+ */
+function validateFilePath(basePath: string, filePath: string): string {
+  // Reject paths with null bytes
+  if (filePath.includes("\0")) {
+    throw new Error(`Access denied: Invalid characters in path`);
+  }
+
+  // Decode URL-encoded characters for security check
+  const decodedPath = decodeURIComponent(filePath);
+
+  // Reject absolute paths
+  if (decodedPath.startsWith("/") || decodedPath.match(/^[a-zA-Z]:/)) {
+    throw new Error(`Access denied: Absolute paths not allowed`);
+  }
+
+  // Resolve the path against base path
+  const resolvedBase = resolve(basePath);
+  const resolvedPath = resolve(join(resolvedBase, decodedPath));
+
+  // Ensure the resolved path is within the base path
+  const relativePath = relative(resolvedBase, resolvedPath);
+
+  if (relativePath.startsWith("..") || relativePath.startsWith("../") || relativePath === "..") {
+    throw new Error(`Access denied: Path traversal detected`);
+  }
+
+  // Additional check: ensure resolved path actually starts with base
+  if (!resolvedPath.startsWith(resolvedBase)) {
+    throw new Error(`Access denied: Path outside allowed directory`);
+  }
+
+  return resolvedPath;
+}
+
+/**
+ * Resolve #file references from a message and inject their contents.
+ *
+ * Parses #path/to/file.ext patterns and reads matching file contents.
+ * Files larger than MAX_REFERENCED_FILE_SIZE are skipped.
+ * Invalid paths (traversal attempts) are silently skipped.
+ *
+ * @param content - The user message content
+ * @param rootDir - The project root directory
+ * @returns The content with file context blocks appended
+ */
+export async function resolveFileReferences(content: string, rootDir: string): Promise<string> {
+  // Regex to match #path/to/file.ext patterns (files must have an extension)
+  const fileMentionRegex = /#([a-zA-Z0-9._\-/]+\.[a-zA-Z0-9]+)/g;
+
+  // Find all unique file mentions
+  const matches = Array.from(content.matchAll(fileMentionRegex), (match) => match[1] ?? "");
+  const uniquePaths = [...new Set(matches)];
+
+  if (uniquePaths.length === 0) {
+    return content;
+  }
+
+  const resolvedFiles: Array<{ path: string; content: string }> = [];
+  const fsPromises = await import("node:fs/promises");
+
+  for (const filePath of uniquePaths) {
+    try {
+      const fullPath = validateFilePath(rootDir, filePath);
+
+      // Check file size before reading
+      const stats = await fsPromises.stat(fullPath);
+      if (!stats.isFile()) {
+        continue;
+      }
+      if (stats.size > MAX_REFERENCED_FILE_SIZE) {
+        continue;
+      }
+
+      const fileContent = await fsPromises.readFile(fullPath, "utf-8");
+      resolvedFiles.push({ path: filePath, content: fileContent });
+    } catch {
+      // Skip files that don't exist or have invalid paths
+      continue;
+    }
+  }
+
+  if (resolvedFiles.length === 0) {
+    return content;
+  }
+
+  // Build the augmented content with file context blocks
+  const fileContextBlocks = resolvedFiles
+    .map((file) => `[Referenced File: ${file.path}]\n${file.content}\n\n[/Referenced File: ${file.path}]`)
+    .join("\n\n");
+
+  return `${content}\n\n${fileContextBlocks}`;
+}
 
 // ── Chat Stream Manager ─────────────────────────────────────────────────────
 
@@ -518,6 +622,9 @@ export class ChatManager {
         (message) => message.role === "user" || message.role === "assistant",
       );
 
+      // Resolve #file references in the current message before sending to AI
+      const resolvedContent = await resolveFileReferences(content, this.rootDir);
+
       const promptContent = conversationMessages.length > 0
         ? [
             "## Previous Conversation",
@@ -529,9 +636,9 @@ export class ChatManager {
             "",
             "## Current Message",
             "",
-            content,
+            resolvedContent,
           ].join("\n")
-        : content;
+        : resolvedContent;
 
       // Create AI agent session
       agentResult = await createKbAgent({

@@ -11,6 +11,7 @@ vi.mock("../../api", () => ({
   fetchChatMessages: vi.fn(),
   streamChatResponse: vi.fn(),
   fetchModels: vi.fn(),
+  searchFiles: vi.fn().mockResolvedValue({ files: [] }),
 }));
 
 vi.mock("../../hooks/useAgents", () => ({
