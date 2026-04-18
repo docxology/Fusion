@@ -2899,15 +2899,14 @@ describe("ModelOnboardingModal progressive disclosure", () => {
     it("renders all 4 disclosure trigger buttons in AI Setup step", async () => {
       render(<ModelOnboardingModal onComplete={vi.fn()} addToast={vi.fn()} />);
 
+      // Wait for async provider/model loading to settle before asserting all disclosures
       await waitFor(() => {
         expect(screen.getByText("Set Up AI")).toBeTruthy();
+        expect(screen.getByText("What are AI providers?")).toBeTruthy();
+        expect(screen.getByText("How does login work?")).toBeTruthy();
+        expect(screen.getByText("What is an API key?")).toBeTruthy();
+        expect(screen.getByText("How do I choose a model?")).toBeTruthy();
       });
-
-      // Verify all 4 disclosures are present
-      expect(screen.getByText("What are AI providers?")).toBeTruthy();
-      expect(screen.getByText("How does login work?")).toBeTruthy();
-      expect(screen.getByText("What is an API key?")).toBeTruthy();
-      expect(screen.getByText("How do I choose a model?")).toBeTruthy();
     });
 
     it("clicking disclosure trigger expands content", async () => {
