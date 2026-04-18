@@ -12805,6 +12805,268 @@ describe("POST /api/memory/compact", () => {
   });
 });
 
+describe("GET /api/memory/insights", () => {
+  let store: TaskStore;
+  let rootDir: string;
+
+  beforeEach(() => {
+    rootDir = mkdtempSync(join(tmpdir(), "fusion-memory-insights-"));
+    mkdirSync(join(rootDir, ".fusion"), { recursive: true });
+    store = createMockStore({
+      getRootDir: vi.fn().mockReturnValue(rootDir),
+    });
+  });
+
+  afterEach(() => {
+    rmSync(rootDir, { recursive: true, force: true });
+  });
+
+  function buildApp() {
+    const app = express();
+    app.use(express.json());
+    app.use("/api", createApiRoutes(store));
+    return app;
+  }
+
+  it("returns 200 with content and exists:true when insights file exists", async () => {
+    // Insights file is at .fusion/memory-insights.md
+    writeFileSync(join(rootDir, ".fusion", "memory-insights.md"), "## Patterns\n- Pattern 1\n- Pattern 2");
+
+    const res = await GET(buildApp(), "/api/memory/insights");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty("content");
+    expect(res.body).toHaveProperty("exists", true);
+    expect(typeof res.body.content).toBe("string");
+  });
+
+  it("returns 200 with content:null and exists:false when insights file does not exist", async () => {
+    const res = await GET(buildApp(), "/api/memory/insights");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty("content", null);
+    expect(res.body).toHaveProperty("exists", false);
+  });
+});
+
+describe("PUT /api/memory/insights", () => {
+  let store: TaskStore;
+  let rootDir: string;
+
+  beforeEach(() => {
+    rootDir = mkdtempSync(join(tmpdir(), "fusion-memory-insights-write-"));
+    mkdirSync(join(rootDir, ".fusion"), { recursive: true });
+    store = createMockStore({
+      getRootDir: vi.fn().mockReturnValue(rootDir),
+    });
+  });
+
+  afterEach(() => {
+    rmSync(rootDir, { recursive: true, force: true });
+  });
+
+  function buildApp() {
+    const app = express();
+    app.use(express.json());
+    app.use("/api", createApiRoutes(store));
+    return app;
+  }
+
+  it("returns 200 with success:true for valid content", async () => {
+    const res = await REQUEST(
+      buildApp(),
+      "PUT",
+      "/api/memory/insights",
+      JSON.stringify({ content: "## Patterns\n- New insight" }),
+      { "Content-Type": "application/json" },
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty("success", true);
+
+    // Verify file was written (insights file is .fusion/memory-insights.md)
+    const insightsPath = join(rootDir, ".fusion", "memory-insights.md");
+    expect(existsSync(insightsPath)).toBe(true);
+  });
+
+  it("returns 400 when content is missing", async () => {
+    const res = await REQUEST(
+      buildApp(),
+      "PUT",
+      "/api/memory/insights",
+      JSON.stringify({}),
+      { "Content-Type": "application/json" },
+    );
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("content must be a string");
+  });
+
+  it("returns 400 when content is not a string", async () => {
+    const res = await REQUEST(
+      buildApp(),
+      "PUT",
+      "/api/memory/insights",
+      JSON.stringify({ content: 123 }),
+      { "Content-Type": "application/json" },
+    );
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("content must be a string");
+  });
+});
+
+describe("POST /api/memory/extract", () => {
+  let store: TaskStore;
+  let rootDir: string;
+
+  beforeEach(() => {
+    rootDir = mkdtempSync(join(tmpdir(), "fusion-memory-extract-"));
+    mkdirSync(join(rootDir, ".fusion"), { recursive: true });
+    store = createMockStore({
+      getRootDir: vi.fn().mockReturnValue(rootDir),
+    });
+  });
+
+  afterEach(() => {
+    rmSync(rootDir, { recursive: true, force: true });
+  });
+
+  function buildApp() {
+    const app = express();
+    app.use(express.json());
+    app.use("/api", createApiRoutes(store));
+    return app;
+  }
+
+  it("returns 400 when working memory is empty", async () => {
+    const res = await REQUEST(
+      buildApp(),
+      "POST",
+      "/api/memory/extract",
+      JSON.stringify({}),
+      { "Content-Type": "application/json" },
+    );
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("No working memory");
+  });
+
+  it("returns 200 with extraction result on success", async () => {
+    // Working memory is at .fusion/memory.md
+    writeFileSync(join(rootDir, ".fusion", "memory.md"), "Working memory content for extraction that is long enough.");
+
+    const res = await REQUEST(
+      buildApp(),
+      "POST",
+      "/api/memory/extract",
+      JSON.stringify({}),
+      { "Content-Type": "application/json" },
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty("success", true);
+    expect(res.body).toHaveProperty("summary");
+    expect(res.body).toHaveProperty("insightCount");
+    expect(res.body).toHaveProperty("pruned");
+  });
+});
+
+describe("GET /api/memory/audit", () => {
+  let store: TaskStore;
+  let rootDir: string;
+
+  beforeEach(() => {
+    rootDir = mkdtempSync(join(tmpdir(), "fusion-memory-audit-"));
+    mkdirSync(join(rootDir, ".fusion", "memory"), { recursive: true });
+    store = createMockStore({
+      getRootDir: vi.fn().mockReturnValue(rootDir),
+    });
+  });
+
+  afterEach(() => {
+    rmSync(rootDir, { recursive: true, force: true });
+  });
+
+  function buildApp() {
+    const app = express();
+    app.use(express.json());
+    app.use("/api", createApiRoutes(store));
+    return app;
+  }
+
+  it("returns 200 with audit report shape", async () => {
+    const res = await GET(buildApp(), "/api/memory/audit");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty("generatedAt");
+    expect(res.body).toHaveProperty("workingMemory");
+    expect(res.body).toHaveProperty("insightsMemory");
+    expect(res.body).toHaveProperty("extraction");
+    expect(res.body).toHaveProperty("pruning");
+    expect(res.body).toHaveProperty("checks");
+    expect(res.body).toHaveProperty("health");
+    expect(["healthy", "warning", "issues"]).toContain(res.body.health);
+  });
+
+  it("includes working memory stats in audit", async () => {
+    writeFileSync(join(rootDir, ".fusion", "memory", "MEMORY.md"), "# Working Memory\n\nSome content.");
+
+    const res = await GET(buildApp(), "/api/memory/audit");
+
+    expect(res.status).toBe(200);
+    expect(res.body.workingMemory).toHaveProperty("exists");
+    expect(res.body.workingMemory).toHaveProperty("size");
+    expect(res.body.workingMemory).toHaveProperty("sectionCount");
+  });
+});
+
+describe("GET /api/memory/stats", () => {
+  let store: TaskStore;
+  let rootDir: string;
+
+  beforeEach(() => {
+    rootDir = mkdtempSync(join(tmpdir(), "fusion-memory-stats-"));
+    mkdirSync(join(rootDir, ".fusion", "memory"), { recursive: true });
+    store = createMockStore({
+      getRootDir: vi.fn().mockReturnValue(rootDir),
+    });
+  });
+
+  afterEach(() => {
+    rmSync(rootDir, { recursive: true, force: true });
+  });
+
+  function buildApp() {
+    const app = express();
+    app.use(express.json());
+    app.use("/api", createApiRoutes(store));
+    return app;
+  }
+
+  it("returns 200 with workingMemorySize, insightsSize, and insightsExists", async () => {
+    writeFileSync(join(rootDir, ".fusion", "memory", "MEMORY.md"), "Working memory content.");
+
+    const res = await GET(buildApp(), "/api/memory/stats");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty("workingMemorySize");
+    expect(res.body).toHaveProperty("insightsSize");
+    expect(res.body).toHaveProperty("insightsExists");
+    expect(typeof res.body.workingMemorySize).toBe("number");
+    expect(typeof res.body.insightsSize).toBe("number");
+    expect(typeof res.body.insightsExists).toBe("boolean");
+  });
+
+  it("returns insightsExists:false when insights file does not exist", async () => {
+    const res = await GET(buildApp(), "/api/memory/stats");
+
+    expect(res.status).toBe(200);
+    expect(res.body.insightsExists).toBe(false);
+    expect(res.body.insightsSize).toBe(0);
+  });
+});
+
 describe("PUT /api/settings - memoryBackendType validation", () => {
   let store: TaskStore;
 

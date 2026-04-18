@@ -388,6 +388,99 @@ export function compactMemory(
   });
 }
 
+/** Memory audit report type (mirrors @fusion/core MemoryAuditReport) */
+export interface MemoryAuditReport {
+  generatedAt: string;
+  workingMemory: {
+    exists: boolean;
+    size: number;
+    sectionCount: number;
+    lastModified?: string;
+  };
+  insightsMemory: {
+    exists: boolean;
+    size: number;
+    insightCount: number;
+    categories: Record<string, number>;
+    lastUpdated?: string;
+  };
+  extraction: {
+    runAt: string;
+    success: boolean;
+    insightCount: number;
+    duplicateCount: number;
+    skippedCount: number;
+    summary: string;
+    error?: string;
+  };
+  pruning: {
+    applied: boolean;
+    reason: string;
+    sizeDelta: number;
+    originalSize: number;
+    newSize: number;
+  };
+  checks: Array<{
+    id: string;
+    name: string;
+    passed: boolean;
+    details: string;
+  }>;
+  health: "healthy" | "warning" | "issues";
+}
+
+/**
+ * Fetch memory insights content.
+ * Returns { content: string | null, exists: boolean }.
+ * content is null when no insights file exists yet.
+ */
+export function fetchMemoryInsights(projectId?: string): Promise<{ content: string | null; exists: boolean }> {
+  return api<{ content: string | null; exists: boolean }>(withProjectId("/memory/insights", projectId));
+}
+
+/**
+ * Save memory insights content.
+ * The insights file stores parsed long-term memory grouped by category.
+ */
+export function saveMemoryInsights(content: string, projectId?: string): Promise<{ success: boolean }> {
+  return api<{ success: boolean }>(withProjectId("/memory/insights", projectId), {
+    method: "PUT",
+    body: JSON.stringify({ content }),
+  });
+}
+
+/**
+ * Trigger AI-powered insight extraction from working memory.
+ * Reads working memory, generates insights via AI, merges/prunes existing insights,
+ * and generates an audit report.
+ *
+ * Returns: { success: boolean, summary: string, insightCount: number, pruned: boolean }
+ */
+export function triggerInsightExtraction(projectId?: string): Promise<{ success: boolean; summary: string; insightCount: number; pruned: boolean }> {
+  return api<{ success: boolean; summary: string; insightCount: number; pruned: boolean }>(withProjectId("/memory/extract", projectId), {
+    method: "POST",
+  });
+}
+
+/**
+ * Fetch memory audit report.
+ * The audit checks working memory and insights memory state, extraction history,
+ * and generates health recommendations.
+ */
+export function fetchMemoryAudit(projectId?: string): Promise<MemoryAuditReport> {
+  return api<MemoryAuditReport>(withProjectId("/memory/audit", projectId));
+}
+
+/**
+ * Fetch quick memory stats (lightweight, no AI).
+ * Useful for dashboard displays showing memory size and insight counts.
+ *
+ * Returns: { workingMemorySize: number, insightsSize: number, insightsExists: boolean }
+ */
+export function fetchMemoryStats(projectId?: string): Promise<{ workingMemorySize: number; insightsSize: number; insightsExists: boolean }> {
+  return api<{ workingMemorySize: number; insightsSize: number; insightsExists: boolean }>(withProjectId("/memory/stats", projectId));
+}
+
 /**
  * Memory backend capabilities returned by the backend status API.
  */

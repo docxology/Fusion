@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Activity,
   Bot,
+  Brain,
   ChevronRight,
   Clock,
   FileCode,
@@ -29,9 +30,9 @@ import { useViewportMode } from "./Header";
 
 export interface MobileNavBarProps {
   /** Current task view mode */
-  view: "board" | "list" | "agents" | "missions" | "chat" | "documents" | "roadmaps" | "skills" | "mailbox" | "insights";
+  view: "board" | "list" | "agents" | "missions" | "chat" | "documents" | "roadmaps" | "skills" | "mailbox" | "insights" | "memory";
   /** Change task view handler */
-  onChangeView: (view: "board" | "list" | "agents" | "missions" | "chat" | "documents" | "roadmaps" | "skills" | "mailbox" | "insights") => void;
+  onChangeView: (view: "board" | "list" | "agents" | "missions" | "chat" | "documents" | "roadmaps" | "skills" | "mailbox" | "insights" | "memory") => void;
   /** Whether the ExecutorStatusBar footer is visible */
   footerVisible: boolean;
   /** Whether any full-screen modal is currently open (hides the tab bar) */
@@ -538,6 +539,16 @@ export function MobileNavBar({
                 <span>Insights</span>
               </button>
             )}
+
+            <button
+              type="button"
+              className="mobile-more-item"
+              data-testid="mobile-more-item-memory"
+              onClick={() => handleMoreAction(() => onChangeView("memory"))}
+            >
+              <Brain />
+              <span>Memory</span>
+            </button>
 
             <div className="mobile-more-separator" />
 

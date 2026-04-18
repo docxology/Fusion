@@ -13,6 +13,7 @@ import { ChatView } from "./components/ChatView";
 import { RoadmapsView } from "./components/RoadmapsView";
 import { SkillsView } from "./components/SkillsView";
 import { MailboxView } from "./components/MailboxView";
+import { MemoryView } from "./components/MemoryView";
 import { PageErrorBoundary } from "./components/ErrorBoundary";
 import { AppModals } from "./components/AppModals";
 import { DashboardLoader, type DashboardLoaderStage } from "./components/DashboardLoader";
@@ -473,6 +474,14 @@ function AppInner() {
             addToast={addToast}
             onClose={() => handleChangeTaskView("board")}
           />
+        </PageErrorBoundary>
+      );
+    }
+
+    if (taskView === "memory") {
+      return (
+        <PageErrorBoundary>
+          <MemoryView addToast={addToast} projectId={currentProject?.id} />
         </PageErrorBoundary>
       );
     }

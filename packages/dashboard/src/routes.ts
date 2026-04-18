@@ -18,7 +18,7 @@ import * as nodeFs from "node:fs";
 
 import { promisify } from "node:util";
 import type { TaskStore, Column, ScheduleType, ActivityEventType, ModelPreset, MessageType, ParticipantType, RoutineTriggerType, ProjectSettings, EnrichedChatSession } from "@fusion/core";
-import { COLUMNS, VALID_TRANSITIONS, GLOBAL_SETTINGS_KEYS, type BatchStatusEntry, type BatchStatusResponse, type BatchStatusResult, type IssueInfo, type PrInfo, type Task, type PiExtensionEntry, type PiExtensionSettings, getCurrentRepo, isGhAuthenticated, AutomationStore, validateBackupSchedule, validateBackupRetention, validateBackupDir, syncBackupRoutine, exportSettings, importSettings, validateImportData, MessageStore, RoutineStore, isWebhookTrigger, resolveMemoryBackend, getMemoryBackendCapabilities, listMemoryBackendTypes, listProjectMemoryFiles, readProjectMemoryFile, readProjectMemoryFileContent, writeProjectMemoryFile, readMemory, writeMemory, searchProjectMemory, isQmdAvailable, installQmd, refreshQmdProjectMemoryIndex, QMD_INSTALL_COMMAND, MemoryBackendError, scheduleQmdProjectMemoryRefresh, discoverPiExtensions, updatePiExtensionDisabledIds, getFusionAgentDir, getLegacyPiAgentDir, ensureMemoryFileWithBackend } from "@fusion/core";
+import { COLUMNS, VALID_TRANSITIONS, GLOBAL_SETTINGS_KEYS, type BatchStatusEntry, type BatchStatusResponse, type BatchStatusResult, type IssueInfo, type PrInfo, type Task, type PiExtensionEntry, type PiExtensionSettings, getCurrentRepo, isGhAuthenticated, AutomationStore, validateBackupSchedule, validateBackupRetention, validateBackupDir, syncBackupRoutine, exportSettings, importSettings, validateImportData, MessageStore, RoutineStore, isWebhookTrigger, resolveMemoryBackend, getMemoryBackendCapabilities, listMemoryBackendTypes, listProjectMemoryFiles, readProjectMemoryFile, readProjectMemoryFileContent, writeProjectMemoryFile, readMemory, writeMemory, searchProjectMemory, isQmdAvailable, installQmd, refreshQmdProjectMemoryIndex, QMD_INSTALL_COMMAND, MemoryBackendError, scheduleQmdProjectMemoryRefresh, discoverPiExtensions, updatePiExtensionDisabledIds, getFusionAgentDir, getLegacyPiAgentDir, ensureMemoryFileWithBackend, readWorkingMemory, readInsightsMemory, writeInsightsMemory, generateMemoryAudit, buildInsightExtractionPrompt, parseInsightExtractionResponse, processAndAuditInsightExtraction } from "@fusion/core";
 import type { ServerOptions } from "./server.js";
 import { GitHubClient, parseBadgeUrl } from "./github.js";
 import { githubRateLimiter } from "./github-poll.js";
@@ -2807,6 +2807,228 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
       }
 
       rethrowAsApiError(err, "Failed to compact memory");
+    }
+  });
+
+  // ── Memory Insights Routes ───────────────────────────────────────────
+
+  // Lazy-loaded createKbAgent for AI operations (same pattern as ai-refine.ts)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let createKbAgentForInsights: any;
+
+  async function initCreateKbAgentForInsights(): Promise<void> {
+    if (createKbAgentForInsights) return;
+    try {
+      // Use dynamic import with @vite-ignore to prevent static analysis issues
+      const engine = await import(/* @vite-ignore */ "@fusion/engine");
+      createKbAgentForInsights = engine.createKbAgent;
+    } catch {
+      createKbAgentForInsights = undefined;
+    }
+  }
+
+  /**
+   * GET /api/memory/insights
+   * Returns the insights memory file content.
+   * Returns { content: null, exists: false } if no insights file exists yet.
+   */
+  router.get("/memory/insights", async (req, res) => {
+    try {
+      const { store: scopedStore } = await getProjectContext(req);
+      const rootDir = scopedStore.getRootDir();
+
+      const content = await readInsightsMemory(rootDir);
+      res.json({ content, exists: content !== null });
+    } catch (err: unknown) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      // If the file doesn't exist, return null with exists: false
+      if (err instanceof Error && err.message.includes("no such file")) {
+        res.json({ content: null, exists: false });
+        return;
+      }
+      rethrowAsApiError(err, "Failed to read memory insights");
+    }
+  });
+
+  /**
+   * PUT /api/memory/insights
+   * Updates the insights memory file content.
+   * Body: { content: string }
+   */
+  router.put("/memory/insights", async (req, res) => {
+    try {
+      const { content } = req.body ?? {};
+      if (typeof content !== "string") {
+        throw badRequest("content must be a string");
+      }
+
+      const { store: scopedStore } = await getProjectContext(req);
+      const rootDir = scopedStore.getRootDir();
+
+      await writeInsightsMemory(rootDir, content);
+      res.json({ success: true });
+    } catch (err: unknown) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      rethrowAsApiError(err, "Failed to save memory insights");
+    }
+  });
+
+  /**
+   * POST /api/memory/extract
+   * Triggers AI-powered insight extraction from working memory.
+   * Reads working memory, generates insights via AI, merges/prunes existing insights,
+   * and generates an audit report.
+   *
+   * Returns: { success: boolean, summary: string, insightCount: number, pruned: boolean }
+   * Errors: 400 if working memory is empty, 503 if AI service unavailable
+   */
+  router.post("/memory/extract", async (req, res) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let session: any = null;
+    try {
+      await initCreateKbAgentForInsights();
+
+      if (!createKbAgentForInsights) {
+        throw new ApiError(503, "AI engine not available");
+      }
+
+      const { store: scopedStore } = await getProjectContext(req);
+      const settings = await scopedStore.getSettings();
+      const rootDir = scopedStore.getRootDir();
+
+      // Read working memory and existing insights
+      const workingMemory = await readWorkingMemory(rootDir);
+      const existingInsights = await readInsightsMemory(rootDir);
+
+      // Validate working memory is not empty
+      if (!workingMemory || workingMemory.trim().length === 0) {
+        throw badRequest("No working memory to extract insights from");
+      }
+
+      // Build the extraction prompt
+      const extractionPrompt = buildInsightExtractionPrompt(workingMemory, existingInsights ?? "");
+
+      // Resolve model selection hierarchy for insight extraction
+      const resolvedProvider =
+        (settings.planningProvider && settings.planningModelId ? settings.planningProvider : undefined) ||
+        (settings.defaultProvider && settings.defaultModelId ? settings.defaultProvider : undefined);
+
+      const resolvedModelId =
+        (settings.planningProvider && settings.planningModelId ? settings.planningModelId : undefined) ||
+        (settings.defaultProvider && settings.defaultModelId ? settings.defaultModelId : undefined);
+
+      // Create AI agent session for extraction
+      const agentResult = await createKbAgentForInsights({
+        cwd: rootDir,
+        tools: "readonly",
+        defaultProvider: resolvedProvider,
+        defaultModelId: resolvedModelId,
+        systemPrompt: "You are a helpful AI assistant that extracts insights from working memory.",
+      });
+
+      if (!agentResult?.session) {
+        throw new ApiError(503, "Failed to initialize AI agent for insight extraction");
+      }
+
+      session = agentResult.session;
+
+      // Send extraction prompt to AI
+      const responseText = await session.prompt(extractionPrompt);
+
+      // Process the result: merge insights, prune duplicates, and generate audit
+      const result = await processAndAuditInsightExtraction(rootDir, {
+        rawResponse: responseText,
+        stepSuccess: true,
+        runAt: new Date().toISOString(),
+      });
+
+      res.json({
+        success: true,
+        summary: result.extraction?.summary ?? `Extracted ${result.extraction?.insightCount ?? 0} insights`,
+        insightCount: result.extraction?.insightCount ?? 0,
+        pruned: result.pruning?.applied ?? false,
+      });
+    } catch (err: unknown) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+
+      // Map AI service errors to 503
+      if (err instanceof Error && err.name === "AiServiceError") {
+        throw new ApiError(503, err.message || "AI service temporarily unavailable");
+      }
+
+      // Map other extraction errors
+      if (err instanceof Error && err.message.includes("No working memory")) {
+        throw badRequest(err.message);
+      }
+
+      rethrowAsApiError(err, "Failed to extract insights");
+    } finally {
+      // Always dispose the session
+      if (session) {
+        try {
+          session.dispose();
+        } catch {
+          // Ignore disposal errors
+        }
+      }
+    }
+  });
+
+  /**
+   * GET /api/memory/audit
+   * Returns a comprehensive memory audit report.
+   * The audit checks working memory and insights memory state, extraction history,
+   * and generates health recommendations.
+   */
+  router.get("/memory/audit", async (req, res) => {
+    try {
+      const { store: scopedStore } = await getProjectContext(req);
+      const rootDir = scopedStore.getRootDir();
+
+      const report = await generateMemoryAudit(rootDir);
+      res.json(report);
+    } catch (err: unknown) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      rethrowAsApiError(err, "Failed to generate memory audit");
+    }
+  });
+
+  /**
+   * GET /api/memory/stats
+   * Returns lightweight quick stats about memory files (no AI, no full audit).
+   * Useful for dashboard displays showing memory size and insight counts.
+   *
+   * Returns: { workingMemorySize: number, insightsSize: number, insightsExists: boolean }
+   */
+  router.get("/memory/stats", async (req, res) => {
+    try {
+      const { store: scopedStore } = await getProjectContext(req);
+      const rootDir = scopedStore.getRootDir();
+
+      // Read both files concurrently
+      const [workingContent, insightsContent] = await Promise.all([
+        readWorkingMemory(rootDir),
+        readInsightsMemory(rootDir).catch(() => null),
+      ]);
+
+      res.json({
+        workingMemorySize: workingContent.length,
+        insightsSize: insightsContent?.length ?? 0,
+        insightsExists: insightsContent !== null,
+      });
+    } catch (err: unknown) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      rethrowAsApiError(err, "Failed to fetch memory stats");
     }
   });
 

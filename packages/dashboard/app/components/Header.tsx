@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { Settings, Pause, Play, Square, LayoutGrid, List, Terminal, Lightbulb, Search, X, Activity, MoreHorizontal, Clock, Folder, History, GitBranch, Server, Workflow, Bot, ChevronLeft, Target, ChevronRight, FileCode, Loader2, Grid3X3, Mail, MessageSquare, ChevronDown, Check, Map, Zap, Sparkles, FileText } from "lucide-react";
+import { Settings, Pause, Play, Square, LayoutGrid, List, Terminal, Lightbulb, Search, X, Activity, MoreHorizontal, Clock, Folder, History, GitBranch, Server, Workflow, Bot, ChevronLeft, Target, ChevronRight, FileCode, Loader2, Grid3X3, Mail, MessageSquare, ChevronDown, Check, Map, Zap, Sparkles, FileText, Brain } from "lucide-react";
 import type { ProjectInfo } from "../api";
 import type { NodeConfig, ProjectStatus } from "@fusion/core";
 import { fetchScripts } from "../api";
@@ -183,8 +183,8 @@ export interface HeaderProps {
   enginePaused?: boolean;
   onToggleGlobalPause?: () => void;
   onToggleEnginePause?: () => void;
-  view?: "board" | "list" | "agents" | "missions" | "chat" | "documents" | "roadmaps" | "skills" | "mailbox" | "insights";
-  onChangeView?: (view: "board" | "list" | "agents" | "missions" | "chat" | "documents" | "roadmaps" | "skills" | "mailbox" | "insights") => void;
+  view?: "board" | "list" | "agents" | "missions" | "chat" | "documents" | "roadmaps" | "skills" | "mailbox" | "insights" | "memory";
+  onChangeView?: (view: "board" | "list" | "agents" | "missions" | "chat" | "documents" | "roadmaps" | "skills" | "mailbox" | "insights" | "memory") => void;
   /** Whether to show the skills tab in the view toggle */
   showSkillsTab?: boolean;
   /** When true, shows the Agents view tab button. Hidden by default (experimental feature). */
@@ -851,6 +851,18 @@ export function Header({
                     <span>Skills</span>
                   </button>
                 )}
+                <button
+                  className={`view-toggle-overflow-item${view === "memory" ? " active" : ""}`}
+                  onClick={() => {
+                    onChangeView("memory");
+                    setIsViewOverflowOpen(false);
+                  }}
+                  role="menuitem"
+                  data-testid="view-toggle-memory"
+                >
+                  <Brain size={14} />
+                  <span>Memory</span>
+                </button>
               </div>
             )}
           </div>

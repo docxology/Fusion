@@ -3852,6 +3852,254 @@ describe("compactMemory", () => {
   });
 });
 
+describe("fetchMemoryInsights", () => {
+  it("calls GET /api/memory/insights without projectId", async () => {
+    const { fetchMemoryInsights } = await import("./api");
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      headers: {
+        get: (name: string) => name.toLowerCase() === "content-type" ? "application/json" : null,
+      },
+      json: () => Promise.resolve({ content: "## Patterns\n- Pattern 1", exists: true }),
+      text: () => Promise.resolve('{"content":"## Patterns\\n- Pattern 1","exists":true}'),
+    } as unknown as Response);
+
+    const result = await fetchMemoryInsights();
+
+    expect(result).toEqual({ content: "## Patterns\n- Pattern 1", exists: true });
+    const call = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit?];
+    expect(call[0]).toContain("/api/memory/insights");
+    fetchSpy.mockRestore();
+  });
+
+  it("calls GET /api/memory/insights with projectId", async () => {
+    const { fetchMemoryInsights } = await import("./api");
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      headers: {
+        get: (name: string) => name.toLowerCase() === "content-type" ? "application/json" : null,
+      },
+      json: () => Promise.resolve({ content: null, exists: false }),
+      text: () => Promise.resolve('{"content":null,"exists":false}'),
+    } as unknown as Response);
+
+    const result = await fetchMemoryInsights("proj_abc");
+
+    expect(result).toEqual({ content: null, exists: false });
+    const call = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit?];
+    expect(call[0]).toContain("/api/memory/insights");
+    expect(call[0]).toContain("projectId=proj_abc");
+    fetchSpy.mockRestore();
+  });
+});
+
+describe("saveMemoryInsights", () => {
+  it("calls PUT /api/memory/insights without projectId", async () => {
+    const { saveMemoryInsights } = await import("./api");
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      headers: {
+        get: (name: string) => name.toLowerCase() === "content-type" ? "application/json" : null,
+      },
+      json: () => Promise.resolve({ success: true }),
+      text: () => Promise.resolve('{"success":true}'),
+    } as unknown as Response);
+
+    const result = await saveMemoryInsights("## Patterns\n- New insight");
+
+    expect(result).toEqual({ success: true });
+    const call = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit?];
+    expect(call[0]).toContain("/api/memory/insights");
+    expect(call[1].method).toBe("PUT");
+    expect(call[1].body).toBe(JSON.stringify({ content: "## Patterns\n- New insight" }));
+    fetchSpy.mockRestore();
+  });
+
+  it("calls PUT /api/memory/insights with projectId", async () => {
+    const { saveMemoryInsights } = await import("./api");
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      headers: {
+        get: (name: string) => name.toLowerCase() === "content-type" ? "application/json" : null,
+      },
+      json: () => Promise.resolve({ success: true }),
+      text: () => Promise.resolve('{"success":true}'),
+    } as unknown as Response);
+
+    const result = await saveMemoryInsights("## Patterns\n- New insight", "proj_abc");
+
+    expect(result).toEqual({ success: true });
+    const call = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit?];
+    expect(call[0]).toContain("/api/memory/insights");
+    expect(call[0]).toContain("projectId=proj_abc");
+    expect(call[1].method).toBe("PUT");
+    fetchSpy.mockRestore();
+  });
+});
+
+describe("triggerInsightExtraction", () => {
+  it("calls POST /api/memory/extract without projectId", async () => {
+    const { triggerInsightExtraction } = await import("./api");
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      headers: {
+        get: (name: string) => name.toLowerCase() === "content-type" ? "application/json" : null,
+      },
+      json: () => Promise.resolve({ success: true, summary: "Extracted 3 insights", insightCount: 3, pruned: false }),
+      text: () => Promise.resolve('{"success":true,"summary":"Extracted 3 insights","insightCount":3,"pruned":false}'),
+    } as unknown as Response);
+
+    const result = await triggerInsightExtraction();
+
+    expect(result).toEqual({ success: true, summary: "Extracted 3 insights", insightCount: 3, pruned: false });
+    const call = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit?];
+    expect(call[0]).toContain("/api/memory/extract");
+    expect(call[1].method).toBe("POST");
+    fetchSpy.mockRestore();
+  });
+
+  it("calls POST /api/memory/extract with projectId", async () => {
+    const { triggerInsightExtraction } = await import("./api");
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      headers: {
+        get: (name: string) => name.toLowerCase() === "content-type" ? "application/json" : null,
+      },
+      json: () => Promise.resolve({ success: true, summary: "Extracted 5 insights", insightCount: 5, pruned: true }),
+      text: () => Promise.resolve('{"success":true,"summary":"Extracted 5 insights","insightCount":5,"pruned":true}'),
+    } as unknown as Response);
+
+    const result = await triggerInsightExtraction("proj_abc");
+
+    expect(result).toEqual({ success: true, summary: "Extracted 5 insights", insightCount: 5, pruned: true });
+    const call = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit?];
+    expect(call[0]).toContain("/api/memory/extract");
+    expect(call[0]).toContain("projectId=proj_abc");
+    expect(call[1].method).toBe("POST");
+    fetchSpy.mockRestore();
+  });
+});
+
+describe("fetchMemoryAudit", () => {
+  it("calls GET /api/memory/audit without projectId", async () => {
+    const { fetchMemoryAudit } = await import("./api");
+    const mockReport = {
+      generatedAt: "2024-01-01T00:00:00.000Z",
+      workingMemory: { exists: true, size: 100, sectionCount: 2 },
+      insightsMemory: { exists: true, size: 50, insightCount: 5, categories: { pattern: 3 } },
+      extraction: { runAt: "2024-01-01T00:00:00.000Z", success: true, insightCount: 5, duplicateCount: 0, skippedCount: 0, summary: "Extracted 5 insights" },
+      pruning: { applied: false, reason: "No pruning needed", sizeDelta: 0, originalSize: 50, newSize: 50 },
+      checks: [],
+      health: "healthy" as const,
+    };
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      headers: {
+        get: (name: string) => name.toLowerCase() === "content-type" ? "application/json" : null,
+      },
+      json: () => Promise.resolve(mockReport),
+      text: () => Promise.resolve(JSON.stringify(mockReport)),
+    } as unknown as Response);
+
+    const result = await fetchMemoryAudit();
+
+    expect(result).toEqual(mockReport);
+    const call = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit?];
+    expect(call[0]).toContain("/api/memory/audit");
+    fetchSpy.mockRestore();
+  });
+
+  it("calls GET /api/memory/audit with projectId", async () => {
+    const { fetchMemoryAudit } = await import("./api");
+    const mockReport = {
+      generatedAt: "2024-01-01T00:00:00.000Z",
+      workingMemory: { exists: false, size: 0, sectionCount: 0 },
+      insightsMemory: { exists: false, size: 0, insightCount: 0, categories: {} },
+      extraction: { runAt: "", success: false, insightCount: 0, duplicateCount: 0, skippedCount: 0, summary: "" },
+      pruning: { applied: false, reason: "", sizeDelta: 0, originalSize: 0, newSize: 0 },
+      checks: [],
+      health: "warning" as const,
+    };
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      headers: {
+        get: (name: string) => name.toLowerCase() === "content-type" ? "application/json" : null,
+      },
+      json: () => Promise.resolve(mockReport),
+      text: () => Promise.resolve(JSON.stringify(mockReport)),
+    } as unknown as Response);
+
+    const result = await fetchMemoryAudit("proj_xyz");
+
+    expect(result).toEqual(mockReport);
+    const call = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit?];
+    expect(call[0]).toContain("/api/memory/audit");
+    expect(call[0]).toContain("projectId=proj_xyz");
+    fetchSpy.mockRestore();
+  });
+});
+
+describe("fetchMemoryStats", () => {
+  it("calls GET /api/memory/stats without projectId", async () => {
+    const { fetchMemoryStats } = await import("./api");
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      headers: {
+        get: (name: string) => name.toLowerCase() === "content-type" ? "application/json" : null,
+      },
+      json: () => Promise.resolve({ workingMemorySize: 150, insightsSize: 50, insightsExists: true }),
+      text: () => Promise.resolve('{"workingMemorySize":150,"insightsSize":50,"insightsExists":true}'),
+    } as unknown as Response);
+
+    const result = await fetchMemoryStats();
+
+    expect(result).toEqual({ workingMemorySize: 150, insightsSize: 50, insightsExists: true });
+    const call = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit?];
+    expect(call[0]).toContain("/api/memory/stats");
+    fetchSpy.mockRestore();
+  });
+
+  it("calls GET /api/memory/stats with projectId", async () => {
+    const { fetchMemoryStats } = await import("./api");
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      headers: {
+        get: (name: string) => name.toLowerCase() === "content-type" ? "application/json" : null,
+      },
+      json: () => Promise.resolve({ workingMemorySize: 200, insightsSize: 0, insightsExists: false }),
+      text: () => Promise.resolve('{"workingMemorySize":200,"insightsSize":0,"insightsExists":false}'),
+    } as unknown as Response);
+
+    const result = await fetchMemoryStats("proj_abc");
+
+    expect(result).toEqual({ workingMemorySize: 200, insightsSize: 0, insightsExists: false });
+    const call = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, RequestInit?];
+    expect(call[0]).toContain("/api/memory/stats");
+    expect(call[0]).toContain("projectId=proj_abc");
+    fetchSpy.mockRestore();
+  });
+});
+
 describe("Roadmap API wrappers", () => {
   const originalFetch = globalThis.fetch;
 
