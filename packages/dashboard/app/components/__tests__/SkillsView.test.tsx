@@ -2,18 +2,20 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { SkillsView } from "../SkillsView";
 import * as apiModule from "../../api";
-import type { DiscoveredSkill, CatalogEntry } from "@fusion/dashboard";
+import type { DiscoveredSkill, CatalogEntry, SkillContent } from "@fusion/dashboard";
 
 // Mock the API module
 vi.mock("../../api", () => ({
   fetchDiscoveredSkills: vi.fn(),
   toggleExecutionSkill: vi.fn(),
   fetchSkillsCatalog: vi.fn(),
+  fetchSkillContent: vi.fn(),
 }));
 
 const mockFetchDiscoveredSkills = vi.mocked(apiModule.fetchDiscoveredSkills);
 const mockToggleExecutionSkill = vi.mocked(apiModule.toggleExecutionSkill);
 const mockFetchSkillsCatalog = vi.mocked(apiModule.fetchSkillsCatalog);
+const mockFetchSkillContent = vi.mocked(apiModule.fetchSkillContent);
 
 describe("SkillsView", () => {
   const mockAddToast = vi.fn();
@@ -687,6 +689,251 @@ describe("SkillsView", () => {
       await waitFor(() => {
         expect(screen.queryByText("test-skill")).toBeNull();
         expect(screen.getByText("another-skill")).toBeTruthy();
+      });
+    });
+  });
+
+  describe("skill content viewing", () => {
+    const mockSkillContent: SkillContent = {
+      name: "test-skill",
+      skillMd: "# Test Skill\n\nThis is the skill content.",
+      files: [
+        { name: "references", relativePath: "references", type: "directory" },
+        { name: "workflows", relativePath: "workflows", type: "directory" },
+      ],
+    };
+
+    beforeEach(() => {
+      mockFetchSkillContent.mockResolvedValue(mockSkillContent);
+    });
+
+    it("calls fetchSkillContent when clicking a discovered skill item", async () => {
+      render(<SkillsView addToast={mockAddToast} onClose={onClose} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("test-skill")).toBeTruthy();
+      });
+
+      // Click on the test-skill item
+      const testSkillItem = screen.getByText("test-skill").closest(".skills-view-item");
+      expect(testSkillItem).toBeTruthy();
+
+      await act(async () => {
+        fireEvent.click(testSkillItem!);
+      });
+
+      expect(mockFetchSkillContent).toHaveBeenCalledWith("npm::skills/test-skill", undefined);
+    });
+
+    it("displays skill content when loaded", async () => {
+      render(<SkillsView addToast={mockAddToast} onClose={onClose} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("test-skill")).toBeTruthy();
+      });
+
+      // Click on the test-skill item
+      const testSkillItem = screen.getByText("test-skill").closest(".skills-view-item");
+      await act(async () => {
+        fireEvent.click(testSkillItem!);
+      });
+
+      await waitFor(() => {
+        const preElement = document.querySelector(".skills-view-detail-content pre");
+        expect(preElement).toBeTruthy();
+        expect(preElement!.textContent).toContain("# Test Skill");
+        expect(preElement!.textContent).toContain("This is the skill content.");
+        const fileBadges = document.querySelectorAll(".skills-view-detail-files .badge");
+        expect(fileBadges.length).toBe(2);
+      });
+    });
+
+    it("collapses detail when clicking the same skill again", async () => {
+      render(<SkillsView addToast={mockAddToast} onClose={onClose} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("test-skill")).toBeTruthy();
+      });
+
+      // Click on the test-skill item to expand
+      const testSkillItem = screen.getByText("test-skill").closest(".skills-view-item");
+      await act(async () => {
+        fireEvent.click(testSkillItem!);
+      });
+
+      await waitFor(() => {
+        expect(screen.getByTestId("skill-detail")).toBeTruthy();
+      });
+
+      // Click again to collapse
+      await act(async () => {
+        fireEvent.click(testSkillItem!);
+      });
+
+      await waitFor(() => {
+        expect(screen.queryByTestId("skill-detail")).toBeNull();
+      });
+    });
+
+    it("does NOT trigger content fetch when clicking toggle", async () => {
+      render(<SkillsView addToast={mockAddToast} onClose={onClose} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("test-skill")).toBeTruthy();
+      });
+
+      // Find the toggle for test-skill
+      const toggles = screen.getAllByRole("checkbox");
+      const enabledToggle = toggles.find(t => (t as HTMLInputElement).checked) as HTMLInputElement;
+
+      await act(async () => {
+        fireEvent.click(enabledToggle);
+      });
+
+      // Should NOT have called fetchSkillContent
+      expect(mockFetchSkillContent).not.toHaveBeenCalled();
+    });
+
+    it("shows loading state while fetching content", async () => {
+      let resolveContent: ((value: SkillContent) => void) | undefined;
+      mockFetchSkillContent.mockImplementation(
+        () => new Promise((resolve) => { resolveContent = resolve as unknown as (value: SkillContent) => void; })
+      );
+
+      render(<SkillsView addToast={mockAddToast} onClose={onClose} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("test-skill")).toBeTruthy();
+      });
+
+      // Click on the test-skill item
+      const testSkillItem = screen.getByText("test-skill").closest(".skills-view-item");
+      await act(async () => {
+        fireEvent.click(testSkillItem!);
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText("Loading skill content...")).toBeTruthy();
+      });
+
+      // Complete the fetch
+      await act(async () => {
+        resolveContent!(mockSkillContent);
+      });
+
+      await waitFor(() => {
+        const preElement = document.querySelector(".skills-view-detail-content pre");
+        expect(preElement).toBeTruthy();
+        expect(preElement!.textContent).toContain("# Test Skill");
+      });
+    });
+
+    it("shows error state on fetch failure", async () => {
+      mockFetchSkillContent.mockRejectedValue(new Error("Failed to load content"));
+
+      render(<SkillsView addToast={mockAddToast} onClose={onClose} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("test-skill")).toBeTruthy();
+      });
+
+      // Click on the test-skill item
+      const testSkillItem = screen.getByText("test-skill").closest(".skills-view-item");
+      await act(async () => {
+        fireEvent.click(testSkillItem!);
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText("Failed to load content")).toBeTruthy();
+        expect(screen.getByText("Retry")).toBeTruthy();
+      });
+    });
+
+    it("collapses detail when close button is clicked", async () => {
+      render(<SkillsView addToast={mockAddToast} onClose={onClose} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("test-skill")).toBeTruthy();
+      });
+
+      // Click on the test-skill item to expand
+      const testSkillItem = screen.getByText("test-skill").closest(".skills-view-item");
+      await act(async () => {
+        fireEvent.click(testSkillItem!);
+      });
+
+      await waitFor(() => {
+        expect(screen.getByTestId("skill-detail")).toBeTruthy();
+      });
+
+      // Click close button
+      await act(async () => {
+        fireEvent.click(screen.getByText("Close"));
+      });
+
+      await waitFor(() => {
+        expect(screen.queryByTestId("skill-detail")).toBeNull();
+      });
+    });
+
+    it("selected skill item has --selected class", async () => {
+      render(<SkillsView addToast={mockAddToast} onClose={onClose} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("test-skill")).toBeTruthy();
+      });
+
+      // Click on the test-skill item
+      const testSkillItem = screen.getByText("test-skill").closest(".skills-view-item");
+      await act(async () => {
+        fireEvent.click(testSkillItem!);
+      });
+
+      await waitFor(() => {
+        const selectedItem = document.querySelector(".skills-view-item--selected");
+        expect(selectedItem).toBeTruthy();
+        expect(selectedItem?.textContent).toContain("test-skill");
+      });
+    });
+
+    it("renders file badges for supplementary files", async () => {
+      render(<SkillsView addToast={mockAddToast} onClose={onClose} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("test-skill")).toBeTruthy();
+      });
+
+      const testSkillItem = screen.getByText("test-skill").closest(".skills-view-item");
+      await act(async () => {
+        fireEvent.click(testSkillItem!);
+      });
+
+      await waitFor(() => {
+        const fileBadges = document.querySelectorAll(".skills-view-detail-files .badge");
+        expect(fileBadges.length).toBe(2);
+      });
+    });
+
+    it("shows empty state when skill has no content", async () => {
+      mockFetchSkillContent.mockResolvedValue({
+        name: "empty-skill",
+        skillMd: "",
+        files: [],
+      });
+
+      render(<SkillsView addToast={mockAddToast} onClose={onClose} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("test-skill")).toBeTruthy();
+      });
+
+      const testSkillItem = screen.getByText("test-skill").closest(".skills-view-item");
+      await act(async () => {
+        fireEvent.click(testSkillItem!);
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText("No content available for this skill.")).toBeTruthy();
       });
     });
   });

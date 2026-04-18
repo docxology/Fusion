@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Wrench, RefreshCw, X } from "lucide-react";
+import { Wrench, RefreshCw, X, ChevronRight, ChevronDown, AlertCircle, Loader2 } from "lucide-react";
 import {
   fetchDiscoveredSkills,
   toggleExecutionSkill,
   fetchSkillsCatalog,
+  fetchSkillContent,
 } from "../api";
-import type { DiscoveredSkill, CatalogEntry } from "@fusion/dashboard";
+import type { DiscoveredSkill, CatalogEntry, SkillContent } from "@fusion/dashboard";
 import type { ToastType } from "../hooks/useToast";
 
 interface SkillsViewProps {
@@ -25,6 +26,12 @@ export function SkillsView({ projectId, addToast, onClose }: SkillsViewProps) {
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [catalogEntries, setCatalogEntries] = useState<CatalogEntry[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+
+  // Skill content viewing state
+  const [selectedSkillId, setSelectedSkillId] = useState<string | null>(null);
+  const [skillContent, setSkillContent] = useState<SkillContent | null>(null);
+  const [isLoadingContent, setIsLoadingContent] = useState(false);
+  const [contentError, setContentError] = useState<string | null>(null);
 
   // Debounce timer for catalog search
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -127,6 +134,43 @@ export function SkillsView({ projectId, addToast, onClose }: SkillsViewProps) {
     }
   }, [projectId, addToast]);
 
+  // Handle click on discovered skill to view content
+  const handleSkillClick = useCallback(async (skillId: string) => {
+    // If clicking the same skill that's already selected, deselect it
+    if (selectedSkillId === skillId) {
+      setSelectedSkillId(null);
+      setSkillContent(null);
+      setContentError(null);
+      return;
+    }
+
+    // Select the new skill and fetch its content
+    setSelectedSkillId(skillId);
+    setSkillContent(null);
+    setContentError(null);
+    setIsLoadingContent(true);
+
+    try {
+      const content = await fetchSkillContent(skillId, projectId);
+      setSkillContent(content);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to load skill content";
+      setContentError(message);
+    } finally {
+      setIsLoadingContent(false);
+    }
+  }, [selectedSkillId, projectId]);
+
+  // Handle click on skill item, but not on toggle
+  const handleSkillItemClick = useCallback((e: React.MouseEvent, skillId: string) => {
+    // Don't trigger content fetch when clicking the toggle switch
+    const target = e.target as HTMLElement;
+    if (target.closest(".skills-view-item-toggle")) {
+      return;
+    }
+    void handleSkillClick(skillId);
+  }, [handleSkillClick]);
+
 
   return (
     <div className="skills-view" data-testid="skills-view">
@@ -194,25 +238,112 @@ export function SkillsView({ projectId, addToast, onClose }: SkillsViewProps) {
             </div>
           ) : (
             <div className="skills-view-list">
-              {filteredDiscoveredSkills.map((skill) => (
-                <div key={skill.id} className="skills-view-item">
-                  <div className="skills-view-item-info">
-                    <span className="skills-view-item-name">{skill.name}</span>
-                    <span className="skills-view-item-path">{skill.relativePath}</span>
-                    <span className="skills-view-item-source">{skill.metadata.source}</span>
+              {filteredDiscoveredSkills.map((skill) => {
+                const isSelected = selectedSkillId === skill.id;
+                return (
+                  <div key={skill.id}>
+                    <div
+                      className={`skills-view-item${isSelected ? " skills-view-item--selected" : ""}`}
+                      onClick={(e) => handleSkillItemClick(e, skill.id)}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          void handleSkillClick(skill.id);
+                        }
+                      }}
+                      aria-expanded={isSelected}
+                      aria-label={`View details for ${skill.name}`}
+                    >
+                      <div className="skills-view-item-info">
+                        <span className="skills-view-item-name">
+                          {isSelected ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                          {skill.name}
+                        </span>
+                        <span className="skills-view-item-path">{skill.relativePath}</span>
+                        <span className="skills-view-item-source">{skill.metadata.source}</span>
+                      </div>
+                      <label
+                        className="skills-view-item-toggle"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={skill.enabled}
+                          disabled={skill.toggling}
+                          onChange={() => void handleToggleSkill(skill.id, skill.enabled)}
+                          aria-label={`${skill.enabled ? "Disable" : "Enable"} ${skill.name}`}
+                        />
+                        <span className="skills-view-toggle-slider" />
+                      </label>
+                    </div>
+
+                    {/* Skill Content Detail Panel */}
+                    {isSelected && (
+                      <div className="skills-view-detail" data-testid="skill-detail">
+                        <div className="skills-view-detail-header">
+                          <span className="skills-view-detail-title">{skill.name}</span>
+                          <button
+                            className="btn btn-sm"
+                            onClick={() => {
+                              setSelectedSkillId(null);
+                              setSkillContent(null);
+                              setContentError(null);
+                            }}
+                            aria-label="Close skill detail"
+                          >
+                            <X size={14} />
+                            Close
+                          </button>
+                        </div>
+
+                        {isLoadingContent ? (
+                          <div className="skills-view-detail-loading">
+                            <Loader2 size={16} className="spin" />
+                            Loading skill content...
+                          </div>
+                        ) : contentError ? (
+                          <div className="skills-view-detail-error">
+                            <AlertCircle size={14} />
+                            <span>{contentError}</span>
+                            <button
+                              className="btn btn-sm"
+                              onClick={() => void handleSkillClick(skill.id)}
+                            >
+                              Retry
+                            </button>
+                          </div>
+                        ) : skillContent ? (
+                          <>
+                            {skillContent.skillMd && (
+                              <div className="skills-view-detail-content">
+                                <pre>{skillContent.skillMd}</pre>
+                              </div>
+                            )}
+                            {skillContent.files.length > 0 && (
+                              <div className="skills-view-detail-files">
+                                <span className="skills-view-detail-files-label">Files:</span>
+                                {skillContent.files.map((file) => (
+                                  <span key={file.relativePath} className="badge badge--sm">
+                                    {file.name}
+                                    {file.type === "directory" && "/"}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                            {!skillContent.skillMd && skillContent.files.length === 0 && (
+                              <div className="skills-view-detail-empty">
+                                No content available for this skill.
+                              </div>
+                            )}
+                          </>
+                        ) : null}
+                      </div>
+                    )}
                   </div>
-                  <label className="skills-view-item-toggle">
-                    <input
-                      type="checkbox"
-                      checked={skill.enabled}
-                      disabled={skill.toggling}
-                      onChange={() => void handleToggleSkill(skill.id, skill.enabled)}
-                      aria-label={`${skill.enabled ? "Disable" : "Enable"} ${skill.name}`}
-                    />
-                    <span className="skills-view-toggle-slider" />
-                  </label>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </section>

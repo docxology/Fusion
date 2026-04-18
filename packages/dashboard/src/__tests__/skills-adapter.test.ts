@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createSkillsAdapter } from "../skills-adapter.js";
+import { writeFile, mkdir, access } from "node:fs/promises";
+import { join, dirname } from "node:path";
+import { tmpdir } from "node:os";
+import { rm } from "node:fs/promises";
 
 describe("createSkillsAdapter - fetchCatalog fallback behavior", () => {
   const originalFetch = globalThis.fetch;
@@ -210,5 +214,220 @@ describe("createSkillsAdapter - fetchCatalog fallback behavior", () => {
       expect(result.auth.tokenPresent).toBe(false);
       expect(result.auth.fallbackUsed).toBe(false);
     }
+  });
+});
+
+describe("createSkillsAdapter - readSkillContent", () => {
+  const originalFetch = globalThis.fetch;
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  async function createMockSkillDir(skillMdContent?: string, extraFiles?: string[]) {
+    const skillDir = join(tmpdir(), `skill-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    await mkdir(skillDir, { recursive: true });
+
+    if (skillMdContent !== undefined) {
+      await writeFile(join(skillDir, "SKILL.md"), skillMdContent, "utf-8");
+    }
+
+    if (extraFiles) {
+      for (const file of extraFiles) {
+        const filePath = join(skillDir, file);
+        const fileDir = dirname(filePath);
+        if (!await access(fileDir).then(() => true).catch(() => false)) {
+          await mkdir(fileDir, { recursive: true });
+        }
+        await writeFile(filePath, `content of ${file}`, "utf-8");
+      }
+    }
+
+    return skillDir;
+  }
+
+  async function cleanup(skillDir: string) {
+    try {
+      await rm(skillDir, { recursive: true, force: true });
+    } catch {
+      // Ignore cleanup errors
+    }
+  }
+
+  it("returns SKILL.md content and file listing for a valid skill", async () => {
+    const skillDir = await createMockSkillDir(
+      "# Test Skill\n\nThis is a test skill.",
+      ["references/ref.md", "workflows/test.sh"]
+    );
+
+    const adapter = createSkillsAdapter({
+      packageManager: {
+        resolve: vi.fn().mockResolvedValue({ skills: [] }),
+      },
+      getSettingsPath: vi.fn().mockReturnValue("/tmp/settings.json"),
+    });
+
+    // Spy on discoverSkills to return a controlled skill
+    const mockDiscoveredSkill = {
+      id: "npm::skills/test-skill",
+      name: "test-skill",
+      path: join(skillDir, "SKILL.md"),
+      relativePath: "skills/test-skill",
+      enabled: true,
+      metadata: {
+        source: "npm",
+        scope: "project" as const,
+        origin: "top-level" as const,
+        baseDir: skillDir,
+      },
+    };
+
+    vi.spyOn(adapter, "discoverSkills").mockResolvedValue([mockDiscoveredSkill]);
+
+    const result = await adapter.readSkillContent("/project", "npm::skills/test-skill");
+
+    expect(result.name).toBe("test-skill");
+    expect(result.skillMd).toBe("# Test Skill\n\nThis is a test skill.");
+    expect(result.files).toHaveLength(2);
+    expect(result.files.map((f) => f.name).sort()).toEqual(["references", "workflows"]);
+    expect(result.files.find((f) => f.name === "references")!.type).toBe("directory");
+    expect(result.files.find((f) => f.name === "workflows")!.type).toBe("directory");
+
+    await cleanup(skillDir);
+  });
+
+  it("returns empty skillMd when SKILL.md doesn't exist", async () => {
+    const skillDir = await createMockSkillDir(undefined, ["readme.txt"]);
+
+    const adapter = createSkillsAdapter({
+      packageManager: {
+        resolve: vi.fn().mockResolvedValue({ skills: [] }),
+      },
+      getSettingsPath: vi.fn().mockReturnValue("/tmp/settings.json"),
+    });
+
+    const mockDiscoveredSkill = {
+      id: "npm::skills/test-skill",
+      name: "test-skill",
+      path: skillDir,
+      relativePath: "skills/test-skill",
+      enabled: true,
+      metadata: {
+        source: "npm",
+        scope: "project" as const,
+        origin: "top-level" as const,
+      },
+    };
+
+    vi.spyOn(adapter, "discoverSkills").mockResolvedValue([mockDiscoveredSkill]);
+
+    const result = await adapter.readSkillContent("/project", "npm::skills/test-skill");
+
+    expect(result.name).toBe("test-skill");
+    expect(result.skillMd).toBe("");
+    expect(result.files).toHaveLength(1);
+    expect(result.files[0]!.name).toBe("readme.txt");
+
+    await cleanup(skillDir);
+  });
+
+  it("throws error for invalid skill ID format", async () => {
+    const adapter = createSkillsAdapter({
+      packageManager: { resolve: vi.fn().mockResolvedValue({ skills: [] }) },
+      getSettingsPath: vi.fn().mockReturnValue("/tmp/settings.json"),
+    });
+
+    await expect(adapter.readSkillContent("/project", "invalid-skill-id")).rejects.toThrow(
+      "Invalid skill ID format"
+    );
+  });
+
+  it("throws error for non-existent skill", async () => {
+    const adapter = createSkillsAdapter({
+      packageManager: { resolve: vi.fn().mockResolvedValue({ skills: [] }) },
+      getSettingsPath: vi.fn().mockReturnValue("/tmp/settings.json"),
+    });
+
+    await expect(adapter.readSkillContent("/project", "npm::skills/nonexistent")).rejects.toThrow(
+      "Skill not found"
+    );
+  });
+
+  it("filters out SKILL.md from supplementary files listing", async () => {
+    const skillDir = await createMockSkillDir(
+      "# Test Skill",
+      ["SKILL.md", "readme.txt"]
+    );
+
+    const adapter = createSkillsAdapter({
+      packageManager: {
+        resolve: vi.fn().mockResolvedValue({ skills: [] }),
+      },
+      getSettingsPath: vi.fn().mockReturnValue("/tmp/settings.json"),
+    });
+
+    const mockDiscoveredSkill = {
+      id: "npm::skills/test-skill",
+      name: "test-skill",
+      path: join(skillDir, "SKILL.md"),
+      relativePath: "skills/test-skill",
+      enabled: true,
+      metadata: {
+        source: "npm",
+        scope: "project" as const,
+        origin: "top-level" as const,
+      },
+    };
+
+    vi.spyOn(adapter, "discoverSkills").mockResolvedValue([mockDiscoveredSkill]);
+
+    const result = await adapter.readSkillContent("/project", "npm::skills/test-skill");
+
+    // Should only have readme.txt, not SKILL.md
+    expect(result.files).toHaveLength(1);
+    expect(result.files[0]!.name).toBe("readme.txt");
+
+    await cleanup(skillDir);
+  });
+
+  it("handles skill path that is already a directory", async () => {
+    const skillDir = await createMockSkillDir(
+      "# Test Skill",
+      ["readme.txt"]
+    );
+
+    const adapter = createSkillsAdapter({
+      packageManager: {
+        resolve: vi.fn().mockResolvedValue({ skills: [] }),
+      },
+      getSettingsPath: vi.fn().mockReturnValue("/tmp/settings.json"),
+    });
+
+    const mockDiscoveredSkill = {
+      id: "npm::skills/test-skill",
+      name: "test-skill",
+      path: skillDir, // Path is already a directory
+      relativePath: "skills/test-skill",
+      enabled: true,
+      metadata: {
+        source: "npm",
+        scope: "project" as const,
+        origin: "top-level" as const,
+      },
+    };
+
+    vi.spyOn(adapter, "discoverSkills").mockResolvedValue([mockDiscoveredSkill]);
+
+    const result = await adapter.readSkillContent("/project", "npm::skills/test-skill");
+
+    expect(result.name).toBe("test-skill");
+    expect(result.skillMd).toBe("# Test Skill");
+    expect(result.files).toHaveLength(1);
+
+    await cleanup(skillDir);
   });
 });

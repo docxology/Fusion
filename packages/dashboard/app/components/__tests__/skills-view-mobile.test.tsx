@@ -193,6 +193,43 @@ describe("skills-view mobile css", () => {
     expect(cssContent).toMatch(/\.skills-view-content\s*\{[^}]*flex:\s*1[^}]*\}/s);
     expect(cssContent).toMatch(/\.skills-view-content\s*\{[^}]*padding:\s*20px[^}]*\}/s);
   });
+
+  it("defines .skills-view-detail with reduced padding on mobile", () => {
+    expect(mobileMediaBlock).toContain(".skills-view-detail");
+    const block = extractRuleBlock(mobileMediaBlock, ".skills-view-detail");
+    expect(block).toContain("padding: var(--space-md)");
+  });
+
+  it("defines .skills-view-detail-content with smaller font on mobile", () => {
+    expect(mobileMediaBlock).toContain(".skills-view-detail-content");
+    const block = extractRuleBlock(mobileMediaBlock, ".skills-view-detail-content");
+    expect(block).toContain("font-size: 11px");
+  });
+
+  it("defines .skills-view-detail-header with flex-wrap on mobile", () => {
+    expect(mobileMediaBlock).toContain(".skills-view-detail-header");
+    const block = extractRuleBlock(mobileMediaBlock, ".skills-view-detail-header");
+    expect(block).toContain("flex-wrap: wrap");
+  });
+
+  it("defines .skills-view-detail-title with smaller font on mobile", () => {
+    expect(mobileMediaBlock).toContain(".skills-view-detail-title");
+    const block = extractRuleBlock(mobileMediaBlock, ".skills-view-detail-title");
+    expect(block).toContain("font-size: 13px");
+  });
+
+  it("skill detail base styles are defined in styles.css", () => {
+    expect(cssContent).toContain(".skills-view-item--selected {");
+    expect(cssContent).toContain(".skills-view-detail {");
+    expect(cssContent).toContain(".skills-view-detail-header {");
+    expect(cssContent).toContain(".skills-view-detail-title {");
+    expect(cssContent).toContain(".skills-view-detail-content {");
+    expect(cssContent).toContain(".skills-view-detail-files {");
+    expect(cssContent).toContain(".skills-view-detail-files-label {");
+    expect(cssContent).toContain(".skills-view-detail-loading {");
+    expect(cssContent).toContain(".skills-view-detail-error {");
+    expect(cssContent).toContain(".skills-view-detail-empty {");
+  });
 });
 
 describe("SkillsView component structure", () => {

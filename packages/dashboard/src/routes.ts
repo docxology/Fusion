@@ -17043,6 +17043,48 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
     }
   });
 
+  /**
+   * GET /api/skills/:id/content
+   * Read the contents of a skill's SKILL.md file and list supplementary files.
+   * Params: id (URL-encoded skill ID)
+   * Query: projectId (optional) for multi-project context
+   * Response: { content: SkillContent }
+   * Error: 404 { error: string; code: "skill_not_found" | "adapter_not_configured" }
+   */
+  router.get("/skills/:id/content", async (req, res) => {
+    try {
+      const scopedStore = await getScopedStore(req);
+      const skillsAdapter = options?.skillsAdapter;
+
+      if (!skillsAdapter) {
+        res.status(404).json({ error: "Skills adapter not configured", code: "adapter_not_configured" });
+        return;
+      }
+
+      const rootDir = scopedStore.getRootDir();
+      const skillId = req.params.id as string;
+
+      const content = await skillsAdapter.readSkillContent(rootDir, skillId);
+
+      res.json({ content });
+    } catch (err: unknown) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      if (err instanceof Error) {
+        if (err.message.includes("Invalid skill ID")) {
+          res.status(400).json({ error: err.message, code: "invalid_skill_id" });
+          return;
+        }
+        if (err.message.includes("Skill not found")) {
+          res.status(404).json({ error: err.message, code: "skill_not_found" });
+          return;
+        }
+      }
+      rethrowAsApiError(err, "Failed to read skill content");
+    }
+  });
+
   // ── Remote Node Proxy Routes ───────────────────────────────────────────
 
   /** GET /api/proxy/:nodeId/health — Forward health check to remote node */

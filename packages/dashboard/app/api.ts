@@ -63,11 +63,11 @@ import type {
 } from "@fusion/core";
 import type { PlanningQuestion, PlanningSummary } from "@fusion/core";
 import type { ScheduledTask, ScheduledTaskCreateInput, ScheduledTaskUpdateInput, AutomationRunResult, Routine, RoutineCreateInput, RoutineUpdateInput, RoutineExecutionResult } from "@fusion/core";
-import type { DiscoveredSkill, CatalogEntry, CatalogFetchResult, ToggleSkillResult } from "@fusion/dashboard";
+import type { DiscoveredSkill, CatalogEntry, CatalogFetchResult, ToggleSkillResult, SkillContent, SkillFileEntry } from "@fusion/dashboard";
 import type { MilestoneValidationTelemetry } from "./components/mission-types";
 
 // Re-export skills types for use by hooks and components
-export type { DiscoveredSkill, CatalogEntry, CatalogFetchResult, ToggleSkillResult };
+export type { DiscoveredSkill, CatalogEntry, CatalogFetchResult, ToggleSkillResult, SkillContent, SkillFileEntry };
 
 function looksLikeHtml(body: string): boolean {
   const trimmed = body.trim();
@@ -5306,6 +5306,14 @@ export async function fetchSkillsCatalog(
   if (limit !== undefined) params.set("limit", String(limit));
   const suffix = params.size > 0 ? `?${params.toString()}` : "";
   return api<CatalogFetchResult>(withProjectId(`/skills/catalog${suffix}`, projectId));
+}
+
+/** Fetch the contents of a skill's SKILL.md file */
+export async function fetchSkillContent(skillId: string, projectId?: string): Promise<SkillContent> {
+  const response = await api<{ content: SkillContent }>(
+    withProjectId(`/skills/${encodeURIComponent(skillId)}/content`, projectId)
+  );
+  return response.content;
 }
 
 // ── Chat API ─────────────────────────────────────────────────────────────────

@@ -6,7 +6,7 @@
  */
 
 import { access } from "node:fs/promises";
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { readFile, writeFile, mkdir, readdir } from "node:fs/promises";
 import { join, relative, dirname } from "node:path";
 
 /**
@@ -101,6 +101,24 @@ export interface ToggleSkillResult {
 }
 
 /**
+ * A file entry in a skill directory.
+ */
+export interface SkillFileEntry {
+  name: string;
+  relativePath: string;
+  type: "file" | "directory";
+}
+
+/**
+ * Content of a skill including its SKILL.md and supplementary files.
+ */
+export interface SkillContent {
+  name: string;
+  skillMd: string;
+  files: SkillFileEntry[];
+}
+
+/**
  * Upstream error codes for catalog fetch failures.
  */
 export type UpstreamErrorCode = "upstream_timeout" | "upstream_http_error" | "upstream_invalid_payload";
@@ -136,6 +154,11 @@ export interface SkillsAdapter {
    * Fetch the skills.sh catalog with optional authentication.
    */
   fetchCatalog(input: { limit: number; query?: string }): Promise<CatalogFetchResult | UpstreamError>;
+
+  /**
+   * Read the contents of a skill's SKILL.md file and list supplementary files.
+   */
+  readSkillContent(rootDir: string, skillId: string): Promise<SkillContent>;
 }
 
 /**
@@ -453,6 +476,78 @@ export function createSkillsAdapter(options: {
           code: "upstream_http_error",
         };
       }
+    },
+
+    async readSkillContent(rootDir: string, skillId: string): Promise<SkillContent> {
+      // Parse the skill ID to get source and relativePath
+      const parsed = parseSkillId(skillId);
+      if (!parsed) {
+        throw new Error(`Invalid skill ID format: ${skillId}`);
+      }
+
+      // Find the skill in discovered skills to get its path
+      const discovered = await this.discoverSkills(rootDir);
+      const skill = discovered.find((s) => s.id === skillId);
+      if (!skill) {
+        throw new Error(`Skill not found: ${skillId}`);
+      }
+
+      // Determine the skill directory
+      // If path points to a file (e.g., SKILL.md), use dirname(path)
+      // If path points to a directory, use it directly
+      let skillDir = skill.path;
+      try {
+        const stat = await access(skill.path);
+        // Path exists, check if it's a file or directory
+        // We can't easily check with access(), so we try to read as file first
+        try {
+          await readFile(skill.path, "utf-8");
+          // It's a file, get the directory
+          skillDir = dirname(skill.path);
+        } catch {
+          // Not a file (might be a directory or error), use path as-is
+          skillDir = skill.path;
+        }
+      } catch {
+        // Path doesn't exist, use dirname as fallback
+        skillDir = dirname(skill.path);
+      }
+
+      // Read SKILL.md from the skill directory
+      const skillMdPath = join(skillDir, "SKILL.md");
+      let skillMd = "";
+      if (await pathExists(skillMdPath)) {
+        try {
+          skillMd = await readFile(skillMdPath, "utf-8");
+        } catch {
+          // Ignore read errors, keep empty string
+        }
+      }
+
+      // List files in the skill directory (non-recursive for MVP)
+      const files: SkillFileEntry[] = [];
+      try {
+        const entries = await readdir(skillDir, { withFileTypes: true });
+        for (const entry of entries) {
+          // Skip SKILL.md as it's shown separately
+          if (entry.name === "SKILL.md") {
+            continue;
+          }
+          files.push({
+            name: entry.name,
+            relativePath: entry.name,
+            type: entry.isDirectory() ? "directory" : "file",
+          });
+        }
+      } catch {
+        // Ignore readdir errors, return empty files array
+      }
+
+      return {
+        name: skill.name,
+        skillMd,
+        files,
+      };
     },
   };
 }
