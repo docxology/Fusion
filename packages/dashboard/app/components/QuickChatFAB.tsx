@@ -865,7 +865,7 @@ export function QuickChatFAB({ projectId, addToast, showFAB = true, open, onOpen
           <div className="quick-chat-panel-messages" ref={messagesRef} data-testid="quick-chat-messages">
             {sessionsLoading || messagesLoading ? (
               <div className="quick-chat-panel-empty">Loading conversation…</div>
-            ) : messages.length === 0 && !streamingText && !streamingThinking ? (
+            ) : messages.length === 0 && !streamingText && !streamingThinking && !isStreaming ? (
               <div className="quick-chat-panel-empty">No messages yet. Start the conversation!</div>
             ) : (
               <>
@@ -882,18 +882,23 @@ export function QuickChatFAB({ projectId, addToast, showFAB = true, open, onOpen
                   );
                 })}
                 {/* Streaming message bubble */}
-                {(streamingText || streamingThinking) && (
+                {isStreaming && (
                   <div
                     className="quick-chat-panel-message quick-chat-panel-message--received quick-chat-panel-message--streaming"
                     data-testid="quick-chat-streaming-message"
                   >
-                    {streamingThinking && (
-                      <p className="quick-chat-panel-thinking" data-testid="quick-chat-streaming-thinking">
-                        {streamingThinking}
+                    {streamingText ? (
+                      <p data-testid="quick-chat-streaming-text">{renderMessageContent(streamingText)}</p>
+                    ) : (
+                      <p className="quick-chat-panel-waiting" data-testid="quick-chat-waiting">
+                        {streamingThinking ? "Thinking…" : "Connecting…"}
                       </p>
                     )}
-                    {streamingText && (
-                      <p data-testid="quick-chat-streaming-text">{renderMessageContent(streamingText)}</p>
+                    {streamingThinking && (
+                      <details className="chat-message-thinking" data-testid="quick-chat-streaming-thinking">
+                        <summary>Thinking</summary>
+                        <pre className="chat-message-thinking-content">{streamingThinking}</pre>
+                      </details>
                     )}
                   </div>
                 )}

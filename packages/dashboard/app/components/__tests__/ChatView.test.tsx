@@ -810,6 +810,64 @@ describe("ChatView", () => {
     expect(details).toHaveProperty("open", false);
   });
 
+  describe("streaming states", () => {
+    it("shows waiting indicator when streaming starts before text arrives", () => {
+      setupMockChat({
+        activeSession: { id: "session-001", agentId: "agent-001", status: "active", title: "Test Chat", updatedAt: "2026-04-08T00:00:00.000Z" },
+        messages: [
+          { id: "msg-001", sessionId: "session-001", role: "user", content: "Hello", createdAt: "2026-04-08T00:00:00.000Z" },
+        ],
+        isStreaming: true,
+        streamingText: "",
+        streamingThinking: "",
+      });
+
+      render(<ChatView projectId="proj-123" addToast={vi.fn()} />);
+
+      // Streaming message should show with "Connecting..." text
+      const streamingMessage = document.querySelector(".chat-message--streaming");
+      expect(streamingMessage).toBeInTheDocument();
+      expect(streamingMessage?.textContent).toContain("Connecting");
+
+      // Waiting class should be present
+      const waitingContent = streamingMessage?.querySelector(".chat-message-content--waiting");
+      expect(waitingContent).toBeInTheDocument();
+
+      // Typing indicator dots should be rendered
+      const typingIndicator = streamingMessage?.querySelector(".chat-typing-indicator");
+      expect(typingIndicator).toBeInTheDocument();
+      expect(typingIndicator?.querySelectorAll("span").length).toBe(3);
+    });
+
+    it("shows thinking indicator when streaming thinking arrives before text", () => {
+      setupMockChat({
+        activeSession: { id: "session-001", agentId: "agent-001", status: "active", title: "Test Chat", updatedAt: "2026-04-08T00:00:00.000Z" },
+        messages: [
+          { id: "msg-001", sessionId: "session-001", role: "user", content: "Hello", createdAt: "2026-04-08T00:00:00.000Z" },
+        ],
+        isStreaming: true,
+        streamingText: "",
+        streamingThinking: "analyzing the request...",
+      });
+
+      render(<ChatView projectId="proj-123" addToast={vi.fn()} />);
+
+      // Streaming message should show with "Thinking..." text
+      const streamingMessage = document.querySelector(".chat-message--streaming");
+      expect(streamingMessage).toBeInTheDocument();
+      expect(streamingMessage?.textContent).toContain("Thinking");
+
+      // Thinking details should be rendered
+      const thinkingDetails = streamingMessage?.querySelector("details.chat-message-thinking");
+      expect(thinkingDetails).toBeInTheDocument();
+      expect(thinkingDetails?.querySelector(".chat-message-thinking-content")?.textContent).toContain("analyzing the request");
+
+      // Typing indicator dots should be rendered
+      const typingIndicator = streamingMessage?.querySelector(".chat-typing-indicator");
+      expect(typingIndicator).toBeInTheDocument();
+    });
+  });
+
   it("filters sessions by search query", async () => {
     setupMockChat({
       sessions: [

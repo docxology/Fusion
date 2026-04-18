@@ -992,7 +992,7 @@ export function ChatView({ projectId, addToast }: ChatViewProps) {
                   <div className="chat-message-time">{formatRelativeTime(message.createdAt)}</div>
                 </div>
               ))}
-              {isStreaming && streamingText && (
+              {isStreaming && (
                 <div className="chat-message chat-message--assistant chat-message--streaming">
                   <div className="chat-message-avatar">
                     <Bot size={14} />
@@ -1002,7 +1002,13 @@ export function ChatView({ projectId, addToast }: ChatViewProps) {
                       return modelTag ? <span className="chat-model-tag">{modelTag}</span> : null;
                     })()}
                   </div>
-                  <div className="chat-message-content">{renderMessageContent(streamingText)}</div>
+                  {streamingText ? (
+                    <div className="chat-message-content">{renderMessageContent(streamingText)}</div>
+                  ) : (
+                    <div className="chat-message-content chat-message-content--waiting">
+                      {streamingThinking ? "Thinking…" : "Connecting…"}
+                    </div>
+                  )}
                   {streamingThinking && (
                     <details className="chat-message-thinking">
                       <summary>Thinking</summary>

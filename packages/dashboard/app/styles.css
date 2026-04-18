@@ -31139,6 +31139,18 @@ html .column.drag-over * {
   40% { opacity: 1; }
 }
 
+/* Chat waiting state */
+.chat-message-content--waiting {
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: 13px;
+}
+
+.quick-chat-panel-waiting {
+  color: var(--text-muted) !important;
+  font-style: italic;
+}
+
 /* Input area */
 .chat-input-area {
   position: relative;
