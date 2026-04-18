@@ -3821,6 +3821,17 @@ body {
   color: var(--color-error);
   padding-right: 4px;
 }
+
+/* === Key Hint === */
+.auth-key-hint {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-muted);
+  display: inline-block;
+  margin-top: var(--space-xs);
+  user-select: none;
+}
+
 .settings-empty-state {
   padding: 12px 20px;
   font-size: 13px;

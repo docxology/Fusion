@@ -853,6 +853,8 @@ export interface AuthProvider {
   authenticated: boolean;
   /** Whether this provider uses OAuth or API key authentication */
   type?: "oauth" | "api_key";
+  /** Masked hint of the stored API key (first 3 + bullets + last 4 chars) */
+  keyHint?: string;
 }
 
 /** Fetch authentication status for all OAuth providers */

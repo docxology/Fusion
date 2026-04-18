@@ -2978,6 +2978,9 @@ export function SettingsModal({
                           >
                             ✓ Active
                           </span>
+                          {provider.authenticated && provider.keyHint && (
+                            <span className="auth-key-hint">Key: {provider.keyHint}</span>
+                          )}
                         </div>
                         {provider.type === "api_key" ? (
                           <div className="auth-apikey-section">

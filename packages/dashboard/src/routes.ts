@@ -18018,6 +18018,18 @@ function registerAuthRoutes(router: Router, authStorage?: AuthStorageLike): void
   }
 
   /**
+   * Mask an API key for safe display.
+   * - If key length <= 8: return 8 bullets (never reveal short keys)
+   * - Otherwise: first 3 chars + 5 bullets + last 4 chars
+   */
+  function maskApiKey(key: string): string {
+    if (key.length <= 8) {
+      return "••••••••";
+    }
+    return key.slice(0, 3) + "•••••" + key.slice(-4);
+  }
+
+  /**
    * Track in-progress login flows to prevent concurrent logins for the same provider.
    * Maps provider ID → AbortController for the active login.
    */
@@ -18027,14 +18039,14 @@ function registerAuthRoutes(router: Router, authStorage?: AuthStorageLike): void
    * GET /api/auth/status
    * Returns list of all providers with their authentication status and type.
    * Includes both OAuth-backed and API-key-backed providers.
-   * Response: { providers: [{ id, name, authenticated, type }] }
+   * Response: { providers: [{ id, name, authenticated, type, keyHint? }] }
    */
   router.get("/auth/status", (_req, res) => {
     try {
       const storage = getAuthStorage();
       storage.reload();
       const oauthProviders = storage.getOAuthProviders();
-      const providers: { id: string; name: string; authenticated: boolean; type: "oauth" | "api_key" }[] = oauthProviders.map((p) => ({
+      const providers: { id: string; name: string; authenticated: boolean; type: "oauth" | "api_key"; keyHint?: string }[] = oauthProviders.map((p) => ({
         id: p.id,
         name: p.name,
         authenticated: storage.hasAuth(p.id),
@@ -18047,11 +18059,19 @@ function registerAuthRoutes(router: Router, authStorage?: AuthStorageLike): void
         for (const p of apiKeyProviders) {
           // Skip if already listed as an OAuth provider (avoid duplicates)
           if (providers.some((existing) => existing.id === p.id)) continue;
+          let keyHint: string | undefined;
+          if (storage.get) {
+            const cred = storage.get(p.id);
+            if (cred?.type === "api_key" && cred?.key) {
+              keyHint = maskApiKey(cred.key);
+            }
+          }
           providers.push({
             id: p.id,
             name: p.name,
             authenticated: storage.hasApiKey ? storage.hasApiKey(p.id) : false,
             type: "api_key" as const,
+            keyHint,
           });
         }
       }

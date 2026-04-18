@@ -1633,6 +1633,9 @@ export function ModelOnboardingModal({
                             {providerInfo.description}
                           </span>
                           <ProviderStatusBadge status={getProviderStatus(provider)} />
+                          {provider.authenticated && provider.keyHint && (
+                            <span className="auth-key-hint">Key: {provider.keyHint}</span>
+                          )}
                         </div>
                         <div className="onboarding-provider-card__actions onboarding-provider-card__actions--api-key">
                           <ApiKeyEntryForm
