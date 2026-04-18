@@ -46,6 +46,9 @@ import {
   fetchFirstRunStatus,
   fetchGlobalConcurrency,
   updateGlobalConcurrency,
+  fetchPiSettings,
+  updatePiSettings,
+  installPiPackage,
   fetchProjectTasks,
   fetchProjectConfig,
   fetchExecutorStats,
@@ -5373,5 +5376,115 @@ describe("Routine API scope forwarding", () => {
 
     const [url] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(url).toContain("/api/routines/routine-001/trigger?scope=project&projectId=proj-789");
+  });
+});
+
+describe("fetchPiSettings", () => {
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it("fetches pi settings from /api/pi-settings", async () => {
+    const mockSettings = {
+      packages: ["npm:pi-example"],
+      extensions: ["/path/to/extension"],
+      skills: ["/path/to/skill"],
+      prompts: ["/path/to/prompts"],
+      themes: ["/path/to/themes"],
+    };
+    globalThis.fetch = vi.fn().mockReturnValue(mockFetchResponse(true, mockSettings));
+
+    const result = await fetchPiSettings();
+
+    expect(result).toEqual(mockSettings);
+    expect(globalThis.fetch).toHaveBeenCalledWith("/api/pi-settings", expect.objectContaining({
+      headers: expect.objectContaining({ "Content-Type": "application/json" }),
+    }));
+  });
+
+  it("throws with server error message on failure", async () => {
+    globalThis.fetch = vi.fn().mockReturnValue(
+      mockFetchResponse(false, { error: "Failed to read settings" })
+    );
+
+    await expect(fetchPiSettings()).rejects.toThrow("Failed to read settings");
+  });
+});
+
+describe("updatePiSettings", () => {
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it("sends PUT to /api/pi-settings with settings body", async () => {
+    globalThis.fetch = vi.fn().mockReturnValue(mockFetchResponse(true, { success: true }));
+
+    const result = await updatePiSettings({ packages: ["npm:new-package"] });
+
+    expect(result.success).toBe(true);
+    expect(globalThis.fetch).toHaveBeenCalledWith("/api/pi-settings", expect.objectContaining({
+      method: "PUT",
+      body: JSON.stringify({ packages: ["npm:new-package"] }),
+    }));
+  });
+
+  it("sends all fields when updating multiple settings", async () => {
+    globalThis.fetch = vi.fn().mockReturnValue(mockFetchResponse(true, { success: true }));
+
+    const result = await updatePiSettings({
+      packages: ["npm:pi-example"],
+      extensions: ["/custom/extension"],
+      skills: ["/custom/skill"],
+      prompts: ["/custom/prompts"],
+      themes: ["/custom/themes"],
+    });
+
+    expect(result.success).toBe(true);
+    expect(globalThis.fetch).toHaveBeenCalledWith("/api/pi-settings", expect.objectContaining({
+      method: "PUT",
+      body: JSON.stringify({
+        packages: ["npm:pi-example"],
+        extensions: ["/custom/extension"],
+        skills: ["/custom/skill"],
+        prompts: ["/custom/prompts"],
+        themes: ["/custom/themes"],
+      }),
+    }));
+  });
+});
+
+describe("installPiPackage", () => {
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it("sends POST to /api/pi-settings/packages with source", async () => {
+    globalThis.fetch = vi.fn().mockReturnValue(mockFetchResponse(true, { success: true }));
+
+    const result = await installPiPackage("npm:pi-example");
+
+    expect(result.success).toBe(true);
+    expect(globalThis.fetch).toHaveBeenCalledWith("/api/pi-settings/packages", expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify({ source: "npm:pi-example" }),
+    }));
+  });
+
+  it("handles git source URLs", async () => {
+    globalThis.fetch = vi.fn().mockReturnValue(mockFetchResponse(true, { success: true }));
+
+    const result = await installPiPackage("git:https://github.com/example/pi-extension.git");
+
+    expect(result.success).toBe(true);
+    expect(globalThis.fetch).toHaveBeenCalledWith("/api/pi-settings/packages", expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify({ source: "git:https://github.com/example/pi-extension.git" }),
+    }));
   });
 });

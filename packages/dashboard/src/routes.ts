@@ -3350,6 +3350,134 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
     }
   });
 
+  // ── Pi Settings Routes ────────────────────────────────────────────
+
+  /**
+   * GET /api/pi-settings
+   * Returns the user's global pi extension settings from ~/.pi/agent/settings.json.
+   * Includes packages, extension paths, skill paths, prompt template paths, and theme paths.
+   */
+  router.get("/pi-settings", async (_req, res) => {
+    try {
+      const { SettingsManager, getAgentDir } = await import("@mariozechner/pi-coding-agent");
+      const agentDir = getAgentDir();
+      const settingsManager = SettingsManager.create(undefined, agentDir);
+      const packages = settingsManager.getPackages();
+      const extensions = settingsManager.getExtensionPaths();
+      const skills = settingsManager.getSkillPaths();
+      const prompts = settingsManager.getPromptTemplatePaths();
+      const themes = settingsManager.getThemePaths();
+      res.json({ packages, extensions, skills, prompts, themes });
+    } catch (err: unknown) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      rethrowAsApiError(err);
+    }
+  });
+
+  /**
+   * PUT /api/pi-settings
+   * Updates the user's global pi extension settings in ~/.pi/agent/settings.json.
+   * Accepts partial updates: only provided fields are updated.
+   * Body: { packages?: PackageSource[], extensions?: string[], skills?: string[], prompts?: string[], themes?: string[] }
+   */
+  router.put("/pi-settings", async (req, res) => {
+    try {
+      const { packages, extensions, skills, prompts, themes } = req.body as {
+        packages?: unknown;
+        extensions?: unknown;
+        skills?: unknown;
+        prompts?: unknown;
+        themes?: unknown;
+      };
+
+      // Validate that at least one field is provided
+      if (packages === undefined && extensions === undefined && skills === undefined && prompts === undefined && themes === undefined) {
+        throw badRequest("At least one setting field must be provided (packages, extensions, skills, prompts, or themes)");
+      }
+
+      const { SettingsManager, getAgentDir } = await import("@mariozechner/pi-coding-agent");
+      const agentDir = getAgentDir();
+      const settingsManager = SettingsManager.create(undefined, agentDir);
+
+      if (packages !== undefined) {
+        if (!Array.isArray(packages)) {
+          throw badRequest("packages must be an array");
+        }
+        settingsManager.setPackages(packages as string[]);
+      }
+      if (extensions !== undefined) {
+        if (!Array.isArray(extensions)) {
+          throw badRequest("extensions must be an array of strings");
+        }
+        settingsManager.setExtensionPaths(extensions as string[]);
+      }
+      if (skills !== undefined) {
+        if (!Array.isArray(skills)) {
+          throw badRequest("skills must be an array of strings");
+        }
+        settingsManager.setSkillPaths(skills as string[]);
+      }
+      if (prompts !== undefined) {
+        if (!Array.isArray(prompts)) {
+          throw badRequest("prompts must be an array of strings");
+        }
+        settingsManager.setPromptTemplatePaths(prompts as string[]);
+      }
+      if (themes !== undefined) {
+        if (!Array.isArray(themes)) {
+          throw badRequest("themes must be an array of strings");
+        }
+        settingsManager.setThemePaths(themes as string[]);
+      }
+
+      await settingsManager.flush();
+      res.json({ success: true });
+    } catch (err: unknown) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      rethrowAsApiError(err);
+    }
+  });
+
+  /**
+   * POST /api/pi-settings/packages
+   * Installs a new pi package source and adds it to the global settings.
+   * Body: { source: string }
+   */
+  router.post("/pi-settings/packages", async (req, res) => {
+    try {
+      const { source } = req.body as { source?: unknown };
+      if (typeof source !== "string" || !source.trim()) {
+        throw badRequest("source must be a non-empty string");
+      }
+
+      const { SettingsManager, DefaultPackageManager, getAgentDir } = await import("@mariozechner/pi-coding-agent");
+      const agentDir = getAgentDir();
+      const cwd = process.cwd();
+      const settingsManager = SettingsManager.create(undefined, agentDir);
+      const packageManager = new DefaultPackageManager({ cwd, agentDir, settingsManager });
+
+      await packageManager.install(source.trim());
+      const added = packageManager.addSourceToSettings(source.trim());
+      if (!added) {
+        // Already in settings (setPackages deduplicates), treat as success
+        res.json({ success: true });
+        return;
+      }
+
+      await settingsManager.flush();
+      res.json({ success: true });
+    } catch (err: unknown) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      rethrowAsApiError(err);
+    }
+  });
+
   /**
    * POST /api/settings/test-ntfy
    * Send a test notification to verify ntfy configuration.

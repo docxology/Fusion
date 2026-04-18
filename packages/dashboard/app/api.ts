@@ -602,6 +602,36 @@ export function testNtfyNotification(config?: { ntfyEnabled?: boolean; ntfyTopic
   });
 }
 
+/** Pi extension settings from ~/.pi/agent/settings.json (global scope) */
+export interface PiSettings {
+  packages: Array<string | { source: string; extensions?: string[]; skills?: string[]; prompts?: string[]; themes?: string[] }>;
+  extensions: string[];
+  skills: string[];
+  prompts: string[];
+  themes: string[];
+}
+
+/** Fetch pi extension settings (global scope from ~/.pi/agent/settings.json) */
+export function fetchPiSettings(): Promise<PiSettings> {
+  return api<PiSettings>("/pi-settings");
+}
+
+/** Update pi extension settings (partial update, global scope) */
+export async function updatePiSettings(settings: Partial<PiSettings>): Promise<{ success: boolean }> {
+  return api<{ success: boolean }>("/pi-settings", {
+    method: "PUT",
+    body: JSON.stringify(settings),
+  });
+}
+
+/** Install a new pi package source (adds to ~/.pi/agent/settings.json) */
+export async function installPiPackage(source: string): Promise<{ success: boolean }> {
+  return api<{ success: boolean }>("/pi-settings/packages", {
+    method: "POST",
+    body: JSON.stringify({ source }),
+  });
+}
+
 export async function uploadAttachment(id: string, file: File, projectId?: string): Promise<TaskAttachment> {
   const formData = new FormData();
   formData.append("file", file);

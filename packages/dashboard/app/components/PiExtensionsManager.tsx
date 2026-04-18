@@ -1,17 +1,32 @@
 /**
  * Pi Extensions Manager Component
  *
- * Provides UI for managing Pi extensions:
- * - List extensions with source badges and toggle switches
- * - Enable/disable extensions
- * - Refresh extension list
+ * Provides UI for managing Pi extension packages, extensions, skills, prompts, and themes
+ * stored in the global pi settings (~/.pi/agent/settings.json).
+ *
+ * Features:
+ * - List configured package sources with type badges (npm/git/local)
+ * - Add new package sources via install form
+ * - Remove package sources from the list
+ * - Manage top-level extension, skill, prompt, and theme path arrays
  * - Loading and empty states
  */
 
 import { useState, useEffect, useCallback } from "react";
-import { Package, RefreshCw } from "lucide-react";
-import { fetchPiExtensions, updatePiExtensions } from "../api";
-import type { PiExtensionSettings } from "../api";
+import {
+  Package,
+  Puzzle,
+  BookOpen,
+  FileText,
+  Palette,
+  Plus,
+  X,
+  ChevronDown,
+  ChevronRight,
+  RefreshCw,
+  Trash2,
+} from "lucide-react";
+import { fetchPiSettings, updatePiSettings, installPiPackage, type PiSettings } from "../api";
 import type { ToastType } from "../hooks/useToast";
 
 interface PiExtensionsManagerProps {
@@ -19,52 +34,133 @@ interface PiExtensionsManagerProps {
   projectId?: string;
 }
 
-/** Source to label mapping */
-const SOURCE_LABELS: Record<PiExtensionSettings["extensions"][number]["source"], string> = {
-  "fusion-global": "Fusion Global",
-  "pi-global": "Pi Global",
-  "fusion-project": "Fusion Project",
-  "pi-project": "Pi Project",
-};
+/** Determine package source type from the source string */
+function getPackageType(source: string): "npm" | "git" | "local" {
+  if (source.startsWith("npm:")) return "npm";
+  if (source.startsWith("git:")) return "git";
+  return "local";
+}
 
-export function PiExtensionsManager({ addToast, projectId }: PiExtensionsManagerProps) {
-  const [extensions, setExtensions] = useState<PiExtensionSettings | null>(null);
+/** Get display label for a package source (strip prefix) */
+function getPackageLabel(source: string): string {
+  return source.replace(/^(npm:|git:)/, "");
+}
+
+export function PiExtensionsManager({ addToast }: PiExtensionsManagerProps) {
+  const [settings, setSettings] = useState<PiSettings | null>(null);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [installing, setInstalling] = useState(false);
+  const [newSource, setNewSource] = useState("");
+  const [expandedPackages, setExpandedPackages] = useState<Set<number>>(new Set());
 
-  const loadExtensions = useCallback(async () => {
+  const loadSettings = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await fetchPiExtensions(projectId);
-      setExtensions(data);
+      const data = await fetchPiSettings();
+      setSettings(data);
     } catch (err) {
-      addToast(`Failed to load Pi extensions: ${err instanceof Error ? err.message : String(err)}`, "error");
+      addToast(`Failed to load Pi settings: ${err instanceof Error ? err.message : String(err)}`, "error");
     } finally {
       setLoading(false);
     }
-  }, [projectId, addToast]);
+  }, [addToast]);
 
   useEffect(() => {
-    void loadExtensions();
-  }, [loadExtensions]);
+    void loadSettings();
+  }, [loadSettings]);
 
-  const toggleExtension = async (extensionId: string, enabled: boolean) => {
-    if (!extensions) return;
+  const toggleExpanded = (index: number) => {
+    setExpandedPackages((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) {
+        next.delete(index);
+      } else {
+        next.add(index);
+      }
+      return next;
+    });
+  };
 
-    const nextDisabledIds = enabled
-      ? extensions.disabledIds.filter((id) => id !== extensionId)
-      : Array.from(new Set([...extensions.disabledIds, extensionId]));
-
-    setSaving(true);
-    try {
-      const nextSettings = await updatePiExtensions(nextDisabledIds, projectId);
-      setExtensions(nextSettings);
-      addToast("Pi extension settings saved", "success");
-    } catch (err) {
-      addToast(err instanceof Error ? err.message : "Failed to save Pi extension settings", "error");
-    } finally {
-      setSaving(false);
+  const handleInstall = async () => {
+    if (!newSource.trim()) {
+      addToast("Please enter a package source", "error");
+      return;
     }
+
+    try {
+      setInstalling(true);
+      await installPiPackage(newSource.trim());
+      addToast("Package installed successfully", "success");
+      setNewSource("");
+      await loadSettings();
+    } catch (err) {
+      addToast(`Failed to install package: ${err instanceof Error ? err.message : String(err)}`, "error");
+    } finally {
+      setInstalling(false);
+    }
+  };
+
+  const handleRemovePackage = async (sourceToRemove: string) => {
+    if (!settings) return;
+
+    const updatedPackages = settings.packages.filter((pkg) => {
+      const pkgSource = typeof pkg === "string" ? pkg : pkg.source;
+      return pkgSource !== sourceToRemove;
+    });
+
+    try {
+      await updatePiSettings({ packages: updatedPackages });
+      addToast("Package removed", "success");
+      await loadSettings();
+    } catch (err) {
+      addToast(`Failed to remove package: ${err instanceof Error ? err.message : String(err)}`, "error");
+    }
+  };
+
+  const handleRemoveResource = async (type: "extensions" | "skills" | "prompts" | "themes", pathToRemove: string) => {
+    if (!settings) return;
+
+    const updated = settings[type].filter((p) => p !== pathToRemove);
+
+    try {
+      await updatePiSettings({ [type]: updated });
+      addToast(`${type.slice(0, -1)} removed`, "success");
+      await loadSettings();
+    } catch (err) {
+      addToast(`Failed to update settings: ${err instanceof Error ? err.message : String(err)}`, "error");
+    }
+  };
+
+  const renderResourceSection = (
+    label: string,
+    Icon: typeof Puzzle,
+    type: "extensions" | "skills" | "prompts" | "themes"
+  ) => {
+    if (!settings || settings[type].length === 0) return null;
+
+    return (
+      <div className="pi-ext-section">
+        <div className="pi-ext-section-header">
+          <Icon size={14} />
+          <span>{label}</span>
+          <span className="pi-ext-count">{settings[type].length}</span>
+        </div>
+        <div className="pi-ext-resource-list">
+          {settings[type].map((path, index) => (
+            <span key={index} className="pi-ext-resource-tag">
+              <span className="pi-ext-resource-path">{path}</span>
+              <button
+                className="pi-ext-resource-remove"
+                onClick={() => handleRemoveResource(type, path)}
+                title={`Remove ${path}`}
+              >
+                <X size={12} />
+              </button>
+            </span>
+          ))}
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -72,60 +168,167 @@ export function PiExtensionsManager({ addToast, projectId }: PiExtensionsManager
       <div className="pi-ext-manager-header">
         <h3>Pi Extensions</h3>
         <div className="pi-ext-manager-actions">
-          <button className="btn-icon" onClick={loadExtensions} title="Refresh" disabled={loading}>
+          <button className="btn-icon" onClick={loadSettings} title="Refresh" disabled={loading}>
             <RefreshCw size={16} className={loading ? "spin" : ""} />
           </button>
         </div>
       </div>
 
-      <p className="pi-ext-description">
-        Choose which project and global Pi extensions Fusion loads. Changes are saved to your Fusion agent
-        settings and apply after restarting the dashboard or headless node.
-      </p>
-
       {loading ? (
-        <div className="loading-state">Loading Pi extensions…</div>
-      ) : !extensions || extensions.extensions.length === 0 ? (
+        <div className="loading-state">Loading Pi settings…</div>
+      ) : !settings ? (
         <div className="empty-state">
           <Package size={32} className="text-muted" />
-          <p>No Pi extensions found.</p>
-          <p className="text-muted">
-            Extensions are discovered from ~/.fusion/agent, ~/.pi/agent, and your project&apos;s .fusion/ directory.
-          </p>
+          <p>Failed to load Pi settings.</p>
         </div>
       ) : (
-        <div className="pi-ext-list">
-          {extensions.extensions.map((extension) => {
-            const isGlobal = extension.source === "fusion-global" || extension.source === "pi-global";
+        <>
+          {/* Add package form */}
+          <div className="pi-ext-add-form">
+            <div className="pi-ext-add-form-row">
+              <input
+                type="text"
+                className="input"
+                placeholder="npm:pi-extension-name or git:https://github.com/..."
+                value={newSource}
+                onChange={(e) => setNewSource(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void handleInstall();
+                  }
+                }}
+                disabled={installing}
+              />
+              <button
+                className="btn-primary"
+                onClick={handleInstall}
+                disabled={installing || !newSource.trim()}
+              >
+                <Plus size={14} />
+                {installing ? "Installing…" : "Add"}
+              </button>
+            </div>
+          </div>
 
-            return (
-              <div key={extension.id} className="pi-ext-item">
-                <div className="pi-ext-item-content">
-                  <div className="pi-ext-info">
-                    <span className="pi-ext-name">{extension.name}</span>
-                    <span
-                      className={`pi-ext-source-badge ${isGlobal ? "pi-ext-source-badge--global" : "pi-ext-source-badge--project"}`}
-                    >
-                      {SOURCE_LABELS[extension.source]}
-                    </span>
+          {/* Package list */}
+          {settings.packages.length > 0 ? (
+            <div className="pi-ext-package-list">
+              {settings.packages.map((pkg, index) => {
+                const source = typeof pkg === "string" ? pkg : pkg.source;
+                const type = getPackageType(source);
+                const label = getPackageLabel(source);
+                const isObject = typeof pkg === "object" && pkg !== null;
+                const hasFilters =
+                  isObject &&
+                  ((pkg as { extensions?: string[] }).extensions?.length ?? 0) > 0 ||
+                  ((pkg as { skills?: string[] }).skills?.length ?? 0) > 0 ||
+                  ((pkg as { prompts?: string[] }).prompts?.length ?? 0) > 0 ||
+                  ((pkg as { themes?: string[] }).themes?.length ?? 0) > 0;
+                const isExpanded = expandedPackages.has(index);
+
+                return (
+                  <div key={index} className="pi-ext-package-card">
+                    <div className="pi-ext-package-header">
+                      {isObject && hasFilters ? (
+                        <button
+                          className="pi-ext-expand-btn"
+                          onClick={() => toggleExpanded(index)}
+                          aria-expanded={isExpanded}
+                        >
+                          {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                        </button>
+                      ) : (
+                        <span className="pi-ext-expand-placeholder" />
+                      )}
+                      <span className={`pi-ext-source-badge pi-ext-source-badge--${type}`}>{type}</span>
+                      <span className="pi-ext-package-source">{label}</span>
+                      <div className="pi-ext-package-actions">
+                        {isObject && hasFilters && (
+                          <span className="pi-ext-filter-hint">
+                            {(pkg as { extensions?: string[] }).extensions?.length ?? 0} ext,{" "}
+                            {(pkg as { skills?: string[] }).skills?.length ?? 0} skill,{" "}
+                            {(pkg as { prompts?: string[] }).prompts?.length ?? 0} prompt,{" "}
+                            {(pkg as { themes?: string[] }).themes?.length ?? 0} theme
+                          </span>
+                        )}
+                        <button
+                          className="pi-ext-remove-btn"
+                          onClick={() => handleRemovePackage(source)}
+                          title="Remove package"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                    {isObject && hasFilters && isExpanded && (
+                      <div className="pi-ext-filter-list">
+                        {(pkg as { extensions?: string[] }).extensions?.length ? (
+                          <div className="pi-ext-filter-section">
+                            <Puzzle size={12} />
+                            <span className="pi-ext-filter-label">Extensions:</span>
+                            {(pkg as { extensions: string[] }).extensions!.map((ext, i) => (
+                              <span key={i} className="pi-ext-filter-tag">
+                                {ext}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+                        {(pkg as { skills?: string[] }).skills?.length ? (
+                          <div className="pi-ext-filter-section">
+                            <BookOpen size={12} />
+                            <span className="pi-ext-filter-label">Skills:</span>
+                            {(pkg as { skills: string[] }).skills!.map((skill, i) => (
+                              <span key={i} className="pi-ext-filter-tag">
+                                {skill}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+                        {(pkg as { prompts?: string[] }).prompts?.length ? (
+                          <div className="pi-ext-filter-section">
+                            <FileText size={12} />
+                            <span className="pi-ext-filter-label">Prompts:</span>
+                            {(pkg as { prompts: string[] }).prompts!.map((prompt, i) => (
+                              <span key={i} className="pi-ext-filter-tag">
+                                {prompt}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+                        {(pkg as { themes?: string[] }).themes?.length ? (
+                          <div className="pi-ext-filter-section">
+                            <Palette size={12} />
+                            <span className="pi-ext-filter-label">Themes:</span>
+                            {(pkg as { themes: string[] }).themes!.map((theme, i) => (
+                              <span key={i} className="pi-ext-filter-tag">
+                                {theme}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    )}
                   </div>
-                  <span className="pi-ext-path">{extension.path}</span>
-                </div>
-                <div className="pi-ext-actions">
-                  <label className="toggle-switch">
-                    <input
-                      type="checkbox"
-                      checked={extension.enabled}
-                      disabled={saving}
-                      onChange={(e) => toggleExtension(extension.id, e.target.checked)}
-                    />
-                    <span className="toggle-slider"></span>
-                  </label>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="empty-state">
+              <Package size={32} className="text-muted" />
+              <p>No packages configured.</p>
+              <p className="text-muted">Add a package source above to get started.</p>
+            </div>
+          )}
+
+          {/* Top-level resource sections */}
+          <div className="pi-ext-top-level">
+            {renderResourceSection("Extensions", Puzzle, "extensions")}
+            {renderResourceSection("Skills", BookOpen, "skills")}
+            {renderResourceSection("Prompts", FileText, "prompts")}
+            {renderResourceSection("Themes", Palette, "themes")}
+          </div>
+        </>
       )}
     </div>
   );

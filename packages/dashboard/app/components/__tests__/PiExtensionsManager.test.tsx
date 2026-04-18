@@ -2,62 +2,67 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor, fireEvent, cleanup } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { PiExtensionsManager } from "../PiExtensionsManager";
-import type { PiExtensionSettings } from "../../api";
 
-// Mock API module - must be declared before import
-const mockFetchPiExtensions = vi.fn();
-const mockUpdatePiExtensions = vi.fn();
+// Mock API module
+const mockFetchPiSettings = vi.fn();
+const mockUpdatePiSettings = vi.fn();
+const mockInstallPiPackage = vi.fn();
 
 // Mock lucide-react icons
 vi.mock("lucide-react", () => ({
   Package: ({ size }: { size?: number }) => (
     <span data-testid="icon-package">Package-{size || 16}</span>
   ),
+  Puzzle: ({ size }: { size?: number }) => (
+    <span data-testid="icon-puzzle">Puzzle-{size || 14}</span>
+  ),
+  BookOpen: ({ size }: { size?: number }) => (
+    <span data-testid="icon-book">BookOpen-{size || 14}</span>
+  ),
+  FileText: ({ size }: { size?: number }) => (
+    <span data-testid="icon-file">FileText-{size || 14}</span>
+  ),
+  Palette: ({ size }: { size?: number }) => (
+    <span data-testid="icon-palette">Palette-{size || 14}</span>
+  ),
+  Plus: ({ size }: { size?: number }) => (
+    <span data-testid="icon-plus">Plus-{size || 14}</span>
+  ),
+  X: ({ size }: { size?: number }) => (
+    <span data-testid="icon-x">X-{size || 12}</span>
+  ),
+  ChevronDown: ({ size }: { size?: number }) => (
+    <span data-testid="icon-chevron-down">ChevronDown-{size || 14}</span>
+  ),
+  ChevronRight: ({ size }: { size?: number }) => (
+    <span data-testid="icon-chevron-right">ChevronRight-{size || 14}</span>
+  ),
   RefreshCw: ({ size, className }: { size?: number; className?: string }) => (
     <span data-testid="icon-refresh" className={className}>
       RefreshCw-{size || 16}
     </span>
   ),
+  Trash2: ({ size }: { size?: number }) => (
+    <span data-testid="icon-trash">Trash2-{size || 14}</span>
+  ),
 }));
 
 vi.mock("../../api", () => ({
-  fetchPiExtensions: (...args: unknown[]) => mockFetchPiExtensions(...args),
-  updatePiExtensions: (...args: unknown[]) => mockUpdatePiExtensions(...args),
+  fetchPiSettings: (...args: unknown[]) => mockFetchPiSettings(...args),
+  updatePiSettings: (...args: unknown[]) => mockUpdatePiSettings(...args),
+  installPiPackage: (...args: unknown[]) => mockInstallPiPackage(...args),
 }));
 
-const mockExtensions: PiExtensionSettings = {
-  extensions: [
-    {
-      id: "ext-1",
-      name: "Test Extension 1",
-      path: "/path/to/ext-1",
-      source: "fusion-global",
-      enabled: true,
-    },
-    {
-      id: "ext-2",
-      name: "Test Extension 2",
-      path: "/path/to/ext-2",
-      source: "pi-global",
-      enabled: false,
-    },
-    {
-      id: "ext-3",
-      name: "Test Extension 3",
-      path: "/path/to/ext-3",
-      source: "fusion-project",
-      enabled: true,
-    },
-    {
-      id: "ext-4",
-      name: "Test Extension 4",
-      path: "/path/to/ext-4",
-      source: "pi-project",
-      enabled: false,
-    },
+const mockPiSettings = {
+  packages: [
+    "npm:pi-example",
+    "git:https://github.com/example/extension.git",
+    { source: "npm:pi-with-filters", extensions: ["ext-a", "ext-b"], skills: ["skill-1"], prompts: [], themes: [] },
   ],
-  disabledIds: ["ext-2", "ext-4"],
-  settingsPath: "/path/to/settings.json",
+  extensions: ["/path/to/extension"],
+  skills: ["/path/to/skill"],
+  prompts: ["/path/to/prompts"],
+  themes: ["/path/to/themes"],
 };
 
 const addToast = vi.fn();
@@ -70,102 +75,71 @@ describe("PiExtensionsManager", () => {
 
   describe("Rendering", () => {
     it("renders Pi Extensions header", async () => {
-      mockFetchPiExtensions.mockResolvedValueOnce({ extensions: [], disabledIds: [], settingsPath: "" });
-      render(<PiExtensionsManager addToast={addToast} />);
-      await waitFor(() => expect(screen.getByRole("heading", { name: /Pi Extensions/i })).toBeTruthy());
-    });
-
-    it("renders extension list with names and toggle switches", async () => {
-      mockFetchPiExtensions.mockResolvedValueOnce(mockExtensions);
-      render(<PiExtensionsManager addToast={addToast} />);
-
-      // Both extension names should be visible
-      await waitFor(() => {
-        expect(screen.getByText("Test Extension 1")).toBeTruthy();
-        expect(screen.getByText("Test Extension 2")).toBeTruthy();
-      });
-
-      // Both toggle switches should be present
-      const toggles = screen.getAllByRole("checkbox");
-      expect(toggles).toHaveLength(4);
-
-      // Enabled extension should be checked, disabled should be unchecked
-      expect(toggles[0]).toBeChecked(); // ext-1 enabled
-      expect(toggles[1]).not.toBeChecked(); // ext-2 disabled
-      expect(toggles[2]).toBeChecked(); // ext-3 enabled
-      expect(toggles[3]).not.toBeChecked(); // ext-4 disabled
-    });
-
-    it("shows source badges with correct labels", async () => {
-      mockFetchPiExtensions.mockResolvedValueOnce(mockExtensions);
+      mockFetchPiSettings.mockResolvedValueOnce(mockPiSettings);
       render(<PiExtensionsManager addToast={addToast} />);
 
       await waitFor(() => {
-        expect(screen.getByText("Fusion Global")).toBeTruthy();
-        expect(screen.getByText("Pi Global")).toBeTruthy();
-        expect(screen.getByText("Fusion Project")).toBeTruthy();
-        expect(screen.getByText("Pi Project")).toBeTruthy();
+        expect(screen.getByRole("heading", { name: "Pi Extensions" })).toBeTruthy();
       });
     });
 
-    it("shows source badges with correct CSS classes", async () => {
-      mockFetchPiExtensions.mockResolvedValueOnce(mockExtensions);
+    it("renders add package form", async () => {
+      mockFetchPiSettings.mockResolvedValueOnce(mockPiSettings);
       render(<PiExtensionsManager addToast={addToast} />);
 
       await waitFor(() => {
-        const fusionGlobalBadge = screen.getByText("Fusion Global").closest(".pi-ext-source-badge");
-        expect(fusionGlobalBadge).toHaveClass("pi-ext-source-badge--global");
-
-        const piGlobalBadge = screen.getByText("Pi Global").closest(".pi-ext-source-badge");
-        expect(piGlobalBadge).toHaveClass("pi-ext-source-badge--global");
-
-        const fusionProjectBadge = screen.getByText("Fusion Project").closest(".pi-ext-source-badge");
-        expect(fusionProjectBadge).toHaveClass("pi-ext-source-badge--project");
-
-        const piProjectBadge = screen.getByText("Pi Project").closest(".pi-ext-source-badge");
-        expect(piProjectBadge).toHaveClass("pi-ext-source-badge--project");
+        expect(screen.getByRole("textbox")).toBeTruthy();
+        expect(screen.getByRole("button", { name: /Add/i })).toBeTruthy();
       });
     });
 
-    it("shows extension paths", async () => {
-      mockFetchPiExtensions.mockResolvedValueOnce(mockExtensions);
+    it("renders package list with source badges", async () => {
+      mockFetchPiSettings.mockResolvedValueOnce(mockPiSettings);
       render(<PiExtensionsManager addToast={addToast} />);
 
       await waitFor(() => {
-        expect(screen.getByText("/path/to/ext-1")).toBeTruthy();
-        expect(screen.getByText("/path/to/ext-2")).toBeTruthy();
-        expect(screen.getByText("/path/to/ext-3")).toBeTruthy();
-        expect(screen.getByText("/path/to/ext-4")).toBeTruthy();
+        expect(screen.getAllByText("npm")).toHaveLength(2); // npm:pi-example and npm:pi-with-filters
+        expect(screen.getByText("git")).toBeTruthy();
+        expect(screen.getByText("pi-example")).toBeTruthy();
+        expect(screen.getByText(/github\.com\/example\/extension\.git/i)).toBeTruthy();
       });
     });
 
-    it("renders description text explaining pi extensions", async () => {
-      mockFetchPiExtensions.mockResolvedValueOnce({ extensions: [], disabledIds: [], settingsPath: "" });
+    it("renders top-level resource sections", async () => {
+      mockFetchPiSettings.mockResolvedValueOnce(mockPiSettings);
       render(<PiExtensionsManager addToast={addToast} />);
+
       await waitFor(() => {
-        expect(screen.getByText(/Choose which project and global Pi extensions/)).toBeTruthy();
+        expect(screen.getByText("Extensions")).toBeTruthy();
+        expect(screen.getByText("Skills")).toBeTruthy();
+        expect(screen.getByText("Prompts")).toBeTruthy();
+        expect(screen.getByText("Themes")).toBeTruthy();
       });
     });
 
-    it("passes projectId to fetchPiExtensions", async () => {
-      mockFetchPiExtensions.mockResolvedValueOnce({ extensions: [], disabledIds: [], settingsPath: "" });
-      render(<PiExtensionsManager addToast={addToast} projectId="proj-123" />);
+    it("renders resource paths as removable tags", async () => {
+      mockFetchPiSettings.mockResolvedValueOnce(mockPiSettings);
+      render(<PiExtensionsManager addToast={addToast} />);
+
       await waitFor(() => {
-        expect(mockFetchPiExtensions).toHaveBeenCalledWith("proj-123");
+        expect(screen.getByText("/path/to/extension")).toBeTruthy();
+        expect(screen.getByText("/path/to/skill")).toBeTruthy();
+        expect(screen.getByText("/path/to/prompts")).toBeTruthy();
+        expect(screen.getByText("/path/to/themes")).toBeTruthy();
       });
     });
   });
 
   describe("Loading state", () => {
-    it("shows loading state while fetching extensions", async () => {
-      mockFetchPiExtensions.mockImplementation(() => new Promise(() => {}));
+    it("shows loading state while fetching settings", async () => {
+      mockFetchPiSettings.mockImplementation(() => new Promise(() => {}));
       render(<PiExtensionsManager addToast={addToast} />);
 
-      expect(screen.getByText("Loading Pi extensions…")).toBeTruthy();
+      expect(screen.getByText("Loading Pi settings…")).toBeTruthy();
     });
 
     it("refresh button shows spinning class while loading", async () => {
-      mockFetchPiExtensions.mockImplementation(() => new Promise(() => {}));
+      mockFetchPiSettings.mockImplementation(() => new Promise(() => {}));
       render(<PiExtensionsManager addToast={addToast} />);
 
       const refreshBtn = screen.getByTestId("icon-refresh");
@@ -174,18 +148,18 @@ describe("PiExtensionsManager", () => {
   });
 
   describe("Empty state", () => {
-    it("shows empty state when no extensions found", async () => {
-      mockFetchPiExtensions.mockResolvedValueOnce({ extensions: [], disabledIds: [], settingsPath: "" });
+    it("shows empty state when no packages configured", async () => {
+      mockFetchPiSettings.mockResolvedValueOnce({ packages: [], extensions: [], skills: [], prompts: [], themes: [] });
       render(<PiExtensionsManager addToast={addToast} />);
 
       await waitFor(() => {
-        expect(screen.getByText("No Pi extensions found.")).toBeTruthy();
+        expect(screen.getByText("No packages configured.")).toBeTruthy();
       });
-      expect(screen.getByText(/Extensions are discovered from ~\/\.fusion\/agent/)).toBeTruthy();
+      expect(screen.getByText(/Add a package source above to get started/)).toBeTruthy();
     });
 
     it("shows Package icon in empty state", async () => {
-      mockFetchPiExtensions.mockResolvedValueOnce({ extensions: [], disabledIds: [], settingsPath: "" });
+      mockFetchPiSettings.mockResolvedValueOnce({ packages: [], extensions: [], skills: [], prompts: [], themes: [] });
       render(<PiExtensionsManager addToast={addToast} />);
 
       await waitFor(() => {
@@ -194,143 +168,219 @@ describe("PiExtensionsManager", () => {
     });
   });
 
-  describe("Toggle interactions", () => {
-    it("toggles extension on - enables disabled extension", async () => {
-      mockFetchPiExtensions.mockResolvedValueOnce(mockExtensions);
-      mockUpdatePiExtensions.mockResolvedValueOnce({
-        ...mockExtensions,
-        extensions: mockExtensions.extensions.map((ext) =>
-          ext.id === "ext-2" ? { ...ext, enabled: true } : ext
-        ),
-        disabledIds: ["ext-4"],
-      });
+  describe("Add package form", () => {
+    it("calls installPiPackage when Add button is clicked", async () => {
+      mockFetchPiSettings.mockResolvedValueOnce({ packages: [], extensions: [], skills: [], prompts: [], themes: [] });
+      mockInstallPiPackage.mockResolvedValueOnce({ success: true });
+      // Second call to loadSettings after install completes
+      mockFetchPiSettings.mockResolvedValueOnce({ packages: ["npm:new-package"], extensions: [], skills: [], prompts: [], themes: [] });
 
       render(<PiExtensionsManager addToast={addToast} />);
 
       await waitFor(() => {
-        const toggles = screen.getAllByRole("checkbox");
-        expect(toggles[1]).not.toBeChecked();
+        expect(screen.getByText("No packages configured.")).toBeTruthy();
       });
 
-      const toggles = screen.getAllByRole("checkbox");
-      await userEvent.click(toggles[1]); // ext-2 is disabled, click to enable
+      await userEvent.type(screen.getByRole("textbox"), "npm:new-package");
+      await userEvent.click(screen.getByRole("button", { name: /Add/i }));
 
       await waitFor(() => {
-        expect(mockUpdatePiExtensions).toHaveBeenCalledWith(["ext-4"], undefined);
+        expect(mockInstallPiPackage).toHaveBeenCalledWith("npm:new-package");
       });
-      expect(addToast).toHaveBeenCalledWith("Pi extension settings saved", "success");
+
+      // Wait for refresh after install
+      await waitFor(() => {
+        expect(screen.queryByText("No packages configured.")).not.toBeTruthy();
+      });
     });
 
-    it("toggles extension off - disables enabled extension", async () => {
-      mockFetchPiExtensions.mockResolvedValueOnce(mockExtensions);
-      mockUpdatePiExtensions.mockResolvedValueOnce({
-        ...mockExtensions,
-        extensions: mockExtensions.extensions.map((ext) =>
-          ext.id === "ext-1" ? { ...ext, enabled: false } : ext
-        ),
-        disabledIds: ["ext-2", "ext-4", "ext-1"],
-      });
+    it("shows error toast when install fails", async () => {
+      mockFetchPiSettings.mockResolvedValueOnce({ packages: [], extensions: [], skills: [], prompts: [], themes: [] });
+      mockInstallPiPackage.mockRejectedValueOnce(new Error("Install failed"));
 
       render(<PiExtensionsManager addToast={addToast} />);
 
       await waitFor(() => {
-        const toggles = screen.getAllByRole("checkbox");
-        expect(toggles[0]).toBeChecked();
+        expect(screen.getByText("No packages configured.")).toBeTruthy();
       });
 
-      const toggles = screen.getAllByRole("checkbox");
-      await userEvent.click(toggles[0]); // ext-1 is enabled, click to disable
+      await userEvent.type(screen.getByRole("textbox"), "npm:failing-package");
+      await userEvent.click(screen.getByRole("button", { name: /Add/i }));
 
       await waitFor(() => {
-        expect(mockUpdatePiExtensions).toHaveBeenCalledWith(["ext-2", "ext-4", "ext-1"], undefined);
+        expect(addToast).toHaveBeenCalledWith("Failed to install package: Install failed", "error");
       });
-      expect(addToast).toHaveBeenCalledWith("Pi extension settings saved", "success");
     });
 
-    it("disables toggle while saving", async () => {
-      mockFetchPiExtensions.mockResolvedValueOnce(mockExtensions);
-      mockUpdatePiExtensions.mockImplementation(
-        () => new Promise((resolve) => setTimeout(() => resolve(mockExtensions), 100))
-      );
+    it("shows loading state while installing", async () => {
+      mockFetchPiSettings.mockResolvedValueOnce({ packages: [], extensions: [], skills: [], prompts: [], themes: [] });
+      mockInstallPiPackage.mockImplementation(() => new Promise((resolve) => setTimeout(() => resolve({ success: true }), 100)));
 
       render(<PiExtensionsManager addToast={addToast} />);
 
       await waitFor(() => {
-        const toggles = screen.getAllByRole("checkbox");
-        expect(toggles[0]).toBeChecked();
+        expect(screen.getByText("No packages configured.")).toBeTruthy();
       });
 
-      const toggles = screen.getAllByRole("checkbox");
-      await userEvent.click(toggles[0]);
+      await userEvent.type(screen.getByRole("textbox"), "npm:slow-package");
+      await userEvent.click(screen.getByRole("button", { name: /Add/i }));
 
-      // Toggle should be disabled while saving
-      expect(toggles[0]).toBeDisabled();
+      expect(screen.getByRole("button", { name: /Installing/ })).toBeTruthy();
+    });
+
+    it("validates non-empty input — button disabled when empty", async () => {
+      mockFetchPiSettings.mockResolvedValueOnce({ packages: [], extensions: [], skills: [], prompts: [], themes: [] });
+
+      render(<PiExtensionsManager addToast={addToast} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("No packages configured.")).toBeTruthy();
+      });
+
+      // Button should be disabled when input is empty
+      const addBtn = screen.getByRole("button", { name: /Add/i });
+      expect(addBtn).toBeDisabled();
+      expect(mockInstallPiPackage).not.toHaveBeenCalled();
     });
   });
 
-  describe("Refresh button", () => {
-    it("refresh button triggers reload", async () => {
-      mockFetchPiExtensions.mockResolvedValueOnce(mockExtensions);
+  describe("Remove package", () => {
+    it("calls updatePiSettings with package removed from list", async () => {
+      mockFetchPiSettings.mockResolvedValueOnce(mockPiSettings);
+      mockUpdatePiSettings.mockResolvedValueOnce({ success: true });
+      mockFetchPiSettings.mockResolvedValueOnce({
+        packages: [mockPiSettings.packages[1], mockPiSettings.packages[2]],
+        extensions: [],
+        skills: [],
+        prompts: [],
+        themes: [],
+      });
+
       render(<PiExtensionsManager addToast={addToast} />);
 
       await waitFor(() => {
-        expect(screen.getAllByRole("checkbox")).toHaveLength(4);
+        expect(screen.getByText("pi-example")).toBeTruthy();
       });
 
-      mockFetchPiExtensions.mockResolvedValueOnce({ extensions: [], disabledIds: [], settingsPath: "" });
-
-      const refreshBtn = screen.getByTestId("icon-refresh").closest("button");
-      await userEvent.click(refreshBtn!);
+      // Find the remove button for the first package (npm:pi-example)
+      const removeButtons = screen.getAllByTestId("icon-trash");
+      await userEvent.click(removeButtons[0]);
 
       await waitFor(() => {
-        expect(mockFetchPiExtensions).toHaveBeenCalledTimes(2);
+        expect(mockUpdatePiSettings).toHaveBeenCalledWith({
+          packages: [mockPiSettings.packages[1], mockPiSettings.packages[2]],
+        });
+      });
+    });
+  });
+
+  describe("Remove resource", () => {
+    it("calls updatePiSettings to remove an extension path", async () => {
+      mockFetchPiSettings.mockResolvedValueOnce(mockPiSettings);
+      mockUpdatePiSettings.mockResolvedValueOnce({ success: true });
+      mockFetchPiSettings.mockResolvedValueOnce({
+        ...mockPiSettings,
+        extensions: [],
+      });
+
+      render(<PiExtensionsManager addToast={addToast} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("/path/to/extension")).toBeTruthy();
+      });
+
+      // Find the remove button for the extension
+      const removeButtons = screen.getAllByTestId("icon-x");
+      await userEvent.click(removeButtons[0]);
+
+      await waitFor(() => {
+        expect(mockUpdatePiSettings).toHaveBeenCalledWith({
+          extensions: [],
+        });
+      });
+    });
+  });
+
+  describe("Expand/collapse object-form packages", () => {
+    it("shows filter list when package with filters is expanded", async () => {
+      mockFetchPiSettings.mockResolvedValueOnce(mockPiSettings);
+
+      render(<PiExtensionsManager addToast={addToast} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("pi-with-filters")).toBeTruthy();
+      });
+
+      // Find the expand button for pi-with-filters (the 3rd package, has filter-hint)
+      const filterHint = screen.getByText(/2 ext/);
+      const expandBtn = filterHint.closest(".pi-ext-package-card")?.querySelector(".pi-ext-expand-btn");
+      expect(expandBtn).toBeTruthy();
+
+      await userEvent.click(expandBtn!);
+
+      await waitFor(() => {
+        expect(screen.getByText("Extensions:", { exact: false })).toBeTruthy();
+      });
+      await waitFor(() => {
+        expect(screen.getByText("ext-a")).toBeTruthy();
+      });
+      expect(screen.getByText("ext-b")).toBeTruthy();
+      expect(screen.getByText("skill-1")).toBeTruthy();
+    });
+
+    it("hides filter list when collapsed", async () => {
+      mockFetchPiSettings.mockResolvedValueOnce(mockPiSettings);
+
+      render(<PiExtensionsManager addToast={addToast} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("pi-with-filters")).toBeTruthy();
+      });
+
+      // Expand
+      const filterHint = screen.getByText(/2 ext/);
+      const expandBtn = filterHint.closest(".pi-ext-package-card")?.querySelector(".pi-ext-expand-btn");
+      await userEvent.click(expandBtn!);
+
+      await waitFor(() => {
+        expect(screen.getByText("ext-a")).toBeTruthy();
+      });
+
+      // Collapse
+      const chevronDown = screen.getAllByTestId("icon-chevron-down")[0];
+      await userEvent.click(chevronDown);
+
+      await waitFor(() => {
+        expect(screen.queryByText("ext-a")).not.toBeTruthy();
       });
     });
   });
 
   describe("Error handling", () => {
     it("shows error toast when fetch fails", async () => {
-      mockFetchPiExtensions.mockRejectedValueOnce(new Error("Network error"));
+      mockFetchPiSettings.mockRejectedValueOnce(new Error("Network error"));
       render(<PiExtensionsManager addToast={addToast} />);
 
       await waitFor(() => {
-        expect(addToast).toHaveBeenCalledWith("Failed to load Pi extensions: Network error", "error");
+        expect(addToast).toHaveBeenCalledWith("Failed to load Pi settings: Network error", "error");
       });
     });
 
     it("shows error toast when update fails", async () => {
-      mockFetchPiExtensions.mockResolvedValueOnce(mockExtensions);
-      mockUpdatePiExtensions.mockRejectedValueOnce(new Error("Update failed"));
+      mockFetchPiSettings.mockResolvedValueOnce(mockPiSettings);
+      mockUpdatePiSettings.mockRejectedValueOnce(new Error("Update failed"));
 
       render(<PiExtensionsManager addToast={addToast} />);
 
       await waitFor(() => {
-        expect(screen.getAllByRole("checkbox")).toHaveLength(4);
+        expect(screen.getByText("pi-example")).toBeTruthy();
       });
 
-      const toggles = screen.getAllByRole("checkbox");
-      await userEvent.click(toggles[0]);
+      const removeButtons = screen.getAllByTestId("icon-trash");
+      await userEvent.click(removeButtons[0]);
 
       await waitFor(() => {
-        expect(addToast).toHaveBeenCalledWith("Update failed", "error");
-      });
-    });
-
-    it("displays specific error message from API", async () => {
-      mockFetchPiExtensions.mockResolvedValueOnce(mockExtensions);
-      mockUpdatePiExtensions.mockRejectedValueOnce(new Error("Extension file not found"));
-
-      render(<PiExtensionsManager addToast={addToast} />);
-
-      await waitFor(() => {
-        expect(screen.getAllByRole("checkbox")).toHaveLength(4);
-      });
-
-      const toggles = screen.getAllByRole("checkbox");
-      await userEvent.click(toggles[0]);
-
-      await waitFor(() => {
-        expect(addToast).toHaveBeenCalledWith("Extension file not found", "error");
+        expect(addToast).toHaveBeenCalledWith("Failed to remove package: Update failed", "error");
       });
     });
   });
