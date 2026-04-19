@@ -4571,6 +4571,12 @@ input[type="range"]:focus-visible {
   position: relative;
 }
 
+.detail-move-actions-in-review {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
 .detail-actions-menu,
 .detail-move-menu {
   position: absolute;

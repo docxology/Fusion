@@ -1797,7 +1797,7 @@ export function TaskDetailModal({
               <div className="detail-move-dropdown" ref={moveMenuRef}>
                 {task.column === "in-review" ? (
                   /* In-review: show merge controls inline with Move dropdown for secondary moves */
-                  <>
+                  <div className="detail-move-actions-in-review">
                     <button
                       className="btn btn-sm"
                       onClick={() => {
@@ -1819,6 +1819,7 @@ export function TaskDetailModal({
                         Merge &amp; Close
                       </button>
                     )}
+                  </div>
                     {showMoveMenu && (
                       <div className="detail-move-menu" role="menu">
                         <button
