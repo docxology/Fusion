@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { useState } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
@@ -9,6 +11,19 @@ type SettingsWithAutoArchive = Settings & {
   autoArchiveDoneTasksEnabled?: boolean;
   autoArchiveDoneAfterMs?: number;
   archiveAgentLogMode?: "none" | "compact" | "full";
+};
+
+const stylesPath = path.resolve(__dirname, "../../styles.css");
+
+const ensureTestStylesLoaded = () => {
+  if (document.getElementById("settings-modal-test-styles")) {
+    return;
+  }
+
+  const styleTag = document.createElement("style");
+  styleTag.id = "settings-modal-test-styles";
+  styleTag.textContent = fs.readFileSync(stylesPath, "utf-8");
+  document.head.appendChild(styleTag);
 };
 
 const defaultSettings: SettingsWithAutoArchive = {
@@ -2152,6 +2167,26 @@ describe("SettingsModal", () => {
     expect(layout).toBeTruthy();
     expect(layout!.querySelector(".settings-sidebar")).toBeTruthy();
     expect(layout!.querySelector(".settings-content")).toBeTruthy();
+  });
+
+  it("applies scroll-constrained desktop layout styles to sidebar and layout", async () => {
+    ensureTestStylesLoaded();
+
+    const { container } = render(<SettingsModal onClose={onClose} addToast={addToast} />);
+    await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
+
+    const layout = container.querySelector(".settings-layout") as HTMLElement | null;
+    const sidebar = container.querySelector(".settings-sidebar") as HTMLElement | null;
+
+    expect(layout).toBeTruthy();
+    expect(sidebar).toBeTruthy();
+
+    const layoutStyles = window.getComputedStyle(layout!);
+    const sidebarStyles = window.getComputedStyle(sidebar!);
+
+    expect(layoutStyles.flex).toContain("1");
+    expect(layoutStyles.overflow).toBe("hidden");
+    expect(sidebarStyles.overflowY).toBe("auto");
   });
 
   it("has .settings-sidebar with 17 .settings-nav-item buttons for all sections", async () => {

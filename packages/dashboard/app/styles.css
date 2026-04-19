@@ -3475,8 +3475,9 @@ input[type="range"]:focus-visible {
 /* === Settings Layout === */
 .settings-layout {
   display: flex;
+  flex: 1;
   flex-direction: row;
-  min-height: 300px;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -3490,6 +3491,7 @@ input[type="range"]:focus-visible {
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
+  overflow-y: auto;
   padding: 10px 8px;
   gap: 2px;
   background: rgba(0, 0, 0, 0.1);
