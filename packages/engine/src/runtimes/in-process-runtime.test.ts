@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import type { Task, TaskStore, CentralCore, AgentStore, Agent } from "@fusion/core";
 import { InProcessRuntime } from "./in-process-runtime.js";
 import type { ProjectRuntimeConfig } from "../project-runtime.js";
+import { runtimeLog } from "../logger.js";
 
 const {
   mockSelfHealingStart,
@@ -637,6 +638,84 @@ describe("InProcessRuntime", () => {
         // Now deleteAgent should have been called
         expect(deleteAgentSpy).toHaveBeenCalledTimes(1);
       } finally {
+        vi.useRealTimers();
+      }
+    }, 30000);
+  });
+
+  describe("agent cleanup failure diagnostics", () => {
+    it("logs warning when agent state update fails on task completion", async () => {
+      const warnSpy = vi.spyOn(runtimeLog, "warn");
+      await runtime.start();
+
+      const store = getAgentStore(runtime);
+      const updateStateSpy = vi.spyOn(store, "updateAgentState").mockImplementation(async (_agentId, state) => {
+        if (state === "terminated") {
+          throw new Error("state update failed");
+        }
+        return {} as Agent;
+      });
+
+      const executorOptions = mockExecutorCtor.mock.calls.at(-1)?.[0] as {
+        onStart?: (task: Task, worktreePath: string) => void;
+        onComplete?: (task: Task) => void;
+      };
+      executorOptions.onStart?.({ id: "FN-DIAG-1" } as Task, join(testDir, "worktree-FN-DIAG-1"));
+
+      await vi.waitFor(async () => {
+        const agents = await store.listAgents({ includeEphemeral: true });
+        expect(agents.some((a: Agent) => a.name === "executor-FN-DIAG-1")).toBe(true);
+      });
+
+      updateStateSpy.mockClear();
+      executorOptions.onComplete?.({ id: "FN-DIAG-1" } as Task);
+      await Promise.resolve();
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Failed to update agent"),
+      );
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("terminated (completion)"),
+      );
+
+      warnSpy.mockRestore();
+    }, 30000);
+
+    it("logs warning when agent deletion fails after task error", async () => {
+      vi.useFakeTimers();
+      const warnSpy = vi.spyOn(runtimeLog, "warn");
+
+      try {
+        await runtime.start();
+
+        const store = getAgentStore(runtime);
+        const deleteAgentSpy = vi.spyOn(store, "deleteAgent").mockRejectedValue(new Error("delete failed"));
+
+        const executorOptions = mockExecutorCtor.mock.calls.at(-1)?.[0] as {
+          onStart?: (task: Task, worktreePath: string) => void;
+          onError?: (task: Task, error: Error) => void;
+        };
+        executorOptions.onStart?.({ id: "FN-DIAG-2" } as Task, join(testDir, "worktree-FN-DIAG-2"));
+
+        await vi.waitFor(async () => {
+          const agents = await store.listAgents({ includeEphemeral: true });
+          expect(agents.some((a: Agent) => a.name === "executor-FN-DIAG-2")).toBe(true);
+        });
+
+        deleteAgentSpy.mockClear();
+        executorOptions.onError?.({ id: "FN-DIAG-2" } as Task, new Error("Task failed"));
+
+        await vi.advanceTimersByTimeAsync(5000);
+        await Promise.resolve();
+
+        expect(warnSpy).toHaveBeenCalledWith(
+          expect.stringContaining("Failed to delete agent"),
+        );
+        expect(warnSpy).toHaveBeenCalledWith(
+          expect.stringContaining("after error"),
+        );
+      } finally {
+        warnSpy.mockRestore();
         vi.useRealTimers();
       }
     }, 30000);

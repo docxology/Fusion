@@ -54,6 +54,9 @@ export const executorLog = createLogger("executor");
 /** Logger for the triage processor subsystem. */
 export const triageLog = createLogger("triage");
 
+/** Logger for the AI session (pi) subsystem. */
+export const piLog = createLogger("pi");
+
 /** Logger for the merge/auto-merge subsystem. */
 export const mergerLog = createLogger("merger");
 

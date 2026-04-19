@@ -988,13 +988,16 @@ export class TaskExecutor {
           try {
             const ratingSummary = await this.options.agentStore.getRatingSummary(agent.id);
             return await resolveAgentInstructions(agent, this.rootDir, ratingSummary);
-          } catch {
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            executorLog.warn(`${agent.id}: failed to load rating summary for instruction resolution, falling back to default instructions: ${msg}`);
             return await resolveAgentInstructions(agent, this.rootDir);
           }
         }
       }
-    } catch {
-      // Graceful fallback — no instructions if lookup fails
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      executorLog.warn(`Failed to resolve instructions for role '${role}', continuing without custom instructions: ${msg}`);
     }
     return "";
   }
@@ -1429,7 +1432,10 @@ export class TaskExecutor {
           onRetry: (attempt, delayMs, error) => {
             const delaySec = Math.round(delayMs / 1000);
             executorLog.warn(`⏳ ${task.id} rate limited — retry ${attempt} in ${delaySec}s: ${error.message}`);
-            this.store.logEntry(task.id, `Rate limited — retry ${attempt} in ${delaySec}s`, undefined, this.currentRunContext).catch(() => {});
+            this.store.logEntry(task.id, `Rate limited — retry ${attempt} in ${delaySec}s`, undefined, this.currentRunContext).catch((err: unknown) => {
+              const msg = err instanceof Error ? err.message : String(err);
+              executorLog.warn(`${task.id}: failed to log rate-limit entry during step-session execution: ${msg}`);
+            });
           },
         });
 
@@ -1471,8 +1477,9 @@ export class TaskExecutor {
                   await execAsync(`git worktree remove "${worktreePath}" --force`, { cwd: this.rootDir });
                   // Audit trail: record worktree removal (FN-1404)
                   await audit.git({ type: "worktree:remove", target: worktreePath });
-                } catch {
-                  // Worktree removal failed - ignoring since we're cleaning up anyway
+                } catch (wtErr: unknown) {
+                  const msg = wtErr instanceof Error ? wtErr.message : String(wtErr);
+                  executorLog.warn(`${task.id}: worktree removal failed during transient-error retry cleanup (${worktreePath}): ${msg}`);
                 }
               }
               await this.store.updateTask(task.id, {
@@ -1527,8 +1534,9 @@ export class TaskExecutor {
               if (worktreePath && existsSync(worktreePath)) {
                 try {
                   await execAsync(`git worktree remove "${worktreePath}" --force`, { cwd: this.rootDir });
-                } catch {
-                  // Worktree removal failed - ignoring since we're cleaning up anyway
+                } catch (wtErr: unknown) {
+                  const msg = wtErr instanceof Error ? wtErr.message : String(wtErr);
+                  executorLog.warn(`${task.id}: worktree removal failed during stuck-requeue cleanup (${worktreePath}): ${msg}`);
                 }
               }
               await this.store.updateTask(task.id, { status: "stuck-killed", worktree: null, branch: null });
@@ -1907,7 +1915,10 @@ export class TaskExecutor {
             });
             // Update session file for the retry session (so pause/resume works)
             if (retrySessionFile) {
-              this.store.updateTask(task.id, { sessionFile: retrySessionFile }).catch(() => {});
+              this.store.updateTask(task.id, { sessionFile: retrySessionFile }).catch((err: unknown) => {
+                const msg = err instanceof Error ? err.message : String(err);
+                executorLog.warn(`${task.id}: failed to update sessionFile during retry: ${msg}`);
+              });
             }
 
             // Reassign so finally{} disposes the correct session
@@ -1993,7 +2004,10 @@ export class TaskExecutor {
           // Check both the local flag (graceful exit) and the instance set
           // (error path where dispose caused prompt to throw).
           if (!wasPaused && !this.pausedAborted.has(task.id)) {
-            this.store.updateTask(task.id, { sessionFile: null }).catch(() => {});
+            this.store.updateTask(task.id, { sessionFile: null }).catch((err: unknown) => {
+              const msg = err instanceof Error ? err.message : String(err);
+              executorLog.warn(`${task.id}: failed to clear sessionFile on completion: ${msg}`);
+            });
           }
           // Invoke plugin onAgentRunEnd hook (fire-and-forget)
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -2005,7 +2019,10 @@ export class TaskExecutor {
         onRetry: (attempt, delayMs, error) => {
           const delaySec = Math.round(delayMs / 1000);
           executorLog.warn(`⏳ ${task.id} rate limited — retry ${attempt} in ${delaySec}s: ${error.message}`);
-          this.store.logEntry(task.id, `Rate limited — retry ${attempt} in ${delaySec}s`, undefined, this.currentRunContext).catch(() => {});
+          this.store.logEntry(task.id, `Rate limited — retry ${attempt} in ${delaySec}s`, undefined, this.currentRunContext).catch((err: unknown) => {
+            const msg = err instanceof Error ? err.message : String(err);
+            executorLog.warn(`${task.id}: failed to log rate-limit entry during regular execution: ${msg}`);
+          });
         },
       });
 
@@ -2587,7 +2604,9 @@ export class TaskExecutor {
                 try {
                   await sessionRef.current.navigateTree(checkpointId, { summarize: false });
                   executorLog.log(`${taskId}: RETHINK — session rewound to checkpoint ${checkpointId}`);
-                } catch {
+                } catch (rewindErr: unknown) {
+                  const msg = rewindErr instanceof Error ? rewindErr.message : String(rewindErr);
+                  executorLog.warn(`${taskId}: RETHINK navigateTree rewind failed, falling back to branchWithSummary: ${msg}`);
                   // Fallback to branchWithSummary
                   try {
                     sessionRef.current.sessionManager.branchWithSummary(
@@ -2651,8 +2670,9 @@ export class TaskExecutor {
     // Remove worktree
     try {
       await execAsync(`git worktree remove "${worktreePath}" --force`, { cwd: this.rootDir });
-    } catch {
-      // Worktree may already be gone
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      executorLog.warn(`${taskId}: failed to remove worktree during dep-abort cleanup (${worktreePath}): ${msg}`);
     }
 
     // Delete the branch — use stored branch name if available, fall back to convention
@@ -2660,8 +2680,9 @@ export class TaskExecutor {
     const branch = task.branch || `fusion/${taskId.toLowerCase()}`;
     try {
       await execAsync(`git branch -D "${branch}"`, { cwd: this.rootDir });
-    } catch {
-      // Branch may not exist
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      executorLog.warn(`${taskId}: failed to delete branch during dep-abort cleanup (${branch}): ${msg}`);
     }
 
     // Clear worktree tracking
@@ -3033,7 +3054,9 @@ ${failureFeedback}
             encoding: "utf-8",
           });
           baseRef = stdout.trim();
-        } catch {
+        } catch (mergeBaseErr: unknown) {
+          const mergeBaseMsg = mergeBaseErr instanceof Error ? mergeBaseErr.message : String(mergeBaseErr);
+          executorLog.warn(`Failed merge-base lookup for diff base in ${worktreePath}, trying HEAD~1 fallback: ${mergeBaseMsg}`);
           // If merge-base fails, use HEAD~1 as last resort
           try {
             const { stdout } = await execAsync("git rev-parse HEAD~1", {
@@ -3775,8 +3798,9 @@ and show an appropriate message to the user.\`
           cwd: this.rootDir,
         });
         await this.store.logEntry(taskId, `Unlocked worktree`, worktreePath);
-      } catch {
-        // Unlock failed - worktree wasn't locked, that's fine
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        executorLog.warn(`${taskId}: failed to unlock conflicting worktree ${worktreePath} before cleanup: ${msg}`);
       }
 
       // Remove the worktree
@@ -3791,8 +3815,9 @@ and show an appropriate message to the user.\`
           cwd: this.rootDir,
         });
         await this.store.logEntry(taskId, `Deleted branch`, branch);
-      } catch {
-        // Branch might not exist, that's fine
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        executorLog.warn(`${taskId}: failed to delete conflicting branch ${branch}: ${msg}`);
       }
 
       return true;
@@ -3990,7 +4015,9 @@ and show an appropriate message to the user.\`
           `Reset ${completedSteps.length} step(s) to pending — branch had no commits (uncommitted work lost with worktree)`,
         );
       }
-    } catch {
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      executorLog.warn(`${task.id}: step-reset-on-work-lost failed (non-fatal, steps keep current status): ${msg}`);
       // Branch may not exist or git commands may fail — non-fatal.
       // Steps keep their current status (safe default: agent can
       // inspect the worktree and decide).
@@ -4150,14 +4177,18 @@ and show an appropriate message to the user.\`
 
     try {
       await this.options.agentStore?.updateAgentState(childId, "terminated");
-    } catch {
-      // Agent may not exist in store — that's ok for cleanup
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      executorLog.warn(`Failed to update spawned child ${childId} state to 'terminated' during cleanup: ${msg}`);
     }
 
     // Auto-delete the child agent after a short delay so the UI can observe
     // the terminal state before the agent is removed.
     void setTimeout(() => {
-      this.options.agentStore?.deleteAgent(childId).catch(() => {});
+      this.options.agentStore?.deleteAgent(childId).catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        executorLog.warn(`Failed to delete spawned child agent ${childId}: ${msg}`);
+      });
     }, 5000);
 
     this.totalSpawnedCount = Math.max(0, this.totalSpawnedCount - 1);
@@ -4174,8 +4205,9 @@ and show an appropriate message to the user.\`
   ): Promise<void> {
     try {
       await this.options.agentStore?.updateAgentState(agentId, "running");
-    } catch {
-      // State update failure shouldn't block execution
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      executorLog.warn(`Failed to update spawned child ${agentId} state to 'running': ${msg}`);
     }
 
     try {

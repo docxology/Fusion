@@ -34,6 +34,7 @@ import {
 } from "./skill-resolver.js";
 import { isContextLimitError } from "./context-limit-detector.js";
 import { createFusionAuthStorage, getModelRegistryModelsPath } from "./auth-storage.js";
+import { piLog } from "./logger.js";
 
 export interface AgentResult {
   session: AgentSession;
@@ -292,8 +293,9 @@ export async function compactSessionContext(
       };
     }
     return null;
-  } catch {
-    // Compaction failed — return null so caller can fall through to kill/requeue
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    piLog.warn(`Context compaction failed (will fall through to kill/requeue): ${msg}`);
     return null;
   }
 }
@@ -826,8 +828,9 @@ export async function createKbAgent(options: AgentOptions): Promise<AgentResult>
       usingFallback = true;
       try {
         session.dispose();
-      } catch {
-        // ignore dispose errors while swapping sessions
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        piLog.warn(`Failed to dispose session during model fallback swap: ${msg}`);
       }
 
       const fallbackSessionResult = await createSessionWithModel(fallbackModel);

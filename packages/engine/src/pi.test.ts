@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { describeModel, compactSessionContext, COMPACTION_FALLBACK_INSTRUCTIONS, createKbAgent, promptWithFallback, type AgentOptions } from "./pi.js";
-import type { AgentSession } from "@mariozechner/pi-coding-agent";
+import { createAgentSession, type AgentSession } from "@mariozechner/pi-coding-agent";
+import { piLog } from "./logger.js";
 
 // Mock skill resolver functions - define inside factory to avoid hoisting issues
 vi.mock("./skill-resolver.js", () => {
@@ -536,5 +537,73 @@ describe("promptWithFallback auto-compaction", () => {
       // Verify compaction was triggered for each error pattern
       expect(mockCompact).toHaveBeenCalled();
     }
+  });
+});
+
+describe("session failure diagnostics", () => {
+  it("logs warning when compaction fails during promptWithFallback", async () => {
+    const warnSpy = vi.spyOn(piLog, "warn");
+    const session = {
+      prompt: vi.fn().mockRejectedValueOnce(
+        new Error("prompt is too long: 210000 tokens > 200000 maximum"),
+      ),
+      compact: vi.fn().mockRejectedValue(new Error("compaction exploded")),
+    } as unknown as AgentSession;
+
+    await expect(promptWithFallback(session, "test prompt")).rejects.toThrow(
+      "prompt is too long: 210000 tokens > 200000 maximum",
+    );
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Context compaction failed (will fall through to kill/requeue): compaction exploded"),
+    );
+
+    warnSpy.mockRestore();
+  });
+
+  it("logs warning when session dispose fails during model fallback swap", async () => {
+    const warnSpy = vi.spyOn(piLog, "warn");
+    const createAgentSessionMock = vi.mocked(createAgentSession);
+
+    const primarySession = {
+      model: { provider: "test", id: "primary-model" },
+      prompt: vi.fn().mockRejectedValue(new Error("429 Too Many Requests")),
+      dispose: vi.fn(() => {
+        throw new Error("dispose failed");
+      }),
+      subscribe: vi.fn(),
+      setThinkingLevel: vi.fn(),
+      sessionFile: undefined,
+    } as unknown as AgentSession;
+
+    const fallbackSession = {
+      model: { provider: "test", id: "fallback-model" },
+      prompt: vi.fn().mockResolvedValue(undefined),
+      dispose: vi.fn(),
+      subscribe: vi.fn(),
+      setThinkingLevel: vi.fn(),
+      sessionFile: undefined,
+    } as unknown as AgentSession;
+
+    createAgentSessionMock
+      .mockResolvedValueOnce({ session: primarySession } as any)
+      .mockResolvedValueOnce({ session: fallbackSession } as any);
+
+    const { session } = await createKbAgent({
+      cwd: "/test/project",
+      systemPrompt: "Test fallback swap",
+      defaultProvider: "test",
+      defaultModelId: "primary-model",
+      fallbackProvider: "test",
+      fallbackModelId: "fallback-model",
+    });
+
+    await expect((session as any).promptWithFallback("Run task")).resolves.toBeUndefined();
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Failed to dispose session during model fallback swap: dispose failed"),
+    );
+
+    warnSpy.mockRestore();
   });
 });

@@ -553,19 +553,29 @@ vi.mock("./logger.js", () => {
     warn: vi.fn(),
     error: vi.fn(),
   });
+
+  const loggers = new Map<string, ReturnType<typeof createMockLogger>>();
+  const getLogger = (prefix: string) => {
+    if (!loggers.has(prefix)) {
+      loggers.set(prefix, createMockLogger());
+    }
+    return loggers.get(prefix)!;
+  };
+
   return {
-    createLogger: vi.fn(() => createMockLogger()),
-    schedulerLog: createMockLogger(),
-    executorLog: createMockLogger(),
-    triageLog: createMockLogger(),
-    mergerLog: createMockLogger(),
-    worktreePoolLog: createMockLogger(),
-    reviewerLog: createMockLogger(),
-    prMonitorLog: createMockLogger(),
-    runtimeLog: createMockLogger(),
-    ipcLog: createMockLogger(),
-    projectManagerLog: createMockLogger(),
-    autopilotLog: createMockLogger(),
+    createLogger: vi.fn((prefix: string) => getLogger(prefix)),
+    schedulerLog: getLogger("scheduler"),
+    executorLog: getLogger("executor"),
+    triageLog: getLogger("triage"),
+    mergerLog: getLogger("merger"),
+    worktreePoolLog: getLogger("worktree-pool"),
+    reviewerLog: getLogger("reviewer"),
+    prMonitorLog: getLogger("pr-monitor"),
+    runtimeLog: getLogger("runtime"),
+    stepExecLog: getLogger("step-session-executor"),
+    ipcLog: getLogger("ipc"),
+    projectManagerLog: getLogger("project-manager"),
+    autopilotLog: getLogger("autopilot"),
   };
 });
 
@@ -633,10 +643,18 @@ import { createKbAgent } from "./pi.js";
 import { generateWorktreeName } from "./worktree-names.js";
 import { execSync } from "node:child_process";
 import { AgentSemaphore } from "./concurrency.js";
+import { createLogger } from "./logger.js";
 
 const mockedCreateKbAgent = vi.mocked(createKbAgent);
 const mockedExecSync = vi.mocked(execSync);
 const mockedGenerateWorktreeName = vi.mocked(generateWorktreeName);
+const mockedCreateLogger = vi.mocked(createLogger);
+
+const getStepSessionLogger = () => mockedCreateLogger("step-session-executor") as {
+  log: ReturnType<typeof vi.fn>;
+  warn: ReturnType<typeof vi.fn>;
+  error: ReturnType<typeof vi.fn>;
+};
 
 function makeMockSession(promptFn?: () => Promise<void>) {
   return {
@@ -1064,6 +1082,54 @@ describe("StepSessionExecutor", () => {
       expect(results.every((r) => r.success)).toBe(true);
     });
 
+    it("logs warning when cherry-pick --abort fails", async () => {
+      const prompt = `# Task: FN-001
+
+### Step 0: Core work
+- \`packages/core/src/types.ts\`
+
+### Step 1: Engine work
+- \`packages/engine/src/pi.ts\``;
+
+      const task = makeTaskDetail({
+        prompt,
+        steps: [
+          { name: "Step 0", status: "pending" },
+          { name: "Step 1", status: "pending" },
+        ],
+      });
+      const settings = makeSettings({ maxParallelSteps: 2 });
+
+      const session = makeMockSession();
+      mockedCreateKbAgent.mockResolvedValue({ session } as any);
+
+      mockedExecSync.mockImplementation((cmd: string) => {
+        if (typeof cmd === "string" && cmd.includes("git log")) {
+          return "abc123def Some commit";
+        }
+        if (typeof cmd === "string" && cmd.includes("git cherry-pick") && cmd.includes("--abort")) {
+          throw new Error("abort failed");
+        }
+        if (typeof cmd === "string" && cmd.includes("git cherry-pick") && !cmd.includes("--abort")) {
+          throw new Error("Merge conflict");
+        }
+        return "";
+      });
+
+      const executor = new StepSessionExecutor({
+        taskDetail: task,
+        worktreePath: "/project/.worktrees/main",
+        rootDir: "/project",
+        settings,
+      });
+
+      await executor.executeAll();
+
+      expect(getStepSessionLogger().warn).toHaveBeenCalledWith(
+        expect.stringContaining("Cherry-pick --abort failed for step"),
+      );
+    });
+
     it("semaphore integration: parallel steps acquire/release", async () => {
       const prompt = `# Task: FN-001
 
@@ -1485,6 +1551,42 @@ describe("StepSessionExecutor", () => {
         expect(removeCalls.some((cmd) => cmd.includes("wt-clean-2"))).toBe(false);
         expect(removeCalls.some((cmd) => cmd.includes("/project/.worktrees/main"))).toBe(false);
       });
+    });
+  });
+
+  describe("cleanup failure diagnostics", () => {
+    it("logs warning when session dispose fails during error cleanup", async () => {
+      const task = makeTaskDetail({
+        prompt: makeStepPrompt("FN-001", 1),
+        steps: [{ name: "Step 0", status: "pending" }],
+      });
+      const settings = makeSettings({ maxParallelSteps: 1 });
+
+      const failingSession = makeMockSession(async () => {
+        throw new Error("step execution failed");
+      });
+      failingSession.dispose = vi.fn(() => {
+        throw new Error("dispose failed");
+      });
+
+      mockedCreateKbAgent.mockResolvedValue({ session: failingSession } as any);
+
+      const executor = new StepSessionExecutor({
+        taskDetail: task,
+        worktreePath: "/project/.worktrees/main",
+        rootDir: "/project",
+        settings,
+      });
+
+      const resultsPromise = executor.executeAll();
+      await vi.advanceTimersByTimeAsync(60_000);
+      const results = await resultsPromise;
+
+      expect(results).toHaveLength(1);
+      expect(results[0]?.success).toBe(false);
+      expect(getStepSessionLogger().warn).toHaveBeenCalledWith(
+        expect.stringContaining("Failed to dispose session for step 0: dispose failed"),
+      );
     });
   });
 

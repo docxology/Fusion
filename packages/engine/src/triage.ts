@@ -464,7 +464,11 @@ export class TriageProcessor {
 
     const settings = await this.store.getSettings();
     const promptPath = join(this.rootDir, ".fusion", "tasks", task.id, "PROMPT.md");
-    const written = await readFile(promptPath, "utf-8").catch(() => "");
+    const written = await readFile(promptPath, "utf-8").catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      triageLog.warn(`${task.id}: failed to read PROMPT.md during approved-spec recovery (${promptPath}): ${msg}`);
+      return "";
+    });
 
     if (!written.trim()) {
       triageLog.warn(`${task.id} approved-spec recovery skipped — PROMPT.md missing or empty`);
@@ -682,8 +686,9 @@ export class TriageProcessor {
                 break;
               }
             }
-          } catch {
-            // Graceful fallback
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            triageLog.warn(`${task.id}: failed to resolve triage agent instructions, continuing with defaults: ${msg}`);
           }
         }
         const triageSystemPrompt = buildSystemPromptWithInstructions(
@@ -806,7 +811,10 @@ export class TriageProcessor {
             this.pauseAborted.delete(task.id);
             triageLog.log(`${task.id} aborted by pause — clearing status`);
             const restoreStatus = task.status === "needs-respecify" ? "needs-respecify" : null;
-            await this.store.updateTask(task.id, { status: restoreStatus }).catch(() => {});
+            await this.store.updateTask(task.id, { status: restoreStatus }).catch((err: unknown) => {
+              const msg = err instanceof Error ? err.message : String(err);
+              triageLog.warn(`${task.id}: failed to restore status to '${restoreStatus}' during pause-abort cleanup: ${msg}`);
+            });
             return;
           }
 
@@ -814,7 +822,10 @@ export class TriageProcessor {
             this.stuckAborted.delete(task.id);
             triageLog.log(`${task.id} killed by stuck detector — clearing status for retry`);
             const restoreStatus = task.status === "needs-respecify" ? "needs-respecify" : null;
-            await this.store.updateTask(task.id, { status: restoreStatus }).catch(() => {});
+            await this.store.updateTask(task.id, { status: restoreStatus }).catch((err: unknown) => {
+              const msg = err instanceof Error ? err.message : String(err);
+              triageLog.warn(`${task.id}: failed to restore status to '${restoreStatus}' during stuck-detector abort cleanup: ${msg}`);
+            });
             return;
           }
 
@@ -979,7 +990,11 @@ export class TriageProcessor {
           const written = await readFile(
             join(this.rootDir, promptPath),
             "utf-8",
-          ).catch(() => "");
+          ).catch((err: unknown) => {
+            const msg = err instanceof Error ? err.message : String(err);
+            triageLog.warn(`${task.id}: failed to read generated PROMPT.md before finalization (${promptPath}): ${msg}`);
+            return "";
+          });
 
           await this.finalizeApprovedTask(task, written, settings, {
             isRespecify,
@@ -998,7 +1013,10 @@ export class TriageProcessor {
         onRetry: (attempt, delayMs, error) => {
           const delaySec = Math.round(delayMs / 1000);
           triageLog.warn(`⏳ ${task.id} rate limited — retry ${attempt} in ${delaySec}s: ${error.message}`);
-          this.store.logEntry(task.id, `Rate limited — retry ${attempt} in ${delaySec}s`).catch(() => {});
+          this.store.logEntry(task.id, `Rate limited — retry ${attempt} in ${delaySec}s`).catch((err: unknown) => {
+            const msg = err instanceof Error ? err.message : String(err);
+            triageLog.warn(`${task.id}: failed to log rate-limit retry entry: ${msg}`);
+          });
         },
       });
 
@@ -1020,14 +1038,20 @@ export class TriageProcessor {
         // For re-specification, restore needs-respecify status; otherwise clear to null
         // so the next poll can re-pick this task up.
         const restoreStatus = task.status === "needs-respecify" ? "needs-respecify" : null;
-        await this.store.updateTask(task.id, { status: restoreStatus }).catch(() => {});
+        await this.store.updateTask(task.id, { status: restoreStatus }).catch((err: unknown) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          triageLog.warn(`${task.id}: failed to restore status to '${restoreStatus}' during pause-abort error cleanup: ${msg}`);
+        });
       } else if (this.stuckAborted.has(task.id)) {
         // Stuck task detector killed this session — clear specifying status so the
         // next poll retries the task from scratch without reporting an error.
         this.stuckAborted.delete(task.id);
         triageLog.log(`${task.id} killed by stuck detector — clearing status for retry`);
         const restoreStatus = task.status === "needs-respecify" ? "needs-respecify" : null;
-        await this.store.updateTask(task.id, { status: restoreStatus }).catch(() => {});
+        await this.store.updateTask(task.id, { status: restoreStatus }).catch((err: unknown) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          triageLog.warn(`${task.id}: failed to restore status to '${restoreStatus}' during stuck-detector error cleanup: ${msg}`);
+        });
       } else {
         // Check if the error is a usage-limit error and trigger global pause
         if (this.options.usageLimitPauser && isUsageLimitError(errorMessage)) {
@@ -1049,32 +1073,47 @@ export class TriageProcessor {
             // Silent transient errors (e.g., "request was aborted") are noisy — skip logging
             if (!isSilentTransientError(errorMessage)) {
               triageLog.warn(`⚡ ${task.id} transient error during triage — retry ${attempt}/${MAX_RECOVERY_RETRIES} in ${delay}: ${errorMessage}`);
-              await this.store.logEntry(task.id, `Transient error during specification (retry ${attempt}/${MAX_RECOVERY_RETRIES} in ${delay}): ${errorMessage}`).catch(() => {});
+              await this.store.logEntry(task.id, `Transient error during specification (retry ${attempt}/${MAX_RECOVERY_RETRIES} in ${delay}): ${errorMessage}`).catch((err: unknown) => {
+                const msg = err instanceof Error ? err.message : String(err);
+                triageLog.warn(`${task.id}: failed to log transient-error retry entry: ${msg}`);
+              });
             }
             const restoreStatus = task.status === "needs-respecify" ? "needs-respecify" : null;
             await this.store.updateTask(task.id, {
               status: restoreStatus,
               recoveryRetryCount: decision.nextState.recoveryRetryCount,
               nextRecoveryAt: decision.nextState.nextRecoveryAt,
-            }).catch(() => {});
+            }).catch((err: unknown) => {
+              const msg = err instanceof Error ? err.message : String(err);
+              triageLog.warn(`${task.id}: failed to restore status to '${restoreStatus}' during transient-error retry scheduling: ${msg}`);
+            });
             return;
           }
 
           // Recovery budget exhausted — freeze in triage with error for manual intervention
           triageLog.error(`✗ ${task.id} transient error retries exhausted (${MAX_RECOVERY_RETRIES} attempts): ${errorMessage}`);
-          await this.store.logEntry(task.id, `Specification failed after ${MAX_RECOVERY_RETRIES} transient errors: ${errorMessage}`).catch(() => {});
+          await this.store.logEntry(task.id, `Specification failed after ${MAX_RECOVERY_RETRIES} transient errors: ${errorMessage}`).catch((err: unknown) => {
+            const msg = err instanceof Error ? err.message : String(err);
+            triageLog.warn(`${task.id}: failed to log transient-error retries-exhausted entry: ${msg}`);
+          });
           await this.store.updateTask(task.id, {
             error: `Specification failed after ${MAX_RECOVERY_RETRIES} transient errors: ${errorMessage}`,
             recoveryRetryCount: null,
             nextRecoveryAt: null,
-          }).catch(() => {});
+          }).catch((err: unknown) => {
+            const msg = err instanceof Error ? err.message : String(err);
+            triageLog.warn(`${task.id}: failed to persist transient-error retries-exhausted state: ${msg}`);
+          });
           this.options.onSpecifyError?.(task, err instanceof Error ? err : new Error(errorMessage));
           return;
         }
         // For re-specification, restore needs-respecify status so it can be retried;
         // otherwise clear to null so the next poll can re-pick the task up.
         const restoreStatus = task.status === "needs-respecify" ? "needs-respecify" : null;
-        await this.store.updateTask(task.id, { status: restoreStatus }).catch(() => {});
+        await this.store.updateTask(task.id, { status: restoreStatus }).catch((restoreErr: unknown) => {
+          const msg = restoreErr instanceof Error ? restoreErr.message : String(restoreErr);
+          triageLog.warn(`${task.id}: failed to restore status to '${restoreStatus}' after specification error: ${msg}`);
+        });
         triageLog.error(`✗ ${task.id} specification failed:`, errorMessage);
         this.options.onSpecifyError?.(task, err instanceof Error ? err : new Error(errorMessage));
       }
@@ -1160,7 +1199,9 @@ export class TriageProcessor {
             content: [{ type: "text" as const, text: parts.join("\n") }],
             details: {},
           };
-        } catch {
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          triageLog.warn(`${options.parentTaskId}: task_get lookup failed for ${params.id}: ${msg}`);
           return {
             content: [
               { type: "text" as const, text: `Task ${params.id} not found.` },
@@ -1192,7 +1233,9 @@ export class TriageProcessor {
           let parentTask: Awaited<ReturnType<typeof store.getTask>> | undefined;
           try {
             parentTask = await store.getTask(options.parentTaskId);
-          } catch {
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            triageLog.warn(`${options.parentTaskId}: failed to load parent task for task_create inheritance: ${msg}`);
             // Parent task not found or error - proceed without inheritance
             parentTask = undefined;
           }
@@ -1296,7 +1339,11 @@ export class TriageProcessor {
           const promptContent = await readFile(
             join(rootDir, promptPath),
             "utf-8",
-          ).catch(() => "");
+          ).catch((err: unknown) => {
+            const msg = err instanceof Error ? err.message : String(err);
+            triageLog.warn(`${taskId}: failed to read PROMPT.md for review_spec (${promptPath}): ${msg}`);
+            return "";
+          });
 
           if (!promptContent) {
             return {
@@ -1384,7 +1431,9 @@ export class TriageProcessor {
                   triageLog.log(
                     `${taskId}: RETHINK — session rewound to checkpoint ${checkpointId}`,
                   );
-                } catch {
+                } catch (rewindErr: unknown) {
+                  const msg = rewindErr instanceof Error ? rewindErr.message : String(rewindErr);
+                  triageLog.warn(`${taskId}: RETHINK navigateTree rewind failed, falling back to branchWithSummary: ${msg}`);
                   // Fallback to branchWithSummary
                   try {
                     sessionRef.current.sessionManager.branchWithSummary(
@@ -1596,7 +1645,9 @@ export async function readAttachmentContents(
           text,
         });
       }
-    } catch {
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      triageLog.warn(`${taskId}: failed to read attachment '${att.filename}', skipping: ${msg}`);
       // Skip unreadable attachments
       continue;
     }

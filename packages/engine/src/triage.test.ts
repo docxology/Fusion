@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { mkdir, writeFile, rm, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { setTimeout as delay } from "node:timers/promises";
+import { triageLog } from "./logger.js";
 
 const { mockReviewStep, mockCreateKbAgent } = vi.hoisted(() => ({
   mockReviewStep: vi.fn(),
@@ -2232,6 +2233,208 @@ describe("stuck task detector integration", () => {
     expect(trackTask).toHaveBeenCalledWith("FN-001", expect.objectContaining({ dispose: expect.any(Function) }));
     expect(untrackTask).toHaveBeenCalledWith("FN-001");
     expect(recordActivity).toHaveBeenCalled();
+  });
+});
+
+describe("specifyTask — status restore failure diagnostics", () => {
+  it("logs warning when status restore fails during pause abort", async () => {
+    const warnSpy = vi.spyOn(triageLog, "warn");
+    const settingsListeners: Array<(e: any) => void> = [];
+
+    const store = {
+      on: vi.fn((event: string, cb: (e: any) => void) => {
+        if (event === "settings:updated") settingsListeners.push(cb);
+      }),
+      getTask: vi.fn().mockResolvedValue({ ...mockTaskDetail }),
+      getSettings: vi.fn().mockResolvedValue({ maxConcurrent: 2, maxWorktrees: 4, pollIntervalMs: 10000, groupOverlappingFiles: false, autoMerge: true } as Settings),
+      listTasks: vi.fn().mockResolvedValue([]),
+      updateTask: vi.fn().mockImplementation(async (_id: string, patch: Record<string, unknown>) => {
+        if (patch?.status === null) {
+          throw new Error("pause restore failed");
+        }
+      }),
+      logEntry: vi.fn().mockResolvedValue(undefined),
+      appendAgentLog: vi.fn().mockResolvedValue(undefined),
+      parseDependenciesFromPrompt: vi.fn().mockResolvedValue([]),
+    } as unknown as TaskStore;
+
+    let resolveDispose!: () => void;
+    const disposePromise = new Promise<void>((r) => { resolveDispose = r; });
+    mockCreateKbAgent.mockResolvedValue({
+      session: {
+        state: {},
+        sessionManager: {},
+        prompt: vi.fn().mockReturnValue(disposePromise),
+        dispose: vi.fn().mockImplementation(() => resolveDispose()),
+        navigateTree: vi.fn(),
+      },
+    });
+
+    const { promptWithFallback } = await import("./pi.js");
+    const promptWithFallbackMock = promptWithFallback as ReturnType<typeof vi.fn>;
+    promptWithFallbackMock.mockReturnValueOnce(disposePromise);
+
+    const task: Task = { id: "FN-001", description: "test", column: "triage", dependencies: [], steps: [], currentStep: 0, log: [], createdAt: "", updatedAt: "" };
+    const processor = new TriageProcessor(store, "/tmp/root");
+    const specifyPromise = processor.specifyTask(task);
+
+    await new Promise((r) => setTimeout(r, 20));
+    for (const listener of settingsListeners) {
+      listener({ settings: { globalPause: true }, previous: { globalPause: false } });
+    }
+
+    await expect(specifyPromise).resolves.toBeUndefined();
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("FN-001: failed to restore status to 'null' during pause-abort cleanup"),
+    );
+
+    warnSpy.mockRestore();
+  });
+
+  it("logs warning when status restore fails during stuck-detector abort", async () => {
+    const warnSpy = vi.spyOn(triageLog, "warn");
+
+    const store = {
+      on: vi.fn(),
+      getTask: vi.fn().mockResolvedValue({ ...mockTaskDetail }),
+      getSettings: vi.fn().mockResolvedValue({ maxConcurrent: 2, maxWorktrees: 4, pollIntervalMs: 10000, groupOverlappingFiles: false, autoMerge: true } as Settings),
+      listTasks: vi.fn().mockResolvedValue([]),
+      updateTask: vi.fn().mockImplementation(async (_id: string, patch: Record<string, unknown>) => {
+        if (patch?.status === null) {
+          throw new Error("stuck restore failed");
+        }
+      }),
+      logEntry: vi.fn().mockResolvedValue(undefined),
+      appendAgentLog: vi.fn().mockResolvedValue(undefined),
+      parseDependenciesFromPrompt: vi.fn().mockResolvedValue([]),
+    } as unknown as TaskStore;
+
+    let resolveDispose!: () => void;
+    const disposePromise = new Promise<void>((r) => { resolveDispose = r; });
+    const mockDispose = vi.fn().mockImplementation(() => resolveDispose());
+    mockCreateKbAgent.mockResolvedValue({
+      session: {
+        state: {},
+        sessionManager: {},
+        prompt: vi.fn().mockReturnValue(disposePromise),
+        dispose: mockDispose,
+        navigateTree: vi.fn(),
+      },
+    });
+
+    const { promptWithFallback } = await import("./pi.js");
+    const promptWithFallbackMock = promptWithFallback as ReturnType<typeof vi.fn>;
+    promptWithFallbackMock.mockReturnValueOnce(disposePromise);
+
+    const task: Task = { id: "FN-002", description: "test", column: "triage", dependencies: [], steps: [], currentStep: 0, log: [], createdAt: "", updatedAt: "" };
+    const processor = new TriageProcessor(store, "/tmp/root");
+    const specifyPromise = processor.specifyTask(task);
+
+    await new Promise((r) => setTimeout(r, 20));
+    processor.markStuckAborted("FN-002");
+    mockDispose();
+
+    await expect(specifyPromise).resolves.toBeUndefined();
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("FN-002: failed to restore status to 'null' during stuck-detector abort cleanup"),
+    );
+
+    warnSpy.mockRestore();
+  });
+
+  it("logs warning when logEntry fails during rate-limit retry", async () => {
+    vi.useFakeTimers();
+    const warnSpy = vi.spyOn(triageLog, "warn");
+
+    try {
+      const task: Task = {
+        id: "FN-207",
+        description: "Rate limit test",
+        column: "triage",
+        dependencies: [],
+        steps: [],
+        currentStep: 0,
+        log: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      } as Task;
+
+      const store = createMockStore({
+        getTask: vi.fn().mockResolvedValue({ ...task, attachments: [], comments: [] }),
+        logEntry: vi.fn().mockImplementation(async (_taskId: string, message: string) => {
+          if (message.includes("Rate limited — retry")) {
+            throw new Error("log write failed");
+          }
+        }),
+      });
+
+      mockCreateKbAgent.mockResolvedValue({
+        session: {
+          state: {},
+          sessionManager: { getLeafId: vi.fn().mockReturnValue(null) },
+          prompt: vi.fn().mockResolvedValue(undefined),
+          dispose: vi.fn(),
+          navigateTree: vi.fn(),
+        },
+      });
+
+      const { promptWithFallback } = await import("./pi.js");
+      const promptWithFallbackMock = promptWithFallback as ReturnType<typeof vi.fn>;
+      promptWithFallbackMock
+        .mockRejectedValueOnce(new Error("429 Too Many Requests"))
+        .mockResolvedValueOnce(undefined);
+
+      const processor = new TriageProcessor(store, "/test/root", {
+        pollIntervalMs: 100_000,
+      });
+
+      const specifyPromise = processor.specifyTask(task);
+      await vi.advanceTimersByTimeAsync(60_000);
+      await expect(specifyPromise).resolves.toBeUndefined();
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("FN-207: failed to log rate-limit retry entry"),
+      );
+    } finally {
+      warnSpy.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("logs warning when transient-error retry status update fails", async () => {
+    const warnSpy = vi.spyOn(triageLog, "warn");
+    const task: Task = {
+      id: "FN-208",
+      description: "Transient retry test",
+      column: "triage",
+      dependencies: [],
+      steps: [],
+      currentStep: 0,
+      log: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    } as Task;
+
+    const store = createMockStore({
+      getTask: vi.fn().mockResolvedValue({ ...task, attachments: [] }),
+      updateTask: vi.fn().mockImplementation(async (_id: string, patch: Record<string, unknown>) => {
+        if (patch?.recoveryRetryCount === 1) {
+          throw new Error("retry status update failed");
+        }
+      }),
+    });
+
+    mockCreateKbAgent.mockRejectedValueOnce(new Error("upstream connect error"));
+
+    const processor = new TriageProcessor(store, "/test/root", {
+      pollIntervalMs: 100_000,
+    });
+
+    await expect(processor.specifyTask(task)).resolves.toBeUndefined();
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("FN-208: failed to restore status to 'null' during transient-error retry scheduling"),
+    );
+
+    warnSpy.mockRestore();
   });
 });
 

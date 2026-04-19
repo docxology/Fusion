@@ -983,8 +983,9 @@ export class StepSessionExecutor {
           stuckTaskDetector?.untrackTask(trackingKey);
           try {
             session?.dispose();
-          } catch {
-            /* best-effort */
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            stepExecLog.warn(`Failed to dispose session for step ${stepIndex}: ${msg}`);
           }
         }
       }
@@ -1163,8 +1164,9 @@ export class StepSessionExecutor {
         { cwd: worktreePath, encoding: "utf-8" },
       );
       commits = stdout.trim();
-    } catch {
-      stepExecLog.warn(`Could not list commits in parallel worktree for step ${stepIndex}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      stepExecLog.warn(`Could not list commits in parallel worktree for step ${stepIndex}: ${msg}`);
       return;
     }
 
@@ -1188,8 +1190,9 @@ export class StepSessionExecutor {
         // Cherry-pick conflict — abort and log
         try {
           await execAsync("git cherry-pick --abort", { cwd: primaryPath });
-        } catch {
-          // Ignore abort failure
+        } catch (abortErr: unknown) {
+          const msg = abortErr instanceof Error ? abortErr.message : String(abortErr);
+          stepExecLog.warn(`Cherry-pick --abort failed for step ${stepIndex}: ${msg}`);
         }
         throw new Error(
           `Cherry-pick conflict for commit ${sha} in step ${stepIndex}: ${

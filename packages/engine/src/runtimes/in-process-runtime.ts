@@ -355,12 +355,18 @@ export class InProcessRuntime
           // Update agent state to terminated (completed)
           const agentId = this.taskAgentMap.get(task.id);
           if (agentId && this.agentStore) {
-            void this.agentStore.updateAgentState(agentId, "terminated").catch(() => {});
+            void this.agentStore.updateAgentState(agentId, "terminated").catch((err: unknown) => {
+              const msg = err instanceof Error ? err.message : String(err);
+              runtimeLog.warn(`Failed to update agent ${agentId} state to terminated (completion): ${msg}`);
+            });
             this.taskAgentMap.delete(task.id);
             // Auto-delete the task-worker agent after a short delay so the UI
             // can observe the terminal state before the agent is removed.
             void setTimeout(() => {
-              this.agentStore?.deleteAgent(agentId).catch(() => {});
+              this.agentStore?.deleteAgent(agentId).catch((err: unknown) => {
+                const msg = err instanceof Error ? err.message : String(err);
+                runtimeLog.warn(`Failed to delete agent ${agentId} after completion: ${msg}`);
+              });
             }, 5000);
           }
         },
@@ -387,12 +393,18 @@ export class InProcessRuntime
           // Update agent state to terminated (failed)
           const agentId = this.taskAgentMap.get(task.id);
           if (agentId && this.agentStore) {
-            void this.agentStore.updateAgentState(agentId, "terminated").catch(() => {});
+            void this.agentStore.updateAgentState(agentId, "terminated").catch((err: unknown) => {
+              const msg = err instanceof Error ? err.message : String(err);
+              runtimeLog.warn(`Failed to update agent ${agentId} state to terminated (error): ${msg}`);
+            });
             this.taskAgentMap.delete(task.id);
             // Auto-delete the task-worker agent after a short delay so the UI
             // can observe the terminal state before the agent is removed.
             void setTimeout(() => {
-              this.agentStore?.deleteAgent(agentId).catch(() => {});
+              this.agentStore?.deleteAgent(agentId).catch((err: unknown) => {
+                const msg = err instanceof Error ? err.message : String(err);
+                runtimeLog.warn(`Failed to delete agent ${agentId} after error: ${msg}`);
+              });
             }, 5000);
           }
         },
@@ -1021,7 +1033,9 @@ export class InProcessRuntime
     try {
       const state = await this.centralCore.getGlobalConcurrencyState();
       return state.globalMaxConcurrent;
-    } catch {
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      runtimeLog.warn(`Failed to fetch global concurrency from CentralCore, falling back to default (4): ${msg}`);
       // Fallback to default if CentralCore is unavailable
       return 4;
     }

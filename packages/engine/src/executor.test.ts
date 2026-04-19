@@ -3239,6 +3239,129 @@ describe("TaskExecutor pause behavior", () => {
   });
 });
 
+describe("session tracking failure diagnostics", () => {
+  it("logs warning when sessionFile update fails during retry", async () => {
+    const warnSpy = vi.spyOn(executorLog, "warn");
+    const store = createMockStore();
+    const retrySessionFilePath = "/tmp/sessions/retry-failed.jsonl";
+
+    store.updateTask.mockImplementation(async (_taskId: string, patch: Record<string, unknown>) => {
+      if (patch?.sessionFile === retrySessionFilePath) {
+        throw new Error("retry sessionFile write failed");
+      }
+      return {};
+    });
+
+    mockedCreateHaiAgent
+      .mockResolvedValueOnce({
+        session: {
+          prompt: vi.fn().mockResolvedValue(undefined),
+          dispose: vi.fn(),
+        },
+        sessionFile: "/tmp/sessions/initial.jsonl",
+      } as any)
+      .mockResolvedValueOnce({
+        session: {
+          prompt: vi.fn().mockResolvedValue(undefined),
+          dispose: vi.fn(),
+        },
+        sessionFile: retrySessionFilePath,
+      } as any);
+
+    const executor = new TaskExecutor(store, "/tmp/test");
+    await expect(executor.execute({
+      id: "FN-001",
+      title: "Retry session task",
+      description: "Session retry diagnostics",
+      column: "in-progress",
+      dependencies: [],
+      steps: [],
+      currentStep: 0,
+      log: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    })).resolves.toBeUndefined();
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("FN-001: failed to update sessionFile during retry"),
+    );
+
+    warnSpy.mockRestore();
+  });
+
+  it("logs warning when sessionFile clear fails on completion", async () => {
+    const warnSpy = vi.spyOn(executorLog, "warn");
+    const store = createMockStore();
+
+    store.updateTask.mockImplementation(async (_taskId: string, patch: Record<string, unknown>) => {
+      if (patch?.sessionFile === null) {
+        throw new Error("session clear failed");
+      }
+      return {};
+    });
+
+    mockedCreateHaiAgent.mockResolvedValue({
+      session: {
+        prompt: vi.fn().mockResolvedValue(undefined),
+        dispose: vi.fn(),
+      },
+      sessionFile: "/tmp/sessions/clear-test.jsonl",
+    } as any);
+
+    const executor = new TaskExecutor(store, "/tmp/test");
+    await expect(executor.execute({
+      id: "FN-001",
+      title: "Session clear task",
+      description: "Session clear diagnostics",
+      column: "in-progress",
+      dependencies: [],
+      steps: [],
+      currentStep: 0,
+      log: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    })).resolves.toBeUndefined();
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("FN-001: failed to clear sessionFile on completion"),
+    );
+
+    warnSpy.mockRestore();
+  });
+
+  it("logs warning when child agent deletion fails during cleanup", async () => {
+    vi.useFakeTimers();
+    const warnSpy = vi.spyOn(executorLog, "warn");
+
+    try {
+      const store = createMockStore();
+      const agentStore = {
+        updateAgentState: vi.fn().mockResolvedValue(undefined),
+        deleteAgent: vi.fn().mockRejectedValue(new Error("delete failed")),
+      };
+
+      const executor = new TaskExecutor(store, "/tmp/test", {
+        agentStore: agentStore as any,
+      });
+
+      (executor as any).childSessions.set("child-007", {
+        dispose: vi.fn(),
+      });
+
+      await (executor as any).terminateChildAgent("child-007");
+      await vi.advanceTimersByTimeAsync(5000);
+      await Promise.resolve();
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Failed to delete spawned child agent child-007"),
+      );
+    } finally {
+      warnSpy.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe("TaskExecutor executor model hot-swap", () => {
   const buildUpdatedTask = (overrides: Partial<Task> = {}): Task => ({
     id: "FN-001",
