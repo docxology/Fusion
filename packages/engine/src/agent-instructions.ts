@@ -6,6 +6,9 @@ import {
   type AgentRatingSummary,
   type AgentStore,
 } from "@fusion/core";
+import { createLogger } from "./logger.js";
+
+const log = createLogger("agent-instructions");
 
 const MAX_INSTRUCTIONS_PATH_LENGTH = 500;
 const MAX_INSTRUCTIONS_TEXT_LENGTH = 50_000;
@@ -21,9 +24,7 @@ function trimAndClamp(value: string, maxLength: number, label: string, agentId: 
     return trimmed;
   }
 
-  console.warn(
-    `[agent-instructions] ${label} exceeded max length for agent ${agentId}; truncating to ${maxLength} chars`,
-  );
+  log.warn(`${label} exceeded max length for agent ${agentId}; truncating to ${maxLength} chars`);
   return trimmed.slice(0, maxLength);
 }
 
@@ -38,32 +39,32 @@ function resolveValidatedInstructionsPath(rawPath: string, rootDir: string, agen
   }
 
   if (trimmed.length > MAX_INSTRUCTIONS_PATH_LENGTH) {
-    console.warn(
-      `[agent-instructions] instructionsPath too long for agent ${agentId} (${trimmed.length} > ${MAX_INSTRUCTIONS_PATH_LENGTH})`,
+    log.warn(
+      `instructionsPath too long for agent ${agentId} (${trimmed.length} > ${MAX_INSTRUCTIONS_PATH_LENGTH})`,
     );
     return null;
   }
 
   if (!trimmed.toLowerCase().endsWith(".md")) {
-    console.warn(`[agent-instructions] instructionsPath must end in .md for agent ${agentId}: ${trimmed}`);
+    log.warn(`instructionsPath must end in .md for agent ${agentId}: ${trimmed}`);
     return null;
   }
 
   if (isAbsolute(trimmed)) {
-    console.warn(`[agent-instructions] instructionsPath must be project-relative for agent ${agentId}: ${trimmed}`);
+    log.warn(`instructionsPath must be project-relative for agent ${agentId}: ${trimmed}`);
     return null;
   }
 
   const normalized = normalize(trimmed);
   if (isPathTraversal(normalized)) {
-    console.warn(`[agent-instructions] instructionsPath traversal is not allowed for agent ${agentId}: ${trimmed}`);
+    log.warn(`instructionsPath traversal is not allowed for agent ${agentId}: ${trimmed}`);
     return null;
   }
 
   const resolvedPath = resolve(rootDir, normalized);
   const rel = relative(rootDir, resolvedPath);
   if (!rel || rel.startsWith(`..${sep}`) || rel === ".." || isAbsolute(rel)) {
-    console.warn(`[agent-instructions] instructionsPath escapes project root for agent ${agentId}: ${trimmed}`);
+    log.warn(`instructionsPath escapes project root for agent ${agentId}: ${trimmed}`);
     return null;
   }
 
@@ -187,13 +188,9 @@ export async function resolveAgentInstructions(
         // Log a warning but don't throw — instructionsText is still used
         const code = (err as NodeJS.ErrnoException).code;
         if (code === "ENOENT") {
-          console.warn(
-            `[agent-instructions] Instructions file not found for agent ${agent.id}: ${filePath}`,
-          );
+          log.warn(`Instructions file not found for agent ${agent.id}: ${filePath}`);
         } else {
-          console.warn(
-            `[agent-instructions] Failed to read instructions file for agent ${agent.id}: ${filePath} (${code})`,
-          );
+          log.warn(`Failed to read instructions file for agent ${agent.id}: ${filePath} (${code})`);
         }
       }
     }
@@ -277,7 +274,7 @@ export async function buildAgentChatPrompt(options: {
       // Graceful fallback for chat/heartbeat: if project memory cannot be read,
       // continue with available identity + agent instructions.
       const message = error instanceof Error ? error.message : String(error);
-      console.warn(`[agent-instructions] Failed to read project memory for agent ${agent.id}: ${message}`);
+      log.warn(`Failed to read project memory for agent ${agent.id}: ${message}`);
     }
   }
 

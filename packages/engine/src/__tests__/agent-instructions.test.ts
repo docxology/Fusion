@@ -552,3 +552,151 @@ describe("buildSystemPromptWithInstructions", () => {
     );
   });
 });
+
+describe("diagnostics logging", () => {
+  let testDir: string;
+
+  beforeEach(async () => {
+    testDir = await mkdtemp(join(tmpdir(), "agent-instr-diagnostics-"));
+  });
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    await rm(testDir, { recursive: true, force: true });
+  });
+
+  it("logs exactly once when oversized instructionsText is truncated", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const agent = makeAgent({ instructionsText: "x".repeat(50_010) });
+
+    const result = await resolveAgentInstructions(agent, testDir);
+
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0]?.[0]).toContain("agent-instructions");
+    expect(warnSpy.mock.calls[0]?.[0]).toContain("instructionsText exceeded max length");
+    expect(result.length).toBe(50_000);
+  });
+
+  it("logs exactly once when oversized instructionsPath file content is truncated", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await writeFile(join(testDir, "large.md"), "y".repeat(50_020));
+    const agent = makeAgent({ instructionsPath: "large.md" });
+
+    const result = await resolveAgentInstructions(agent, testDir);
+
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0]?.[0]).toContain("agent-instructions");
+    expect(warnSpy.mock.calls[0]?.[0]).toContain("instructions file content exceeded max length");
+    expect(result.length).toBe(50_000);
+  });
+
+  it("logs exactly once when oversized soul is truncated", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const agent = makeAgent({ soul: "s".repeat(10_010) });
+
+    const result = await resolveAgentInstructions(agent, testDir);
+
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0]?.[0]).toContain("agent-instructions");
+    expect(warnSpy.mock.calls[0]?.[0]).toContain("soul exceeded max length");
+    expect(result.length).toBe(10_000 + "## Soul\n\n".length);
+  });
+
+  it("logs exactly once when oversized memory is truncated", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const memory = "m".repeat(50_010);
+    const agent = makeAgent({ memory });
+
+    const result = await resolveAgentInstructions(agent, testDir);
+
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0]?.[0]).toContain("agent-instructions");
+    expect(warnSpy.mock.calls[0]?.[0]).toContain("memory exceeded max length");
+    expect(result).toContain("## Agent Memory");
+    expect(result).toContain(memory.slice(0, 50_000));
+  });
+
+  it("logs exactly once when instructionsPath is too long", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const agent = makeAgent({ instructionsPath: `${"a".repeat(501)}.md` });
+
+    const result = await resolveAgentInstructions(agent, testDir);
+
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0]?.[0]).toContain("agent-instructions");
+    expect(warnSpy.mock.calls[0]?.[0]).toContain("instructionsPath too long");
+    expect(result).toBe("");
+  });
+
+  it("logs exactly once when instructionsPath does not end in .md", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await writeFile(join(testDir, "instructions.txt"), "plain text");
+    const agent = makeAgent({ instructionsPath: "instructions.txt" });
+
+    const result = await resolveAgentInstructions(agent, testDir);
+
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0]?.[0]).toContain("agent-instructions");
+    expect(warnSpy.mock.calls[0]?.[0]).toContain("must end in .md");
+    expect(result).toBe("");
+  });
+
+  it("logs exactly once when instructionsPath is absolute", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const agent = makeAgent({ instructionsPath: "/etc/passwd.md" });
+
+    const result = await resolveAgentInstructions(agent, testDir);
+
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0]?.[0]).toContain("agent-instructions");
+    expect(warnSpy.mock.calls[0]?.[0]).toContain("must be project-relative");
+    expect(result).toBe("");
+  });
+
+  it("logs exactly once when instructionsPath attempts traversal", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const agent = makeAgent({ instructionsPath: "../secrets.md" });
+
+    const result = await resolveAgentInstructions(agent, testDir);
+
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0]?.[0]).toContain("agent-instructions");
+    expect(warnSpy.mock.calls[0]?.[0]).toContain("traversal is not allowed");
+    expect(result).toBe("");
+  });
+
+  it("logs exactly once when instructionsPath file is missing", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const agent = makeAgent({
+      instructionsText: "Fallback text.",
+      instructionsPath: "nonexistent.md",
+    });
+
+    const result = await resolveAgentInstructions(agent, testDir);
+
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0]?.[0]).toContain("agent-instructions");
+    expect(warnSpy.mock.calls[0]?.[0]).toContain("file not found");
+    expect(result).toBe("Fallback text.");
+  });
+
+  it("logs exactly once when project memory read fails in buildAgentChatPrompt", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await mkdir(join(testDir, ".fusion", "memory", "MEMORY.md"), { recursive: true });
+
+    const prompt = await buildAgentChatPrompt({
+      agent: makeAgent({
+        name: "Avery",
+        role: "reviewer",
+      }),
+      rootDir: testDir,
+      basePrompt: "You are a chat assistant.",
+      includeProjectMemory: true,
+    });
+
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0]?.[0]).toContain("agent-instructions");
+    expect(warnSpy.mock.calls[0]?.[0]).toContain("Failed to read project memory");
+    expect(prompt).toContain("## Identity");
+  });
+});
