@@ -827,7 +827,7 @@ describe("PlanningModeModal", () => {
       });
 
       expect(screen.getByText("List your acceptance criteria")).toBeDefined();
-      expect(screen.getByText("Medium")).toBeDefined();
+      expect(within(screen.getByTestId("conversation-history")).getByText("Medium")).toBeDefined();
       expect(screen.getByText("Must support offline mode")).toBeDefined();
       expect(screen.getByText("What should we prioritize next?")).toBeDefined();
     });

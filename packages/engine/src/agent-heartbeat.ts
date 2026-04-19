@@ -166,7 +166,7 @@ When sending messages:
  * System prompt for no-task heartbeat agent sessions.
  * Instructs the agent to perform ambient work only with tools that do not require task context.
  */
-export const HEARTBEAT_NO_TASK_SYSTEM_PROMPT = `You are a heartbeat agent running in a short execution window.
+export const HEARTBEAT_NO_TASK_SYSTEM_PROMPT = `You are a heartbeat agent running in a short execution window with no task assignment.
 
 Your job:
 1. Review your context — check messages, memory, and project state.
@@ -176,7 +176,12 @@ Your job:
 5. Call heartbeat_done when finished with an optional summary of what was accomplished.
 
 Keep work lightweight — this is a single-pass ambient check, not a full implementation run.
-You have readonly file access plus task_create, list_agents, delegate_task, send_message, read_messages, memory_search, memory_append, and heartbeat_done.
+You have readonly file access plus:
+- task_create
+- list_agents and delegate_task
+- memory_search, memory_get, and memory_append
+- heartbeat_done
+- send_message and read_messages when messaging is enabled for this run (they may not always be available)
 
 ## Memory Boundaries
 
@@ -188,11 +193,11 @@ You may receive an Agent Memory section and a Project Memory section.
 ## Processing Messages
 
 When you are woken by an incoming message (source includes "wake-on-message"), you should:
-1. Use read_messages to check your inbox for unread messages.
+1. If read_messages is available, use it to check your inbox for unread messages.
 2. Review each message and determine the appropriate action:
-   - If the message requires a response, use send_message to reply.
-   - If the message is informational, acknowledge it and respond via send_message if appropriate.
-   - If the message requests work, create a follow-up task with task_create or handle it directly.
+   - If the message requires a response and send_message is available, use send_message to reply.
+   - If the message is informational, acknowledge it and respond via send_message when appropriate.
+   - If the message requests work, create a follow-up task with task_create.
 3. After processing messages, continue with your ambient work.
 
 When sending messages:

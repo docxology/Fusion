@@ -2388,24 +2388,39 @@ describe("HeartbeatMonitor", () => {
     });
 
     describe("execution", () => {
-      it("HEARTBEAT_NO_TASK_SYSTEM_PROMPT does not mention task-scoped tools", () => {
+      it("no-task system prompt does not reference task_log or task_document tools", () => {
         expect(HEARTBEAT_NO_TASK_SYSTEM_PROMPT).not.toContain("task_log");
         expect(HEARTBEAT_NO_TASK_SYSTEM_PROMPT).not.toContain("task_document_write");
         expect(HEARTBEAT_NO_TASK_SYSTEM_PROMPT).not.toContain("task_document_read");
         expect(HEARTBEAT_NO_TASK_SYSTEM_PROMPT).not.toContain("task_document");
+      });
+
+      it("no-task system prompt references only available tools", () => {
         expect(HEARTBEAT_NO_TASK_SYSTEM_PROMPT).toContain("task_create");
         expect(HEARTBEAT_NO_TASK_SYSTEM_PROMPT).toContain("list_agents");
         expect(HEARTBEAT_NO_TASK_SYSTEM_PROMPT).toContain("delegate_task");
-        expect(HEARTBEAT_NO_TASK_SYSTEM_PROMPT).toContain("read_messages");
         expect(HEARTBEAT_NO_TASK_SYSTEM_PROMPT).toContain("send_message");
+        expect(HEARTBEAT_NO_TASK_SYSTEM_PROMPT).toContain("read_messages");
         expect(HEARTBEAT_NO_TASK_SYSTEM_PROMPT).toContain("memory_search");
+        expect(HEARTBEAT_NO_TASK_SYSTEM_PROMPT).toContain("memory_get");
         expect(HEARTBEAT_NO_TASK_SYSTEM_PROMPT).toContain("memory_append");
         expect(HEARTBEAT_NO_TASK_SYSTEM_PROMPT).toContain("heartbeat_done");
       });
 
-      it("HEARTBEAT_SYSTEM_PROMPT mentions task_log and task_document_write", () => {
+      it("task-scoped system prompt still references task_log and task_document tools", () => {
         expect(HEARTBEAT_SYSTEM_PROMPT).toContain("task_log");
         expect(HEARTBEAT_SYSTEM_PROMPT).toContain("task_document_write");
+        expect(HEARTBEAT_SYSTEM_PROMPT).toContain("task_document tools");
+      });
+
+      it("both prompts include memory boundaries section", () => {
+        expect(HEARTBEAT_SYSTEM_PROMPT).toContain("## Memory Boundaries");
+        expect(HEARTBEAT_NO_TASK_SYSTEM_PROMPT).toContain("## Memory Boundaries");
+      });
+
+      it("no-task system prompt processing messages section does not reference task_log", () => {
+        const processingMessagesSection = HEARTBEAT_NO_TASK_SYSTEM_PROMPT.split("## Processing Messages")[1] ?? "";
+        expect(processingMessagesSection).not.toContain("task_log");
       });
 
       it("creates session with enriched system prompt and expected tools", async () => {
