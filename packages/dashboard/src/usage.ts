@@ -324,6 +324,20 @@ const ANTHROPIC_TOKEN_ENDPOINT = "https://platform.claude.com/v1/oauth/token";
 const ANTHROPIC_OAUTH_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
 
 /**
+ * `anthropic-beta` header value required by the Anthropic API to authorize
+ * OAuth-scoped access to `/api/oauth/usage`. Without this header the endpoint
+ * returns 401 "OAuth authentication is currently not supported". Value mirrors
+ * what the Claude CLI (`claude /usage`) sends — bump when the CLI does.
+ */
+const ANTHROPIC_OAUTH_BETA = "oauth-2025-04-20";
+
+/**
+ * User-Agent sent alongside OAuth usage requests. Matches the format used by
+ * the Claude CLI so the call is recognizable to Anthropic.
+ */
+const CLAUDE_USAGE_USER_AGENT = "claude-code-fusion-dashboard";
+
+/**
  * Check whether an OAuth access token is expired using the `expiresAt` timestamp
  * from the credential store. Returns true if expired or expiring within 60 seconds.
  */
@@ -337,19 +351,33 @@ function isTokenExpired(expiresAt: number | undefined): boolean {
  * Attempt to refresh the OAuth access token using the refresh token.
  * Returns the new access token on success, or null on failure.
  * The refreshed token is cached in memory only (not written to disk/keychain).
+ *
+ * Request shape mirrors what the Claude CLI sends: JSON body, includes a
+ * `scope` field, and posts to platform.claude.com. Sending the body as
+ * form-urlencoded or omitting `scope` causes Anthropic to respond with 4xx
+ * errors (or silently rate-limit) even when the refresh token is valid.
  */
-async function refreshClaudeAccessToken(refreshToken: string): Promise<string | null> {
+async function refreshClaudeAccessToken(
+  refreshToken: string,
+  scopes?: string[],
+): Promise<string | null> {
   try {
-    const body = new URLSearchParams({
+    const payload: Record<string, string> = {
       grant_type: "refresh_token",
       refresh_token: refreshToken,
       client_id: ANTHROPIC_OAUTH_CLIENT_ID,
-    }).toString();
+    };
+    if (scopes && scopes.length > 0) {
+      payload.scope = scopes.join(" ");
+    }
 
     const res = await httpsRequest(ANTHROPIC_TOKEN_ENDPOINT, {
       method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
-      body,
+      headers: {
+        "content-type": "application/json",
+        "user-agent": CLAUDE_USAGE_USER_AGENT,
+      },
+      body: JSON.stringify(payload),
       timeout: 10_000, // 10s timeout for refresh
     });
 
@@ -870,7 +898,7 @@ async function fetchClaudeUsage(): Promise<ProviderUsage> {
   if (tokenExpired && !refreshedAccessToken) {
     // Token is expired — attempt refresh before calling the usage API
     if (oauthCreds.refreshToken) {
-      const newToken = await refreshClaudeAccessToken(oauthCreds.refreshToken);
+      const newToken = await refreshClaudeAccessToken(oauthCreds.refreshToken, scopes);
       if (newToken) {
         activeToken = newToken;
       } else {
@@ -893,6 +921,8 @@ async function fetchClaudeUsage(): Promise<ProviderUsage> {
         method: "GET",
         headers: {
           authorization: `Bearer ${activeToken}`,
+          "anthropic-beta": ANTHROPIC_OAUTH_BETA,
+          "user-agent": CLAUDE_USAGE_USER_AGENT,
         },
       });
 
@@ -902,7 +932,7 @@ async function fetchClaudeUsage(): Promise<ProviderUsage> {
       if (res.status === 401 || res.status === 403) {
         if (oauthCreds.refreshToken && activeToken !== refreshedAccessToken) {
           // Try refreshing the token as a recovery path
-          const newToken = await refreshClaudeAccessToken(oauthCreds.refreshToken);
+          const newToken = await refreshClaudeAccessToken(oauthCreds.refreshToken, scopes);
           if (newToken) {
             activeToken = newToken;
             continue; // Retry with refreshed token

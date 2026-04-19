@@ -446,7 +446,7 @@ describe("usage", () => {
       expect(claude.status).toBe("error");
     });
 
-    it("does not send anthropic-beta header in requests", async () => {
+    it("sends anthropic-beta=oauth-2025-04-20 header so the OAuth usage endpoint authorizes the request", async () => {
       const mockResponse = {
         five_hour: { utilization: 10.0 },
       };
@@ -491,8 +491,11 @@ describe("usage", () => {
 
       await fetchAllProviderUsage();
 
-      // Verify no anthropic-beta header is sent
-      expect(capturedHeaders).not.toHaveProperty("anthropic-beta");
+      // Anthropic now requires the `anthropic-beta: oauth-2025-04-20` header on
+      // /api/oauth/usage for OAuth-scoped tokens; without it the endpoint
+      // replies with 401 "OAuth authentication is currently not supported".
+      // The value mirrors what the Claude CLI sends from `claude /usage`.
+      expect(capturedHeaders["anthropic-beta"]).toBe("oauth-2025-04-20");
     });
 
     it("retries on 429 and succeeds after transient rate limit", async () => {
@@ -1206,19 +1209,20 @@ describe("usage", () => {
 
         await fetchAllProviderUsage();
 
-        // Verify the refresh request (first call)
+        // Verify the refresh request (first call). Body is JSON with a `scope`
+        // field — matches what the Claude CLI sends; form-urlencoded bodies or
+        // missing scope cause Anthropic to reject the refresh.
         const refreshOpts = capturedOptions[0];
         expect(refreshOpts.hostname).toBe("platform.claude.com");
         expect(refreshOpts.path).toBe("/v1/oauth/token");
-        expect(refreshOpts.headers["content-type"]).toBe("application/x-www-form-urlencoded");
+        expect(refreshOpts.headers["content-type"]).toBe("application/json");
 
-        // Verify body contains required parameters
         expect(capturedBodies.length).toBeGreaterThanOrEqual(1);
-        const body = capturedBodies[0];
-        const params = new URLSearchParams(body);
-        expect(params.get("grant_type")).toBe("refresh_token");
-        expect(params.get("refresh_token")).toBe("refresh-token-456");
-        expect(params.get("client_id")).toBe("9d1c250a-e61b-44d9-88ed-5944d1962f5e");
+        const body = JSON.parse(capturedBodies[0]);
+        expect(body.grant_type).toBe("refresh_token");
+        expect(body.refresh_token).toBe("refresh-token-456");
+        expect(body.client_id).toBe("9d1c250a-e61b-44d9-88ed-5944d1962f5e");
+        expect(body.scope).toBe("user:profile");
       });
 
       it("falls back to CLI when refresh fails for expired token", async () => {
