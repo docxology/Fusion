@@ -3265,10 +3265,29 @@ describe("HeartbeatMonitor", () => {
 
       const responseText = result.content[0] && "text" in result.content[0] ? result.content[0].text : "";
       expect(responseText).toContain("Created FN-100");
+      expect((result.details as any).taskId).toBe("FN-100");
       expect(result.details).toEqual({ taskId: "FN-100" });
     });
 
-    it("task_create tracking uses details.taskId instead of regex", async () => {
+    it("task_create details includes taskId matching mock store return", async () => {
+      const store = createMockStore();
+      const matchingStore = createMockTaskStoreForTools({
+        createTask: vi.fn().mockResolvedValue({
+          id: "ZX-321",
+          description: "Follow-up task",
+          dependencies: [],
+          column: "triage",
+        }),
+      });
+      const monitor = new HeartbeatMonitor({ store, taskStore: matchingStore, rootDir: "/tmp" });
+
+      const tools = monitor.createHeartbeatTools("agent-001", matchingStore, "FN-001");
+      const result = await tools[0]!.execute("call-1", { description: "Follow-up task" }, undefined as any, undefined as any, undefined as any);
+
+      expect((result.details as any).taskId).toBe("ZX-321");
+    });
+
+    it("task_create tracking uses details.taskId for non-standard ID prefixes", async () => {
       const store = createMockStore();
       const prefixedTaskStore = createMockTaskStoreForTools({
         createTask: vi.fn().mockResolvedValue({
@@ -3291,7 +3310,7 @@ describe("HeartbeatMonitor", () => {
       );
     });
 
-    it("task_create tracking falls back to parsing text when details.taskId is missing", async () => {
+    it("task_create tracking falls back to unknown when details has no taskId", async () => {
       const store = createMockStore();
       const createTaskCreateToolSpy = vi.spyOn(agentTools, "createTaskCreateTool").mockReturnValue({
         name: "task_create",
@@ -3310,7 +3329,7 @@ describe("HeartbeatMonitor", () => {
         await tools[0]!.execute("call-1", { description: "Follow-up task" }, undefined as any, undefined as any, undefined as any);
 
         expect(mockTaskStore.logEntry).toHaveBeenCalledWith(
-          "PROJ-777",
+          "unknown",
           "Created by agent agent-001 during heartbeat run",
           undefined,
           undefined,
