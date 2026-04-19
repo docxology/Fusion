@@ -796,7 +796,7 @@ export function createInsightExtractionAutomation(
 
 ## Instructions
 
-1. Read the working memory file at \`.fusion/memory.md\` using your file reading tools
+1. Read the working memory file at \`.fusion/memory/MEMORY.md\` using your file reading tools
 2. Read the existing insights file at \`.fusion/memory-insights.md\` (it may not exist yet)
 3. Analyze the working memory content and identify:
    a) **New insights** that should be preserved in long-term memory
@@ -835,7 +835,7 @@ After extracting insights, also produce a PRUNED version of working memory conta
 **CRITICAL REQUIREMENTS:**
 - You MUST preserve at least 2 of these 3 core sections: Architecture, Conventions, Pitfalls
 - If working memory doesn't have enough durable content to justify pruning, omit \`prunedMemory\` entirely (do not force a prune)
-- The \`prunedMemory\` field should be a complete, valid markdown file that can replace \`.fusion/memory.md\`
+- The \`prunedMemory\` field should be a complete, valid markdown file that can replace \`.fusion/memory/MEMORY.md\`
 
 ## Output Format
 
@@ -1149,7 +1149,7 @@ export async function generateMemoryAudit(
       id: "working-memory-exists",
       name: "Working memory file exists",
       passed: false,
-      details: "File .fusion/memory.md does not exist",
+      details: "File .fusion/memory/MEMORY.md does not exist",
     });
   }
 

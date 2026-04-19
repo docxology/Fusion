@@ -459,7 +459,7 @@ Do important work.
       "`/repo/project/packages/engine/src/new-module.ts`",
     ).replace(
       "- `src/types.ts`",
-      "- `/repo/project/.fusion/memory.md`",
+      "- `/repo/project/.fusion/memory/MEMORY.md`",
     );
     const task = makeTaskDetail({ prompt });
     const result = buildStepPrompt(
@@ -471,8 +471,8 @@ Do important work.
     );
 
     expect(result).toContain("/repo/project/.worktrees/happy-robin/packages/engine/src/new-module.ts");
-    expect(result).toContain("/repo/project/.fusion/memory.md");
-    expect(result).not.toContain("/repo/project/.worktrees/happy-robin/.fusion/memory.md");
+    expect(result).toContain("/repo/project/.fusion/memory/MEMORY.md");
+    expect(result).not.toContain("/repo/project/.worktrees/happy-robin/.fusion/memory/MEMORY.md");
   });
 
   it("handles step 0 (preflight) correctly", () => {

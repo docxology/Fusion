@@ -124,8 +124,8 @@ describe("memory-compaction", () => {
     it("should prompt to write compacted content to file", () => {
       const automation = createAutoSummarizeAutomation({});
 
-      expect(automation.steps![0].prompt).toContain(".fusion/memory.md");
-      expect(automation.steps![0].prompt).toContain(".fusion/memory.md");
+      expect(automation.steps![0].prompt).toContain(".fusion/memory/MEMORY.md");
+      expect(automation.steps![0].prompt).toContain(".fusion/memory/MEMORY.md");
     });
   });
 

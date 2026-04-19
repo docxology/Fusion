@@ -254,7 +254,7 @@ export function createAutoSummarizeAutomation(
 
 ## Your Task
 
-1. Read the working memory file at \`.fusion/memory.md\` using your file reading tools
+1. Read the working memory file at \`.fusion/memory/MEMORY.md\` using your file reading tools
 2. Check if the file size exceeds the threshold of ${threshold} characters
 3. If the file is BELOW the threshold: output JSON indicating no compaction needed:
    \`\`\`json
@@ -263,7 +263,7 @@ export function createAutoSummarizeAutomation(
 4. If the file is AT OR ABOVE the threshold:
    a) Distill the memory to ONLY the most important insights
    b) Preserve at least 2 of these 3 core sections: Architecture, Conventions, Pitfalls
-   c) Write the compacted content back to \`.fusion/memory.md\`
+   c) Write the compacted content back to \`.fusion/memory/MEMORY.md\`
    d) Output JSON indicating compaction was done:
    \`\`\`json
    {"skipped": false, "originalSize": <size_before>, "newSize": <size_after>, "reduction": "<percentage>%"}
@@ -287,7 +287,7 @@ export function createAutoSummarizeAutomation(
 **CRITICAL REQUIREMENTS:**
 - You MUST preserve at least 2 of these 3 core sections: Architecture, Conventions, Pitfalls
 - Output ONLY valid JSON — no markdown fences, no extra text
-- Use your file writing tools to update \`.fusion/memory.md\` with the compacted content`;
+- Use your file writing tools to update \`.fusion/memory/MEMORY.md\` with the compacted content`;
 
   return {
     name: AUTO_SUMMARIZE_SCHEDULE_NAME,

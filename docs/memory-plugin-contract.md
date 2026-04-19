@@ -29,7 +29,7 @@ This document defines the pluggable memory backend contract for Fusion, translat
 
 ```typescript
 // Constants
-MEMORY_FILE_PATH: ".fusion/memory.md"
+MEMORY_FILE_PATH: ".fusion/memory/MEMORY.md"
 
 // Functions
 memoryFilePath(rootDir: string): string
@@ -41,7 +41,8 @@ readProjectMemory(rootDir: string): Promise<string>      // Read current content
 ```
 
 **Key invariants:**
-- `MEMORY_FILE_PATH` is always `.fusion/memory.md` (project-root relative, NOT worktree-local)
+- Canonical memory path is `.fusion/memory/MEMORY.md` (project-root relative, NOT worktree-local)
+- Legacy fallback `.fusion/memory.md` remains readable for backward compatibility
 - `ensureMemoryFile` is idempotent: safe to call multiple times; never overwrites existing content
 - Bootstrap failure is non-fatal: `store.ts` wraps the call in try/catch
 
@@ -49,12 +50,12 @@ readProjectMemory(rootDir: string): Promise<string>      // Read current content
 
 The module implements a two-tier memory architecture with automatic pruning:
 
-1. **Working memory** (`memory.md`) — agent-maintained, manually edited, automatically pruned
-2. **Insights memory** (`memory-insights.md`) — AI-extracted distilled knowledge
+1. **Working memory** (`.fusion/memory/MEMORY.md`, with legacy `.fusion/memory.md` fallback) — agent-maintained, manually edited, automatically pruned
+2. **Insights memory** (`.fusion/memory-insights.md`) — AI-extracted distilled knowledge
 
 ```typescript
 // Constants
-MEMORY_WORKING_PATH: ".fusion/memory.md"
+MEMORY_WORKING_PATH: ".fusion/memory/MEMORY.md"
 MEMORY_INSIGHTS_PATH: ".fusion/memory-insights.md"
 DEFAULT_INSIGHT_SCHEDULE: "0 2 * * *"           // Daily at 2 AM
 DEFAULT_MIN_INTERVAL_MS: 86400000               // 24 hours
@@ -90,7 +91,7 @@ MemoryAuditReport: { ..., pruning: { applied: boolean, reason: string, sizeDelta
 **Pruning behavior (FN-1477):**
 - AI response may include `prunedMemory` field with a pruned working memory candidate
 - `validatePruneCandidate()` checks that at least 2 of 3 required sections are preserved (Architecture, Conventions, Pitfalls)
-- `applyMemoryPruning()` only writes to `.fusion/memory.md` if validation passes
+- `applyMemoryPruning()` only writes to `.fusion/memory/MEMORY.md` if validation passes
 - Invalid prune candidates are safely ignored; existing memory is preserved
 - Pruning outcome is included in audit reports for operator visibility
 
@@ -103,7 +104,7 @@ MemoryAuditReport: { ..., pruning: { applied: boolean, reason: string, sizeDelta
 interface ProjectSettings {
   // ... other fields ...
 
-  /** When true, agents will consult and update .fusion/memory.md.
+  /** When true, agents will consult and update .fusion/memory/MEMORY.md.
    *  Default: true (enabled for backward compatibility). */
   memoryEnabled?: boolean;
 
@@ -169,9 +170,9 @@ if (memoryEnabled && rootDir) {
 | Route | Method | Description |
 |-------|--------|-------------|
 | `/api/memory` | GET | Returns `{ content: string }` — empty string if file absent |
-| `/api/memory` | PUT | Body: `{ content: string }` — writes to `.fusion/memory.md` |
+| `/api/memory` | PUT | Body: `{ content: string }` — writes to canonical `.fusion/memory/MEMORY.md` (legacy fallback remains supported) |
 
-Both routes use `readProjectFile` / `writeProjectFile` from `file-service.ts`, which enforces project-root path constraints (memory path is `.fusion/memory.md` — always within project scope).
+Both routes use `readProjectFile` / `writeProjectFile` from `file-service.ts`, which enforces project-root path constraints (canonical memory path is `.fusion/memory/MEMORY.md`, with `.fusion/memory.md` treated as a compatibility fallback).
 
 ### 1.6 Dashboard Settings UI
 
@@ -193,7 +194,7 @@ Both routes use `readProjectFile` / `writeProjectFile` from `file-service.ts`, w
 
 ### 1.8 Summary of Non-Negotiable Behaviors
 
-1. **File path**: Memory always lives at `.fusion/memory.md` (project root, not worktree)
+1. **File path**: Canonical memory lives at `.fusion/memory/MEMORY.md` (project root, not worktree); legacy `.fusion/memory.md` remains a compatibility fallback
 2. **Toggle**: `memoryEnabled` controls all memory behavior — when `false`, no instructions injected, no reads/writes
 3. **Default**: `memoryEnabled: true` (backward-compatible default)
 4. **Idempotent bootstrap**: `ensureMemoryFile` never overwrites existing content
@@ -269,7 +270,7 @@ OpenClaw backends fall back to a default (file-based) backend when:
 | Auto-flush | Manual writes via dashboard | Backend should handle internal buffering |
 | Search capability | Not implemented | Optional `search()` method in interface |
 | Fallback semantics | Always file-based | Need explicit fallback chain |
-| Path abstraction | Hardcoded `.fusion/memory.md` | Backend config includes `rootDir` |
+| Path abstraction | Canonical `.fusion/memory/MEMORY.md` with legacy fallback support | Backend config includes `rootDir` |
 
 ### 2.3 OpenClaw Memory Architecture Sources
 
@@ -526,7 +527,7 @@ export type MemoryBackendFactory = (
 ```typescript
 /**
  * Default file-based memory backend.
- * Preserves exact current behavior: .fusion/memory.md on project root.
+ * Preserves canonical behavior: .fusion/memory/MEMORY.md on project root (with legacy .fusion/memory.md fallback).
  *
  * This backend is always registered as the fallback when no other backend
  * is configured or when configured backend is unavailable.
@@ -713,24 +714,26 @@ The following return shapes are **contractually guaranteed** by all backends and
 | Function | Current Behavior | Contract Requirement |
 |----------|----------------|---------------------|
 | `GET /api/memory` → `{ content }` | Empty string if file absent | Backend `read()` must return `""` when no content exists |
-| `readWorkingMemory(rootDir)` | `""` if `.fusion/memory.md` absent | Same — empty string NOT `null` |
+| `readWorkingMemory(rootDir)` | `""` if `.fusion/memory/MEMORY.md` absent | Same — empty string NOT `null` |
 | `readInsightsMemory(rootDir)` | `null` if `.fusion/memory-insights.md` absent | Same — `null` NOT `""` |
 
 #### 3.8.2 Canonical Source-of-Truth
 
 **For the `"file"` backend (default):**
-- The file `.fusion/memory.md` IS the canonical source
-- All reads/writes go directly to the file
+- The file `.fusion/memory/MEMORY.md` IS the canonical source
+- Legacy `.fusion/memory.md` remains readable as a backward-compatible fallback
+- All reads/writes target canonical memory semantics
 - No mirroring or sync required
 
 **For alternative backends:**
 - The backend is the canonical source for memory content
-- **File mirroring is NOT required** — alternative backends need not maintain `.fusion/memory.md`
-- If a backend stores content externally (database, cloud), `.fusion/memory.md` may be stale or absent
+- **File mirroring is NOT required** — alternative backends need not maintain `.fusion/memory/MEMORY.md`
+- If a backend stores content externally (database, cloud), `.fusion/memory/MEMORY.md` may be stale or absent
+- Legacy `.fusion/memory.md` may exist but should be treated as compatibility-only data
 
 #### 3.8.3 File Bridge Adapter (For Dashboard/Agent Compatibility)
 
-When using alternative backends, the dashboard and engine must still work with the canonical path `.fusion/memory.md`. This is achieved through an **adapter layer**:
+When using alternative backends, the dashboard and engine must still work with the canonical path `.fusion/memory/MEMORY.md`. This is achieved through an **adapter layer**:
 
 ```typescript
 /**
@@ -779,7 +782,7 @@ Dashboard routes (`/api/memory`) use `readProjectFile`/`writeProjectFile` from `
 
 | Constraint | Source | Requirement |
 |------------|--------|-------------|
-| Path validation | `file-service.ts:55` | Memory path `.fusion/memory.md` must be within project scope |
+| Path validation | `file-service.ts:55` | Canonical memory path `.fusion/memory/MEMORY.md` (and legacy fallback `.fusion/memory.md`) must be within project scope |
 | File size limit | `MAX_FILE_SIZE = 1MB` | Backend writes must not exceed 1MB |
 | Text encoding | `utf-8` | All content encoded as UTF-8 |
 
@@ -816,9 +819,9 @@ Prompt instructions branch based on the configured memory backend type via `reso
 
 | Backend Type | Path Hint | Behavior |
 |-------------|-----------|-----------|
-| `file` | `.fusion/memory.md` | Full read/write instructions with explicit file path |
+| `file` | `.fusion/memory/MEMORY.md` | Full read/write instructions with explicit file path |
 | `readonly` | `null` | Read-only instructions, no write/update directives |
-| `qmd` / non-file | `null` | Generic instructions without unconditional `.fusion/memory.md` reference |
+| `qmd` / non-file | `null` | Generic instructions without unconditional `.fusion/memory/MEMORY.md` reference |
 
 **API functions:**
 
@@ -828,7 +831,7 @@ Prompt instructions branch based on the configured memory backend type via `reso
 
 **Behavior details:**
 
-- **File backend**: Instructions include `.fusion/memory.md` guidance and read/write directives
+- **File backend**: Instructions include `.fusion/memory/MEMORY.md` guidance and read/write directives (plus legacy `.fusion/memory.md` fallback context)
 - **Readonly backend**: Instructions include read-only wording but no write/update directives
 - **QMD/non-file backends**: Instructions are generic without assuming a file path; agents consult the project memory through backend-specific mechanisms
 - **Backward compatibility**: When `memoryBackendType` is omitted or unknown, defaults to file behavior
@@ -891,10 +894,10 @@ Prompt instructions branch based on the configured memory backend type via `reso
 
 ### 4.3 Must-Not-Break Invariants
 
-1. **File path invariant**: Memory always accessible at `.fusion/memory.md` (file backend is always available as fallback)
+1. **File path invariant**: Canonical memory is always accessible at `.fusion/memory/MEMORY.md`, with `.fusion/memory.md` supported as legacy fallback
 2. **Toggle invariant**: `memoryEnabled: false` always means zero memory **prompt** operations — agent instructions are NOT injected, but `GET /api/memory` remains readable and `PUT /api/memory` remains writable
 3. **Bootstrap invariant**: `ensureMemoryFile` is always called on init when `memoryEnabled !== false`
-4. **Prompt invariant**: Memory instructions always use project-root path (`.fusion/memory.md`), never worktree-local
+4. **Prompt invariant**: Memory instructions always use project-root canonical paths (`.fusion/memory/MEMORY.md` and `.fusion/memory/*`), never worktree-local paths
 5. **Non-fatal invariant**: Memory initialization/operation failures never block startup or settings updates
 6. **Insights null invariant**: `readInsightsMemory()` returns `null` when `.fusion/memory-insights.md` is absent (not `""`)
 7. **Insights write invariant**: `writeInsightsMemory()` creates `.fusion/` directory and `.fusion/memory-insights.md` if absent

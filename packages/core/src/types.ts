@@ -1258,7 +1258,7 @@ export interface ProjectSettings {
   setupScript?: string;
   /** When true, enables periodic AI-powered extraction of insights from working memory
    *  into a distilled long-term memory file. Creates an automation schedule that reads
-   *  `.fusion/memory.md`, identifies patterns/principles/pitfalls, and writes to
+   *  `.fusion/memory/MEMORY.md`, identifies patterns/principles/pitfalls, and writes to
    *  `.fusion/memory-insights.md`. Default: false. */
   insightExtractionEnabled?: boolean;
   /** Cron expression for insight extraction schedule. Only used when
@@ -1269,15 +1269,15 @@ export interface ProjectSettings {
    *  Extraction only runs if BOTH this time has elapsed AND memory has grown
    *  by more than MIN_INSIGHT_GROWTH_CHARS characters. Default: 86400000 (24h). */
   insightExtractionMinIntervalMs?: number;
-  /** When enabled, agents will consult and update .fusion/memory.md with durable
+  /** When enabled, agents will consult and update the .fusion/memory/ directory with durable
    *  project learnings. When disabled, agents will not include memory instructions
-   *  in their prompts and will not read or write to .fusion/memory.md.
+   *  in their prompts and will not read or write to the .fusion/memory/ directory.
    *  Default: true (enabled for backward compatibility). */
   memoryEnabled?: boolean;
   /** Memory backend type for pluggable memory storage.
    *  Available built-in backends:
    *  - "qmd": QMD (Quantized Memory Distillation) backend using the qmd CLI tool (default)
-   *  - "file": File-based backend storing memory in `.fusion/memory.md`
+   *  - "file": File-based backend storing memory in `.fusion/memory/MEMORY.md`
    *  - "readonly": Read-only backend that returns empty memory (for external management)
    *  - Any registered custom backend type
    *  Default: "qmd" */
