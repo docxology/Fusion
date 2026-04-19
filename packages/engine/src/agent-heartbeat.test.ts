@@ -1378,6 +1378,7 @@ describe("HeartbeatMonitor", () => {
         expect(systemPrompt).not.toContain("task_document_read");
         expect(systemPrompt).not.toContain("Task Documents:");
         expect(systemPrompt).toContain("task_create");
+        expect(systemPrompt).toContain("heartbeat_done");
         expect(systemPrompt).toContain("memory_append");
 
         // The execution prompt is passed to session.prompt by promptWithFallback mock
@@ -2252,6 +2253,8 @@ describe("HeartbeatMonitor", () => {
         expect(callArgs.systemPrompt).toContain("Always log blockers with actionable next steps.");
         expect(callArgs.systemPrompt).toContain("## Project Memory");
         expect(callArgs.systemPrompt).toContain("memory_search");
+        expect(callArgs.systemPrompt).toContain("task_log");
+        expect(callArgs.systemPrompt).toContain("task_document_write");
         expect(callArgs.tools).toBe("readonly");
         // Tools: task_create, task_log, task_document_write, task_document_read, list_agents, delegate_task,
         // memory_search, memory_get, memory_append, heartbeat_done

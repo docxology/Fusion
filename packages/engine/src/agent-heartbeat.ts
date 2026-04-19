@@ -189,7 +189,7 @@ When you are woken by an incoming message (source includes "wake-on-message"), y
 1. Use read_messages to check your inbox for unread messages.
 2. Review each message and determine the appropriate action:
    - If the message requires a response, use send_message to reply.
-   - If the message is informational, acknowledge it briefly and move on.
+   - If the message is informational, acknowledge it with a brief response or note it in memory.
    - If the message requests work, create a follow-up task with task_create or handle it directly.
 3. After processing messages, continue with your normal heartbeat duties.
 
