@@ -14949,7 +14949,7 @@ describe("GET /api/agents/:id/runs/:runId/logs", () => {
     expect(res.body[1]).toMatchObject({ taskId: "FN-001", type: "tool" });
   });
 
-  it("returns empty array for run without contextSnapshot.taskId", async () => {
+  it("returns synthesized logs for run without contextSnapshot.taskId", async () => {
     // Create a run without contextSnapshot
     const { AgentStore } = await import("@fusion/core");
     const agentStore = new AgentStore({ rootDir: fusionDir });
@@ -14957,6 +14957,7 @@ describe("GET /api/agents/:id/runs/:runId/logs", () => {
     const run = await agentStore.startHeartbeatRun(agentId);
     run.endedAt = new Date().toISOString();
     run.status = "completed";
+    run.stdoutExcerpt = "Ambient heartbeat completed";
     // No contextSnapshot
     await agentStore.saveRun(run);
 
@@ -14971,7 +14972,13 @@ describe("GET /api/agents/:id/runs/:runId/logs", () => {
     const res = await REQUEST(app, "GET", `/api/agents/${agentId}/runs/${run.id}/logs`);
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual([]);
+    expect(res.body).toEqual([
+      expect.objectContaining({
+        taskId: "agent-run",
+        type: "text",
+        text: "Ambient heartbeat completed",
+      }),
+    ]);
   });
 
   it("returns 404 for non-existent run", async () => {

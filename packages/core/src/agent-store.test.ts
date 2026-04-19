@@ -15,7 +15,7 @@ import { AgentStore } from "./agent-store.js";
 import { TaskStore } from "./store.js";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
-import { mkdtempSync, existsSync, writeFileSync } from "node:fs";
+import { mkdtempSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 import { CheckoutConflictError, type AgentCapability, type AgentState } from "./types.js";
@@ -51,6 +51,48 @@ describe("AgentStore", () => {
       await store.init();
       const agentsDir = join(rootDir, "agents");
       expect(existsSync(agentsDir)).toBe(true);
+    });
+
+    it("imports legacy agent run JSON files into SQLite once", async () => {
+      const legacyRoot = makeTmpDir();
+      try {
+        const agentsDir = join(legacyRoot, "agents");
+        const runDir = join(agentsDir, "agent-legacy-runs");
+        mkdirSync(runDir, { recursive: true });
+        writeFileSync(join(agentsDir, "agent-legacy.json"), JSON.stringify({
+          id: "agent-legacy",
+          name: "Legacy",
+          role: "executor",
+          state: "idle",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+          metadata: {},
+        }));
+        writeFileSync(join(runDir, "run-legacy.json"), JSON.stringify({
+          id: "run-legacy",
+          agentId: "agent-legacy",
+          startedAt: "2026-01-01T00:00:00.000Z",
+          endedAt: "2026-01-01T00:00:01.000Z",
+          status: "completed",
+          contextSnapshot: { taskId: "FN-001" },
+          stdoutExcerpt: "done",
+        }));
+
+        const legacyStore = new AgentStore({ rootDir: legacyRoot });
+        await legacyStore.init();
+        const run = await legacyStore.getRunDetail("agent-legacy", "run-legacy");
+
+        expect(run).toMatchObject({
+          id: "run-legacy",
+          agentId: "agent-legacy",
+          status: "completed",
+          contextSnapshot: { taskId: "FN-001" },
+          stdoutExcerpt: "done",
+        });
+        expect(await legacyStore.importLegacyFileRuns()).toBe(0);
+      } finally {
+        await rm(legacyRoot, { recursive: true, force: true });
+      }
     });
   });
 

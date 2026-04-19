@@ -744,6 +744,41 @@ function logEntryToTimelineEntry(entry: import("@fusion/core").AgentLogEntry): T
   };
 }
 
+function runExcerptToAgentLogs(run: import("@fusion/core").AgentHeartbeatRun): import("@fusion/core").AgentLogEntry[] {
+  const entries: import("@fusion/core").AgentLogEntry[] = [];
+  const taskId = typeof run.contextSnapshot?.taskId === "string" ? run.contextSnapshot.taskId : "agent-run";
+
+  if (run.stdoutExcerpt?.trim()) {
+    entries.push({
+      timestamp: run.endedAt ?? run.startedAt,
+      taskId,
+      type: "text",
+      text: run.stdoutExcerpt,
+    });
+  }
+
+  if (run.stderrExcerpt?.trim()) {
+    entries.push({
+      timestamp: run.endedAt ?? run.startedAt,
+      taskId,
+      type: "tool_error",
+      text: "stderr",
+      detail: run.stderrExcerpt,
+    });
+  }
+
+  if (run.resultJson && Object.keys(run.resultJson).length > 0 && entries.length === 0) {
+    entries.push({
+      timestamp: run.endedAt ?? run.startedAt,
+      taskId,
+      type: "text",
+      text: JSON.stringify(run.resultJson, null, 2),
+    });
+  }
+
+  return entries;
+}
+
 function trimTaskDetailActivityLog<T extends Task>(task: T): T {
   if (!Array.isArray(task.log) || task.log.length <= TASK_DETAIL_ACTIVITY_LOG_LIMIT) {
     return task;
@@ -13066,7 +13101,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
       // not the task active during a historical run.
       const taskId = run.contextSnapshot?.taskId as string | undefined;
       if (!taskId) {
-        res.json([]);
+        res.json(runExcerptToAgentLogs(run));
         return;
       }
 
@@ -13075,7 +13110,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         run.startedAt,
         run.endedAt,
       );
-      res.json(logs);
+      res.json(logs.length > 0 ? logs : runExcerptToAgentLogs(run));
     } catch (err: unknown) {
       if (err instanceof ApiError) {
         throw err;

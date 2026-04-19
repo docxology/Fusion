@@ -154,6 +154,7 @@ export class AgentStore extends EventEmitter {
   async init(): Promise<void> {
     const _ = this.db;
     await mkdir(this.agentsDir, { recursive: true });
+    await this.importLegacyFileDataOnce();
   }
 
   /**
@@ -190,6 +191,99 @@ export class AgentStore extends EventEmitter {
     }
 
     return imported;
+  }
+
+  /**
+   * One-way migration helper for legacy structured run JSON files.
+   * Runtime reads come from SQLite; this only seeds old projects.
+   */
+  async importLegacyFileRuns(): Promise<number> {
+    const entries = await readdir(this.agentsDir, { withFileTypes: true }).catch(() => []);
+    const runDirs = entries.filter((entry) => entry.isDirectory() && entry.name.endsWith("-runs"));
+
+    let imported = 0;
+    for (const dir of runDirs) {
+      const agentId = dir.name.replace(/-runs$/, "");
+      const runDir = join(this.agentsDir, dir.name);
+      const runFiles = await readdir(runDir).catch(() => [] as string[]);
+
+      for (const file of runFiles) {
+        if (!file.endsWith(".json")) {
+          continue;
+        }
+
+        try {
+          const content = await readFile(join(runDir, file), "utf-8");
+          const run = JSON.parse(content) as Partial<AgentHeartbeatRun>;
+          if (
+            typeof run.id !== "string" ||
+            typeof run.startedAt !== "string" ||
+            !["active", "completed", "terminated", "failed"].includes(String(run.status))
+          ) {
+            continue;
+          }
+
+          const normalizedRun: AgentHeartbeatRun = {
+            id: run.id,
+            agentId: typeof run.agentId === "string" ? run.agentId : agentId,
+            startedAt: run.startedAt,
+            endedAt: typeof run.endedAt === "string" ? run.endedAt : null,
+            status: run.status as AgentHeartbeatRun["status"],
+            invocationSource: run.invocationSource,
+            triggerDetail: run.triggerDetail,
+            processPid: run.processPid,
+            exitCode: run.exitCode,
+            sessionIdBefore: run.sessionIdBefore,
+            sessionIdAfter: run.sessionIdAfter,
+            usageJson: run.usageJson,
+            resultJson: run.resultJson,
+            contextSnapshot: run.contextSnapshot,
+            stdoutExcerpt: run.stdoutExcerpt,
+            stderrExcerpt: run.stderrExcerpt,
+          };
+
+          const result = this.db.prepare(`
+            INSERT OR IGNORE INTO agentRuns (id, agentId, data, startedAt, endedAt, status)
+            VALUES (?, ?, ?, ?, ?, ?)
+          `).run(
+            normalizedRun.id,
+            normalizedRun.agentId,
+            JSON.stringify(normalizedRun),
+            normalizedRun.startedAt,
+            normalizedRun.endedAt,
+            normalizedRun.status,
+          );
+          imported += result.changes;
+        } catch {
+          // Legacy run files may be partially written or manually edited; ignore them.
+        }
+      }
+    }
+
+    if (imported > 0) {
+      this.db.bumpLastModified();
+    }
+    return imported;
+  }
+
+  private async importLegacyFileDataOnce(): Promise<void> {
+    const migrationKey = "agentLegacyFileImportVersion";
+    const migrationVersion = "2";
+    const row = this.db.prepare("SELECT value FROM __meta WHERE key = ?").get(migrationKey) as
+      | { value: string }
+      | undefined;
+    if (row?.value === migrationVersion) {
+      return;
+    }
+
+    await this.importLegacyFileAgents();
+    await this.importLegacyFileRuns();
+    this.db.prepare(`
+      INSERT INTO __meta (key, value)
+      VALUES (?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value
+    `).run(migrationKey, migrationVersion);
+    this.db.bumpLastModified();
   }
 
   /**
