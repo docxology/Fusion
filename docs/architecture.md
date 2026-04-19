@@ -236,7 +236,14 @@ From `packages/core/src/index.ts` exports (selected high-impact modules):
 
 ### Memory System
 
-Fusion uses OpenClaw-style project memory files:
+Fusion uses OpenClaw-style project memory files and separates memory into two responsibilities:
+
+1. **Layered backend runtime memory** (`memory-backend.ts`, `project-memory.ts`)
+   - canonical long-term + layered memory access used by agents and dashboard APIs
+2. **Insight extraction automation** (`memory-insights.ts`, `InsightStore`)
+   - scheduled extraction/pruning workflows over project memory plus insight/audit artifacts
+
+Both systems currently use `.fusion/memory/MEMORY.md` as the canonical working source-of-truth.
 
 **Primary memory files:**
 - Long-term: `.fusion/memory/MEMORY.md`

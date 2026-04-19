@@ -30,9 +30,7 @@ type TarExtractOptions = {
 };
 
 const require = createRequire(import.meta.url);
-const { x: tarExtract } = require("tar") as {
-  x: (options: TarExtractOptions) => Promise<void>;
-};
+let optionalTarExtract: ((options: TarExtractOptions) => Promise<void>) | null | undefined;
 
 export class AgentCompaniesParseError extends Error {
   constructor(message: string) {
@@ -490,13 +488,45 @@ function resolveExtractionRoot(tempDir: string): string {
   return tempDir;
 }
 
+function getOptionalTarExtract(): ((options: TarExtractOptions) => Promise<void>) | null {
+  if (optionalTarExtract !== undefined) {
+    return optionalTarExtract;
+  }
+
+  try {
+    const candidate = require("tar") as {
+      x?: (options: TarExtractOptions) => Promise<void>;
+    };
+    optionalTarExtract = typeof candidate.x === "function" ? candidate.x : null;
+  } catch {
+    optionalTarExtract = null;
+  }
+
+  return optionalTarExtract;
+}
+
+async function extractTarArchive(archivePath: string, outputDir: string): Promise<void> {
+  const tarExtract = getOptionalTarExtract();
+  if (tarExtract) {
+    await tarExtract({ file: archivePath, cwd: outputDir });
+    return;
+  }
+
+  const [{ execFile }, { promisify }] = await Promise.all([
+    import("node:child_process"),
+    import("node:util"),
+  ]);
+  const execFileAsync = promisify(execFile);
+  await execFileAsync("tar", ["-xzf", archivePath, "-C", outputDir]);
+}
+
 export async function parseCompanyArchive(archivePath: string): Promise<AgentCompaniesPackage> {
   const resolvedArchivePath = resolve(archivePath);
   const tempDir = mkdtempSync(join(tmpdir(), "agent-companies-"));
 
   try {
     if (resolvedArchivePath.endsWith(".tar.gz") || resolvedArchivePath.endsWith(".tgz")) {
-      await tarExtract({ file: resolvedArchivePath, cwd: tempDir });
+      await extractTarArchive(resolvedArchivePath, tempDir);
     } else if (resolvedArchivePath.endsWith(".zip")) {
       await extractZip(resolvedArchivePath, { dir: tempDir });
     } else {
