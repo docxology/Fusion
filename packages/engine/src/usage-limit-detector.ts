@@ -44,7 +44,8 @@ export function isUsageLimitError(errorMessage: string): boolean {
 
 /**
  * Lightweight coordinator that agents call when they detect usage-limit errors.
- * Triggers the global pause mechanism by calling `store.updateSettings({ globalPause: true })`.
+ * Triggers the global pause mechanism by calling
+ * `store.updateSettings({ globalPause: true, globalPauseReason: "rate-limit" })`.
  *
  * **Idempotency:** Tracks an internal `paused` flag so that multiple concurrent
  * agents hitting limits only trigger one pause. The flag resets when `globalPause`
@@ -107,7 +108,7 @@ export class UsageLimitPauser {
     );
 
     // Activate global pause
-    await this.store.updateSettings({ globalPause: true });
+    await this.store.updateSettings({ globalPause: true, globalPauseReason: "rate-limit" });
 
     log.warn("⚠ Global pause activated — all automated activity will halt");
   }

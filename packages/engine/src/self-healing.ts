@@ -205,6 +205,11 @@ export class SelfHealingManager {
         return;
       }
 
+      if (settings.globalPauseReason === "manual") {
+        log.log("Global pause activated manually — auto-unpause skipped, requires manual intervention");
+        return;
+      }
+
       // If pause re-triggered within 60s of our last unpause, escalate backoff
       if (this.lastUnpauseAt && (Date.now() - this.lastUnpauseAt) < 60_000) {
         this.unpauseAttempt++;
@@ -258,7 +263,7 @@ export class SelfHealingManager {
 
       log.warn("Auto-unpause: clearing globalPause");
       this.lastUnpauseAt = Date.now();
-      await this.store.updateSettings({ globalPause: false });
+      await this.store.updateSettings({ globalPause: false, globalPauseReason: undefined });
 
       // Note: if the rate limit is still active, the next agent session will
       // hit it again → UsageLimitPauser triggers globalPause → our listener

@@ -52,6 +52,7 @@ export const DEFAULT_GLOBAL_SETTINGS = {
 /** Default values for project-level settings. */
 export const DEFAULT_PROJECT_SETTINGS = {
   globalPause: false,
+  globalPauseReason: undefined,
   enginePaused: false,
   maxConcurrent: 2,
   maxTriageConcurrent: 2,

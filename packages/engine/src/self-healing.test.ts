@@ -142,7 +142,48 @@ describe("SelfHealingManager", () => {
   // ── Auto-unpause ─────────────────────────────────────────────────
 
   describe("auto-unpause", () => {
-    it("schedules unpause when globalPause transitions false→true", async () => {
+    it("does not schedule unpause when globalPauseReason is 'manual'", async () => {
+      manager.start();
+
+      store.emit("settings:updated", {
+        settings: {
+          globalPause: true,
+          globalPauseReason: "manual",
+          autoUnpauseEnabled: true,
+          autoUnpauseBaseDelayMs: 100,
+          autoUnpauseMaxDelayMs: 800,
+        },
+        previous: { globalPause: false },
+      });
+
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect(store.updateSettings).not.toHaveBeenCalled();
+    });
+
+    it("auto-unpauses when globalPauseReason is 'rate-limit'", async () => {
+      manager.start();
+
+      store.emit("settings:updated", {
+        settings: {
+          globalPause: true,
+          globalPauseReason: "rate-limit",
+          autoUnpauseEnabled: true,
+          autoUnpauseBaseDelayMs: 100,
+          autoUnpauseMaxDelayMs: 800,
+        },
+        previous: { globalPause: false },
+      });
+
+      await vi.advanceTimersByTimeAsync(150);
+
+      expect(store.updateSettings).toHaveBeenCalledWith({
+        globalPause: false,
+        globalPauseReason: undefined,
+      });
+    });
+
+    it("auto-unpauses when globalPauseReason is undefined (backward compat)", async () => {
       manager.start();
 
       store.emit("settings:updated", {
@@ -152,7 +193,10 @@ describe("SelfHealingManager", () => {
 
       await vi.advanceTimersByTimeAsync(150);
 
-      expect(store.updateSettings).toHaveBeenCalledWith({ globalPause: false });
+      expect(store.updateSettings).toHaveBeenCalledWith({
+        globalPause: false,
+        globalPauseReason: undefined,
+      });
     });
 
     it("does not schedule unpause when autoUnpauseEnabled is false", async () => {

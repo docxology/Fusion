@@ -73,6 +73,7 @@ Defaults from `DEFAULT_PROJECT_SETTINGS`; key scope from `PROJECT_SETTINGS_KEYS`
 | Setting | Type | Default | Description |
 |---|---|---:|---|
 | `globalPause` | `boolean` | `false` | Hard stop: terminate active engine sessions and pause scheduling immediately. |
+| `globalPauseReason` | `string` | `undefined` | Optional reason for `globalPause` (`"rate-limit"` for automatic pauses, `"manual"` for user-triggered pauses). Cleared on unpause. |
 | `enginePaused` | `boolean` | `false` | Soft pause: stop dispatching new work while letting active sessions finish. |
 | `maxConcurrent` | `number` | `2` | Max concurrent task-lane AI agents (triage, executor, merge). |
 | `maxTriageConcurrent` | `number` | `2` | Max concurrent triage/specification agents. |
@@ -119,7 +120,7 @@ Defaults from `DEFAULT_PROJECT_SETTINGS`; key scope from `PROJECT_SETTINGS_KEYS`
 | `taskStuckTimeoutMs` | `number` | `undefined` | Inactivity timeout for stuck-task recovery. |
 | `aiSessionTtlMs` | `number` | `604800000` | TTL in ms for persisted planning/subtask/mission sessions (7 days). |
 | `aiSessionCleanupIntervalMs` | `number` | `3600000` | Interval in ms for AI session cleanup sweeps (1 hour). |
-| `autoUnpauseEnabled` | `boolean` | `true` | Auto-unpause after rate-limit-triggered pauses. |
+| `autoUnpauseEnabled` | `boolean` | `true` | Auto-unpause after rate-limit-triggered pauses; manual pauses stay paused until explicitly unpaused by the user. |
 | `autoUnpauseBaseDelayMs` | `number` | `300000` | Base unpause delay in ms (5 min). |
 | `autoUnpauseMaxDelayMs` | `number` | `3600000` | Max auto-unpause delay in ms (1 hour). |
 | `maxStuckKills` | `number` | `6` | Max stuck-task terminations before permanent failure. |

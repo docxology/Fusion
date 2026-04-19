@@ -93,7 +93,13 @@ export function useAppSettings(projectId?: string): UseAppSettingsResult {
     setGlobalPaused(next);
 
     try {
-      await updateSettings({ globalPause: next }, projectId);
+      await updateSettings(
+        {
+          globalPause: next,
+          globalPauseReason: next ? "manual" : undefined,
+        },
+        projectId,
+      );
     } catch {
       setGlobalPaused(!next);
     }

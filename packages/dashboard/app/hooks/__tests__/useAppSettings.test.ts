@@ -81,7 +81,37 @@ describe("useAppSettings", () => {
     });
 
     expect(result.current.globalPaused).toBe(true);
-    expect(mockUpdateSettings).toHaveBeenCalledWith({ globalPause: false }, "proj_123");
+    expect(mockUpdateSettings).toHaveBeenCalledWith(
+      { globalPause: false, globalPauseReason: undefined },
+      "proj_123",
+    );
+  });
+
+  it("sets globalPauseReason to manual when pausing", async () => {
+    mockFetchSettings.mockResolvedValueOnce({
+      autoMerge: false,
+      globalPause: false,
+      enginePaused: false,
+      githubTokenConfigured: true,
+      taskStuckTimeoutMs: 600000,
+      showQuickChatFAB: false,
+    } as never);
+
+    const { result } = renderHook(() => useAppSettings("proj_123"));
+
+    await waitFor(() => {
+      expect(result.current.globalPaused).toBe(false);
+    });
+
+    await act(async () => {
+      await result.current.toggleGlobalPause();
+    });
+
+    expect(result.current.globalPaused).toBe(true);
+    expect(mockUpdateSettings).toHaveBeenCalledWith(
+      { globalPause: true, globalPauseReason: "manual" },
+      "proj_123",
+    );
   });
 
   it("refresh() re-fetches and updates state", async () => {

@@ -1007,6 +1007,9 @@ export interface ProjectSettings {
    *  global emergency stop for the entire AI engine.
    *  Individual per-task pause flags are unaffected. */
   globalPause?: boolean;
+  /** Tracks why globalPause was activated. "rate-limit" for automatic pauses,
+   *  "manual" for user-initiated. Cleared on unpause. */
+  globalPauseReason?: string;
   /** Engine pause (soft pause): when true, the scheduler and triage
    *  processor stop dispatching **new** work (scheduling, triage
    *  specification, and auto-merge), but currently running agent sessions

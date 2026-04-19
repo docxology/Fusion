@@ -141,13 +141,16 @@ describe("UsageLimitPauser", () => {
     vi.clearAllMocks();
   });
 
-  it("calls store.updateSettings({ globalPause: true }) on usage limit hit", async () => {
+  it("calls store.updateSettings({ globalPause: true, globalPauseReason: \"rate-limit\" }) on usage limit hit", async () => {
     const store = createMockStore();
     const pauser = new UsageLimitPauser(store);
 
     await pauser.onUsageLimitHit("executor", "FN-001", "rate_limit_error: Rate limit exceeded");
 
-    expect(store.updateSettings).toHaveBeenCalledWith({ globalPause: true });
+    expect(store.updateSettings).toHaveBeenCalledWith({
+      globalPause: true,
+      globalPauseReason: "rate-limit",
+    });
   });
 
   it("logs the triggering error on the task via store.logEntry", async () => {

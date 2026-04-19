@@ -960,8 +960,11 @@ describe("App global pause (hard stop)", () => {
       expect(screen.getByTitle("Start AI engine")).toBeTruthy();
     });
 
-    // Should call updateSettings with globalPause: true
-    expect(updateSettings).toHaveBeenCalledWith({ globalPause: true }, "proj_123");
+    // Should call updateSettings with globalPause and manual reason
+    expect(updateSettings).toHaveBeenCalledWith(
+      { globalPause: true, globalPauseReason: "manual" },
+      "proj_123",
+    );
   });
 
   it("reverts global pause state on updateSettings failure", async () => {

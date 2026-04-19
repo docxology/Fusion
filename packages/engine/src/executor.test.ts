@@ -5459,7 +5459,10 @@ describe("TaskExecutor usage limit detection", () => {
       "FN-001",
       "rate_limit_error: Rate limit exceeded",
     );
-    expect(store.updateSettings).toHaveBeenCalledWith({ globalPause: true });
+    expect(store.updateSettings).toHaveBeenCalledWith({
+      globalPause: true,
+      globalPauseReason: "rate-limit",
+    });
     // Task should still be marked as failed
     expect(store.updateTask).toHaveBeenCalledWith("FN-001", { status: "failed", error: "rate_limit_error: Rate limit exceeded" });
     expect(onError).toHaveBeenCalled();

@@ -720,7 +720,10 @@ describe("aiMergeTask — usage limit detection", () => {
       "FN-050",
       "rate_limit_error: Rate limit exceeded",
     );
-    expect(store.updateSettings).toHaveBeenCalledWith({ globalPause: true });
+    expect(store.updateSettings).toHaveBeenCalledWith({
+      globalPause: true,
+      globalPauseReason: "rate-limit",
+    });
   });
 
   it("triggers global pause when session.prompt() resolves with exhausted-retry error on state.error", async () => {
