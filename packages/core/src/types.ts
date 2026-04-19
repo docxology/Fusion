@@ -1276,15 +1276,15 @@ export interface ProjectSettings {
    *  Extraction only runs if BOTH this time has elapsed AND memory has grown
    *  by more than MIN_INSIGHT_GROWTH_CHARS characters. Default: 86400000 (24h). */
   insightExtractionMinIntervalMs?: number;
-  /** When enabled, agents will consult and update .fusion/memory/MEMORY.md with durable
+  /** When enabled, agents will consult and update files under .fusion/memory/ with durable
    *  project learnings. When disabled, agents will not include memory instructions
-   *  in their prompts and will not read or write to .fusion/memory/MEMORY.md.
+   *  in their prompts and will not read or write to .fusion/memory/ files.
    *  Default: true (enabled for backward compatibility). */
   memoryEnabled?: boolean;
   /** Memory backend type for pluggable memory storage.
    *  Available built-in backends:
    *  - "qmd": QMD (Quantized Memory Distillation) backend using the qmd CLI tool (default)
-   *  - "file": File-based backend storing memory in `.fusion/memory/MEMORY.md`
+   *  - "file": File-based backend storing memory in `.fusion/memory/`
    *  - "readonly": Read-only backend that returns empty memory (for external management)
    *  - Any registered custom backend type
    *  Default: "qmd" */

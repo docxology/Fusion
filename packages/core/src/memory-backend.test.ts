@@ -85,7 +85,7 @@ describe("memory-backend", () => {
 
       it("should have human-readable name", () => {
         const backend = new FileMemoryBackend();
-        expect(backend.name).toBe("File (.fusion/memory/MEMORY.md)");
+        expect(backend.name).toBe("File (.fusion/memory/)");
       });
     });
 

@@ -471,8 +471,8 @@ Do important work.
     );
 
     expect(result).toContain("/repo/project/.worktrees/happy-robin/packages/engine/src/new-module.ts");
-    expect(result).toContain("/repo/project/.fusion/memory/MEMORY.md");
-    expect(result).not.toContain("/repo/project/.worktrees/happy-robin/.fusion/memory/MEMORY.md");
+    expect(result).toContain("/repo/project/.fusion/memory/");
+    expect(result).not.toContain("/repo/project/.worktrees/happy-robin/.fusion/memory/");
   });
 
   it("handles step 0 (preflight) correctly", () => {

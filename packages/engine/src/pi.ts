@@ -561,7 +561,7 @@ async function assertValidWorktreeSession(cwd: string, projectRoot: string): Pro
  * Check if a path is allowed to be accessed from a worktree session.
  * Rules:
  * - Paths inside the worktree are always allowed
- * - Project root .fusion/memory/* is allowed (for durable project learnings)
+ * - Project root .fusion/memory/ files are allowed (for durable project learnings)
  * - Task attachments under .fusion/tasks/N/attachments/ are allowed (for reading context files)
  * - All other paths outside the worktree are rejected
  *
@@ -582,9 +582,13 @@ function isWorktreeAllowedPath(worktreePath: string, projectRoot: string, reques
     return true; // Path is inside the worktree
   }
 
-  // Exception: project root `.fusion/memory/*` for durable project learnings
+  // Exception: project root `.fusion/memory/` files for durable project learnings
   const relToProjectRoot = relative(projectRootResolved, requestedResolved).replace(/\\/g, "/");
-  if (/^\.fusion\/memory\/[^/]+\.md$/.test(relToProjectRoot)) {
+  if (
+    relToProjectRoot === ".fusion/memory" ||
+    relToProjectRoot === ".fusion/memory/" ||
+    relToProjectRoot.startsWith(".fusion/memory/")
+  ) {
     return true;
   }
 
@@ -642,7 +646,7 @@ export function wrapToolsWithBoundary(
             ok: false,
             error: `Path "${relToProject}" is outside the worktree boundary. ` +
               `Coding agents can only modify files inside the current worktree. ` +
-              `Exception: .fusion/memory/* (project root) and .fusion/tasks/*/attachments/* are permitted for reading.`,
+              `Exception: .fusion/memory/ (project root) and .fusion/tasks/*/attachments/* are permitted for reading.`,
           };
         }
 

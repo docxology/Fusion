@@ -2116,7 +2116,7 @@ describe("buildExecutionPrompt", () => {
         "# test",
         "## Context to Read First",
         "- `/home/user/project/web/app/page.tsx`",
-        "- `/home/user/project/.fusion/memory/MEMORY.md`",
+        "- `/home/user/project/.fusion/memory/`",
         "## Steps",
         "### Step 0: Preflight",
         "- [ ] inspect `/home/user/project/web/app/layout.tsx`",
@@ -2132,8 +2132,8 @@ describe("buildExecutionPrompt", () => {
 
     expect(result).toContain("/home/user/project/.worktrees/happy-robin/web/app/page.tsx");
     expect(result).toContain("/home/user/project/.worktrees/happy-robin/web/app/layout.tsx");
-    expect(result).toContain("/home/user/project/.fusion/memory/MEMORY.md");
-    expect(result).not.toContain("/home/user/project/.worktrees/happy-robin/.fusion/memory/MEMORY.md");
+    expect(result).toContain("/home/user/project/.fusion/memory/");
+    expect(result).not.toContain("/home/user/project/.worktrees/happy-robin/.fusion/memory/");
   });
 
   it("omits attachment section when no attachments", () => {
@@ -2419,7 +2419,7 @@ describe("buildExecutionPrompt", () => {
       } as any);
       expect(result).toContain("Execute this task.");
       expect(result).toContain("## Project Memory");
-      expect(result).toContain(".fusion/memory/MEMORY.md");
+      expect(result).toContain(".fusion/memory/");
     });
 
     it("excludes memory instructions when memoryEnabled: false", () => {
@@ -2436,7 +2436,7 @@ describe("buildExecutionPrompt", () => {
       const result = buildExecutionPrompt(task, "/project", {} as any);
       expect(result).toContain("Execute this task.");
       expect(result).toContain("## Project Memory");
-      expect(result).toContain(".fusion/memory/MEMORY.md");
+      expect(result).toContain(".fusion/memory/");
     });
 
     it("includes selective memory write instruction for durable learnings at end of execution", () => {
@@ -2458,22 +2458,22 @@ describe("buildExecutionPrompt", () => {
       const result = buildExecutionPrompt(task, "/project", {
         memoryEnabled: true,
       } as any);
-      expect(result).toContain("`.fusion/memory/MEMORY.md`");
+      expect(result).toContain("`.fusion/memory/`");
     });
   });
 
   describe("memoryBackendType setting", () => {
-    it("includes .fusion/memory/MEMORY.md for file backend", () => {
+    it("includes .fusion/memory/ for file backend", () => {
       const task = createMockTaskDetail();
       const result = buildExecutionPrompt(task, "/project", {
         memoryEnabled: true,
         memoryBackendType: "file",
       } as any);
       expect(result).toContain("## Project Memory");
-      // Check that the Project Memory section contains .fusion/memory/MEMORY.md
+      // Check that the Project Memory section contains .fusion/memory/
       const memorySectionMatch = result.match(/## Project Memory\n([\s\S]*?)(?=\n## [^#]|$)/);
       expect(memorySectionMatch).toBeTruthy();
-      expect(memorySectionMatch![1]).toContain(".fusion/memory/MEMORY.md");
+      expect(memorySectionMatch![1]).toContain(".fusion/memory/");
     });
 
     it("includes read-only wording for readonly backend without write directives in memory section", () => {
@@ -2490,10 +2490,10 @@ describe("buildExecutionPrompt", () => {
       // Should NOT contain write/update directives in the memory section
       expect(memorySection).not.toMatch(/write.*memory|update.*memory/i);
       // Should NOT contain the specific file path in the memory section
-      expect(memorySection).not.toContain(".fusion/memory/MEMORY.md");
+      expect(memorySection).not.toContain(".fusion/memory/");
     });
 
-    it("does not include .fusion/memory/MEMORY.md in Project Memory section for qmd backend", () => {
+    it("does not include .fusion/memory/ in Project Memory section for qmd backend", () => {
       const task = createMockTaskDetail();
       const result = buildExecutionPrompt(task, "/project", {
         memoryEnabled: true,
@@ -2504,8 +2504,8 @@ describe("buildExecutionPrompt", () => {
       const memorySectionMatch = result.match(/## Project Memory\n([\s\S]*?)(?=\n## [^#]|$)/);
       expect(memorySectionMatch).toBeTruthy();
       const memorySection = memorySectionMatch![1];
-      // QMD should NOT unconditionally reference .fusion/memory/MEMORY.md in the memory section
-      expect(memorySection).not.toContain(".fusion/memory/MEMORY.md");
+      // QMD should NOT unconditionally reference .fusion/memory/ in the memory section
+      expect(memorySection).not.toContain(".fusion/memory/");
       expect(memorySection).toContain("memory_search");
       expect(memorySection).toContain("memory_get");
     });
@@ -2521,8 +2521,8 @@ describe("buildExecutionPrompt", () => {
       const memorySectionMatch = result.match(/## Project Memory\n([\s\S]*?)(?=\n## [^#]|$)/);
       expect(memorySectionMatch).toBeTruthy();
       const memorySection = memorySectionMatch![1];
-      // QMD should NOT contain .fusion/memory/MEMORY.md
-      expect(memorySection).not.toContain(".fusion/memory/MEMORY.md");
+      // QMD should NOT contain .fusion/memory/
+      expect(memorySection).not.toContain(".fusion/memory/");
       expect(memorySection).toContain("memory_search");
       // Contains "end of execution" write guidance
       expect(memorySection).toMatch(/end of execution/i);
@@ -10885,7 +10885,7 @@ describe("buildExecutionPrompt", () => {
 
     const prompt = buildExecutionPrompt(task, "/project");
 
-    expect(prompt).toContain(".fusion/memory/MEMORY.md");
+    expect(prompt).toContain(".fusion/memory/");
     expect(prompt).toContain("memory");
     expect(prompt).toContain("durable");
   });

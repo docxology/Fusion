@@ -215,7 +215,7 @@ const backendRegistry = new Map<string, MemoryBackend>();
  */
 export class FileMemoryBackend implements MemoryBackend {
   readonly type = "file";
-  readonly name = "File (.fusion/memory/MEMORY.md)";
+  readonly name = "File (.fusion/memory/)";
   readonly capabilities: MemoryBackendCapabilities = {
     readable: true,
     writable: true,

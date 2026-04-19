@@ -93,7 +93,7 @@ function countTotalInsights(categories: ParsedInsightCategory[]): number {
 function getBackendDisplayName(backend: string): string {
   switch (backend) {
     case "file":
-      return "File (.fusion/memory/MEMORY.md)";
+      return "File (.fusion/memory/)";
     case "readonly":
       return "Read-Only";
     case "qmd":
