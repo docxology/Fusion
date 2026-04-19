@@ -1,9 +1,14 @@
-import { useState, useMemo, useCallback } from "react";
-import { FileText, ChevronDown, ChevronUp, ChevronRight, RefreshCw, Search, X } from "lucide-react";
+import { useState, useMemo, useCallback, useEffect, useRef, type ChangeEvent } from "react";
+import { ArrowLeft, FileText, ChevronDown, ChevronUp, ChevronRight, RefreshCw, Search, X } from "lucide-react";
 import type { TaskDocumentWithTask, TaskDetail } from "@fusion/core";
 import type { ToastType } from "../hooks/useToast";
 import { fetchTaskDetail, fetchWorkspaceFileContent, type MarkdownFileEntry } from "../api";
 import { useDocuments } from "../hooks/useDocuments";
+import { useProjectMarkdownFiles } from "../hooks/useProjectMarkdownFiles";
+
+const MOBILE_BREAKPOINT = 768;
+
+type DocumentsTab = "project" | "tasks";
 
 export interface DocumentsViewProps {
   projectId?: string;
@@ -13,16 +18,13 @@ export interface DocumentsViewProps {
 
 interface DocumentCardProps {
   document: TaskDocumentWithTask;
-  onOpenTask: (taskId: string) => void;
 }
 
-interface ProjectFileCardProps {
-  file: MarkdownFileEntry;
-  expanded: boolean;
-  loading: boolean;
-  error: string | null;
-  content: string;
-  onOpen: (filePath: string) => Promise<void>;
+interface TaskGroupProps {
+  taskId: string;
+  taskTitle?: string;
+  documents: TaskDocumentWithTask[];
+  onOpenTask: (taskId: string) => void;
 }
 
 function formatTimestamp(iso?: string): string {
@@ -44,10 +46,10 @@ function formatFileSize(bytes: number): string {
 
 function getContentPreview(content: string, maxLength: number = 200): string {
   if (content.length <= maxLength) return content;
-  return content.substring(0, maxLength) + "…";
+  return `${content.substring(0, maxLength)}…`;
 }
 
-function DocumentCard({ document, onOpenTask }: DocumentCardProps) {
+function DocumentCard({ document }: DocumentCardProps) {
   const [expanded, setExpanded] = useState(false);
 
   const preview = getContentPreview(document.content);
@@ -63,7 +65,7 @@ function DocumentCard({ document, onOpenTask }: DocumentCardProps) {
         </div>
         <button
           className="btn btn-sm document-card-expand-btn"
-          onClick={() => setExpanded(!expanded)}
+          onClick={() => setExpanded((current) => !current)}
           title={expanded ? "Collapse" : "Expand"}
           aria-label={expanded ? "Collapse content" : "Expand content"}
         >
@@ -91,91 +93,35 @@ function DocumentCard({ document, onOpenTask }: DocumentCardProps) {
   );
 }
 
-function ProjectFileCard({ file, expanded, loading, error, content, onOpen }: ProjectFileCardProps) {
-  const preview = getContentPreview(file.contentPreview, 200);
-  const isExpanded = expanded;
-
-  return (
-    <div className="documents-project-file">
-      <button
-        className="documents-project-file-card"
-        onClick={() => void onOpen(file.path)}
-        aria-expanded={isExpanded}
-        aria-label={`${isExpanded ? "Collapse" : "Open"} project file ${file.path}`}
-      >
-        <div className="documents-project-file-header">
-          <div className="documents-project-file-title">
-            <FileText size={14} />
-            <span>{file.name}</span>
-          </div>
-          <span className="documents-project-file-toggle">
-            {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-          </span>
-        </div>
-
-        <p className="documents-project-file-path">{file.path}</p>
-
-        <div className="documents-project-file-meta">
-          <span>{formatFileSize(file.size)}</span>
-          <span>·</span>
-          <span>{formatTimestamp(file.mtime)}</span>
-        </div>
-
-        <p className="documents-project-file-preview">
-          {preview || "No preview available."}
-          {file.contentPreview.length >= 200 ? "…" : ""}
-        </p>
-      </button>
-
-      {isExpanded && (
-        <div className="documents-project-file-content">
-          {loading ? (
-            <p className="documents-project-file-content-state">Loading file content…</p>
-          ) : error ? (
-            <p className="documents-project-file-content-state documents-project-file-content-state--error">{error}</p>
-          ) : (
-            <pre className="documents-project-file-content-text">{content}</pre>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-interface TaskGroupProps {
-  taskId: string;
-  taskTitle?: string;
-  documents: TaskDocumentWithTask[];
-  onOpenTask: (taskId: string) => void;
-}
-
 function TaskGroup({ taskId, taskTitle, documents, onOpenTask }: TaskGroupProps) {
   const [expanded, setExpanded] = useState(false);
 
   return (
     <div className="documents-group">
-      <button
-        className="documents-group-header"
-        onClick={() => setExpanded(!expanded)}
-        aria-expanded={expanded}
-        aria-label={`${expanded ? "Collapse" : "Expand"} documents for task ${taskId}`}
-      >
-        <span className="documents-group-toggle">
-          {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-        </span>
+      <div className="documents-group-header">
         <button
-          className="documents-group-task-link"
-          onClick={(e) => {
-            e.stopPropagation();
-            onOpenTask(taskId);
-          }}
-          aria-label={`Open task ${taskId}: ${taskTitle || "Untitled"}`}
+          className="documents-group-toggle-btn"
+          onClick={() => setExpanded((current) => !current)}
+          aria-expanded={expanded}
+          aria-label={`${expanded ? "Collapse" : "Expand"} documents for task ${taskId}`}
         >
+          <span className="documents-group-toggle" aria-hidden="true">
+            {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+          </span>
           <span className="documents-group-task-id">{taskId}</span>
           <span className="documents-group-task-title">{taskTitle || "Untitled"}</span>
         </button>
+
         <span className="documents-group-count">{documents.length} doc{documents.length !== 1 ? "s" : ""}</span>
-      </button>
+
+        <button
+          className="documents-group-task-link"
+          onClick={() => onOpenTask(taskId)}
+          aria-label={`Open task ${taskId}: ${taskTitle || "Untitled"}`}
+        >
+          Open task
+        </button>
+      </div>
 
       {expanded && (
         <div className="documents-group-content">
@@ -183,7 +129,6 @@ function TaskGroup({ taskId, taskTitle, documents, onOpenTask }: TaskGroupProps)
             <DocumentCard
               key={doc.id}
               document={doc}
-              onOpenTask={onOpenTask}
             />
           ))}
         </div>
@@ -193,37 +138,121 @@ function TaskGroup({ taskId, taskTitle, documents, onOpenTask }: TaskGroupProps)
 }
 
 export function DocumentsView({ projectId, addToast, onOpenDetail }: DocumentsViewProps) {
+  const [activeTab, setActiveTab] = useState<DocumentsTab>("project");
   const [searchQuery, setSearchQuery] = useState("");
-  const [projectFilesExpanded, setProjectFilesExpanded] = useState(true);
-  const [openProjectFilePath, setOpenProjectFilePath] = useState<string | null>(null);
-  const [openProjectFileContent, setOpenProjectFileContent] = useState("");
-  const [openProjectFileLoading, setOpenProjectFileLoading] = useState(false);
-  const [openProjectFileError, setOpenProjectFileError] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<MarkdownFileEntry | null>(null);
+  const [fileContent, setFileContent] = useState<string | null>(null);
+  const [fileLoading, setFileLoading] = useState(false);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const [isMobile, setIsMobile] = useState(false);
+  const requestIdRef = useRef(0);
+  const initialTabSetRef = useRef(false);
 
-  const { documents, projectFiles, loading, error, refresh } = useDocuments({
+  const taskSearchQuery = activeTab === "tasks" ? searchQuery.trim() : "";
+
+  const {
+    documents,
+    loading: documentsLoading,
+    error: documentsError,
+    refresh: refreshDocuments,
+  } = useDocuments({
     projectId,
-    searchQuery: searchQuery || undefined,
+    searchQuery: taskSearchQuery || undefined,
+    includeProjectFiles: false,
   });
 
-  // Group documents by task
+  const {
+    files: projectFiles,
+    loading: projectFilesLoading,
+    error: projectFilesError,
+    refresh: refreshProjectFiles,
+  } = useProjectMarkdownFiles(projectId);
+
+  useEffect(() => {
+    const updateMobile = () => {
+      setIsMobile(window.innerWidth <= MOBILE_BREAKPOINT);
+    };
+
+    updateMobile();
+    window.addEventListener("resize", updateMobile);
+
+    return () => {
+      window.removeEventListener("resize", updateMobile);
+    };
+  }, []);
+
+  useEffect(() => {
+    initialTabSetRef.current = false;
+    setActiveTab("project");
+    setSelectedFile(null);
+    setFileContent(null);
+    setFileError(null);
+    setFileLoading(false);
+  }, [projectId]);
+
+  useEffect(() => {
+    if (initialTabSetRef.current || documentsLoading || projectFilesLoading) {
+      return;
+    }
+
+    if (projectFiles.length > 0) {
+      setActiveTab("project");
+    } else if (documents.length > 0) {
+      setActiveTab("tasks");
+    }
+
+    initialTabSetRef.current = true;
+  }, [documents.length, documentsLoading, projectFiles.length, projectFilesLoading]);
+
   const groupedDocuments = useMemo(() => {
     const groups = new Map<string, TaskDocumentWithTask[]>();
     for (const doc of documents) {
       const existing = groups.get(doc.taskId) || [];
       groups.set(doc.taskId, [...existing, doc]);
     }
-    // Sort groups by the most recently updated document
+
     return Array.from(groups.entries())
-      .map(([taskId, docs]) => ({
-        taskId,
-        taskTitle: docs[0].taskTitle,
-        documents: docs.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
-        latestUpdated: docs[0].updatedAt,
-      }))
+      .map(([taskId, docs]) => {
+        const sortedDocs = [...docs].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+
+        return {
+          taskId,
+          taskTitle: sortedDocs[0]?.taskTitle,
+          documents: sortedDocs,
+          latestUpdated: sortedDocs[0]?.updatedAt ?? "",
+        };
+      })
       .sort((a, b) => b.latestUpdated.localeCompare(a.latestUpdated));
   }, [documents]);
 
-  const handleSearchChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+  const filteredProjectFiles = useMemo(() => {
+    const normalizedQuery = searchQuery.trim().toLowerCase();
+    if (!normalizedQuery) {
+      return projectFiles;
+    }
+
+    return projectFiles.filter((file) => {
+      const normalizedPath = file.path.toLowerCase();
+      const normalizedName = file.name.toLowerCase();
+      return normalizedPath.includes(normalizedQuery) || normalizedName.includes(normalizedQuery);
+    });
+  }, [projectFiles, searchQuery]);
+
+  useEffect(() => {
+    if (!selectedFile) {
+      return;
+    }
+
+    const selectedStillExists = projectFiles.some((file) => file.path === selectedFile.path);
+    if (!selectedStillExists) {
+      setSelectedFile(null);
+      setFileContent(null);
+      setFileError(null);
+      setFileLoading(false);
+    }
+  }, [projectFiles, selectedFile]);
+
+  const handleSearchChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
     setSearchQuery(e.target.value);
   }, []);
 
@@ -231,11 +260,10 @@ export function DocumentsView({ projectId, addToast, onOpenDetail }: DocumentsVi
     setSearchQuery("");
   }, []);
 
-  const toggleProjectFilesExpanded = useCallback(() => {
-    setProjectFilesExpanded((current) => !current);
+  const handleTabChange = useCallback((tab: DocumentsTab) => {
+    setActiveTab(tab);
   }, []);
 
-  // Wrapper to open task detail by fetching full task first
   const handleOpenTask = useCallback(async (taskId: string) => {
     try {
       const task = await fetchTaskDetail(taskId, projectId);
@@ -245,45 +273,58 @@ export function DocumentsView({ projectId, addToast, onOpenDetail }: DocumentsVi
     }
   }, [projectId, onOpenDetail, addToast]);
 
-  const handleOpenProjectFile = useCallback(async (filePath: string) => {
-    if (openProjectFilePath === filePath) {
-      setOpenProjectFilePath(null);
-      setOpenProjectFileContent("");
-      setOpenProjectFileError(null);
-      setOpenProjectFileLoading(false);
-      return;
-    }
+  const handleSelectProjectFile = useCallback(async (file: MarkdownFileEntry) => {
+    setSelectedFile(file);
+    setFileLoading(true);
+    setFileError(null);
+    setFileContent(null);
 
-    setOpenProjectFilePath(filePath);
-    setOpenProjectFileLoading(true);
-    setOpenProjectFileError(null);
-    setOpenProjectFileContent("");
+    const requestId = requestIdRef.current + 1;
+    requestIdRef.current = requestId;
 
     try {
-      const file = await fetchWorkspaceFileContent("project", filePath, projectId);
-      setOpenProjectFileContent(file.content);
+      const fileResponse = await fetchWorkspaceFileContent("project", file.path, projectId);
+      if (requestIdRef.current !== requestId) {
+        return;
+      }
+      setFileContent(fileResponse.content);
     } catch (err) {
-      const message = err instanceof Error ? err.message : `Failed to open ${filePath}`;
-      setOpenProjectFileError(message);
+      if (requestIdRef.current !== requestId) {
+        return;
+      }
+
+      const message = err instanceof Error ? err.message : `Failed to open ${file.path}`;
+      setFileError(message);
       addToast(message, "error");
     } finally {
-      setOpenProjectFileLoading(false);
+      if (requestIdRef.current === requestId) {
+        setFileLoading(false);
+      }
     }
-  }, [openProjectFilePath, projectId, addToast]);
+  }, [projectId, addToast]);
 
-  if (error) {
-    return (
-      <div className="documents-view">
-        <div className="documents-view-error">
-          <p>Failed to load documents: {error}</p>
-          <button className="btn btn-primary" onClick={() => void refresh()}>
-            <RefreshCw size={16} />
-            Retry
-          </button>
-        </div>
-      </div>
-    );
-  }
+  const handleBackToFileList = useCallback(() => {
+    setSelectedFile(null);
+    setFileContent(null);
+    setFileError(null);
+    setFileLoading(false);
+  }, []);
+
+  const activeError = activeTab === "project" ? projectFilesError : documentsError;
+
+  const handleRetry = useCallback(async () => {
+    if (activeTab === "project") {
+      await refreshProjectFiles();
+      return;
+    }
+    await refreshDocuments();
+  }, [activeTab, refreshProjectFiles, refreshDocuments]);
+
+  const activeCount = activeTab === "project" ? filteredProjectFiles.length : documents.length;
+
+  const searchPlaceholder = activeTab === "project"
+    ? "Search project markdown files…"
+    : "Search task documents…";
 
   return (
     <div className="documents-view">
@@ -294,8 +335,31 @@ export function DocumentsView({ projectId, addToast, onOpenDetail }: DocumentsVi
             Documents
           </h2>
           <span className="documents-view-count">
-            {loading ? "…" : `${documents.length + projectFiles.length} total`}
+            {activeCount} result{activeCount !== 1 ? "s" : ""}
           </span>
+        </div>
+
+        <div className="documents-tab-bar" role="tablist" aria-label="Documents sections">
+          <button
+            className={`btn documents-tab${activeTab === "project" ? " active" : ""}`}
+            role="tab"
+            aria-selected={activeTab === "project"}
+            aria-label="Show project markdown files"
+            onClick={() => handleTabChange("project")}
+          >
+            Project Files
+            <span className="documents-tab-count">{projectFiles.length}</span>
+          </button>
+          <button
+            className={`btn documents-tab${activeTab === "tasks" ? " active" : ""}`}
+            role="tab"
+            aria-selected={activeTab === "tasks"}
+            aria-label="Show task documents"
+            onClick={() => handleTabChange("tasks")}
+          >
+            Task Documents
+            <span className="documents-tab-count">{groupedDocuments.length}</span>
+          </button>
         </div>
 
         <div className="documents-search">
@@ -303,10 +367,10 @@ export function DocumentsView({ projectId, addToast, onOpenDetail }: DocumentsVi
           <input
             type="text"
             className="documents-search-input"
-            placeholder="Search documents…"
+            placeholder={searchPlaceholder}
             value={searchQuery}
             onChange={handleSearchChange}
-            aria-label="Search documents"
+            aria-label={searchPlaceholder}
           />
           {searchQuery && (
             <button
@@ -321,77 +385,122 @@ export function DocumentsView({ projectId, addToast, onOpenDetail }: DocumentsVi
       </div>
 
       <div className="documents-view-content">
-        {loading ? (
+        {activeError ? (
+          <div className="documents-view-error">
+            <p>Failed to load {activeTab === "project" ? "project files" : "task documents"}: {activeError}</p>
+            <button className="btn btn-primary" onClick={() => void handleRetry()} aria-label="Retry loading documents">
+              <RefreshCw size={16} />
+              Retry
+            </button>
+          </div>
+        ) : activeTab === "project" ? (
+          projectFilesLoading && projectFiles.length === 0 ? (
+            <div className="documents-view-loading">
+              <p>Loading project markdown files…</p>
+            </div>
+          ) : filteredProjectFiles.length === 0 ? (
+            <div className="documents-view-empty">
+              {searchQuery.trim() ? (
+                <p>No project markdown files match "{searchQuery.trim()}".</p>
+              ) : (
+                <>
+                  <FileText size={48} className="documents-view-empty-icon" />
+                  <p>No Markdown files found in this project.</p>
+                </>
+              )}
+            </div>
+          ) : (
+            <div className={`documents-project-layout${isMobile ? " documents-project-layout--mobile" : ""}`}>
+              {(!isMobile || !selectedFile) && (
+                <aside className="documents-view-sidebar" aria-label="Project markdown files">
+                  <ul className="markdown-file-list">
+                    {filteredProjectFiles.map((file) => {
+                      const isSelected = selectedFile?.path === file.path;
+                      return (
+                        <li key={file.path} className="markdown-file-list-item">
+                          <button
+                            className={`markdown-file-item${isSelected ? " markdown-file-item--selected" : ""}`}
+                            onClick={() => void handleSelectProjectFile(file)}
+                            aria-label={`Open ${file.path}`}
+                            aria-current={isSelected ? "true" : undefined}
+                          >
+                            <span className="markdown-file-item-name">{file.name}</span>
+                            <span className="markdown-file-item-path">{file.path}</span>
+                            <span className="markdown-file-item-meta">
+                              {formatFileSize(file.size)} · {formatTimestamp(file.mtime)}
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </aside>
+              )}
+
+              {(!isMobile || selectedFile) && (
+                <section className="documents-view-main" aria-label="Project file content preview">
+                  {isMobile && selectedFile && (
+                    <button
+                      className="btn btn-sm documents-mobile-back"
+                      onClick={handleBackToFileList}
+                      aria-label="Back to project files list"
+                    >
+                      <ArrowLeft size={14} />
+                      Back to files
+                    </button>
+                  )}
+
+                  {!selectedFile ? (
+                    <div className="documents-view-empty">
+                      <p>Select a Markdown file to view its content.</p>
+                    </div>
+                  ) : (
+                    <div className="documents-content-viewer">
+                      <p className="documents-file-path-header">{selectedFile.path}</p>
+                      {fileLoading ? (
+                        <p className="documents-content-state">Loading file content…</p>
+                      ) : fileError ? (
+                        <p className="documents-content-state documents-content-state--error">{fileError}</p>
+                      ) : (
+                        <pre className="document-card-content-text documents-content-viewer-text">{fileContent ?? ""}</pre>
+                      )}
+                    </div>
+                  )}
+                </section>
+              )}
+            </div>
+          )
+        ) : documentsLoading && documents.length === 0 ? (
           <div className="documents-view-loading">
-            <p>Loading documents…</p>
+            <p>Loading task documents…</p>
+          </div>
+        ) : groupedDocuments.length === 0 ? (
+          <div className="documents-view-empty">
+            {searchQuery.trim() ? (
+              <p>No task documents match "{searchQuery.trim()}".</p>
+            ) : (
+              <>
+                <FileText size={48} className="documents-view-empty-icon" />
+                <p>No task documents yet.</p>
+                <p className="documents-view-empty-hint">
+                  Documents are created in task detail tabs.
+                </p>
+              </>
+            )}
           </div>
         ) : (
-          <div className="documents-view-sections">
-            <section className="documents-project-files" aria-label="Project files section">
-              <button
-                className="documents-project-files-header"
-                onClick={toggleProjectFilesExpanded}
-                aria-expanded={projectFilesExpanded}
-              >
-                <span className="documents-project-files-toggle">
-                  {projectFilesExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                </span>
-                <span className="documents-project-files-title">Project Files</span>
-                <span className="documents-project-files-count">
-                  {projectFiles.length} file{projectFiles.length !== 1 ? "s" : ""}
-                </span>
-              </button>
-
-              {projectFilesExpanded && (
-                projectFiles.length === 0 ? (
-                  <p className="documents-project-files-empty">
-                    No Markdown files found in the project.
-                  </p>
-                ) : (
-                  <div className="documents-project-files-list">
-                    {projectFiles.map((file) => (
-                      <ProjectFileCard
-                        key={file.path}
-                        file={file}
-                        expanded={openProjectFilePath === file.path}
-                        loading={openProjectFileLoading && openProjectFilePath === file.path}
-                        error={openProjectFilePath === file.path ? openProjectFileError : null}
-                        content={openProjectFilePath === file.path ? openProjectFileContent : ""}
-                        onOpen={handleOpenProjectFile}
-                      />
-                    ))}
-                  </div>
-                )
-              )}
-            </section>
-
-            {groupedDocuments.length === 0 ? (
-              <div className="documents-view-empty">
-                {searchQuery ? (
-                  <p>No task documents match "{searchQuery}".</p>
-                ) : (
-                  <>
-                    <FileText size={48} className="documents-view-empty-icon" />
-                    <p>No task documents yet.</p>
-                    <p className="documents-view-empty-hint">
-                      Documents are created in task detail tabs.
-                    </p>
-                  </>
-                )}
-              </div>
-            ) : (
-              <div className="documents-view-list">
-                {groupedDocuments.map(({ taskId, taskTitle, documents: taskDocs }) => (
-                  <TaskGroup
-                    key={taskId}
-                    taskId={taskId}
-                    taskTitle={taskTitle}
-                    documents={taskDocs}
-                    onOpenTask={handleOpenTask}
-                  />
-                ))}
-              </div>
-            )}
+          <div className="documents-task-list-wrap">
+            <div className="documents-view-list">
+              {groupedDocuments.map(({ taskId, taskTitle, documents: taskDocs }) => (
+                <TaskGroup
+                  key={taskId}
+                  taskId={taskId}
+                  taskTitle={taskTitle}
+                  documents={taskDocs}
+                  onOpenTask={handleOpenTask}
+                />
+              ))}
+            </div>
           </div>
         )}
       </div>

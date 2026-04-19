@@ -756,7 +756,10 @@ export interface MarkdownFileEntry {
   name: string;
   size: number;
   mtime: string;
-  contentPreview: string;
+}
+
+export interface MarkdownFileListResponse {
+  files: MarkdownFileEntry[];
 }
 
 export async function fetchAllDocuments(
@@ -772,17 +775,8 @@ export async function fetchAllDocuments(
   return api<TaskDocumentWithTask[]>(withProjectId(path, projectId));
 }
 
-export function fetchProjectMarkdownFiles(
-  options?: { q?: string },
-  projectId?: string,
-): Promise<MarkdownFileEntry[]> {
-  const params = new URLSearchParams();
-  if (options?.q) {
-    params.set("q", options.q);
-  }
-  const queryString = params.toString();
-  const path = `/project-files/md${queryString ? `?${queryString}` : ""}`;
-  return api<MarkdownFileEntry[]>(withProjectId(path, projectId));
+export function fetchProjectMarkdownFiles(projectId?: string): Promise<MarkdownFileListResponse> {
+  return api<MarkdownFileListResponse>(withProjectId("/files/markdown", projectId));
 }
 
 export function putTaskDocument(

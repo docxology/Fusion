@@ -904,6 +904,16 @@ export interface MarkdownFileEntry {
   name: string;
   size: number;
   mtime: string;
+}
+
+/**
+ * Response payload for project markdown file listing.
+ */
+export interface MarkdownFileListResponse {
+  files: MarkdownFileEntry[];
+}
+
+export interface ScannedMarkdownFileEntry extends MarkdownFileEntry {
   contentPreview: string;
 }
 
@@ -913,13 +923,80 @@ const MARKDOWN_SCAN_EXCLUDED_DIRS = new Set([
   ".fusion",
   "dist",
   "build",
-  ".next",
-  "coverage",
   "__pycache__",
+  ".next",
   ".cache",
+  "coverage",
   ".turbo",
+  ".parcel-cache",
   ".vercel",
 ]);
+
+async function walkDirForMarkdown(
+  basePath: string,
+  currentRelative: string,
+  results: MarkdownFileEntry[],
+): Promise<void> {
+  const currentPath = currentRelative ? join(basePath, currentRelative) : basePath;
+
+  let entries: Dirent[];
+  try {
+    entries = await readdir(currentPath, { withFileTypes: true });
+  } catch {
+    return;
+  }
+
+  for (const entry of entries) {
+    const entryRelativePath = currentRelative
+      ? join(currentRelative, entry.name)
+      : entry.name;
+
+    if (entry.isDirectory()) {
+      if (MARKDOWN_SCAN_EXCLUDED_DIRS.has(entry.name)) {
+        continue;
+      }
+      await walkDirForMarkdown(basePath, entryRelativePath, results);
+      continue;
+    }
+
+    if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".md")) {
+      continue;
+    }
+
+    const fullPath = join(basePath, entryRelativePath);
+
+    let fileStats;
+    try {
+      fileStats = await stat(fullPath);
+    } catch {
+      continue;
+    }
+
+    if (!fileStats.isFile()) {
+      continue;
+    }
+
+    results.push({
+      path: entryRelativePath.replace(/\\/g, "/"),
+      name: entry.name,
+      size: fileStats.size,
+      mtime: fileStats.mtime.toISOString(),
+    });
+  }
+}
+
+export async function listProjectMarkdownFiles(
+  store: TaskStore,
+): Promise<MarkdownFileListResponse> {
+  const projectBasePath = getProjectBasePath(store);
+  const files: MarkdownFileEntry[] = [];
+
+  await walkDirForMarkdown(projectBasePath, "", files);
+
+  files.sort((a, b) => a.path.localeCompare(b.path));
+
+  return { files };
+}
 
 /**
  * Recursively scan the project directory for Markdown files.
@@ -927,11 +1004,11 @@ const MARKDOWN_SCAN_EXCLUDED_DIRS = new Set([
 export async function scanMarkdownFiles(
   store: TaskStore,
   options?: { maxDepth?: number; maxFileSize?: number },
-): Promise<MarkdownFileEntry[]> {
+): Promise<ScannedMarkdownFileEntry[]> {
   const projectBasePath = getProjectBasePath(store);
   const maxDepth = options?.maxDepth ?? 5;
   const maxFileSize = options?.maxFileSize ?? MAX_FILE_SIZE;
-  const markdownFiles: MarkdownFileEntry[] = [];
+  const markdownFiles: ScannedMarkdownFileEntry[] = [];
 
   async function walkDirectory(relativeDir: string, depth: number): Promise<void> {
     if (depth > maxDepth) {

@@ -24,7 +24,7 @@ import { GitHubClient, parseBadgeUrl } from "./github.js";
 import { githubRateLimiter } from "./github-poll.js";
 import { terminalSessionManager } from "./terminal.js";
 import { getTerminalService } from "./terminal-service.js";
-import { listFiles, readFile, writeFile, listWorkspaceFiles, readWorkspaceFile, writeWorkspaceFile, searchWorkspaceFiles, copyWorkspaceFile, moveWorkspaceFile, deleteWorkspaceFile, renameWorkspaceFile, getWorkspaceFileForDownload, getWorkspaceFolderForZip, scanMarkdownFiles, FileServiceError } from "./file-service.js";
+import { listFiles, readFile, writeFile, listWorkspaceFiles, readWorkspaceFile, writeWorkspaceFile, searchWorkspaceFiles, copyWorkspaceFile, moveWorkspaceFile, deleteWorkspaceFile, renameWorkspaceFile, getWorkspaceFileForDownload, getWorkspaceFolderForZip, listProjectMarkdownFiles, scanMarkdownFiles, FileServiceError, type MarkdownFileListResponse } from "./file-service.js";
 import { clearUsageCache, fetchAllProviderUsage } from "./usage.js";
 import {
   getGitHubAppConfig,
@@ -7854,6 +7854,32 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
       const { path: subPath, workspace } = req.query;
       const workspaceId = typeof workspace === "string" && workspace.length > 0 ? workspace : "project";
       const result = await listWorkspaceFiles(scopedStore, workspaceId, typeof subPath === "string" ? subPath : undefined);
+      res.json(result);
+    } catch (err: unknown) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      if (err instanceof FileServiceError) {
+        const status = err.code === "ENOTASK" ? 404
+          : err.code === "ENOENT" ? 404
+          : err.code === "EACCES" ? 403
+          : 400;
+        throw new ApiError(status, err.message, { code: err.code });
+      } else {
+        rethrowAsApiError(err, "Internal server error");
+      }
+    }
+  });
+
+  /**
+   * GET /api/files/markdown
+   * Recursively list markdown files in the project workspace.
+   * Returns: { files: MarkdownFileEntry[] }
+   */
+  router.get("/files/markdown", async (req, res) => {
+    try {
+      const { store: scopedStore } = await getProjectContext(req);
+      const result: MarkdownFileListResponse = await listProjectMarkdownFiles(scopedStore);
       res.json(result);
     } catch (err: unknown) {
       if (err instanceof ApiError) {

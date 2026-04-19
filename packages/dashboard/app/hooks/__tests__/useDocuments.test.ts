@@ -32,11 +32,11 @@ function createDocumentsFetchMock(options: {
   return vi.fn().mockImplementation((input: RequestInfo | URL) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
 
-    if (url.includes("/project-files/md")) {
+    if (url.includes("/files/markdown")) {
       if (options.failProjectFiles) {
         return mockFetchResponse(false, { error: "Project files failed" }, 500);
       }
-      return mockFetchResponse(true, options.projectFiles);
+      return mockFetchResponse(true, { files: options.projectFiles });
     }
 
     if (url.includes("/documents")) {
@@ -86,14 +86,12 @@ describe("useDocuments", () => {
       name: "README.md",
       size: 1024,
       mtime: "2024-01-03T00:00:00.000Z",
-      contentPreview: "# Project README",
     },
     {
       path: "docs/CONTRIBUTING.md",
       name: "CONTRIBUTING.md",
       size: 900,
       mtime: "2024-01-04T00:00:00.000Z",
-      contentPreview: "Contribution guide",
     },
   ];
 
@@ -176,7 +174,7 @@ describe("useDocuments", () => {
     expect(result.current.projectFiles).toHaveLength(2);
   });
 
-  it("passes search query to both document and project file endpoints", async () => {
+  it("passes search query to document endpoint and filters project files client-side", async () => {
     globalThis.fetch = createDocumentsFetchMock({
       documents: mockDocuments,
       projectFiles: mockProjectFiles,
@@ -200,7 +198,8 @@ describe("useDocuments", () => {
     await waitFor(() => {
       const urls = globalThis.fetch.mock.calls.map((call) => String(call[0]));
       expect(urls.some((url) => url.includes("/documents?q=readme"))).toBe(true);
-      expect(urls.some((url) => url.includes("/project-files/md?q=readme"))).toBe(true);
+      expect(urls.some((url) => url.includes("/files/markdown") && !url.includes("q=readme"))).toBe(true);
+      expect(urls.some((url) => url.includes("/project-files/md"))).toBe(false);
     });
   });
 
@@ -219,7 +218,7 @@ describe("useDocuments", () => {
     await waitFor(() => {
       const urls = globalThis.fetch.mock.calls.map((call) => String(call[0]));
       expect(urls.some((url) => url.includes("/documents") && url.includes("projectId=proj-123"))).toBe(true);
-      expect(urls.some((url) => url.includes("/project-files/md") && url.includes("projectId=proj-123"))).toBe(true);
+      expect(urls.some((url) => url.includes("/files/markdown") && url.includes("projectId=proj-123"))).toBe(true);
     });
   });
 

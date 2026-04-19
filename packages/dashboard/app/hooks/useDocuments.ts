@@ -28,8 +28,10 @@ export function useDocuments(options?: {
   projectId?: string;
   /** Search query for filtering documents */
   searchQuery?: string;
+  /** Whether to include project markdown files in the response (defaults to true) */
+  includeProjectFiles?: boolean;
 }): UseDocumentsResult {
-  const { projectId, searchQuery } = options ?? {};
+  const { projectId, searchQuery, includeProjectFiles = true } = options ?? {};
   const [documents, setDocuments] = useState<TaskDocumentWithTask[]>([]);
   const [projectFiles, setProjectFiles] = useState<MarkdownFileEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -65,10 +67,9 @@ export function useDocuments(options?: {
       projectId,
     );
 
-    const projectFileFetchPromise = fetchProjectMarkdownFiles(
-      searchQuery ? { q: searchQuery } : undefined,
-      projectId,
-    );
+    const projectFileFetchPromise = includeProjectFiles
+      ? fetchProjectMarkdownFiles(projectId)
+      : Promise.resolve({ files: [] as MarkdownFileEntry[] });
 
     const [documentResult, projectFileResult] = await Promise.allSettled([
       documentFetchPromise,
@@ -91,7 +92,14 @@ export function useDocuments(options?: {
     }
 
     if (projectFileResult.status === "fulfilled") {
-      setProjectFiles(projectFileResult.value);
+      const fetchedFiles = projectFileResult.value.files;
+      const normalizedSearch = searchQuery?.trim().toLowerCase();
+      const filteredFiles = normalizedSearch
+        ? fetchedFiles.filter((file) =>
+          file.name.toLowerCase().includes(normalizedSearch) ||
+          file.path.toLowerCase().includes(normalizedSearch))
+        : fetchedFiles;
+      setProjectFiles(filteredFiles);
     }
 
     setError(documentError);
@@ -99,7 +107,7 @@ export function useDocuments(options?: {
     if (isInitial) {
       setLoading(false);
     }
-  }, [projectId, searchQuery]);
+  }, [includeProjectFiles, projectId, searchQuery]);
 
   // Debounced search effect
   useEffect(() => {
