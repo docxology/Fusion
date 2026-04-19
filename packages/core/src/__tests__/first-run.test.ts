@@ -1,15 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { realpath } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join, basename } from "node:path";
+import { join } from "node:path";
+import { tempWorkspace } from "@fusion/test-utils";
 import { FirstRunExperience, createFirstRunExperience } from "../first-run.js";
 import { CentralCore } from "../central-core.js";
-
-// Helper to create a temp directory
-function createTempDir(): string {
-  return mkdtempSync(join(tmpdir(), "kb-first-run-test-"));
-}
 
 // Helper to create a fake kb project structure
 function createFakeKbProject(dir: string): void {
@@ -24,7 +19,7 @@ describe("FirstRunExperience", () => {
   let originalCwd: string;
 
   beforeEach(async () => {
-    tempDir = createTempDir();
+    tempDir = tempWorkspace("kb-first-run-test-");
     centralCore = new CentralCore(tempDir);
     await centralCore.init();
     // Create GlobalSettingsStore with temp directory for isolation
@@ -38,7 +33,6 @@ describe("FirstRunExperience", () => {
   afterEach(() => {
     try {
       process.chdir(originalCwd);
-      rmSync(tempDir, { recursive: true, force: true });
     } catch {
       // Ignore cleanup errors
     }

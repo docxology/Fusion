@@ -5,6 +5,12 @@ import type { Column, Task, TaskDetail } from "@fusion/core";
 import { TaskCard } from "../TaskCard";
 import React, { useState } from "react";
 import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+// Resolve paths relative to this test file so tests pass regardless of cwd
+// (a global test safety guard may change cwd to a per-worker temp dir).
+const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 
 vi.mock("../../api", () => ({
   fetchTaskDetail: vi.fn(),
@@ -3599,7 +3605,7 @@ describe("TaskCard agent badge", () => {
       expect(text).toBeInTheDocument();
     });
 
-    const styles = readFileSync("app/styles.css", "utf-8");
+    const styles = readFileSync(resolve(PACKAGE_ROOT, "app/styles.css"), "utf-8");
     expect(styles).toMatch(/\.card-agent-badge\s*\{[^}]*flex-shrink:\s*0;/);
     expect(styles).toMatch(/\.card-agent-badge\s*\{[^}]*max-width:\s*120px;/);
     expect(styles).toMatch(/\.card-agent-badge-text\s*\{[^}]*text-overflow:\s*ellipsis;/);

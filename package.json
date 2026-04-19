@@ -13,6 +13,8 @@
     "build:exe:all": "pnpm build && pnpm --filter @gsxdsm/fusion build:exe:all",
     "test": "pnpm -r --workspace-concurrency=1 test",
     "test:fast": "VITEST_MAX_WORKERS=4 pnpm -r --workspace-concurrency=2 test",
+    "test:isolated": "node scripts/check-test-isolation.mjs --before && pnpm test && node scripts/check-test-isolation.mjs",
+    "test:check-isolation": "node scripts/check-test-isolation.mjs",
     "test:coverage": "pnpm -r --workspace-concurrency=1 exec vitest run --silent=passed-only --reporter=dot --coverage",
     "test:coverage:core": "pnpm --filter @fusion/core exec vitest run --silent=passed-only --reporter=dot --coverage",
     "test:coverage:engine": "pnpm --filter @fusion/engine exec vitest run --silent=passed-only --reporter=dot --coverage",

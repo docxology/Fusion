@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { tempWorkspace } from "@fusion/test-utils";
 import { createReadOnlyAuthFileStorage, mergeAuthStorageReads, wrapAuthStorageWithApiKeyProviders } from "./provider-auth.js";
 
 function makeAuthStorage(credentials: Record<string, { type: string; key?: string; access?: string; refresh?: string; expires?: number }> = {}) {
@@ -87,7 +87,7 @@ describe("wrapAuthStorageWithApiKeyProviders", () => {
 
 
   it("reads legacy auth JSON without creating missing files", async () => {
-    const tempDir = join(tmpdir(), `fusion-provider-auth-${process.pid}-${Date.now()}`);
+    const tempDir = tempWorkspace("fusion-provider-auth-");
     const legacyAgentDir = join(tempDir, ".pi", "agent");
     const legacyAgentAuth = join(legacyAgentDir, "auth.json");
     const missingLegacyAuth = join(tempDir, ".pi", "auth.json");
@@ -101,7 +101,7 @@ describe("wrapAuthStorageWithApiKeyProviders", () => {
   });
 
   it("reads non-expired OAuth credentials from legacy auth JSON", async () => {
-    const tempDir = join(tmpdir(), `fusion-provider-auth-oauth-${process.pid}-${Date.now()}`);
+    const tempDir = tempWorkspace("fusion-provider-auth-oauth-");
     const legacyAgentDir = join(tempDir, ".pi", "agent");
     const legacyAgentAuth = join(legacyAgentDir, "auth.json");
     mkdirSync(legacyAgentDir, { recursive: true });

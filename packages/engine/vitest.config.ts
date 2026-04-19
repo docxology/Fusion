@@ -10,10 +10,13 @@ export default defineConfig({
   resolve: {
     alias: {
       "@fusion/core": resolve(__dirname, "../core/src/index.ts"),
+      "@fusion/test-utils": resolve(__dirname, "../core/src/__test-utils__/workspace.ts"),
     },
   },
   test: {
     include: ["src/**/*.test.ts"],
+    setupFiles: [resolve(__dirname, "../core/src/__test-utils__/vitest-setup.ts")],
+    globalSetup: [resolve(__dirname, "../core/src/__test-utils__/vitest-teardown.ts")],
     maxWorkers,
     poolOptions: { threads: { minThreads: 1, maxThreads: maxWorkers }, forks: { minForks: 1, maxForks: maxWorkers } },
     fileParallelism: true,

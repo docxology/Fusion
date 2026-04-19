@@ -1,9 +1,15 @@
 import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
 import { COLOR_THEMES, type Settings } from "@fusion/core";
 import { useTheme, getThemeInitScript } from "../useTheme";
 import { fetchGlobalSettings, updateGlobalSettings } from "../../api";
+
+// Resolve paths relative to this test file so tests pass regardless of cwd
+// (a global test safety guard may change cwd to a per-worker temp dir).
+const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 
 vi.mock("../../api", () => ({
   fetchGlobalSettings: vi.fn(),
@@ -433,8 +439,8 @@ describe("useTheme", () => {
   it("applies factory-specific design tokens from the stylesheet", () => {
     // Load both base styles and theme data (theme blocks are in a separate file)
     const style = document.createElement("style");
-    const baseCss = readFileSync("app/styles.css", "utf8");
-    const themeDataCss = readFileSync("app/public/theme-data.css", "utf8");
+    const baseCss = readFileSync(resolve(PACKAGE_ROOT, "app/styles.css"), "utf8");
+    const themeDataCss = readFileSync(resolve(PACKAGE_ROOT, "app/public/theme-data.css"), "utf8");
     style.textContent = baseCss + "\n" + themeDataCss;
     document.head.appendChild(style);
 
@@ -1145,7 +1151,7 @@ describe("getThemeInitScript", () => {
   });
 
   it("keeps index.html inline theme validation in sync with supported themes", () => {
-    const indexHtml = readFileSync("app/index.html", "utf8");
+    const indexHtml = readFileSync(resolve(PACKAGE_ROOT, "app/index.html"), "utf8");
 
     COLOR_THEMES.forEach((theme) => {
       expect(indexHtml).toContain(`'${theme}'`);
@@ -1164,7 +1170,7 @@ describe("getThemeInitScript", () => {
   it("index.html uses correct URL replacement pattern", () => {
     // Verify that the inline script in index.html uses the correct URL replacement
     // pattern (handle both directory paths and filename paths) rather than buggy concatenation
-    const indexHtml = readFileSync("app/index.html", "utf8");
+    const indexHtml = readFileSync(resolve(PACKAGE_ROOT, "app/index.html"), "utf8");
 
     // The correct pattern: check if base ends with '/' and use slice or replace accordingly
     // The buggy pattern: base.substring(0, 7) + dirPath + 'theme-data.css'

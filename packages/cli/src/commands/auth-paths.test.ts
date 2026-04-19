@@ -1,7 +1,7 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { tempWorkspace } from "@fusion/test-utils";
 import { getFusionAgentDir, getLegacyAgentDir, getPackageManagerAgentDir } from "./auth-paths.js";
 
 function writeJson(path: string, value: Record<string, unknown>): void {
@@ -10,7 +10,7 @@ function writeJson(path: string, value: Record<string, unknown>): void {
 
 describe("getPackageManagerAgentDir", () => {
   it("falls back to legacy Pi settings when Fusion settings only contain Fusion metadata", () => {
-    const home = mkdtempSync(join(tmpdir(), "fusion-agent-dir-"));
+    const home = tempWorkspace("fusion-agent-dir-");
     const fusionAgentDir = getFusionAgentDir(home);
     const legacyAgentDir = getLegacyAgentDir(home);
 
@@ -27,7 +27,7 @@ describe("getPackageManagerAgentDir", () => {
   });
 
   it("prefers Fusion settings when they contain package-manager settings", () => {
-    const home = mkdtempSync(join(tmpdir(), "fusion-agent-dir-"));
+    const home = tempWorkspace("fusion-agent-dir-");
     const fusionAgentDir = getFusionAgentDir(home);
     const legacyAgentDir = getLegacyAgentDir(home);
 

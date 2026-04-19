@@ -1,15 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from "node:fs";
+import { mkdirSync, rmSync, existsSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { tempWorkspace } from "@fusion/test-utils";
 import { TaskStore } from "../store.js";
 import { CentralCore } from "../central-core.js";
-
-// Helper to create a temp directory
-function createTempDir(): string {
-  return mkdtempSync(join(tmpdir(), "kb-compat-test-"));
-}
 
 // Helper to create a fake fusion project structure for the current store implementation
 function createFakeFusionProject(dir: string): void {
@@ -26,7 +21,7 @@ describe("TaskStore Backward Compatibility", () => {
   let originalCwd: string;
 
   beforeEach(async () => {
-    tempDir = createTempDir();
+    tempDir = tempWorkspace("kb-compat-test-");
     centralCore = new CentralCore(tempDir);
     await centralCore.init();
     originalCwd = process.cwd();
@@ -36,7 +31,6 @@ describe("TaskStore Backward Compatibility", () => {
     try {
       process.chdir(originalCwd);
       await centralCore.close();
-      rmSync(tempDir, { recursive: true, force: true });
     } catch {
       // Ignore cleanup errors
     }
@@ -187,13 +181,13 @@ describe("TaskStore Backward Compatibility", () => {
       await store.init();
 
       expect(store).toBeInstanceOf(TaskStore);
-      
+
       // Should be able to create tasks
       const task = await store.createTask({
         description: "Test task",
         column: "triage",
       });
-      
+
       expect(task.id).toBeDefined();
       expect(task.description).toBe("Test task");
     });

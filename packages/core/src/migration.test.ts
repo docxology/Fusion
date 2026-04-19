@@ -3,9 +3,10 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { tempWorkspace, useIsolatedCwd } from "@fusion/test-utils";
 import {
   FirstRunDetector,
   MigrationCoordinator,
@@ -15,11 +16,6 @@ import {
 } from "./migration.js";
 import { needsCentralMigration, autoMigrateToCentral, detectExistingProjects as detectExistingProjectsFromDbMigrate } from "./db-migrate.js";
 import { CentralCore } from "./central-core.js";
-
-// Helper to create temp directories
-function tempDir(prefix: string): string {
-  return mkdtempSync(join(tmpdir(), prefix));
-}
 
 // Helper to create a fake kb project
 function createFakeKbProject(dir: string): void {
@@ -46,62 +42,47 @@ async function initGitRepo(dir: string, remoteUrl?: string): Promise<void> {
 
 describe("FirstRunDetector", () => {
   let tempGlobalDir: string;
-  let originalCwd: string;
 
   beforeEach(() => {
-    tempGlobalDir = tempDir("kb-migration-test-");
-    originalCwd = process.cwd();
-  });
-
-  afterEach(() => {
-    // Cleanup
-    try {
-      rmSync(tempGlobalDir, { recursive: true, force: true });
-    } catch {
-      // Ignore cleanup errors
-    }
-    process.chdir(originalCwd);
+    tempGlobalDir = tempWorkspace("kb-migration-test-");
   });
 
   describe("detectFirstRunState", () => {
     it("should detect fresh-install when no central DB and no local .fusion/", async () => {
-      const tempProjectDir = tempDir("kb-fresh-");
-      process.chdir(tempProjectDir);
+      useIsolatedCwd("kb-fresh-");
 
       const detector = new FirstRunDetector(tempGlobalDir);
       const state = await detector.detectFirstRunState();
 
       expect(state).toBe("fresh-install");
-
-      rmSync(tempProjectDir, { recursive: true, force: true });
     });
 
     it("should detect needs-migration when local .fusion/ exists but no central DB", async () => {
-      const tempProjectDir = tempDir("kb-needs-migration-");
+      const tempProjectDir = useIsolatedCwd("kb-needs-migration-");
       createFakeKbProject(tempProjectDir);
-      process.chdir(tempProjectDir);
 
       const detector = new FirstRunDetector(tempGlobalDir);
       const state = await detector.detectFirstRunState();
 
       expect(state).toBe("needs-migration");
-
-      rmSync(tempProjectDir, { recursive: true, force: true });
     });
 
     it("should detect needs-migration from nested directory inside an existing project", async () => {
-      const tempProjectDir = tempDir("kb-needs-migration-nested-");
+      const tempProjectDir = tempWorkspace("kb-needs-migration-nested-");
       createFakeKbProject(tempProjectDir);
       const nestedDir = join(tempProjectDir, "src", "features", "deep");
       mkdirSync(nestedDir, { recursive: true });
+      const originalCwd = process.cwd();
       process.chdir(nestedDir);
 
-      const detector = new FirstRunDetector(tempGlobalDir);
-      const state = await detector.detectFirstRunState();
+      try {
+        const detector = new FirstRunDetector(tempGlobalDir);
+        const state = await detector.detectFirstRunState();
 
-      expect(state).toBe("needs-migration");
-
-      rmSync(tempProjectDir, { recursive: true, force: true });
+        expect(state).toBe("needs-migration");
+      } finally {
+        process.chdir(originalCwd);
+      }
     });
 
     it("should detect setup-wizard when central DB exists but is empty", async () => {
@@ -110,53 +91,46 @@ describe("FirstRunDetector", () => {
       await central.init();
       await central.close();
 
-      const tempProjectDir = tempDir("kb-setup-wizard-");
-      process.chdir(tempProjectDir);
+      useIsolatedCwd("kb-setup-wizard-");
 
       const detector = new FirstRunDetector(tempGlobalDir);
       const state = await detector.detectFirstRunState();
 
       expect(state).toBe("setup-wizard");
-
-      rmSync(tempProjectDir, { recursive: true, force: true });
     });
 
     it("should detect normal-operation when central DB has projects", async () => {
       // Create a separate global dir for this test to avoid conflicts with beforeEach's tempGlobalDir
-      const testGlobalDir = tempDir("kb-normal-op-global-");
-      
+      const testGlobalDir = tempWorkspace("kb-normal-op-global-");
+
       // Create and initialize central
       const testCentral = new CentralCore(testGlobalDir);
       await testCentral.init();
-      
+
       // Register a project
-      const projectDir = tempDir("kb-test-project-");
+      const projectDir = tempWorkspace("kb-test-project-");
       await testCentral.registerProject({
         name: "Test Project",
         path: projectDir,
       });
 
       // Create a temp dir for the cwd
-      const tempProjectDir = tempDir("kb-normal-op-");
-      process.chdir(tempProjectDir);
+      useIsolatedCwd("kb-normal-op-");
 
-      // Pass existing central to avoid concurrent connection issues
-      const detector = new FirstRunDetector(testGlobalDir);
-      const state = await detector.detectFirstRunState(testCentral);
+      try {
+        // Pass existing central to avoid concurrent connection issues
+        const detector = new FirstRunDetector(testGlobalDir);
+        const state = await detector.detectFirstRunState(testCentral);
 
-      expect(state).toBe("normal-operation");
-
-      // Cleanup
-      await testCentral.close();
-      rmSync(tempProjectDir, { recursive: true, force: true });
-      rmSync(projectDir, { recursive: true, force: true });
-      rmSync(testGlobalDir, { recursive: true, force: true });
+        expect(state).toBe("normal-operation");
+      } finally {
+        await testCentral.close();
+      }
     });
 
     it("should fall back to needs-migration when central DB exists but is unreadable", async () => {
-      const tempProjectDir = tempDir("kb-corrupt-central-");
+      const tempProjectDir = useIsolatedCwd("kb-corrupt-central-");
       createFakeKbProject(tempProjectDir);
-      process.chdir(tempProjectDir);
 
       mkdirSync(tempGlobalDir, { recursive: true });
       writeFileSync(join(tempGlobalDir, "fusion-central.db"), "not a sqlite database");
@@ -165,13 +139,10 @@ describe("FirstRunDetector", () => {
       const state = await detector.detectFirstRunState();
 
       expect(state).toBe("needs-migration");
-
-      rmSync(tempProjectDir, { recursive: true, force: true });
     });
 
     it("should return fresh-install when central DB exists but is unreadable and no local project is found", async () => {
-      const tempProjectDir = tempDir("kb-corrupt-central-no-local-");
-      process.chdir(tempProjectDir);
+      useIsolatedCwd("kb-corrupt-central-no-local-");
 
       mkdirSync(tempGlobalDir, { recursive: true });
       writeFileSync(join(tempGlobalDir, "fusion-central.db"), "not a sqlite database");
@@ -180,8 +151,6 @@ describe("FirstRunDetector", () => {
       const state = await detector.detectFirstRunState();
 
       expect(state).toBe("fresh-install");
-
-      rmSync(tempProjectDir, { recursive: true, force: true });
     });
   });
 
@@ -203,7 +172,7 @@ describe("FirstRunDetector", () => {
 
   describe("detectExistingProjects", () => {
     it("should detect project in cwd", async () => {
-      const tempProjectDir = tempDir("kb-detect-");
+      const tempProjectDir = tempWorkspace("kb-detect-");
       createFakeKbProject(tempProjectDir);
 
       const detector = new FirstRunDetector(tempGlobalDir);
@@ -212,12 +181,10 @@ describe("FirstRunDetector", () => {
       expect(projects).toHaveLength(1);
       expect(projects[0].path).toBe(tempProjectDir);
       expect(projects[0].hasDb).toBe(true);
-
-      rmSync(tempProjectDir, { recursive: true, force: true });
     });
 
     it("should walk up directory tree to find .fusion/", async () => {
-      const tempProjectDir = tempDir("kb-parent-");
+      const tempProjectDir = tempWorkspace("kb-parent-");
       createFakeKbProject(tempProjectDir);
       const nestedDir = join(tempProjectDir, "src", "components");
       mkdirSync(nestedDir, { recursive: true });
@@ -227,8 +194,6 @@ describe("FirstRunDetector", () => {
 
       expect(projects).toHaveLength(1);
       expect(projects[0].path).toBe(tempProjectDir);
-
-      rmSync(tempProjectDir, { recursive: true, force: true });
     });
 
     it("should stop safely at home/root boundaries when no project is found", async () => {
@@ -240,7 +205,7 @@ describe("FirstRunDetector", () => {
     });
 
     it("should still check the starting directory when cwd matches the stop boundary", async () => {
-      const fakeHome = tempDir("kb-home-boundary-");
+      const fakeHome = tempWorkspace("kb-home-boundary-");
       createFakeKbProject(fakeHome);
 
       const detector = new FirstRunDetector(fakeHome);
@@ -248,56 +213,46 @@ describe("FirstRunDetector", () => {
 
       expect(projects).toHaveLength(1);
       expect(projects[0].path).toBe(fakeHome);
-
-      rmSync(fakeHome, { recursive: true, force: true });
     });
 
     it("should return empty array when no project found", async () => {
-      const emptyDir = tempDir("kb-empty-");
+      const emptyDir = tempWorkspace("kb-empty-");
 
       const detector = new FirstRunDetector(tempGlobalDir);
       const projects = await detector.detectExistingProjects(emptyDir);
 
       expect(projects).toHaveLength(0);
-
-      rmSync(emptyDir, { recursive: true, force: true });
     });
   });
 
   describe("generateProjectName", () => {
     it("should use directory basename when no git remote", async () => {
-      const tempProjectDir = tempDir("my-awesome-project-");
+      const tempProjectDir = tempWorkspace("my-awesome-project-");
 
       const detector = new FirstRunDetector(tempGlobalDir);
       const name = await detector.generateProjectName(tempProjectDir);
 
       expect(name).toContain("my-awesome-project");
-
-      rmSync(tempProjectDir, { recursive: true, force: true });
     });
 
     it("should extract repo name from HTTPS git remote", async () => {
-      const tempProjectDir = tempDir("kb-git-https-");
+      const tempProjectDir = tempWorkspace("kb-git-https-");
       await initGitRepo(tempProjectDir, "https://github.com/owner/my-repo.git");
 
       const detector = new FirstRunDetector(tempGlobalDir);
       const name = await detector.generateProjectName(tempProjectDir);
 
       expect(name).toBe("my-repo");
-
-      rmSync(tempProjectDir, { recursive: true, force: true });
     });
 
     it("should extract repo name from SSH git remote", async () => {
-      const tempProjectDir = tempDir("kb-git-ssh-");
+      const tempProjectDir = tempWorkspace("kb-git-ssh-");
       await initGitRepo(tempProjectDir, "git@github.com:owner/my-ssh-repo");
 
       const detector = new FirstRunDetector(tempGlobalDir);
       const name = await detector.generateProjectName(tempProjectDir);
 
       expect(name).toBe("my-ssh-repo");
-
-      rmSync(tempProjectDir, { recursive: true, force: true });
     });
   });
 
@@ -311,8 +266,8 @@ describe("FirstRunDetector", () => {
 
 describe("db-migrate wrappers", () => {
   it("should forward detectExistingProjects through db-migrate wrapper", async () => {
-    const tempGlobalDir = tempDir("kb-dbmigrate-detect-global-");
-    const tempProjectDir = tempDir("kb-dbmigrate-detect-project-");
+    const tempGlobalDir = tempWorkspace("kb-dbmigrate-detect-global-");
+    const tempProjectDir = tempWorkspace("kb-dbmigrate-detect-project-");
     createFakeKbProject(tempProjectDir);
     const nestedDir = join(tempProjectDir, "src", "nested");
     mkdirSync(nestedDir, { recursive: true });
@@ -321,14 +276,11 @@ describe("db-migrate wrappers", () => {
 
     expect(detected).toHaveLength(1);
     expect(detected[0].path).toBe(tempProjectDir);
-
-    rmSync(tempGlobalDir, { recursive: true, force: true });
-    rmSync(tempProjectDir, { recursive: true, force: true });
   });
 
   it("should autoMigrateToCentral and register the project", async () => {
-    const tempGlobalDir = tempDir("kb-dbmigrate-auto-global-");
-    const tempProjectDir = tempDir("kb-dbmigrate-auto-project-");
+    const tempGlobalDir = tempWorkspace("kb-dbmigrate-auto-global-");
+    const tempProjectDir = tempWorkspace("kb-dbmigrate-auto-project-");
     createFakeKbProject(tempProjectDir);
 
     const central = new CentralCore(tempGlobalDir);
@@ -345,14 +297,12 @@ describe("db-migrate wrappers", () => {
       expect(project!.status).toBe("active");
     } finally {
       await central.close();
-      rmSync(tempGlobalDir, { recursive: true, force: true });
-      rmSync(tempProjectDir, { recursive: true, force: true });
     }
   });
 
   it("should autoMigrateToCentral idempotently on repeat runs", async () => {
-    const tempGlobalDir = tempDir("kb-dbmigrate-idempotent-global-");
-    const tempProjectDir = tempDir("kb-dbmigrate-idempotent-project-");
+    const tempGlobalDir = tempWorkspace("kb-dbmigrate-idempotent-global-");
+    const tempProjectDir = tempWorkspace("kb-dbmigrate-idempotent-project-");
     createFakeKbProject(tempProjectDir);
 
     const central = new CentralCore(tempGlobalDir);
@@ -367,35 +317,27 @@ describe("db-migrate wrappers", () => {
       expect(result1.projectsRegistered[0]).toBe(result2.projectsRegistered[0]);
     } finally {
       await central.close();
-      rmSync(tempGlobalDir, { recursive: true, force: true });
-      rmSync(tempProjectDir, { recursive: true, force: true });
     }
   });
 });
 
 describe("needsCentralMigration", () => {
   it("should detect migration need from nested directory inside a project", () => {
-    const tempGlobalDir = tempDir("kb-needs-central-global-");
-    const tempProjectDir = tempDir("kb-needs-central-project-");
+    const tempGlobalDir = tempWorkspace("kb-needs-central-global-");
+    const tempProjectDir = tempWorkspace("kb-needs-central-project-");
     createFakeKbProject(tempProjectDir);
     const nestedDir = join(tempProjectDir, "src", "nested");
     mkdirSync(nestedDir, { recursive: true });
 
     expect(needsCentralMigration(nestedDir, tempGlobalDir)).toBe(true);
-
-    rmSync(tempGlobalDir, { recursive: true, force: true });
-    rmSync(tempProjectDir, { recursive: true, force: true });
   });
 
   it("should detect migration need from the project root itself", () => {
-    const tempGlobalDir = tempDir("kb-needs-central-root-global-");
-    const tempProjectDir = tempDir("kb-needs-central-root-project-");
+    const tempGlobalDir = tempWorkspace("kb-needs-central-root-global-");
+    const tempProjectDir = tempWorkspace("kb-needs-central-root-project-");
     createFakeKbProject(tempProjectDir);
 
     expect(needsCentralMigration(tempProjectDir, tempGlobalDir)).toBe(true);
-
-    rmSync(tempGlobalDir, { recursive: true, force: true });
-    rmSync(tempProjectDir, { recursive: true, force: true });
   });
 });
 
@@ -404,23 +346,18 @@ describe("MigrationCoordinator", () => {
   let central: CentralCore;
 
   beforeEach(async () => {
-    tempGlobalDir = tempDir("kb-coordinator-test-");
+    tempGlobalDir = tempWorkspace("kb-coordinator-test-");
     central = new CentralCore(tempGlobalDir);
     await central.init();
   });
 
   afterEach(async () => {
     await central.close();
-    try {
-      rmSync(tempGlobalDir, { recursive: true, force: true });
-    } catch {
-      // Ignore cleanup errors
-    }
   });
 
   describe("registerSingleProject", () => {
     it("should register a new project successfully", async () => {
-      const tempProjectDir = tempDir("kb-register-");
+      const tempProjectDir = tempWorkspace("kb-register-");
       createFakeKbProject(tempProjectDir);
 
       const coordinator = new MigrationCoordinator(central);
@@ -435,12 +372,10 @@ describe("MigrationCoordinator", () => {
       expect(project).toBeDefined();
       expect(project!.path).toBe(tempProjectDir);
       expect(project!.status).toBe("active");
-
-      rmSync(tempProjectDir, { recursive: true, force: true });
     });
 
     it("should be idempotent - return existing project if already registered", async () => {
-      const tempProjectDir = tempDir("kb-idempotent-");
+      const tempProjectDir = tempWorkspace("kb-idempotent-");
       createFakeKbProject(tempProjectDir);
 
       const coordinator = new MigrationCoordinator(central);
@@ -454,8 +389,6 @@ describe("MigrationCoordinator", () => {
       expect(result2.success).toBe(true);
       expect(result2.projectsRegistered).toEqual(result1.projectsRegistered);
       expect(result2.errors).toHaveLength(0);
-
-      rmSync(tempProjectDir, { recursive: true, force: true });
     });
 
     it("should reject relative paths", async () => {
@@ -468,7 +401,7 @@ describe("MigrationCoordinator", () => {
     });
 
     it("should reject absolute paths that are not valid kb projects", async () => {
-      const tempProjectDir = tempDir("kb-invalid-project-");
+      const tempProjectDir = tempWorkspace("kb-invalid-project-");
 
       const coordinator = new MigrationCoordinator(central);
       const result = await coordinator.registerSingleProject(tempProjectDir);
@@ -476,12 +409,10 @@ describe("MigrationCoordinator", () => {
       expect(result.success).toBe(false);
       expect(result.projectsRegistered).toHaveLength(0);
       expect(result.errors[0]).toContain("not a valid kb project");
-
-      rmSync(tempProjectDir, { recursive: true, force: true });
     });
 
     it("should handle duplicate names by appending suffix", async () => {
-      const tempRoot = tempDir("kb-duplicate-names-");
+      const tempRoot = tempWorkspace("kb-duplicate-names-");
       const tempProjectDir1 = join(tempRoot, "same-project");
       const tempProjectDir2 = join(tempRoot, "group", "same-project");
       mkdirSync(tempProjectDir1, { recursive: true });
@@ -500,12 +431,10 @@ describe("MigrationCoordinator", () => {
       const project2 = await central.getProject(result2.projectsRegistered[0]);
       expect(project1!.name).toBe("same-project");
       expect(project2!.name).toBe("same-project-1");
-
-      rmSync(tempRoot, { recursive: true, force: true });
     });
 
     it("should reject nested project registration when parent is already registered", async () => {
-      const parentProjectDir = tempDir("kb-parent-project-");
+      const parentProjectDir = tempWorkspace("kb-parent-project-");
       createFakeKbProject(parentProjectDir);
       const nestedProjectDir = join(parentProjectDir, "apps", "nested-project");
       mkdirSync(nestedProjectDir, { recursive: true });
@@ -518,12 +447,10 @@ describe("MigrationCoordinator", () => {
       expect(parentResult.success).toBe(true);
       expect(nestedResult.success).toBe(false);
       expect(nestedResult.errors[0]).toContain("overlaps an existing registered project");
-
-      rmSync(parentProjectDir, { recursive: true, force: true });
     });
 
     it("should register the detected ancestor project root when called from a nested directory", async () => {
-      const tempProjectDir = tempDir("kb-nested-register-");
+      const tempProjectDir = tempWorkspace("kb-nested-register-");
       createFakeKbProject(tempProjectDir);
       const nestedDir = join(tempProjectDir, "packages", "feature");
       mkdirSync(nestedDir, { recursive: true });
@@ -539,15 +466,13 @@ describe("MigrationCoordinator", () => {
       const projects = await central.listProjects();
       expect(projects).toHaveLength(1);
       expect(projects[0].path.endsWith(tempProjectDir)).toBe(true);
-
-      rmSync(tempProjectDir, { recursive: true, force: true });
     });
   });
 
   describe("completeSetup", () => {
     it("should register multiple projects from wizard", async () => {
-      const tempProjectDir1 = tempDir("kb-setup1-");
-      const tempProjectDir2 = tempDir("kb-setup2-");
+      const tempProjectDir1 = tempWorkspace("kb-setup1-");
+      const tempProjectDir2 = tempWorkspace("kb-setup2-");
       createFakeKbProject(tempProjectDir1);
       createFakeKbProject(tempProjectDir2);
 
@@ -562,13 +487,10 @@ describe("MigrationCoordinator", () => {
       expect(result.success).toBe(true);
       expect(result.projectsRegistered).toHaveLength(2);
       expect(result.errors).toHaveLength(0);
-
-      rmSync(tempProjectDir1, { recursive: true, force: true });
-      rmSync(tempProjectDir2, { recursive: true, force: true });
     });
 
     it("should skip already registered projects", async () => {
-      const tempProjectDir = tempDir("kb-setup-existing-");
+      const tempProjectDir = tempWorkspace("kb-setup-existing-");
       createFakeKbProject(tempProjectDir);
 
       const coordinator = new MigrationCoordinator(central);
@@ -582,13 +504,11 @@ describe("MigrationCoordinator", () => {
 
       expect(result2.success).toBe(true);
       expect(result2.projectsRegistered).toEqual(result1.projectsRegistered);
-
-      rmSync(tempProjectDir, { recursive: true, force: true });
     });
 
     it("should reject invalid setup project paths", async () => {
-      const validProjectDir = tempDir("kb-setup-valid-");
-      const invalidProjectDir = tempDir("kb-setup-invalid-");
+      const validProjectDir = tempWorkspace("kb-setup-valid-");
+      const invalidProjectDir = tempWorkspace("kb-setup-invalid-");
       createFakeKbProject(validProjectDir);
 
       const inputs: ProjectSetupInput[] = [
@@ -603,15 +523,12 @@ describe("MigrationCoordinator", () => {
       expect(result.projectsRegistered).toHaveLength(1);
       expect(result.errors).toHaveLength(1);
       expect(result.errors[0]).toContain("not a valid kb project");
-
-      rmSync(validProjectDir, { recursive: true, force: true });
-      rmSync(invalidProjectDir, { recursive: true, force: true });
     });
   });
 
   describe("coordinateMigration", () => {
     it("should auto-register an existing local project when no projects are registered", async () => {
-      const tempProjectDir = tempDir("kb-coordinate-migration-");
+      const tempProjectDir = tempWorkspace("kb-coordinate-migration-");
       createFakeKbProject(tempProjectDir);
       const nestedDir = join(tempProjectDir, "src", "feature");
       mkdirSync(nestedDir, { recursive: true });
@@ -631,24 +548,49 @@ describe("MigrationCoordinator", () => {
         expect(registered[0].path.endsWith(tempProjectDir)).toBe(true);
       } finally {
         process.chdir(originalCwd);
-        rmSync(tempProjectDir, { recursive: true, force: true });
       }
     });
 
     it("should return success for fresh-install state", async () => {
       // Close and remove central to simulate fresh state
       await central.close();
+      const { rmSync } = await import("node:fs");
       rmSync(join(tempGlobalDir, "fusion-central.db"), { force: true });
-
-      // Create fresh temp dir with no .fusion/
-      const tempFreshDir = tempDir("kb-fresh-coord-");
 
       central = new CentralCore(tempGlobalDir);
       await central.init();
 
       // Change to fresh dir (no .fusion/)
-      const originalCwd = process.cwd();
-      process.chdir(tempFreshDir);
+      useIsolatedCwd("kb-fresh-coord-");
+
+      const coordinator = new MigrationCoordinator(central);
+      const result = await coordinator.coordinateMigration();
+
+      expect(result.success).toBe(true);
+      expect(result.projectsRegistered).toHaveLength(0);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    it("should be a no-op in setup-wizard state when no local project exists", async () => {
+      useIsolatedCwd("kb-setup-wizard-coord-");
+
+      const coordinator = new MigrationCoordinator(central);
+      const result = await coordinator.coordinateMigration();
+
+      expect(result.success).toBe(true);
+      expect(result.projectsRegistered).toHaveLength(0);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    it("should be a no-op in normal-operation when projects already exist", async () => {
+      const existingProjectDir = tempWorkspace("kb-normal-op-existing-");
+      await central.registerProject({
+        name: "Existing Project",
+        path: existingProjectDir,
+      });
+
+      const localProjectDir = useIsolatedCwd("kb-normal-op-local-");
+      createFakeKbProject(localProjectDir);
 
       const coordinator = new MigrationCoordinator(central);
       const result = await coordinator.coordinateMigration();
@@ -657,55 +599,8 @@ describe("MigrationCoordinator", () => {
       expect(result.projectsRegistered).toHaveLength(0);
       expect(result.errors).toHaveLength(0);
 
-      process.chdir(originalCwd);
-      rmSync(tempFreshDir, { recursive: true, force: true });
-    });
-
-    it("should be a no-op in setup-wizard state when no local project exists", async () => {
-      const tempFreshDir = tempDir("kb-setup-wizard-coord-");
-      const originalCwd = process.cwd();
-      process.chdir(tempFreshDir);
-
-      try {
-        const coordinator = new MigrationCoordinator(central);
-        const result = await coordinator.coordinateMigration();
-
-        expect(result.success).toBe(true);
-        expect(result.projectsRegistered).toHaveLength(0);
-        expect(result.errors).toHaveLength(0);
-      } finally {
-        process.chdir(originalCwd);
-        rmSync(tempFreshDir, { recursive: true, force: true });
-      }
-    });
-
-    it("should be a no-op in normal-operation when projects already exist", async () => {
-      const existingProjectDir = tempDir("kb-normal-op-existing-");
-      await central.registerProject({
-        name: "Existing Project",
-        path: existingProjectDir,
-      });
-
-      const localProjectDir = tempDir("kb-normal-op-local-");
-      createFakeKbProject(localProjectDir);
-      const originalCwd = process.cwd();
-      process.chdir(localProjectDir);
-
-      try {
-        const coordinator = new MigrationCoordinator(central);
-        const result = await coordinator.coordinateMigration();
-
-        expect(result.success).toBe(true);
-        expect(result.projectsRegistered).toHaveLength(0);
-        expect(result.errors).toHaveLength(0);
-
-        const registered = await central.listProjects();
-        expect(registered).toHaveLength(1);
-      } finally {
-        process.chdir(originalCwd);
-        rmSync(existingProjectDir, { recursive: true, force: true });
-        rmSync(localProjectDir, { recursive: true, force: true });
-      }
+      const registered = await central.listProjects();
+      expect(registered).toHaveLength(1);
     });
   });
 });
@@ -715,23 +610,18 @@ describe("BackwardCompat", () => {
   let central: CentralCore;
 
   beforeEach(async () => {
-    tempGlobalDir = tempDir("kb-compat-test-");
+    tempGlobalDir = tempWorkspace("kb-compat-test-");
     central = new CentralCore(tempGlobalDir);
     await central.init();
   });
 
   afterEach(async () => {
     await central.close();
-    try {
-      rmSync(tempGlobalDir, { recursive: true, force: true });
-    } catch {
-      // Ignore cleanup errors
-    }
   });
 
   describe("resolveProjectContext", () => {
     it("should use explicit project ID when provided", async () => {
-      const tempProjectDir = tempDir("kb-explicit-");
+      const tempProjectDir = tempWorkspace("kb-explicit-");
       const project = await central.registerProject({
         name: "Explicit Project",
         path: tempProjectDir,
@@ -743,12 +633,10 @@ describe("BackwardCompat", () => {
       expect(context.projectId).toBe(project.id);
       expect(context.workingDirectory).toBe(tempProjectDir);
       expect(context.isLegacy).toBe(false);
-
-      rmSync(tempProjectDir, { recursive: true, force: true });
     });
 
     it("should auto-use single project when no explicit ID provided", async () => {
-      const tempProjectDir = tempDir("kb-single-");
+      const tempProjectDir = tempWorkspace("kb-single-");
       const project = await central.registerProject({
         name: "Single Project",
         path: tempProjectDir,
@@ -760,13 +648,11 @@ describe("BackwardCompat", () => {
       expect(context.projectId).toBe(project.id);
       expect(context.workingDirectory).toBe(tempProjectDir);
       expect(context.isLegacy).toBe(false);
-
-      rmSync(tempProjectDir, { recursive: true, force: true });
     });
 
     it("should throw ProjectRequiredError when multiple projects and no selection", async () => {
-      const tempProjectDir1 = tempDir("kb-multi1-");
-      const tempProjectDir2 = tempDir("kb-multi2-");
+      const tempProjectDir1 = tempWorkspace("kb-multi1-");
+      const tempProjectDir2 = tempWorkspace("kb-multi2-");
       await central.registerProject({ name: "Project 1", path: tempProjectDir1 });
       await central.registerProject({ name: "Project 2", path: tempProjectDir2 });
 
@@ -782,13 +668,10 @@ describe("BackwardCompat", () => {
         expect(err).toBeInstanceOf(ProjectRequiredError);
         expect((err as ProjectRequiredError).availableProjects).toHaveLength(2);
       }
-
-      rmSync(tempProjectDir1, { recursive: true, force: true });
-      rmSync(tempProjectDir2, { recursive: true, force: true });
     });
 
     it("should find project by name (case-insensitive)", async () => {
-      const tempProjectDir = tempDir("kb-byname-");
+      const tempProjectDir = tempWorkspace("kb-byname-");
       const project = await central.registerProject({
         name: "My Project",
         path: tempProjectDir,
@@ -798,8 +681,6 @@ describe("BackwardCompat", () => {
       const context = await compat.resolveProjectContext("/some/dir", "my project");
 
       expect(context.projectId).toBe(project.id);
-
-      rmSync(tempProjectDir, { recursive: true, force: true });
     });
 
     it("should throw when project not found", async () => {
@@ -820,6 +701,7 @@ describe("BackwardCompat", () => {
     it("should return true when no central DB", async () => {
       // Close and remove central DB
       await central.close();
+      const { rmSync } = await import("node:fs");
       rmSync(join(tempGlobalDir, "fusion-central.db"), { force: true });
 
       // Need to re-init CentralCore for it to work
@@ -836,23 +718,18 @@ describe("CentralCore migration helpers", () => {
   let central: CentralCore;
 
   beforeEach(async () => {
-    tempGlobalDir = tempDir("kb-central-migration-test-");
+    tempGlobalDir = tempWorkspace("kb-central-migration-test-");
     central = new CentralCore(tempGlobalDir);
     await central.init();
   });
 
   afterEach(async () => {
     await central.close();
-    try {
-      rmSync(tempGlobalDir, { recursive: true, force: true });
-    } catch {
-      // Ignore cleanup errors
-    }
   });
 
   describe("autoRegisterProject", () => {
     it("should auto-register a project with generated name", async () => {
-      const tempProjectDir = tempDir("kb-autoreg-");
+      const tempProjectDir = tempWorkspace("kb-autoreg-");
       createFakeKbProject(tempProjectDir);
 
       const project = await central.autoRegisterProject(tempProjectDir);
@@ -862,12 +739,10 @@ describe("CentralCore migration helpers", () => {
       expect(project.isolationMode).toBe("in-process");
       expect(project.status).toBe("active");
       expect(project.name).toContain("kb-autoreg"); // Based on directory name
-
-      rmSync(tempProjectDir, { recursive: true, force: true });
     });
 
     it("should reject nested auto-registration when parent project is already registered", async () => {
-      const parentProjectDir = tempDir("kb-central-parent-");
+      const parentProjectDir = tempWorkspace("kb-central-parent-");
       createFakeKbProject(parentProjectDir);
       const nestedProjectDir = join(parentProjectDir, "packages", "nested");
       mkdirSync(nestedProjectDir, { recursive: true });
@@ -876,12 +751,10 @@ describe("CentralCore migration helpers", () => {
       await central.autoRegisterProject(parentProjectDir);
 
       await expect(central.autoRegisterProject(nestedProjectDir)).rejects.toThrow(/overlaps an existing registered project/);
-
-      rmSync(parentProjectDir, { recursive: true, force: true });
     });
 
     it("should be idempotent - return existing project if already registered", async () => {
-      const tempProjectDir = tempDir("kb-autoreg-dup-");
+      const tempProjectDir = tempWorkspace("kb-autoreg-dup-");
       createFakeKbProject(tempProjectDir);
 
       const project1 = await central.autoRegisterProject(tempProjectDir);
@@ -889,24 +762,20 @@ describe("CentralCore migration helpers", () => {
 
       expect(project1.id).toBe(project2.id);
       expect(project1.name).toBe(project2.name);
-
-      rmSync(tempProjectDir, { recursive: true, force: true });
     });
   });
 
   describe("isProjectRegistered", () => {
     it("should return false for unregistered project", async () => {
-      const tempProjectDir = tempDir("kb-unreg-");
+      const tempProjectDir = tempWorkspace("kb-unreg-");
 
       const isRegistered = await central.isProjectRegistered(tempProjectDir);
 
       expect(isRegistered).toBe(false);
-
-      rmSync(tempProjectDir, { recursive: true, force: true });
     });
 
     it("should return true for registered project", async () => {
-      const tempProjectDir = tempDir("kb-registered-");
+      const tempProjectDir = tempWorkspace("kb-registered-");
       await central.registerProject({
         name: "Registered",
         path: tempProjectDir,
@@ -915,8 +784,6 @@ describe("CentralCore migration helpers", () => {
       const isRegistered = await central.isProjectRegistered(tempProjectDir);
 
       expect(isRegistered).toBe(true);
-
-      rmSync(tempProjectDir, { recursive: true, force: true });
     });
   });
 
@@ -927,7 +794,7 @@ describe("CentralCore migration helpers", () => {
     });
 
     it("should return normal-operation when projects exist", async () => {
-      const tempProjectDir = tempDir("kb-state-test-");
+      const tempProjectDir = tempWorkspace("kb-state-test-");
       await central.registerProject({
         name: "State Test",
         path: tempProjectDir,
@@ -936,8 +803,6 @@ describe("CentralCore migration helpers", () => {
       const state = await central.getFirstRunState();
 
       expect(state).toBe("normal-operation");
-
-      rmSync(tempProjectDir, { recursive: true, force: true });
     });
   });
 });

@@ -4,7 +4,10 @@
     "outDir": "dist",
     "rootDir": "src",
     "jsx": "react-jsx",
-    "types": ["node", "vitest/globals", "@testing-library/jest-dom"]
+    "types": ["node", "vitest/globals", "@testing-library/jest-dom"],
+    "paths": {
+      "@fusion/test-utils": ["../core/src/__test-utils__/workspace.ts"]
+    }
   },
   "include": ["src/**/*"],
   "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/**/__tests__/**/*"]

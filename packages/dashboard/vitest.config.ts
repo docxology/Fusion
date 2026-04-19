@@ -13,13 +13,18 @@ export default defineConfig({
     alias: {
       "@fusion/core": resolve(__dirname, "../core/src/index.ts"),
       "@fusion/engine": resolve(__dirname, "../engine/src/index.ts"),
+      "@fusion/test-utils": resolve(__dirname, "../core/src/__test-utils__/workspace.ts"),
     },
   },
   test: {
     environment: "jsdom",
     globals: true,
     include: ["app/**/*.test.{ts,tsx}", "src/**/*.test.{ts,tsx}"],
-    setupFiles: ["./vitest.setup.ts"],
+    setupFiles: [
+      resolve(__dirname, "../core/src/__test-utils__/vitest-setup.ts"),
+      "./vitest.setup.ts",
+    ],
+    globalSetup: [resolve(__dirname, "../core/src/__test-utils__/vitest-teardown.ts")],
     maxWorkers,
     poolOptions: { threads: { minThreads: 1, maxThreads: maxWorkers }, forks: { minForks: 1, maxForks: maxWorkers } },
     fileParallelism: true,

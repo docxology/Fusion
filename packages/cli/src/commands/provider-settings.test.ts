@@ -1,7 +1,7 @@
-import { mkdirSync, mkdtempSync, writeFileSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { tempWorkspace } from "@fusion/test-utils";
 import { createReadOnlyProviderSettingsView, createProjectSettingsPersistence } from "./provider-settings.js";
 
 function writeJson(path: string, value: Record<string, unknown>): void {
@@ -10,7 +10,7 @@ function writeJson(path: string, value: Record<string, unknown>): void {
 
 describe("createReadOnlyProviderSettingsView", () => {
   it("reads provider package settings from .fusion/settings.json", () => {
-    const root = mkdtempSync(join(tmpdir(), "fusion-provider-settings-"));
+    const root = tempWorkspace("fusion-provider-settings-");
     const cwd = join(root, "project");
     const agentDir = join(root, "agent");
 
@@ -40,7 +40,7 @@ describe("createReadOnlyProviderSettingsView", () => {
   });
 
   it("returns empty project settings when .fusion/settings.json does not exist", () => {
-    const root = mkdtempSync(join(tmpdir(), "fusion-provider-settings-"));
+    const root = tempWorkspace("fusion-provider-settings-");
     const cwd = join(root, "project");
     const agentDir = join(root, "agent");
 
@@ -57,7 +57,7 @@ describe("createReadOnlyProviderSettingsView", () => {
   });
 
   it("merges legacy Pi and Fusion agent settings with Fusion taking precedence", () => {
-    const home = mkdtempSync(join(tmpdir(), "fusion-provider-settings-"));
+    const home = tempWorkspace("fusion-provider-settings-");
     const cwd = join(home, "project");
     const fusionAgentDir = join(home, ".fusion", "agent");
     const legacyAgentDir = join(home, ".pi", "agent");
@@ -91,7 +91,7 @@ describe("createReadOnlyProviderSettingsView", () => {
 
 describe("createProjectSettingsPersistence", () => {
   it("reads from .fusion/settings.json when it exists", () => {
-    const root = mkdtempSync(join(tmpdir(), "fusion-provider-settings-"));
+    const root = tempWorkspace("fusion-provider-settings-");
     const cwd = join(root, "project");
 
     mkdirSync(join(cwd, ".fusion"), { recursive: true });
@@ -110,7 +110,7 @@ describe("createProjectSettingsPersistence", () => {
   });
 
   it("returns empty object when .fusion/settings.json does not exist", () => {
-    const root = mkdtempSync(join(tmpdir(), "fusion-provider-settings-"));
+    const root = tempWorkspace("fusion-provider-settings-");
     const cwd = join(root, "project");
 
     mkdirSync(cwd, { recursive: true });
@@ -122,7 +122,7 @@ describe("createProjectSettingsPersistence", () => {
   });
 
   it("writes to .fusion/settings.json", () => {
-    const root = mkdtempSync(join(tmpdir(), "fusion-provider-settings-"));
+    const root = tempWorkspace("fusion-provider-settings-");
     const cwd = join(root, "project");
 
     mkdirSync(cwd, { recursive: true });
@@ -135,7 +135,7 @@ describe("createProjectSettingsPersistence", () => {
   });
 
   it("replaces existing settings when writing (read before write for merge)", () => {
-    const root = mkdtempSync(join(tmpdir(), "fusion-provider-settings-"));
+    const root = tempWorkspace("fusion-provider-settings-");
     const cwd = join(root, "project");
 
     mkdirSync(join(cwd, ".fusion"), { recursive: true });
@@ -154,7 +154,7 @@ describe("createProjectSettingsPersistence", () => {
   });
 
   it("creates .fusion directory if it does not exist", () => {
-    const root = mkdtempSync(join(tmpdir(), "fusion-provider-settings-"));
+    const root = tempWorkspace("fusion-provider-settings-");
     const cwd = join(root, "project");
 
     mkdirSync(cwd, { recursive: true });
@@ -167,7 +167,7 @@ describe("createProjectSettingsPersistence", () => {
   });
 
   it("returns correct settings path via getSettingsPath", () => {
-    const root = mkdtempSync(join(tmpdir(), "fusion-provider-settings-"));
+    const root = tempWorkspace("fusion-provider-settings-");
     const cwd = join(root, "project");
 
     mkdirSync(cwd, { recursive: true });
