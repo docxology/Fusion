@@ -9,6 +9,7 @@ interface PrSectionProps {
   projectId?: string;
   prInfo?: PrInfo;
   automationStatus?: string | null;
+  autoMerge?: boolean;
   hasGitHubToken: boolean;
   onPrCreated: (prInfo: PrInfo) => void;
   onPrUpdated: (prInfo: PrInfo) => void;
@@ -26,6 +27,7 @@ export function PrSection({
   projectId,
   prInfo,
   automationStatus,
+  autoMerge = false,
   hasGitHubToken,
   onPrCreated,
   onPrUpdated,
@@ -86,6 +88,20 @@ export function PrSection({
           </h4>
           <div className="pr-hint pr-hint--muted">
             fn is creating a pull request automatically for this task.
+          </div>
+        </div>
+      );
+    }
+
+    if (autoMerge) {
+      return (
+        <div className="pr-section">
+          <h4>
+            <GitPullRequest size={16} className="pr-section-icon" />
+            Pull Request
+          </h4>
+          <div className="pr-hint pr-hint--muted">
+            Auto-merge will handle this task automatically.
           </div>
         </div>
       );

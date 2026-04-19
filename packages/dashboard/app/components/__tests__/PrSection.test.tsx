@@ -151,6 +151,76 @@ describe("PrSection", () => {
     });
   });
 
+  describe("when autoMerge is enabled", () => {
+    it("hides manual PR controls and shows auto-merge messaging when no PR exists", () => {
+      render(
+        <PrSection
+          taskId="FN-001"
+          autoMerge={true}
+          hasGitHubToken={true}
+          onPrCreated={mockOnPrCreated}
+          onPrUpdated={mockOnPrUpdated}
+          addToast={mockAddToast}
+        />
+      );
+
+      expect(screen.queryByRole("button", { name: "Create PR" })).toBeNull();
+      expect(screen.queryByText(/GITHUB_TOKEN env var/i)).toBeNull();
+      expect(screen.getByText("Auto-merge will handle this task automatically.")).toBeDefined();
+    });
+
+    it("does not show GitHub token hint when auto-merge is enabled and token is missing", () => {
+      render(
+        <PrSection
+          taskId="FN-001"
+          autoMerge={true}
+          hasGitHubToken={false}
+          onPrCreated={mockOnPrCreated}
+          onPrUpdated={mockOnPrUpdated}
+          addToast={mockAddToast}
+        />
+      );
+
+      expect(screen.queryByText(/GITHUB_TOKEN env var/i)).toBeNull();
+      expect(screen.getByText("Auto-merge will handle this task automatically.")).toBeDefined();
+    });
+
+    it("still shows the creating-pr automation message when automation is active", () => {
+      render(
+        <PrSection
+          taskId="FN-001"
+          autoMerge={true}
+          automationStatus="creating-pr"
+          hasGitHubToken={false}
+          onPrCreated={mockOnPrCreated}
+          onPrUpdated={mockOnPrUpdated}
+          addToast={mockAddToast}
+        />
+      );
+
+      expect(screen.getByText(/creating a pull request automatically/i)).toBeDefined();
+      expect(screen.queryByText("Auto-merge will handle this task automatically.")).toBeNull();
+      expect(screen.queryByRole("button", { name: "Create PR" })).toBeNull();
+    });
+
+    it("preserves manual PR creation behavior when auto-merge is disabled", () => {
+      render(
+        <PrSection
+          taskId="FN-001"
+          autoMerge={false}
+          hasGitHubToken={false}
+          onPrCreated={mockOnPrCreated}
+          onPrUpdated={mockOnPrUpdated}
+          addToast={mockAddToast}
+        />
+      );
+
+      expect(screen.getByRole("button", { name: "Create PR" })).toBeDefined();
+      expect(screen.getByText(/GITHUB_TOKEN env var/i)).toBeDefined();
+      expect(screen.queryByText("Auto-merge will handle this task automatically.")).toBeNull();
+    });
+  });
+
   describe("when task has a PR", () => {
     it("displays PR info for open PR", () => {
       render(

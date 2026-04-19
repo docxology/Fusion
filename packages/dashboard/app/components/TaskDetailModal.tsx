@@ -1655,6 +1655,7 @@ export function TaskDetailModal({
               projectId={projectId}
               prInfo={task.prInfo}
               automationStatus={task.status ?? null}
+              autoMerge={settings?.autoMerge ?? false}
               hasGitHubToken={githubTokenConfigured ?? false}
               onPrCreated={(prInfo) => {
                 // Update task locally to show new PR
