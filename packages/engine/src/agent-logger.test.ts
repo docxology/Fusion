@@ -344,4 +344,116 @@ describe("AgentLogger", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(store.appendAgentLog).toHaveBeenCalledWith("FN-018", "Bash", "tool_result", undefined, "merger");
   });
+
+  describe("persistence failure observability", () => {
+    const warningFor = (warnSpy: ReturnType<typeof vi.spyOn>): string => {
+      return warnSpy.mock.calls.map((call) => call.map((arg) => String(arg)).join(" ")).join("\n");
+    };
+
+    it("text flush failure logs structured warning", async () => {
+      const store = {
+        appendAgentLog: vi.fn().mockRejectedValue(new Error("ENOSPC: no space left on device")),
+      } as unknown as TaskStore;
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const logger = new AgentLogger({
+        store,
+        taskId: "FN-2083-TEXT",
+        flushSizeBytes: 1,
+      });
+
+      logger.onText("some text");
+      await vi.advanceTimersByTimeAsync(0);
+
+      const warning = warningFor(warnSpy);
+      expect(warning).toContain("[agent-logger]");
+      expect(warning).toContain("FN-2083-TEXT");
+      expect(warning).toContain("ENOSPC");
+
+      warnSpy.mockRestore();
+    });
+
+    it("thinking flush failure logs structured warning", async () => {
+      const store = {
+        appendAgentLog: vi.fn().mockRejectedValue(new Error("ENOSPC: no space left on device")),
+      } as unknown as TaskStore;
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const logger = new AgentLogger({
+        store,
+        taskId: "FN-2083-THINK",
+        flushSizeBytes: 1,
+      });
+
+      logger.onThinking("deep thought");
+      await vi.advanceTimersByTimeAsync(0);
+
+      const warning = warningFor(warnSpy);
+      expect(warning).toContain("[agent-logger]");
+      expect(warning).toContain("FN-2083-THINK");
+      expect(warning).toContain("thinking");
+      expect(warning).toContain("ENOSPC");
+
+      warnSpy.mockRestore();
+    });
+
+    it("tool-start persistence failure logs structured warning", async () => {
+      const store = {
+        appendAgentLog: vi.fn().mockRejectedValue(new Error("EACCES: permission denied")),
+      } as unknown as TaskStore;
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const logger = new AgentLogger({ store, taskId: "FN-2083-TOOL-START" });
+
+      logger.onToolStart("Bash", { command: "ls" });
+      await vi.advanceTimersByTimeAsync(0);
+
+      const warning = warningFor(warnSpy);
+      expect(warning).toContain("[agent-logger]");
+      expect(warning).toContain("FN-2083-TOOL-START");
+      expect(warning).toContain("Bash");
+      expect(warning).toContain("EACCES");
+
+      warnSpy.mockRestore();
+    });
+
+    it("tool-end persistence failure logs structured warning", async () => {
+      const store = {
+        appendAgentLog: vi.fn().mockRejectedValue(new Error("EPERM: operation not permitted")),
+      } as unknown as TaskStore;
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const logger = new AgentLogger({ store, taskId: "FN-2083-TOOL-END" });
+
+      logger.onToolEnd("Bash", false, "output");
+      await vi.advanceTimersByTimeAsync(0);
+
+      const warning = warningFor(warnSpy);
+      expect(warning).toContain("[agent-logger]");
+      expect(warning).toContain("FN-2083-TOOL-END");
+      expect(warning).toContain("EPERM");
+
+      warnSpy.mockRestore();
+    });
+
+    it("flush() propagates text and thinking warnings", async () => {
+      const store = {
+        appendAgentLog: vi.fn().mockRejectedValue(new Error("ENOSPC: no space left on device")),
+      } as unknown as TaskStore;
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const logger = new AgentLogger({
+        store,
+        taskId: "FN-2083-FLUSH",
+        flushSizeBytes: 1024,
+      });
+
+      logger.onText("text");
+      logger.onThinking("thought");
+      await logger.flush();
+
+      const warning = warningFor(warnSpy);
+      expect(warnSpy).toHaveBeenCalledTimes(2);
+      expect(warning).toContain("[agent-logger]");
+      expect(warning).toContain("FN-2083-FLUSH");
+      expect(warning).toContain("ENOSPC");
+
+      warnSpy.mockRestore();
+    });
+  });
 });

@@ -1,9 +1,12 @@
 import type { TaskStore, AgentRole } from "@fusion/core";
+import { createLogger } from "./logger.js";
 
 /** Default byte threshold before an automatic flush. */
 const FLUSH_SIZE_BYTES = 1024;
 /** Default timer interval (ms) for periodic flush of small writes. */
 const FLUSH_INTERVAL_MS = 500;
+
+const log = createLogger("agent-logger");
 
 /**
  * Produce a human-readable summary from tool arguments.
@@ -147,7 +150,14 @@ export class AgentLogger {
     if (this.thinkingFlushTimer) { clearTimeout(this.thinkingFlushTimer); this.thinkingFlushTimer = null; }
     this.flushThinkingBuffer();
     const detail = summarizeToolArgs(name, args);
-    this.store.appendAgentLog(this.taskId, name, "tool", detail, this.agent).catch(() => {});
+    this.store.appendAgentLog(this.taskId, name, "tool", detail, this.agent).catch((err) => {
+      log.warn(
+        "Failed to persist tool-start log for task %s (tool: %s): %s",
+        this.taskId,
+        name,
+        err instanceof Error ? err.message : String(err),
+      );
+    });
   }
 
   /**
@@ -165,7 +175,15 @@ export class AgentLogger {
       const str = typeof result === "string" ? result : JSON.stringify(result);
       detail = str.length > 500 ? str.slice(0, 500) + "…" : str;
     }
-    this.store.appendAgentLog(this.taskId, name, type, detail, this.agent).catch(() => {});
+    this.store.appendAgentLog(this.taskId, name, type, detail, this.agent).catch((err) => {
+      log.warn(
+        "Failed to persist tool-end log for task %s (tool: %s, type: %s): %s",
+        this.taskId,
+        name,
+        type,
+        err instanceof Error ? err.message : String(err),
+      );
+    });
   }
 
   /**
@@ -185,8 +203,12 @@ export class AgentLogger {
     if (this.textBuffer.length === 0) return Promise.resolve();
     const chunk = this.textBuffer;
     this.textBuffer = "";
-    return this.store.appendAgentLog(this.taskId, chunk, "text", undefined, this.agent).catch(() => {
-      /* best-effort persistence */
+    return this.store.appendAgentLog(this.taskId, chunk, "text", undefined, this.agent).catch((err) => {
+      log.warn(
+        "Failed to persist text log for task %s: %s",
+        this.taskId,
+        err instanceof Error ? err.message : String(err),
+      );
     });
   }
 
@@ -194,8 +216,12 @@ export class AgentLogger {
     if (this.thinkingBuffer.length === 0) return Promise.resolve();
     const chunk = this.thinkingBuffer;
     this.thinkingBuffer = "";
-    return this.store.appendAgentLog(this.taskId, chunk, "thinking", undefined, this.agent).catch(() => {
-      /* best-effort persistence */
+    return this.store.appendAgentLog(this.taskId, chunk, "thinking", undefined, this.agent).catch((err) => {
+      log.warn(
+        "Failed to persist thinking log for task %s: %s",
+        this.taskId,
+        err instanceof Error ? err.message : String(err),
+      );
     });
   }
 
