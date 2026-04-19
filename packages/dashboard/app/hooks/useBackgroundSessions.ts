@@ -28,12 +28,7 @@ function parseTimestamp(updatedAt: string | undefined): number {
 }
 
 function shouldIncludeSession(session: AiSessionSummary): boolean {
-  return (
-    session.status === "generating" ||
-    session.status === "awaiting_input" ||
-    session.status === "complete" ||
-    session.status === "error"
-  );
+  return session.status === "generating" || session.status === "awaiting_input";
 }
 
 export function useBackgroundSessions(projectId?: string): UseBackgroundSessionsResult {
@@ -152,7 +147,11 @@ export function useBackgroundSessions(projectId?: string): UseBackgroundSessions
 
           sessionTimestampsRef.current.set(updated.id, eventTimestamp);
 
-          const idx = prev.findIndex((s) => s.id === updated.id);
+          if (updated.status === "complete" || updated.status === "error") {
+            return prev.filter((session) => session.id !== updated.id);
+          }
+
+          const idx = prev.findIndex((session) => session.id === updated.id);
           if (idx >= 0) {
             const next = [...prev];
             next[idx] = updated;

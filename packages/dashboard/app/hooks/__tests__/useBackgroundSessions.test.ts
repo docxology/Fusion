@@ -74,8 +74,6 @@ describe("useBackgroundSessions", () => {
     await waitFor(() => {
       expect(result.current.sessions.map((session) => session.id).sort()).toEqual([
         "s-awaiting",
-        "s-complete",
-        "s-error",
         "s-generating",
       ]);
     });
@@ -144,6 +142,97 @@ describe("useBackgroundSessions", () => {
       expect(result.current.sessions.find((session) => session.id === "sse-session")?.status).toBe(
         "awaiting_input",
       );
+    });
+  });
+
+  it("removes session when SSE delivers complete status", async () => {
+    const { result } = renderHook(() => useBackgroundSessions());
+
+    await waitFor(() => {
+      expect(MockEventSource.instances.length).toBeGreaterThan(0);
+    });
+
+    const eventSource = MockEventSource.instances[0]!;
+
+    act(() => {
+      eventSource._emit(
+        "ai_session:updated",
+        makeSession({
+          id: "terminal-complete",
+          type: "planning",
+          status: "generating",
+          updatedAt: "2026-04-08T00:00:01.000Z",
+        }),
+      );
+    });
+
+    await waitFor(() => {
+      expect(result.current.generating).toBe(1);
+      expect(result.current.sessions.map((session) => session.id)).toEqual(["terminal-complete"]);
+      expect(result.current.planningSessions.map((session) => session.id)).toEqual(["terminal-complete"]);
+    });
+
+    act(() => {
+      eventSource._emit(
+        "ai_session:updated",
+        makeSession({
+          id: "terminal-complete",
+          type: "planning",
+          status: "complete",
+          updatedAt: "2026-04-08T00:00:02.000Z",
+        }),
+      );
+    });
+
+    await waitFor(() => {
+      expect(result.current.sessions).toEqual([]);
+      expect(result.current.planningSessions).toEqual([]);
+      expect(result.current.generating).toBe(0);
+    });
+  });
+
+  it("removes session when SSE delivers error status", async () => {
+    const { result } = renderHook(() => useBackgroundSessions());
+
+    await waitFor(() => {
+      expect(MockEventSource.instances.length).toBeGreaterThan(0);
+    });
+
+    const eventSource = MockEventSource.instances[0]!;
+
+    act(() => {
+      eventSource._emit(
+        "ai_session:updated",
+        makeSession({
+          id: "terminal-error",
+          type: "planning",
+          status: "generating",
+          updatedAt: "2026-04-08T00:00:01.000Z",
+        }),
+      );
+    });
+
+    await waitFor(() => {
+      expect(result.current.sessions.map((session) => session.id)).toEqual(["terminal-error"]);
+      expect(result.current.planningSessions.map((session) => session.id)).toEqual(["terminal-error"]);
+    });
+
+    act(() => {
+      eventSource._emit(
+        "ai_session:updated",
+        makeSession({
+          id: "terminal-error",
+          type: "planning",
+          status: "error",
+          updatedAt: "2026-04-08T00:00:02.000Z",
+        }),
+      );
+    });
+
+    await waitFor(() => {
+      expect(result.current.sessions).toEqual([]);
+      expect(result.current.planningSessions).toEqual([]);
+      expect(result.current.generating).toBe(0);
     });
   });
 
@@ -259,8 +348,11 @@ describe("useBackgroundSessions", () => {
     await waitFor(() => {
       expect(result.current.generating).toBe(1);
       expect(result.current.needsInput).toBe(1);
-      expect(result.current.planningSessions.map((session) => session.id).sort()).toEqual([
-        "count-error-plan",
+      expect(result.current.planningSessions.map((session) => session.id)).toEqual([
+        "count-generating",
+      ]);
+      expect(result.current.sessions.map((session) => session.id).sort()).toEqual([
+        "count-awaiting",
         "count-generating",
       ]);
     });
