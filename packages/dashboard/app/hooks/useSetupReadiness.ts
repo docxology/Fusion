@@ -13,9 +13,15 @@ export interface SetupReadiness {
   hasWarnings: boolean;
 }
 
+interface GhCliStatus {
+  available: boolean;
+  authenticated: boolean;
+}
+
 interface SetupReadinessSnapshot {
   hasAiProvider: boolean;
   hasGithub: boolean;
+  ghCli?: GhCliStatus;
   expiresAt: number;
 }
 
@@ -41,9 +47,14 @@ function getFreshSnapshot(cacheKey: string): SetupReadinessSnapshot | null {
   return cached;
 }
 
-function evaluateProviders(providers: AuthProvider[]): Pick<SetupReadinessSnapshot, "hasAiProvider" | "hasGithub"> {
+function evaluateProviders(
+  providers: AuthProvider[],
+  ghCli?: GhCliStatus,
+): Pick<SetupReadinessSnapshot, "hasAiProvider" | "hasGithub"> {
   const hasAiProvider = providers.some((provider) => provider.id !== "github" && provider.authenticated);
-  const hasGithub = providers.some((provider) => provider.id === "github" && provider.authenticated);
+  const hasGithub =
+    providers.some((provider) => provider.id === "github" && provider.authenticated) ||
+    (ghCli?.authenticated ?? false);
 
   return {
     hasAiProvider,
@@ -58,10 +69,11 @@ async function fetchAndCacheSetupReadiness(cacheKey: string): Promise<SetupReadi
   }
 
   const request = fetchAuthStatus()
-    .then(({ providers }) => {
-      const computed = evaluateProviders(providers);
+    .then(({ providers, ghCli }) => {
+      const computed = evaluateProviders(providers, ghCli);
       const snapshot: SetupReadinessSnapshot = {
         ...computed,
+        ghCli,
         expiresAt: Date.now() + CACHE_TTL_MS,
       };
       setupReadinessCache.set(cacheKey, snapshot);
@@ -90,6 +102,7 @@ export function useSetupReadiness(projectId?: string): SetupReadiness {
 
   const [hasAiProvider, setHasAiProvider] = useState(initialSnapshot?.hasAiProvider ?? false);
   const [hasGithub, setHasGithub] = useState(initialSnapshot?.hasGithub ?? false);
+  const [, setGhCli] = useState<GhCliStatus | undefined>(initialSnapshot?.ghCli);
   const [loading, setLoading] = useState(initialSnapshot == null);
 
   const initialLoadCompleteRef = useRef(Boolean(initialSnapshot));
@@ -102,6 +115,7 @@ export function useSetupReadiness(projectId?: string): SetupReadiness {
     if (cached) {
       setHasAiProvider(cached.hasAiProvider);
       setHasGithub(cached.hasGithub);
+      setGhCli(cached.ghCli);
       setLoading(false);
       initialLoadCompleteRef.current = true;
       return () => {
@@ -124,6 +138,7 @@ export function useSetupReadiness(projectId?: string): SetupReadiness {
         }
         setHasAiProvider(snapshot.hasAiProvider);
         setHasGithub(snapshot.hasGithub);
+        setGhCli(snapshot.ghCli);
       } catch {
         // Best effort only: keep warnings visible when status cannot be fetched.
       } finally {

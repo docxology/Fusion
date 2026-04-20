@@ -903,8 +903,14 @@ export interface AuthProvider {
 }
 
 /** Fetch authentication status for all OAuth providers */
-export function fetchAuthStatus(): Promise<{ providers: AuthProvider[] }> {
-  return api<{ providers: AuthProvider[] }>("/auth/status");
+export function fetchAuthStatus(): Promise<{
+  providers: AuthProvider[];
+  ghCli?: { available: boolean; authenticated: boolean };
+}> {
+  return api<{
+    providers: AuthProvider[];
+    ghCli?: { available: boolean; authenticated: boolean };
+  }>("/auth/status");
 }
 
 /** Initiate OAuth login for a provider. Returns the auth URL to open in a new tab. */

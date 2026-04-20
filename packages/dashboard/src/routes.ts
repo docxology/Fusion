@@ -18,7 +18,7 @@ import * as nodeFs from "node:fs";
 
 import { promisify } from "node:util";
 import type { TaskStore, Column, ScheduleType, ActivityEventType, ModelPreset, MessageType, ParticipantType, RoutineTriggerType, ProjectSettings, EnrichedChatSession, PlanningSummary } from "@fusion/core";
-import { COLUMNS, VALID_TRANSITIONS, GLOBAL_SETTINGS_KEYS, type BatchStatusEntry, type BatchStatusResponse, type BatchStatusResult, type IssueInfo, type PrInfo, type Task, type PiExtensionEntry, type PiExtensionSettings, getCurrentRepo, isGhAuthenticated, AutomationStore, validateBackupSchedule, validateBackupRetention, validateBackupDir, syncBackupRoutine, exportSettings, importSettings, validateImportData, MessageStore, RoutineStore, isWebhookTrigger, resolveMemoryBackend, getMemoryBackendCapabilities, listMemoryBackendTypes, listProjectMemoryFiles, readProjectMemoryFile, readProjectMemoryFileContent, writeProjectMemoryFile, listAgentMemoryFiles, readAgentMemoryFile, writeAgentMemoryFile, readMemory, writeMemory, searchProjectMemory, isQmdAvailable, installQmd, refreshQmdProjectMemoryIndex, QMD_INSTALL_COMMAND, MemoryBackendError, scheduleQmdProjectMemoryRefresh, discoverPiExtensions, updatePiExtensionDisabledIds, getFusionAgentDir, getLegacyPiAgentDir, ensureMemoryFileWithBackend, readInsightsMemory, writeInsightsMemory, generateMemoryAudit, buildInsightExtractionPrompt, parseInsightExtractionResponse, processAndAuditInsightExtraction } from "@fusion/core";
+import { COLUMNS, VALID_TRANSITIONS, GLOBAL_SETTINGS_KEYS, type BatchStatusEntry, type BatchStatusResponse, type BatchStatusResult, type IssueInfo, type PrInfo, type Task, type PiExtensionEntry, type PiExtensionSettings, getCurrentRepo, isGhAvailable, isGhAuthenticated, AutomationStore, validateBackupSchedule, validateBackupRetention, validateBackupDir, syncBackupRoutine, exportSettings, importSettings, validateImportData, MessageStore, RoutineStore, isWebhookTrigger, resolveMemoryBackend, getMemoryBackendCapabilities, listMemoryBackendTypes, listProjectMemoryFiles, readProjectMemoryFile, readProjectMemoryFileContent, writeProjectMemoryFile, listAgentMemoryFiles, readAgentMemoryFile, writeAgentMemoryFile, readMemory, writeMemory, searchProjectMemory, isQmdAvailable, installQmd, refreshQmdProjectMemoryIndex, QMD_INSTALL_COMMAND, MemoryBackendError, scheduleQmdProjectMemoryRefresh, discoverPiExtensions, updatePiExtensionDisabledIds, getFusionAgentDir, getLegacyPiAgentDir, ensureMemoryFileWithBackend, readInsightsMemory, writeInsightsMemory, generateMemoryAudit, buildInsightExtractionPrompt, parseInsightExtractionResponse, processAndAuditInsightExtraction } from "@fusion/core";
 import type { ServerOptions } from "./server.js";
 import { GitHubClient, parseBadgeUrl } from "./github.js";
 import { githubRateLimiter } from "./github-poll.js";
@@ -18562,7 +18562,10 @@ function registerAuthRoutes(router: Router, authStorage?: AuthStorageLike): void
    * GET /api/auth/status
    * Returns list of all providers with their authentication status and type.
    * Includes both OAuth-backed and API-key-backed providers.
-   * Response: { providers: [{ id, name, authenticated, type, keyHint? }] }
+   * Response: {
+   *   providers: [{ id, name, authenticated, type, keyHint? }],
+   *   ghCli: { available: boolean, authenticated: boolean }
+   * }
    */
   router.get("/auth/status", (_req, res) => {
     try {
@@ -18599,7 +18602,12 @@ function registerAuthRoutes(router: Router, authStorage?: AuthStorageLike): void
         }
       }
 
-      res.json({ providers });
+      const ghCli = {
+        available: isGhAvailable(),
+        authenticated: isGhAuthenticated(),
+      };
+
+      res.json({ providers, ghCli });
     } catch (err: unknown) {
       if (err instanceof ApiError) {
         throw err;

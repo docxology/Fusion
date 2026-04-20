@@ -77,6 +77,54 @@ describe("useSetupReadiness", () => {
     expect(result.current.hasGithub).toBe(true);
   });
 
+  it("returns hasGithub=true when gh CLI is authenticated but GitHub OAuth is not", async () => {
+    mockFetchAuthStatus.mockResolvedValueOnce({
+      providers: [makeProvider("anthropic", true)],
+      ghCli: { available: true, authenticated: true },
+    });
+
+    const { result } = renderHook(() => useSetupReadiness());
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.hasGithub).toBe(true);
+    expect(result.current.hasWarnings).toBe(false);
+  });
+
+  it("returns hasGithub=true when both gh CLI and GitHub OAuth are authenticated", async () => {
+    mockFetchAuthStatus.mockResolvedValueOnce({
+      providers: [makeProvider("anthropic", true), makeProvider("github", true)],
+      ghCli: { available: true, authenticated: true },
+    });
+
+    const { result } = renderHook(() => useSetupReadiness());
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.hasGithub).toBe(true);
+  });
+
+  it("returns hasGithub=false when gh CLI is available but not authenticated and GitHub OAuth is not connected", async () => {
+    mockFetchAuthStatus.mockResolvedValueOnce({
+      providers: [makeProvider("anthropic", true)],
+      ghCli: { available: true, authenticated: false },
+    });
+
+    const { result } = renderHook(() => useSetupReadiness());
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.hasGithub).toBe(false);
+  });
+
+  it("returns hasGithub=false when ghCli is absent from response", async () => {
+    mockFetchAuthStatus.mockResolvedValueOnce({
+      providers: [makeProvider("anthropic", true)],
+    });
+
+    const { result } = renderHook(() => useSetupReadiness());
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.hasGithub).toBe(false);
+  });
+
   it("returns hasGithub=false when GitHub is missing or not authenticated", async () => {
     mockFetchAuthStatus.mockResolvedValueOnce({
       providers: [makeProvider("anthropic", true)],
