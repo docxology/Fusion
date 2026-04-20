@@ -5739,6 +5739,8 @@ export function streamChatResponse(
   handlers: {
     onThinking?: (data: string) => void;
     onText?: (data: string) => void;
+    onToolStart?: (data: { toolName: string; args?: Record<string, unknown> }) => void;
+    onToolEnd?: (data: { toolName: string; isError: boolean; result?: unknown }) => void;
     onDone?: (data: { messageId: string }) => void;
     onError?: (data: string) => void;
     onConnectionStateChange?: (state: StreamConnectionState) => void;
@@ -5771,6 +5773,20 @@ export function streamChatResponse(
           handlers.onText?.(JSON.parse(rawData));
         } catch {
           handlers.onText?.(rawData);
+        }
+        break;
+      case "tool_start":
+        try {
+          handlers.onToolStart?.(JSON.parse(rawData));
+        } catch {
+          // skip malformed event
+        }
+        break;
+      case "tool_end":
+        try {
+          handlers.onToolEnd?.(JSON.parse(rawData));
+        } catch {
+          // skip malformed event
         }
         break;
       case "done":

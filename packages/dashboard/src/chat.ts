@@ -86,6 +86,8 @@ const MAX_REFERENCED_FILE_SIZE = 50 * 1024;
 export type ChatStreamEvent =
   | { type: "thinking"; data: string }
   | { type: "text"; data: string }
+  | { type: "tool_start"; data: { toolName: string; args?: Record<string, unknown> } }
+  | { type: "tool_end"; data: { toolName: string; isError: boolean; result?: unknown } }
   | { type: "done"; data: { messageId: string } }
   | { type: "error"; data: string };
 
@@ -518,6 +520,14 @@ export class ChatManager {
     let agentResult: AgentResult | undefined;
     let accumulatedThinking = "";
     let accumulatedText = "";
+    type ToolCallRecord = {
+      toolName: string;
+      args?: Record<string, unknown>;
+      isError: boolean;
+      result?: unknown;
+    };
+    const toolCallsAccum: ToolCallRecord[] = [];
+    const pendingToolStarts = new Map<string, Array<{ toolName: string; args?: Record<string, unknown> }>>();
 
     try {
       // Validate session exists
@@ -670,6 +680,35 @@ export class ChatManager {
             data: delta,
           });
         },
+        onToolStart: (name: string, args?: Record<string, unknown>) => {
+          const pendingForTool = pendingToolStarts.get(name) ?? [];
+          pendingForTool.push({ toolName: name, args });
+          pendingToolStarts.set(name, pendingForTool);
+
+          chatStreamManager.broadcast(sessionId, {
+            type: "tool_start",
+            data: { toolName: name, args },
+          });
+        },
+        onToolEnd: (name: string, isError: boolean, result?: unknown) => {
+          const pendingForTool = pendingToolStarts.get(name);
+          const pendingStart = pendingForTool?.pop();
+          if (pendingForTool && pendingForTool.length === 0) {
+            pendingToolStarts.delete(name);
+          }
+
+          toolCallsAccum.push({
+            toolName: name,
+            args: pendingStart?.args,
+            isError,
+            result,
+          });
+
+          chatStreamManager.broadcast(sessionId, {
+            type: "tool_end",
+            data: { toolName: name, isError, result },
+          });
+        },
       });
       this.activeGenerations.set(sessionId, { abortController, agentResult });
 
@@ -714,6 +753,7 @@ export class ChatManager {
         role: "assistant",
         content: finalResponseText,
         thinkingOutput: accumulatedThinking || undefined,
+        metadata: toolCallsAccum.length > 0 ? { toolCalls: toolCallsAccum } : undefined,
       });
 
       // Broadcast done event
@@ -733,13 +773,16 @@ export class ChatManager {
       const errorMessage = err instanceof Error ? err.message : "AI processing failed";
       console.error(`[chat] Error in sendMessage for session ${sessionId}:`, err);
 
-      if (accumulatedText || accumulatedThinking) {
+      if (accumulatedText || accumulatedThinking || toolCallsAccum.length > 0) {
         try {
           this.chatStore.addMessage(sessionId, {
             role: "assistant",
             content: accumulatedText || "(response interrupted before text generation)",
             thinkingOutput: accumulatedThinking || undefined,
-            metadata: { interrupted: true },
+            metadata: {
+              interrupted: true,
+              ...(toolCallsAccum.length > 0 ? { toolCalls: toolCallsAccum } : {}),
+            },
           });
         } catch (persistErr) {
           console.error(`[chat] Failed to persist partial response for session ${sessionId}:`, persistErr);

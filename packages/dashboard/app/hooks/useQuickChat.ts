@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ChatSession } from "@fusion/core";
+import type { ChatMessage, ChatSession } from "@fusion/core";
 import {
   fetchChatSessions,
   createChatSession,
@@ -10,12 +10,21 @@ import {
 
 export const FN_AGENT_ID = "__fn_agent__";
 
+export interface ToolCallInfo {
+  toolName: string;
+  args?: Record<string, unknown>;
+  isError: boolean;
+  result?: unknown;
+  status: "running" | "completed";
+}
+
 export interface ChatMessageInfo {
   id: string;
   sessionId: string;
   role: "user" | "assistant" | "system";
   content: string;
   thinkingOutput?: string | null;
+  toolCalls?: ToolCallInfo[];
   createdAt: string;
 }
 
@@ -41,6 +50,7 @@ export interface UseQuickChatReturn {
   isStreaming: boolean;
   streamingText: string;
   streamingThinking: string;
+  streamingToolCalls: ToolCallInfo[];
   pendingMessage: string;
 
   // Operations
@@ -104,6 +114,51 @@ function findMatchingSession(sessions: ChatSession[], target: SessionTarget): Ch
   return candidateSessions.find((session) => !session.modelProvider && !session.modelId) ?? candidateSessions[0];
 }
 
+function extractCompletedToolCalls(metadata: Record<string, unknown> | null | undefined): ToolCallInfo[] | undefined {
+  const rawToolCalls = metadata?.toolCalls;
+  if (!Array.isArray(rawToolCalls)) {
+    return undefined;
+  }
+
+  const parsed = rawToolCalls
+    .map((toolCall): ToolCallInfo | null => {
+      if (!toolCall || typeof toolCall !== "object") {
+        return null;
+      }
+
+      const record = toolCall as Record<string, unknown>;
+      const toolName = typeof record.toolName === "string" ? record.toolName : "";
+      if (!toolName) {
+        return null;
+      }
+
+      const args = record.args;
+
+      return {
+        toolName,
+        ...(args && typeof args === "object" ? { args: args as Record<string, unknown> } : {}),
+        isError: Boolean(record.isError),
+        result: record.result,
+        status: "completed" as const,
+      };
+    })
+    .filter((toolCall): toolCall is ToolCallInfo => toolCall !== null);
+
+  return parsed.length > 0 ? parsed : undefined;
+}
+
+function mapChatMessageToInfo(message: ChatMessage): ChatMessageInfo {
+  return {
+    id: message.id,
+    sessionId: message.sessionId,
+    role: message.role,
+    content: message.content,
+    thinkingOutput: message.thinkingOutput,
+    toolCalls: extractCompletedToolCalls(message.metadata),
+    createdAt: message.createdAt,
+  };
+}
+
 /**
  * Hook for the QuickChatFAB component.
  * Provides chat session management and SSE streaming for real-time AI responses.
@@ -122,6 +177,7 @@ export function useQuickChat(
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingText, setStreamingText] = useState("");
   const [streamingThinking, setStreamingThinking] = useState("");
+  const [streamingToolCalls, setStreamingToolCalls] = useState<ToolCallInfo[]>([]);
   const [pendingMessage, setPendingMessage] = useState("");
 
   // Stream connection ref for cleanup
@@ -183,7 +239,7 @@ export function useQuickChat(
     setMessagesLoading(true);
     try {
       const data = await fetchChatMessages(activeSession.id, { limit: 50 }, projectId);
-      setMessages(data.messages);
+      setMessages(data.messages.map(mapChatMessageToInfo));
     } catch (err) {
       console.error("[useQuickChat] Failed to load messages:", err);
     } finally {
@@ -206,7 +262,7 @@ export function useQuickChat(
     setMessagesLoading(true);
     try {
       const data = await fetchChatMessages(activeSession.id, { limit: 50 }, projectId);
-      setMessages(data.messages);
+      setMessages(data.messages.map(mapChatMessageToInfo));
     } catch (err) {
       console.error("[useQuickChat] Failed to reload messages:", err);
     } finally {
@@ -231,6 +287,7 @@ export function useQuickChat(
       // Reset streaming state
       setStreamingText("");
       setStreamingThinking("");
+      setStreamingToolCalls([]);
       setIsStreaming(false);
 
       if (targetSessionKey === currentSessionKeyRef.current && activeSession) {
@@ -271,6 +328,7 @@ export function useQuickChat(
     setIsStreaming(false);
     setStreamingText("");
     setStreamingThinking("");
+    setStreamingToolCalls([]);
   }, [activeSession, projectId]);
 
   const clearPendingMessage = useCallback(() => {
@@ -311,11 +369,13 @@ export function useQuickChat(
       // Clear streaming state
       setStreamingText("");
       setStreamingThinking("");
+      setStreamingToolCalls([]);
       setIsStreaming(true);
 
-      // Accumulate streaming text in local variables
+      // Accumulate streaming text and tool calls in local variables
       let capturedText = "";
       let capturedThinking = "";
+      let capturedToolCalls: ToolCallInfo[] = [];
 
       const textHandlers = {
         onThinking: (data: string) => {
@@ -326,6 +386,46 @@ export function useQuickChat(
           capturedText += data;
           setStreamingText(capturedText);
         },
+        onToolStart: (data: { toolName: string; args?: Record<string, unknown> }) => {
+          capturedToolCalls = [
+            ...capturedToolCalls,
+            {
+              toolName: data.toolName,
+              args: data.args,
+              isError: false,
+              status: "running",
+            },
+          ];
+          setStreamingToolCalls(capturedToolCalls);
+        },
+        onToolEnd: (data: { toolName: string; isError: boolean; result?: unknown }) => {
+          const nextToolCalls = [...capturedToolCalls];
+          for (let i = nextToolCalls.length - 1; i >= 0; i--) {
+            const candidate = nextToolCalls[i];
+            if (candidate?.toolName === data.toolName && candidate.status === "running") {
+              nextToolCalls[i] = {
+                ...candidate,
+                status: "completed",
+                isError: data.isError,
+                result: data.result,
+              };
+              capturedToolCalls = nextToolCalls;
+              setStreamingToolCalls(nextToolCalls);
+              return;
+            }
+          }
+
+          capturedToolCalls = [
+            ...nextToolCalls,
+            {
+              toolName: data.toolName,
+              isError: data.isError,
+              result: data.result,
+              status: "completed",
+            },
+          ];
+          setStreamingToolCalls(capturedToolCalls);
+        },
         onDone: (data: { messageId: string }) => {
           const assistantMessage: ChatMessageInfo = {
             id: data.messageId || `msg-${Date.now()}`,
@@ -333,6 +433,7 @@ export function useQuickChat(
             role: "assistant",
             content: capturedText,
             thinkingOutput: capturedThinking || undefined,
+            toolCalls: capturedToolCalls.length > 0 ? capturedToolCalls : undefined,
             createdAt: new Date().toISOString(),
           };
 
@@ -341,6 +442,7 @@ export function useQuickChat(
 
           setStreamingText("");
           setStreamingThinking("");
+          setStreamingToolCalls([]);
           setIsStreaming(false);
           streamRef.current = null;
 
@@ -354,6 +456,7 @@ export function useQuickChat(
         onError: (data: string) => {
           setStreamingText("");
           setStreamingThinking("");
+          setStreamingToolCalls([]);
           setIsStreaming(false);
           streamRef.current = null;
           console.error("[useQuickChat] Stream error:", data);
@@ -395,6 +498,7 @@ export function useQuickChat(
     isStreaming,
     streamingText,
     streamingThinking,
+    streamingToolCalls,
     pendingMessage,
     sendMessage,
     stopStreaming,
@@ -411,6 +515,7 @@ export function useQuickChat(
     isStreaming,
     streamingText,
     streamingThinking,
+    streamingToolCalls,
     pendingMessage,
     sendMessage,
     stopStreaming,

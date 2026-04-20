@@ -309,6 +309,96 @@ describe("ChatManager.sendMessage", () => {
     expect(assistantCall?.[1].content).toBe("Hello world!");
   });
 
+
+  it("broadcasts tool_start and tool_end SSE events when agent calls tools", async () => {
+    const events: Array<{ type: string; data: unknown }> = [];
+    const unsubscribe = chatStreamManager.subscribe("chat-001", (event) => {
+      events.push(event);
+    });
+
+    let onToolStartCb: ((name: string, args?: Record<string, unknown>) => void) | undefined;
+    let onToolEndCb: ((name: string, isError: boolean, result?: unknown) => void) | undefined;
+
+    __setCreateFnAgent(async (options: any) => {
+      onToolStartCb = options.onToolStart;
+      onToolEndCb = options.onToolEnd;
+
+      return {
+        session: {
+          prompt: vi.fn().mockImplementation(async () => {
+            onToolStartCb?.("read", { path: "/foo.ts" });
+            onToolEndCb?.("read", false, "file contents");
+            options.onText?.("Done");
+          }),
+          dispose: vi.fn(),
+          state: {
+            messages: [{ role: "assistant", content: "Done" }],
+          },
+        },
+      };
+    });
+
+    const chatManager = createChatManager();
+    await chatManager.sendMessage("chat-001", "Use read tool");
+    unsubscribe();
+
+    expect(events).toContainEqual({
+      type: "tool_start",
+      data: { toolName: "read", args: { path: "/foo.ts" } },
+    });
+    expect(events).toContainEqual({
+      type: "tool_end",
+      data: { toolName: "read", isError: false, result: "file contents" },
+    });
+  });
+
+  it("persists tool calls in assistant message metadata", async () => {
+    let onToolStartCb: ((name: string, args?: Record<string, unknown>) => void) | undefined;
+    let onToolEndCb: ((name: string, isError: boolean, result?: unknown) => void) | undefined;
+
+    __setCreateFnAgent(async (options: any) => {
+      onToolStartCb = options.onToolStart;
+      onToolEndCb = options.onToolEnd;
+
+      return {
+        session: {
+          prompt: vi.fn().mockImplementation(async () => {
+            onToolStartCb?.("read", { path: "foo.ts" });
+            onToolEndCb?.("read", false, "contents");
+            options.onText?.("Here you go");
+          }),
+          dispose: vi.fn(),
+          state: {
+            messages: [{ role: "assistant", content: "Here you go" }],
+          },
+        },
+      };
+    });
+
+    const chatManager = createChatManager();
+    await chatManager.sendMessage("chat-001", "Read foo.ts");
+
+    const assistantCall = mockChatStore.addMessage.mock.calls.find(
+      (call) => call[1].role === "assistant",
+    );
+
+    expect(assistantCall).toBeDefined();
+    expect(assistantCall?.[1]).toEqual(
+      expect.objectContaining({
+        metadata: {
+          toolCalls: [
+            {
+              toolName: "read",
+              args: { path: "foo.ts" },
+              isError: false,
+              result: "contents",
+            },
+          ],
+        },
+      }),
+    );
+  });
+
   it("creates chat agents with the full coding toolset", async () => {
     let createOptions: any;
     __setCreateFnAgent(async (options: any) => {

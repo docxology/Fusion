@@ -42,74 +42,6 @@ function createSSEResponse(): {
   return { res, chunks };
 }
 
-/**
- * Parse collected SSE chunks into structured event objects.
- * SSE format: "id: N\nevent: event-name\ndata: {...}\n\n"
- */
-function parseSSEChunks(chunks: string[]): Array<{ id?: number; event: string; data: string }> {
-  const events: Array<{ id?: number; event: string; data: string }> = [];
-  let currentEvent: { id?: number; event: string; data: string } | null = null;
-
-  for (const chunk of chunks) {
-    // SSE events end with \n\n
-    const eventMatches = chunk.match(/([^\n]*\n)*/g);
-    const lines = chunk.split("\n").filter((l) => l !== "");
-
-    for (const line of lines) {
-      if (line.startsWith(":")) {
-        // Comment line - ignore
-        continue;
-      }
-
-      if (line === "") {
-        // Empty line marks end of event
-        if (currentEvent) {
-          events.push(currentEvent);
-          currentEvent = null;
-        }
-        continue;
-      }
-
-      const colonIndex = line.indexOf(":");
-      if (colonIndex === -1) continue;
-
-      const field = line.slice(0, colonIndex).trim();
-      const value = line.slice(colonIndex + 1).trim();
-
-      if (field === "id") {
-        if (!currentEvent) currentEvent = { event: "", data: "" };
-        currentEvent.id = parseInt(value, 10);
-      } else if (field === "event") {
-        if (!currentEvent) currentEvent = { event: "", data: "" };
-        currentEvent.event = value;
-      } else if (field === "data") {
-        if (!currentEvent) currentEvent = { event: "", data: "" };
-        currentEvent.data = value;
-      }
-    }
-  }
-
-  // Push last event if not already ended
-  if (currentEvent) {
-    events.push(currentEvent);
-  }
-
-  return events;
-}
-
-/**
- * Extract JSON data from an SSE message chunk.
- */
-function extractSSEPayload(sseChunk: string): unknown {
-  const dataMatch = sseChunk.match(/data: ([\s\S]*?)(?=\n\n|$)/);
-  if (!dataMatch) return {};
-  try {
-    return JSON.parse(dataMatch[1]);
-  } catch {
-    return dataMatch[1];
-  }
-}
-
 // ── Mock Setup ──────────────────────────────────────────────────────────────
 
 const mockInit = vi.fn().mockResolvedValue(undefined);
@@ -1070,7 +1002,7 @@ describe("Chat API Routes", () => {
         }
 
         // Get the actual handler function from the layer
-        const routeHandler = handler.route.stack[0].handle;
+        const routeHandler = handler.route.stack[handler.route.stack.length - 1].handle;
 
         // The handler is wrapped in middleware (rateLimit), so we need to call next
         const next = vi.fn();
@@ -1125,7 +1057,7 @@ describe("Chat API Routes", () => {
 
         // Invoke the handler - handler should execute without error
         const next = vi.fn();
-        const routeHandler = handler.route.stack[0].handle;
+        const routeHandler = handler.route.stack[handler.route.stack.length - 1].handle;
         const result = routeHandler(req, res, next);
 
         // If it returns a promise, await it
@@ -1135,6 +1067,55 @@ describe("Chat API Routes", () => {
 
         // Handler executed without throwing
         expect(true).toBe(true);
+      });
+
+
+      it("SSE route passes through tool_start and tool_end events", async () => {
+        mockGetSession.mockReturnValue(sampleSession);
+
+        const chatModule = await import("../chat.js");
+        vi.mocked(chatModule.checkRateLimit).mockReturnValue(true);
+
+        mockSendMessage.mockImplementation(async (sessionId: string) => {
+          mockChatStreamManager.broadcast(sessionId, {
+            type: "tool_start",
+            data: {
+              toolName: "read",
+              args: { path: "/foo.ts" },
+            },
+          });
+          mockChatStreamManager.broadcast(sessionId, {
+            type: "tool_end",
+            data: {
+              toolName: "read",
+              isError: false,
+              result: "file contents",
+            },
+          });
+          mockChatStreamManager.broadcast(sessionId, {
+            type: "done",
+            data: { messageId: "msg-tool" },
+          });
+        });
+
+        const req = createSSERequest();
+        const { res, chunks } = createSSEResponse();
+
+        req.body = { content: "Read #foo.ts" };
+        req.params = { id: "chat-abc123" };
+        req.query = {} as any;
+        req.headers = {} as any;
+        req.ip = "127.0.0.1";
+        req.socket = { remoteAddress: "127.0.0.1" } as any;
+
+        await invokeSSEHandler(req, res, store, mockChatStore, mockChatManager);
+
+        const output = chunks.join("");
+        expect(output).toContain("event: tool_start");
+        expect(output).toContain("event: tool_end");
+
+        expect(output).toContain('data: {"toolName":"read","args":{"path":"/foo.ts"}}');
+        expect(output).toContain('data: {"toolName":"read","isError":false,"result":"file contents"}');
       });
     });
   });

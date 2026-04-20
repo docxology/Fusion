@@ -12,7 +12,7 @@ import {
 } from "../api";
 import { subscribeSse } from "../sse-bus";
 import { getScopedItem, setScopedItem, removeScopedItem } from "../utils/projectStorage";
-import type { Agent } from "@fusion/core";
+import type { Agent, ChatMessage } from "@fusion/core";
 
 const ACTIVE_SESSION_STORAGE_KEY = "kb-chat-active-session";
 
@@ -29,12 +29,21 @@ export interface ChatSessionInfo {
   lastMessageAt?: string;
 }
 
+export interface ToolCallInfo {
+  toolName: string;
+  args?: Record<string, unknown>;
+  isError: boolean;
+  result?: unknown;
+  status: "running" | "completed";
+}
+
 export interface ChatMessageInfo {
   id: string;
   sessionId: string;
   role: "user" | "assistant" | "system";
   content: string;
   thinkingOutput?: string | null;
+  toolCalls?: ToolCallInfo[];
   createdAt: string;
 }
 
@@ -50,6 +59,7 @@ export interface UseChatReturn {
   isStreaming: boolean;
   streamingText: string;
   streamingThinking: string;
+  streamingToolCalls: ToolCallInfo[];
   pendingMessage: string;
 
   // Session operations
@@ -79,6 +89,51 @@ export interface UseChatReturn {
   agentsMap: Map<string, Agent>;
 }
 
+function extractCompletedToolCalls(metadata: Record<string, unknown> | null | undefined): ToolCallInfo[] | undefined {
+  const rawToolCalls = metadata?.toolCalls;
+  if (!Array.isArray(rawToolCalls)) {
+    return undefined;
+  }
+
+  const parsed = rawToolCalls
+    .map((toolCall): ToolCallInfo | null => {
+      if (!toolCall || typeof toolCall !== "object") {
+        return null;
+      }
+
+      const record = toolCall as Record<string, unknown>;
+      const toolName = typeof record.toolName === "string" ? record.toolName : "";
+      if (!toolName) {
+        return null;
+      }
+
+      const args = record.args;
+
+      return {
+        toolName,
+        ...(args && typeof args === "object" ? { args: args as Record<string, unknown> } : {}),
+        isError: Boolean(record.isError),
+        result: record.result,
+        status: "completed" as const,
+      };
+    })
+    .filter((toolCall): toolCall is ToolCallInfo => toolCall !== null);
+
+  return parsed.length > 0 ? parsed : undefined;
+}
+
+function mapChatMessageToInfo(message: ChatMessage): ChatMessageInfo {
+  return {
+    id: message.id,
+    sessionId: message.sessionId,
+    role: message.role,
+    content: message.content,
+    thinkingOutput: message.thinkingOutput,
+    toolCalls: extractCompletedToolCalls(message.metadata),
+    createdAt: message.createdAt,
+  };
+}
+
 export function useChat(projectId?: string): UseChatReturn {
   // Session state
   const [sessions, setSessions] = useState<ChatSessionInfo[]>([]);
@@ -91,6 +146,7 @@ export function useChat(projectId?: string): UseChatReturn {
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingText, setStreamingText] = useState("");
   const [streamingThinking, setStreamingThinking] = useState("");
+  const [streamingToolCalls, setStreamingToolCalls] = useState<ToolCallInfo[]>([]);
   const [pendingMessage, setPendingMessage] = useState("");
 
   // Search/filter
@@ -196,11 +252,12 @@ export function useChat(projectId?: string): UseChatReturn {
       setMessagesLoading(true);
       try {
         const data = await fetchChatMessages(sessionId, { limit: 50, ...opts }, projectId);
+        const mappedMessages = data.messages.map(mapChatMessageToInfo);
         if (opts?.offset && opts.offset > 0) {
           // Prepend older messages
-          setMessages((prev) => [...data.messages, ...prev]);
+          setMessages((prev) => [...mappedMessages, ...prev]);
         } else {
-          setMessages(data.messages);
+          setMessages(mappedMessages);
         }
         setHasMoreMessages(data.messages.length >= 50);
       } catch {
@@ -228,6 +285,7 @@ export function useChat(projectId?: string): UseChatReturn {
       // Reset streaming state
       setStreamingText("");
       setStreamingThinking("");
+      setStreamingToolCalls([]);
       setIsStreaming(false);
       setHasMoreMessages(true);
 
@@ -275,6 +333,7 @@ export function useChat(projectId?: string): UseChatReturn {
       setMessages([]);
       setStreamingText("");
       setStreamingThinking("");
+      setStreamingToolCalls([]);
       setIsStreaming(false);
       setHasMoreMessages(true);
 
@@ -339,6 +398,7 @@ export function useChat(projectId?: string): UseChatReturn {
     setIsStreaming(false);
     setStreamingText("");
     setStreamingThinking("");
+    setStreamingToolCalls([]);
   }, [activeSession, projectId]);
 
   const clearPendingMessage = useCallback(() => {
@@ -379,11 +439,13 @@ export function useChat(projectId?: string): UseChatReturn {
       // Clear streaming state
       setStreamingText("");
       setStreamingThinking("");
+      setStreamingToolCalls([]);
       setIsStreaming(true);
 
-      // Accumulate streaming text in local variables
+      // Accumulate streaming text and tool calls in local variables
       let capturedText = "";
       let capturedThinking = "";
+      let capturedToolCalls: ToolCallInfo[] = [];
 
       const textHandlers = {
         onThinking: (data: string) => {
@@ -394,6 +456,46 @@ export function useChat(projectId?: string): UseChatReturn {
           capturedText += data;
           setStreamingText(capturedText);
         },
+        onToolStart: (data: { toolName: string; args?: Record<string, unknown> }) => {
+          capturedToolCalls = [
+            ...capturedToolCalls,
+            {
+              toolName: data.toolName,
+              args: data.args,
+              isError: false,
+              status: "running",
+            },
+          ];
+          setStreamingToolCalls(capturedToolCalls);
+        },
+        onToolEnd: (data: { toolName: string; isError: boolean; result?: unknown }) => {
+          const nextToolCalls = [...capturedToolCalls];
+          for (let i = nextToolCalls.length - 1; i >= 0; i--) {
+            const candidate = nextToolCalls[i];
+            if (candidate?.toolName === data.toolName && candidate.status === "running") {
+              nextToolCalls[i] = {
+                ...candidate,
+                status: "completed",
+                isError: data.isError,
+                result: data.result,
+              };
+              capturedToolCalls = nextToolCalls;
+              setStreamingToolCalls(nextToolCalls);
+              return;
+            }
+          }
+
+          capturedToolCalls = [
+            ...nextToolCalls,
+            {
+              toolName: data.toolName,
+              isError: data.isError,
+              result: data.result,
+              status: "completed",
+            },
+          ];
+          setStreamingToolCalls(capturedToolCalls);
+        },
         onDone: (data: { messageId: string }) => {
           const assistantMessage: ChatMessageInfo = {
             id: data.messageId || `msg-${Date.now()}`,
@@ -401,6 +503,7 @@ export function useChat(projectId?: string): UseChatReturn {
             role: "assistant",
             content: capturedText,
             thinkingOutput: capturedThinking,
+            toolCalls: capturedToolCalls.length > 0 ? capturedToolCalls : undefined,
             createdAt: new Date().toISOString(),
           };
 
@@ -412,6 +515,7 @@ export function useChat(projectId?: string): UseChatReturn {
 
           setStreamingText("");
           setStreamingThinking("");
+          setStreamingToolCalls([]);
           setIsStreaming(false);
           streamRef.current = null;
 
@@ -433,6 +537,7 @@ export function useChat(projectId?: string): UseChatReturn {
           setMessages((prev) => prev.filter((m) => m.id !== tempId));
           setStreamingText("");
           setStreamingThinking("");
+          setStreamingToolCalls([]);
           setIsStreaming(false);
           streamRef.current = null;
           console.error("[useChat] Stream error:", data);
@@ -506,7 +611,8 @@ export function useChat(projectId?: string): UseChatReturn {
 
     const handleChatMessageAdded = (e: MessageEvent) => {
       if (isStale()) return;
-      const message: ChatMessageInfo = JSON.parse(e.data);
+      const rawMessage = JSON.parse(e.data) as ChatMessage;
+      const message = mapChatMessageToInfo(rawMessage);
 
       // Skip if this message was already added via streaming completion
       // (SSE event may arrive before streaming state clears)
@@ -564,6 +670,7 @@ export function useChat(projectId?: string): UseChatReturn {
     isStreaming,
     streamingText,
     streamingThinking,
+    streamingToolCalls,
     pendingMessage,
     selectSession,
     createSession,

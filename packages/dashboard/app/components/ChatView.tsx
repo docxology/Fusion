@@ -9,8 +9,9 @@ import {
   ChevronLeft,
   Bot,
   Square,
+  Wrench,
 } from "lucide-react";
-import { useChat } from "../hooks/useChat";
+import { useChat, type ToolCallInfo } from "../hooks/useChat";
 import { useViewportMode } from "./Header";
 import { fetchAgents, fetchDiscoveredSkills, fetchModels } from "../api";
 import type { Agent } from "@fusion/core";
@@ -106,6 +107,111 @@ function formatModelTag(provider?: string | null, modelId?: string | null): stri
     .replace(/\s+/g, " ")
     .trim();
   return formatted.length > 30 ? formatted.slice(0, 30) + "…" : formatted;
+}
+
+function truncateValue(value: string, maxLength: number): string {
+  return value.length > maxLength ? `${value.slice(0, maxLength)}…` : value;
+}
+
+function formatToolArgsSummary(args?: Record<string, unknown>): string | null {
+  if (!args) return null;
+
+  const entries = Object.entries(args);
+  if (entries.length === 0) return null;
+
+  return entries
+    .map(([key, value]) => {
+      let stringValue = "";
+      if (typeof value === "string") {
+        stringValue = value;
+      } else {
+        try {
+          stringValue = JSON.stringify(value);
+        } catch {
+          stringValue = String(value);
+        }
+      }
+      return `${key}=${truncateValue(stringValue, 50)}`;
+    })
+    .join(", ");
+}
+
+function formatToolResultSummary(result: unknown): string | null {
+  if (result === undefined) {
+    return null;
+  }
+
+  if (typeof result === "string") {
+    return truncateValue(result, 200);
+  }
+
+  try {
+    return truncateValue(JSON.stringify(result), 200);
+  } catch {
+    return truncateValue(String(result), 200);
+  }
+}
+
+function renderToolCalls(toolCalls?: ToolCallInfo[]): ReactNode {
+  if (!toolCalls || toolCalls.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="chat-tool-calls" data-testid="chat-tool-calls">
+      <div className="chat-tool-calls-header">
+        <Wrench size={12} aria-hidden="true" />
+        <span>Tool calls</span>
+      </div>
+      {toolCalls.map((toolCall, index) => {
+        const isRunning = toolCall.status === "running";
+        const isError = toolCall.status === "completed" && toolCall.isError;
+        const argsSummary = formatToolArgsSummary(toolCall.args);
+        const resultSummary = formatToolResultSummary(toolCall.result);
+        const summaryPreview = isRunning
+          ? argsSummary
+          : resultSummary
+            ? `result: ${resultSummary}`
+            : argsSummary
+              ? `args: ${argsSummary}`
+              : null;
+        const statusLabel = isRunning ? "running" : isError ? "error" : "completed";
+
+        return (
+          <details
+            key={`${toolCall.toolName}-${index}`}
+            className={`chat-tool-call${isRunning ? " chat-tool-call--running" : ""}${isError ? " chat-tool-call--error" : ""}`}
+            open={isRunning}
+          >
+            <summary>
+              <span className="chat-tool-call-status-dot" aria-hidden="true" />
+              <span className="chat-tool-call-name">{toolCall.toolName}</span>
+              {summaryPreview && (
+                <span className="chat-tool-call-preview" title={summaryPreview}>
+                  {summaryPreview}
+                </span>
+              )}
+              <span className="chat-tool-call-status-text">{statusLabel}</span>
+            </summary>
+            <div className="chat-tool-call-content">
+              {argsSummary && (
+                <div className="chat-tool-call-row">
+                  <span className="chat-tool-call-label">args</span>
+                  <span className="chat-tool-call-value">{argsSummary}</span>
+                </div>
+              )}
+              {resultSummary && (
+                <div className={`chat-tool-call-row${isError ? " chat-tool-call-row--error" : ""}`}>
+                  <span className="chat-tool-call-label">result</span>
+                  <span className="chat-tool-call-value">{resultSummary}</span>
+                </div>
+              )}
+            </div>
+          </details>
+        );
+      })}
+    </div>
+  );
 }
 
 /**
@@ -316,6 +422,7 @@ export function ChatView({ projectId, addToast }: ChatViewProps) {
     isStreaming,
     streamingText,
     streamingThinking,
+    streamingToolCalls,
     selectSession,
     createSession,
     archiveSession,
@@ -1056,6 +1163,7 @@ export function ChatView({ projectId, addToast }: ChatViewProps) {
                     </div>
                   )}
                   <div className="chat-message-content">{renderMessageContent(message.content)}</div>
+                  {renderToolCalls(message.toolCalls)}
                   {message.thinkingOutput && (
                     <details className="chat-message-thinking">
                       <summary>Thinking</summary>
@@ -1079,6 +1187,7 @@ export function ChatView({ projectId, addToast }: ChatViewProps) {
                       {streamingThinking ? "Thinking…" : "Connecting…"}
                     </div>
                   )}
+                  {renderToolCalls(streamingToolCalls)}
                   {streamingThinking && (
                     <details className="chat-message-thinking">
                       <summary>Thinking</summary>

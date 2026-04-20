@@ -88,6 +88,8 @@ function createMockStreamResponse() {
   const handlers: {
     onThinking?: (data: string) => void;
     onText?: (data: string) => void;
+    onToolStart?: (data: { toolName: string; args?: Record<string, unknown> }) => void;
+    onToolEnd?: (data: { toolName: string; isError: boolean; result?: unknown }) => void;
     onDone?: (data: { messageId: string }) => void;
     onError?: (data: string) => void;
     onConnectionStateChange?: (state: string) => void;
@@ -454,6 +456,8 @@ describe("QuickChatFAB", () => {
         expect.objectContaining({
           onThinking: expect.any(Function),
           onText: expect.any(Function),
+          onToolStart: expect.any(Function),
+          onToolEnd: expect.any(Function),
           onDone: expect.any(Function),
           onError: expect.any(Function),
         }),
@@ -608,6 +612,71 @@ describe("QuickChatFAB", () => {
     // After streaming completes, input should be re-enabled
     await waitFor(() => {
       expect(screen.getByTestId("quick-chat-input")).not.toBeDisabled();
+    });
+  });
+
+  it("renders tool calls in quick chat messages", async () => {
+    mockStreamChatResponse.mockImplementation((_sessionId, _content, handlers) => {
+      setTimeout(() => {
+        handlers.onText?.("Used read tool");
+        handlers.onToolStart?.({ toolName: "read", args: { path: "foo.ts" } });
+        handlers.onToolEnd?.({ toolName: "read", isError: false, result: "contents" });
+        handlers.onDone?.({ messageId: "msg-tool" });
+      }, 0);
+
+      return {
+        close: vi.fn(),
+        isConnected: vi.fn(() => true),
+      };
+    });
+
+    render(<QuickChatFAB addToast={addToast} projectId="proj-123" />);
+
+    fireEvent.click(screen.getByTestId("quick-chat-fab"));
+    await waitFor(() => {
+      expect(mockFetchChatSessions).toHaveBeenCalled();
+    });
+
+    const input = await screen.findByTestId("quick-chat-input");
+    fireEvent.change(input, { target: { value: "Show tools" } });
+    fireEvent.click(screen.getByTestId("quick-chat-send"));
+
+    await waitFor(() => {
+      expect(screen.getByText("read")).toBeInTheDocument();
+      expect(screen.getByText("Tool calls")).toBeInTheDocument();
+    });
+
+    const preview = document.querySelector(".chat-tool-call-preview");
+    expect(preview).toHaveTextContent("result: contents");
+  });
+
+  it("shows streaming tool calls during generation", async () => {
+    mockStreamChatResponse.mockImplementation((_sessionId, _content, handlers) => {
+      handlers.onText?.("Still working");
+      handlers.onToolStart?.({ toolName: "read", args: { path: "foo.ts" } });
+
+      return {
+        close: vi.fn(),
+        isConnected: vi.fn(() => true),
+      };
+    });
+
+    render(<QuickChatFAB addToast={addToast} projectId="proj-123" />);
+
+    fireEvent.click(screen.getByTestId("quick-chat-fab"));
+    await waitFor(() => {
+      expect(mockFetchChatSessions).toHaveBeenCalled();
+    });
+
+    const input = await screen.findByTestId("quick-chat-input");
+    fireEvent.change(input, { target: { value: "Stream tools" } });
+    fireEvent.click(screen.getByTestId("quick-chat-send"));
+
+    await waitFor(() => {
+      const streamingMessage = screen.getByTestId("quick-chat-streaming-message");
+      expect(within(streamingMessage).getByText("read")).toBeInTheDocument();
+      expect(streamingMessage.querySelector(".chat-tool-call--running")).toBeTruthy();
+      expect(streamingMessage.querySelector(".chat-tool-call-preview")).toHaveTextContent("path=foo.ts");
     });
   });
 

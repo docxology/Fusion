@@ -94,6 +94,7 @@ const defaultChatState = {
   isStreaming: false,
   streamingText: "",
   streamingThinking: "",
+  streamingToolCalls: [],
   selectSession: vi.fn(),
   createSession: vi.fn().mockResolvedValue({ id: "session-new", agentId: "__fn_agent__" }),
   archiveSession: vi.fn(),
@@ -396,6 +397,143 @@ describe("ChatView", () => {
 
     expect(screen.getByText("Hello")).toBeInTheDocument();
     expect(screen.getByText("Hi there!")).toBeInTheDocument();
+  });
+
+  it("renders tool calls from persisted messages", () => {
+    setupMockChat({
+      activeSession: { id: "session-001", agentId: "agent-001", status: "active", title: "Tool Chat", updatedAt: "2026-04-08T00:00:00.000Z" },
+      messages: [
+        {
+          id: "msg-002",
+          sessionId: "session-001",
+          role: "assistant",
+          content: "I used a tool",
+          toolCalls: [
+            {
+              toolName: "read",
+              args: { path: "foo.ts" },
+              isError: false,
+              result: "contents",
+              status: "completed",
+            },
+          ],
+          createdAt: "2026-04-08T00:01:00.000Z",
+        },
+      ],
+    });
+
+    render(<ChatView projectId="proj-123" addToast={vi.fn()} />);
+
+    expect(screen.getByText("read")).toBeInTheDocument();
+    const preview = document.querySelector(".chat-tool-call-preview");
+    expect(preview).toHaveTextContent("result: contents");
+  });
+
+  it("renders streaming tool calls", () => {
+    setupMockChat({
+      activeSession: { id: "session-001", agentId: "agent-001", status: "active", title: "Tool Chat", updatedAt: "2026-04-08T00:00:00.000Z" },
+      messages: [{ id: "msg-001", sessionId: "session-001", role: "user", content: "Use tools", createdAt: "2026-04-08T00:00:00.000Z" }],
+      isStreaming: true,
+      streamingText: "Working...",
+      streamingToolCalls: [
+        {
+          toolName: "read",
+          args: { path: "foo.ts" },
+          isError: false,
+          status: "running",
+        },
+      ],
+    });
+
+    render(<ChatView projectId="proj-123" addToast={vi.fn()} />);
+
+    const streamingBubble = document.querySelector(".chat-message--streaming");
+    expect(streamingBubble).toBeInTheDocument();
+    expect(within(streamingBubble as HTMLElement).getByText("read")).toBeInTheDocument();
+    const preview = (streamingBubble as HTMLElement).querySelector(".chat-tool-call-preview");
+    expect(preview).toHaveTextContent("path=foo.ts");
+  });
+
+  it("completed tool calls are collapsed by default", () => {
+    setupMockChat({
+      activeSession: { id: "session-001", agentId: "agent-001", status: "active", title: "Tool Chat", updatedAt: "2026-04-08T00:00:00.000Z" },
+      messages: [
+        {
+          id: "msg-002",
+          sessionId: "session-001",
+          role: "assistant",
+          content: "Done",
+          toolCalls: [
+            {
+              toolName: "read",
+              isError: false,
+              result: "contents",
+              status: "completed",
+            },
+          ],
+          createdAt: "2026-04-08T00:01:00.000Z",
+        },
+      ],
+    });
+
+    render(<ChatView projectId="proj-123" addToast={vi.fn()} />);
+
+    const details = document.querySelector(".chat-tool-call") as HTMLDetailsElement | null;
+    expect(details).toBeInTheDocument();
+    expect(details?.open).toBe(false);
+  });
+
+  it("running tool calls show running indicator", () => {
+    setupMockChat({
+      activeSession: { id: "session-001", agentId: "agent-001", status: "active", title: "Tool Chat", updatedAt: "2026-04-08T00:00:00.000Z" },
+      messages: [
+        {
+          id: "msg-002",
+          sessionId: "session-001",
+          role: "assistant",
+          content: "Running",
+          toolCalls: [
+            {
+              toolName: "read",
+              isError: false,
+              status: "running",
+            },
+          ],
+          createdAt: "2026-04-08T00:01:00.000Z",
+        },
+      ],
+    });
+
+    render(<ChatView projectId="proj-123" addToast={vi.fn()} />);
+
+    expect(document.querySelector(".chat-tool-call--running")).toBeInTheDocument();
+  });
+
+  it("error tool calls show error styling", () => {
+    setupMockChat({
+      activeSession: { id: "session-001", agentId: "agent-001", status: "active", title: "Tool Chat", updatedAt: "2026-04-08T00:00:00.000Z" },
+      messages: [
+        {
+          id: "msg-002",
+          sessionId: "session-001",
+          role: "assistant",
+          content: "Error",
+          toolCalls: [
+            {
+              toolName: "read",
+              isError: true,
+              result: "failed",
+              status: "completed",
+            },
+          ],
+          createdAt: "2026-04-08T00:01:00.000Z",
+        },
+      ],
+    });
+
+    render(<ChatView projectId="proj-123" addToast={vi.fn()} />);
+
+    expect(document.querySelector(".chat-tool-call--error")).toBeInTheDocument();
   });
 
   it("shows resolved agent name in assistant message avatar", async () => {
