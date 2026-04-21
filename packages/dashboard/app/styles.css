@@ -1745,20 +1745,24 @@ body {
   background: var(--badge-mission-bg-hover);
 }
 
+.card-agent-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-top: var(--space-xs);
+}
+
 .card-agent-badge {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: var(--text-xs);
+  font-size: 10px;
   font-weight: 600;
-  font-family: var(--font-mono);
   color: var(--text-muted);
-  background: var(--card-agent-badge-bg, rgba(139, 148, 158, 0.15));
-  border: 1px solid var(--card-agent-badge-border, rgba(139, 148, 158, 0.28));
+  background: color-mix(in srgb, var(--text-muted) 18%, transparent);
+  border: 1px solid color-mix(in srgb, var(--text-muted) 35%, transparent);
   padding: 2px 6px;
-  border-radius: 9999px;
-  flex-shrink: 0;
-  max-width: 120px;
+  border-radius: var(--radius-pill);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

@@ -2841,7 +2841,11 @@ export class TaskExecutor {
         // The task is already in in-progress, so we need to:
         // 1. Move to todo (this triggers the guard to clear)
         // 2. Move back to in-progress (this triggers fresh execution)
+        // moveTask(in-progress → todo) clears `task.worktree`; restore it before
+        // the return trip so the dashboard never renders the task under
+        // "Unassigned" and self-healing can't reclaim the worktree as idle.
         await this.store.moveTask(task.id, "todo");
+        await this.store.updateTask(task.id, { worktree: worktreePath });
         await this.store.moveTask(task.id, "in-progress");
         executorLog.log(`${task.id}: revision rerun scheduled — moved to todo then in-progress`);
       } catch (err: unknown) {
@@ -2970,8 +2974,12 @@ ${feedback}
     executorLog.log(`${task.id}: scheduling fresh execution after workflow step failure (retry ${retryCount}/${MAX_WORKFLOW_STEP_RETRIES})`);
     setTimeout(async () => {
       try {
-        // Move task to todo briefly, then back to in-progress to trigger fresh execution
+        // Move task to todo briefly, then back to in-progress to trigger fresh execution.
+        // moveTask(in-progress → todo) clears `task.worktree`; restore it before
+        // the return trip so the dashboard never renders the task under
+        // "Unassigned" and self-healing can't reclaim the worktree as idle.
         await this.store.moveTask(task.id, "todo");
+        await this.store.updateTask(task.id, { worktree: worktreePath });
         await this.store.moveTask(task.id, "in-progress");
         executorLog.log(`${task.id}: workflow step retry scheduled — moved to todo then in-progress`);
       } catch (err: unknown) {
@@ -3040,7 +3048,11 @@ ${feedback}
     // 6. Schedule the move after the guard unwinds (per guard-unwind requirement)
     setTimeout(async () => {
       try {
+        // moveTask(in-progress → todo) clears `task.worktree`; restore it before
+        // the return trip so the dashboard never renders the task under
+        // "Unassigned" and self-healing can't reclaim the worktree as idle.
         await this.store.moveTask(taskId, "todo");
+        await this.store.updateTask(taskId, { worktree: worktreePath });
         await this.store.moveTask(taskId, "in-progress");
         executorLog.log(`${taskId}: sent back to in-progress for remediation`);
       } catch (err: unknown) {
