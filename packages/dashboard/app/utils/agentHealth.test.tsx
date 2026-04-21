@@ -42,6 +42,7 @@ describe("getAgentHealthStatus", () => {
       const agent = makeAgent({ state: "terminated" });
       const status = getAgentHealthStatus(agent);
       expect(status.label).toBe("Terminated");
+      expect(status.stateDerived).toBe(true);
       expect(status.color).toBe("var(--state-error-text)");
     });
 
@@ -52,6 +53,7 @@ describe("getAgentHealthStatus", () => {
       });
       const status = getAgentHealthStatus(agent);
       expect(status.label).toBe("Terminated");
+      expect(status.stateDerived).toBe(true);
     });
   });
 
@@ -60,6 +62,7 @@ describe("getAgentHealthStatus", () => {
       const agent = makeAgent({ state: "error" });
       const status = getAgentHealthStatus(agent);
       expect(status.label).toBe("Error");
+      expect(status.stateDerived).toBe(true);
       expect(status.color).toBe("var(--state-error-text)");
     });
 
@@ -67,6 +70,7 @@ describe("getAgentHealthStatus", () => {
       const agent = makeAgent({ state: "error", lastError: "Agent crashed" });
       const status = getAgentHealthStatus(agent);
       expect(status.label).toBe("Agent crashed");
+      expect(status.stateDerived).toBe(false);
     });
 
     it("ignores heartbeat data for error agents", () => {
@@ -76,6 +80,7 @@ describe("getAgentHealthStatus", () => {
       });
       const status = getAgentHealthStatus(agent);
       expect(status.label).toBe("Error");
+      expect(status.stateDerived).toBe(true);
     });
   });
 
@@ -84,6 +89,7 @@ describe("getAgentHealthStatus", () => {
       const agent = makeAgent({ state: "paused" });
       const status = getAgentHealthStatus(agent);
       expect(status.label).toBe("Paused");
+      expect(status.stateDerived).toBe(true);
       expect(status.color).toBe("var(--state-paused-text)");
     });
 
@@ -91,6 +97,7 @@ describe("getAgentHealthStatus", () => {
       const agent = makeAgent({ state: "paused", pauseReason: "User requested" });
       const status = getAgentHealthStatus(agent);
       expect(status.label).toBe("Paused: User requested");
+      expect(status.stateDerived).toBe(false);
     });
 
     it("ignores heartbeat data for paused agents", () => {
@@ -100,6 +107,7 @@ describe("getAgentHealthStatus", () => {
       });
       const status = getAgentHealthStatus(agent);
       expect(status.label).toBe("Paused");
+      expect(status.stateDerived).toBe(true);
     });
   });
 
@@ -108,6 +116,7 @@ describe("getAgentHealthStatus", () => {
       const agent = makeAgent({ state: "running" });
       const status = getAgentHealthStatus(agent);
       expect(status.label).toBe("Running");
+      expect(status.stateDerived).toBe(true);
       expect(status.color).toBe("var(--state-active-text)");
     });
 
@@ -118,6 +127,7 @@ describe("getAgentHealthStatus", () => {
       });
       const status = getAgentHealthStatus(agent);
       expect(status.label).toBe("Running");
+      expect(status.stateDerived).toBe(true);
     });
   });
 
@@ -131,6 +141,7 @@ describe("getAgentHealthStatus", () => {
       });
       const status = getAgentHealthStatus(agent);
       expect(status.label).toBe("Disabled");
+      expect(status.stateDerived).toBe(false);
       expect(status.color).toBe("var(--text-secondary)");
     });
 
@@ -142,6 +153,7 @@ describe("getAgentHealthStatus", () => {
       });
       const status = getAgentHealthStatus(agent);
       expect(status.label).toBe("Disabled");
+      expect(status.stateDerived).toBe(false);
     });
 
     it('returns "Disabled" for idle agents with monitoring disabled', () => {
@@ -151,6 +163,7 @@ describe("getAgentHealthStatus", () => {
       });
       const status = getAgentHealthStatus(agent);
       expect(status.label).toBe("Disabled");
+      expect(status.stateDerived).toBe(false);
     });
   });
 
@@ -171,6 +184,7 @@ describe("getAgentHealthStatus", () => {
       });
       const status = getAgentHealthStatus(agent);
       expect(status.label).toBe("Running");
+      expect(status.stateDerived).toBe(true);
       expect(status.color).toBe("var(--state-active-text)");
     });
 
@@ -185,6 +199,7 @@ describe("getAgentHealthStatus", () => {
       });
       const status = getAgentHealthStatus(agent);
       expect(status.label).toBe("Running");
+      expect(status.stateDerived).toBe(true);
       expect(status.color).toBe("var(--state-active-text)");
     });
 
@@ -197,6 +212,7 @@ describe("getAgentHealthStatus", () => {
       });
       const status = getAgentHealthStatus(agent);
       expect(status.label).toBe("Disabled");
+      expect(status.stateDerived).toBe(false);
     });
   });
 
@@ -207,6 +223,7 @@ describe("getAgentHealthStatus", () => {
       const agent = makeAgent({ state: "active" });
       const status = getAgentHealthStatus(agent);
       expect(status.label).toBe("Starting...");
+      expect(status.stateDerived).toBe(false);
       expect(status.color).toBe("var(--text-secondary)");
     });
 
@@ -214,6 +231,7 @@ describe("getAgentHealthStatus", () => {
       const agent = makeAgent({ state: "idle" });
       const status = getAgentHealthStatus(agent);
       expect(status.label).toBe("Idle");
+      expect(status.stateDerived).toBe(false);
       expect(status.color).toBe("var(--text-secondary)");
     });
 
@@ -222,6 +240,7 @@ describe("getAgentHealthStatus", () => {
       const agent = makeAgent({ state: "idle", lastHeartbeatAt: undefined });
       const status = getAgentHealthStatus(agent);
       expect(status.label).toBe("Idle");
+      expect(status.stateDerived).toBe(false);
     });
   });
 
@@ -236,6 +255,7 @@ describe("getAgentHealthStatus", () => {
       });
       const status = getAgentHealthStatus(agent);
       expect(status.label).toBe("Healthy");
+      expect(status.stateDerived).toBe(false);
       expect(status.color).toBe("var(--state-active-text)");
     });
 
@@ -247,6 +267,7 @@ describe("getAgentHealthStatus", () => {
       });
       const status = getAgentHealthStatus(agent);
       expect(status.label).toBe("Healthy");
+      expect(status.stateDerived).toBe(false);
     });
 
     it('returns "Unresponsive" when heartbeat exceeds the timeout with periodic heartbeat', () => {
@@ -257,6 +278,7 @@ describe("getAgentHealthStatus", () => {
       });
       const status = getAgentHealthStatus(agent);
       expect(status.label).toBe("Unresponsive");
+      expect(status.stateDerived).toBe(false);
       expect(status.color).toBe("var(--state-error-text)");
     });
 
@@ -269,6 +291,7 @@ describe("getAgentHealthStatus", () => {
       });
       const status = getAgentHealthStatus(agent);
       expect(status.label).toBe("Healthy");
+      expect(status.stateDerived).toBe(false);
     });
 
     it("marks as unresponsive when exceeding per-agent timeout", () => {
@@ -280,6 +303,7 @@ describe("getAgentHealthStatus", () => {
       });
       const status = getAgentHealthStatus(agent);
       expect(status.label).toBe("Unresponsive");
+      expect(status.stateDerived).toBe(false);
     });
   });
 
@@ -295,6 +319,7 @@ describe("getAgentHealthStatus", () => {
       });
       const status = getAgentHealthStatus(agent);
       expect(status.label).toBe("Healthy");
+      expect(status.stateDerived).toBe(false);
       expect(status.color).toBe("var(--state-active-text)");
     });
 
@@ -306,6 +331,7 @@ describe("getAgentHealthStatus", () => {
       });
       const status = getAgentHealthStatus(agent);
       expect(status.label).toBe("Healthy");
+      expect(status.stateDerived).toBe(false);
     });
 
     it('returns "Healthy" for agent with heartbeatIntervalMs: 0 (invalid, treated as non-periodic)', () => {
@@ -316,6 +342,7 @@ describe("getAgentHealthStatus", () => {
       });
       const status = getAgentHealthStatus(agent);
       expect(status.label).toBe("Healthy");
+      expect(status.stateDerived).toBe(false);
     });
 
     it('returns "Healthy" for agent with heartbeatIntervalMs: -5000 (negative, treated as non-periodic)', () => {
@@ -326,6 +353,7 @@ describe("getAgentHealthStatus", () => {
       });
       const status = getAgentHealthStatus(agent);
       expect(status.label).toBe("Healthy");
+      expect(status.stateDerived).toBe(false);
     });
 
     it('returns "Healthy" for agent with heartbeatIntervalMs: undefined (non-periodic)', () => {
@@ -336,6 +364,7 @@ describe("getAgentHealthStatus", () => {
       });
       const status = getAgentHealthStatus(agent);
       expect(status.label).toBe("Healthy");
+      expect(status.stateDerived).toBe(false);
     });
 
     it('returns "Healthy" for periodic agent with heartbeatIntervalMs: 60000 and stale heartbeat shows "Unresponsive"', () => {
@@ -346,6 +375,7 @@ describe("getAgentHealthStatus", () => {
       });
       const status = getAgentHealthStatus(agent);
       expect(status.label).toBe("Unresponsive");
+      expect(status.stateDerived).toBe(false);
     });
   });
 
@@ -359,6 +389,7 @@ describe("getAgentHealthStatus", () => {
       });
       const status = getAgentHealthStatus(agent);
       expect(status.label).toBe("Healthy");
+      expect(status.stateDerived).toBe(false);
     });
 
     it("returns 'Healthy' for agent with runtimeConfig but no heartbeatIntervalMs", () => {
@@ -369,6 +400,7 @@ describe("getAgentHealthStatus", () => {
       });
       const status = getAgentHealthStatus(agent);
       expect(status.label).toBe("Healthy");
+      expect(status.stateDerived).toBe(false);
     });
 
     it("handles custom timeout of 30 seconds with periodic heartbeat", () => {
@@ -379,6 +411,7 @@ describe("getAgentHealthStatus", () => {
       });
       const status = getAgentHealthStatus(agent);
       expect(status.label).toBe("Unresponsive");
+      expect(status.stateDerived).toBe(false);
     });
 
     it("handles custom timeout of 120 seconds with periodic heartbeat", () => {
@@ -389,6 +422,7 @@ describe("getAgentHealthStatus", () => {
       });
       const status = getAgentHealthStatus(agent);
       expect(status.label).toBe("Healthy");
+      expect(status.stateDerived).toBe(false);
     });
 
     it("handles very short timeout of 5 seconds with periodic heartbeat", () => {
@@ -399,6 +433,86 @@ describe("getAgentHealthStatus", () => {
       });
       const status = getAgentHealthStatus(agent);
       expect(status.label).toBe("Unresponsive");
+      expect(status.stateDerived).toBe(false);
+    });
+  });
+
+  describe("stateDerived semantics", () => {
+    it.each([
+      {
+        name: "paused without reason",
+        agent: makeAgent({ state: "paused" }),
+        expectedLabel: "Paused",
+        expectedStateDerived: true,
+      },
+      {
+        name: "paused with reason",
+        agent: makeAgent({ state: "paused", pauseReason: "Backoff" }),
+        expectedLabel: "Paused: Backoff",
+        expectedStateDerived: false,
+      },
+      {
+        name: "running",
+        agent: makeAgent({ state: "running" }),
+        expectedLabel: "Running",
+        expectedStateDerived: true,
+      },
+      {
+        name: "error without lastError",
+        agent: makeAgent({ state: "error" }),
+        expectedLabel: "Error",
+        expectedStateDerived: true,
+      },
+      {
+        name: "error with lastError",
+        agent: makeAgent({ state: "error", lastError: "OOM" }),
+        expectedLabel: "OOM",
+        expectedStateDerived: false,
+      },
+      {
+        name: "terminated",
+        agent: makeAgent({ state: "terminated" }),
+        expectedLabel: "Terminated",
+        expectedStateDerived: true,
+      },
+      {
+        name: "healthy",
+        agent: makeAgent({ state: "active", lastHeartbeatAt: new Date(FIXED_NOW - 10_000).toISOString() }),
+        expectedLabel: "Healthy",
+        expectedStateDerived: false,
+      },
+      {
+        name: "unresponsive",
+        agent: makeAgent({
+          state: "active",
+          lastHeartbeatAt: new Date(FIXED_NOW - 120_000).toISOString(),
+          runtimeConfig: { heartbeatIntervalMs: 30_000 },
+        }),
+        expectedLabel: "Unresponsive",
+        expectedStateDerived: false,
+      },
+      {
+        name: "idle",
+        agent: makeAgent({ state: "idle", lastHeartbeatAt: undefined }),
+        expectedLabel: "Idle",
+        expectedStateDerived: false,
+      },
+      {
+        name: "starting",
+        agent: makeAgent({ state: "active", lastHeartbeatAt: undefined }),
+        expectedLabel: "Starting...",
+        expectedStateDerived: false,
+      },
+      {
+        name: "disabled",
+        agent: makeAgent({ state: "active", runtimeConfig: { enabled: false } }),
+        expectedLabel: "Disabled",
+        expectedStateDerived: false,
+      },
+    ])("sets stateDerived correctly for $name", ({ agent, expectedLabel, expectedStateDerived }) => {
+      const status = getAgentHealthStatus(agent);
+      expect(status.label).toBe(expectedLabel);
+      expect(status.stateDerived).toBe(expectedStateDerived);
     });
   });
 
@@ -413,6 +527,7 @@ describe("getAgentHealthStatus", () => {
       });
       const status = getAgentHealthStatus(agent);
       expect(status.label).toBe("Healthy");
+      expect(status.stateDerived).toBe(false);
     });
 
     it("handles empty runtimeConfig object", () => {
@@ -423,6 +538,7 @@ describe("getAgentHealthStatus", () => {
       });
       const status = getAgentHealthStatus(agent);
       expect(status.label).toBe("Healthy");
+      expect(status.stateDerived).toBe(false);
     });
 
     it("treats runtimeConfig.enabled as true when undefined (non-periodic)", () => {
@@ -433,6 +549,7 @@ describe("getAgentHealthStatus", () => {
       });
       const status = getAgentHealthStatus(agent);
       expect(status.label).toBe("Healthy"); // non-periodic agents are always Healthy when they have heartbeat
+      expect(status.stateDerived).toBe(false);
     });
 
     it("treats runtimeConfig.enabled === true with periodic heartbeat", () => {
@@ -443,6 +560,7 @@ describe("getAgentHealthStatus", () => {
       });
       const status = getAgentHealthStatus(agent);
       expect(status.label).toBe("Healthy"); // within 120s timeout
+      expect(status.stateDerived).toBe(false);
     });
 
     it("returns consistent icons for all states", () => {

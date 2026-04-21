@@ -14,6 +14,7 @@ import type { AgentLogEntry, Task } from "@fusion/core";
 import { AgentLogViewer } from "./AgentLogViewer";
 import { AgentReflectionsTab } from "./AgentReflectionsTab";
 import { getAgentHealthStatus } from "../utils/agentHealth";
+import type { AgentHealthStatus } from "../utils/agentHealth";
 import { SkillMultiselect } from "./SkillMultiselect";
 import { subscribeSse } from "../sse-bus";
 import { DEFAULT_HEARTBEAT_INTERVAL_MS, formatHeartbeatInterval } from "../utils/heartbeatIntervals";
@@ -326,8 +327,16 @@ export function AgentDetailView({ agentId, projectId, onClose, addToast, onChild
   };
 
   // Use centralized health status utility for consistent labels across all views
-  const getHealthStatus = () => {
-    if (!agent) return { label: "Unknown", color: "var(--text-muted, #8b949e)" };
+  const getHealthStatus = (): AgentHealthStatus => {
+    if (!agent) {
+      return {
+        label: "Unknown",
+        icon: <Bot size={14} />,
+        color: "var(--text-muted, #8b949e)",
+        stateDerived: false,
+      };
+    }
+
     return getAgentHealthStatus(agent);
   };
 
@@ -377,9 +386,9 @@ export function AgentDetailView({ agentId, projectId, onClose, addToast, onChild
                 >
                   {agent.state}
                 </span>
-                <span className="badge" style={{ color: health.color }}>
-                  {"icon" in health ? health.icon : null}
-                  {health.label}
+                <span className="badge" style={{ color: health.color }} title={health.label}>
+                  {health.icon}
+                  {!health.stateDerived && health.label}
                 </span>
               </div>
             </div>
@@ -620,7 +629,7 @@ function DashboardTab({
   projectId,
 }: { 
   agent: AgentDetail; 
-  health: { label: string; color: string };
+  health: AgentHealthStatus;
   onChildClick?: (childId: string) => void;
   projectId?: string;
 }) {
@@ -748,8 +757,8 @@ function DashboardTab({
           </div>
           <div className="info-item">
             <span className="info-label">Health</span>
-            <span className="info-value" style={{ color: health.color }}>
-              {health.label}
+            <span className="info-value" style={{ color: health.color }} title={health.label}>
+              {!health.stateDerived ? health.label : health.icon}
             </span>
           </div>
           {modelDisplay && (

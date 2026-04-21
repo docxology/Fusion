@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import type { JSX } from "react";
 import { X, Plus, Play, Pause, Square, Activity, Heart, Trash2, RefreshCw, Bot, LayoutGrid, List, Filter } from "lucide-react";
 import type { Agent, AgentCapability, AgentState } from "../api";
 import { fetchAgents, createAgent, updateAgent, updateAgentState, deleteAgent } from "../api";
 import { getScopedItem, setScopedItem } from "../utils/projectStorage";
 import { getAgentHealthStatus } from "../utils/agentHealth";
+import type { AgentHealthStatus } from "../utils/agentHealth";
 
 interface AgentListModalProps {
   isOpen: boolean;
@@ -169,7 +169,7 @@ export function AgentListModal({ isOpen, onClose, addToast, projectId }: AgentLi
 
   // Use centralized health status utility for consistent labels across all views
   // This fixes the previous hardcoded 60s timeout that was inconsistent with other views
-  const getHealthStatus = (agent: Agent): { label: string; icon: JSX.Element; color: string } => {
+  const getHealthStatus = (agent: Agent): AgentHealthStatus => {
     return getAgentHealthStatus(agent);
   };
 
@@ -473,8 +473,8 @@ export function AgentListModal({ isOpen, onClose, addToast, projectId }: AgentLi
                         >
                           {agent.state}
                         </span>
-                        <span className="badge" style={{ color: health.color }}>
-                          {health.icon} {health.label}
+                        <span className="badge" style={{ color: health.color }} title={health.label}>
+                          {health.icon}{!health.stateDerived && ` ${health.label}`}
                         </span>
                         <span className="badge text-secondary">
                           {getRoleLabel(agent.role)}

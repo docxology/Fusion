@@ -10,6 +10,8 @@ export interface AgentHealthStatus {
   label: string;
   icon: JSX.Element;
   color: string;
+  /** True when label only mirrors agent.state and adds no extra context */
+  stateDerived: boolean;
 }
 
 type AgentHealthInput = Pick<
@@ -90,7 +92,7 @@ function isTaskWorkerAgent(agent: AgentHealthInput): boolean {
  * - "Unresponsive" — heartbeat exceeded the configured timeout
  *
  * @param agent - The agent object (partial Agent shape is accepted)
- * @returns A health status object with label, icon, and color
+ * @returns A health status object with label, icon, color, and stateDerived metadata
  */
 export function getAgentHealthStatus(agent: AgentHealthInput): AgentHealthStatus {
   const { state, lastHeartbeatAt, lastError, pauseReason, runtimeConfig } = agent;
@@ -102,6 +104,7 @@ export function getAgentHealthStatus(agent: AgentHealthInput): AgentHealthStatus
       label: "Terminated",
       icon: <Square size={14} />,
       color: "var(--state-error-text)",
+      stateDerived: true,
     };
   }
 
@@ -110,6 +113,7 @@ export function getAgentHealthStatus(agent: AgentHealthInput): AgentHealthStatus
       label: lastError ?? "Error",
       icon: <Activity size={14} />,
       color: "var(--state-error-text)",
+      stateDerived: !lastError,
     };
   }
 
@@ -119,6 +123,7 @@ export function getAgentHealthStatus(agent: AgentHealthInput): AgentHealthStatus
       label,
       icon: <Pause size={14} />,
       color: "var(--state-paused-text)",
+      stateDerived: !pauseReason,
     };
   }
 
@@ -127,6 +132,7 @@ export function getAgentHealthStatus(agent: AgentHealthInput): AgentHealthStatus
       label: "Running",
       icon: <Activity size={14} />,
       color: "var(--state-active-text)",
+      stateDerived: true,
     };
   }
 
@@ -136,6 +142,7 @@ export function getAgentHealthStatus(agent: AgentHealthInput): AgentHealthStatus
       label: "Disabled",
       icon: <Bot size={14} />,
       color: "var(--text-secondary)",
+      stateDerived: false,
     };
   }
 
@@ -145,6 +152,7 @@ export function getAgentHealthStatus(agent: AgentHealthInput): AgentHealthStatus
       label: state === "active" ? "Starting..." : "Idle",
       icon: <Bot size={14} />,
       color: "var(--text-secondary)",
+      stateDerived: false,
     };
   }
 
@@ -157,6 +165,7 @@ export function getAgentHealthStatus(agent: AgentHealthInput): AgentHealthStatus
       label: "Healthy",
       icon: <Heart size={14} />,
       color: "var(--state-active-text)",
+      stateDerived: false,
     };
   }
 
@@ -170,6 +179,7 @@ export function getAgentHealthStatus(agent: AgentHealthInput): AgentHealthStatus
       label: "Unresponsive",
       icon: <Activity size={14} />,
       color: "var(--state-error-text)",
+      stateDerived: false,
     };
   }
 
@@ -177,6 +187,7 @@ export function getAgentHealthStatus(agent: AgentHealthInput): AgentHealthStatus
     label: "Healthy",
     icon: <Heart size={14} />,
     color: "var(--state-active-text)",
+    stateDerived: false,
   };
 }
 

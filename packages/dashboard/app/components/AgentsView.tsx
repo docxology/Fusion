@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import type { JSX } from "react";
 import { Plus, Play, Pause, Square, Activity, Heart, Trash2, RefreshCw, Bot, LayoutGrid, List, ChevronRight, ChevronDown, GitBranch, Filter, Upload, Network } from "lucide-react";
 import type { Agent, AgentCapability, AgentState, OrgTreeNode } from "../api";
 import { fetchAgents, updateAgent, updateAgentState, deleteAgent, startAgentRun, fetchOrgTree } from "../api";
@@ -14,6 +13,7 @@ import { NewAgentDialog } from "./NewAgentDialog";
 import { AgentImportModal } from "./AgentImportModal";
 import { getScopedItem, setScopedItem } from "../utils/projectStorage";
 import { getAgentHealthStatus } from "../utils/agentHealth";
+import type { AgentHealthStatus } from "../utils/agentHealth";
 import {
   formatHeartbeatInterval,
   getHeartbeatIntervalOptions,
@@ -62,7 +62,7 @@ function AgentTreeNode({
   onToggle: (id: string) => void;
   isExpanded: (id: string) => boolean;
   getChildCount: (id: string) => number;
-  getHealthStatus: (agent: Agent) => { label: string; icon: JSX.Element; color: string };
+  getHealthStatus: (agent: Agent) => AgentHealthStatus;
   getRoleIcon: (role: AgentCapability) => string;
   getSkillBadges: (agent: Agent) => string[];
 }) {
@@ -156,7 +156,7 @@ function OrgChartNode({
 }: {
   node: OrgTreeNode;
   onSelect: (id: string) => void;
-  getHealthStatus: (agent: Agent) => { label: string; icon: JSX.Element; color: string };
+  getHealthStatus: (agent: Agent) => AgentHealthStatus;
   getRoleIcon: (role: AgentCapability) => string;
   getSkillBadges: (agent: Agent) => string[];
 }) {
@@ -190,7 +190,7 @@ function OrgChartNode({
           </span>
           <span className="org-chart-node__health" style={{ color: health.color }} title={health.label}>
             {health.icon}
-            <span className="text-secondary">{health.label}</span>
+            {!health.stateDerived && <span className="text-secondary">{health.label}</span>}
           </span>
           {/* Org chart: up to 2 skill badges */}
           {(() => {
@@ -475,7 +475,7 @@ export function AgentsView({ addToast, projectId }: AgentsViewProps) {
   };
 
   // Use centralized health status utility for consistent labels across all views
-  const getHealthStatus = (agent: Agent): { label: string; icon: JSX.Element; color: string } => {
+  const getHealthStatus = (agent: Agent): AgentHealthStatus => {
     return getAgentHealthStatus(agent);
   };
 
@@ -914,8 +914,8 @@ export function AgentsView({ addToast, projectId }: AgentsViewProps) {
                       >
                         {agent.state}
                       </span>
-                      <span className="badge" style={{ color: health.color }}>
-                        {health.icon} {health.label}
+                      <span className="badge" style={{ color: health.color }} title={health.label}>
+                        {health.icon}{!health.stateDerived && ` ${health.label}`}
                       </span>
                       <span className="badge text-secondary">
                         {getRoleLabel(agent.role)}
