@@ -59,28 +59,110 @@ function configurePiPackage(): void {
 
 configurePiPackage();
 
-// Dynamic imports so the pi-coding-agent config module sees PI_PACKAGE_DIR
-const { runDashboard } = await import("./commands/dashboard.js");
-const { runServe } = await import("./commands/serve.js");
-const { runDaemon } = await import("./commands/daemon.js");
-const { runDesktop } = await import("./commands/desktop.js");
-const { runTaskCreate, runTaskList, runTaskMove, runTaskMerge, runTaskUpdate, runTaskLog, runTaskLogs, runTaskShow, runTaskAttach, runTaskPause, runTaskUnpause, runTaskImportFromGitHub, runTaskDuplicate, runTaskArchive, runTaskUnarchive, runTaskRefine, runTaskPlan, runTaskDelete, runTaskRetry, runTaskComment, runTaskComments, runTaskSteer, runTaskPrCreate } = await import("./commands/task.js");
-const { runSettingsShow, runSettingsSet } = await import("./commands/settings.js");
-const { runSettingsExport } = await import("./commands/settings-export.js");
-const { runSettingsImport } = await import("./commands/settings-import.js");
-const { runGitStatus, runGitFetch, runGitPull, runGitPush } = await import("./commands/git.js");
-const { runBackupCreate, runBackupList, runBackupRestore, runBackupCleanup } = await import("./commands/backup.js");
-const { runMissionCreate, runMissionList, runMissionShow, runMissionDelete, runMissionActivateSlice } = await import("./commands/mission.js");
-const { runProjectList, runProjectAdd, runProjectRemove, runProjectShow, runProjectInfo, runProjectSetDefault, runProjectDetect } = await import("./commands/project.js");
-const { runNodeList, runNodeConnect, runNodeDisconnect, runNodeShow, runNodeHealth, runMeshStatus } = await import("./commands/node.js");
-const { runInit } = await import("./commands/init.js");
-const { runAgentStop, runAgentStart } = await import("./commands/agent.js");
-const { runAgentImport } = await import("./commands/agent-import.js");
-const { runAgentExport } = await import("./commands/agent-export.js");
-const { runMessageInbox, runMessageOutbox, runMessageSend, runMessageRead, runMessageDelete, runAgentMailbox } = await import("./commands/message.js");
-const { runPluginList, runPluginInstall, runPluginUninstall, runPluginEnable, runPluginDisable } = await import("./commands/plugin.js");
-const { runPluginCreate } = await import("./commands/plugin-scaffold.js");
-const { runSkillsSearch, runSkillsInstall } = await import("./commands/skills.js");
+// Command handlers are loaded lazily so --help can return immediately
+// without importing the full command graph.
+async function loadCommandHandlers() {
+  const { runDashboard } = await import("./commands/dashboard.js");
+  const { runServe } = await import("./commands/serve.js");
+  const { runDaemon } = await import("./commands/daemon.js");
+  const { runDesktop } = await import("./commands/desktop.js");
+  const { runTaskCreate, runTaskList, runTaskMove, runTaskMerge, runTaskUpdate, runTaskLog, runTaskLogs, runTaskShow, runTaskAttach, runTaskPause, runTaskUnpause, runTaskImportFromGitHub, runTaskDuplicate, runTaskArchive, runTaskUnarchive, runTaskRefine, runTaskPlan, runTaskDelete, runTaskRetry, runTaskComment, runTaskComments, runTaskSteer, runTaskPrCreate } = await import("./commands/task.js");
+  const { runSettingsShow, runSettingsSet } = await import("./commands/settings.js");
+  const { runSettingsExport } = await import("./commands/settings-export.js");
+  const { runSettingsImport } = await import("./commands/settings-import.js");
+  const { runGitStatus, runGitFetch, runGitPull, runGitPush } = await import("./commands/git.js");
+  const { runBackupCreate, runBackupList, runBackupRestore, runBackupCleanup } = await import("./commands/backup.js");
+  const { runMissionCreate, runMissionList, runMissionShow, runMissionDelete, runMissionActivateSlice } = await import("./commands/mission.js");
+  const { runProjectList, runProjectAdd, runProjectRemove, runProjectShow, runProjectInfo, runProjectSetDefault, runProjectDetect } = await import("./commands/project.js");
+  const { runNodeList, runNodeConnect, runNodeDisconnect, runNodeShow, runNodeHealth, runMeshStatus } = await import("./commands/node.js");
+  const { runInit } = await import("./commands/init.js");
+  const { runAgentStop, runAgentStart } = await import("./commands/agent.js");
+  const { runAgentImport } = await import("./commands/agent-import.js");
+  const { runAgentExport } = await import("./commands/agent-export.js");
+  const { runMessageInbox, runMessageOutbox, runMessageSend, runMessageRead, runMessageDelete, runAgentMailbox } = await import("./commands/message.js");
+  const { runPluginList, runPluginInstall, runPluginUninstall, runPluginEnable, runPluginDisable } = await import("./commands/plugin.js");
+  const { runPluginCreate } = await import("./commands/plugin-scaffold.js");
+  const { runSkillsSearch, runSkillsInstall } = await import("./commands/skills.js");
+
+  return {
+    runDashboard,
+    runServe,
+    runDaemon,
+    runDesktop,
+    runTaskCreate,
+    runTaskList,
+    runTaskMove,
+    runTaskMerge,
+    runTaskUpdate,
+    runTaskLog,
+    runTaskLogs,
+    runTaskShow,
+    runTaskAttach,
+    runTaskPause,
+    runTaskUnpause,
+    runTaskImportFromGitHub,
+    runTaskDuplicate,
+    runTaskArchive,
+    runTaskUnarchive,
+    runTaskRefine,
+    runTaskPlan,
+    runTaskDelete,
+    runTaskRetry,
+    runTaskComment,
+    runTaskComments,
+    runTaskSteer,
+    runTaskPrCreate,
+    runSettingsShow,
+    runSettingsSet,
+    runSettingsExport,
+    runSettingsImport,
+    runGitStatus,
+    runGitFetch,
+    runGitPull,
+    runGitPush,
+    runBackupCreate,
+    runBackupList,
+    runBackupRestore,
+    runBackupCleanup,
+    runMissionCreate,
+    runMissionList,
+    runMissionShow,
+    runMissionDelete,
+    runMissionActivateSlice,
+    runProjectList,
+    runProjectAdd,
+    runProjectRemove,
+    runProjectShow,
+    runProjectInfo,
+    runProjectSetDefault,
+    runProjectDetect,
+    runNodeList,
+    runNodeConnect,
+    runNodeDisconnect,
+    runNodeShow,
+    runNodeHealth,
+    runMeshStatus,
+    runInit,
+    runAgentStop,
+    runAgentStart,
+    runAgentImport,
+    runAgentExport,
+    runMessageInbox,
+    runMessageOutbox,
+    runMessageSend,
+    runMessageRead,
+    runMessageDelete,
+    runAgentMailbox,
+    runPluginList,
+    runPluginInstall,
+    runPluginUninstall,
+    runPluginEnable,
+    runPluginDisable,
+    runPluginCreate,
+    runSkillsSearch,
+    runSkillsInstall,
+  };
+}
 
 const HELP = `
 fn — AI-orchestrated task board
@@ -314,6 +396,85 @@ async function main() {
   if (command !== "init" && command !== "dashboard") {
     await checkAndMigrate();
   }
+
+  const {
+    runDashboard,
+    runServe,
+    runDaemon,
+    runDesktop,
+    runTaskCreate,
+    runTaskList,
+    runTaskMove,
+    runTaskMerge,
+    runTaskUpdate,
+    runTaskLog,
+    runTaskLogs,
+    runTaskShow,
+    runTaskAttach,
+    runTaskPause,
+    runTaskUnpause,
+    runTaskImportFromGitHub,
+    runTaskDuplicate,
+    runTaskArchive,
+    runTaskUnarchive,
+    runTaskRefine,
+    runTaskPlan,
+    runTaskDelete,
+    runTaskRetry,
+    runTaskComment,
+    runTaskComments,
+    runTaskSteer,
+    runTaskPrCreate,
+    runSettingsShow,
+    runSettingsSet,
+    runSettingsExport,
+    runSettingsImport,
+    runGitStatus,
+    runGitFetch,
+    runGitPull,
+    runGitPush,
+    runBackupCreate,
+    runBackupList,
+    runBackupRestore,
+    runBackupCleanup,
+    runMissionCreate,
+    runMissionList,
+    runMissionShow,
+    runMissionDelete,
+    runMissionActivateSlice,
+    runProjectList,
+    runProjectAdd,
+    runProjectRemove,
+    runProjectShow,
+    runProjectInfo,
+    runProjectSetDefault,
+    runProjectDetect,
+    runNodeList,
+    runNodeConnect,
+    runNodeDisconnect,
+    runNodeShow,
+    runNodeHealth,
+    runMeshStatus,
+    runInit,
+    runAgentStop,
+    runAgentStart,
+    runAgentImport,
+    runAgentExport,
+    runMessageInbox,
+    runMessageOutbox,
+    runMessageSend,
+    runMessageRead,
+    runMessageDelete,
+    runAgentMailbox,
+    runPluginList,
+    runPluginInstall,
+    runPluginUninstall,
+    runPluginEnable,
+    runPluginDisable,
+    runPluginCreate,
+    runSkillsSearch,
+    runSkillsInstall,
+  } = await loadCommandHandlers();
 
   try {
     switch (command) {

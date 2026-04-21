@@ -3610,9 +3610,16 @@ describe("TaskCard agent badge", () => {
       expect(text).toBeInTheDocument();
     });
 
+    const badge = screen.getByTitle("Assigned to Autopilot Agent");
+    expect(badge.closest(".card-agent-row")).toBeTruthy();
+    expect(badge.closest(".card-header")).toBeNull();
+
     const styles = readFileSync(resolve(PACKAGE_ROOT, "app/styles.css"), "utf-8");
-    expect(styles).toMatch(/\.card-agent-badge\s*\{[^}]*flex-shrink:\s*0;/);
-    expect(styles).toMatch(/\.card-agent-badge\s*\{[^}]*max-width:\s*120px;/);
+    expect(styles).toMatch(/\.card-agent-badge\s*\{[^}]*font-size:\s*10px;/);
+    expect(styles).toMatch(/\.card-agent-badge\s*\{[^}]*border-radius:\s*var\(--radius-pill\);/);
+    expect(styles).toMatch(/\.card-agent-badge\s*\{[^}]*background:\s*color-mix\(/);
+    expect(styles).not.toMatch(/\.card-agent-badge\s*\{[^}]*font-family:\s*var\(--font-mono\);/);
+    expect(styles).toMatch(/\.card-agent-row\s*\{/);
     expect(styles).toMatch(/\.card-agent-badge-text\s*\{[^}]*text-overflow:\s*ellipsis;/);
     expect(styles).toMatch(/\.card-agent-badge-text\s*\{[^}]*white-space:\s*nowrap;/);
     expect(styles).toMatch(/\.card-agent-badge-text\s*\{[^}]*overflow:\s*hidden;/);

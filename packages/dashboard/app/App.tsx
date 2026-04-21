@@ -274,9 +274,6 @@ function AppInner() {
     if ((taskView === "devserver" || taskView === "dev-server") && !devServerEnabled) {
       handleChangeTaskView("board");
     }
-    if (taskView === "devserver" && devServerEnabled) {
-      handleChangeTaskView("dev-server");
-    }
   }, [taskView, insightsEnabled, roadmapEnabled, experimentalFeatures, handleChangeTaskView, agentsEnabled, memoryEnabled, devServerEnabled]);
 
   // Auto-close nodes overlay if feature flag is toggled off while overlay is open

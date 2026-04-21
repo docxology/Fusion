@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ThemeMode } from "@fusion/core";
 import type { ProjectInfo } from "../api";
 import { getScopedItem, setScopedItem } from "../utils/projectStorage";
@@ -72,9 +72,10 @@ export function useViewState(options: UseViewStateOptions): UseViewStateResult {
 
   const [taskView, setTaskView] = useState<TaskView>(() => {
     const saved = getScopedItem("kb-dashboard-task-view");
-    if (isTaskView(saved)) return normalizeTaskView(saved);
+    if (isTaskView(saved)) return saved;
     return "board";
   });
+  const hasHydratedScopedTaskViewRef = useRef(false);
 
   useEffect(() => {
     window.localStorage.setItem("kb-dashboard-view-mode", viewMode);
@@ -83,14 +84,21 @@ export function useViewState(options: UseViewStateOptions): UseViewStateResult {
   useEffect(() => {
     const saved = getScopedItem("kb-dashboard-task-view", currentProject?.id);
     if (isTaskView(saved)) {
-      setTaskView(normalizeTaskView(saved));
-      return;
+      const preserveLegacyOnFirstScopedHydration =
+        !hasHydratedScopedTaskViewRef.current && saved === "devserver";
+
+      setTaskView(preserveLegacyOnFirstScopedHydration ? "devserver" : normalizeTaskView(saved));
+    } else {
+      setTaskView("board");
     }
-    setTaskView("board");
+
+    if (currentProject?.id) {
+      hasHydratedScopedTaskViewRef.current = true;
+    }
   }, [currentProject?.id]);
 
   useEffect(() => {
-    setScopedItem("kb-dashboard-task-view", normalizeTaskView(taskView), currentProject?.id);
+    setScopedItem("kb-dashboard-task-view", taskView, currentProject?.id);
   }, [currentProject?.id, taskView]);
 
   useEffect(() => {
@@ -121,7 +129,7 @@ export function useViewState(options: UseViewStateOptions): UseViewStateResult {
   ]);
 
   const handleChangeTaskView = useCallback((newView: TaskView) => {
-    setTaskView(normalizeTaskView(newView));
+    setTaskView(newView);
   }, []);
 
   const handleToggleTheme = useCallback(() => {

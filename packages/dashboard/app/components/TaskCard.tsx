@@ -813,17 +813,6 @@ function TaskCardComponent({
             {abbreviateMissionTitle(missionTitle ?? task.missionId)}
           </span>
         )}
-        {task.assignedAgentId && (
-          <span
-            className={`card-agent-badge${isAgentNameLoading ? " card-agent-badge--loading" : ""}`}
-            title={`Assigned to ${agentName ?? task.assignedAgentId}`}
-          >
-            <Bot size={11} />
-            <span className="card-agent-badge-text">
-              {abbreviateBadge(agentName ?? task.assignedAgentId, 15)}
-            </span>
-          </span>
-        )}
         <div className="card-header-actions">
           {canEdit && (
             <button
@@ -1063,6 +1052,19 @@ function TaskCardComponent({
             </span>
           )}
           {(queued || task.status === "queued") && task.column !== "in-progress" && <span className="queued-badge"><Clock size={12} style={{ verticalAlign: "middle" }} /> Queued</span>}
+        </div>
+      )}
+      {task.assignedAgentId && (
+        <div className="card-agent-row">
+          <span
+            className={`card-agent-badge${isAgentNameLoading ? " card-agent-badge--loading" : ""}`}
+            title={`Assigned to ${agentName ?? task.assignedAgentId}`}
+          >
+            <Bot size={11} />
+            <span className="card-agent-badge-text">
+              {abbreviateBadge(agentName ?? task.assignedAgentId, 15)}
+            </span>
+          </span>
         </div>
       )}
       <PluginSlot slotId="task-card-badge" projectId={projectId} />

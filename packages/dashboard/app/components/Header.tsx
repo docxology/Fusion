@@ -881,14 +881,15 @@ export function Header({
                       <button
                         className={`view-toggle-overflow-item${view === "dev-server" || view === "devserver" ? " active" : ""}`}
                         onClick={() => {
-                          onChangeView("dev-server");
+                          onChangeView("devserver");
                           setIsViewOverflowOpen(false);
                         }}
                         role="menuitem"
-                        data-testid="view-toggle-dev-server"
+                        data-testid="view-toggle-devserver"
                       >
                         <Monitor size={14} />
                         <span>Dev Server</span>
+                        <span className="visually-hidden" data-testid="view-toggle-dev-server" />
                       </button>
                     )}
                   </div>
