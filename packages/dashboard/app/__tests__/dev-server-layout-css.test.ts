@@ -17,6 +17,12 @@ function getRule(selector: string, options: { last?: boolean } = {}): string {
 }
 
 describe("Dev server view CSS layout regressions", () => {
+  it("allows vertical page scrolling to keep all controls reachable on short viewports", () => {
+    const rootRule = getRule(".dev-server-view");
+    expect(rootRule).toContain("overflow-y: auto");
+    expect(rootRule).toContain("overflow-x: hidden");
+  });
+
   it("keeps config and candidate lists scrollable with bounded height", () => {
     const configRule = getRule(".dev-server-config");
     expect(configRule).toContain("max-height: min(52vh, calc(var(--space-2xl) * 16))");
@@ -44,5 +50,18 @@ describe("Dev server view CSS layout regressions", () => {
     expect(externalOnlyRule).toContain("border: 1px solid var(--border)");
     expect(externalOnlyRule).toContain("background: var(--surface)");
     expect(externalOnlyRule).not.toContain("--color-warning");
+  });
+
+  it("keeps the preview header responsive on narrow screens", () => {
+    const badgeRule = getRule(".devserver-preview-url-badge");
+    expect(badgeRule).toContain("flex: 1 1 auto");
+    expect(badgeRule).toContain("min-width: 0");
+
+    const mobileHeaderRule = getRule(".devserver-preview-header", { last: true });
+    expect(mobileHeaderRule).toContain("flex-wrap: wrap");
+
+    const mobileActionsRule = getRule(".devserver-preview-actions", { last: true });
+    expect(mobileActionsRule).toContain("width: 100%");
+    expect(mobileActionsRule).toContain("justify-content: flex-end");
   });
 });

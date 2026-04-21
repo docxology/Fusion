@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ExternalLink, Eye, Loader2, Monitor, Play, RefreshCw, RotateCw, Square } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AlertTriangle, ExternalLink, Eye, Loader2, Monitor, Play, RefreshCw, RotateCw, ShieldAlert, Square } from "lucide-react";
 import type { DevServerCandidate } from "../api";
 import { useDevServer } from "../hooks/useDevServer";
 import { useDevServerConfig } from "../hooks/useDevServerConfig";
@@ -131,14 +131,35 @@ export function DevServerView({ addToast, projectId }: DevServerViewProps) {
   const previewEmbedUrl = previewMode === "embedded" ? effectivePreviewUrl : null;
   const {
     embedStatus,
+    setEmbedStatus,
+    resetEmbedStatus,
     iframeRef,
-    handleIframeLoad,
-    handleIframeError,
-    resetEmbed,
     isEmbedded,
     isBlocked,
+    embedContext,
+    retry,
   } = usePreviewEmbed(previewEmbedUrl);
-  const isEmbedLoading = embedStatus === "loading";
+
+  const [showFallback, setShowFallback] = useState(false);
+  const prevStatusRef = useRef(embedStatus);
+
+  useEffect(() => {
+    const hasTransitioned = prevStatusRef.current !== embedStatus;
+
+    if (isBlocked && hasTransitioned) {
+      setShowFallback(true);
+    }
+
+    if (embedStatus === "embedded") {
+      setShowFallback(false);
+    }
+
+    prevStatusRef.current = embedStatus;
+  }, [embedStatus, isBlocked]);
+
+  useEffect(() => {
+    setShowFallback(false);
+  }, [effectivePreviewUrl]);
 
   const selectedCandidate = useMemo(() => {
     if (!config?.selectedScript) {
@@ -220,12 +241,18 @@ export function DevServerView({ addToast, projectId }: DevServerViewProps) {
     window.open(effectivePreviewUrl, "_blank", "noopener,noreferrer");
   }, [effectivePreviewUrl]);
 
+  const handleRetryEmbeddedPreview = useCallback(() => {
+    setShowFallback(false);
+    retry();
+  }, [retry]);
+
   const handleRefreshPreview = useCallback(() => {
     try {
       const iframeElement = iframeRef.current;
       if (iframeElement?.contentWindow) {
         iframeElement.contentWindow.location.reload();
-        resetEmbed();
+        setShowFallback(false);
+        resetEmbedStatus();
         return;
       }
     } catch {
@@ -240,12 +267,14 @@ export function DevServerView({ addToast, projectId }: DevServerViewProps) {
       const refreshedUrl = new URL(effectivePreviewUrl);
       refreshedUrl.searchParams.set("_t", Date.now().toString());
       iframeRef.current.src = refreshedUrl.toString();
-      resetEmbed();
+      setShowFallback(false);
+      resetEmbedStatus();
     } catch {
       iframeRef.current.src = effectivePreviewUrl;
-      resetEmbed();
+      setShowFallback(false);
+      resetEmbedStatus();
     }
-  }, [effectivePreviewUrl, iframeRef, resetEmbed]);
+  }, [effectivePreviewUrl, iframeRef, resetEmbedStatus]);
 
   const runAction = useCallback(async (kind: "start" | "stop" | "restart" | "preview", action: () => Promise<void>, successMessage: string) => {
     setActionInFlight(kind);
@@ -599,37 +628,54 @@ export function DevServerView({ addToast, projectId }: DevServerViewProps) {
               </div>
             )}
 
-            {effectivePreviewUrl && previewMode === "embedded" && isBlocked && (
-              <div className="devserver-preview-fallback" data-testid="devserver-preview-fallback" role="alert">
-                <AlertTriangle size={16} aria-hidden="true" />
-                <p>Preview cannot be embedded here. The server may be blocking iframe embedding.</p>
-                <button
-                  type="button"
-                  className="btn btn-primary btn-sm touch-target"
-                  onClick={handleOpenInNewTab}
-                  data-testid="devserver-preview-fallback-open-tab"
-                >
-                  Open in new tab
-                </button>
-                <span className="devserver-preview-fallback-hint">Click to view your app in a separate browser tab.</span>
+            {effectivePreviewUrl && previewMode === "embedded" && showFallback && isBlocked && (
+              <div
+                className={embedStatus === "error" ? "devserver-preview-error-panel" : "devserver-preview-blocked-panel"}
+                data-testid="devserver-preview-fallback"
+                role="alert"
+              >
+                {embedStatus === "error"
+                  ? <AlertTriangle className="devserver-preview-blocked-icon" aria-hidden="true" />
+                  : <ShieldAlert className="devserver-preview-blocked-icon" aria-hidden="true" />}
+                <div>
+                  <p className="devserver-preview-blocked-title">
+                    {embedStatus === "error" ? "Preview failed" : "Preview blocked"}
+                  </p>
+                  {embedContext && <p className="devserver-preview-blocked-context">{embedContext}</p>}
+                </div>
+                <p className="devserver-preview-blocked-description">
+                  Open the preview in a new tab, or retry embedded mode after checking your server settings.
+                </p>
+                <div className="devserver-preview-blocked-actions">
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={handleOpenInNewTab}
+                    data-testid="devserver-preview-fallback-open-tab"
+                  >
+                    Open preview in new tab
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    onClick={handleRetryEmbeddedPreview}
+                    data-testid="devserver-preview-fallback-retry"
+                  >
+                    Retry embedded preview
+                  </button>
+                </div>
               </div>
             )}
 
-            {effectivePreviewUrl && previewMode === "embedded" && !isBlocked && (
-              <>
-                <PreviewIframe
-                  url={effectivePreviewUrl}
-                  iframeRef={iframeRef}
-                  onLoad={handleIframeLoad}
-                  onError={handleIframeError}
-                />
-                {isEmbedLoading && (
-                  <div className="devserver-preview-overlay" data-testid="devserver-preview-loading">
-                    <Loader2 size={16} className="dev-server-spin" />
-                    <span>Loading preview…</span>
-                  </div>
-                )}
-              </>
+            {effectivePreviewUrl && previewMode === "embedded" && !showFallback && (
+              <PreviewIframe
+                url={effectivePreviewUrl}
+                embedStatus={embedStatus}
+                onEmbedStatusChange={setEmbedStatus}
+                iframeRef={iframeRef}
+                embedContext={embedContext}
+                onRetry={handleRetryEmbeddedPreview}
+              />
             )}
           </div>
         </section>
