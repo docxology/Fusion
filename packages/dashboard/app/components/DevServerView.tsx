@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, ExternalLink, Eye, Loader2, Monitor, Play, RefreshCw, RotateCw, ShieldAlert, Square } from "lucide-react";
-import type { DevServerCandidate } from "../api";
+import type { DetectedDevServerCommand, DevServerState, DevServerSession } from "../api";
 import { useDevServer } from "../hooks/useDevServer";
 import { useDevServerConfig } from "../hooks/useDevServerConfig";
 import { useDevServerLogs } from "../hooks/useDevServerLogs";
@@ -21,10 +21,11 @@ interface StatusBadgeConfig {
   label: string;
 }
 
-const STATUS_BADGE_CONFIG: Record<"stopped" | "starting" | "running" | "failed", StatusBadgeConfig> = {
+const STATUS_BADGE_CONFIG: Record<"stopped" | "starting" | "running" | "failed" | "stopping", StatusBadgeConfig> = {
   stopped: { className: "dev-server-status-badge--stopped", label: "Stopped" },
   starting: { className: "dev-server-status-badge--starting", label: "Starting..." },
   running: { className: "dev-server-status-badge--running", label: "Running" },
+  stopping: { className: "dev-server-status-badge--starting", label: "Stopping..." },
   failed: { className: "dev-server-status-badge--failed", label: "Failed" },
 };
 
@@ -36,6 +37,32 @@ function normalizeCwdToSource(cwd: string): string {
   return cwd === "." ? "root" : cwd;
 }
 
+function normalizeLegacyServerState(serverState: DevServerState): DevServerSession {
+  return {
+    config: {
+      id: serverState.id ?? "default",
+      name: serverState.name ?? "Dev Server",
+      command: serverState.command ?? "",
+      cwd: serverState.cwd ?? ".",
+    },
+    status: serverState.status as DevServerSession["status"],
+    runtime: serverState.pid
+      ? {
+        pid: serverState.pid,
+        startedAt: serverState.startedAt ?? new Date().toISOString(),
+        exitCode: serverState.exitCode ?? undefined,
+        previewUrl: serverState.previewUrl,
+      }
+      : undefined,
+    previewUrl: serverState.previewUrl ?? serverState.detectedUrl ?? serverState.manualUrl ?? undefined,
+    logHistory: (serverState.logs ?? []).map((line) => ({
+      timestamp: new Date().toISOString(),
+      stream: line.startsWith("[stderr]") ? "stderr" as const : "stdout" as const,
+      text: line.replace(/^\[stderr\]\s*/, ""),
+    })),
+  };
+}
+
 function normalizeSourceToCwd(source: string | null | undefined): string | null {
   if (!source) {
     return null;
@@ -43,7 +70,7 @@ function normalizeSourceToCwd(source: string | null | undefined): string | null 
   return source === "root" ? "." : source;
 }
 
-function candidateMatchesSelection(candidate: DevServerCandidate, selectedScript: string | null, selectedSource: string | null): boolean {
+function candidateMatchesSelection(candidate: DetectedDevServerCommand, selectedScript: string | null, selectedSource: string | null): boolean {
   if (!selectedScript) {
     return false;
   }
@@ -59,16 +86,13 @@ function candidateMatchesSelection(candidate: DevServerCandidate, selectedScript
   return normalizeCwdToSource(candidate.cwd) === selectedSource;
 }
 
-function formatCandidateSource(candidate: DevServerCandidate): string {
-  if (candidate.source === "root") {
+function formatCandidateSource(candidate: DetectedDevServerCommand): string {
+  // DetectedDevServerCommand doesn't have source/workspaceName, so use cwd-based approach
+  if (candidate.cwd === ".") {
     return "root";
   }
 
-  if (candidate.workspaceName) {
-    return `${candidate.workspaceName} · ${candidate.source}`;
-  }
-
-  return candidate.source;
+  return candidate.cwd;
 }
 
 function truncateCommand(command: string): string {
@@ -81,18 +105,7 @@ function truncateCommand(command: string): string {
 }
 
 export function DevServerView({ addToast, projectId }: DevServerViewProps) {
-  const {
-    candidates,
-    serverState,
-    start,
-    stop,
-    restart,
-    setPreviewUrl,
-    loading,
-    error,
-    detect,
-  } = useDevServer(projectId);
-
+  const devServer = useDevServer(projectId);
   const {
     config,
     loading: configLoading,
@@ -103,7 +116,71 @@ export function DevServerView({ addToast, projectId }: DevServerViewProps) {
     refresh: refreshConfig,
   } = useDevServerConfig(projectId);
 
-  const status = serverState?.status ?? "stopped";
+  const legacyServerState = (devServer.serverState as DevServerState | null | undefined) ?? null;
+  const session = devServer.session ?? (legacyServerState ? normalizeLegacyServerState(legacyServerState) : null);
+  const detectedCommands = devServer.detectedCommands ?? devServer.candidates ?? [];
+  const isLoading = devServer.isLoading ?? devServer.loading ?? configLoading;
+  const error = devServer.error ?? configError ?? null;
+
+  const startServer = useCallback(async (command: string, cwd?: string) => {
+    if (typeof devServer.startServer === "function") {
+      await devServer.startServer(command, cwd);
+      return;
+    }
+
+    if (typeof devServer.start === "function") {
+      await devServer.start({ command, cwd });
+    }
+  }, [devServer]);
+
+  const stopServer = useCallback(async () => {
+    if (typeof devServer.stopServer === "function") {
+      await devServer.stopServer();
+      return;
+    }
+
+    if (typeof devServer.stop === "function") {
+      await devServer.stop();
+    }
+  }, [devServer]);
+
+  const restartServer = useCallback(async () => {
+    if (typeof devServer.restartServer === "function") {
+      await devServer.restartServer();
+      return;
+    }
+
+    if (typeof devServer.restart === "function") {
+      await devServer.restart();
+    }
+  }, [devServer]);
+
+  const detectCommands = useCallback(async () => {
+    if (typeof devServer.detectCommands === "function") {
+      await devServer.detectCommands();
+      return;
+    }
+
+    if (typeof devServer.detect === "function") {
+      await devServer.detect();
+    }
+  }, [devServer]);
+
+  const refresh = useCallback(async () => {
+    if (typeof devServer.refresh === "function") {
+      await devServer.refresh();
+      return;
+    }
+
+    if (typeof devServer.refreshStatus === "function") {
+      await devServer.refreshStatus();
+      return;
+    }
+
+    await refreshConfig();
+  }, [devServer, refreshConfig]);
+
+  const status = session?.status ?? "stopped";
   const isRunning = status === "running" || status === "starting";
   const statusBadge = STATUS_BADGE_CONFIG[status] ?? STATUS_BADGE_CONFIG.stopped;
 
@@ -116,29 +193,28 @@ export function DevServerView({ addToast, projectId }: DevServerViewProps) {
     loadMore: loadMoreLogs,
   } = useDevServerLogs(projectId, Boolean(projectId));
 
-  const effectivePreviewUrl = config?.previewUrlOverride ?? serverState?.manualPreviewUrl ?? serverState?.previewUrl ?? null;
-  const detectedPreviewUrl = config?.detectedPreviewUrl ?? serverState?.previewUrl ?? null;
-  const selectedSource = config?.selectedSource ?? null;
-  const isManualPreviewOverride = Boolean(config?.previewUrlOverride ?? serverState?.manualPreviewUrl);
+  const manualPreviewUrl = config?.previewUrlOverride ?? legacyServerState?.manualPreviewUrl ?? null;
+  const effectivePreviewUrl = manualPreviewUrl ?? devServer.previewUrl ?? session?.previewUrl ?? null;
+  const selectedSource = config?.selectedSource ?? (session?.config?.cwd ? normalizeCwdToSource(session.config.cwd) : null);
 
   const [showCandidates, setShowCandidates] = useState(true);
   const [commandInput, setCommandInput] = useState("");
   const [previewInput, setPreviewInput] = useState("");
+  const [selectedScript, setSelectedScript] = useState<string | null>(null);
   const [actionInFlight, setActionInFlight] = useState<"start" | "stop" | "restart" | "preview" | null>(null);
 
   const [previewMode, setPreviewMode] = useState<PreviewMode>("embedded");
 
   const previewEmbedUrl = previewMode === "embedded" ? effectivePreviewUrl : null;
-  const {
-    embedStatus,
-    setEmbedStatus,
-    resetEmbedStatus,
-    iframeRef,
-    isEmbedded,
-    isBlocked,
-    embedContext,
-    retry,
-  } = usePreviewEmbed(previewEmbedUrl);
+  const previewEmbed = usePreviewEmbed(previewEmbedUrl);
+  const embedStatus = previewEmbed.embedStatus ?? "unknown";
+  const setEmbedStatus = previewEmbed.setEmbedStatus ?? (() => undefined);
+  const resetEmbedStatus = previewEmbed.resetEmbedStatus ?? (() => undefined);
+  const iframeRef = previewEmbed.iframeRef ?? useRef<HTMLIFrameElement | null>(null);
+  const isEmbedded = previewEmbed.isEmbedded ?? false;
+  const isBlocked = previewEmbed.isBlocked ?? false;
+  const blockReason = previewEmbed.blockReason ?? (previewEmbed as { embedContext?: string | null }).embedContext ?? null;
+  const retry = previewEmbed.retry ?? (() => undefined);
 
   const [showFallback, setShowFallback] = useState(false);
   const prevStatusRef = useRef(embedStatus);
@@ -162,14 +238,14 @@ export function DevServerView({ addToast, projectId }: DevServerViewProps) {
   }, [effectivePreviewUrl]);
 
   const selectedCandidate = useMemo(() => {
-    if (!config?.selectedScript) {
+    if (!selectedScript) {
       return null;
     }
 
-    const selectedCwd = normalizeSourceToCwd(config.selectedSource);
+    const selectedCwd = normalizeSourceToCwd(selectedSource);
 
-    return candidates.find((candidate) => {
-      if (candidate.scriptName !== config.selectedScript) {
+    return detectedCommands.find((candidate) => {
+      if (candidate.scriptName !== selectedScript) {
         return false;
       }
 
@@ -177,39 +253,45 @@ export function DevServerView({ addToast, projectId }: DevServerViewProps) {
         return false;
       }
 
-      if (config.selectedCommand && candidate.command !== config.selectedCommand) {
+      if (session?.config?.command && candidate.command !== session.config.command) {
         return false;
       }
 
       return true;
     })
-      ?? candidates.find((candidate) => candidateMatchesSelection(candidate, config.selectedScript, config.selectedSource))
+      ?? detectedCommands.find((candidate) => candidateMatchesSelection(candidate, selectedScript, selectedSource))
       ?? null;
-  }, [candidates, config?.selectedCommand, config?.selectedScript, config?.selectedSource]);
+  }, [detectedCommands, session?.config?.command, selectedScript, selectedSource]);
 
   useEffect(() => {
-    if (typeof detect !== "function") {
+    if (typeof detectCommands !== "function") {
       return;
     }
 
-    void detect().catch((detectError) => {
+    void detectCommands().catch((detectError: unknown) => {
       addToast(normalizeError(detectError), "error");
     });
-  }, [addToast, detect]);
+  }, [addToast, detectCommands]);
 
   useEffect(() => {
-    if (config?.selectedScript) {
+    if (config?.selectedScript !== undefined) {
+      setSelectedScript(config?.selectedScript ?? null);
+    }
+  }, [config?.selectedScript]);
+
+  useEffect(() => {
+    if (selectedScript) {
       setShowCandidates(false);
       return;
     }
 
     setShowCandidates(true);
-  }, [config?.selectedScript]);
+  }, [selectedScript]);
 
   useEffect(() => {
-    if (serverState?.status === "running" || serverState?.status === "starting") {
-      if (serverState.command.trim().length > 0) {
-        setCommandInput(serverState.command);
+    if (session?.status === "running" || session?.status === "starting") {
+      if (session.config?.command?.trim().length > 0) {
+        setCommandInput(session.config.command);
       }
       return;
     }
@@ -219,19 +301,14 @@ export function DevServerView({ addToast, projectId }: DevServerViewProps) {
       return;
     }
 
-    if (config?.selectedCommand) {
-      setCommandInput(config.selectedCommand);
-      return;
+    if (detectedCommands.length > 0) {
+      setCommandInput((current) => (current.trim().length > 0 ? current : detectedCommands[0]?.command ?? ""));
     }
-
-    if (candidates.length > 0) {
-      setCommandInput((current) => (current.trim().length > 0 ? current : candidates[0]?.command ?? ""));
-    }
-  }, [candidates, config?.selectedCommand, selectedCandidate, serverState?.command, serverState?.status]);
+  }, [detectedCommands, selectedCandidate, session?.config?.command, session?.status]);
 
   useEffect(() => {
-    setPreviewInput(config?.previewUrlOverride ?? serverState?.manualPreviewUrl ?? "");
-  }, [config?.previewUrlOverride, serverState?.manualPreviewUrl]);
+    setPreviewInput(effectivePreviewUrl ?? "");
+  }, [effectivePreviewUrl]);
 
   const handleOpenInNewTab = useCallback(() => {
     if (!effectivePreviewUrl) {
@@ -288,27 +365,40 @@ export function DevServerView({ addToast, projectId }: DevServerViewProps) {
     }
   }, [addToast]);
 
-  const handleSelectCandidate = useCallback((candidate: DevServerCandidate) => {
-    void selectScript({
-      name: candidate.scriptName,
-      command: candidate.command,
-      source: normalizeCwdToSource(candidate.cwd),
-    }).then(() => {
-      setShowCandidates(false);
-      setCommandInput(candidate.command);
-      addToast(`Selected ${candidate.scriptName} script.`, "success");
-    }).catch((selectionError) => {
-      addToast(normalizeError(selectionError), "error");
-    });
+  const handleSelectCandidate = useCallback((candidate: DetectedDevServerCommand) => {
+    void (async () => {
+      try {
+        if (typeof selectScript === "function") {
+          await selectScript({
+            name: candidate.scriptName,
+            command: candidate.command,
+            source: normalizeCwdToSource(candidate.cwd),
+          });
+        }
+
+        setSelectedScript(candidate.scriptName);
+        setShowCandidates(false);
+        setCommandInput(candidate.command);
+        addToast(`Selected ${candidate.scriptName} script.`, "success");
+      } catch (selectionError) {
+        addToast(normalizeError(selectionError), "error");
+      }
+    })();
   }, [addToast, selectScript]);
 
   const handleClearSelection = useCallback(() => {
-    void clearSelection().then(() => {
-      setShowCandidates(true);
-      addToast("Cleared selected dev server script.", "success");
-    }).catch((clearError) => {
-      addToast(normalizeError(clearError), "error");
-    });
+    void (async () => {
+      try {
+        if (typeof clearSelection === "function") {
+          await clearSelection();
+        }
+        setSelectedScript(null);
+        setShowCandidates(true);
+        addToast("Cleared selected dev server script.", "success");
+      } catch (clearError) {
+        addToast(normalizeError(clearError), "error");
+      }
+    })();
   }, [addToast, clearSelection]);
 
   const handleStart = () => {
@@ -318,28 +408,23 @@ export function DevServerView({ addToast, projectId }: DevServerViewProps) {
       return;
     }
 
-    const fallbackCwd = normalizeSourceToCwd(config?.selectedSource) ?? ".";
-    const scriptName = selectedCandidate?.scriptName ?? config?.selectedScript ?? "custom";
+    const fallbackCwd = normalizeSourceToCwd(selectedSource) ?? ".";
+    const scriptName = selectedCandidate?.scriptName ?? selectedScript ?? "custom";
     const cwd = selectedCandidate?.cwd ?? fallbackCwd;
 
     void runAction(
       "start",
-      () => {
-        if (selectedCandidate && trimmedCommand === selectedCandidate.command) {
-          return start(selectedCandidate);
-        }
-        return start({ command: trimmedCommand, scriptName, cwd });
-      },
+      () => startServer(trimmedCommand, cwd),
       "Dev server started.",
     );
   };
 
   const handleStop = () => {
-    void runAction("stop", stop, "Dev server stopped.");
+    void runAction("stop", stopServer, "Dev server stopped.");
   };
 
   const handleRestart = () => {
-    void runAction("restart", restart, "Dev server restarted.");
+    void runAction("restart", restartServer, "Dev server restarted.");
   };
 
   const handleSetPreview = () => {
@@ -349,24 +434,28 @@ export function DevServerView({ addToast, projectId }: DevServerViewProps) {
     void runAction(
       "preview",
       async () => {
-        await setPreviewUrlOverride(nextUrl);
-        await setPreviewUrl(nextUrl);
+        if (typeof setPreviewUrlOverride === "function") {
+          await setPreviewUrlOverride(nextUrl);
+        }
+        if (typeof devServer.setPreviewUrl === "function") {
+          await devServer.setPreviewUrl(nextUrl);
+          return;
+        }
+        if (typeof devServer.setManualUrl === "function") {
+          await devServer.setManualUrl(nextUrl);
+        }
       },
       nextUrl ? "Preview URL updated." : "Preview URL override cleared.",
     );
   };
 
   const handleRetry = useCallback(() => {
-    if (!configError && error) {
-      window.location.reload();
-      return;
+    if (error) {
+      void refresh();
     }
+  }, [error, refresh]);
 
-    void refreshConfig();
-  }, [configError, error, refreshConfig]);
-
-  const isLoading = loading || configLoading;
-  const combinedError = configError ?? error;
+  const isManualPreviewOverride = Boolean(manualPreviewUrl);
 
   const startDisabled = status === "starting" || status === "running" || actionInFlight !== null;
   const stopDisabled = status === "stopped" || actionInFlight !== null;
@@ -425,16 +514,16 @@ export function DevServerView({ addToast, projectId }: DevServerViewProps) {
           {isLoading && <span className="dev-server-muted">Loading...</span>}
         </div>
 
-        {isLoading && !config && candidates.length === 0 && (
+        {isLoading && !session && detectedCommands.length === 0 && (
           <div className="dev-server-loading-state" data-testid="dev-server-loading-state">
             <Loader2 size={16} className="dev-server-spin" />
             <span>Loading dev server configuration...</span>
           </div>
         )}
 
-        {combinedError && (
+        {error && (
           <div className="dev-server-error-box" role="alert" data-testid="dev-server-error-box">
-            <p>{combinedError}</p>
+            <p>{error}</p>
             <button type="button" className="btn btn-sm" onClick={handleRetry}>Retry</button>
           </div>
         )}
@@ -442,9 +531,9 @@ export function DevServerView({ addToast, projectId }: DevServerViewProps) {
         <div className="dev-server-section">
           <h3>Script Selection</h3>
 
-          {config?.selectedScript && (
+          {selectedScript && (
             <div className="dev-server-selected" data-testid="dev-server-selected-summary">
-              <span className="dev-server-candidate-name">{config.selectedScript}</span>
+              <span className="dev-server-candidate-name">{selectedScript}</span>
               <span className="dev-server-candidate-source">{selectedSource ?? "root"}</span>
               <button
                 type="button"
@@ -465,16 +554,16 @@ export function DevServerView({ addToast, projectId }: DevServerViewProps) {
             </div>
           )}
 
-          {showCandidates && candidates.length === 0 && (
+          {showCandidates && detectedCommands.length === 0 && (
             <p className="dev-server-empty-state" data-testid="dev-server-empty-candidates">
               No dev server scripts detected. Check that your project has a <code>package.json</code> with a <code>dev</code>, <code>start</code>, or similar script.
             </p>
           )}
 
-          {showCandidates && candidates.length > 0 && (
+          {showCandidates && detectedCommands.length > 0 && (
             <div className="dev-server-candidates" data-testid="dev-server-candidates">
-              {candidates.map((candidate) => {
-                const isSelected = candidateMatchesSelection(candidate, config?.selectedScript ?? null, selectedSource);
+              {detectedCommands.map((candidate) => {
+                const isSelected = candidateMatchesSelection(candidate, selectedScript, selectedSource);
                 return (
                   <button
                     type="button"
@@ -506,10 +595,10 @@ export function DevServerView({ addToast, projectId }: DevServerViewProps) {
           />
         </div>
 
-        {(status === "running" || status === "starting") && serverState && (
+        {(status === "running" || status === "starting") && session && (
           <div className="dev-server-current-command" data-testid="dev-server-current-command">
             <span className="dev-server-label">Running command</span>
-            <code>{serverState.command}</code>
+            <code>{session.config?.command ?? commandInput}</code>
           </div>
         )}
 
@@ -535,8 +624,8 @@ export function DevServerView({ addToast, projectId }: DevServerViewProps) {
           </button>
         </div>
 
-        {detectedPreviewUrl && (
-          <p className="dev-server-preview-hint">Auto-detected: {detectedPreviewUrl}</p>
+        {effectivePreviewUrl && (
+          <p className="dev-server-preview-hint">Auto-detected: {effectivePreviewUrl}</p>
         )}
       </section>
 
@@ -641,7 +730,7 @@ export function DevServerView({ addToast, projectId }: DevServerViewProps) {
                   <p className="devserver-preview-blocked-title">
                     {embedStatus === "error" ? "Preview failed" : "Preview blocked"}
                   </p>
-                  {embedContext && <p className="devserver-preview-blocked-context">{embedContext}</p>}
+                  {blockReason && <p className="devserver-preview-blocked-context">{blockReason}</p>}
                 </div>
                 <p className="devserver-preview-blocked-description">
                   Open the preview in a new tab, or retry embedded mode after checking your server settings.
@@ -673,7 +762,7 @@ export function DevServerView({ addToast, projectId }: DevServerViewProps) {
                 embedStatus={embedStatus}
                 onEmbedStatusChange={setEmbedStatus}
                 iframeRef={iframeRef}
-                embedContext={embedContext}
+                blockReason={blockReason}
                 onRetry={handleRetryEmbeddedPreview}
               />
             )}

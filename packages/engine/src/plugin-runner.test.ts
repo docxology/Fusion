@@ -738,6 +738,90 @@ describe("PluginRunner", () => {
     });
   });
 
+  describe("getRuntimeById()", () => {
+    it("should return undefined when no runtimes exist", () => {
+      mockPluginLoader.getPluginRuntimes.mockReturnValue([]);
+      const result = pluginRunner.getRuntimeById("code-interpreter");
+      expect(result).toBeUndefined();
+    });
+
+    it("should return the runtime when runtimeId matches", () => {
+      const mockRuntime = {
+        metadata: {
+          runtimeId: "code-interpreter",
+          name: "Code Interpreter",
+        },
+        factory: vi.fn(),
+      };
+      mockPluginLoader.getPluginRuntimes.mockReturnValue([
+        { pluginId: "code-plugin", runtime: mockRuntime as any },
+      ]);
+      
+      const result = pluginRunner.getRuntimeById("code-interpreter");
+      expect(result).toEqual({ pluginId: "code-plugin", runtime: mockRuntime });
+    });
+
+    it("should return undefined when runtimeId does not match", () => {
+      const mockRuntime = {
+        metadata: {
+          runtimeId: "web-search",
+          name: "Web Search",
+        },
+        factory: vi.fn(),
+      };
+      mockPluginLoader.getPluginRuntimes.mockReturnValue([
+        { pluginId: "search-plugin", runtime: mockRuntime as any },
+      ]);
+      
+      const result = pluginRunner.getRuntimeById("code-interpreter");
+      expect(result).toBeUndefined();
+    });
+
+    it("should return first matching runtime when multiple plugins have same runtimeId", () => {
+      const mockRuntime1 = {
+        metadata: {
+          runtimeId: "shared-id",
+          name: "First Runtime",
+        },
+        factory: vi.fn(),
+      };
+      const mockRuntime2 = {
+        metadata: {
+          runtimeId: "shared-id",
+          name: "Second Runtime",
+        },
+        factory: vi.fn(),
+      };
+      mockPluginLoader.getPluginRuntimes.mockReturnValue([
+        { pluginId: "plugin-1", runtime: mockRuntime1 as any },
+        { pluginId: "plugin-2", runtime: mockRuntime2 as any },
+      ]);
+      
+      const result = pluginRunner.getRuntimeById("shared-id");
+      expect(result?.pluginId).toBe("plugin-1");
+    });
+
+    it("should find runtime even when cache is already built", () => {
+      const mockRuntime = {
+        metadata: {
+          runtimeId: "cached-runtime",
+          name: "Cached Runtime",
+        },
+        factory: vi.fn(),
+      };
+      mockPluginLoader.getPluginRuntimes.mockReturnValue([
+        { pluginId: "cached-plugin", runtime: mockRuntime as any },
+      ]);
+      
+      // First call builds cache
+      pluginRunner.getRuntimeById("other-id");
+      // Second call should find from cache
+      const result = pluginRunner.getRuntimeById("cached-runtime");
+      expect(result?.pluginId).toBe("cached-plugin");
+      expect(mockPluginLoader.getPluginRuntimes).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe("getLoader() / getStore()", () => {
     it("should return the plugin loader", () => {
       const loader = pluginRunner.getLoader();

@@ -30,6 +30,20 @@ vi.mock("./pi.js", () => ({
 vi.mock("./reviewer.js", () => ({
   reviewStep: vi.fn(),
 }));
+vi.mock("./agent-session-helpers.js", async () => {
+  const { createFnAgent } = await import("./pi.js");
+  return {
+    createResolvedAgentSession: async (options: any) => {
+      const result = await createFnAgent(options);
+      return {
+        session: result.session,
+        sessionFile: result.sessionFile,
+        runtimeId: "pi",
+        wasConfigured: false,
+      };
+    },
+  };
+});
 vi.mock("node:child_process", () => {
   const { promisify } = require("node:util");
   const execSyncFn = vi.fn().mockReturnValue(Buffer.from(""));

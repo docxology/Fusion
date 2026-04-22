@@ -1,13 +1,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  detectDevServerCommands,
+  fetchDevServer,
+  fetchDevServerLogs,
+  fetchDevServers,
+  getDevServerLogsStreamUrl,
+  getDevServerSessionLogsStreamUrl,
+  restartDevServerById,
+  setDevServerPreviewUrlById,
+  startDevServerById,
+  stopDevServerById,
   fetchDevServerCandidates,
   fetchDevServerStatus,
-  getDevServerLogsStreamUrl,
   restartDevServer,
   setDevServerPreviewUrl,
   startDevServer,
   stopDevServer,
-  type DevServerCandidate,
+  type DetectedDevServerCommand,
+  type DevServerLogEntry,
+  type DevServerSession,
   type DevServerState,
 } from "../api";
 import { subscribeSse } from "../sse-bus";
@@ -40,56 +51,113 @@ function parseJson<T>(value: string): T | null {
   }
 }
 
-function mapStateToHook(state: DevServerState | null): Pick<UseDevServerReturn, "status" | "detectedUrl" | "manualUrl" | "selectedCommand" | "serverState"> {
-  if (!state) {
-    return {
-      status: "stopped",
-      detectedUrl: null,
-      manualUrl: null,
-      selectedCommand: null,
-      serverState: null,
-    };
-  }
+function logEntryToString(entry: DevServerLogEntry): string {
+  const text = entry.text ?? "";
+  return entry.stream === "stderr" ? `[stderr] ${text}` : text;
+}
 
+function extractPreviewUrl(session: DevServerSession | null): string | null {
+  return session?.previewUrl ?? null;
+}
+
+// Legacy API helpers for single-server fallback
+async function legacyFetchStatus(projectId?: string) {
+  return fetchDevServerStatus(projectId);
+}
+
+async function legacyStart(body: { command: string; cwd?: string; scriptName?: string; packagePath?: string }, projectId?: string) {
+  return startDevServer(body, projectId);
+}
+
+async function legacyStop(projectId?: string) {
+  return stopDevServer(projectId);
+}
+
+async function legacyRestart(projectId?: string) {
+  return restartDevServer(projectId);
+}
+
+async function legacyDetect(projectId?: string) {
+  return fetchDevServerCandidates(projectId);
+}
+
+function getOptionalExport<T>(reader: () => T): T | null {
+  try {
+    return reader();
+  } catch {
+    return null;
+  }
+}
+
+function hasSessionApi(): boolean {
+  return typeof getOptionalExport(() => fetchDevServers) === "function"
+    && typeof getOptionalExport(() => fetchDevServer) === "function";
+}
+
+function toSessionFromLegacy(legacyState: DevServerState): DevServerSession {
   return {
-    status: state.status,
-    detectedUrl: state.detectedUrl ?? state.previewUrl ?? null,
-    manualUrl: state.manualUrl ?? state.manualPreviewUrl ?? null,
-    selectedCommand: state.command?.trim().length ? state.command : null,
-    serverState: state,
+    config: {
+      id: legacyState.id ?? "default",
+      name: legacyState.name ?? "Dev Server",
+      command: legacyState.command ?? "",
+      cwd: legacyState.cwd ?? ".",
+    },
+    status: legacyState.status as DevServerSession["status"],
+    runtime: legacyState.pid
+      ? {
+        pid: legacyState.pid,
+        startedAt: legacyState.startedAt ?? new Date().toISOString(),
+        exitCode: legacyState.exitCode ?? undefined,
+        previewUrl: legacyState.previewUrl,
+      }
+      : undefined,
+    previewUrl: legacyState.previewUrl ?? legacyState.detectedUrl ?? legacyState.manualUrl ?? undefined,
+    logHistory: (legacyState.logs ?? []).map<DevServerLogEntry>((text) => ({
+      timestamp: new Date().toISOString(),
+      stream: text.startsWith("[stderr]") ? "stderr" : "stdout",
+      text: text.replace(/^\[stderr\]\s*/, ""),
+    })),
   };
 }
 
-type DevServerStartArgs =
-  | string
-  | DevServerCandidate
-  | {
-    command: string;
-    cwd?: string;
-    scriptName?: string;
-    packagePath?: string;
-  };
-
 export interface UseDevServerReturn {
-  status: "starting" | "running" | "stopped" | "failed";
+  /** Current active session */
+  session: DevServerSession | null;
+  /** All available sessions */
+  sessions: DevServerSession[];
+  /** Current log entries as strings */
   logs: string[];
-  detectedUrl: string | null;
-  manualUrl: string | null;
-  selectedCommand: string | null;
-  candidates: DevServerCandidate[];
+  /** Detected dev server commands */
+  detectedCommands: DetectedDevServerCommand[];
+  /** Current preview URL */
+  previewUrl: string | null;
+  /** Loading state */
   isLoading: boolean;
+  /** Error message if any */
   error: string | null;
-  start: (commandOrInput: DevServerStartArgs, cwd?: string, scriptName?: string, packagePath?: string) => Promise<void>;
+  /** Start the dev server with the given command */
+  startServer: (command: string, cwd?: string) => Promise<void>;
+  /** Stop the dev server */
+  stopServer: () => Promise<void>;
+  /** Restart the dev server */
+  restartServer: () => Promise<void>;
+  /** Set the preview URL */
+  setPreviewUrl: (url: string | null) => Promise<void>;
+  /** Detect available dev server commands */
+  detectCommands: () => Promise<void>;
+  /** Refresh session state */
+  refresh: () => Promise<void>;
+
+  // Legacy aliases for compatibility
+  candidates: DetectedDevServerCommand[];
+  serverState: (DevServerSession & { pid?: number }) | null;
+  loading: boolean;
+  start: (commandOrInput: string | { command: string; cwd?: string; scriptName?: string; packagePath?: string }, cwd?: string) => Promise<void>;
   stop: () => Promise<void>;
   restart: () => Promise<void>;
   setManualUrl: (url: string | null) => Promise<void>;
   detect: () => Promise<void>;
   refreshStatus: () => Promise<void>;
-
-  // Back-compat aliases used by existing consumers/tests.
-  serverState: DevServerState | null;
-  loading: boolean;
-  setPreviewUrl: (url: string | null) => Promise<void>;
 }
 
 export function __resetUseDevServerForTests(): void {
@@ -97,188 +165,211 @@ export function __resetUseDevServerForTests(): void {
 }
 
 export function useDevServer(projectId?: string): UseDevServerReturn {
-  const [status, setStatus] = useState<UseDevServerReturn["status"]>("stopped");
+  const [session, setSession] = useState<DevServerSession | null>(null);
+  const [sessions, setSessions] = useState<DevServerSession[]>([]);
   const [logs, setLogs] = useState<string[]>([]);
-  const [detectedUrl, setDetectedUrl] = useState<string | null>(null);
-  const [manualUrl, setManualUrlState] = useState<string | null>(null);
-  const [selectedCommand, setSelectedCommand] = useState<string | null>(null);
-  const [candidates, setCandidates] = useState<DevServerCandidate[]>([]);
+  const [detectedCommands, setDetectedCommands] = useState<DetectedDevServerCommand[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [serverState, setServerState] = useState<DevServerState | null>(null);
 
   const contextVersionRef = useRef(0);
+  // Track session ID for SSE subscription - this state change triggers effect re-run
+  const [subscriptionSessionId, setSubscriptionSessionId] = useState<string | null>(null);
 
-  const applyStatusState = useCallback((state: DevServerState) => {
-    const mapped = mapStateToHook(state);
-    setStatus(mapped.status);
-    setDetectedUrl(mapped.detectedUrl);
-    setManualUrlState(mapped.manualUrl);
-    setSelectedCommand(mapped.selectedCommand);
-    setServerState(mapped.serverState);
-    if (Array.isArray(state.logs)) {
-      setLogs(capLogs(state.logs));
+  const applySession = useCallback((newSession: DevServerSession | null) => {
+    setSession(newSession);
+    if (newSession?.logHistory) {
+      const logStrings = newSession.logHistory
+        .slice(-MAX_LOG_LINES)
+        .map(logEntryToString);
+      setLogs(logStrings);
     }
   }, []);
 
-  const refreshStatus = useCallback(async () => {
+  const refresh = useCallback(async () => {
     const versionAtStart = contextVersionRef.current;
 
     try {
-      const nextState = await fetchDevServerStatus(projectId);
-      if (contextVersionRef.current !== versionAtStart) {
-        return;
+      if (hasSessionApi()) {
+        if (subscriptionSessionId) {
+          const updatedSession = await fetchDevServer(subscriptionSessionId, projectId);
+          if (contextVersionRef.current !== versionAtStart) {
+            return;
+          }
+          applySession(updatedSession);
+        } else {
+          const allSessions = await fetchDevServers(projectId);
+          if (contextVersionRef.current !== versionAtStart) {
+            return;
+          }
+          setSessions(allSessions);
+          if (allSessions.length > 0) {
+            setSubscriptionSessionId(allSessions[0].config.id);
+            applySession(allSessions[0]);
+          }
+        }
+      } else {
+        const legacyState = await legacyFetchStatus(projectId);
+        if (contextVersionRef.current !== versionAtStart) {
+          return;
+        }
+        const legacySession = toSessionFromLegacy(legacyState);
+        setSessions([legacySession]);
+        applySession(legacySession);
       }
-      applyStatusState(nextState);
       setError(null);
     } catch (refreshError) {
       if (contextVersionRef.current !== versionAtStart) {
         return;
       }
       setError(normalizeError(refreshError));
-      throw refreshError;
     }
-  }, [applyStatusState, projectId]);
+  }, [applySession, projectId, subscriptionSessionId]);
 
   useEffect(() => {
     contextVersionRef.current += 1;
     const versionAtStart = contextVersionRef.current;
 
-    setStatus("stopped");
+    // Reset state
+    setSession(null);
+    setSessions([]);
     setLogs([]);
-    setDetectedUrl(null);
-    setManualUrlState(null);
-    setSelectedCommand(null);
-    setCandidates([]);
+    setDetectedCommands([]);
     setIsLoading(true);
     setError(null);
-    setServerState(null);
+    setSubscriptionSessionId(null);
 
-    void Promise.allSettled([
-      fetchDevServerCandidates(projectId),
-      fetchDevServerStatus(projectId),
-    ]).then(([candidateResult, statusResult]) => {
-      if (contextVersionRef.current !== versionAtStart) {
-        return;
+    const loadInitialData = async () => {
+      try {
+        const [sessionsResult, commandsResult] = await Promise.allSettled([
+          hasSessionApi()
+            ? fetchDevServers(projectId)
+            : legacyFetchStatus(projectId).then((state) => [toSessionFromLegacy(state)]),
+          typeof getOptionalExport(() => detectDevServerCommands) === "function"
+            ? detectDevServerCommands(projectId)
+            : legacyDetect(projectId).then((legacyCandidates) => legacyCandidates.map((candidate) => ({
+              name: candidate.name,
+              command: candidate.command,
+              cwd: candidate.cwd,
+              scriptName: candidate.scriptName,
+              packagePath: candidate.packagePath,
+            }))),
+        ]);
+
+        if (contextVersionRef.current !== versionAtStart) {
+          return;
+        }
+
+        let nextError: string | null = null;
+
+        if (sessionsResult.status === "fulfilled") {
+          const sessionsData = sessionsResult.value;
+          setSessions(sessionsData);
+          if (sessionsData.length > 0) {
+            const firstSession = sessionsData[0];
+            if (hasSessionApi()) {
+              setSubscriptionSessionId(firstSession.config.id);
+            }
+            applySession(firstSession);
+          }
+        } else {
+          nextError = normalizeError(sessionsResult.reason);
+        }
+
+        if (commandsResult.status === "fulfilled") {
+          setDetectedCommands(commandsResult.value);
+        }
+
+        if (nextError) {
+          setError(nextError);
+        }
+      } catch (err) {
+        if (contextVersionRef.current !== versionAtStart) {
+          return;
+        }
+        setError(normalizeError(err));
+      } finally {
+        if (contextVersionRef.current === versionAtStart) {
+          setIsLoading(false);
+        }
       }
-
-      let nextError: string | null = null;
-
-      if (candidateResult.status === "fulfilled") {
-        setCandidates(candidateResult.value);
-      } else {
-        nextError = normalizeError(candidateResult.reason);
-      }
-
-      if (statusResult.status === "fulfilled") {
-        applyStatusState(statusResult.value);
-      } else {
-        nextError = nextError ?? normalizeError(statusResult.reason);
-      }
-
-      setError(nextError);
-      setIsLoading(false);
-    });
-
-    return () => {
-      contextVersionRef.current += 1;
     };
-  }, [applyStatusState, projectId]);
 
+    void loadInitialData();
+  }, [applySession, projectId]);
+
+  // SSE subscription for live log updates
   useEffect(() => {
-    if (status !== "running" && status !== "starting") {
+    const streamUrl = subscriptionSessionId
+      ? getDevServerSessionLogsStreamUrl(subscriptionSessionId, projectId)
+      : (typeof getOptionalExport(() => getDevServerLogsStreamUrl) === "function" ? getDevServerLogsStreamUrl(projectId) : null);
+
+    if (!streamUrl) {
       return;
     }
 
-    const intervalId = window.setInterval(() => {
-      void refreshStatus().catch(() => {
-        // Errors are recorded in hook state.
-      });
-    }, POLL_INTERVAL_MS);
-
-    return () => {
-      window.clearInterval(intervalId);
-    };
-  }, [refreshStatus, status]);
-
-  useEffect(() => {
     const versionAtStart = contextVersionRef.current;
 
-    const unsubscribe = subscribeSse(getDevServerLogsStreamUrl(projectId), {
+    const unsubscribe = subscribeSse(streamUrl, {
       events: {
         history: (event) => {
           if (contextVersionRef.current !== versionAtStart) {
             return;
           }
-
-          const payload = parseJson<{ lines?: Array<string | { text?: string; line?: string; stream?: "stdout" | "stderr" }> }>(event.data);
-          const nextLogs = Array.isArray(payload?.lines)
-            ? payload.lines.map((entry) => {
-              if (typeof entry === "string") {
-                return entry;
-              }
-              const text = typeof entry?.text === "string" ? entry.text : (typeof entry?.line === "string" ? entry.line : "");
-              const stream = entry?.stream;
-              return stream === "stderr" ? `[stderr] ${text}` : text;
-            }).filter((line) => line.length > 0)
-            : [];
-          if (nextLogs.length > 0) {
-            setLogs(capLogs(nextLogs));
+          const payload = parseJson<{ lines?: DevServerLogEntry[] }>(event.data);
+          if (payload?.lines) {
+            const logStrings = payload.lines.map(logEntryToString);
+            setLogs(capLogs(logStrings));
           }
         },
         log: (event) => {
           if (contextVersionRef.current !== versionAtStart) {
             return;
           }
-
-          const payload = parseJson<{ line?: string; text?: string; stream?: "stdout" | "stderr" }>(event.data);
-          const text = typeof payload?.line === "string"
-            ? payload.line
-            : typeof payload?.text === "string"
-              ? payload.text
-              : event.data;
-          const stream = payload?.stream;
-          const formatted = stream === "stderr" ? `[stderr] ${text}` : text;
-          setLogs((current) => appendLog(current, formatted));
-          setError(null);
+          const payload = parseJson<DevServerLogEntry & { line?: string }>(event.data);
+          if (payload) {
+            const line = typeof payload.line === "string" ? payload.line : logEntryToString(payload);
+            setLogs((prev) => appendLog(prev, line));
+          }
         },
         "dev-server:log": (event) => {
           if (contextVersionRef.current !== versionAtStart) {
             return;
           }
-
-          const payload = parseJson<{ line?: string; text?: string; stream?: "stdout" | "stderr" }>(event.data);
-          const text = typeof payload?.line === "string"
-            ? payload.line
-            : typeof payload?.text === "string"
-              ? payload.text
-              : event.data;
-          const stream = payload?.stream;
-          const formatted = stream === "stderr" ? `[stderr] ${text}` : text;
-          setLogs((current) => appendLog(current, formatted));
-          setError(null);
+          const payload = parseJson<DevServerLogEntry & { line?: string }>(event.data);
+          if (payload) {
+            const line = typeof payload.line === "string" ? payload.line : logEntryToString(payload);
+            setLogs((prev) => appendLog(prev, line));
+          }
         },
         "dev-server:output": (event) => {
           if (contextVersionRef.current !== versionAtStart) {
             return;
           }
-
-          const payload = parseJson<{ text?: string; stream?: "stdout" | "stderr" }>(event.data);
-          if (!payload?.text) {
-            return;
+          const payload = parseJson<{ line?: string }>(event.data);
+          if (payload?.line) {
+            setLogs((prev) => appendLog(prev, payload.line!));
           }
-          const formatted = payload.stream === "stderr" ? `[stderr] ${payload.text}` : payload.text;
-          setLogs((current) => appendLog(current, formatted));
-          setError(null);
         },
         status: (event) => {
           if (contextVersionRef.current !== versionAtStart) {
             return;
           }
-          const payload = parseJson<DevServerState>(event.data);
-          if (payload) {
-            applyStatusState(payload);
-            setError(null);
+          const payload = parseJson<{ status?: DevServerSession["status"]; pid?: number }>(event.data);
+          const nextStatus = payload?.status;
+          if (nextStatus) {
+            setSession((prev) => (prev
+              ? {
+                ...prev,
+                status: nextStatus,
+                runtime: payload.pid
+                  ? {
+                    ...(prev.runtime ?? { startedAt: new Date().toISOString() }),
+                    pid: payload.pid,
+                  }
+                  : prev.runtime,
+              }
+              : prev));
           }
         },
         "dev-server:status": (event) => {
@@ -286,35 +377,30 @@ export function useDevServer(projectId?: string): UseDevServerReturn {
             return;
           }
           const payload = parseJson<DevServerState>(event.data);
-          if (payload) {
-            applyStatusState(payload);
-            setError(null);
+          if (payload?.status) {
+            const nextSession = toSessionFromLegacy(payload);
+            setSession(nextSession);
+            setSessions([nextSession]);
           }
         },
         stopped: () => {
           if (contextVersionRef.current !== versionAtStart) {
             return;
           }
-          void refreshStatus().catch(() => {
-            // Errors are recorded in hook state.
-          });
+          // Server stopped event
         },
         failed: () => {
           if (contextVersionRef.current !== versionAtStart) {
             return;
           }
-          void refreshStatus().catch(() => {
-            // Errors are recorded in hook state.
-          });
+          // Server failed event
         },
       },
       onReconnect: () => {
         if (contextVersionRef.current !== versionAtStart) {
           return;
         }
-        void refreshStatus().catch(() => {
-          // Errors are recorded in hook state.
-        });
+        void refresh();
       },
       onError: () => {
         if (contextVersionRef.current !== versionAtStart) {
@@ -327,206 +413,264 @@ export function useDevServer(projectId?: string): UseDevServerReturn {
     return () => {
       unsubscribe();
     };
-  }, [applyStatusState, projectId, refreshStatus]);
+  }, [projectId, refresh, subscriptionSessionId]);
 
+  // Polling while server is running
   useEffect(() => {
-    const version = resetVersion;
-    return () => {
-      if (resetVersion !== version) {
-        contextVersionRef.current += 1;
-      }
-    };
-  }, []);
-
-  const start = useCallback(async (
-    commandOrInput: DevServerStartArgs,
-    cwd?: string,
-    scriptName?: string,
-    packagePath?: string,
-  ) => {
-    const payload = typeof commandOrInput === "string"
-      ? {
-        command: commandOrInput,
-        cwd,
-        scriptName,
-        packagePath,
-      }
-      : {
-        command: commandOrInput.command,
-        cwd: commandOrInput.cwd ?? cwd,
-        scriptName: commandOrInput.scriptName ?? scriptName,
-        packagePath: commandOrInput.packagePath ?? cwd ?? commandOrInput.cwd ?? packagePath,
-      };
-
-    const trimmedCommand = payload.command.trim();
-    if (!trimmedCommand) {
-      const message = "Command is required to start the dev server.";
-      setError(message);
-      throw new Error(message);
+    if (session?.status !== "running" && session?.status !== "starting") {
+      return;
     }
 
+    const interval = setInterval(() => {
+      void refresh();
+    }, POLL_INTERVAL_MS);
+
+    return () => {
+      clearInterval(interval);
+    };
+  }, [refresh, session?.status]);
+
+  const startServer = useCallback(async (command: string, cwd?: string) => {
+    contextVersionRef.current += 1;
     const versionAtStart = contextVersionRef.current;
-    setError(null);
-    setStatus("starting");
-    setSelectedCommand(trimmedCommand);
 
     try {
-      const nextState = await startDevServer(
-        {
-          command: trimmedCommand,
-          cwd: payload.cwd,
-          scriptName: payload.scriptName,
-          packagePath: payload.packagePath,
-        },
-        projectId,
-      );
+      let result: DevServerSession;
+
+      if (subscriptionSessionId && typeof getOptionalExport(() => startDevServerById) === "function") {
+        result = await startDevServerById(subscriptionSessionId, projectId);
+      } else {
+        const legacyState = await legacyStart({ command, cwd }, projectId);
+        result = toSessionFromLegacy(legacyState);
+      }
 
       if (contextVersionRef.current !== versionAtStart) {
         return;
       }
 
-      applyStatusState(nextState);
+      setSession(result);
       setError(null);
     } catch (startError) {
       if (contextVersionRef.current !== versionAtStart) {
         return;
       }
-
-      setStatus("failed");
       setError(normalizeError(startError));
       throw startError;
     }
-  }, [applyStatusState, projectId]);
+  }, [projectId, subscriptionSessionId]);
 
-  const stop = useCallback(async () => {
+  const stopServer = useCallback(async () => {
+    contextVersionRef.current += 1;
     const versionAtStart = contextVersionRef.current;
-    setError(null);
 
     try {
-      const nextState = await stopDevServer(projectId);
+      let result: DevServerSession;
+
+      if (subscriptionSessionId && typeof getOptionalExport(() => stopDevServerById) === "function") {
+        result = await stopDevServerById(subscriptionSessionId, projectId);
+      } else {
+        const legacyState = await legacyStop(projectId);
+        result = toSessionFromLegacy(legacyState);
+      }
 
       if (contextVersionRef.current !== versionAtStart) {
         return;
       }
 
-      applyStatusState(nextState);
+      setSession(result);
       setError(null);
     } catch (stopError) {
       if (contextVersionRef.current !== versionAtStart) {
         return;
       }
-
       setError(normalizeError(stopError));
       throw stopError;
     }
-  }, [applyStatusState, projectId]);
+  }, [projectId, subscriptionSessionId]);
 
-  const restart = useCallback(async () => {
+  const restartServer = useCallback(async () => {
+    contextVersionRef.current += 1;
     const versionAtStart = contextVersionRef.current;
-    setError(null);
-    setStatus("starting");
 
     try {
-      const nextState = await restartDevServer(projectId);
+      let result: DevServerSession;
+
+      if (subscriptionSessionId && typeof getOptionalExport(() => restartDevServerById) === "function") {
+        result = await restartDevServerById(subscriptionSessionId, projectId);
+      } else {
+        const legacyState = await legacyRestart(projectId);
+        result = toSessionFromLegacy(legacyState);
+      }
 
       if (contextVersionRef.current !== versionAtStart) {
         return;
       }
 
-      applyStatusState(nextState);
+      setSession(result);
       setError(null);
     } catch (restartError) {
       if (contextVersionRef.current !== versionAtStart) {
         return;
       }
-
       setError(normalizeError(restartError));
       throw restartError;
     }
-  }, [applyStatusState, projectId]);
+  }, [projectId, subscriptionSessionId]);
 
-  const setManualUrl = useCallback(async (url: string | null) => {
+  const setPreviewUrl = useCallback(async (url: string | null) => {
+    contextVersionRef.current += 1;
     const versionAtStart = contextVersionRef.current;
-    setError(null);
 
     try {
-      const nextState = await setDevServerPreviewUrl({ url }, projectId);
+      let result: { url: string | null; source: string | null };
+
+      if (subscriptionSessionId && typeof getOptionalExport(() => setDevServerPreviewUrlById) === "function") {
+        result = await setDevServerPreviewUrlById(subscriptionSessionId, url, projectId);
+      } else {
+        const legacyState = await setDevServerPreviewUrl({ url }, projectId);
+        result = {
+          url: legacyState.manualUrl ?? legacyState.previewUrl ?? legacyState.detectedUrl ?? null,
+          source: legacyState.manualUrl ? "manual" : "auto",
+        };
+      }
+
       if (contextVersionRef.current !== versionAtStart) {
         return;
       }
 
-      applyStatusState(nextState);
-      setManualUrlState(nextState.manualUrl ?? nextState.manualPreviewUrl ?? url ?? null);
+      // Update session with new preview URL
+      setSession((prev) => {
+        if (!prev) {
+          return null;
+        }
+        return {
+          ...prev,
+          previewUrl: result.url ?? undefined,
+        };
+      });
       setError(null);
     } catch (previewError) {
       if (contextVersionRef.current !== versionAtStart) {
         return;
       }
-
       setError(normalizeError(previewError));
       throw previewError;
     }
-  }, [applyStatusState, projectId]);
+  }, [projectId, subscriptionSessionId]);
 
-  const detect = useCallback(async () => {
+  const detectCommands = useCallback(async () => {
+    contextVersionRef.current += 1;
     const versionAtStart = contextVersionRef.current;
-    setError(null);
 
     try {
-      const detected = await fetchDevServerCandidates(projectId);
+      let commands: DetectedDevServerCommand[];
+
+      try {
+        commands = await detectDevServerCommands(projectId);
+      } catch {
+        // Fallback to legacy detect
+        const legacyCandidates = await legacyDetect(projectId);
+        commands = legacyCandidates.map((candidate) => ({
+          name: candidate.name,
+          command: candidate.command,
+          cwd: candidate.cwd,
+          scriptName: candidate.scriptName,
+          packagePath: candidate.packagePath,
+        }));
+      }
+
       if (contextVersionRef.current !== versionAtStart) {
         return;
       }
 
-      setCandidates(detected);
+      setDetectedCommands(commands);
       setError(null);
     } catch (detectError) {
       if (contextVersionRef.current !== versionAtStart) {
         return;
       }
-
       setError(normalizeError(detectError));
       throw detectError;
     }
   }, [projectId]);
 
-  const setPreviewUrl = useCallback((url: string | null) => setManualUrl(url), [setManualUrl]);
+  // Legacy alias methods
+  const start = useCallback(async (commandOrInput: string | { command: string; cwd?: string; scriptName?: string; packagePath?: string }, cwd?: string) => {
+    if (typeof commandOrInput !== "string" && !subscriptionSessionId) {
+      try {
+        const input = commandOrInput;
+        const legacyState = await legacyStart(
+          {
+            command: input.command,
+            cwd: input.cwd,
+            scriptName: input.scriptName,
+            packagePath: input.packagePath ?? input.cwd,
+          },
+          projectId,
+        );
+        const nextSession = toSessionFromLegacy(legacyState);
+        setSession(nextSession);
+        setSessions([nextSession]);
+        setError(null);
+        return;
+      } catch (legacyStartError) {
+        setError(normalizeError(legacyStartError));
+        throw legacyStartError;
+      }
+    }
 
-  return useMemo(() => ({
-    status,
+    const command = typeof commandOrInput === "string" ? commandOrInput : commandOrInput.command;
+    const cwdArg = typeof commandOrInput === "string" ? cwd : commandOrInput.cwd;
+    await startServer(command, cwdArg);
+  }, [projectId, startServer, subscriptionSessionId]);
+
+  const stop = useCallback(async () => {
+    await stopServer();
+  }, [stopServer]);
+
+  const restart = useCallback(async () => {
+    await restartServer();
+  }, [restartServer]);
+
+  const setManualUrl = useCallback(async (url: string | null) => {
+    await setPreviewUrl(url);
+  }, [setPreviewUrl]);
+
+  const detect = useCallback(async () => {
+    await detectCommands();
+  }, [detectCommands]);
+
+  const refreshStatus = useCallback(async () => {
+    await refresh();
+  }, [refresh]);
+
+  const previewUrl = extractPreviewUrl(session);
+  const serverState = session ? { ...session, pid: session.runtime?.pid } : null;
+
+  return {
+    session,
+    sessions,
     logs,
-    detectedUrl,
-    manualUrl,
-    selectedCommand,
-    candidates,
+    detectedCommands,
+    previewUrl,
     isLoading,
     error,
-    start,
-    stop,
-    restart,
-    setManualUrl,
-    detect,
-    refreshStatus,
-
+    startServer,
+    stopServer,
+    restartServer,
+    setPreviewUrl,
+    detectCommands,
+    refresh,
+    // Legacy aliases
+    candidates: detectedCommands,
     serverState,
     loading: isLoading,
-    setPreviewUrl,
-  }), [
-    status,
-    logs,
-    detectedUrl,
-    manualUrl,
-    selectedCommand,
-    candidates,
-    isLoading,
-    error,
+    // Legacy methods
     start,
     stop,
     restart,
     setManualUrl,
     detect,
     refreshStatus,
-    serverState,
-    setPreviewUrl,
-  ]);
+  };
 }

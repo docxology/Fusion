@@ -68,6 +68,8 @@ export interface HeartbeatMonitorOptions {
   /** Project root directory for agent session CWD.
    *  When not provided, executeHeartbeat() will throw. */
   rootDir?: string;
+  /** Plugin runner for runtime selection. When provided, enables plugin runtime lookup. */
+  pluginRunner?: import("./plugin-runner.js").PluginRunner;
 }
 
 /** Options for waking up an agent */
@@ -240,6 +242,7 @@ export class HeartbeatMonitor {
   private taskStore?: TaskStore;
   private rootDir?: string;
   private messageStore?: MessageStore;
+  private pluginRunner?: import("./plugin-runner.js").PluginRunner;
 
   private trackedAgents: Map<string, TrackedAgent> = new Map();
   private agentStartLocks: Map<string, Promise<unknown>> = new Map();
@@ -256,6 +259,14 @@ export class HeartbeatMonitor {
     this.heartbeatTimeoutMs = options.heartbeatTimeoutMs ?? 60000;
     this.maxConcurrentRuns = options.maxConcurrentRuns ?? 1;
     this.onMissed = options.onMissed;
+    this.onRecovered = options.onRecovered;
+    this.onTerminated = options.onTerminated;
+    this.onRunStarted = options.onRunStarted;
+    this.onRunCompleted = options.onRunCompleted;
+    this.taskStore = options.taskStore;
+    this.rootDir = options.rootDir;
+    this.messageStore = options.messageStore;
+    this.pluginRunner = options.pluginRunner;
     this.onRecovered = options.onRecovered;
     this.onTerminated = options.onTerminated;
     this.onRunStarted = options.onRunStarted;
@@ -1060,6 +1071,7 @@ export class HeartbeatMonitor {
 
         // Lazy-load createFnAgent and promptWithFallback
         const { createFnAgent, promptWithFallback } = await import("./pi.js");
+        const { createResolvedAgentSession } = await import("./agent-session-helpers.js");
         const { buildSessionSkillContextSync } = await import("./session-skill-context.js");
 
         // Build tools with task creation tracking and run context for mutation correlation
@@ -1135,7 +1147,9 @@ export class HeartbeatMonitor {
         }
 
         // Create agent session
-        const { session } = await createFnAgent({
+        const { session } = await createResolvedAgentSession({
+          sessionPurpose: "heartbeat",
+          pluginRunner: this.pluginRunner,
           cwd: rootDir,
           systemPrompt,
           tools: "readonly",

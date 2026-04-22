@@ -1,3 +1,4 @@
 packages:
   - "packages/*"
   - "plugins/examples/*"
+  - "plugins/fusion-plugin-paperclip-runtime"

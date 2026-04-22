@@ -49,6 +49,20 @@ vi.mock("./merger.js", () => ({
   aiMergeTask: vi.fn(),
   findWorktreeUser: vi.fn().mockResolvedValue(null),
 }));
+vi.mock("./agent-session-helpers.js", async () => {
+  const { createFnAgent } = await import("./pi.js");
+  return {
+    createResolvedAgentSession: async (options: any) => {
+      const result = await createFnAgent(options);
+      return {
+        session: result.session,
+        sessionFile: result.sessionFile,
+        runtimeId: "pi",
+        wasConfigured: false,
+      };
+    },
+  };
+});
 vi.mock("./worktree-names.js", async () => {
   const actual = await vi.importActual<typeof import("./worktree-names.js")>("./worktree-names.js");
   return {

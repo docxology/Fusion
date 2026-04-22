@@ -13,7 +13,8 @@ import type {
   ToolDefinition,
   AgentSession,
 } from "@mariozechner/pi-coding-agent";
-import { createFnAgent, describeModel, promptWithFallback } from "./pi.js";
+import { describeModel, promptWithFallback } from "./pi.js";
+import { createResolvedAgentSession } from "./agent-session-helpers.js";
 import { reviewStep, type ReviewVerdict } from "./reviewer.js";
 import { buildSessionSkillContext } from "./session-skill-context.js";
 import { PRIORITY_SPECIFY, type AgentSemaphore } from "./concurrency.js";
@@ -290,6 +291,8 @@ export interface TriageProcessorOptions {
   onAgentText?: (taskId: string, delta: string) => void;
   /** AgentStore for resolving per-agent custom instructions. */
   agentStore?: import("@fusion/core").AgentStore;
+  /** Plugin runner for runtime selection. When provided, enables plugin runtime lookup. */
+  pluginRunner?: import("./plugin-runner.js").PluginRunner;
 }
 
 /**
@@ -734,7 +737,9 @@ export class TriageProcessor {
           projectRootDir: this.rootDir,
         });
 
-        let { session } = await createFnAgent({
+        let { session } = await createResolvedAgentSession({
+          sessionPurpose: "triage",
+          pluginRunner: this.options.pluginRunner,
           cwd: this.rootDir,
           systemPrompt: triageSystemPrompt,
           tools: "coding",
@@ -914,7 +919,9 @@ export class TriageProcessor {
             specReviewVerdictRef.current = null;
             approvedCommentFingerprintRef.current = "";
 
-            const fallbackResult = await createFnAgent({
+            const fallbackResult = await createResolvedAgentSession({
+              sessionPurpose: "triage",
+              pluginRunner: this.options.pluginRunner,
               cwd: this.rootDir,
               systemPrompt: triageSystemPrompt,
               tools: "coding",

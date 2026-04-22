@@ -235,6 +235,17 @@ export class PluginRunner {
   }
 
   /**
+   * Get a specific runtime registration by its runtimeId.
+   *
+   * @param runtimeId - The unique runtime identifier to find
+   * @returns The runtime registration with plugin ID, or undefined if not found
+   */
+  getRuntimeById(runtimeId: string): { pluginId: string; runtime: PluginRuntimeRegistration } | undefined {
+    const registrations = this.getPluginRuntimes();
+    return registrations.find((reg) => reg.runtime.metadata.runtimeId === runtimeId);
+  }
+
+  /**
    * Get the underlying plugin loader.
    */
   getLoader(): PluginLoader {
@@ -477,6 +488,35 @@ export class PluginRunner {
       logger: this.createPluginLogger(plugin.manifest.id),
       emitEvent: (event: string, data: unknown) => {
         this.log.log(`[plugin:${plugin.manifest.id}] Event: ${event}`, data);
+      },
+    };
+  }
+
+  /**
+   * Create a plugin context for runtime instantiation.
+   *
+   * This context is passed to plugin runtime factories to allow them
+   * to initialize their runtime instances with access to task store,
+   * settings, and logging.
+   *
+   * @param pluginId - The plugin ID to create context for
+   * @returns The plugin context, or null if the plugin is not loaded
+   */
+  async createRuntimeContext(pluginId: string): Promise<PluginContext | null> {
+    const plugin = this.options.pluginLoader.getPlugin(pluginId);
+    if (!plugin) {
+      this.log.warn(`Plugin "${pluginId}" not loaded, cannot create runtime context`);
+      return null;
+    }
+
+    const settings = await this.getPluginSettings(pluginId);
+    return {
+      pluginId,
+      taskStore: this.options.taskStore,
+      settings,
+      logger: this.createPluginLogger(pluginId),
+      emitEvent: (event: string, data: unknown) => {
+        this.log.log(`[plugin:${pluginId}] Event: ${event}`, data);
       },
     };
   }

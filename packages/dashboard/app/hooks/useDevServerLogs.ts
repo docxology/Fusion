@@ -351,6 +351,9 @@ export function useDevServerLogs(projectId: string | undefined, enabled: boolean
     setEntries([]);
   }, []);
 
+  // Track streaming state: true when SSE subscription is active
+  const isStreaming = unsubscribeRef.current !== null && !loading && !cancelledRef.current;
+
   return {
     entries,
     loading,
@@ -359,6 +362,10 @@ export function useDevServerLogs(projectId: string | undefined, enabled: boolean
     total,
     loadMore,
     clear,
+    // New simplified interface per Step 2 requirements
+    logs: entries, // Alias for backward compatibility
+    isStreaming, // Track SSE subscription state
+    clearLogs: clear, // Alias for clear
   };
 }
 

@@ -7,7 +7,8 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { getTaskMergeBlocker, type TaskStore, type MergeResult, type MergeDetails, type WorkflowStep, type WorkflowStepResult, type Settings, type AgentPromptsConfig } from "@fusion/core";
 import { resolveAgentPrompt } from "@fusion/core";
-import { createFnAgent, describeModel, promptWithFallback, compactSessionContext } from "./pi.js";
+import { describeModel, promptWithFallback, compactSessionContext } from "./pi.js";
+import { createResolvedAgentSession } from "./agent-session-helpers.js";
 import { buildSessionSkillContext } from "./session-skill-context.js";
 import type { WorktreePool } from "./worktree-pool.js";
 import { AgentLogger } from "./agent-logger.js";
@@ -662,7 +663,9 @@ async function attemptInMergeVerificationFix(
     }
 
     // Create the fix agent session
-    const { session } = await createFnAgent({
+    const { session } = await createResolvedAgentSession({
+      sessionPurpose: "merger",
+      pluginRunner: options.pluginRunner,
       cwd: rootDir, // Runs on the main branch in the project root
       systemPrompt: `You are a verification fix agent running during a merge on the main branch.
 
@@ -1332,6 +1335,8 @@ export interface MergerOptions {
   onSession?: (session: { dispose: () => void }) => void;
   /** AgentStore for resolving per-agent custom instructions. */
   agentStore?: import("@fusion/core").AgentStore;
+  /** Plugin runner for runtime selection. When provided, enables plugin runtime lookup. */
+  pluginRunner?: import("./plugin-runner.js").PluginRunner;
 }
 
 function quoteArg(value: string): string {
@@ -1395,7 +1400,7 @@ async function resolveComplexRebaseConflictsWithAi(
   taskId: string,
   settings: Settings,
   conflictedFiles: string[],
-  options?: { onAgentText?: (delta: string) => void },
+  options?: { onAgentText?: (delta: string) => void; pluginRunner?: import("./plugin-runner.js").PluginRunner },
 ): Promise<void> {
   mergerLog.log(`${taskId}: resolving ${conflictedFiles.length} complex rebase conflict(s) with AI`);
 
@@ -1420,7 +1425,9 @@ You are assisting with a paused \`git pull --rebase\`.
       : undefined,
   });
 
-  const { session } = await createFnAgent({
+  const { session } = await createResolvedAgentSession({
+    sessionPurpose: "merger",
+    pluginRunner: options?.pluginRunner,
     cwd: rootDir,
     systemPrompt,
     tools: "coding",
@@ -2765,7 +2772,9 @@ async function runAiAgentForCommit(params: AiAgentParams): Promise<{ success: bo
     }
   }
 
-  const { session } = await createFnAgent({
+  const { session } = await createResolvedAgentSession({
+    sessionPurpose: "merger",
+    pluginRunner: options.pluginRunner,
     cwd: rootDir,
     systemPrompt: mergerSystemPrompt,
     tools: "coding",
@@ -3243,7 +3252,9 @@ If issues are found that need attention, describe them clearly.`;
       }
     }
 
-    const { session } = await createFnAgent({
+    const { session } = await createResolvedAgentSession({
+      sessionPurpose: "merger",
+      pluginRunner: mergeOptions.pluginRunner,
       cwd,
       systemPrompt: postMergeSystemPrompt,
       tools: toolMode,

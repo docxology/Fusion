@@ -10,7 +10,8 @@
 
 import type { TaskStore, TaskComment, AgentPromptsConfig, Settings } from "@fusion/core";
 import { buildReviewerMemoryInstructions, resolveAgentPrompt } from "@fusion/core";
-import { createFnAgent, describeModel, promptWithFallback } from "./pi.js";
+import { describeModel, promptWithFallback } from "./pi.js";
+import { createResolvedAgentSession } from "./agent-session-helpers.js";
 import { buildSessionSkillContext } from "./session-skill-context.js";
 import { AgentLogger } from "./agent-logger.js";
 import { reviewerLog } from "./logger.js";
@@ -230,6 +231,8 @@ export interface ReviewOptions {
   rootDir?: string;
   /** Project settings used for backend-aware memory tools and instructions. */
   settings?: Settings;
+  /** Plugin runner for runtime selection. When provided, enables plugin runtime lookup. */
+  pluginRunner?: import("./plugin-runner.js").PluginRunner;
 }
 
 /**
@@ -359,7 +362,9 @@ export async function reviewStep(
         } : undefined),
       ]
     : undefined;
-  const { session } = await createFnAgent({
+  const { session } = await createResolvedAgentSession({
+    sessionPurpose: "reviewer",
+    pluginRunner: options.pluginRunner,
     cwd,
     systemPrompt: reviewerSystemPrompt,
     tools: "readonly",

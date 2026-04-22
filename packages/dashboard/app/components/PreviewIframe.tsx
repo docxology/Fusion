@@ -7,9 +7,11 @@ export interface PreviewIframeProps {
   embedStatus: EmbedStatus;
   onEmbedStatusChange: (status: EmbedStatus) => void;
   iframeRef: RefObject<HTMLIFrameElement | null>;
-  embedContext: string | null;
+  blockReason: string | null;
   onRetry?: () => void;
   className?: string;
+  /** @deprecated Use blockReason instead */
+  embedContext?: string | null;
 }
 
 const DEFAULT_IFRAME_CLASS = "devserver-preview-iframe";
@@ -19,10 +21,14 @@ export function PreviewIframe({
   embedStatus,
   onEmbedStatusChange,
   iframeRef,
-  embedContext,
+  blockReason,
   onRetry,
   className = DEFAULT_IFRAME_CLASS,
+  embedContext: deprecatedEmbedContext,
 }: PreviewIframeProps) {
+  // Support both blockReason and legacy embedContext
+  const context = blockReason ?? deprecatedEmbedContext ?? null;
+
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
@@ -98,7 +104,7 @@ export function PreviewIframe({
           <ShieldAlert className="devserver-preview-blocked-icon" aria-hidden="true" />
           <div>
             <p className="devserver-preview-blocked-title">Preview cannot be embedded</p>
-            {embedContext && <p className="devserver-preview-blocked-context">{embedContext}</p>}
+            {context && <p className="devserver-preview-blocked-context">{context}</p>}
           </div>
           <p className="devserver-preview-blocked-description">You can view the preview in a separate browser tab.</p>
           <div className="devserver-preview-blocked-actions">
@@ -127,7 +133,7 @@ export function PreviewIframe({
           <AlertTriangle className="devserver-preview-blocked-icon" aria-hidden="true" />
           <div>
             <p className="devserver-preview-blocked-title">Unable to load preview</p>
-            {embedContext && <p className="devserver-preview-blocked-context">{embedContext}</p>}
+            {context && <p className="devserver-preview-blocked-context">{context}</p>}
           </div>
           <p className="devserver-preview-blocked-description">You can view the preview in a separate browser tab.</p>
           <div className="devserver-preview-blocked-actions">

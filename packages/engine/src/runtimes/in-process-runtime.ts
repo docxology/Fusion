@@ -255,6 +255,7 @@ export class InProcessRuntime
                 }
               : undefined,
             rootDir: this.config.workingDirectory,
+            pluginRunner: this.pluginRunner,
           })
         : undefined;
 
@@ -452,6 +453,7 @@ export class InProcessRuntime
           taskStore: this.taskStore,
           rootDir: this.config.workingDirectory,
           messageStore: this.messageStore,
+          pluginRunner: this.pluginRunner,
           onMissed: (agentId) => {
             runtimeLog.warn(`Agent ${agentId} missed heartbeat`);
           },
@@ -596,6 +598,7 @@ export class InProcessRuntime
           semaphore: this.globalSemaphore,
           stuckTaskDetector: this.stuckTaskDetector,
           agentStore: this.agentStore,
+          pluginRunner: this.pluginRunner,
           onSpecifyStart: (t) => {
             this.recordActivity();
             runtimeLog.log(`Specifying ${t.id}...`);

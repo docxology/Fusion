@@ -10,7 +10,8 @@ import { buildExecutionMemoryInstructions, getTaskMergeBlocker, resolveAgentProm
 import { findWorktreeUser } from "./merger.js";
 import { generateWorktreeName, slugify } from "./worktree-names.js";
 import { Type, type Static } from "@mariozechner/pi-ai";
-import { createFnAgent, describeModel, promptWithFallback, compactSessionContext } from "./pi.js";
+import { describeModel, promptWithFallback, compactSessionContext } from "./pi.js";
+import { createResolvedAgentSession, describeAgentModel } from "./agent-session-helpers.js";
 import { buildSessionSkillContext } from "./session-skill-context.js";
 import { reviewStep, type ReviewVerdict } from "./reviewer.js";
 import { ModelRegistry, SessionManager, type ToolDefinition, type AgentSession } from "@mariozechner/pi-coding-agent";
@@ -1765,7 +1766,9 @@ export class TaskExecutor {
 
         // sessionFile must be let because it's destructured alongside session which is reassigned
         // eslint-disable-next-line prefer-const
-        let { session, sessionFile } = await createFnAgent({
+        let { session, sessionFile } = await createResolvedAgentSession({
+          sessionPurpose: "executor",
+          pluginRunner: this.options.pluginRunner,
           cwd: worktreePath,
           systemPrompt: executorSystemPrompt,
           tools: "coding",
@@ -2000,7 +2003,9 @@ export class TaskExecutor {
             this.activeSessions.delete(task.id);
             session.dispose();
 
-            const { session: retrySession, sessionFile: retrySessionFile } = await createFnAgent({
+            const { session: retrySession, sessionFile: retrySessionFile } = await createResolvedAgentSession({
+              sessionPurpose: "executor",
+              pluginRunner: this.options.pluginRunner,
               cwd: worktreePath,
               systemPrompt: executorSystemPrompt,
               tools: "coding",
@@ -3627,7 +3632,9 @@ and show an appropriate message to the user.\`
         projectRootDir: this.rootDir,
       });
 
-      const { session } = await createFnAgent({
+      const { session } = await createResolvedAgentSession({
+        sessionPurpose: "executor",
+        pluginRunner: this.options.pluginRunner,
         cwd: worktreePath,
         systemPrompt: stepSystemPrompt,
         tools: toolMode,
@@ -4673,7 +4680,9 @@ and show an appropriate message to the user.\`
           });
 
           // Create child agent session
-          const { session: childSession } = await createFnAgent({
+          const { session: childSession } = await createResolvedAgentSession({
+            sessionPurpose: "executor",
+            pluginRunner: this.options.pluginRunner,
             cwd: childWorktreePath,
             systemPrompt: childSystemPrompt,
             tools: "coding",

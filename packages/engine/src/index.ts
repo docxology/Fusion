@@ -47,6 +47,24 @@ export { HeartbeatMonitor, HeartbeatTriggerScheduler, type WakeContext } from ".
 export { TokenCapDetector, type TokenCapCheckResult } from "./token-cap-detector.js";
 export { SelfHealingManager, type SelfHealingOptions } from "./self-healing.js";
 export { PluginRunner, type PluginRunnerOptions } from "./plugin-runner.js";
+// Agent runtime abstraction
+export { type AgentRuntime, type AgentRuntimeOptions, type AgentSessionResult } from "./agent-runtime.js";
+export {
+  resolveRuntime,
+  getDefaultPiRuntime,
+  buildRuntimeResolutionContext,
+  type RuntimeResolutionContext,
+  type ResolvedRuntime,
+  type SessionPurpose,
+} from "./runtime-resolution.js";
+// Agent session helpers
+export {
+  createResolvedAgentSession,
+  promptWithAutoRetry,
+  describeAgentModel,
+  type ResolvedSessionOptions,
+  type ResolvedSessionResult,
+} from "./agent-session-helpers.js";
 export { ProjectManager } from "./project-manager.js";
 export { ProjectEngine, type ProjectEngineOptions } from "./project-engine.js";
 export { ProjectEngineManager, type EngineManagerOptions } from "./project-engine-manager.js";

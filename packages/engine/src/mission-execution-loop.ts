@@ -20,6 +20,7 @@ import type {
   MissionValidatorRun,
 } from "@fusion/core";
 import { createFnAgent, promptWithFallback, type AgentResult } from "./pi.js";
+import { createResolvedAgentSession } from "./agent-session-helpers.js";
 import { createLogger } from "./logger.js";
 
 /** Logger for the mission execution loop subsystem. */
@@ -63,6 +64,8 @@ export interface MissionExecutionLoopOptions {
   rootDir: string;
   /** Maximum implementation retry budget (default: 3) */
   maxRetryBudget?: number;
+  /** Plugin runner for runtime selection. When provided, enables plugin runtime lookup. */
+  pluginRunner?: import("./plugin-runner.js").PluginRunner;
 }
 
 export class MissionExecutionLoop extends EventEmitter {
@@ -72,6 +75,7 @@ export class MissionExecutionLoop extends EventEmitter {
   private rootDir: string;
   private maxRetryBudget: number;
   private missionAutopilot?: MissionExecutionLoopOptions["missionAutopilot"];
+  private pluginRunner?: MissionExecutionLoopOptions["pluginRunner"];
   private activeValidations = new Set<string>(); // feature IDs currently being validated
 
   constructor(options: MissionExecutionLoopOptions) {
@@ -81,6 +85,7 @@ export class MissionExecutionLoop extends EventEmitter {
     this.rootDir = options.rootDir;
     this.maxRetryBudget = options.maxRetryBudget ?? 3;
     this.missionAutopilot = options.missionAutopilot;
+    this.pluginRunner = options.pluginRunner;
     loopLog.log("MissionExecutionLoop created");
   }
 
@@ -325,7 +330,9 @@ export class MissionExecutionLoop extends EventEmitter {
 
     try {
       // Create validation agent session
-      session = await createFnAgent({
+      const sessionResult = await createResolvedAgentSession({
+        sessionPurpose: "validation",
+        pluginRunner: this.pluginRunner,
         cwd: this.rootDir,
         systemPrompt: this.buildValidationSystemPrompt(feature, assertions, taskContext),
         tools: "readonly",
@@ -334,6 +341,7 @@ export class MissionExecutionLoop extends EventEmitter {
           // Could stream this to a log entry if needed
         },
       });
+      session = { session: sessionResult.session, sessionFile: sessionResult.sessionFile };
 
       loopLog.log(`Validation session created for feature ${feature.id}`);
 

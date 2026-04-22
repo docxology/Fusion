@@ -319,6 +319,9 @@ See [Memory Plugin Contract](./memory-plugin-contract.md) for the full specifica
 - `ContextLimitDetector` (`context-limit-detector.ts`) — context-window pressure checks
 - `TokenCapDetector` (`token-cap-detector.ts`) — token-cap enforcement checks
 - `PluginRunner` (`plugin-runner.ts`) — runtime plugin callback execution
+- `AgentRuntime` (`agent-runtime.ts`) — runtime adapter interface contract
+- `RuntimeResolution` (`runtime-resolution.ts`) — runtime selection and fallback logic
+- `AgentSessionHelpers` (`agent-session-helpers.ts`) — runtime-aware session creation helpers
 
 ### Concurrency, recovery, and resiliency
 - `AgentSemaphore` (`concurrency.ts`) — slot acquisition

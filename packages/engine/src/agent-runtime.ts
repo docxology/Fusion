@@ -1,0 +1,116 @@
+/**
+ * Agent runtime adapter abstraction layer.
+ *
+ * Provides a typed interface for creating and managing agent sessions
+ * across different runtime implementations (default pi runtime, plugin-provided runtimes).
+ *
+ * ## Interface Contract
+ *
+ * All runtimes must implement:
+ * - `id`: Unique runtime identifier (e.g., "pi", "code-interpreter")
+ * - `name`: Human-readable name
+ * - `createSession()`: Create a new agent session
+ * - `promptWithFallback()`: Prompt with automatic retry/compaction
+ * - `describeModel()`: Get model description from session
+ */
+
+import type { AgentSession, SessionManager, ToolDefinition } from "@mariozechner/pi-coding-agent";
+import type { SkillSelectionContext } from "./skill-resolver.js";
+
+/**
+ * Options for creating an agent session.
+ * Mirrors the options accepted by createFnAgent.
+ */
+export interface AgentRuntimeOptions {
+  /** Working directory for the agent session */
+  cwd: string;
+  /** System prompt for the agent */
+  systemPrompt: string;
+  /** Tool set to use: "coding" for full tools, "readonly" for read-only access */
+  tools?: "coding" | "readonly";
+  /** Additional custom tools to merge with the base toolset */
+  customTools?: ToolDefinition[];
+  /** Callback for text output from the agent */
+  onText?: (delta: string) => void;
+  /** Callback for thinking/thought output from the agent */
+  onThinking?: (delta: string) => void;
+  /** Callback when a tool starts execution */
+  onToolStart?: (name: string, args?: Record<string, unknown>) => void;
+  /** Callback when a tool finishes execution */
+  onToolEnd?: (name: string, isError: boolean, result?: unknown) => void;
+  /** Default model provider (e.g. "anthropic") */
+  defaultProvider?: string;
+  /** Default model ID within the provider (e.g. "claude-sonnet-4-5") */
+  defaultModelId?: string;
+  /** Optional fallback model provider for retryable errors */
+  fallbackProvider?: string;
+  /** Optional fallback model ID */
+  fallbackModelId?: string;
+  /** Default thinking effort level (e.g. "medium", "high") */
+  defaultThinkingLevel?: string;
+  /** Optional pre-configured SessionManager for persistence */
+  sessionManager?: SessionManager;
+  /** Optional skill selection context */
+  skillSelection?: SkillSelectionContext;
+  /** Convenience: skill names to include in the session */
+  skills?: string[];
+}
+
+/**
+ * Result of creating an agent session.
+ */
+export interface AgentSessionResult {
+  /** The created agent session */
+  session: AgentSession;
+  /** Path to the persisted session file (undefined for in-memory sessions) */
+  sessionFile?: string;
+}
+
+/**
+ * Agent runtime adapter interface.
+ *
+ * All session runtimes (default pi runtime, plugin-provided runtimes) must
+ * implement this interface to ensure consistent behavior across engine subsystems.
+ *
+ * ## Implementation Notes
+ *
+ * - `createSession()` should return a fully initialized session ready for prompting
+ * - `promptWithFallback()` should handle retry/compaction automatically
+ * - `describeModel()` should return a human-readable model identifier
+ */
+export interface AgentRuntime {
+  /** Unique runtime identifier (e.g., "pi", "code-interpreter", "web-search") */
+  readonly id: string;
+  /** Human-readable name for the runtime */
+  readonly name: string;
+
+  /**
+   * Create a new agent session.
+   *
+   * @param options - Session creation options
+   * @returns Promise resolving to the session result
+   */
+  createSession(options: AgentRuntimeOptions): Promise<AgentSessionResult>;
+
+  /**
+   * Prompt the session with user input.
+   *
+   * Implementations should handle:
+   * - Automatic retry on transient errors
+   * - Context compaction on context limit errors
+   * - Model fallback on retryable model selection errors
+   *
+   * @param session - The session to prompt
+   * @param prompt - The prompt text
+   * @param options - Optional prompt options (e.g., images for vision)
+   */
+  promptWithFallback(session: AgentSession, prompt: string, options?: unknown): Promise<void>;
+
+  /**
+   * Get a human-readable model description from a session.
+   *
+   * @param session - The session to describe
+   * @returns Model description (e.g., "anthropic/claude-sonnet-4-5") or "unknown model"
+   */
+  describeModel(session: AgentSession): string;
+}
