@@ -59,6 +59,48 @@ function configurePiPackage(): void {
 
 configurePiPackage();
 
+/**
+ * Load `.env` (and `.env.local`) from the current working directory into
+ * process.env so that secrets like FUSION_DAEMON_TOKEN can live in a local
+ * gitignored file instead of being exported manually each session.
+ *
+ * Existing environment variables always win — this loader never clobbers
+ * values the user set explicitly in their shell. `.env.local` overrides
+ * `.env` when both are present.
+ *
+ * We deliberately hand-roll a minimal parser instead of pulling in dotenv:
+ * the CLI ships as a single bundled binary and we want to keep it lean.
+ */
+function loadEnvFile(path: string): void {
+  if (!existsSync(path)) return;
+  const contents = readFileSync(path, "utf-8");
+  for (const rawLine of contents.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    const eq = line.indexOf("=");
+    if (eq === -1) continue;
+    const key = line.slice(0, eq).trim();
+    if (!key || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) continue;
+    if (process.env[key] !== undefined) continue; // Shell wins.
+    let value = line.slice(eq + 1).trim();
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    process.env[key] = value;
+  }
+}
+
+function loadLocalEnv(): void {
+  const cwd = process.cwd();
+  loadEnvFile(join(cwd, ".env"));
+  loadEnvFile(join(cwd, ".env.local"));
+}
+
+loadLocalEnv();
+
 // Command handlers are loaded lazily so --help can return immediately
 // without importing the full command graph.
 async function loadCommandHandlers() {
