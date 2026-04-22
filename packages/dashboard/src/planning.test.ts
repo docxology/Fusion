@@ -21,6 +21,7 @@ import {
   getRateLimitResetTime,
   __resetPlanningState,
   __setCreateFnAgent,
+  __setPlanningDiagnostics,
   rehydrateFromStore,
   setAiSessionStore,
   RateLimitError,
@@ -494,6 +495,58 @@ describe("planning module", () => {
       const callArg = createFnAgentSpy.mock.calls[0]?.[0] as Record<string, unknown>;
       expect(callArg?.systemPrompt).toContain("planning assistant");
     });
+
+    it("logs error diagnostic when agent initialization fails and preserves error state", async () => {
+      const loggedErrors: Array<{ message: string; args: unknown[] }> = [];
+      __setPlanningDiagnostics({
+        log: vi.fn(),
+        warn: vi.fn(),
+        error: (message: string, ...args: unknown[]) => {
+          loggedErrors.push({ message, args });
+        },
+      });
+
+      __setCreateFnAgent(async () => {
+        throw new Error("Agent creation failed");
+      });
+
+      const sessionId = await createSessionWithAgent(
+        getUniqueIp(),
+        "Build auth system",
+        TEST_ROOT_DIR,
+      );
+
+      // Wait for the async initialization to complete (errors are logged in initializeAgent's catch block)
+      await vi.waitFor(
+        () => {
+          return loggedErrors.some(
+            (e) => e.message === `Agent initialization error for session ${sessionId}:`
+          );
+        },
+        { timeout: 10000 },
+      );
+
+      // Verify the error was logged
+      await vi.waitFor(
+        () => {
+          const agentError = loggedErrors.find(
+            (e) => e.message === `Agent initialization error for session ${sessionId}:`
+          );
+          expect(agentError).toBeDefined();
+        },
+        { timeout: 5000 },
+      );
+
+      const agentError = loggedErrors.find(
+        (e) => e.message === `Agent initialization error for session ${sessionId}:`
+      );
+      expect(agentError?.args[0]).toBeInstanceOf(Error);
+      expect((agentError?.args[0] as Error).message).toBe("Agent creation failed");
+
+      // Verify session is in error state
+      const session = getSession(sessionId);
+      expect(session?.error).toContain("Agent creation failed");
+    });
   });
 
   describe("submitResponse", () => {
@@ -931,18 +984,24 @@ describe("planning module", () => {
       store.rows.set(goodRow.id, goodRow);
       store.rows.set(badRow.id, badRow);
 
-      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+      const loggedErrors: Array<{ message: string; args: unknown[] }> = [];
+      __setPlanningDiagnostics({
+        log: vi.fn(),
+        warn: vi.fn(),
+        error: (message: string, ...args: unknown[]) => {
+          loggedErrors.push({ message, args });
+        },
+      });
 
       const rehydrated = rehydrateFromStore(store as any);
 
       expect(rehydrated).toBe(1);
       expect(getSession(goodRow.id)).toBeDefined();
       expect(getSession(badRow.id)).toBeUndefined();
-      expect(errorSpy).toHaveBeenCalledWith(
-        `[planning] Failed to rehydrate session ${badRow.id}:`,
-        expect.any(Error),
-      );
-      errorSpy.mockRestore();
+      expect(loggedErrors).toContainEqual({
+        message: `Failed to rehydrate session ${badRow.id}:`,
+        args: [expect.any(Error)],
+      });
     });
   });
 
@@ -1206,6 +1265,64 @@ describe("planning module", () => {
       const result = parseAgentResponse(input);
       expect(result.type).toBe("complete");
     });
+
+    it("logs error diagnostic when no JSON candidate found before throwing", () => {
+      const loggedErrors: Array<{ message: string; args: unknown[] }> = [];
+      __setPlanningDiagnostics({
+        log: vi.fn(),
+        warn: vi.fn(),
+        error: (message: string, ...args: unknown[]) => {
+          loggedErrors.push({ message, args });
+        },
+      });
+
+      const input = "I'm not sure what to ask about this project.";
+      expect(() => parseAgentResponse(input)).toThrow("no valid JSON");
+
+      expect(loggedErrors).toContainEqual({
+        message: "No JSON candidate found in agent response:",
+        args: [expect.stringContaining("I'm not sure")],
+      });
+    });
+
+    it("logs error diagnostic when repair also fails before throwing", () => {
+      const loggedErrors: Array<{ message: string; args: unknown[] }> = [];
+      __setPlanningDiagnostics({
+        log: vi.fn(),
+        warn: vi.fn(),
+        error: (message: string, ...args: unknown[]) => {
+          loggedErrors.push({ message, args });
+        },
+      });
+
+      // Invalid JSON that repair cannot fix (missing quotes around values, unclosed objects)
+      const input = '{"type":"question","data":{"id":q-1,"question":"What is this?';
+      expect(() => parseAgentResponse(input)).toThrow("Failed to parse AI response");
+
+      expect(loggedErrors).toContainEqual({
+        message: "Failed to parse agent response (repair also failed):",
+        args: [expect.stringContaining("{\"type\":\"question\"")],
+      });
+    });
+
+    it("logs error diagnostic for invalid response structure before throwing", () => {
+      const loggedErrors: Array<{ message: string; args: unknown[] }> = [];
+      __setPlanningDiagnostics({
+        log: vi.fn(),
+        warn: vi.fn(),
+        error: (message: string, ...args: unknown[]) => {
+          loggedErrors.push({ message, args });
+        },
+      });
+
+      const input = '{"type":"unknown","data":null}';
+      expect(() => parseAgentResponse(input)).toThrow("invalid response structure");
+
+      expect(loggedErrors).toContainEqual({
+        message: "Invalid response structure from AI:",
+        args: [expect.stringContaining('"type":"unknown"')],
+      });
+    });
   });
 
   describe("formatInterviewQA", () => {
@@ -1366,6 +1483,49 @@ describe("planning module", () => {
 
       planningStreamManager.cleanupSession(sessionId);
       expect(planningStreamManager.getBufferedEvents(sessionId, 0)).toEqual([]);
+    });
+
+    it("broadcast callback throw logs error but broadcast continues and buffer remains valid", () => {
+      const sessionId = "stream-session-throw";
+      const loggedErrors: Array<{ message: string; args: unknown[] }> = [];
+      __setPlanningDiagnostics({
+        log: vi.fn(),
+        warn: vi.fn(),
+        error: (message: string, ...args: unknown[]) => {
+          loggedErrors.push({ message, args });
+        },
+      });
+
+      let otherCallbackCalled = false;
+      const failingCallback = () => {
+        throw new Error("Callback failed");
+      };
+      const workingCallback = () => {
+        otherCallbackCalled = true;
+      };
+
+      planningStreamManager.subscribe(sessionId, failingCallback);
+      planningStreamManager.subscribe(sessionId, workingCallback);
+
+      const eventId = planningStreamManager.broadcast(sessionId, {
+        type: "thinking",
+        data: "test",
+      });
+
+      // Broadcast should continue despite callback failure
+      expect(eventId).toBe(1);
+      expect(otherCallbackCalled).toBe(true);
+
+      // Buffer should still be valid
+      const buffered = planningStreamManager.getBufferedEvents(sessionId, 0);
+      expect(buffered).toHaveLength(1);
+      expect(buffered[0]).toMatchObject({ id: 1, event: "thinking" });
+
+      // Error should be logged
+      expect(loggedErrors).toContainEqual({
+        message: `Error broadcasting to client for session ${sessionId}:`,
+        args: [expect.any(Error)],
+      });
     });
   });
 

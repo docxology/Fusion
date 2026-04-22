@@ -4,8 +4,12 @@ import { vi } from "vitest";
 // Ensure dashboard route/server tests start in no-auth mode unless they
 // explicitly opt in. CI/agent shells may export daemon tokens globally,
 // which would otherwise force 401s across unrelated endpoint tests.
-delete process.env.FUSION_DAEMON_TOKEN;
-delete process.env.FUSION_BEARER_TOKEN;
+const clearDaemonAuthEnv = () => {
+  delete process.env.FUSION_DAEMON_TOKEN;
+  delete process.env.FUSION_BEARER_TOKEN;
+};
+
+clearDaemonAuthEnv();
 
 const noisyOutputMarkers = [
   "Subagent result watcher failed",
@@ -128,6 +132,7 @@ class MockEventSource {
 
 // Set up before each test
 beforeEach(() => {
+  clearDaemonAuthEnv();
   MockEventSource.instances = [];
   (globalThis as any).EventSource = MockEventSource;
 });
@@ -140,6 +145,7 @@ afterEach(() => {
   }
   MockEventSource.instances = [];
   delete (globalThis as any).EventSource;
+  clearDaemonAuthEnv();
 });
 
 export { MockEventSource };

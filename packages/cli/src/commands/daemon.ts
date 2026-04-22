@@ -125,6 +125,11 @@ function maskToken(token: string): string {
   return `${token.slice(0, 6)}...${token.slice(-4)}`;
 }
 
+function isValidDaemonToken(token: string): boolean {
+  // Accept generated tokens (fn_<32 hex>) and user-provided prefixed variants.
+  return /^fn_[A-Za-z0-9_-]{8,}$/.test(token);
+}
+
 export interface DaemonOptions {
   /** Port to listen on (default: 0 for random port) */
   port?: number;
@@ -178,9 +183,10 @@ export async function runDaemon(opts: DaemonOptions = {}) {
     const settingsStore = new GlobalSettingsStore(globalDir);
     const tokenManager = new DaemonTokenManager(settingsStore);
 
-    // Check for token in environment (fallback)
+    // Check for token in environment (fallback). Ignore legacy/invalid values
+    // so daemon auth always uses the expected fn_* token format.
     const envToken = process.env.FUSION_DAEMON_TOKEN;
-    if (envToken) {
+    if (envToken && isValidDaemonToken(envToken)) {
       daemonToken = envToken;
     } else {
       // Get or create token

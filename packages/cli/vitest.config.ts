@@ -8,11 +8,12 @@ process.env.VITEST_MAX_WORKERS = String(maxWorkers);
 
 export default defineConfig({
   resolve: {
-    alias: {
-      "@fusion/core": resolve(__dirname, "../core/src/index.ts"),
-      "@fusion/core/gh-cli": resolve(__dirname, "../core/src/gh-cli.ts"),
-      "@fusion/test-utils": resolve(__dirname, "../core/src/__test-utils__/workspace.ts"),
-    },
+    // Use ordered aliases so the subpath match is resolved before @fusion/core.
+    alias: [
+      { find: "@fusion/core/gh-cli", replacement: resolve(__dirname, "../core/src/gh-cli.ts") },
+      { find: "@fusion/core", replacement: resolve(__dirname, "../core/src/index.ts") },
+      { find: "@fusion/test-utils", replacement: resolve(__dirname, "../core/src/__test-utils__/workspace.ts") },
+    ],
   },
   test: {
     include: ["src/**/*.test.ts"],
