@@ -69,6 +69,8 @@ function renderTaskForm(props: Partial<React.ComponentProps<typeof TaskForm>> = 
     tasks: [],
     addToast: vi.fn(),
     isActive: true,
+    reviewLevel: undefined,
+    onReviewLevelChange: vi.fn(),
   };
   const mergedProps = { ...defaultProps, ...props };
   const result = render(<TaskForm {...mergedProps} />);
@@ -99,6 +101,8 @@ function renderTaskFormWithDescriptionState(props: Partial<React.ComponentProps<
     tasks: [],
     addToast: vi.fn(),
     isActive: true,
+    reviewLevel: undefined,
+    onReviewLevelChange: vi.fn(),
   };
 
   const mergedProps = { ...defaultProps, ...props };

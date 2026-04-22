@@ -15364,6 +15364,45 @@ html .column.drag-over * {
   margin-bottom: var(--space-sm);
 }
 
+/* === Workflow Steps Section (TaskForm & WorkflowResultsTab) === */
+.workflow-steps-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.workflow-steps-description {
+  margin-bottom: var(--space-xs);
+  display: block;
+  color: var(--text-muted);
+  font-size: var(--space-xs);
+}
+
+.workflow-steps-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.workflow-step-item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+}
+
+.workflow-step-name {
+  font-weight: 500;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.workflow-step-description {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+  line-height: 1.4;
+}
+
 /* Workflow step reorder controls */
 .workflow-step-order {
   margin-top: var(--space-sm);
@@ -15457,6 +15496,13 @@ html .column.drag-over * {
 .workflow-step-order-actions .btn-icon:disabled {
   opacity: 0.3;
   cursor: not-allowed;
+}
+
+@media (max-width: 768px) {
+  .workflow-step-order-actions .btn-icon {
+    width: 36px;
+    height: 36px;
+  }
 }
 
 /* === New Task Modal Quick Fields === */

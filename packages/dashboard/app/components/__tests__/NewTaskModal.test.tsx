@@ -630,6 +630,82 @@ describe("NewTaskModal", () => {
     });
   });
 
+  // Review level tests (FN-2241)
+  describe("review level selection payload", () => {
+    it("omits reviewLevel from payload when not selected", async () => {
+      const { props } = renderNewTaskModal();
+
+      const descTextarea = screen.getByRole('textbox');
+      fireEvent.change(descTextarea, { target: { value: "Task without review level" } });
+
+      fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
+
+      await waitFor(() => {
+        expect(props.onCreateTask).toHaveBeenCalledWith(
+          expect.objectContaining({
+            reviewLevel: undefined,
+          }),
+        );
+      });
+    });
+
+    it("includes reviewLevel in payload when selected", async () => {
+      const { props } = renderNewTaskModal();
+
+      // Open more options to access the review level selector
+      fireEvent.click(screen.getByTestId("task-form-more-options-toggle"));
+
+      await waitFor(() => {
+        expect(screen.getByLabelText("Review")).toBeTruthy();
+      });
+
+      // Select review level 2 (Plan and Code)
+      const select = document.getElementById("review-level") as HTMLSelectElement;
+      fireEvent.change(select, { target: { value: "2" } });
+
+      const descTextarea = screen.getByRole('textbox');
+      fireEvent.change(descTextarea, { target: { value: "Task with review level" } });
+
+      fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
+
+      await waitFor(() => {
+        expect(props.onCreateTask).toHaveBeenCalledWith(
+          expect.objectContaining({
+            reviewLevel: 2,
+          }),
+        );
+      });
+    });
+
+    it("includes reviewLevel 3 in payload when Full review is selected", async () => {
+      const { props } = renderNewTaskModal();
+
+      // Open more options to access the review level selector
+      fireEvent.click(screen.getByTestId("task-form-more-options-toggle"));
+
+      await waitFor(() => {
+        expect(screen.getByLabelText("Review")).toBeTruthy();
+      });
+
+      // Select review level 3 (Full)
+      const select = document.getElementById("review-level") as HTMLSelectElement;
+      fireEvent.change(select, { target: { value: "3" } });
+
+      const descTextarea = screen.getByRole('textbox');
+      fireEvent.change(descTextarea, { target: { value: "Task with full review" } });
+
+      fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
+
+      await waitFor(() => {
+        expect(props.onCreateTask).toHaveBeenCalledWith(
+          expect.objectContaining({
+            reviewLevel: 3,
+          }),
+        );
+      });
+    });
+  });
+
   // Agent assignment tests (FN-1483)
   describe("agent assignment", () => {
     it("renders agent picker button", () => {

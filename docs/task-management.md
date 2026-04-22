@@ -40,6 +40,7 @@ Expand the creation panel (▼) to access additional controls:
 - **Attach** — Add image attachments
 - **Models** (🧠) — Set per-task model overrides (executor, validator, planning)
 - **Agent** — Assign an agent to the task
+- **Review** — Set review rigor level (None, Plan Only, Plan and Code, Full)
 - **Browser Verify** — Enable browser verification workflow step
 
 ### 5) CLI creation
@@ -187,6 +188,21 @@ Each task may override:
 - Thinking level (`off|minimal|low|medium|high`)
 
 Overrides are configured from the task model tab or task creation actions.
+
+## Review Level
+
+Review levels control the rigor of the review process for a task:
+
+| Level | Name | Description |
+|-------|------|-------------|
+| 0 | None | No review |
+| 1 | Plan Only | Review only the specification/plan |
+| 2 | Plan and Code | Review both the specification and implementation |
+| 3 | Full | Full review with all checks |
+
+Review level can be set during task creation (in the New Task dialog under More options) or when editing a task (in the task detail modal).
+
+The review level affects how the reviewer agent evaluates the task but does not override workflow steps or model presets.
 
 ## Model Presets and Auto-Selection by Size
 

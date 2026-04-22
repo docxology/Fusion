@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, type ReactNode } from "react";
 import type { Task, ModelPreset, Settings, WorkflowStep } from "@fusion/core";
 import type { ToastType } from "../hooks/useToast";
 import { fetchModels, fetchSettings, fetchWorkflowSteps, refineText, getRefineErrorMessage, updateGlobalSettings, type RefinementType, type ModelInfo } from "../api";
@@ -7,6 +7,19 @@ import { CustomModelDropdown } from "./CustomModelDropdown";
 import { Sparkles, ChevronUp, ChevronDown, X, Maximize2, Minimize2 } from "lucide-react";
 
 const ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+
+/** Renders a phase badge using shared .phase-badge classes for consistency */
+function phaseBadge(phase: "pre-merge" | "post-merge", id: string, prefix: string): ReactNode {
+  const phaseClass = phase === "post-merge" ? "phase-badge--post-merge" : "phase-badge--pre-merge";
+  return (
+    <span
+      className={`phase-badge ${phaseClass}`}
+      data-testid={`${prefix}-${id}`}
+    >
+      {phase === "post-merge" ? "Post-merge" : "Pre-merge"}
+    </span>
+  );
+}
 
 export interface PendingImage {
   file: File;
@@ -60,6 +73,10 @@ export interface TaskFormProps {
   // Auto-save callback (edit mode)
   onAutoSaveDescription?: (description: string) => Promise<void>;
 
+  // Review level (0=None, 1=Plan Only, 2=Plan and Code, 3=Full)
+  reviewLevel?: number;
+  onReviewLevelChange?: (value: number) => void;
+
   // AI-assisted creation callbacks (create mode only)
   onPlanningMode?: (initialPlan: string) => void;
   onSubtaskBreakdown?: (description: string) => void;
@@ -107,6 +124,8 @@ export function TaskForm({
   onClose,
   renderBelowPrimary,
   hideDependencies,
+  reviewLevel,
+  onReviewLevelChange,
 }: TaskFormProps) {
   const hasInitialMoreOptions =
     (hideDependencies ? false : dependencies.length > 0) ||
@@ -116,7 +135,8 @@ export function TaskForm({
     executorModel !== "" ||
     validatorModel !== "" ||
     (planningModel || "") !== "" ||
-    (thinkingLevel || "") !== "";
+    (thinkingLevel || "") !== "" ||
+    reviewLevel !== undefined;
 
   const [showDepDropdown, setShowDepDropdown] = useState(false);
   const [showMoreOptions, setShowMoreOptions] = useState(hasInitialMoreOptions);
@@ -176,7 +196,8 @@ export function TaskForm({
     executorModel !== "" ||
     validatorModel !== "" ||
     (planningModel || "") !== "" ||
-    (thinkingLevel || "") !== "";
+    (thinkingLevel || "") !== "" ||
+    reviewLevel !== undefined;
 
   // Auto-select preset by size (create mode only)
   useEffect(() => {
@@ -952,6 +973,23 @@ export function TaskForm({
                 </select>
               </div>
             )}
+            {onReviewLevelChange && (
+              <div className="model-select-row">
+                <label htmlFor="review-level" className="model-select-label">Review</label>
+                <select
+                  id="review-level"
+                  value={reviewLevel ?? ""}
+                  onChange={(e) => onReviewLevelChange(e.target.value === "" ? 0 : parseInt(e.target.value, 10))}
+                  disabled={disabled}
+                >
+                  <option value="">Default (None)</option>
+                  <option value="0">0 — None</option>
+                  <option value="1">1 — Plan Only</option>
+                  <option value="2">2 — Plan and Code</option>
+                  <option value="3">3 — Full</option>
+                </select>
+              </div>
+            )}
           </>
         )}
       </div>
@@ -959,57 +997,41 @@ export function TaskForm({
       {/* Workflow Steps */}
       <div className="form-group" data-testid="workflow-steps-section">
         <label>Workflow Steps</label>
-        <small style={{ marginBottom: "8px", display: "block" }}>
-          Select steps to run after task implementation completes
-        </small>
-        <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-          {workflowSteps.length > 0 && workflowSteps.map((step) => (
-            <label
-              key={step.id}
-              className="checkbox-label"
-              style={{ display: "flex", alignItems: "flex-start", gap: "8px" }}
-              data-testid={`workflow-step-checkbox-${step.id}`}
-            >
-              <input
-                type="checkbox"
-                checked={selectedWorkflowSteps.includes(step.id)}
-                onChange={(e) => {
-                  onWorkflowStepsChange(
-                    e.target.checked
-                      ? [...selectedWorkflowSteps, step.id]
-                      : selectedWorkflowSteps.filter((id) => id !== step.id)
-                  );
-                }}
-                disabled={disabled}
-                style={{ marginTop: "2px" }}
-              />
-              <div>
-                <span style={{ fontWeight: 500, fontSize: "13px" }}>
-                  {step.name}
-                  <span
-                    style={{
-                      marginLeft: "6px",
-                      fontSize: "11px",
-                      padding: "1px 6px",
-                      borderRadius: "4px",
-                      background: (step.phase || "pre-merge") === "post-merge"
-                        ? "rgba(139, 92, 246, 0.15)"
-                        : "rgba(59, 130, 246, 0.15)",
-                      color: (step.phase || "pre-merge") === "post-merge"
-                        ? "#8b5cf6"
-                        : "#3b82f6",
-                    }}
-                    data-testid={`workflow-step-phase-${step.id}`}
-                  >
-                    {(step.phase || "pre-merge") === "post-merge" ? "Post-merge" : "Pre-merge"}
+        <div className="workflow-steps-section">
+          <small className="workflow-steps-description">
+            Select steps to run after task implementation completes
+          </small>
+          <div className="workflow-steps-list">
+            {workflowSteps.length > 0 && workflowSteps.map((step) => (
+              <label
+                key={step.id}
+                className="checkbox-label workflow-step-item"
+                data-testid={`workflow-step-checkbox-${step.id}`}
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedWorkflowSteps.includes(step.id)}
+                  onChange={(e) => {
+                    onWorkflowStepsChange(
+                      e.target.checked
+                        ? [...selectedWorkflowSteps, step.id]
+                        : selectedWorkflowSteps.filter((id) => id !== step.id)
+                    );
+                  }}
+                  disabled={disabled}
+                />
+                <div>
+                  <span className="workflow-step-name">
+                    {step.name}
+                    {phaseBadge(step.phase || "pre-merge", step.id, "workflow-step-phase")}
                   </span>
-                </span>
-                <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "2px" }}>
-                  {step.description}
+                  <div className="workflow-step-description">
+                    {step.description}
+                  </div>
                 </div>
-              </div>
-            </label>
-          ))}
+              </label>
+            ))}
+          </div>
         </div>
 
         {/* Selected steps — execution order with reorder controls */}

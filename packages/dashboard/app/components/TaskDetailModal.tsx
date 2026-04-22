@@ -321,6 +321,7 @@ export function TaskDetailModal({
   const [editPlanningModel, setEditPlanningModel] = useState("");
   const [editThinkingLevel, setEditThinkingLevel] = useState("");
   const [editPresetMode, setEditPresetMode] = useState<"default" | "preset" | "custom">("default");
+  const [editReviewLevel, setEditReviewLevel] = useState<number | undefined>(undefined);
   const [editSelectedPresetId, setEditSelectedPresetId] = useState("");
   const [editSelectedWorkflowSteps, setEditSelectedWorkflowSteps] = useState<string[]>(task.enabledWorkflowSteps || []);
   const [editPendingImages, setEditPendingImages] = useState<PendingImage[]>([]);
@@ -526,6 +527,7 @@ export function TaskDetailModal({
     setEditSelectedPresetId("");
     setEditSelectedWorkflowSteps(task.enabledWorkflowSteps || []);
     setEditPendingImages([]);
+    setEditReviewLevel(task.reviewLevel);
   }, [canEdit, task]);
 
   const exitEditMode = useCallback(() => {
@@ -583,6 +585,11 @@ export function TaskDetailModal({
         updates.thinkingLevel = editThinkingLevel !== "" ? (editThinkingLevel as "minimal" | "low" | "medium" | "high") : null;
       }
 
+      const currentReviewLevel = task.reviewLevel;
+      if (editReviewLevel !== currentReviewLevel) {
+        updates.reviewLevel = editReviewLevel;
+      }
+
       const hasTaskUpdates = Object.keys(updates).length > 0;
       if (hasTaskUpdates) {
         const updatedTask = await updateTask(task.id, updates, projectId);
@@ -617,7 +624,7 @@ export function TaskDetailModal({
         setIsSaving(false);
       }
     }
-  }, [task, editTitle, editDescription, editDependencies, editExecutorModel, editValidatorModel, editPlanningModel, editThinkingLevel, editSelectedWorkflowSteps, editPendingImages, addToast, projectId, onTaskUpdated]);
+  }, [task, editTitle, editDescription, editDependencies, editExecutorModel, editValidatorModel, editPlanningModel, editThinkingLevel, editReviewLevel, editSelectedWorkflowSteps, editPendingImages, addToast, projectId, onTaskUpdated]);
 
   const handleAutoSaveDescription = useCallback(async (description: string) => {
     try {
@@ -1147,6 +1154,8 @@ export function TaskDetailModal({
                 addToast={addToast}
                 isActive={isEditing}
                 onAutoSaveDescription={handleAutoSaveDescription}
+                reviewLevel={editReviewLevel}
+                onReviewLevelChange={setEditReviewLevel}
               />
             </div>
           ) : (

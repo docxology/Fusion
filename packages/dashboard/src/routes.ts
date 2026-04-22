@@ -3805,6 +3805,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         planningModelProvider,
         planningModelId,
         thinkingLevel,
+        reviewLevel,
       } = req.body;
       if (!description || typeof description !== "string") {
         throw badRequest("description is required");
@@ -3824,6 +3825,13 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
       const validThinkingLevels = ["off", "minimal", "low", "medium", "high"];
       if (thinkingLevel !== undefined && thinkingLevel !== null && !validThinkingLevels.includes(thinkingLevel)) {
         throw badRequest(`thinkingLevel must be one of: ${validThinkingLevels.join(", ")}`);
+      }
+
+      // Validate reviewLevel if provided (must be integer 0-3)
+      if (reviewLevel !== undefined && reviewLevel !== null) {
+        if (typeof reviewLevel !== "number" || !Number.isInteger(reviewLevel) || reviewLevel < 0 || reviewLevel > 3) {
+          throw badRequest("reviewLevel must be an integer between 0 and 3");
+        }
       }
 
       const executorModel = normalizeModelSelectionPair(validatedModelProvider, validatedModelId);
@@ -3891,6 +3899,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
           planningModelId: planningModel.modelId,
           thinkingLevel: thinkingLevel || undefined,
           summarize,
+          reviewLevel: reviewLevel ?? undefined,
         },
         { onSummarize, settings: { autoSummarizeTitles: settings.autoSummarizeTitles } }
       );
@@ -5086,7 +5095,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
   router.patch("/tasks/:id", async (req, res) => {
     try {
       const { store: scopedStore } = await getProjectContext(req);
-      const { title, description, prompt, dependencies, enabledWorkflowSteps, modelProvider, modelId, validatorModelProvider, validatorModelId, planningModelProvider, planningModelId, thinkingLevel, assigneeUserId } = req.body;
+      const { title, description, prompt, dependencies, enabledWorkflowSteps, modelProvider, modelId, validatorModelProvider, validatorModelId, planningModelProvider, planningModelId, thinkingLevel, assigneeUserId, reviewLevel } = req.body;
       const hasBodyField = (field: string) => Object.prototype.hasOwnProperty.call(req.body, field);
 
       // Validate model fields are strings or undefined/null
@@ -5113,6 +5122,13 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         throw new Error(`thinkingLevel must be one of: ${validThinkingLevels.join(", ")}`);
       }
 
+      // Validate reviewLevel if provided (must be integer 0-3)
+      if (reviewLevel !== undefined && reviewLevel !== null) {
+        if (typeof reviewLevel !== "number" || !Number.isInteger(reviewLevel) || reviewLevel < 0 || reviewLevel > 3) {
+          throw new Error("reviewLevel must be an integer between 0 and 3");
+        }
+      }
+
       if (enabledWorkflowSteps !== undefined) {
         if (!Array.isArray(enabledWorkflowSteps) || !enabledWorkflowSteps.every((id: unknown) => typeof id === "string")) {
           throw new Error("enabledWorkflowSteps must be an array of strings");
@@ -5133,6 +5149,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
       if (hasBodyField("planningModelId")) updates.planningModelId = validatedPlanningModelId;
       if (hasBodyField("thinkingLevel")) updates.thinkingLevel = thinkingLevel === null ? null : thinkingLevel;
       if (hasBodyField("assigneeUserId")) updates.assigneeUserId = validatedAssigneeUserId;
+      if (hasBodyField("reviewLevel")) updates.reviewLevel = reviewLevel;
 
       const task = await scopedStore.updateTask(req.params.id, updates);
       res.json(task);
@@ -5140,7 +5157,7 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
       if (err instanceof ApiError) {
         throw err;
       }
-      const status = (err instanceof Error ? err.message : String(err)).includes("must be a string") || (err instanceof Error ? err.message : String(err)).includes("must be an array of strings") || (err instanceof Error ? err.message : String(err)).includes("thinkingLevel must be one of") ? 400 : 500;
+      const status = (err instanceof Error ? err.message : String(err)).includes("must be a string") || (err instanceof Error ? err.message : String(err)).includes("must be an array of strings") || (err instanceof Error ? err.message : String(err)).includes("thinkingLevel must be one of") || (err instanceof Error ? err.message : String(err)).includes("reviewLevel must be an integer") ? 400 : 500;
       throw new ApiError(status, err instanceof Error ? err.message : String(err));
     }
   });

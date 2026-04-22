@@ -33,6 +33,7 @@ export function NewTaskModal({ isOpen, onClose, projectId, tasks, onCreateTask, 
   const [hasDirtyState, setHasDirtyState] = useState(false);
   const [selectedWorkflowSteps, setSelectedWorkflowSteps] = useState<string[]>([]);
   const [workflowStepsExplicitlySet, setWorkflowStepsExplicitlySet] = useState(false);
+  const [reviewLevel, setReviewLevel] = useState<number | undefined>(undefined);
 
   // Agent assignment state
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
@@ -142,9 +143,10 @@ export function NewTaskModal({ isOpen, onClose, projectId, tasks, onCreateTask, 
       planningModel !== "" ||
       thinkingLevel !== "" ||
       selectedWorkflowSteps.length > 0 ||
-      selectedAgentId !== null;
+      selectedAgentId !== null ||
+      reviewLevel !== undefined;
     setHasDirtyState(isDirty);
-  }, [description, dependencies, pendingImages, executorModel, validatorModel, planningModel, thinkingLevel, selectedWorkflowSteps, selectedAgentId]);
+  }, [description, dependencies, pendingImages, executorModel, validatorModel, planningModel, thinkingLevel, selectedWorkflowSteps, selectedAgentId, reviewLevel]);
 
   const handleClose = useCallback(() => {
     if (hasDirtyState) {
@@ -166,6 +168,7 @@ export function NewTaskModal({ isOpen, onClose, projectId, tasks, onCreateTask, 
     setWorkflowStepsExplicitlySet(false);
     setSelectedAgentId(null);
     setShowAgentPicker(false);
+    setReviewLevel(undefined);
     setHasDirtyState(false);
     onClose();
   }, [hasDirtyState, onClose, pendingImages]);
@@ -197,6 +200,7 @@ export function NewTaskModal({ isOpen, onClose, projectId, tasks, onCreateTask, 
         planningModelProvider: planningModel && planningSlashIdx !== -1 ? planningModel.slice(0, planningSlashIdx) : undefined,
         planningModelId: planningModel && planningSlashIdx !== -1 ? planningModel.slice(planningSlashIdx + 1) : undefined,
         thinkingLevel: thinkingLevel !== "" ? thinkingLevel as "minimal" | "low" | "medium" | "high" : undefined,
+        reviewLevel,
       });
 
       // Upload pending images as attachments
@@ -229,6 +233,7 @@ export function NewTaskModal({ isOpen, onClose, projectId, tasks, onCreateTask, 
       setWorkflowStepsExplicitlySet(false);
       setSelectedAgentId(null);
       setShowAgentPicker(false);
+      setReviewLevel(undefined);
 
       addToast(`Created ${task.id}`, "success");
       onClose();
@@ -436,6 +441,8 @@ export function NewTaskModal({ isOpen, onClose, projectId, tasks, onCreateTask, 
             onPlanningModelChange={setPlanningModel}
             thinkingLevel={thinkingLevel}
             onThinkingLevelChange={setThinkingLevel}
+            reviewLevel={reviewLevel}
+            onReviewLevelChange={setReviewLevel}
             renderBelowPrimary={quickFields}
             hideDependencies={true}
           />

@@ -361,37 +361,36 @@ export function WorkflowResultsTab({
 
     return (
       <div className="workflow-results-editor" data-testid="workflow-steps-editor">
-        <small style={{ marginBottom: "8px", display: "block" }}>
-          Select steps to run after task implementation completes
-        </small>
-
-        <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-          {workflowStepOptions.map((step) => (
-            <label
-              key={step.id}
-              className="checkbox-label"
-              style={{ display: "flex", alignItems: "flex-start", gap: "8px" }}
-              data-testid={step.id === "browser-verification"
-                ? "browser-verification-checkbox"
-                : `workflow-step-checkbox-${step.id}`}
-            >
-              <input
-                type="checkbox"
-                checked={selectedWorkflowSteps.includes(step.id)}
-                onChange={(event) => toggleStep(step.id, event.target.checked)}
-                style={{ marginTop: "2px" }}
-              />
-              <div>
-                <span style={{ fontWeight: 500, fontSize: "13px" }}>
-                  {step.name}
-                  {phaseBadge(step.phase, step.id, "workflow-step-phase")}
-                </span>
-                <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "2px" }}>
-                  {step.description}
+        <div className="workflow-steps-section">
+          <small className="workflow-steps-description">
+            Select steps to run after task implementation completes
+          </small>
+          <div className="workflow-steps-list">
+            {workflowStepOptions.map((step) => (
+              <label
+                key={step.id}
+                className="checkbox-label workflow-step-item"
+                data-testid={step.id === "browser-verification"
+                  ? "browser-verification-checkbox"
+                  : `workflow-step-checkbox-${step.id}`}
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedWorkflowSteps.includes(step.id)}
+                  onChange={(event) => toggleStep(step.id, event.target.checked)}
+                />
+                <div>
+                  <span className="workflow-step-name">
+                    {step.name}
+                    {phaseBadge(step.phase, step.id, "workflow-step-phase")}
+                  </span>
+                  <div className="workflow-step-description">
+                    {step.description}
+                  </div>
                 </div>
-              </div>
-            </label>
-          ))}
+              </label>
+            ))}
+          </div>
         </div>
 
         {selectedWorkflowSteps.length > 1 && (

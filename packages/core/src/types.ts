@@ -829,6 +829,8 @@ export interface TaskCreateInput {
   assignedAgentId?: string;
   /** Optional explicit user assignment for this task (used during review handoff) */
   assigneeUserId?: string;
+  /** Review level for task execution — controls review rigor: 0=None, 1=Plan Only, 2=Plan and Code, 3=Full */
+  reviewLevel?: number;
 }
 
 // ── Settings Scope Types ────────────────────────────────────────────────

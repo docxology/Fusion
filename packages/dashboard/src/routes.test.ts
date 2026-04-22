@@ -758,6 +758,72 @@ describe("POST /tasks", () => {
     expect(store.createTask).not.toHaveBeenCalled();
   });
 
+  it("forwards reviewLevel when provided", async () => {
+    const createdTask = { ...FAKE_TASK_DETAIL, column: "triage" };
+    (store.createTask as ReturnType<typeof vi.fn>).mockResolvedValue(createdTask);
+
+    const res = await REQUEST(
+      buildApp(),
+      "POST",
+      "/api/tasks",
+      JSON.stringify({ description: "Test task", reviewLevel: 2 }),
+      { "Content-Type": "application/json" },
+    );
+
+    expect(res.status).toBe(201);
+    expect(store.createTask).toHaveBeenCalledWith(
+      expect.objectContaining({ reviewLevel: 2 }),
+      expect.any(Object),
+    );
+  });
+
+  it("accepts reviewLevel 0 (None) via POST", async () => {
+    const createdTask = { ...FAKE_TASK_DETAIL, column: "triage", reviewLevel: 0 };
+    (store.createTask as ReturnType<typeof vi.fn>).mockResolvedValue(createdTask);
+
+    const res = await REQUEST(
+      buildApp(),
+      "POST",
+      "/api/tasks",
+      JSON.stringify({ description: "Test task", reviewLevel: 0 }),
+      { "Content-Type": "application/json" },
+    );
+
+    expect(res.status).toBe(201);
+    expect(store.createTask).toHaveBeenCalledWith(
+      expect.objectContaining({ reviewLevel: 0 }),
+      expect.any(Object),
+    );
+  });
+
+  it("returns 400 for invalid reviewLevel value via POST", async () => {
+    const res = await REQUEST(
+      buildApp(),
+      "POST",
+      "/api/tasks",
+      JSON.stringify({ description: "Test task", reviewLevel: 5 }),
+      { "Content-Type": "application/json" },
+    );
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("reviewLevel must be an integer between 0 and 3");
+    expect(store.createTask).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 for non-integer reviewLevel via POST", async () => {
+    const res = await REQUEST(
+      buildApp(),
+      "POST",
+      "/api/tasks",
+      JSON.stringify({ description: "Test task", reviewLevel: 1.5 }),
+      { "Content-Type": "application/json" },
+    );
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("reviewLevel must be an integer between 0 and 3");
+    expect(store.createTask).not.toHaveBeenCalled();
+  });
+
   it("forwards planningModelProvider and planningModelId when provided", async () => {
     const createdTask = {
       ...FAKE_TASK_DETAIL,
@@ -2673,6 +2739,64 @@ describe("PATCH /tasks/:id", () => {
 
     expect(res.status).toBe(400);
     expect(res.body.error).toContain("thinkingLevel must be one of");
+  });
+
+  it("forwards reviewLevel to store.updateTask", async () => {
+    (store.updateTask as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ...FAKE_TASK_DETAIL,
+      reviewLevel: 2,
+    });
+
+    const res = await REQUEST(buildApp(), "PATCH", "/api/tasks/KB-001", JSON.stringify({
+      reviewLevel: 2,
+    }), {
+      "Content-Type": "application/json",
+    });
+
+    expect(res.status).toBe(200);
+    expect(store.updateTask).toHaveBeenCalledWith("KB-001", {
+      reviewLevel: 2,
+    });
+  });
+
+  it("accepts null to clear reviewLevel via PATCH", async () => {
+    (store.updateTask as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ...FAKE_TASK_DETAIL,
+      reviewLevel: undefined,
+    });
+
+    const res = await REQUEST(buildApp(), "PATCH", "/api/tasks/KB-001", JSON.stringify({
+      reviewLevel: null,
+    }), {
+      "Content-Type": "application/json",
+    });
+
+    expect(res.status).toBe(200);
+    expect(store.updateTask).toHaveBeenCalledWith("KB-001", {
+      reviewLevel: null,
+    });
+  });
+
+  it("returns 400 for invalid reviewLevel value via PATCH", async () => {
+    const res = await REQUEST(buildApp(), "PATCH", "/api/tasks/KB-001", JSON.stringify({
+      reviewLevel: 5,
+    }), {
+      "Content-Type": "application/json",
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("reviewLevel must be an integer between 0 and 3");
+  });
+
+  it("returns 400 for non-integer reviewLevel via PATCH", async () => {
+    const res = await REQUEST(buildApp(), "PATCH", "/api/tasks/KB-001", JSON.stringify({
+      reviewLevel: 1.5,
+    }), {
+      "Content-Type": "application/json",
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("reviewLevel must be an integer between 0 and 3");
   });
 });
 
