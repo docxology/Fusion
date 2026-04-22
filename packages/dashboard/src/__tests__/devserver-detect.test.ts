@@ -113,6 +113,36 @@ describe("devserver-detect", () => {
     expect(detected).toEqual([]);
   });
 
+  it("returns empty array for malformed package.json without throwing", async () => {
+    const root = await mkdtemp(join(tmpdir(), "devserver-detect-"));
+    const filePath = join(root, "package.json");
+    await mkdir(dirname(filePath), { recursive: true });
+    await writeFile(filePath, '{ "invalid json', "utf-8");
+
+    const detected = await detectDevServerCommands(root);
+    expect(detected).toEqual([]);
+  });
+
+  it("deeply nested package.json (2+ levels) is NOT scanned", async () => {
+    const root = await mkdtemp(join(tmpdir(), "devserver-detect-"));
+    await writePackageJson(root, { scripts: {} });
+    // Create a deeply nested package.json (2 levels deep)
+    await writePackageJson(
+      root,
+      {
+        scripts: {
+          dev: "vite",
+        },
+      },
+      "apps/web/src/package.json",
+    );
+
+    const detected = await detectDevServerCommands(root);
+
+    // Should not find the deeply nested package.json
+    expect(detected).toHaveLength(0);
+  });
+
   it("persists and reloads devserver configs", async () => {
     const root = await mkdtemp(join(tmpdir(), "devserver-config-"));
     const configs: DevServerConfig[] = [

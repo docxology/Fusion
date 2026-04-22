@@ -255,6 +255,32 @@ describe("devserver-manager", () => {
     expect(restarted.config.id).toBe(config.id);
   });
 
+  it("startServer throws error when process emits error event", async () => {
+    const config = makeConfig();
+    const onStatus = vi.fn();
+    manager.on("status", onStatus);
+
+    await manager.startServer(config);
+
+    // Simulate process error (e.g., command not found)
+    children[0].emit("error", new Error("spawn ENOENT"));
+
+    const session = manager.getSession(config.id);
+    expect(session?.status).toBe("failed");
+    expect(onStatus).toHaveBeenLastCalledWith(config.id, "failed");
+  });
+
+  it("startServer throws error when same server is already running", async () => {
+    const config = makeConfig();
+    await manager.startServer(config);
+    children[0].stdout.emit("data", "ready");
+
+    // Try to start the same server again
+    await expect(manager.startServer(config)).rejects.toThrow(
+      /already (?:running|starting)/,
+    );
+  });
+
   it("setPreviewUrl updates session and emits preview event", async () => {
     const config = makeConfig();
     const onPreview = vi.fn();
