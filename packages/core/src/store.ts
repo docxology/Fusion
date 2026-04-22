@@ -5048,7 +5048,6 @@ ${deps}
 ### Step 3: Documentation & Delivery
 
 - [ ] Update relevant documentation
-- [ ] .DONE created
 
 ## Acceptance Criteria
 
