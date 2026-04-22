@@ -15,6 +15,7 @@ import {
 import type { ToastType } from "../hooks/useToast";
 import { CustomModelDropdown } from "./CustomModelDropdown";
 import { ProviderIcon } from "./ProviderIcon";
+import { appendTokenQuery } from "../auth";
 
 /** Provider-specific API key setup metadata for onboarding form rendering */
 interface ApiKeyInfo {
@@ -863,7 +864,7 @@ export function ModelOnboardingModal({
 
       try {
         const { url } = await loginProvider(providerId);
-        window.open(url, "_blank");
+        window.open(appendTokenQuery(url), "_blank");
 
         // Poll for auth completion
         pollIntervalRef.current = setInterval(async () => {

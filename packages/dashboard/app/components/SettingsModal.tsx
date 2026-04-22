@@ -14,6 +14,7 @@ import { PiExtensionsManager } from "./PiExtensionsManager";
 import { PluginSlot } from "./PluginSlot";
 import { AgentPromptsManager } from "./AgentPromptsManager";
 import { applyPresetToSelection, generateUniquePresetId } from "../utils/modelPresets";
+import { appendTokenQuery } from "../auth";
 
 /**
  * Settings sections configuration.
@@ -363,7 +364,7 @@ export function SettingsModal({
     setAuthActionInProgress(providerId);
     try {
       const { url } = await loginProvider(providerId);
-      window.open(url, "_blank");
+      window.open(appendTokenQuery(url), "_blank");
 
       // Poll for auth completion every 2 seconds
       pollIntervalRef.current = setInterval(async () => {

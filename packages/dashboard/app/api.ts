@@ -65,7 +65,7 @@ import type { PlanningQuestion, PlanningSummary } from "@fusion/core";
 import type { ScheduledTask, ScheduledTaskCreateInput, ScheduledTaskUpdateInput, AutomationRunResult, Routine, RoutineCreateInput, RoutineUpdateInput, RoutineExecutionResult } from "@fusion/core";
 import type { DiscoveredSkill, CatalogEntry, CatalogFetchResult, ToggleSkillResult, SkillContent, SkillFileEntry } from "@fusion/dashboard";
 import type { MilestoneValidationTelemetry } from "./components/mission-types";
-import { appendTokenQuery } from "./auth";
+import { appendTokenQuery, withTokenHeader } from "./auth";
 
 // Re-export skills types for use by hooks and components
 export type { DiscoveredSkill, CatalogEntry, CatalogFetchResult, ToggleSkillResult, SkillContent, SkillFileEntry };
@@ -154,7 +154,7 @@ export async function fetchTaskDetail(id: string, projectId?: string): Promise<T
   const url = buildApiUrl(withProjectId(`/tasks/${id}`, projectId));
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const res = await fetch(url, {
-      headers: { "Content-Type": "application/json" },
+      headers: withTokenHeader({ "Content-Type": "application/json" }),
     });
     const data = await res.json();
     if (res.ok) return data as TaskDetail;
@@ -638,6 +638,7 @@ export async function uploadAttachment(id: string, file: File, projectId?: strin
   formData.append("file", file);
   const res = await fetch(buildApiUrl(withProjectId(`/tasks/${id}/attachments`, projectId)), {
     method: "POST",
+    headers: withTokenHeader(),
     body: formData,
   });
   const data = await res.json();
@@ -684,7 +685,9 @@ export async function fetchAgentLogsWithMeta(
   const suffix = params.toString() ? `?${params.toString()}` : "";
   const url = withProjectId(`/tasks/${taskId}/logs${suffix}`, projectId);
 
-  const response = await fetch(buildApiUrl(url));
+  const response = await fetch(buildApiUrl(url), {
+    headers: withTokenHeader(),
+  });
 
   if (!response.ok) {
     const data = await response.json().catch(() => ({ error: "Failed to fetch agent logs" }));
@@ -3598,7 +3601,7 @@ export async function summarizeTitle(
     : "/api/ai/summarize-title";
   const res = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: withTokenHeader({ "Content-Type": "application/json" }),
     body: JSON.stringify({ description, provider, modelId }),
   });
 
@@ -5506,14 +5509,18 @@ export function parseConversationHistory(raw: string): ConversationHistoryEntry[
 
 export async function fetchAiSessions(projectId?: string): Promise<AiSessionSummary[]> {
   const params = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
-  const res = await fetch(buildApiUrl(`/ai-sessions${params}`));
+  const res = await fetch(buildApiUrl(`/ai-sessions${params}`), {
+    headers: withTokenHeader(),
+  });
   if (!res.ok) return [];
   const data = await res.json();
   return data.sessions ?? [];
 }
 
 export async function fetchAiSession(id: string): Promise<AiSessionDetail | null> {
-  const res = await fetch(buildApiUrl(`/ai-sessions/${encodeURIComponent(id)}`));
+  const res = await fetch(buildApiUrl(`/ai-sessions/${encodeURIComponent(id)}`), {
+    headers: withTokenHeader(),
+  });
   if (!res.ok) return null;
   return res.json();
 }
@@ -5551,7 +5558,10 @@ export function forceAcquireSessionLock(sessionId: string, tabId: string): Promi
 }
 
 export async function deleteAiSession(id: string): Promise<void> {
-  await fetch(buildApiUrl(`/ai-sessions/${encodeURIComponent(id)}`), { method: "DELETE" });
+  await fetch(buildApiUrl(`/ai-sessions/${encodeURIComponent(id)}`), {
+    method: "DELETE",
+    headers: withTokenHeader(),
+  });
 }
 
 export function pingSession(sessionId: string, projectId?: string): Promise<{ ok: boolean }> {
@@ -6080,7 +6090,7 @@ export function streamChatResponse(
     try {
       const res = await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: withTokenHeader({ "Content-Type": "application/json" }),
         body: JSON.stringify({ content }),
         signal: abortController.signal,
       });

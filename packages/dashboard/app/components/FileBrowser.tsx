@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { Folder, File, ChevronRight, Loader2, Copy, Move, Trash2, Pencil, Download, Archive } from "lucide-react";
 import type { FileNode } from "../api";
 import { copyFile, moveFile, deleteFile, renameFile, downloadFileUrl, downloadZipUrl } from "../api";
+import { appendTokenQuery } from "../auth";
 
 interface FileBrowserProps {
   entries: FileNode[];
@@ -447,14 +448,14 @@ export function FileBrowser({
     if (action === "download") {
       if (!workspace) return;
       const url = downloadFileUrl(workspace, fullPath, projectId);
-      window.open(url, "_blank");
+      window.open(appendTokenQuery(url), "_blank");
       return;
     }
 
     if (action === "download-zip") {
       if (!workspace) return;
       const url = downloadZipUrl(workspace, fullPath, projectId);
-      window.open(url, "_blank");
+      window.open(appendTokenQuery(url), "_blank");
       return;
     }
 

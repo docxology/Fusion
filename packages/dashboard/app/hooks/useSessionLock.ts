@@ -7,6 +7,7 @@ import {
 } from "../api";
 import { getSessionTabId } from "../utils/getSessionTabId";
 import { subscribeSse } from "../sse-bus";
+import { appendTokenQuery } from "../auth";
 
 interface SessionLockState {
   isLockedByOther: boolean;
@@ -80,7 +81,9 @@ export function useSessionLock(sessionId: string | null): SessionLockState {
         return;
       }
 
-      const url = `/api/ai-sessions/${encodeURIComponent(sessionId)}/lock/beacon?tabId=${encodeURIComponent(tabId)}`;
+      const url = appendTokenQuery(
+        `/api/ai-sessions/${encodeURIComponent(sessionId)}/lock/beacon?tabId=${encodeURIComponent(tabId)}`,
+      );
       navigator.sendBeacon(url);
     };
 

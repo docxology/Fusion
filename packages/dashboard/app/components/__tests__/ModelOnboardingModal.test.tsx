@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor, act, within } from "@testing-library/react";
 import { ModelOnboardingModal } from "../ModelOnboardingModal";
 import type { AuthProvider } from "../../api";
+import { clearAuthToken } from "../../auth";
 import type { Task } from "@fusion/core";
 
 // Mock the API module
@@ -131,6 +132,8 @@ async function navigateToFirstTaskStep() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  clearAuthToken();
+  localStorage.removeItem("fn.authToken");
   mockTrackOnboardingEvent.mockReset();
   mockFetchModels.mockResolvedValue({ models: defaultModels, favoriteProviders: [], favoriteModels: [] });
   mockFetchGlobalSettings.mockResolvedValue({});
@@ -155,8 +158,10 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  clearAuthToken();
   // Clean up localStorage
   localStorage.removeItem("kb-onboarding-state");
+  localStorage.removeItem("fn.authToken");
 });
 
 describe("ModelOnboardingModal", () => {
@@ -450,7 +455,8 @@ describe("ModelOnboardingModal", () => {
       });
     });
 
-    it("initiates OAuth login when Login is clicked", async () => {
+    it("initiates OAuth login when Login is clicked without appending token to external provider URLs", async () => {
+      localStorage.setItem("fn.authToken", "daemon-token");
       const mockWindowOpen = vi.fn();
       vi.spyOn(window, "open").mockImplementation(mockWindowOpen);
 
@@ -465,6 +471,28 @@ describe("ModelOnboardingModal", () => {
       await waitFor(() => {
         expect(mockLoginProvider).toHaveBeenCalledWith("anthropic");
         expect(mockWindowOpen).toHaveBeenCalledWith("https://auth.example.com/login", "_blank");
+      });
+    });
+
+    it("appends daemon query token for same-origin OAuth login popup URLs", async () => {
+      localStorage.setItem("fn.authToken", "daemon-token");
+      mockLoginProvider.mockResolvedValueOnce({ url: "/api/auth/providers/anthropic/login?state=xyz" });
+      const mockWindowOpen = vi.fn();
+      vi.spyOn(window, "open").mockImplementation(mockWindowOpen);
+
+      render(<ModelOnboardingModal onComplete={vi.fn()} addToast={vi.fn()} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("Login")).toBeTruthy();
+      });
+
+      fireEvent.click(screen.getByText("Login"));
+
+      await waitFor(() => {
+        expect(mockWindowOpen).toHaveBeenCalledWith(
+          "/api/auth/providers/anthropic/login?state=xyz&fn_token=daemon-token",
+          "_blank",
+        );
       });
     });
 

@@ -1,6 +1,12 @@
 import "@testing-library/jest-dom";
 import { vi } from "vitest";
 
+// Ensure dashboard route/server tests start in no-auth mode unless they
+// explicitly opt in. CI/agent shells may export daemon tokens globally,
+// which would otherwise force 401s across unrelated endpoint tests.
+delete process.env.FUSION_DAEMON_TOKEN;
+delete process.env.FUSION_BEARER_TOKEN;
+
 const noisyOutputMarkers = [
   "Subagent result watcher failed",
   "pi-async-subagent-results",

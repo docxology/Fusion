@@ -1,9 +1,10 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { useState } from "react";
 import { render, screen, fireEvent, act, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { TaskDetailModal } from "../TaskDetailModal";
 import type { TaskDetail, Column, MergeResult, Task } from "@fusion/core";
+import { clearAuthToken } from "../../auth";
 
 vi.mock("../../api", () => ({
   uploadAttachment: vi.fn(),
@@ -93,6 +94,16 @@ const noopRetry = vi.fn(async () => ({}) as Task);
 const noopOpenDetail = vi.fn();
 
 describe("TaskDetailModal", () => {
+  beforeEach(() => {
+    clearAuthToken();
+    localStorage.removeItem("fn.authToken");
+  });
+
+  afterEach(() => {
+    clearAuthToken();
+    localStorage.removeItem("fn.authToken");
+  });
+
   it("renders markdown-body without detail-prompt class when prompt exists", () => {
     const { container } = render(
       <TaskDetailModal
@@ -178,6 +189,72 @@ describe("TaskDetailModal", () => {
     );
 
     expect(screen.getByText("Comments")).toBeTruthy();
+  });
+
+  it("appends daemon token query to attachment href/src URLs for direct browser loads", () => {
+    localStorage.setItem("fn.authToken", "daemon-token");
+
+    render(
+      <TaskDetailModal
+        task={makeTask({
+          attachments: [
+            {
+              filename: "screenshot.png",
+              originalName: "Screenshot",
+              mimeType: "image/png",
+              size: 1024,
+              createdAt: "2026-01-01T00:00:00Z",
+            },
+          ],
+        })}
+        onClose={noop}
+        onMoveTask={noopMove}
+        onDeleteTask={noopDelete}
+        onMergeTask={noopMerge}
+        onOpenDetail={noopOpenDetail}
+        addToast={noop}
+      />,
+    );
+
+    const attachmentLink = screen.getByRole("link", { name: "Screenshot" });
+    const attachmentImage = screen.getByAltText("Screenshot");
+
+    expect(attachmentLink.getAttribute("href")).toBe(
+      "/api/tasks/FN-099/attachments/screenshot.png?fn_token=daemon-token",
+    );
+    expect(attachmentImage.getAttribute("src")).toBe(
+      "/api/tasks/FN-099/attachments/screenshot.png?fn_token=daemon-token",
+    );
+  });
+
+  it("leaves attachment href/src URLs unchanged when no daemon token is present", () => {
+    render(
+      <TaskDetailModal
+        task={makeTask({
+          attachments: [
+            {
+              filename: "screenshot.png",
+              originalName: "Screenshot",
+              mimeType: "image/png",
+              size: 1024,
+              createdAt: "2026-01-01T00:00:00Z",
+            },
+          ],
+        })}
+        onClose={noop}
+        onMoveTask={noopMove}
+        onDeleteTask={noopDelete}
+        onMergeTask={noopMerge}
+        onOpenDetail={noopOpenDetail}
+        addToast={noop}
+      />,
+    );
+
+    const attachmentLink = screen.getByRole("link", { name: "Screenshot" });
+    const attachmentImage = screen.getByAltText("Screenshot");
+
+    expect(attachmentLink.getAttribute("href")).toBe("/api/tasks/FN-099/attachments/screenshot.png");
+    expect(attachmentImage.getAttribute("src")).toBe("/api/tasks/FN-099/attachments/screenshot.png");
   });
 
   it("renders Retry button when task status is 'failed' (in Actions dropdown)", () => {

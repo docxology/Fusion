@@ -9,6 +9,8 @@ process.env.VITEST_MAX_WORKERS = String(maxWorkers);
 export default defineConfig({
   resolve: {
     alias: {
+      "@fusion/core": resolve(__dirname, "../core/src/index.ts"),
+      "@fusion/core/gh-cli": resolve(__dirname, "../core/src/gh-cli.ts"),
       "@fusion/test-utils": resolve(__dirname, "../core/src/__test-utils__/workspace.ts"),
     },
   },

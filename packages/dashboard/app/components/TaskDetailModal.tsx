@@ -20,6 +20,7 @@ import { TaskDocumentsTab } from "./TaskDocumentsTab";
 import { PluginSlot } from "./PluginSlot";
 import { subscribeSse } from "../sse-bus";
 import { usePluginUiSlots } from "../hooks/usePluginUiSlots";
+import { appendTokenQuery } from "../auth";
 
 interface ModelSelection {
   provider?: string;
@@ -1510,32 +1511,35 @@ export function TaskDetailModal({
             <h4>Attachments</h4>
             {attachments.length > 0 ? (
               <div className="detail-attachments-grid">
-                {attachments.map((a) => (
-                  <div key={a.filename} className="detail-attachment-card">
-                    <a
-                      className="detail-attachment-link"
-                      href={`/api/tasks/${task.id}/attachments/${a.filename}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      <img
-                        src={`/api/tasks/${task.id}/attachments/${a.filename}`}
-                        alt={a.originalName}
-                        className="detail-attachment-image"
-                      />
-                    </a>
-                    <div className="detail-attachment-meta">
-                      {a.originalName} ({formatBytes(a.size)})
+                {attachments.map((a) => {
+                  const attachmentUrl = appendTokenQuery(`/api/tasks/${task.id}/attachments/${a.filename}`);
+                  return (
+                    <div key={a.filename} className="detail-attachment-card">
+                      <a
+                        className="detail-attachment-link"
+                        href={attachmentUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <img
+                          src={attachmentUrl}
+                          alt={a.originalName}
+                          className="detail-attachment-image"
+                        />
+                      </a>
+                      <div className="detail-attachment-meta">
+                        {a.originalName} ({formatBytes(a.size)})
+                      </div>
+                      <button
+                        className="detail-attachment-delete"
+                        onClick={() => handleDeleteAttachment(a.filename)}
+                        title="Delete attachment"
+                      >
+                        ×
+                      </button>
                     </div>
-                    <button
-                      className="detail-attachment-delete"
-                      onClick={() => handleDeleteAttachment(a.filename)}
-                      title="Delete attachment"
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               <div className="detail-empty-inline">(no attachments)</div>

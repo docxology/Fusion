@@ -5,6 +5,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { FileBrowser } from "../FileBrowser";
 import type { FileNode } from "../../api";
+import { clearAuthToken } from "../../auth";
 
 // Resolve paths relative to this test file so tests pass regardless of cwd
 // (a global test safety guard may change cwd to a per-worker temp dir).
@@ -33,16 +34,20 @@ const mockCopyFile = vi.fn();
 const mockMoveFile = vi.fn();
 const mockDeleteFile = vi.fn();
 const mockRenameFile = vi.fn();
+const mockDownloadFileUrl = vi.fn((_workspace: string, filePath: string) =>
+  `/api/files/${encodeURIComponent(filePath)}/download?workspace=test-ws`,
+);
+const mockDownloadZipUrl = vi.fn((_workspace: string, filePath: string) =>
+  `/api/files/${encodeURIComponent(filePath)}/download-zip?workspace=test-ws`,
+);
 
 vi.mock("../../api", () => ({
   copyFile: (...args: any[]) => mockCopyFile(...args),
   moveFile: (...args: any[]) => mockMoveFile(...args),
   deleteFile: (...args: any[]) => mockDeleteFile(...args),
   renameFile: (...args: any[]) => mockRenameFile(...args),
-  downloadFileUrl: (_workspace: string, filePath: string) =>
-    `/api/files/${encodeURIComponent(filePath)}/download?workspace=test-ws`,
-  downloadZipUrl: (_workspace: string, filePath: string) =>
-    `/api/files/${encodeURIComponent(filePath)}/download-zip?workspace=test-ws`,
+  downloadFileUrl: (...args: any[]) => mockDownloadFileUrl(...args),
+  downloadZipUrl: (...args: any[]) => mockDownloadZipUrl(...args),
 }));
 
 // ── Test Data ───────────────────────────────────────────────────────────
@@ -99,6 +104,14 @@ function touchStart(entryName: string, coords: { x: number; y: number } = { x: 2
 describe("FileBrowser", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clearAuthToken();
+    localStorage.removeItem("fn.authToken");
+    mockDownloadFileUrl.mockImplementation((_workspace: string, filePath: string) =>
+      `/api/files/${encodeURIComponent(filePath)}/download?workspace=test-ws`,
+    );
+    mockDownloadZipUrl.mockImplementation((_workspace: string, filePath: string) =>
+      `/api/files/${encodeURIComponent(filePath)}/download-zip?workspace=test-ws`,
+    );
     vi.useRealTimers();
     Object.defineProperty(window, "innerWidth", {
       configurable: true,
@@ -118,6 +131,8 @@ describe("FileBrowser", () => {
   });
 
   afterEach(() => {
+    clearAuthToken();
+    localStorage.removeItem("fn.authToken");
     cleanup();
   });
 
@@ -394,6 +409,19 @@ describe("FileBrowser", () => {
     openSpy.mockRestore();
   });
 
+  it("appends daemon token query for same-origin file download URLs", () => {
+    localStorage.setItem("fn.authToken", "daemon-token");
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+    renderFileBrowser();
+    contextMenuClick("readme.md");
+    fireEvent.click(screen.getByText("Download"));
+    expect(openSpy).toHaveBeenCalledWith(
+      "/api/files/readme.md/download?workspace=test-ws&fn_token=daemon-token",
+      "_blank"
+    );
+    openSpy.mockRestore();
+  });
+
   it("opens download-zip URL for directory when Download as ZIP is clicked", () => {
     const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
     renderFileBrowser();
@@ -403,6 +431,19 @@ describe("FileBrowser", () => {
       "/api/files/src/download-zip?workspace=test-ws",
       "_blank"
     );
+    openSpy.mockRestore();
+  });
+
+  it("does not append daemon token query for cross-origin download URLs", () => {
+    localStorage.setItem("fn.authToken", "daemon-token");
+    mockDownloadFileUrl.mockReturnValue("https://downloads.example.com/readme.md");
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+
+    renderFileBrowser();
+    contextMenuClick("readme.md");
+    fireEvent.click(screen.getByText("Download"));
+
+    expect(openSpy).toHaveBeenCalledWith("https://downloads.example.com/readme.md", "_blank");
     openSpy.mockRestore();
   });
 

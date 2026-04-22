@@ -7,15 +7,21 @@
  *      secret doesn't end up in browser history or shared screenshots.
  *   2. `getAuthToken()` returns the stored token (or undefined if none).
  *   3. `installAuthFetch()` wraps `window.fetch` to inject
- *      `Authorization: Bearer <token>` on every same-origin `/api/*` call,
- *      and rewrites EventSource-style URLs by appending `fn_token=<token>`
- *      (EventSource can't set headers).
- *   4. `appendTokenQuery()` and `withTokenHeader()` are helpers for places
- *      that construct URLs directly (WebSocket upgrades, EventSource).
+ *      `Authorization: Bearer <token>` on same-origin `/api/*` calls.
+ *   4. `appendTokenQuery()` is for browser transports that cannot set headers
+ *      (`EventSource`, `WebSocket`, popup navigation, `sendBeacon`, links/imgs).
  *
- * If no token is configured (dashboard started with `--no-auth`), all of the
- * above no-ops — the fetch wrapper adds nothing and `appendTokenQuery` is
- * identity.
+ * Safe token propagation rules:
+ *   - Header-based requests should prefer `Authorization` (via fetch wrapper or
+ *     `withTokenHeader`). `withTokenHeader` is idempotent and never overwrites
+ *     an explicitly supplied `Authorization` value.
+ *   - Query-token fallback (`fn_token`) is only appended for dashboard-owned
+ *     URLs (same host/port and same protocol family, including http↔ws and
+ *     https↔wss pairs). Cross-origin URLs are returned unchanged so daemon
+ *     tokens are never leaked to third-party providers.
+ *
+ * If no token is configured (dashboard started with `--no-auth`), all helpers
+ * become no-ops.
  */
 
 const STORAGE_KEY = "fn.authToken";
@@ -101,27 +107,64 @@ export function clearAuthToken(): void {
   }
 }
 
-/** Append `fn_token=<token>` to a URL so EventSource / WebSocket can auth. */
+function normalizeProtocol(protocol: string): string {
+  if (protocol === "ws:") return "http:";
+  if (protocol === "wss:") return "https:";
+  return protocol;
+}
+
+function isSupportedTransportProtocol(protocol: string): boolean {
+  return protocol === "http:" || protocol === "https:" || protocol === "ws:" || protocol === "wss:";
+}
+
+function isDashboardOwnedUrl(url: URL): boolean {
+  if (typeof window === "undefined") return false;
+
+  const current = new URL(window.location.origin);
+  if (!isSupportedTransportProtocol(url.protocol)) {
+    return false;
+  }
+
+  const sameHost = url.hostname === current.hostname;
+  const samePort = url.port === current.port;
+  const sameProtocolFamily = normalizeProtocol(url.protocol) === normalizeProtocol(current.protocol);
+
+  return sameHost && samePort && sameProtocolFamily;
+}
+
+function parseTokenizableUrl(url: string): { parsed: URL; preserveRelativePath: boolean } | undefined {
+  if (typeof window === "undefined") return undefined;
+
+  try {
+    const parsed = new URL(url, window.location.origin);
+    const preserveRelativePath = url.startsWith("/");
+    return { parsed, preserveRelativePath };
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Append `fn_token=<token>` for non-header browser transports.
+ *
+ * This is intentionally restricted to dashboard-owned URLs to prevent leaking
+ * daemon auth secrets to third-party providers (for example OAuth hosts).
+ */
 export function appendTokenQuery(url: string): string {
   const token = getAuthToken();
-  if (!token) {
+  if (!token || typeof window === "undefined") {
     return url;
   }
-  try {
-    // Support both absolute and relative URLs by using a dummy base.
-    const base = url.startsWith("/") || !/^[a-z]+:\/\//i.test(url)
-      ? new URL(url, window.location.origin)
-      : new URL(url);
-    base.searchParams.set(QUERY_TOKEN_PARAM, token);
-    // Preserve the original form (relative vs absolute).
-    return url.startsWith("/")
-      ? base.pathname + base.search + base.hash
-      : base.toString();
-  } catch {
-    // URL too malformed to parse — fall back to naive concatenation.
-    const sep = url.includes("?") ? "&" : "?";
-    return `${url}${sep}${QUERY_TOKEN_PARAM}=${encodeURIComponent(token)}`;
+
+  const parsed = parseTokenizableUrl(url);
+  if (!parsed || !isDashboardOwnedUrl(parsed.parsed)) {
+    return url;
   }
+
+  parsed.parsed.searchParams.set(QUERY_TOKEN_PARAM, token);
+  return parsed.preserveRelativePath
+    ? `${parsed.parsed.pathname}${parsed.parsed.search}${parsed.parsed.hash}`
+    : parsed.parsed.toString();
 }
 
 /** Merge an Authorization header onto an existing HeadersInit, if we have a token. */

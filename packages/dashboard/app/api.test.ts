@@ -1,6 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   fetchTaskDetail,
+  uploadAttachment,
+  fetchAgentLogsWithMeta,
+  fetchAiSessions,
+  fetchAiSession,
+  deleteAiSession,
   updateTask,
   connectPlanningStream,
   connectSubtaskStream,
@@ -65,6 +70,7 @@ import {
   type ExecutorState,
 } from "./api";
 import type { Task, TaskDetail, BatchStatusResponse, MergeResult } from "@fusion/core";
+import { clearAuthToken } from "./auth";
 
 const FAKE_DETAIL: TaskDetail = {
   id: "FN-001",
@@ -99,6 +105,16 @@ function mockFetchResponse(
   } as unknown as Response);
 }
 
+beforeEach(() => {
+  clearAuthToken();
+  localStorage.removeItem("fn.authToken");
+});
+
+afterEach(() => {
+  clearAuthToken();
+  localStorage.removeItem("fn.authToken");
+});
+
 describe("fetchTaskDetail", () => {
   const originalFetch = globalThis.fetch;
 
@@ -118,6 +134,21 @@ describe("fetchTaskDetail", () => {
 
     expect(result.id).toBe("FN-001");
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(globalThis.fetch).toHaveBeenCalledWith("/api/tasks/FN-001", {
+      headers: { "Content-Type": "application/json" },
+    });
+  });
+
+  it("adds Authorization header when daemon token is present", async () => {
+    localStorage.setItem("fn.authToken", "daemon-token");
+    globalThis.fetch = vi.fn().mockReturnValue(mockFetchResponse(true, FAKE_DETAIL));
+
+    await fetchTaskDetail("FN-001");
+
+    const call = vi.mocked(globalThis.fetch).mock.calls[0];
+    expect(call[0]).toBe("/api/tasks/FN-001");
+    expect(new Headers((call[1] as RequestInit).headers).get("Authorization")).toBe("Bearer daemon-token");
+    expect(new Headers((call[1] as RequestInit).headers).get("Content-Type")).toBe("application/json");
   });
 
   it("retries once on failure then succeeds", async () => {
@@ -137,6 +168,143 @@ describe("fetchTaskDetail", () => {
 
     await expect(fetchTaskDetail("FN-001")).rejects.toThrow("Server error");
     expect(globalThis.fetch).toHaveBeenCalledTimes(2); // initial + 1 retry
+  });
+});
+
+describe("uploadAttachment", () => {
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it("does not send Authorization header when no daemon token is present", async () => {
+    globalThis.fetch = vi.fn().mockReturnValue(mockFetchResponse(true, {
+      filename: "shot.png",
+      originalName: "shot.png",
+      mimeType: "image/png",
+      size: 42,
+      createdAt: "2026-01-01T00:00:00.000Z",
+    }));
+
+    const file = new File(["img"], "shot.png", { type: "image/png" });
+    await uploadAttachment("FN-001", file);
+
+    const call = vi.mocked(globalThis.fetch).mock.calls[0];
+    expect(call[0]).toBe("/api/tasks/FN-001/attachments");
+    expect((call[1] as RequestInit).method).toBe("POST");
+    expect((call[1] as RequestInit).headers).toBeUndefined();
+  });
+
+  it("sends Authorization header when daemon token is present", async () => {
+    localStorage.setItem("fn.authToken", "daemon-token");
+    globalThis.fetch = vi.fn().mockReturnValue(mockFetchResponse(true, {
+      filename: "shot.png",
+      originalName: "shot.png",
+      mimeType: "image/png",
+      size: 42,
+      createdAt: "2026-01-01T00:00:00.000Z",
+    }));
+
+    const file = new File(["img"], "shot.png", { type: "image/png" });
+    await uploadAttachment("FN-001", file);
+
+    const call = vi.mocked(globalThis.fetch).mock.calls[0];
+    const headers = new Headers((call[1] as RequestInit).headers);
+    expect(headers.get("Authorization")).toBe("Bearer daemon-token");
+  });
+});
+
+describe("fetchAgentLogsWithMeta", () => {
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it("keeps headers empty when token is absent", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: {
+        has: vi.fn((name: string) => name === "X-Total-Count"),
+        get: vi.fn((name: string) => (name === "X-Total-Count" ? "1" : null)),
+      },
+      json: vi.fn().mockResolvedValue([{ timestamp: "t", taskId: "FN-001", text: "x", type: "text" }]),
+    } as unknown as Response);
+
+    await fetchAgentLogsWithMeta("FN-001");
+
+    const call = vi.mocked(globalThis.fetch).mock.calls[0];
+    expect(call[0]).toBe("/api/tasks/FN-001/logs");
+    expect((call[1] as RequestInit).headers).toBeUndefined();
+  });
+
+  it("injects Authorization header when token exists", async () => {
+    localStorage.setItem("fn.authToken", "daemon-token");
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: {
+        has: vi.fn(() => false),
+        get: vi.fn(() => null),
+      },
+      json: vi.fn().mockResolvedValue([]),
+    } as unknown as Response);
+
+    await fetchAgentLogsWithMeta("FN-001", undefined, { limit: 10, offset: 5 });
+
+    const call = vi.mocked(globalThis.fetch).mock.calls[0];
+    expect(call[0]).toBe("/api/tasks/FN-001/logs?limit=10&offset=5");
+    const headers = new Headers((call[1] as RequestInit).headers);
+    expect(headers.get("Authorization")).toBe("Bearer daemon-token");
+  });
+});
+
+describe("AI session raw fetch auth headers", () => {
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it("fetchAiSessions omits Authorization header when no token is stored", async () => {
+    globalThis.fetch = vi.fn().mockReturnValue(mockFetchResponse(true, { sessions: [{ id: "s1" }] }));
+
+    await fetchAiSessions();
+
+    const call = vi.mocked(globalThis.fetch).mock.calls[0];
+    expect(call[0]).toBe("/api/ai-sessions");
+    expect((call[1] as RequestInit).headers).toBeUndefined();
+  });
+
+  it("fetchAiSessions includes Authorization header when token is stored", async () => {
+    localStorage.setItem("fn.authToken", "daemon-token");
+    globalThis.fetch = vi.fn().mockReturnValue(mockFetchResponse(true, { sessions: [{ id: "s1" }] }));
+
+    await fetchAiSessions("proj-1");
+
+    const call = vi.mocked(globalThis.fetch).mock.calls[0];
+    expect(call[0]).toBe("/api/ai-sessions?projectId=proj-1");
+    const headers = new Headers((call[1] as RequestInit).headers);
+    expect(headers.get("Authorization")).toBe("Bearer daemon-token");
+  });
+
+  it("fetchAiSession and deleteAiSession both include Authorization header with token", async () => {
+    localStorage.setItem("fn.authToken", "daemon-token");
+    globalThis.fetch = vi.fn()
+      .mockReturnValueOnce(mockFetchResponse(true, { id: "s1" }))
+      .mockReturnValueOnce(mockFetchResponse(true, {}));
+
+    await fetchAiSession("s1");
+    await deleteAiSession("s1");
+
+    const fetchSessionCall = vi.mocked(globalThis.fetch).mock.calls[0];
+    const deleteCall = vi.mocked(globalThis.fetch).mock.calls[1];
+
+    expect(new Headers((fetchSessionCall[1] as RequestInit).headers).get("Authorization")).toBe("Bearer daemon-token");
+    expect((deleteCall[1] as RequestInit).method).toBe("DELETE");
+    expect(new Headers((deleteCall[1] as RequestInit).headers).get("Authorization")).toBe("Bearer daemon-token");
   });
 });
 
@@ -2278,6 +2446,24 @@ describe("summarizeTitle", () => {
     );
   });
 
+  it("adds Authorization header when daemon token is present", async () => {
+    localStorage.setItem("fn.authToken", "daemon-token");
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers({ "content-type": "application/json" }),
+      text: vi.fn().mockResolvedValue(JSON.stringify({ title: "Generated Title" })),
+    });
+    global.fetch = mockFetch;
+
+    await summarizeTitle("a".repeat(201));
+
+    const call = vi.mocked(global.fetch).mock.calls[0];
+    const headers = new Headers((call[1] as RequestInit).headers);
+    expect(headers.get("Authorization")).toBe("Bearer daemon-token");
+    expect(headers.get("Content-Type")).toBe("application/json");
+  });
+
   it("sends provider and modelId when provided", async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
@@ -3477,6 +3663,36 @@ describe("streamChatResponse", () => {
 
   afterEach(() => {
     globalThis.fetch = originalFetch;
+  });
+
+  it("sends JSON content-type without Authorization when no token exists", async () => {
+    await withStreamResult(
+      [
+        "event: done\ndata: {\"messageId\":\"msg-header\"}\n\n",
+      ],
+      () => {
+        const call = vi.mocked(globalThis.fetch).mock.calls[0];
+        const headers = call[1] ? new Headers((call[1] as RequestInit).headers) : new Headers();
+        expect(headers.get("Content-Type")).toBe("application/json");
+        expect(headers.get("Authorization")).toBeNull();
+      },
+    );
+  });
+
+  it("adds Authorization header for stream POST when daemon token exists", async () => {
+    localStorage.setItem("fn.authToken", "daemon-token");
+
+    await withStreamResult(
+      [
+        "event: done\ndata: {\"messageId\":\"msg-header\"}\n\n",
+      ],
+      () => {
+        const call = vi.mocked(globalThis.fetch).mock.calls[0];
+        const headers = call[1] ? new Headers((call[1] as RequestInit).headers) : new Headers();
+        expect(headers.get("Content-Type")).toBe("application/json");
+        expect(headers.get("Authorization")).toBe("Bearer daemon-token");
+      },
+    );
   });
 
   it("delivers chunk-split text and done events in order", async () => {
