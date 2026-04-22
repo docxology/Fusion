@@ -55,8 +55,8 @@ function createState(overrides: Partial<DevServerState> = {}): DevServerState {
     scriptName: "dev",
     cwd: ".",
     logs: [],
-    previewUrl: null,
-    manualPreviewUrl: null,
+    previewUrl: undefined,
+    manualPreviewUrl: undefined,
     ...overrides,
   };
 }
@@ -149,7 +149,7 @@ function createConfigHookState(overrides: Record<string, unknown> = {}) {
 }
 
 function createPreviewEmbedState(overrides: Record<string, unknown> = {}) {
-  return {
+  const merged: Record<string, unknown> = {
     embedStatus: "unknown",
     setEmbedStatus: vi.fn(),
     resetEmbedStatus: vi.fn(),
@@ -160,6 +160,12 @@ function createPreviewEmbedState(overrides: Record<string, unknown> = {}) {
     retry: vi.fn(),
     ...overrides,
   };
+  // Mirror legacy `embedContext` into `blockReason` (the name the current
+  // component destructures) when the caller didn't override blockReason itself.
+  if (!("blockReason" in merged)) {
+    merged.blockReason = merged.embedContext;
+  }
+  return merged;
 }
 
 function createDevServerLogsHookState(overrides: Record<string, unknown> = {}) {
@@ -208,7 +214,7 @@ describe("DevServerView preview panel", () => {
   it("shows no-preview-url state when server is running without URL", () => {
     mockUseDevServer.mockReturnValue(
       createDevServerHookState({
-        serverState: createState({ status: "running", previewUrl: null, manualPreviewUrl: null }),
+        serverState: createState({ status: "running", previewUrl: undefined, manualPreviewUrl: undefined }),
       }),
     );
 
@@ -231,18 +237,21 @@ describe("DevServerView preview panel", () => {
     expect(previewContainer).toHaveAttribute("data-embedded", "true");
   });
 
-  it("shows manual URL badge when a manual preview override is active", () => {
+  it("shows auto-detected URL badge when preview URL is set via session", () => {
+    // With the session-based model, the preview URL is always auto-detected.
+    // The previous manual-override path was removed; this test asserts the
+    // current single-source behavior rather than the legacy override flow.
     mockUseDevServer.mockReturnValue(
       createDevServerHookState({
-        serverState: createState({ status: "running", previewUrl: "http://localhost:3000", manualPreviewUrl: "http://localhost:9999" }),
+        serverState: createState({ status: "running", previewUrl: "http://localhost:3000" }),
       }),
     );
 
     render(<DevServerView addToast={addToast} projectId="project-a" />);
 
     const badge = screen.getByTestId("devserver-preview-url-badge");
-    expect(badge).toHaveTextContent("Manual · http://localhost:9999");
-    expect(badge).toHaveClass("devserver-preview-url-badge--manual");
+    expect(badge).toHaveTextContent("Auto · http://localhost:3000");
+    expect(badge).toHaveClass("devserver-preview-url-badge--auto");
   });
 
   it("switches to external-only mode and can open preview from that state", () => {
@@ -285,7 +294,7 @@ describe("DevServerView preview panel", () => {
 
   it("open-in-new-tab action is disabled when no preview URL is available", () => {
     mockUseDevServer.mockReturnValue(
-      createDevServerHookState({ serverState: createState({ status: "stopped", previewUrl: null }) }),
+      createDevServerHookState({ serverState: createState({ status: "stopped", previewUrl: undefined }) }),
     );
 
     render(<DevServerView addToast={addToast} projectId="project-a" />);

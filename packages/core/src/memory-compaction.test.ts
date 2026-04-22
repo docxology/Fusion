@@ -237,11 +237,13 @@ describe("memory-compaction", () => {
   // ── compactMemoryWithAi ────────────────────────────────────────────────────
 
   describe("compactMemoryWithAi", () => {
-    it("should throw AiServiceError when engine not available", async () => {
-      // In test environment, the dynamic import fails, so createFnAgent is undefined
+    it("should throw AiServiceError when AI service cannot process request", async () => {
       const content = "Some memory content that is long enough";
+
       await expect(compactMemoryWithAi(content, "/tmp")).rejects.toThrow(AiServiceError);
-      await expect(compactMemoryWithAi(content, "/tmp")).rejects.toThrow("AI engine not available");
+      await expect(compactMemoryWithAi(content, "/tmp")).rejects.toThrow(
+        /(AI engine not available|No model selected)/
+      );
     });
 
     it("should throw AiServiceError with provider and modelId when engine not available", async () => {

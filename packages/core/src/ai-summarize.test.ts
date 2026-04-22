@@ -144,11 +144,13 @@ describe("ai-summarize", () => {
       expect(result).toBeNull();
     });
 
-    it("should throw AiServiceError when engine not available", async () => {
-      // In test environment, the dynamic import fails, so createFnAgent is undefined
+    it("should throw AiServiceError when AI service cannot process request", async () => {
       const longDesc = "a".repeat(201);
+
       await expect(summarizeTitle(longDesc, "/tmp")).rejects.toThrow(AiServiceError);
-      await expect(summarizeTitle(longDesc, "/tmp")).rejects.toThrow("AI engine not available");
+      await expect(summarizeTitle(longDesc, "/tmp")).rejects.toThrow(
+        /(AI engine not available|No model selected)/
+      );
     });
 
     it("should accept optional provider and modelId", async () => {

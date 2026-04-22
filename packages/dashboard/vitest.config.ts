@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 
 const defaultMaxWorkers = 2;
 const requestedMaxWorkers = Number.parseInt(process.env.VITEST_MAX_WORKERS ?? String(defaultMaxWorkers), 10);
-const maxWorkers = Math.max(1, Math.min(2, Number.isFinite(requestedMaxWorkers) ? requestedMaxWorkers : defaultMaxWorkers));
+const maxWorkers = Math.max(1, Math.min(4, Number.isFinite(requestedMaxWorkers) ? requestedMaxWorkers : defaultMaxWorkers));
 process.env.VITEST_MAX_WORKERS = String(maxWorkers);
 
 export default defineConfig({
