@@ -773,7 +773,6 @@ function AppInner() {
         onOpenUsage={modalManager.openUsage}
         onViewAllProjects={handleViewAllProjects}
         onRunScript={modalManager.runScript}
-        onOpenQuickChat={() => setQuickChatOpen(true)}
         projectId={currentProject?.id}
         showSkillsTab={skillsEnabled}
         experimentalFeatures={{

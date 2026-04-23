@@ -47,7 +47,6 @@ const createDefaultProps = () => ({
   onOpenUsage: vi.fn(),
   onViewAllProjects: vi.fn(),
   onRunScript: vi.fn(),
-  onOpenQuickChat: vi.fn(),
   projectId: "proj_1",
 });
 
@@ -231,7 +230,7 @@ describe("MobileNavBar", () => {
     expect(screen.getByTestId("mobile-more-item-github")).toBeDefined();
     expect(screen.getByTestId("mobile-more-item-usage")).toBeDefined();
     expect(screen.getByTestId("mobile-more-item-projects")).toBeDefined();
-    expect(screen.getByTestId("mobile-more-item-chat")).toBeDefined();
+    expect(screen.queryByTestId("mobile-more-item-chat")).toBeNull();
     expect(screen.queryByTestId("mobile-more-item-roadmaps")).toBeNull();
     expect(screen.queryByTestId("mobile-more-item-insights")).toBeNull();
     expect(screen.getByTestId("mobile-more-item-settings")).toBeDefined();
@@ -305,15 +304,16 @@ describe("MobileNavBar", () => {
     expect(props.onViewAllProjects).toHaveBeenCalledOnce();
   });
 
-  it("calls onOpenQuickChat from the Chat more-sheet item", () => {
+  it("chat remains accessible via the primary mobile tab and is absent from More", () => {
     const props = createDefaultProps();
-    const { container } = render(<MobileNavBar {...props} />);
+    const { container } = render(<MobileNavBar {...props} view="board" />);
+
+    fireEvent.click(screen.getByTestId("mobile-nav-tab-chat"));
+    expect(props.onChangeView).toHaveBeenCalledWith("chat");
 
     fireEvent.click(screen.getByTestId("mobile-nav-tab-more"));
-    fireEvent.click(screen.getByTestId("mobile-more-item-chat"));
-
-    expect(container.querySelector(".mobile-more-sheet")).toBeNull();
-    expect(props.onOpenQuickChat).toHaveBeenCalledOnce();
+    expect(container.querySelector(".mobile-more-sheet")).not.toBeNull();
+    expect(screen.queryByTestId("mobile-more-item-chat")).toBeNull();
   });
 
   it("closes sheet on backdrop click", () => {

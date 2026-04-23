@@ -1046,7 +1046,7 @@ export function SettingsModal({
                 />
                 Show quick chat button
               </label>
-              <small>Show the floating chat button in the dashboard. Chat is still accessible from the More menu.</small>
+              <small>Show the floating chat button in the dashboard. Chat is still accessible from the Chat tab in the mobile navigation.</small>
             </div>
           </>
         );
