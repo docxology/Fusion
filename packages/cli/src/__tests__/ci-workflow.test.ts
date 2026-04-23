@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from "vitest";
-import { readFileSync, accessSync, constants, existsSync } from "node:fs";
+import { readFileSync, accessSync, constants } from "node:fs";
 import { join } from "node:path";
 import { parse } from "yaml";
 
@@ -22,12 +22,19 @@ function loadWorkflow(name: string): any {
 describe("CI workflow (.github/workflows/ci.yml)", () => {
   let workflow: any;
   let content: string;
+  let ciSteps: any[];
 
   beforeAll(() => {
     const result = loadWorkflow("ci.yml");
     workflow = result.parsed;
     content = result.content;
+    ciSteps = workflow.jobs?.ci?.steps ?? [];
   });
+
+  const findStepByRun = (runSnippet: string) => ciSteps.find((step) => typeof step.run === "string" && step.run.includes(runSnippet));
+
+  const findStepIndexByRun = (runSnippet: string) =>
+    ciSteps.findIndex((step) => typeof step.run === "string" && step.run.includes(runSnippet));
 
   it("is valid YAML", () => {
     expect(workflow).toBeDefined();
@@ -47,8 +54,24 @@ describe("CI workflow (.github/workflows/ci.yml)", () => {
     expect(content).toContain("pnpm install");
   });
 
-  it("includes pnpm build step", () => {
-    expect(content).toContain("pnpm build");
+  it("uses verify:workspace as the single lint/test/build contract", () => {
+    const verifyStep = findStepByRun("pnpm verify:workspace");
+    expect(verifyStep).toBeDefined();
+    expect(verifyStep.name).toContain("bootstrap contract");
+
+    const directLintStep = findStepByRun("pnpm lint");
+    const directTestStep = findStepByRun("pnpm test");
+    const directBuildStep = findStepByRun("pnpm build");
+    expect(directLintStep).toBeUndefined();
+    expect(directTestStep).toBeUndefined();
+    expect(directBuildStep).toBeUndefined();
+  });
+
+  it("runs workspace verification before binary packaging", () => {
+    const verifyIdx = findStepIndexByRun("pnpm verify:workspace");
+    const buildExeIdx = findStepIndexByRun("build:exe");
+    expect(verifyIdx).toBeGreaterThanOrEqual(0);
+    expect(buildExeIdx).toBeGreaterThan(verifyIdx);
   });
 
   it("includes binary build step", () => {
@@ -61,10 +84,6 @@ describe("CI workflow (.github/workflows/ci.yml)", () => {
 
   it("verifies binary exists after build", () => {
     expect(content).toContain("test -f packages/cli/dist/fn");
-  });
-
-  it("includes pnpm test step", () => {
-    expect(content).toContain("pnpm test");
   });
 });
 

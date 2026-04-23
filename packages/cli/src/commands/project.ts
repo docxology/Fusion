@@ -26,6 +26,7 @@ import { resolve, isAbsolute, relative, basename } from "node:path";
 import { existsSync, statSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { formatProjectLine, detectProjectFromCwd, setDefaultProject, resolveProject as resolveProjectContext } from "../project-context.js";
+import { maybeInstallClaudeSkillForNewProject } from "./claude-skills-runner.js";
 
 const VALID_ISOLATION_MODES: IsolationMode[] = ["in-process", "child-process"];
 
@@ -372,6 +373,8 @@ export async function runProjectAdd(
     } catch (err) {
       console.warn(`  ⚠ Warning: Could not initialize project memory: ${err instanceof Error ? err.message : String(err)}`);
     }
+
+    maybeInstallClaudeSkillForNewProject(absolutePath);
 
     console.log();
     console.log(`  ✓ Registered project '${projectName}'`);

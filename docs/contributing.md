@@ -41,22 +41,33 @@ pnpm build
 ## Development Workflow
 
 ```bash
-pnpm dev          # build + run CLI entrypoint in dev mode
-pnpm dev:ui       # dashboard dev server only
-pnpm lint         # lint all packages
-pnpm typecheck    # workspace typechecks
-pnpm test         # workspace test suite
-pnpm build        # workspace builds
+pnpm dev               # build + run CLI entrypoint in dev mode
+pnpm dev:ui            # dashboard dev server only
+pnpm lint              # lint all packages
+pnpm test              # workspace test suite (clean-worktree compatible)
+pnpm build             # workspace builds
+pnpm verify:workspace  # canonical lint -> test -> build verification gate
+pnpm typecheck         # workspace typechecks
 ```
+
+## Deterministic workspace verification bootstrap
+
+Fusion codifies workspace verification as a deterministic contract:
+
+- `pnpm test` must be runnable in a clean worktree without requiring a prior `pnpm build`.
+- `pnpm verify:workspace` is the canonical pre-merge gate and runs in strict order:
+  1. `pnpm lint`
+  2. `pnpm test`
+  3. `pnpm build`
+
+CI uses `pnpm verify:workspace` directly, so changes that reintroduce hidden test pre-build dependencies fail fast.
 
 ## Quality Gate Checklist
 
 Before submitting changes, verify:
 
-- [ ] `pnpm lint` — lint passes with no errors
-- [ ] `pnpm test` — all tests pass
+- [ ] `pnpm verify:workspace` — canonical lint → test → build gate
 - [ ] `pnpm typecheck` — type checking passes
-- [ ] `pnpm build` — builds successfully
 
 ## Testing Requirements
 

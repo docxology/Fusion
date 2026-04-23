@@ -373,7 +373,7 @@ export async function runServe(
   // internally for task-execution plugin hooks. These instances here serve the
   // HTTP plugin-management API routes and are intentionally separate.
   //
-  const pluginStore = new PluginStore(store.getFusionDir());
+  const pluginStore = new PluginStore(store.getRootDir());
   await pluginStore.init();
 
   // ── PluginLoader: plugin lifecycle management ───────────────────────

@@ -635,7 +635,7 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
   // Enables the PluginManager UI to list, install, enable, disable, and
   // configure plugins via the /api/plugins REST endpoints.
   //
-  const pluginStore = new PluginStore(store.getFusionDir());
+  const pluginStore = new PluginStore(store.getRootDir());
   await pluginStore.init();
 
   // ── PluginLoader: plugin lifecycle management ───────────────────────

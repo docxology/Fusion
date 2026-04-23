@@ -14,6 +14,9 @@ const tsupConfigPath = join(cliRoot, "tsup.config.ts");
 
 describe("CLI bundle output", () => {
   beforeAll(() => {
+    // Intentional: bundle-output tests validate compiled artifacts, so they
+    // perform their own explicit build bootstrap instead of relying on ambient
+    // workspace dist/ state.
     buildCliWithRealDashboardAssets();
   }, 300_000);
 

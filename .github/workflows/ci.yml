@@ -29,17 +29,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
-      - name: Lint
-        run: pnpm lint
-
-      - name: Build
-        run: pnpm build
+      - name: Verify workspace bootstrap contract (lint -> test -> build)
+        run: pnpm verify:workspace
 
       - name: Install Bun
         uses: oven-sh/setup-bun@v2
-
-      - name: Test
-        run: pnpm test
 
       - name: Build standalone binary
         run: pnpm --filter @runfusion/fusion build:exe

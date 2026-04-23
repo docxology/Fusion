@@ -16,6 +16,7 @@ import { promisify } from "node:util";
 const execAsync = promisify(exec);
 import { CentralCore, QMD_INSTALL_COMMAND, isQmdAvailable } from "@fusion/core";
 import { resolveGlobalDir } from "@fusion/core";
+import { maybeInstallClaudeSkillForNewProject } from "./claude-skills-runner.js";
 
 /** Options for the init command */
 export interface InitOptions {
@@ -99,6 +100,7 @@ export async function runInit(options: InitOptions = {}): Promise<void> {
     const existing = await central.getProjectByPath(cwd);
     if (existing) {
       console.log(`  ✓ Already registered in central database`);
+      maybeInstallClaudeSkillForNewProject(cwd);
       console.log(`\n✓ Project "${projectName}" is ready!`);
       console.log(`\n  Next steps:`);
       console.log(`    fn task list       # View tasks`);
@@ -117,6 +119,8 @@ export async function runInit(options: InitOptions = {}): Promise<void> {
 
     // Activate the project (registration sets it to 'initializing')
     await central.updateProject(project.id, { status: "active" });
+
+    maybeInstallClaudeSkillForNewProject(cwd);
 
     console.log(`  ✓ Registered in central database`);
     console.log(`\n✓ Project "${project.name}" initialized successfully!`);

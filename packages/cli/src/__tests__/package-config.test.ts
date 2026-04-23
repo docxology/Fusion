@@ -16,6 +16,11 @@ function loadWorkflowYaml(name: string): any {
   return parse(content);
 }
 
+function loadRootPackageJson(): any {
+  const path = join(workspaceRoot, "package.json");
+  return JSON.parse(readFileSync(path, "utf-8"));
+}
+
 describe("CLI package.json publishing config", () => {
   const pkg = loadPackageJson("cli");
 
@@ -104,6 +109,30 @@ describe("Scoped @fusion/* packages publishing config", () => {
       });
     });
   }
+});
+
+describe("Workspace bootstrap script contract", () => {
+  const rootPkg = loadRootPackageJson();
+
+  it("keeps root test self-sufficient (no implicit pre-build dependency)", () => {
+    const testScript = rootPkg.scripts?.test;
+    expect(testScript).toBeDefined();
+    expect(testScript).toContain("pnpm -r");
+    expect(testScript).not.toContain("pnpm build");
+  });
+
+  it("defines verify:workspace in lint -> test -> build order", () => {
+    const verifyScript = rootPkg.scripts?.["verify:workspace"];
+    expect(verifyScript).toBe("pnpm lint && pnpm test && pnpm build");
+
+    const lintIdx = verifyScript.indexOf("pnpm lint");
+    const testIdx = verifyScript.indexOf("pnpm test");
+    const buildIdx = verifyScript.indexOf("pnpm build");
+
+    expect(lintIdx).toBeGreaterThanOrEqual(0);
+    expect(testIdx).toBeGreaterThan(lintIdx);
+    expect(buildIdx).toBeGreaterThan(testIdx);
+  });
 });
 
 describe("Workflow YAML validity", () => {
