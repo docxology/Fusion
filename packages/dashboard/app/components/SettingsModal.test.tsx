@@ -27,6 +27,7 @@ const mockUpdateGlobalConcurrency = vi.fn();
 const mockFetchMemoryBackendStatus = vi.fn();
 const mockTestMemoryRetrieval = vi.fn();
 const mockInstallQmd = vi.fn();
+const mockFetchGitRemotesDetailed = vi.fn();
 
 vi.mock("../api", () => ({
   fetchSettings: (...args: unknown[]) => mockFetchSettings(...args),
@@ -51,6 +52,7 @@ vi.mock("../api", () => ({
   fetchMemoryBackendStatus: (...args: unknown[]) => mockFetchMemoryBackendStatus(...args),
   testMemoryRetrieval: (...args: unknown[]) => mockTestMemoryRetrieval(...args),
   installQmd: (...args: unknown[]) => mockInstallQmd(...args),
+  fetchGitRemotesDetailed: (...args: unknown[]) => mockFetchGitRemotesDetailed(...args),
 }));
 
 // Mock the hook
@@ -139,6 +141,7 @@ describe("SettingsModal", () => {
       qmdAvailable: true,
       qmdInstallCommand: "bun install -g @tobilu/qmd",
     });
+    mockFetchGitRemotesDetailed.mockResolvedValue([]);
     mockImportSettings.mockResolvedValue({ success: true, globalCount: 0, projectCount: 0 });
     mockFetchGlobalConcurrency.mockResolvedValue({ globalMaxConcurrent: 4, currentlyActive: 0, queuedCount: 0, projectsActive: {} });
     mockUpdateGlobalConcurrency.mockResolvedValue({ globalMaxConcurrent: 4, currentlyActive: 0, queuedCount: 0, projectsActive: {} });

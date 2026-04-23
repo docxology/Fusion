@@ -1891,8 +1891,14 @@ export class HeartbeatTriggerScheduler {
       if (!this.running) return;
 
       try {
-        if (!isHeartbeatManaged(agent) || !isTickableState(agent.state)) {
-          heartbeatLog.log(`Assignment trigger skipped for ${agent.id} (state=${agent.state})`);
+        if (!isHeartbeatManaged(agent)) {
+          heartbeatLog.log(`Assignment trigger skipped for ${agent.id} (ephemeral/internal)`);
+          return;
+        }
+
+        const runtimeConfig = (agent.runtimeConfig ?? {}) as { enabled?: boolean };
+        if (runtimeConfig.enabled === false) {
+          heartbeatLog.log(`Assignment trigger skipped for ${agent.id} (disabled)`);
           return;
         }
 

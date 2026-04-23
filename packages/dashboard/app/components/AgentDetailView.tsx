@@ -422,16 +422,28 @@ export function AgentDetailView({ agentId, projectId, onClose, addToast, onChild
               </button>
             )}
             {agent.state === "running" && (
-              <button className="btn btn--compact" onClick={() => void handleStateChange("paused")}>
-                <Pause size={14} />
-                Pause
-              </button>
+              <>
+                <button className="btn btn--compact" onClick={() => void handleStateChange("paused")}>
+                  <Pause size={14} />
+                  Pause
+                </button>
+                <button className="btn btn--danger btn--compact" onClick={() => void handleStateChange("terminated")}>
+                  <Square size={14} />
+                  Stop
+                </button>
+              </>
             )}
             {agent.state === "error" && (
-              <button className="btn btn--primary btn--compact" onClick={() => void handleStateChange("active")}>
-                <Play size={14} />
-                Retry
-              </button>
+              <>
+                <button className="btn btn--primary btn--compact" onClick={() => void handleStateChange("active")}>
+                  <Play size={14} />
+                  Retry
+                </button>
+                <button className="btn btn--danger btn--compact" onClick={() => void handleStateChange("terminated")}>
+                  <Square size={14} />
+                  Stop
+                </button>
+              </>
             )}
             {agent.state === "terminated" && (
               <>

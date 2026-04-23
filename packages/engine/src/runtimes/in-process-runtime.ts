@@ -492,15 +492,15 @@ export class InProcessRuntime
         );
         this.triggerScheduler.start();
 
-        // Dynamic registration follows state, not runtimeConfig.enabled.
-        // Active/running → timer armed; anything else → not. Ephemeral
-        // (task-worker) agents are never armed.
-        const isTickable = (agent: import("@fusion/core").Agent) =>
-          !isEphemeralAgent(agent) && (agent.state === "active" || agent.state === "running");
+        // Dynamic registration follows per-agent heartbeat enablement.
+        // Non-ephemeral agents are managed unless runtimeConfig.enabled is
+        // explicitly false. Ephemeral/task-worker agents are never armed.
+        const isHeartbeatEnabledAgent = (agent: import("@fusion/core").Agent) =>
+          !isEphemeralAgent(agent) && agent.runtimeConfig?.enabled !== false;
 
         this.agentCreatedListener = (agent) => {
           if (!this.triggerScheduler) return;
-          if (!isTickable(agent)) return;
+          if (!isHeartbeatEnabledAgent(agent)) return;
           const rc = agent.runtimeConfig;
           this.triggerScheduler.registerAgent(agent.id, {
             heartbeatIntervalMs: rc?.heartbeatIntervalMs as number | undefined,
@@ -512,9 +512,9 @@ export class InProcessRuntime
 
         this.agentUpdatedListener = (agent) => {
           if (!this.triggerScheduler) return;
-          if (!isTickable(agent)) {
+          if (!isHeartbeatEnabledAgent(agent)) {
             this.triggerScheduler.unregisterAgent(agent.id);
-            runtimeLog.log(`Unregistered agent ${agent.id} from heartbeat triggers (state=${agent.state})`);
+            runtimeLog.log(`Unregistered agent ${agent.id} from heartbeat triggers`);
             return;
           }
           const rc = agent.runtimeConfig;
@@ -522,7 +522,7 @@ export class InProcessRuntime
             heartbeatIntervalMs: rc?.heartbeatIntervalMs as number | undefined,
             maxConcurrentRuns: rc?.maxConcurrentRuns as number | undefined,
           });
-          runtimeLog.log(`Re-registered agent ${agent.id} for heartbeat triggers (state=${agent.state})`);
+          runtimeLog.log(`Re-registered agent ${agent.id} for heartbeat triggers`);
         };
         this.agentStore.on("agent:updated", this.agentUpdatedListener);
 
@@ -566,15 +566,12 @@ export class InProcessRuntime
         };
         this.agentStore.on("agent:stateChanged", this.ephemeralTerminationListener);
 
-        // Register existing agents whose current state is tickable. Agents
-        // in paused/idle/error/terminated stay unregistered until the user
-        // re-activates them; the agentUpdatedListener arms the timer the
-        // moment state transitions to active.
+        // Register existing non-ephemeral agents with heartbeat enabled.
         try {
           const agents = await this.agentStore.listAgents();
           let registeredCount = 0;
           for (const agent of agents) {
-            if (!isTickable(agent)) continue;
+            if (!isHeartbeatEnabledAgent(agent)) continue;
             const rc = agent.runtimeConfig;
             this.triggerScheduler.registerAgent(agent.id, {
               heartbeatIntervalMs: rc?.heartbeatIntervalMs as number | undefined,

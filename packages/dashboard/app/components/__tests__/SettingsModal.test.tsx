@@ -127,6 +127,7 @@ vi.mock("../../api", () => ({
     qmdInstallCommand: "bun install -g @tobilu/qmd",
     results: [],
   })),
+  fetchGitRemotesDetailed: vi.fn(() => Promise.resolve([])),
 }));
 
 // Mock useMemoryBackendStatus hook
