@@ -57,6 +57,33 @@ export function fromJson<T>(json: string | null | undefined): T | undefined {
   }
 }
 
+// ── Runtime capability probes ────────────────────────────────────────
+
+/**
+ * Probe whether this SQLite build supports the FTS5 extension.
+ *
+ * Node's built-in `node:sqlite` only exposes FTS5 when the bundled SQLite was
+ * compiled with `SQLITE_ENABLE_FTS5`. Newer Node builds (≥ 22.13, 24, 25) have
+ * it on; some older 22.x LTS builds do not, and attempting to
+ * `CREATE VIRTUAL TABLE … USING fts5(…)` on those throws `no such module: fts5`.
+ *
+ * The probe creates and drops a disposable virtual table. Set
+ * `FUSION_DISABLE_FTS5=1` to force the LIKE fallback path in environments where
+ * FTS5 is available at probe time but undesirable at runtime (e.g. tests).
+ */
+export function probeFts5(db: DatabaseSync): boolean {
+  if (process.env.FUSION_DISABLE_FTS5 === "1" || process.env.FUSION_DISABLE_FTS5 === "true") {
+    return false;
+  }
+  try {
+    db.exec("CREATE VIRTUAL TABLE IF NOT EXISTS __fusion_fts5_probe USING fts5(x)");
+    db.exec("DROP TABLE IF EXISTS __fusion_fts5_probe");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // ── Schema Definition ────────────────────────────────────────────────
 
 const SCHEMA_VERSION = 42;
@@ -589,6 +616,7 @@ export class Database {
   private readonly dbPath: string;
   /** Tracks transaction nesting depth for savepoint-based nested transactions. */
   private transactionDepth = 0;
+  private readonly _fts5Available: boolean;
 
   constructor(kbDir: string) {
     this.dbPath = join(kbDir, "fusion.db");
@@ -610,6 +638,18 @@ export class Database {
     this.db.exec("PRAGMA busy_timeout = 5000");
     // Enable foreign key enforcement
     this.db.exec("PRAGMA foreign_keys = ON");
+
+    this._fts5Available = probeFts5(this.db);
+  }
+
+  /**
+   * True when the underlying SQLite build has FTS5 (`CREATE VIRTUAL TABLE … USING fts5`).
+   * Node's bundled SQLite only exposes FTS5 when built with `SQLITE_ENABLE_FTS5`;
+   * older Node 22.x LTS builds do not. Consumers must fall back to LIKE-based scans
+   * when this is false. Override with `FUSION_DISABLE_FTS5=1` to force the fallback path.
+   */
+  get fts5Available(): boolean {
+    return this._fts5Available;
   }
 
   /**
@@ -972,6 +1012,12 @@ export class Database {
     // up comment text, IDs, timestamps, and author names. This is acceptable for v1.
     if (version < 21) {
       this.applyMigration(21, () => {
+        if (!this._fts5Available) {
+          // FTS5 unavailable (older node:sqlite build). Bump the migration
+          // version so we don't retry forever, and fall back to LIKE-based
+          // search in TaskStore.searchTasks / ArchiveDatabase.search.
+          return;
+        }
         // Create FTS5 virtual table for full-text search
         // Note: Column names must match the tasks table for external content mode to work
         this.db.exec(`
@@ -1501,6 +1547,11 @@ export class Database {
     // log-only executor updates should not churn or bloat the FTS index.
     if (version < 35) {
       this.applyMigration(35, () => {
+        if (!this._fts5Available) {
+          // tasks_fts does not exist when FTS5 is unavailable; nothing to
+          // rebuild or re-trigger.
+          return;
+        }
         const hasTaskTitle = this.hasColumn("tasks", "title");
         const updateColumns = hasTaskTitle
           ? "id, title, description, comments"

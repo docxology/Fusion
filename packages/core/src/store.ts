@@ -1991,7 +1991,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       return this.listTasks(options);
     }
 
-    // Sanitize query for FTS5 safety: strip dangerous operators but preserve alphanumeric
+    // Sanitize query: strip FTS5 operators so both code paths see the same token set
     const sanitizedTokens = trimmedQuery
       .split(/\s+/)
       .filter((token) => token.length > 0)
@@ -2002,34 +2002,56 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       return this.listTasks(options);
     }
 
-    // For FTS5 MATCH, quote tokens that contain special characters like hyphens
-    // to prevent them from being interpreted as operators
-    const ftsQuery = sanitizedTokens
-      .map((token) => {
-        // If token contains FTS5 special chars, wrap in double quotes
-        if (/[":(){}*^+-]/.test(token)) {
-          return `"${token.replace(/"/g, '\\"')}"`;
-        }
-        return token;
-      })
-      .join(" OR ");
-
-    // Execute FTS query with ranking
     const limit = options?.limit ?? -1;
     const offset = options?.offset ?? 0;
     const offsetClause = offset > 0 ? ` OFFSET ${offset}` : "";
     const includeArchived = options?.includeArchived ?? true;
-    const whereClause = includeArchived ? "" : ` AND t."column" != 'archived'`;
-    const selectClause = this.getTaskSelectClause(options?.slim ?? false, "t");
+    const slim = options?.slim ?? false;
+    const selectClause = this.getTaskSelectClause(slim, "t");
 
-    const rows = this.db.prepare(`
-      SELECT ${selectClause} FROM tasks t
-      JOIN tasks_fts fts ON t.rowid = fts.rowid
-      WHERE tasks_fts MATCH ?
-      ${whereClause}
-      ORDER BY rank
-      LIMIT ${limit >= 0 ? limit : -1}${offsetClause}
-    `).all(ftsQuery) as any[];
+    let rows: any[];
+    if (this.db.fts5Available) {
+      // For FTS5 MATCH, quote tokens that contain special characters like hyphens
+      // to prevent them from being interpreted as operators
+      const ftsQuery = sanitizedTokens
+        .map((token) => {
+          if (/[":(){}*^+-]/.test(token)) {
+            return `"${token.replace(/"/g, '\\"')}"`;
+          }
+          return token;
+        })
+        .join(" OR ");
+      const whereClause = includeArchived ? "" : ` AND t."column" != 'archived'`;
+      rows = this.db.prepare(`
+        SELECT ${selectClause} FROM tasks t
+        JOIN tasks_fts fts ON t.rowid = fts.rowid
+        WHERE tasks_fts MATCH ?
+        ${whereClause}
+        ORDER BY rank
+        LIMIT ${limit >= 0 ? limit : -1}${offsetClause}
+      `).all(ftsQuery) as any[];
+    } else {
+      // LIKE fallback: any token matching any searchable column counts as a hit.
+      // Tokens are OR'd; per token we OR across id/title/description/comments.
+      // ESCAPE '\\' lets us include user input containing % or _ literally.
+      const searchColumns = ["id", "title", "description", "comments"];
+      const perTokenClause = `(${searchColumns
+        .map((c) => `t."${c}" LIKE ? ESCAPE '\\'`)
+        .join(" OR ")})`;
+      const whereTokens = sanitizedTokens.map(() => perTokenClause).join(" OR ");
+      const params: string[] = [];
+      for (const token of sanitizedTokens) {
+        const pattern = `%${token.replace(/[\\%_]/g, "\\$&")}%`;
+        for (let i = 0; i < searchColumns.length; i++) params.push(pattern);
+      }
+      const archivedClause = includeArchived ? "" : ` AND t."column" != 'archived'`;
+      rows = this.db.prepare(`
+        SELECT ${selectClause} FROM tasks t
+        WHERE (${whereTokens})${archivedClause}
+        ORDER BY t.createdAt ASC
+        LIMIT ${limit >= 0 ? limit : -1}${offsetClause}
+      `).all(...params) as any[];
+    }
 
     const activeMatches = await Promise.all(rows.map(async (row) => {
       const task = this.rowToTask(row);
@@ -2041,7 +2063,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       return steps.length > 0 ? { ...task, steps } : task;
     }));
     const archiveMatches = includeArchived
-      ? this.archiveDb.search(ftsQuery, limit >= 0 ? limit : 100).map((entry) => this.archiveEntryToTask(entry, options?.slim ?? false))
+      ? this.archiveDb.search(trimmedQuery, limit >= 0 ? limit : 100).map((entry) => this.archiveEntryToTask(entry, slim))
       : [];
 
     const matches = [...activeMatches, ...archiveMatches];
