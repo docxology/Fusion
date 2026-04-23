@@ -13191,7 +13191,7 @@ html .column.drag-over * {
   width: 90vw;
   max-width: 640px;
   min-height: 400px;
-  max-height: 90vh;
+  max-height: min(90vh, calc(100dvh - 2 * var(--overlay-padding-top, 10vh)));
   overflow: hidden;
 }
 
@@ -21597,6 +21597,22 @@ html .column.drag-over * {
   margin-bottom: 0;
 }
 
+.setup-wizard-auth-token {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.setup-wizard-auth-token-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.setup-wizard-auth-token-actions .btn {
+  min-height: 36px;
+}
+
 .setup-wizard-isolation-option {
   display: flex;
   align-items: flex-start;
@@ -21747,6 +21763,11 @@ html .column.drag-over * {
 
   .setup-wizard-advanced-panel {
     padding: var(--space-sm);
+  }
+
+  .setup-wizard-auth-token-actions .btn {
+    width: 100%;
+    justify-content: center;
   }
 
   .setup-wizard-footer {

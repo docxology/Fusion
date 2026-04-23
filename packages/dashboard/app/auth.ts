@@ -97,6 +97,12 @@ export function getAuthToken(): string | undefined {
   return undefined;
 }
 
+/** Persist a token for future dashboard API requests in this browser session. */
+export function setAuthToken(token: string): void {
+  cachedToken = token;
+  writeStoredToken(token);
+}
+
 /** Clear the stored token (e.g., on a 401 response). */
 export function clearAuthToken(): void {
   cachedToken = undefined;

@@ -287,6 +287,27 @@ export class TerminalService extends EventEmitter {
   }
 
   /**
+   * Build concise diagnostics for PTY launch failures without logging the full environment.
+   */
+  private getSpawnDiagnostics(
+    requestedShell: string | undefined,
+    detectedShell: string,
+    detectedArgs: string[],
+    cwd: string,
+  ): Record<string, unknown> {
+    return {
+      platform: os.platform(),
+      projectRoot: this.projectRoot,
+      cwd,
+      requestedShell: requestedShell ?? null,
+      detectedShell,
+      detectedArgs,
+      envShell: process.env.SHELL ?? null,
+      allowedShells: this.getAllowedShells().filter((shellPath) => existsSync(shellPath)),
+    };
+  }
+
+  /**
    * Validate and resolve a working directory path
    */
   private async resolveWorkingDirectory(requestedCwd?: string): Promise<string> {
@@ -445,6 +466,7 @@ export class TerminalService extends EventEmitter {
 
     // Validate and resolve working directory
     const cwd = await this.resolveWorkingDirectory(options.cwd);
+    const spawnDiagnostics = this.getSpawnDiagnostics(options.shell, detectedShell, shellArgs, cwd);
 
     // Build environment with stripped sensitive vars
     const cleanEnv: Record<string, string> = {};
@@ -464,7 +486,11 @@ export class TerminalService extends EventEmitter {
       ...options.env,
     };
 
-    console.info(`Creating session ${id} with shell: ${shell} in ${cwd}`);
+    console.info(`[createSession] Creating session ${id}`, {
+      ...spawnDiagnostics,
+      selectedShell: shell,
+      selectedArgs: shell === detectedShell ? shellArgs : [],
+    });
 
     // Lazy-load node-pty module with proper error handling
     let pty: typeof import("node-pty");
@@ -529,12 +555,13 @@ export class TerminalService extends EventEmitter {
         console.error(
           `[createSession] PTY spawn failed (${attempt.reason}) for ${attempt.shell} ${attempt.args.join(" ")}:`,
           spawnError,
+          spawnDiagnostics,
         );
       }
     }
 
     if (!ptyProcess) {
-      console.error(`[createSession] All PTY spawn attempts failed`, lastSpawnError);
+      console.error(`[createSession] All PTY spawn attempts failed`, lastSpawnError, spawnDiagnostics);
       return {
         success: false,
         code: "pty_spawn_failed",

@@ -45,15 +45,30 @@ vi.mock("../../api", () => ({
   }),
 }));
 
+vi.mock("../../auth", () => ({
+  getAuthToken: vi.fn(() => undefined),
+  setAuthToken: vi.fn(),
+  clearAuthToken: vi.fn(),
+}));
+
 import { registerProject } from "../../api";
+import { getAuthToken, setAuthToken, clearAuthToken } from "../../auth";
 import { useNodes } from "../../hooks/useNodes";
 
 const mockRegisterProject = vi.mocked(registerProject);
+const mockGetAuthToken = vi.mocked(getAuthToken);
+const mockSetAuthToken = vi.mocked(setAuthToken);
+const mockClearAuthToken = vi.mocked(clearAuthToken);
 const mockUseNodes = vi.mocked(useNodes);
 
 describe("SetupWizardModal", () => {
+  let reloadMock: ReturnType<typeof vi.fn>;
+
   beforeEach(() => {
     vi.clearAllMocks();
+    mockGetAuthToken.mockReturnValue(undefined);
+    reloadMock = vi.fn();
+    vi.stubGlobal("location", { ...window.location, reload: reloadMock });
   });
 
   it("renders with welcome message", () => {
@@ -246,6 +261,72 @@ describe("SetupWizardModal", () => {
 
     fireEvent.click(childProcessRadio);
     expect(childProcessRadio.checked).toBe(true);
+  });
+
+  it("shows a set token action when no browser auth token is stored", () => {
+    render(
+      <SetupWizardModal
+        onProjectRegistered={vi.fn()}
+        onClose={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByText("Advanced settings"));
+
+    expect(screen.getByLabelText("Browser Auth Token")).toBeDefined();
+    expect(screen.getByRole("button", { name: "Set token" })).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Reset token" })).toBeNull();
+  });
+
+  it("stores a browser auth token and reloads the page", () => {
+    render(
+      <SetupWizardModal
+        onProjectRegistered={vi.fn()}
+        onClose={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByText("Advanced settings"));
+    fireEvent.change(screen.getByLabelText("Browser Auth Token"), {
+      target: { value: "daemon-token" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Set token" }));
+
+    expect(mockSetAuthToken).toHaveBeenCalledWith("daemon-token");
+    expect(reloadMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows reset when a browser auth token is already stored", () => {
+    mockGetAuthToken.mockReturnValue("stored-token");
+
+    render(
+      <SetupWizardModal
+        onProjectRegistered={vi.fn()}
+        onClose={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByText("Advanced settings"));
+
+    expect(screen.getByRole("button", { name: "Update token" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Reset token" })).toBeDefined();
+  });
+
+  it("resets the stored browser auth token and reloads the page", () => {
+    mockGetAuthToken.mockReturnValue("stored-token");
+
+    render(
+      <SetupWizardModal
+        onProjectRegistered={vi.fn()}
+        onClose={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByText("Advanced settings"));
+    fireEvent.click(screen.getByRole("button", { name: "Reset token" }));
+
+    expect(mockClearAuthToken).toHaveBeenCalledTimes(1);
+    expect(reloadMock).toHaveBeenCalledTimes(1);
   });
 
   describe("node selector", () => {

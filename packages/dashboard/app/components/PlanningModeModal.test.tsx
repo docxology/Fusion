@@ -430,6 +430,38 @@ describe("PlanningModeModal", () => {
     });
   });
 
+  describe("modal height constraint regression", () => {
+    it("desktop planning modal max-height accounts for overlay padding", async () => {
+      const { container } = render(
+        <PlanningModeModal
+          isOpen={true}
+          onClose={mockOnClose}
+          onTaskCreated={mockOnTaskCreated}
+          tasks={mockTasks}
+        />
+      );
+
+      const modal = container.querySelector(".planning-modal");
+      expect(modal).toBeTruthy();
+
+      const fs = await import("fs");
+      const path = await import("path");
+      const cssPath = path.resolve(__dirname, "../styles.css");
+      const css = fs.readFileSync(cssPath, "utf-8");
+
+      const blockMatch = css.match(
+        /\.planning-modal\s*\{[^}]*max-height:\s*([^;]+);/,
+      );
+      expect(blockMatch).toBeTruthy();
+
+      const maxHeightValue = blockMatch![1].trim();
+      expect(maxHeightValue).toContain("min(");
+      expect(maxHeightValue).toContain("calc(");
+      expect(maxHeightValue).toContain("100dvh");
+      expect(maxHeightValue).toContain("--overlay-padding-top");
+    });
+  });
+
   describe("Planning flow", () => {
     it("starts planning and shows question view", async () => {
       render(

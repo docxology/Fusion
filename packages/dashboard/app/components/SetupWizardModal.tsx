@@ -2,6 +2,7 @@ import { useState, useCallback } from "react";
 import { X, Loader2, Sparkles, CheckCircle, ChevronRight } from "lucide-react";
 import type { ProjectInfo, ProjectCreateInput } from "../api";
 import { registerProject } from "../api";
+import { getAuthToken, setAuthToken, clearAuthToken } from "../auth";
 import { DirectoryPicker } from "./DirectoryPicker";
 import { suggestProjectName } from "../utils/projectDetection";
 import { useNodes } from "../hooks/useNodes";
@@ -47,6 +48,8 @@ export function SetupWizardModal({
     error: null,
   });
   const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
+  const [authTokenInput, setAuthTokenInput] = useState("");
+  const [storedAuthToken, setStoredAuthToken] = useState(() => getAuthToken());
 
   const { nodes, loading: nodesLoading } = useNodes();
   const localNodeId = nodes.find((n) => n.type === "local")?.id;
@@ -96,6 +99,20 @@ export function SetupWizardModal({
       }));
     }
   }, [state.manualPath, state.manualName, state.manualIsolationMode, state.manualNodeId, onProjectRegistered]);
+
+  const handleSetAuthToken = useCallback(() => {
+    const token = authTokenInput.trim();
+    if (!token) return;
+    setAuthToken(token);
+    window.location.reload();
+  }, [authTokenInput]);
+
+  const handleResetAuthToken = useCallback(() => {
+    clearAuthToken();
+    setStoredAuthToken(undefined);
+    setAuthTokenInput("");
+    window.location.reload();
+  }, []);
 
   if (!isOpen) return null;
 
@@ -253,6 +270,45 @@ export function SetupWizardModal({
                           </div>
                         </label>
                       </div>
+                    </div>
+
+                    <div className="form-group">
+                      <label htmlFor="setup-auth-token">Browser Auth Token</label>
+                      <div className="setup-wizard-auth-token">
+                        <input
+                          id="setup-auth-token"
+                          type="password"
+                          value={authTokenInput}
+                          onChange={(e) => setAuthTokenInput(e.target.value)}
+                          placeholder={storedAuthToken ? "Enter a new token to replace the stored one" : "Paste the auth token for this browser"}
+                          autoComplete="off"
+                          spellCheck={false}
+                        />
+                        <div className="setup-wizard-auth-token-actions">
+                          <button
+                            type="button"
+                            className="btn"
+                            onClick={handleSetAuthToken}
+                            disabled={authTokenInput.trim().length === 0}
+                          >
+                            {storedAuthToken ? "Update token" : "Set token"}
+                          </button>
+                          {storedAuthToken && (
+                            <button
+                              type="button"
+                              className="btn"
+                              onClick={handleResetAuthToken}
+                            >
+                              Reset token
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <p className="form-hint">
+                        {storedAuthToken
+                          ? "A token is already stored in this browser. Updating or resetting it will reload the page."
+                          : "Store a token in this browser for authenticated dashboard requests, then reload the page."}
+                      </p>
                     </div>
                   </div>
                 )}
