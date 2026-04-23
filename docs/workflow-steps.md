@@ -24,6 +24,8 @@ Workflow steps run in one of two phases:
 - **Pre-merge** (default): runs before merge/finalization; failure blocks completion
 - **Post-merge**: runs after successful merge; failure is logged but non-blocking
 
+> **Note on Fast Mode:** When a task has `executionMode: "fast"`, pre-merge workflow steps are bypassed entirely during executor completion. Post-merge workflow steps remain active and run normally (post-merge is merger-owned and unaffected by execution mode).
+
 ## Execution Modes
 
 - **Prompt mode**: starts an AI agent for the step

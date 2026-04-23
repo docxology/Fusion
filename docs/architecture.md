@@ -553,15 +553,17 @@ done
 ### Execution detail
 - **Triage phase**: `TriageProcessor` generates executable spec
 - **Execution phase**: `TaskExecutor` performs implementation, tool calls, tests/build commands
-- **Review phase**: optional `reviewStep()` workflow depending on prompt review level
+- **Review phase**: optional `reviewStep()` workflow depending on prompt review level (bypassed in fast mode)
 - **Merge phase**: `aiMergeTask()` handles merge strategy and post-merge workflow steps
+
+> **Fast Mode:** Tasks with `executionMode: "fast"` bypass the `review_step` tool injection and pre-merge workflow steps. Completion blockers (tests, build, typecheck from PROMPT.md) and post-merge workflow steps remain enforced.
 
 ### Step status model
 Task steps use statuses: `pending`, `in-progress`, `done`, `skipped`.
 
 ### Workflow steps
 - Defined in project config as `WorkflowStep`
-- **Pre-merge** steps run in executor (`runWorkflowSteps()`)
+- **Pre-merge** steps run in executor (`runWorkflowSteps()`) — bypassed in fast mode
 - **Post-merge** steps run in merger (`runPostMergeWorkflowSteps()`)
 
 ---

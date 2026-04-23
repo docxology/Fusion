@@ -71,6 +71,62 @@ fn task archive FN-001
 fn task unarchive FN-001
 ```
 
+## Task Execution Modes
+
+Each task has an execution mode that controls how the executor agent approaches the task:
+
+| Mode | Description |
+|------|-------------|
+| `standard` | Full execution with complete review workflow (default) |
+| `fast` | Expedited execution with minimal overhead for simple tasks |
+
+### Fast Mode Bypassed Gates
+
+When `executionMode: "fast"`, the following automated review/validation gates are **bypassed**:
+
+| Gate | Standard Mode | Fast Mode |
+|------|---------------|-----------|
+| `review_step` tool enforcement | Available to executor agent | **Not injected** |
+| Pre-merge workflow-step execution | Runs configured steps | **Skipped** |
+| Workflow revision loop | Enabled (feedback → fix → re-review) | **Disabled** |
+
+### Fast Mode Mandatory Gates
+
+The following quality gates **remain enforced** in fast mode:
+
+| Gate | Behavior |
+|------|----------|
+| `task_done` requirement | Agent must call `task_done()` to complete |
+| Completion blocker checks | Tests, build, and typecheck from PROMPT.md still enforced |
+| Post-merge workflow steps | Run as normal (merger-owned) |
+
+### Execution Mode Matrix
+
+| Feature | Standard | Fast |
+|---------|----------|------|
+| Executor agent session | Full prompt + tools | Full prompt (minus review_step) |
+| Pre-merge workflow steps | ✅ Run | ❌ Bypassed |
+| `review_step` tool | ✅ Available | ❌ Not available |
+| Post-merge workflow steps | ✅ Run | ✅ Run |
+| Completion blockers (test/build/typecheck) | ✅ Enforced | ✅ Enforced |
+| `task_done()` requirement | ✅ Required | ✅ Required |
+
+### Setting Execution Mode
+
+Execution mode can be set during task creation or editing:
+
+- **Via API**: Include `executionMode` field in task create/update payload
+- **Via dashboard**: Select execution mode in the task creation dialog or task detail modal
+- **Values**: `"standard"` (default) or `"fast"`
+
+Example API payload:
+```json
+{
+  "description": "Simple fix",
+  "executionMode": "fast"
+}
+```
+
 ## Task Detail Modal (Dashboard)
 
 The task detail modal exposes multiple tabs:

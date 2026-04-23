@@ -7,6 +7,7 @@ import {
   fetchAiSession,
   deleteAiSession,
   updateTask,
+  createTask,
   connectPlanningStream,
   connectSubtaskStream,
   connectMissionInterviewStream,
@@ -344,6 +345,133 @@ describe("updateTask", () => {
     globalThis.fetch = vi.fn().mockReturnValue(mockFetchResponse(false, { error: "Not found" }));
 
     await expect(updateTask("FN-001", { dependencies: [] })).rejects.toThrow("Not found");
+  });
+
+  it("sends PATCH with executionMode 'fast' when provided", async () => {
+    globalThis.fetch = vi.fn().mockReturnValue(mockFetchResponse(true, { ...FAKE_TASK, executionMode: "fast" }));
+
+    const result = await updateTask("FN-001", { executionMode: "fast" });
+
+    expect(result.executionMode).toBe("fast");
+    expect(globalThis.fetch).toHaveBeenCalledWith("/api/tasks/FN-001", {
+      headers: { "Content-Type": "application/json" },
+      method: "PATCH",
+      body: JSON.stringify({ executionMode: "fast" }),
+    });
+  });
+
+  it("sends PATCH with executionMode 'standard' when provided", async () => {
+    globalThis.fetch = vi.fn().mockReturnValue(mockFetchResponse(true, { ...FAKE_TASK, executionMode: "standard" }));
+
+    const result = await updateTask("FN-001", { executionMode: "standard" });
+
+    expect(result.executionMode).toBe("standard");
+    expect(globalThis.fetch).toHaveBeenCalledWith("/api/tasks/FN-001", {
+      headers: { "Content-Type": "application/json" },
+      method: "PATCH",
+      body: JSON.stringify({ executionMode: "standard" }),
+    });
+  });
+
+  it("sends PATCH with null to clear executionMode", async () => {
+    globalThis.fetch = vi.fn().mockReturnValue(mockFetchResponse(true, { ...FAKE_TASK, executionMode: undefined }));
+
+    const result = await updateTask("FN-001", { executionMode: null });
+
+    expect(result.executionMode).toBeUndefined();
+    expect(globalThis.fetch).toHaveBeenCalledWith("/api/tasks/FN-001", {
+      headers: { "Content-Type": "application/json" },
+      method: "PATCH",
+      body: JSON.stringify({ executionMode: null }),
+    });
+  });
+
+  it("omits executionMode key when not provided in update", async () => {
+    globalThis.fetch = vi.fn().mockReturnValue(mockFetchResponse(true, { ...FAKE_TASK, title: "Updated" }));
+
+    await updateTask("FN-001", { title: "Updated" });
+
+    const call = vi.mocked(globalThis.fetch).mock.calls[0];
+    const body = JSON.parse((call[1] as RequestInit).body as string);
+    expect(body).not.toHaveProperty("executionMode");
+  });
+});
+
+describe("createTask", () => {
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  const FAKE_CREATED_TASK: Task = {
+    id: "FN-001",
+    description: "Test task",
+    column: "triage",
+    dependencies: [],
+    steps: [],
+    currentStep: 0,
+    log: [],
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+
+  it("sends POST with executionMode 'fast' when provided", async () => {
+    globalThis.fetch = vi.fn().mockReturnValue(mockFetchResponse(true, { ...FAKE_CREATED_TASK, executionMode: "fast" }));
+
+    const result = await createTask({ description: "Fast task", executionMode: "fast" });
+
+    expect(result.executionMode).toBe("fast");
+    const call = vi.mocked(globalThis.fetch).mock.calls[0];
+    const body = JSON.parse((call[1] as RequestInit).body as string);
+    expect(body.executionMode).toBe("fast");
+    expect(body.description).toBe("Fast task");
+  });
+
+  it("sends POST with executionMode 'standard' when provided", async () => {
+    globalThis.fetch = vi.fn().mockReturnValue(mockFetchResponse(true, { ...FAKE_CREATED_TASK, executionMode: "standard" }));
+
+    const result = await createTask({ description: "Standard task", executionMode: "standard" });
+
+    expect(result.executionMode).toBe("standard");
+    const call = vi.mocked(globalThis.fetch).mock.calls[0];
+    const body = JSON.parse((call[1] as RequestInit).body as string);
+    expect(body.executionMode).toBe("standard");
+    expect(body.description).toBe("Standard task");
+  });
+
+  it("omits executionMode key when not provided", async () => {
+    globalThis.fetch = vi.fn().mockReturnValue(mockFetchResponse(true, FAKE_CREATED_TASK));
+
+    await createTask({ description: "Task without execution mode" });
+
+    const call = vi.mocked(globalThis.fetch).mock.calls[0];
+    const body = JSON.parse((call[1] as RequestInit).body as string);
+    expect(body).not.toHaveProperty("executionMode");
+  });
+
+  it("sends POST with multiple fields including executionMode", async () => {
+    globalThis.fetch = vi.fn().mockReturnValue(mockFetchResponse(true, {
+      ...FAKE_CREATED_TASK,
+      executionMode: "fast",
+      title: "Test Title",
+      dependencies: ["FN-002"],
+    }));
+
+    const result = await createTask({
+      description: "Full task",
+      title: "Test Title",
+      dependencies: ["FN-002"],
+      executionMode: "fast",
+    });
+
+    expect(result.executionMode).toBe("fast");
+    const call = vi.mocked(globalThis.fetch).mock.calls[0];
+    const body = JSON.parse((call[1] as RequestInit).body as string);
+    expect(body.description).toBe("Full task");
+    expect(body.title).toBe("Test Title");
+    expect(body.dependencies).toEqual(["FN-002"]);
+    expect(body.executionMode).toBe("fast");
   });
 });
 

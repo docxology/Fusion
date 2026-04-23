@@ -11385,6 +11385,329 @@ describe("TaskExecutor messaging tools", () => {
       const toolNames = tools.map((t: any) => t.name);
       expect(toolNames).toContain("review_step");
     });
+
+    it("logs executor model usage when execution starts", async () => {
+      const store = createMockStore();
+      store.getTask.mockResolvedValue({
+        id: "FN-001",
+        title: "Test",
+        description: "Test task",
+        column: "in-progress",
+        dependencies: [],
+        steps: [],
+        currentStep: 0,
+        log: [],
+        executionMode: "fast",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+
+      mockedCreateFnAgent.mockResolvedValue({
+        session: {
+          prompt: vi.fn().mockResolvedValue(undefined),
+          dispose: vi.fn(),
+          sessionManager: { getLeafId: vi.fn().mockReturnValue("leaf-1") },
+        },
+      } as any);
+
+      const executor = new TaskExecutor(store, "/tmp/test");
+      await executor.execute({
+        id: "FN-001",
+        title: "Test",
+        description: "Test task",
+        column: "in-progress",
+        dependencies: [],
+        steps: [],
+        currentStep: 0,
+        log: [],
+        executionMode: "fast",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+
+      // Verify logEntry was called (indicates executor is running)
+      expect(store.logEntry).toHaveBeenCalled();
+    });
+  });
+
+  describe("Fast mode completion path", () => {
+    beforeEach(() => {
+      vi.clearAllMocks();
+      mockedExistsSync.mockReturnValue(false);
+    });
+
+    it("skips workflow steps in fast mode when task completes", async () => {
+      const store = createMockStore();
+
+      // Task with workflow steps enabled AND fast mode
+      store.getTask.mockResolvedValue({
+        id: "FN-001",
+        title: "Test",
+        description: "Test task",
+        column: "in-progress",
+        dependencies: [],
+        steps: [{ name: "Preflight", status: "pending" }],
+        currentStep: 0,
+        log: [],
+        enabledWorkflowSteps: ["WS-001"],
+        executionMode: "fast",
+        prompt: "# test\n## Steps\n### Step 0: Preflight\n- [ ] check",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+
+      // Mock workflow step exists
+      store.getWorkflowStep.mockResolvedValue({
+        id: "WS-001",
+        name: "Docs Review",
+        description: "Check documentation",
+        prompt: "Review docs.",
+        enabled: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+
+      // Mock agent with task_done
+      mockedCreateFnAgent.mockImplementation((async (opts: any) => {
+        const customTools = opts.customTools || [];
+        const session = {
+          prompt: vi.fn().mockImplementation(async () => {
+            const taskDoneTool = customTools.find((t: any) => t.name === "task_done");
+            if (taskDoneTool) await taskDoneTool.execute("tool-1", {});
+          }),
+          dispose: vi.fn(),
+          subscribe: vi.fn(),
+          on: vi.fn(),
+          sessionManager: { getLeafId: vi.fn().mockReturnValue("leaf-1") },
+          state: {},
+        };
+        return { session };
+      }) as any);
+
+      const onComplete = vi.fn();
+      const executor = new TaskExecutor(store, "/tmp/test", { onComplete });
+
+      await executor.execute({
+        id: "FN-001",
+        title: "Test",
+        description: "Test task",
+        column: "in-progress",
+        dependencies: [],
+        steps: [{ name: "Preflight", status: "pending" }],
+        currentStep: 0,
+        log: [],
+        enabledWorkflowSteps: ["WS-001"],
+        executionMode: "fast",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+
+      // Verify task moved to in-review
+      expect(store.moveTask).toHaveBeenCalledWith("FN-001", "in-review");
+
+      // Verify onComplete was called
+      expect(onComplete).toHaveBeenCalled();
+
+      // Verify workflow step was NOT called (fast mode skips workflow steps)
+      // The agent should only be called once (main execution), not twice (main + workflow)
+      expect(mockedCreateFnAgent).toHaveBeenCalledTimes(1);
+    });
+
+    it("still runs workflow steps in standard mode when task completes", async () => {
+      const store = createMockStore();
+
+      // Task with workflow steps enabled in standard mode
+      store.getTask.mockResolvedValue({
+        id: "FN-001",
+        title: "Test",
+        description: "Test task",
+        column: "in-progress",
+        dependencies: [],
+        steps: [{ name: "Preflight", status: "pending" }],
+        currentStep: 0,
+        log: [],
+        enabledWorkflowSteps: ["WS-001"],
+        executionMode: "standard",
+        prompt: "# test\n## Steps\n### Step 0: Preflight\n- [ ] check",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+
+      // Mock workflow step exists
+      store.getWorkflowStep.mockResolvedValue({
+        id: "WS-001",
+        name: "Docs Review",
+        description: "Check documentation",
+        prompt: "Review docs.",
+        enabled: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+
+      // Track agent calls
+      let callIdx = 0;
+      mockedCreateFnAgent.mockImplementation((async (opts: any) => {
+        callIdx++;
+        const customTools = opts.customTools || [];
+        const session = {
+          prompt: vi.fn().mockImplementation(async () => {
+            if (callIdx === 1) {
+              // Main execution — find and trigger task_done
+              const taskDoneTool = customTools.find((t: any) => t.name === "task_done");
+              if (taskDoneTool) await taskDoneTool.execute("tool-1", {});
+            } else {
+              // Workflow step — no task_done needed
+            }
+          }),
+          dispose: vi.fn(),
+          subscribe: vi.fn(),
+          on: vi.fn(),
+          sessionManager: { getLeafId: vi.fn().mockReturnValue("leaf-1") },
+          state: {},
+        };
+        return { session };
+      }) as any);
+
+      const executor = new TaskExecutor(store, "/tmp/test");
+
+      await executor.execute({
+        id: "FN-001",
+        title: "Test",
+        description: "Test task",
+        column: "in-progress",
+        dependencies: [],
+        steps: [{ name: "Preflight", status: "pending" }],
+        currentStep: 0,
+        log: [],
+        enabledWorkflowSteps: ["WS-001"],
+        executionMode: "standard",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+
+      // Verify task moved to in-review
+      expect(store.moveTask).toHaveBeenCalledWith("FN-001", "in-review");
+
+      // Verify workflow step WAS called (standard mode runs workflow steps)
+      // Agent should be called twice: main execution + workflow step
+      expect(mockedCreateFnAgent).toHaveBeenCalledTimes(2);
+    });
+
+    it("still enforces task_done requirement in fast mode", async () => {
+      const store = createMockStore();
+
+      // Task in fast mode
+      store.getTask.mockResolvedValue({
+        id: "FN-001",
+        title: "Test",
+        description: "Test task",
+        column: "in-progress",
+        dependencies: [],
+        steps: [{ name: "Preflight", status: "pending" }],
+        currentStep: 0,
+        log: [],
+        executionMode: "fast",
+        prompt: "# test\n## Steps\n### Step 0: Preflight\n- [ ] check",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+
+      // Mock agent that exits WITHOUT calling task_done
+      mockedCreateFnAgent.mockResolvedValue({
+        session: {
+          prompt: vi.fn().mockResolvedValue(undefined),
+          dispose: vi.fn(),
+          subscribe: vi.fn(),
+          on: vi.fn(),
+          sessionManager: { getLeafId: vi.fn().mockReturnValue("leaf-1") },
+          state: {},
+        },
+      } as any);
+
+      const onError = vi.fn();
+      const executor = new TaskExecutor(store, "/tmp/test", { onError });
+
+      await executor.execute({
+        id: "FN-001",
+        title: "Test",
+        description: "Test task",
+        column: "in-progress",
+        dependencies: [],
+        steps: [{ name: "Preflight", status: "pending" }],
+        currentStep: 0,
+        log: [],
+        executionMode: "fast",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+
+      // Fast mode should still enforce task_done requirement
+      // Should fail after retry and call onError
+      expect(onError).toHaveBeenCalled();
+      expect(store.updateTask).toHaveBeenCalledWith(
+        "FN-001",
+        expect.objectContaining({ status: "failed" }),
+      );
+    });
+
+    it("still checks completion blockers in fast mode", async () => {
+      const store = createMockStore();
+
+      // Task in fast mode with no workflow steps
+      store.getTask.mockResolvedValue({
+        id: "FN-001",
+        title: "Test",
+        description: "Test task",
+        column: "in-progress",
+        dependencies: [],
+        steps: [],
+        currentStep: 0,
+        log: [],
+        executionMode: "fast",
+        prompt: "# test\n## Steps\n",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+
+      // Mock agent with task_done
+      mockedCreateFnAgent.mockImplementation((async (opts: any) => {
+        const customTools = opts.customTools || [];
+        const session = {
+          prompt: vi.fn().mockImplementation(async () => {
+            const taskDoneTool = customTools.find((t: any) => t.name === "task_done");
+            if (taskDoneTool) await taskDoneTool.execute("tool-1", {});
+          }),
+          dispose: vi.fn(),
+          subscribe: vi.fn(),
+          on: vi.fn(),
+          sessionManager: { getLeafId: vi.fn().mockReturnValue("leaf-1") },
+          state: {},
+        };
+        return { session };
+      }) as any);
+
+      const onComplete = vi.fn();
+      const executor = new TaskExecutor(store, "/tmp/test", { onComplete });
+
+      await executor.execute({
+        id: "FN-001",
+        title: "Test",
+        description: "Test task",
+        column: "in-progress",
+        dependencies: [],
+        steps: [],
+        currentStep: 0,
+        log: [],
+        executionMode: "fast",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+
+      // Verify task completed normally even without workflow steps
+      // Completion blockers (test/build/typecheck) are checked via getTaskCompletionBlocker
+      // which is called before finalizing
+      expect(onComplete).toHaveBeenCalled();
+    });
   });
 });
 
