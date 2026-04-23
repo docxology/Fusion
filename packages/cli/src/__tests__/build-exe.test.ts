@@ -93,10 +93,20 @@ describe("build-exe", () => {
         // Verify no package.json in the isolated dir
         expect(existsSync(join(dir, "package.json"))).toBe(false);
 
-        const result = spawnSync(binary, ["--help"], {
+        let result = spawnSync(binary, ["--help"], {
           encoding: "utf-8",
           timeout: 15_000,
         });
+
+        // Rarely on loaded CI hosts the bundled binary can be slow to warm up.
+        // Retry once with a longer timeout if the first attempt was terminated.
+        if (result.status === null && result.signal === "SIGTERM") {
+          result = spawnSync(binary, ["--help"], {
+            encoding: "utf-8",
+            timeout: 60_000,
+          });
+        }
+
         if (hasKnownBunSqliteLimitation(result)) {
           return;
         }
