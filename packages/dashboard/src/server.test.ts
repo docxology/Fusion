@@ -5,6 +5,7 @@ import http from "node:http";
 import { createHmac } from "node:crypto";
 import express from "express";
 import { createServer, setupTerminalWebSocket } from "./server.js";
+import { toSessionTag } from "./terminal-websocket-diagnostics.js";
 import type { TaskStore } from "@fusion/core";
 import { get as performGet, request as performRequest } from "./test-request.js";
 
@@ -76,6 +77,35 @@ function createMockStore(overrides: Partial<TaskStore> = {}): TaskStore {
     off: vi.fn(),
     ...overrides,
   } as unknown as TaskStore;
+}
+
+function createTerminalLoggerHarness() {
+  const terminalLogger = {
+    scope: "server:terminal",
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    child: vi.fn(),
+  };
+
+  terminalLogger.child.mockReturnValue(terminalLogger);
+
+  const runtimeLogger = {
+    scope: "server",
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    child: vi.fn(),
+  };
+
+  runtimeLogger.child.mockImplementation((scope: string) => {
+    if (scope === "terminal") {
+      return terminalLogger;
+    }
+    return runtimeLogger;
+  });
+
+  return { runtimeLogger, terminalLogger };
 }
 
 async function GET(app: ReturnType<typeof createServer>, path: string): Promise<{ status: number; body: unknown; headers: Record<string, unknown> }> {
@@ -475,15 +505,17 @@ describe("Terminal WebSocket heartbeat", () => {
   let app: ReturnType<typeof express>;
   let server: http.Server;
   let store: TaskStore;
+  let runtimeLogger: ReturnType<typeof createTerminalLoggerHarness>["runtimeLogger"];
+  let terminalLogger: ReturnType<typeof createTerminalLoggerHarness>["terminalLogger"];
 
   beforeEach(() => {
     app = express();
     server = http.createServer(app);
     store = createMockStore();
     vi.useFakeTimers();
-    vi.spyOn(console, "warn").mockImplementation(() => {});
-    vi.spyOn(console, "info").mockImplementation(() => {});
-    vi.spyOn(console, "log").mockImplementation(() => {});
+    const loggerHarness = createTerminalLoggerHarness();
+    runtimeLogger = loggerHarness.runtimeLogger;
+    terminalLogger = loggerHarness.terminalLogger;
   });
 
   afterEach(() => {
@@ -520,8 +552,11 @@ describe("Terminal WebSocket heartbeat", () => {
   }
 
   /** Setup terminal WebSocket and trigger a connection */
-  function setupAndConnect(ws: any, req: any): void {
-    const wss = setupTerminalWebSocket(app, server, store);
+  function setupAndConnect(ws: any, req: any, options: Record<string, unknown> = {}): void {
+    setupTerminalWebSocket(app, server, store, {
+      runtimeLogger: runtimeLogger as any,
+      ...options,
+    });
 
     // The function sets up wss on the server's upgrade event.
     // We need to access the WebSocketServer directly to emit a connection.
@@ -579,10 +614,26 @@ describe("Terminal WebSocket heartbeat", () => {
     // Don't send pong — missed pong #1
     vi.advanceTimersByTime(30000);
     expect(ws.terminate).not.toHaveBeenCalled();
+    expect(terminalLogger.info).toHaveBeenCalledWith(
+      "Missed terminal websocket pong",
+      expect.objectContaining({
+        sessionTag: toSessionTag("session-2"),
+        missedPongs: 1,
+        maxMissedPongs: 2,
+      }),
+    );
 
     // Don't send pong — missed pong #2: should terminate
     vi.advanceTimersByTime(30000);
     expect(ws.terminate).toHaveBeenCalled();
+    expect(terminalLogger.warn).toHaveBeenCalledWith(
+      "Terminating terminal websocket after missed pong threshold",
+      expect.objectContaining({
+        sessionTag: toSessionTag("session-2"),
+        missedPongs: 2,
+        maxMissedPongs: 2,
+      }),
+    );
   });
 
   it("resets missed pong counter on successful pong", () => {
@@ -620,14 +671,68 @@ describe("Terminal WebSocket heartbeat", () => {
     expect(ws.terminate).not.toHaveBeenCalled();
   });
 
-  it("logs warning for stale session reconnect", () => {
+  it("logs structured error and closes 4510 when scoped store resolution fails", async () => {
     const ws = createMockWs();
-    const req = createMockReq("stale-session");
+    const req = {
+      url: "/api/terminal/ws?sessionId=session-4510&projectId=proj-a",
+      headers: { host: "localhost:3000" },
+    };
+
+    const engineManager = {
+      getEngine: vi.fn(() => {
+        throw new Error("scope lookup failed");
+      }),
+    };
+
+    setupAndConnect(ws, req, { engineManager });
+    await Promise.resolve();
+
+    expect(ws.close).toHaveBeenCalledWith(4510, "Failed to resolve project scope");
+    expect(terminalLogger.error).toHaveBeenCalledWith(
+      "Failed to resolve project scope",
+      expect.objectContaining({
+        projectId: "proj-a",
+        error: "scope lookup failed",
+      }),
+    );
+  });
+
+  it("logs redacted cwd mismatch context and closes 4503", () => {
+    const ws = createMockWs();
+    const req = createMockReq("cross-project-session-1");
+
+    mockTerminalService.getSession.mockReturnValue({
+      id: "cross-project-session-1",
+      shell: "/bin/bash",
+      cwd: "/Users/alice/private/other-project",
+      lastActivityAt: new Date(),
+    });
+
+    setupAndConnect(ws, req);
+
+    expect(ws.close).toHaveBeenCalledWith(4503, "Session does not belong to this project");
+    expect(terminalLogger.warn).toHaveBeenCalledWith(
+      "Rejected terminal session outside scoped project root",
+      expect.objectContaining({
+        sessionTag: toSessionTag("cross-project-session-1"),
+        sessionCwdHint: expect.stringContaining("<redacted>/"),
+        scopedRootHint: expect.stringContaining("<redacted>/"),
+      }),
+    );
+    expect(terminalLogger.warn).not.toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ sessionCwd: "/Users/alice/private/other-project" }),
+    );
+  });
+
+  it("logs structured warning for stale session reconnect with bounded context", () => {
+    const ws = createMockWs();
+    const req = createMockReq("stale-session-123456");
 
     // Session last active 10 minutes ago (past the 5-minute threshold)
     const tenMinutesAgo = new Date(Date.now() - 600_000);
     mockTerminalService.getSession.mockReturnValue({
-      id: "stale-session",
+      id: "stale-session-123456",
       shell: "/bin/bash",
       cwd: "/fake/root",
       lastActivityAt: tenMinutesAgo,
@@ -635,11 +740,16 @@ describe("Terminal WebSocket heartbeat", () => {
 
     setupAndConnect(ws, req);
 
-    expect(console.warn).toHaveBeenCalledWith(
-      expect.stringContaining("stale-session"),
+    expect(terminalLogger.warn).toHaveBeenCalledWith(
+      "Terminal reconnect may target stale PTY session",
+      expect.objectContaining({
+        sessionTag: toSessionTag("stale-session-123456"),
+        idleMs: 600_000,
+      }),
     );
-    expect(console.warn).toHaveBeenCalledWith(
-      expect.stringContaining("PTY may be stale"),
+    expect(terminalLogger.warn).not.toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ sessionId: "stale-session-123456" }),
     );
   });
 
@@ -657,8 +767,9 @@ describe("Terminal WebSocket heartbeat", () => {
 
     setupAndConnect(ws, req);
 
-    expect(console.warn).not.toHaveBeenCalledWith(
-      expect.stringContaining("PTY may be stale"),
+    expect(terminalLogger.warn).not.toHaveBeenCalledWith(
+      "Terminal reconnect may target stale PTY session",
+      expect.anything(),
     );
   });
 });
@@ -667,7 +778,8 @@ describe("Terminal stale-session eviction", () => {
   let app: ReturnType<typeof express>;
   let server: http.Server;
   let store: TaskStore;
-  let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
+  let runtimeLogger: ReturnType<typeof createTerminalLoggerHarness>["runtimeLogger"];
+  let terminalLogger: ReturnType<typeof createTerminalLoggerHarness>["terminalLogger"];
 
   beforeEach(() => {
     app = express();
@@ -675,8 +787,9 @@ describe("Terminal stale-session eviction", () => {
     store = createMockStore();
     vi.useFakeTimers();
     mockTerminalService.evictStaleSessions.mockReset().mockReturnValue(0);
-    consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    vi.spyOn(console, "log").mockImplementation(() => {});
+    const loggerHarness = createTerminalLoggerHarness();
+    runtimeLogger = loggerHarness.runtimeLogger;
+    terminalLogger = loggerHarness.terminalLogger;
   });
 
   afterEach(() => {
@@ -686,36 +799,35 @@ describe("Terminal stale-session eviction", () => {
   });
 
   it("calls evictStaleSessions on each 60s interval tick", () => {
-    setupTerminalWebSocket(app, server, store);
+    setupTerminalWebSocket(app, server, store, { runtimeLogger: runtimeLogger as any });
 
     vi.advanceTimersByTime(60_000);
     expect(mockTerminalService.evictStaleSessions).toHaveBeenCalledTimes(1);
 
     vi.advanceTimersByTime(60_000);
     expect(mockTerminalService.evictStaleSessions).toHaveBeenCalledTimes(2);
-    expect(consoleErrorSpy).not.toHaveBeenCalledWith(
-      expect.stringContaining("Stale session eviction failed"),
+    expect(terminalLogger.error).not.toHaveBeenCalledWith(
+      "Stale session eviction failed",
       expect.anything(),
     );
   });
 
-  it("logs error and continues when evictStaleSessions throws", () => {
+  it("logs structured error and continues when evictStaleSessions throws", () => {
     mockTerminalService.evictStaleSessions.mockImplementation(() => {
       throw new Error("simulated eviction failure");
     });
 
-    setupTerminalWebSocket(app, server, store);
+    setupTerminalWebSocket(app, server, store, { runtimeLogger: runtimeLogger as any });
 
     vi.advanceTimersByTime(60_000);
 
-    expect(consoleErrorSpy).toHaveBeenCalled();
-    const failureCall = consoleErrorSpy.mock.calls.find(
-      (call) => typeof call[0] === "string" && call[0].includes("[terminal] Stale session eviction failed"),
-    );
-    expect(failureCall).toBeDefined();
-    expect(failureCall?.[0]).toEqual(expect.stringContaining("[terminal] Stale session eviction failed"));
-    expect(failureCall?.[1]).toEqual(
-      expect.objectContaining({ error: "simulated eviction failure" }),
+    expect(terminalLogger.error).toHaveBeenCalledWith(
+      "Stale session eviction failed",
+      expect.objectContaining({
+        error: "simulated eviction failure",
+        errorName: "Error",
+        errorMessage: "simulated eviction failure",
+      }),
     );
 
     vi.advanceTimersByTime(60_000);
@@ -723,7 +835,7 @@ describe("Terminal stale-session eviction", () => {
   });
 
   it("stops eviction interval when server closes", () => {
-    setupTerminalWebSocket(app, server, store);
+    setupTerminalWebSocket(app, server, store, { runtimeLogger: runtimeLogger as any });
 
     server.emit("close");
 

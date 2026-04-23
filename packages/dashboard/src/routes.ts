@@ -4435,16 +4435,27 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    */
   async function resolveDiffBase(task: { baseCommitSha?: string; baseBranch?: string }, cwd: string): Promise<string | undefined> {
     const baseBranch = task.baseBranch ?? "main";
+    let mergeBase: string | undefined;
     try {
       try {
-        const base = (await runGitCommand(["merge-base", "HEAD", `origin/${baseBranch}`], cwd, 5000)).trim();
-        if (base) return base;
+        mergeBase = (await runGitCommand(["merge-base", "HEAD", `origin/${baseBranch}`], cwd, 5000)).trim() || undefined;
       } catch {
-        const base = (await runGitCommand(["merge-base", "HEAD", baseBranch], cwd, 5000)).trim();
-        if (base) return base;
+        mergeBase = (await runGitCommand(["merge-base", "HEAD", baseBranch], cwd, 5000)).trim() || undefined;
       }
     } catch {
-      // merge-base unavailable — base branch may no longer exist locally
+      // base branch may no longer exist locally
+    }
+
+    // If the merge-base equals HEAD, we're on the base branch with no feature
+    // divergence — the live merge-base would give an empty diff, so prefer the
+    // task-scoped baseCommitSha instead.
+    if (mergeBase) {
+      try {
+        const head = (await runGitCommand(["rev-parse", "HEAD"], cwd, 5000)).trim();
+        if (head && head !== mergeBase) return mergeBase;
+      } catch {
+        return mergeBase;
+      }
     }
 
     if (task.baseCommitSha) {

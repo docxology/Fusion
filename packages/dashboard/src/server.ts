@@ -21,6 +21,7 @@ import { WebSocketManager, type BadgeSnapshot } from "./websocket.js";
 import type { BadgePubSub } from "./badge-pubsub.js";
 import { createBadgePubSub, type BadgePubSubMessage } from "./badge-pubsub.js";
 import { createRuntimeLogger, type RuntimeLogger } from "./runtime-logger.js";
+import { createTerminalWebSocketDiagnostics } from "./terminal-websocket-diagnostics.js";
 import {
   AiSessionStore,
   SESSION_CLEANUP_DEFAULT_MAX_AGE_MS,
@@ -975,7 +976,7 @@ export function setupTerminalWebSocket(
 
   // Resolve the daemon token once so every upgrade picks up the same value.
   const wsDaemonToken = getDaemonToken(options);
-  const terminalLogger = options?.runtimeLogger?.child("terminal") ?? createRuntimeLogger("terminal");
+  const terminalDiagnostics = createTerminalWebSocketDiagnostics(options?.runtimeLogger);
 
   server.on("upgrade", (req, socket, head) => {
     const pathname = new URL(req.url || "", `http://${req.headers.host}`).pathname;
@@ -1028,8 +1029,9 @@ export function setupTerminalWebSocket(
         terminalService = getTerminalService(scopedRootDir);
       }
     } catch (err) {
-      terminalLogger.error("Failed to resolve project scope", {
-        error: err instanceof Error ? err.message : String(err),
+      terminalDiagnostics.scopeResolutionFailed({
+        projectId,
+        error: err,
       });
       ws.close(4510, "Failed to resolve project scope");
       return;
@@ -1044,7 +1046,12 @@ export function setupTerminalWebSocket(
     // Security check: reject sessions that don't belong to this project's root
     // Session cwd must be within the resolved project root
     if (!session.cwd.startsWith(scopedRootDir)) {
-      terminalLogger.warn(`Session ${sessionId} cwd ${session.cwd} does not belong to project root ${scopedRootDir}`);
+      terminalDiagnostics.crossProjectCwdRejected({
+        sessionId,
+        projectId,
+        sessionCwd: session.cwd,
+        scopedRootDir,
+      });
       ws.close(4503, "Session does not belong to this project");
       return;
     }
@@ -1060,9 +1067,11 @@ export function setupTerminalWebSocket(
     // Detect potentially stale sessions on reconnect
     const idleMs = Date.now() - session.lastActivityAt.getTime();
     if (idleMs > STALE_SESSION_THRESHOLD_MS) {
-      terminalLogger.warn(
-        `Session ${sessionId} reconnect after ${Math.round(idleMs / 1000)}s idle — PTY may be stale`,
-      );
+      terminalDiagnostics.staleReconnect({
+        sessionId,
+        idleMs,
+        staleThresholdMs: STALE_SESSION_THRESHOLD_MS,
+      });
     }
 
     // Send scrollback buffer first
@@ -1095,7 +1104,11 @@ export function setupTerminalWebSocket(
         try {
           ws.send(JSON.stringify({ type: "exit", exitCode }));
           const idleSec = id ? Math.round((Date.now() - (terminalService.getSession(id)?.lastActivityAt?.getTime() ?? Date.now())) / 1000) : 0;
-          terminalLogger.info(`Session ${id} exited with code ${exitCode} (was ${idleSec}s idle)`);
+          terminalDiagnostics.ptyExit({
+            sessionId: id,
+            exitCode,
+            idleSeconds: idleSec,
+          });
         } catch {
           // WebSocket might be closing
         }
@@ -1107,11 +1120,19 @@ export function setupTerminalWebSocket(
       if (!isAlive) {
         missedPongs++;
         if (missedPongs >= MAX_MISSED_PONGS) {
-          terminalLogger.warn(`Connection dead after ${missedPongs} missed pongs, terminating`);
+          terminalDiagnostics.heartbeatTerminating({
+            sessionId,
+            missedPongs,
+            maxMissedPongs: MAX_MISSED_PONGS,
+          });
           ws.terminate();
           return;
         }
-        terminalLogger.info(`Missed pong #${missedPongs}, waiting for response...`);
+        terminalDiagnostics.heartbeatMissed({
+          sessionId,
+          missedPongs,
+          maxMissedPongs: MAX_MISSED_PONGS,
+        });
         return;
       }
       isAlive = false;
@@ -1184,9 +1205,7 @@ export function setupTerminalWebSocket(
     try {
       defaultTerminalService.evictStaleSessions();
     } catch (err) {
-      terminalLogger.error("Stale session eviction failed", {
-        error: err instanceof Error ? err.message : String(err),
-      });
+      terminalDiagnostics.staleEvictionFailed({ error: err });
     }
   }, 60_000);
 
@@ -1195,7 +1214,7 @@ export function setupTerminalWebSocket(
     clearInterval(staleEvictionInterval);
   });
 
-  terminalLogger.info("WebSocket server mounted at /api/terminal/ws");
+  terminalDiagnostics.mounted({ path: "/api/terminal/ws" });
 }
 
 export function setupBadgeWebSocket(
