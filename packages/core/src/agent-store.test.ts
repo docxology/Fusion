@@ -812,7 +812,13 @@ describe("AgentStore", () => {
       const result = await store.rollbackConfig(created.id, targetRevision.id);
 
       expect(result.agent.name).toBe("Rollback Me");
-      expect(result.agent.runtimeConfig).toEqual({ heartbeatTimeoutMs: 60000 });
+      // createAgent now injects the default heartbeatIntervalMs on non-ephemeral
+      // agents, so the rollback target config includes that field alongside
+      // whatever the caller supplied.
+      expect(result.agent.runtimeConfig).toEqual({
+        heartbeatTimeoutMs: 60000,
+        heartbeatIntervalMs: 3_600_000,
+      });
       expect(result.revision.source).toBe("rollback");
       expect(result.revision.rollbackToRevisionId).toBe(targetRevision.id);
 

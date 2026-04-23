@@ -122,6 +122,41 @@ interface AgentLock {
 }
 
 /**
+ * Default recurring heartbeat interval (1 hour). The engine's
+ * HeartbeatTriggerScheduler already falls back to this value when an agent
+ * has no explicit interval, but we also write it onto non-ephemeral agents at
+ * creation time so the persisted config mirrors the effective schedule.
+ */
+export const DEFAULT_AGENT_HEARTBEAT_INTERVAL_MS = 3_600_000;
+
+/**
+ * Compute the runtimeConfig to persist for a newly created agent.
+ *
+ * - Ephemeral/task-worker agents (see {@link isEphemeralAgent}) keep whatever
+ *   the caller supplied — task workers explicitly opt out of heartbeats via
+ *   `runtimeConfig.enabled: false` and must not get a timer reintroduced.
+ * - Every other agent has `heartbeatIntervalMs` filled in with the default
+ *   when the caller omitted it, matching the scheduler's fallback behavior.
+ *
+ * Returns `undefined` when there's nothing to persist (only possible for
+ * ephemeral agents with no incoming config).
+ */
+function resolveCreationRuntimeConfig(
+  incoming: Record<string, unknown> | undefined,
+  metadata: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+  const isEphemeral = isEphemeralAgent({ metadata });
+  if (isEphemeral) {
+    return incoming;
+  }
+  const rc: Record<string, unknown> = { ...(incoming ?? {}) };
+  if (typeof rc.heartbeatIntervalMs !== "number" || !Number.isFinite(rc.heartbeatIntervalMs)) {
+    rc.heartbeatIntervalMs = DEFAULT_AGENT_HEARTBEAT_INTERVAL_MS;
+  }
+  return rc;
+}
+
+/**
  * AgentStore manages agent lifecycle with SQLite-backed persistence.
  * Follows the same patterns as TaskStore for consistency.
  */
@@ -295,6 +330,16 @@ export class AgentStore extends EventEmitter {
 
   /**
    * Create a new agent with "idle" state.
+   *
+   * For non-ephemeral agents, ensures `runtimeConfig.heartbeatIntervalMs` is
+   * persisted at creation time — previously it was only ever written when the
+   * user interacted with the dashboard dropdown, so agents created and never
+   * touched would end up with no interval on disk. That made the dashboard's
+   * freshness check behave inconsistently between agents that had been
+   * configured and agents that hadn't, even though the scheduler applied the
+   * same default (1h) to both at runtime. Writing the default explicitly
+   * removes that divergence and keeps the persisted config truthful.
+   *
    * @param input - Creation parameters
    * @returns The created agent
    * @throws Error if input is invalid
@@ -310,6 +355,9 @@ export class AgentStore extends EventEmitter {
     const now = new Date().toISOString();
     const agentId = `agent-${randomUUID().slice(0, 8)}`;
 
+    const metadata = input.metadata ?? {};
+    const runtimeConfig = resolveCreationRuntimeConfig(input.runtimeConfig, metadata);
+
     const agent: Agent = {
       id: agentId,
       name: input.name.trim(),
@@ -317,11 +365,11 @@ export class AgentStore extends EventEmitter {
       state: "idle",
       createdAt: now,
       updatedAt: now,
-      metadata: input.metadata ?? {},
+      metadata,
       ...(input.title && { title: input.title }),
       ...(input.icon && { icon: input.icon }),
       ...(input.reportsTo && { reportsTo: input.reportsTo }),
-      ...(input.runtimeConfig && { runtimeConfig: input.runtimeConfig }),
+      ...(runtimeConfig && { runtimeConfig }),
       ...(input.permissions && { permissions: input.permissions }),
       ...(input.instructionsPath && { instructionsPath: input.instructionsPath }),
       ...(input.instructionsText && { instructionsText: input.instructionsText }),

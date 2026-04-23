@@ -35,7 +35,7 @@ export {
   computeAccessState,
   isValidPermission,
 } from "./agent-permissions.js";
-export { AgentStore } from "./agent-store.js";
+export { AgentStore, DEFAULT_AGENT_HEARTBEAT_INTERVAL_MS } from "./agent-store.js";
 export type { AgentStoreEvents } from "./agent-store.js";
 export { ReflectionStore } from "./reflection-store.js";
 export type { ReflectionStoreEvents } from "./reflection-store.js";

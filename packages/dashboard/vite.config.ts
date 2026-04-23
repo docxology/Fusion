@@ -50,7 +50,11 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      "/api": "http://localhost:3000",
+      "/api": {
+        target: `http://localhost:${process.env.FUSION_API_PORT ?? "4040"}`,
+        changeOrigin: true,
+        ws: true,
+      },
     },
   },
 });
