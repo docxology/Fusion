@@ -1,15 +1,16 @@
 # Skipped Test Inventory
 
-_Last audited: 2026-04-20 (FN-2197)_
+_Last audited: 2026-04-23 (FN-2321)_
 
 This document tracks intentional skip usage in test suites so stale follow-up backlog items can be retired quickly.
 
 ## Current Inventory
 
-Audit command:
+Audit commands:
 
 ```bash
-rg -n "\b(it|test|describe)\.skip\b|\bskipIf\b|\?\s*it\s*:\s*it\.skip" packages --glob "**/*.{test,spec}.{ts,tsx}"
+rg -n "\b(it|test|describe)\.skip\b|\bskipIf\b|createLoopbackIntegrationTest\(" packages --glob "**/*.{test,spec}.{ts,tsx}"
+rg -n "\?\s*it\s*:\s*it\.skip|detectLoopbackBinding" packages/dashboard/src --glob "**/*.{test,spec}.{ts,tsx}"
 ```
 
 Current results:
@@ -19,12 +20,15 @@ Current results:
    - `it.skip("step-session skill selection covered in step-session-executor.test.ts", ...)`
    - Rationale: dedicated coverage exists in `step-session-executor.test.ts`; this marker documents ownership.
 
-2. **Environment-gated integration aliases**
-   - `packages/dashboard/src/server-static-assets.test.ts`
-   - `packages/dashboard/src/__tests__/websocket.test.ts`
-   - `packages/dashboard/src/__tests__/server-webhook.test.ts`
-   - Pattern: `loopbackBindingAvailable ? it : it.skip`
-   - Rationale: these integration tests require loopback binding support in the runtime environment.
+2. **Environment-gated integration aliases (loopback gated)**
+   - Canonical helper: `packages/dashboard/src/__tests__/loopback-integration-test.ts`
+   - Helper consumers:
+     - `packages/dashboard/src/server-static-assets.test.ts`
+     - `packages/dashboard/src/__tests__/websocket.test.ts`
+     - `packages/dashboard/src/__tests__/server-webhook.test.ts`
+   - Pattern: suites call `createLoopbackIntegrationTest(scope)` and register integration cases through the returned test function.
+   - Rationale: these suites require real loopback binding support (`127.0.0.1`) and are intentionally environment-gated.
+   - Auditability: when loopback binding is unavailable, skipped test names include a standardized reason and the suite scope label (`...; scope: <suite scope>`), making coverage gaps explicit in CI/test output.
 
 3. **Build-output-gated checks**
    - `packages/cli/src/__tests__/bundle-output.test.ts`

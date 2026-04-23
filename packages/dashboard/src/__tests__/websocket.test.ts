@@ -7,7 +7,7 @@ import { WebSocketManager } from "../websocket.js";
 import { InMemoryBadgePubSub, type BadgePubSub } from "../badge-pubsub.js";
 import { createLoopbackIntegrationTest } from "./loopback-integration-test.js";
 
-const websocketIntegrationTest = await createLoopbackIntegrationTest("websocket integration");
+const websocketIntegrationTest = await createLoopbackIntegrationTest("websocket /api/ws integration");
 
 class MockSocket extends EventEmitter {
   readyState: number = WebSocket.OPEN;

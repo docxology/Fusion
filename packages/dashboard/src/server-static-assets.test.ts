@@ -2,7 +2,7 @@ import express from "express";
 import { describe, expect, it } from "vitest";
 import { createLoopbackIntegrationTest } from "./__tests__/loopback-integration-test.js";
 
-const staticAssetIntegrationTest = await createLoopbackIntegrationTest("static asset serving");
+const staticAssetIntegrationTest = await createLoopbackIntegrationTest("server-static-assets integration");
 
 describe("static asset serving", () => {
   staticAssetIntegrationTest("returns 404 for missing asset paths instead of falling back to index.html", async () => {

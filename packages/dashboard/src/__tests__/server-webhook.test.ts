@@ -17,7 +17,7 @@ vi.mock("../github-webhooks.js", async () => {
 
 const mockGetGitHubAppConfig = vi.mocked(getGitHubAppConfig);
 
-const webhookIntegrationTest = await createLoopbackIntegrationTest("GitHub webhook integration");
+const webhookIntegrationTest = await createLoopbackIntegrationTest("server-webhook GitHub webhook integration");
 
 class MockStore extends EventEmitter {
   private tasks = new Map<string, Task>();
