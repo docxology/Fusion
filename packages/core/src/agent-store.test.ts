@@ -12,6 +12,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { AgentStore } from "./agent-store.js";
+import { Database } from "./db.js";
 import { TaskStore } from "./store.js";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
@@ -99,6 +100,35 @@ describe("AgentStore", () => {
         await rm(legacyRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
       }
     });
+
+    it("normalizes legacy durable agents to heartbeat enabled once", async () => {
+      const agent = await store.createAgent({
+        name: "Legacy Durable Agent",
+        role: "executor",
+      });
+
+      await store.updateAgent(agent.id, {
+        runtimeConfig: {
+          ...(agent.runtimeConfig ?? {}),
+          enabled: false,
+        },
+      });
+
+      const db = new Database(rootDir);
+      db.init();
+      db.prepare(`
+        INSERT INTO __meta (key, value)
+        VALUES ('agentHeartbeatDefaultVersion', '0')
+        ON CONFLICT(key) DO UPDATE SET value = '0'
+      `).run();
+
+      store.close();
+      store = new AgentStore({ rootDir });
+      await store.init();
+
+      const migrated = await store.getAgent(agent.id);
+      expect((migrated?.runtimeConfig as Record<string, unknown> | undefined)?.enabled).toBe(true);
+    });
   });
 
   // ── createAgent ───────────────────────────────────────────────────
@@ -115,6 +145,9 @@ describe("AgentStore", () => {
       expect(agent.role).toBe("executor");
       expect(agent.state).toBe("idle");
       expect(agent.metadata).toEqual({});
+      expect(agent.runtimeConfig).toMatchObject({
+        enabled: true,
+      });
       expect(new Date(agent.createdAt).getTime()).not.toBeNaN();
       expect(new Date(agent.updatedAt).getTime()).not.toBeNaN();
     });
@@ -816,6 +849,7 @@ describe("AgentStore", () => {
       // agents, so the rollback target config includes that field alongside
       // whatever the caller supplied.
       expect(result.agent.runtimeConfig).toEqual({
+        enabled: true,
         heartbeatTimeoutMs: 60000,
         heartbeatIntervalMs: 3_600_000,
       });

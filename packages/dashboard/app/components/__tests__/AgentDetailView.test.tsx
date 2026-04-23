@@ -1147,6 +1147,7 @@ describe("AgentDetailView", () => {
     it("pre-fills heartbeat fields from agent runtimeConfig", async () => {
       mockFetchAgent.mockResolvedValue(createMockAgent({
         runtimeConfig: {
+          enabled: false,
           heartbeatIntervalMs: 15000,
           heartbeatTimeoutMs: 120000,
         },
@@ -1168,6 +1169,9 @@ describe("AgentDetailView", () => {
       await navigateToSettings(user);
 
       await waitFor(() => {
+        const heartbeatEnabledInput = screen.getByLabelText("Heartbeat Enabled") as HTMLInputElement;
+        expect(heartbeatEnabledInput.checked).toBe(false);
+
         const heartbeatInput = screen.getByLabelText("Heartbeat Interval (s)") as HTMLInputElement;
         expect(heartbeatInput.value).toBe("15");
 
@@ -1179,6 +1183,29 @@ describe("AgentDetailView", () => {
 
         const logLevelSelect = screen.getByLabelText("Log Level") as HTMLSelectElement;
         expect(logLevelSelect.value).toBe("debug");
+      });
+    });
+
+    it("defaults heartbeat toggle to enabled when runtimeConfig.enabled is missing", async () => {
+      mockFetchAgent.mockResolvedValue(createMockAgent({
+        runtimeConfig: {
+          heartbeatIntervalMs: 30000,
+        },
+      }));
+
+      const user = userEvent.setup();
+      render(
+        <AgentDetailView
+          agentId="agent-001"
+          onClose={vi.fn()}
+          addToast={vi.fn()}
+        />
+      );
+
+      await navigateToSettings(user);
+
+      await waitFor(() => {
+        expect((screen.getByLabelText("Heartbeat Enabled") as HTMLInputElement).checked).toBe(true);
       });
     });
 
@@ -1362,6 +1389,41 @@ describe("AgentDetailView", () => {
       expect(addToast).toHaveBeenCalledWith("Settings saved", "success");
     });
 
+    it("persists heartbeat enabled toggle changes on save", async () => {
+      mockFetchAgent.mockResolvedValue(createMockAgent({
+        runtimeConfig: {
+          enabled: true,
+          heartbeatIntervalMs: 30000,
+        },
+      }));
+      mockUpdateAgent.mockResolvedValue(createMockAgent() as any);
+
+      const user = userEvent.setup();
+      render(
+        <AgentDetailView
+          agentId="agent-001"
+          onClose={vi.fn()}
+          addToast={vi.fn()}
+        />
+      );
+
+      await navigateToSettings(user);
+
+      const heartbeatEnabledInput = await screen.findByLabelText("Heartbeat Enabled");
+      await user.click(heartbeatEnabledInput);
+      await user.click(screen.getByText("Save Settings"));
+
+      await waitFor(() => {
+        expect(mockUpdateAgent).toHaveBeenCalledWith(
+          "agent-001",
+          expect.objectContaining({
+            runtimeConfig: expect.objectContaining({ enabled: false, heartbeatIntervalMs: 30000 }),
+          }),
+          undefined,
+        );
+      });
+    });
+
     it("forwards projectId to updateAgent", async () => {
       const addToast = vi.fn();
       mockUpdateAgent.mockResolvedValue(createMockAgent() as any);
@@ -1535,7 +1597,7 @@ describe("AgentDetailView", () => {
     it("persists existing non-advanced metadata keys and runtimeConfig during save", async () => {
       mockFetchAgent.mockResolvedValue(createMockAgent({
         metadata: { customKey: "preserved" },
-        runtimeConfig: { heartbeatIntervalMs: 30000, otherConfig: "also-preserved" },
+        runtimeConfig: { enabled: true, heartbeatIntervalMs: 30000, otherConfig: "also-preserved" },
       }));
       mockUpdateAgent.mockResolvedValue(createMockAgent() as any);
 
@@ -1561,6 +1623,7 @@ describe("AgentDetailView", () => {
         const call = mockUpdateAgent.mock.calls[0];
         const payload = (call as any)[1];
         expect(payload.metadata.customKey).toBe("preserved");
+        expect(payload.runtimeConfig.enabled).toBe(true);
         expect(payload.runtimeConfig.heartbeatIntervalMs).toBe(45000);
         expect(payload.runtimeConfig.otherConfig).toBe("also-preserved");
       });

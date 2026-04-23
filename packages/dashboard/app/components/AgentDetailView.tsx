@@ -2657,6 +2657,10 @@ function deriveHeartbeatValues(runtimeConfig: AgentDetail["runtimeConfig"] | und
   return nextValues;
 }
 
+function deriveHeartbeatEnabled(runtimeConfig: AgentDetail["runtimeConfig"] | undefined): boolean {
+  return runtimeConfig?.enabled !== false;
+}
+
 function deriveBudgetValues(runtimeConfig: AgentDetail["runtimeConfig"] | undefined): Record<string, string> {
   const bc = (runtimeConfig ?? {}).budgetConfig as Record<string, unknown> | undefined;
   const nextValues: Record<string, string> = {};
@@ -2717,6 +2721,9 @@ function ConfigTab({
   // Heartbeat config state initialised from agent.runtimeConfig
   const [heartbeatValues, setHeartbeatValues] = useState<Record<string, string>>(
     () => deriveHeartbeatValues(agent.runtimeConfig),
+  );
+  const [heartbeatEnabled, setHeartbeatEnabled] = useState<boolean>(
+    () => deriveHeartbeatEnabled(agent.runtimeConfig),
   );
 
   // Budget config state initialised from agent.runtimeConfig.budgetConfig
@@ -2826,6 +2833,7 @@ function ConfigTab({
     }
     // Check heartbeat values
     const rc = agent.runtimeConfig ?? {};
+    if (heartbeatEnabled !== deriveHeartbeatEnabled(agent.runtimeConfig)) return true;
     for (const key of ["heartbeatIntervalMs", "heartbeatTimeoutMs", "maxConcurrentRuns", "messageResponseMode"] as const) {
       const current = heartbeatValues[key]?.trim() ?? "";
       let persisted = rc[key] !== undefined && rc[key] !== null ? String(rc[key]) : "";
@@ -2896,6 +2904,7 @@ function ConfigTab({
 
     previousAgentRuntimeSyncRef.current = nextSnapshot;
     setHeartbeatValues(deriveHeartbeatValues(agent.runtimeConfig));
+    setHeartbeatEnabled(deriveHeartbeatEnabled(agent.runtimeConfig));
     setBudgetValues(deriveBudgetValues(agent.runtimeConfig));
   }, [agent, hasChanges]);
 
@@ -2922,6 +2931,11 @@ function ConfigTab({
         return next;
       });
     }
+  };
+
+  const handleHeartbeatEnabledChange = (enabled: boolean) => {
+    setHeartbeatEnabled(enabled);
+    setJustSaved(false);
   };
 
   const handleBudgetFieldChange = (key: string, value: string) => {
@@ -3033,6 +3047,7 @@ function ConfigTab({
 
     // Build the runtimeConfig payload — only include non-empty values
     const newRuntimeConfig: Record<string, unknown> = { ...agent.runtimeConfig };
+    newRuntimeConfig.enabled = heartbeatEnabled;
     for (const key of ["heartbeatIntervalMs", "heartbeatTimeoutMs", "maxConcurrentRuns"] as const) {
       const raw = heartbeatValues[key]?.trim();
       if (!raw) {
@@ -3253,6 +3268,19 @@ function ConfigTab({
         </p>
 
         <div className="config-fields">
+          <div className="config-field">
+            <label className="checkbox-label" htmlFor="hb-enabled">
+              <input
+                id="hb-enabled"
+                type="checkbox"
+                checked={heartbeatEnabled}
+                onChange={(e) => handleHeartbeatEnabledChange(e.target.checked)}
+              />
+              Heartbeat Enabled
+            </label>
+            <span className="config-hint">When enabled, this agent receives scheduled heartbeat runs based on its interval.</span>
+          </div>
+
           <div className="config-field">
             <label htmlFor="hb-heartbeatIntervalMs">Heartbeat Interval (s)</label>
             <input
