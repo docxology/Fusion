@@ -165,7 +165,7 @@ npx companies.sh add paperclipai/companies/gstack
 
 ## Built on Pi. Compatible with the tools you already use.
 
-Fusion stands on open tools we love. Every **Pi** extension works out of the box. **Hermes** and **Paperclip** both ship as first-class agent-provider plugins — route any workspace to whichever runtime fits the task. And any Paperclip agent-company imports with a single command.
+Fusion stands on open tools we love. Every **Pi** extension works out of the box. **Hermes** and **Paperclip** both ship as first-class plugins — route any workspace to whichever runtime fits the task. And any Paperclip agent-company imports with a single command.
 
 <div align="center">
   <img src="./demo/assets/pi-logo.svg" alt="Pi" height="56" />
@@ -175,7 +175,7 @@ Fusion stands on open tools we love. Every **Pi** extension works out of the box
 
 <sub>pi.dev</sub>
 
-Fusion is built on top of **Pi** — the minimal, extensible coding-agent CLI. Every [Pi extension](https://github.com/badlogic/pi-mono#extensions) works inside of Fusion. Install Fusion as a Pi extension to get native tools (`fn_task_create`, `fn_task_list`, `fn_task_show`, …) and a `/fn` command to start the dashboard from any Pi session.
+Fusion is built on top of **Pi** — the minimal, extensible coding-agent CLI. Every [Pi extension](https://github.com/badlogic/pi-mono#extensions) works inside of Fusion. Install Fusion as a Pi extension to get native tools (`fn_task_create`, `fn_task_list`, `fn_task_show`, …) and a `/fn` command to manage Fusion from any Pi session.
 
 ```bash
 pi install npm:@runfusion/fusion
@@ -187,11 +187,11 @@ pi install npm:@runfusion/fusion
   <img src="./demo/assets/hermes-logo.svg" alt="Hermes" height="56" />
 </div>
 
-### [Hermes](https://hermes-agent.nousresearch.com) — agent-runner plugin <sub>`experimental`</sub>
+### [Hermes](https://hermes-agent.nousresearch.com) <sub>`experimental`</sub>
 
 <sub>Nous Research</sub>
 
-The open-source autonomous agent from **Nous Research**. Install the Hermes agent-provider plugin and run agents through Hermes for long-running, context-growing work — route any Fusion workspace to it.
+The open-source autonomous agent from **Nous Research**. Install the Hermes plugin and run agents through Hermes for long-running, context-growing work — route any Fusion workspace to it.
 
 <br />
 
@@ -199,11 +199,11 @@ The open-source autonomous agent from **Nous Research**. Install the Hermes agen
   <img src="./demo/assets/paperclip-logo.svg" alt="Paperclip" height="56" />
 </div>
 
-### [Paperclip](https://paperclip.ing) — agent-runner plugin <sub>`experimental`</sub>
+### [Paperclip](https://paperclip.ing) <sub>`experimental`</sub>
 
 <sub>paperclip.ing</sub>
 
-The human control plane for AI labor. Install the Paperclip agent-provider plugin to run agents through Paperclip inside Fusion.
+The human control plane for AI labor. Install the Paperclip plugin to run agents through Paperclip inside Fusion.
 
 Fusion also natively supports the **[`companies.sh`](https://github.com/paperclipai/companies)** agent-company standard: import a prebuilt team — **440+ agents across 16 companies** — and let them coordinate over Fusion's mailbox, missions, and workflow gates for weeks of autonomous work. Same company format, same agents, same skills as Paperclip.
 
@@ -213,7 +213,7 @@ npx companies.sh add paperclipai/companies/gstack
 
 <br />
 
-> **Hermes** and **Paperclip** are both agent-runner plugins and are **experimental** — APIs and wire formats may shift between minor releases. **Pi** is Fusion's stable runtime dependency.
+> **Hermes** and **Paperclip** are both **experimental** — APIs and wire formats may shift between minor releases. **Pi** is Fusion's stable runtime dependency.
 
 ---
 
