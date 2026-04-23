@@ -502,10 +502,11 @@ describe("TaskExecutor worktreeInitCommand", () => {
     );
 
     // The init command failure itself does not abort execution, but the mocked
-    // agent still exits without task_done. After the retry also fails, it reports an error.
+    // agent still exits without task_done. After 3 retries it requeues to todo
+    // and reports an error.
     expect(onError).toHaveBeenCalledWith(
       expect.objectContaining({ id: "FN-010" }),
-      expect.objectContaining({ message: "Agent finished without calling task_done (after retry)" }),
+      expect.objectContaining({ message: "Agent finished without calling task_done (after 3 retries)" }),
     );
 
     // Agent should still have been created
@@ -2486,8 +2487,8 @@ describe("buildExecutionPrompt", () => {
       updatedAt: new Date().toISOString(),
     });
 
-    // Called twice: initial execution + retry when agent finishes without task_done
-    expect(mockPrompt).toHaveBeenCalledTimes(2);
+    // Called four times: initial execution + 3 retries when agent finishes without task_done
+    expect(mockPrompt).toHaveBeenCalledTimes(4);
     const agentPrompt = mockPrompt.mock.calls[0][0];
     expect(agentPrompt).toContain("## Project Commands");
     expect(agentPrompt).toContain("- **Test:** `npm test`");
@@ -3160,8 +3161,8 @@ describe("TaskExecutor pause behavior", () => {
 
     await executePromise;
 
-    // Two agent sessions (initial + retry without task_done) — the unpause during active session was a no-op
-    expect(mockedCreateFnAgent).toHaveBeenCalledTimes(2);
+    // Four agent sessions (initial + 3 retries without task_done) — the unpause during active session was a no-op
+    expect(mockedCreateFnAgent).toHaveBeenCalledTimes(4);
   });
 
   it("uses SessionManager.create for fresh execution and persists sessionFile", async () => {
@@ -3502,7 +3503,7 @@ describe("swallowed async store failure observability", () => {
       updatedAt: new Date().toISOString(),
     })).resolves.toBeUndefined();
 
-    expect(mockedCreateFnAgent).toHaveBeenCalledTimes(2);
+    expect(mockedCreateFnAgent.mock.calls.length).toBeGreaterThanOrEqual(2);
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining("FN-001 failed to persist retry sessionFile: retry sessionFile write failed"),
     );
@@ -3513,6 +3514,7 @@ describe("swallowed async store failure observability", () => {
   it("logs warning when sessionFile clear fails on completion", async () => {
     const warnSpy = vi.spyOn(executorLog, "warn");
     const store = createMockStore();
+    let capturedCustomTools: any[] = [];
 
     store.updateTask.mockImplementation(async (_taskId: string, patch: Record<string, unknown>) => {
       if (patch?.sessionFile === null) {
@@ -3521,13 +3523,21 @@ describe("swallowed async store failure observability", () => {
       return {};
     });
 
-    mockedCreateFnAgent.mockResolvedValue({
-      session: {
-        prompt: vi.fn().mockResolvedValue(undefined),
-        dispose: vi.fn(),
-      },
-      sessionFile: "/tmp/sessions/clear-test.jsonl",
-    } as any);
+    mockedCreateFnAgent.mockImplementation((async (opts: any) => {
+      capturedCustomTools = opts.customTools || [];
+      return {
+        session: {
+          prompt: vi.fn().mockImplementation(async () => {
+            const taskDoneTool = capturedCustomTools.find((tool: any) => tool.name === "task_done");
+            if (taskDoneTool) {
+              await taskDoneTool.execute("call-1", { summary: "done" });
+            }
+          }),
+          dispose: vi.fn(),
+        },
+        sessionFile: "/tmp/sessions/clear-test.jsonl",
+      };
+    }) as any);
 
     const executor = new TaskExecutor(store, "/tmp/test");
     await expect(executor.execute({
@@ -3932,19 +3942,26 @@ describe("TaskExecutor global pause behavior", () => {
   it("takes no action when globalPause remains false", async () => {
     const store = createMockStore();
     const disposeFn = vi.fn();
+    let capturedCustomTools: any[] = [];
 
-    mockedCreateFnAgent.mockImplementation(async () => ({
-      session: {
-        prompt: vi.fn().mockImplementation(async () => {
-          // Trigger settings:updated but globalPause stays false
-          store._trigger("settings:updated", {
-            settings: { globalPause: false },
-            previous: { globalPause: false },
-          });
-        }),
-        dispose: disposeFn,
-      },
-    } as any));
+    mockedCreateFnAgent.mockImplementation((async (opts: any) => {
+      capturedCustomTools = opts.customTools || [];
+      return {
+        session: {
+          prompt: vi.fn().mockImplementation(async () => {
+            store._trigger("settings:updated", {
+              settings: { globalPause: false },
+              previous: { globalPause: false },
+            });
+            const taskDoneTool = capturedCustomTools.find((tool: any) => tool.name === "task_done");
+            if (taskDoneTool) {
+              await taskDoneTool.execute("call-1", { summary: "done" });
+            }
+          }),
+          dispose: disposeFn,
+        },
+      };
+    }) as any);
 
     const executor = new TaskExecutor(store, "/tmp/test");
     await executor.execute({
@@ -3960,19 +3977,26 @@ describe("TaskExecutor global pause behavior", () => {
 
   it("takes no action when globalPause transitions from true to true", async () => {
     const store = createMockStore();
+    let capturedCustomTools: any[] = [];
 
-    mockedCreateFnAgent.mockImplementation(async () => ({
-      session: {
-        prompt: vi.fn().mockImplementation(async () => {
-          // Trigger settings:updated but globalPause is already true
-          store._trigger("settings:updated", {
-            settings: { globalPause: true },
-            previous: { globalPause: true },
-          });
-        }),
-        dispose: vi.fn(),
-      },
-    } as any));
+    mockedCreateFnAgent.mockImplementation((async (opts: any) => {
+      capturedCustomTools = opts.customTools || [];
+      return {
+        session: {
+          prompt: vi.fn().mockImplementation(async () => {
+            store._trigger("settings:updated", {
+              settings: { globalPause: true },
+              previous: { globalPause: true },
+            });
+            const taskDoneTool = capturedCustomTools.find((tool: any) => tool.name === "task_done");
+            if (taskDoneTool) {
+              await taskDoneTool.execute("call-1", { summary: "done" });
+            }
+          }),
+          dispose: vi.fn(),
+        },
+      };
+    }) as any);
 
     const executor = new TaskExecutor(store, "/tmp/test");
     await executor.execute({
@@ -3996,20 +4020,26 @@ describe("TaskExecutor enginePaused soft pause (no agent termination)", () => {
   it("does NOT dispose active sessions when enginePaused transitions false→true", async () => {
     const store = createMockStore();
     const disposeFn = vi.fn();
+    let capturedCustomTools: any[] = [];
 
-    mockedCreateFnAgent.mockImplementation(async () => ({
-      session: {
-        prompt: vi.fn().mockImplementation(async () => {
-          // Trigger engine pause while the session is active
-          store._trigger("settings:updated", {
-            settings: { enginePaused: true },
-            previous: { enginePaused: false },
-          });
-          // Session continues normally — no error thrown
-        }),
-        dispose: disposeFn,
-      },
-    } as any));
+    mockedCreateFnAgent.mockImplementation((async (opts: any) => {
+      capturedCustomTools = opts.customTools || [];
+      return {
+        session: {
+          prompt: vi.fn().mockImplementation(async () => {
+            store._trigger("settings:updated", {
+              settings: { enginePaused: true },
+              previous: { enginePaused: false },
+            });
+            const taskDoneTool = capturedCustomTools.find((tool: any) => tool.name === "task_done");
+            if (taskDoneTool) {
+              await taskDoneTool.execute("call-1", { summary: "done" });
+            }
+          }),
+          dispose: disposeFn,
+        },
+      };
+    }) as any);
 
     const executor = new TaskExecutor(store, "/tmp/test");
     await executor.execute({
@@ -4018,9 +4048,9 @@ describe("TaskExecutor enginePaused soft pause (no agent termination)", () => {
       createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
     });
 
-    // dispose called twice: initial session + retry session (both cleaned up normally),
+    // dispose called once during normal completion,
     // NOT by an engine pause listener
-    expect(disposeFn).toHaveBeenCalledTimes(2);
+    expect(disposeFn).toHaveBeenCalledTimes(1);
     // Task should complete normally and move to in-review, not todo
     expect(store.moveTask).toHaveBeenCalledWith("FN-001", "in-review");
     expect(store.moveTask).not.toHaveBeenCalledWith("FN-001", "todo");
@@ -4029,19 +4059,26 @@ describe("TaskExecutor enginePaused soft pause (no agent termination)", () => {
 
   it("does NOT move tasks to todo when enginePaused transitions false→true", async () => {
     const store = createMockStore();
+    let capturedCustomTools: any[] = [];
 
-    mockedCreateFnAgent.mockImplementation(async () => ({
-      session: {
-        prompt: vi.fn().mockImplementation(async () => {
-          store._trigger("settings:updated", {
-            settings: { enginePaused: true },
-            previous: { enginePaused: false },
-          });
-          // Session continues normally
-        }),
-        dispose: vi.fn(),
-      },
-    } as any));
+    mockedCreateFnAgent.mockImplementation((async (opts: any) => {
+      capturedCustomTools = opts.customTools || [];
+      return {
+        session: {
+          prompt: vi.fn().mockImplementation(async () => {
+            store._trigger("settings:updated", {
+              settings: { enginePaused: true },
+              previous: { enginePaused: false },
+            });
+            const taskDoneTool = capturedCustomTools.find((tool: any) => tool.name === "task_done");
+            if (taskDoneTool) {
+              await taskDoneTool.execute("call-1", { summary: "done" });
+            }
+          }),
+          dispose: vi.fn(),
+        },
+      };
+    }) as any);
 
     const executor = new TaskExecutor(store, "/tmp/test");
     await executor.execute({
@@ -4057,18 +4094,26 @@ describe("TaskExecutor enginePaused soft pause (no agent termination)", () => {
 
   it("takes no action when enginePaused stays false (false→false)", async () => {
     const store = createMockStore();
+    let capturedCustomTools: any[] = [];
 
-    mockedCreateFnAgent.mockImplementation(async () => ({
-      session: {
-        prompt: vi.fn().mockImplementation(async () => {
-          store._trigger("settings:updated", {
-            settings: { enginePaused: false },
-            previous: { enginePaused: false },
-          });
-        }),
-        dispose: vi.fn(),
-      },
-    } as any));
+    mockedCreateFnAgent.mockImplementation((async (opts: any) => {
+      capturedCustomTools = opts.customTools || [];
+      return {
+        session: {
+          prompt: vi.fn().mockImplementation(async () => {
+            store._trigger("settings:updated", {
+              settings: { enginePaused: false },
+              previous: { enginePaused: false },
+            });
+            const taskDoneTool = capturedCustomTools.find((tool: any) => tool.name === "task_done");
+            if (taskDoneTool) {
+              await taskDoneTool.execute("call-1", { summary: "done" });
+            }
+          }),
+          dispose: vi.fn(),
+        },
+      };
+    }) as any);
 
     const executor = new TaskExecutor(store, "/tmp/test");
     await executor.execute({
@@ -4084,18 +4129,26 @@ describe("TaskExecutor enginePaused soft pause (no agent termination)", () => {
 
   it("takes no action when enginePaused stays true (true→true)", async () => {
     const store = createMockStore();
+    let capturedCustomTools: any[] = [];
 
-    mockedCreateFnAgent.mockImplementation(async () => ({
-      session: {
-        prompt: vi.fn().mockImplementation(async () => {
-          store._trigger("settings:updated", {
-            settings: { enginePaused: true },
-            previous: { enginePaused: true },
-          });
-        }),
-        dispose: vi.fn(),
-      },
-    } as any));
+    mockedCreateFnAgent.mockImplementation((async (opts: any) => {
+      capturedCustomTools = opts.customTools || [];
+      return {
+        session: {
+          prompt: vi.fn().mockImplementation(async () => {
+            store._trigger("settings:updated", {
+              settings: { enginePaused: true },
+              previous: { enginePaused: true },
+            });
+            const taskDoneTool = capturedCustomTools.find((tool: any) => tool.name === "task_done");
+            if (taskDoneTool) {
+              await taskDoneTool.execute("call-1", { summary: "done" });
+            }
+          }),
+          dispose: vi.fn(),
+        },
+      };
+    }) as any);
 
     const executor = new TaskExecutor(store, "/tmp/test");
     await executor.execute({
@@ -5985,8 +6038,8 @@ describe("TaskExecutor bounded recovery retries", () => {
       updatedAt: new Date().toISOString(),
     });
 
-    // moveTask to in-review clears recovery metadata (via store's column transition logic)
-    expect(store.moveTask).toHaveBeenCalledWith("FN-001", "in-review");
+    // Exhausted no-task_done retries now requeue immediately to todo.
+    expect(store.moveTask).toHaveBeenCalledWith("FN-001", "todo");
   });
 });
 
@@ -6630,12 +6683,13 @@ describe("Invalid transition error handling", () => {
       updatedAt: new Date().toISOString(),
     });
 
-    // A missing task_done triggers a retry. Both attempts fail to call task_done,
-    // then the moveTask in the retry path throws the Invalid transition error,
+    // A missing task_done triggers 3 retries. The final requeue-to-todo move
+    // then throws the Invalid transition error,
     // which is caught by the outer handler.
     expect(store.updateTask).toHaveBeenCalledWith("FN-001", {
       status: "failed",
-      error: "Agent finished without calling task_done (after retry)",
+      error: "Agent finished without calling task_done (after 3 retries)",
+      taskDoneRetryCount: 1,
     });
 
     // Should log informative message from the outer catch for Invalid transition
@@ -6923,7 +6977,7 @@ describe("Workflow Steps Execution", () => {
     }) as any);
   }
 
-  it("marks the task failed when the agent exits without calling task_done", async () => {
+  it("requeues to todo after 3 retries when the agent exits without calling task_done", async () => {
     const store = createMockStore();
     store.getTask.mockResolvedValue({
       id: "FN-001",
@@ -6967,26 +7021,86 @@ describe("Workflow Steps Execution", () => {
       updatedAt: new Date().toISOString(),
     });
 
-    // Should have been called twice: initial + retry
-    expect(mockedCreateFnAgent).toHaveBeenCalledTimes(2);
+    // Should have been called four times: initial + 3 retries
+    expect(mockedCreateFnAgent).toHaveBeenCalledTimes(4);
 
-    // Retry still didn't call task_done, so it fails with the retry message
+    // Retries still didn't call task_done, so it fails and requeues immediately.
     expect(store.updateTask).toHaveBeenCalledWith("FN-001", {
       status: "failed",
-      error: "Agent finished without calling task_done (after retry)",
+      error: "Agent finished without calling task_done (after 3 retries)",
+      taskDoneRetryCount: 1,
     });
-    expect(store.moveTask).toHaveBeenCalledWith("FN-001", "in-review");
+    expect(store.moveTask).toHaveBeenCalledWith("FN-001", "todo");
     expect(store.logEntry).toHaveBeenCalledWith(
       "FN-001",
-      "Agent finished without calling task_done (after retry) — moved to in-review for inspection",
+      "Agent finished without calling task_done (after 3 retries) — requeued to todo immediately (1/3)",
       undefined,
       expect.objectContaining({ agentId: "executor" }),
     );
     expect(onError).toHaveBeenCalledWith(
       expect.objectContaining({ id: "FN-001" }),
-      expect.objectContaining({ message: "Agent finished without calling task_done (after retry)" }),
+      expect.objectContaining({ message: "Agent finished without calling task_done (after 3 retries)" }),
     );
     expect(onComplete).not.toHaveBeenCalled();
+  });
+
+  it("moves task to in-review once task_done requeue budget is exhausted", async () => {
+    const store = createMockStore();
+    store.getTask.mockResolvedValue({
+      id: "FN-001",
+      title: "Test",
+      description: "Test task",
+      column: "in-progress",
+      dependencies: [],
+      steps: [{ name: "Preflight", status: "in-progress" }],
+      currentStep: 0,
+      taskDoneRetryCount: 3,
+      log: [],
+      prompt: "# test\n## Steps\n### Step 0: Preflight\n- [ ] check",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+
+    mockedCreateFnAgent.mockResolvedValue({
+      session: {
+        prompt: vi.fn().mockResolvedValue(undefined),
+        dispose: vi.fn(),
+        subscribe: vi.fn(),
+        on: vi.fn(),
+        sessionManager: { getLeafId: vi.fn().mockReturnValue("leaf-1") },
+        state: {},
+      },
+    } as any);
+
+    const onError = vi.fn();
+    const executor = new TaskExecutor(store, "/tmp/test", { onError });
+
+    await executor.execute({
+      id: "FN-001",
+      title: "Test",
+      description: "Test task",
+      column: "in-progress",
+      dependencies: [],
+      steps: [{ name: "Preflight", status: "in-progress" }],
+      currentStep: 0,
+      taskDoneRetryCount: 3,
+      log: [],
+      prompt: "# test\n## Steps\n### Step 0: Preflight\n- [ ] check",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+
+    expect(mockedCreateFnAgent.mock.calls.length).toBeGreaterThanOrEqual(1);
+    expect(store.updateTask).toHaveBeenCalledWith("FN-001", {
+      status: "failed",
+      error: "Agent finished without calling task_done (after 3 retries)",
+    });
+    expect(store.moveTask).toHaveBeenCalledWith("FN-001", "in-review");
+    expect(store.moveTask).not.toHaveBeenCalledWith("FN-001", "todo");
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "FN-001" }),
+      expect.objectContaining({ message: "Agent finished without calling task_done (after 3 retries)" }),
+    );
   });
 
   it("runs workflow steps after main task execution", async () => {
@@ -11165,15 +11279,119 @@ describe("TaskExecutor skillSelection regression (FN-1511)", () => {
   });
 
   describe("step-session mode (runStepsInNewSessions: true)", () => {
-    // Note: These tests verify that skillSelection flows from executor to
-    // StepSessionExecutor. The full integration is complex due to mock setup,
-    // so we verify the contract indirectly through the step-session-executor tests.
-    // The executor tests focus on verifying skillSelection is present in createFnAgent calls.
-    // See StepSessionExecutor skillSelection tests in step-session-executor.test.ts.
+    // Ownership: executor tests verify skillSelection is wired into StepSessionExecutor
+    // constructor args. step-session-executor tests own downstream forwarding to createFnAgent.
 
-    // Skipped: Integration tests for step-session skill selection are covered
-    // in step-session-executor.test.ts where StepSessionExecutor is tested directly.
-    it.skip("step-session skill selection covered in step-session-executor.test.ts", () => {});
+    async function captureStepSessionCtorOptions(options?: {
+      assignedAgentId?: string;
+      assignedAgentSkills?: string[];
+    }) {
+      const { assignedAgentId, assignedAgentSkills } = options || {};
+
+      const mockAgentStore = {
+        getAgent: vi.fn().mockImplementation(async (id: string) => {
+          if (id === assignedAgentId) {
+            return {
+              id,
+              name: "Test Agent",
+              role: "executor",
+              state: "idle",
+              metadata: { skills: assignedAgentSkills || [] },
+            };
+          }
+          return null;
+        }),
+      };
+
+      const store = createMockStore();
+      store.getSettings.mockResolvedValue({
+        maxConcurrent: 2,
+        maxWorktrees: 4,
+        pollIntervalMs: 15000,
+        groupOverlappingFiles: false,
+        autoMerge: false,
+        runStepsInNewSessions: true,
+      });
+      store.getTask.mockResolvedValue({
+        id: "FN-SKILL-SS",
+        title: "Skill Test Step-Session",
+        description: "Test skill selection in step-session mode",
+        column: "in-progress",
+        dependencies: [],
+        steps: [
+          { name: "Step 0", status: "pending" },
+          { name: "Step 1", status: "pending" },
+        ],
+        currentStep: 0,
+        log: [],
+        assignedAgentId,
+        prompt: "# test\n## Steps\n### Step 0: Preflight\n- [ ] check\n### Step 1: Implement\n- [ ] code",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        baseCommitSha: "abc123",
+        enabledWorkflowSteps: [],
+      });
+
+      const executor = new TaskExecutor(store, projectRoot, { agentStore: mockAgentStore as any });
+      await executor.execute({
+        id: "FN-SKILL-SS",
+        title: "Skill Test Step-Session",
+        description: "Test skill selection in step-session mode",
+        column: "in-progress",
+        dependencies: [],
+        steps: [
+          { name: "Step 0", status: "pending" },
+          { name: "Step 1", status: "pending" },
+        ],
+        currentStep: 0,
+        log: [],
+        assignedAgentId,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+
+      expect(mockedStepSessionExecutor).toHaveBeenCalled();
+      return mockedStepSessionExecutor.mock.calls[mockedStepSessionExecutor.mock.calls.length - 1][0];
+    }
+
+    it("passes skillSelection to StepSessionExecutor when assigned agent has skills", async () => {
+      const ctorOptions = await captureStepSessionCtorOptions({
+        assignedAgentId: "agent-001",
+        assignedAgentSkills: ["triage", "executor"],
+      });
+
+      expect(ctorOptions).toHaveProperty("skillSelection");
+      expect(ctorOptions.skillSelection).toMatchObject({
+        projectRootDir: projectRoot,
+        requestedSkillNames: expect.arrayContaining(["triage", "executor"]),
+        sessionPurpose: "executor",
+      });
+    });
+
+    it("uses role fallback skillSelection when assigned agent has no skills", async () => {
+      const ctorOptions = await captureStepSessionCtorOptions({
+        assignedAgentId: "agent-001",
+        assignedAgentSkills: [],
+      });
+
+      // No explicit agent skills → executor falls back to role-based skill context
+      expect(ctorOptions.skillSelection).toMatchObject({
+        projectRootDir: projectRoot,
+        requestedSkillNames: expect.arrayContaining(["executor"]),
+        sessionPurpose: "executor",
+      });
+    });
+
+    it("uses role fallback skillSelection when no assigned agent", async () => {
+      const ctorOptions = await captureStepSessionCtorOptions({});
+
+      // No assigned agent → executor falls back to role-based skill context
+      expect(ctorOptions.skillSelection).toMatchObject({
+        projectRootDir: projectRoot,
+        requestedSkillNames: expect.arrayContaining(["executor"]),
+        sessionPurpose: "executor",
+      });
+    });
   });
 });
 
@@ -11641,13 +11859,18 @@ describe("TaskExecutor messaging tools", () => {
         updatedAt: new Date().toISOString(),
       });
 
-      // Fast mode should still enforce task_done requirement
-      // Should fail after retry and call onError
+      // Fast mode should still enforce task_done requirement.
+      // After 3 retries it should fail and requeue.
       expect(onError).toHaveBeenCalled();
       expect(store.updateTask).toHaveBeenCalledWith(
         "FN-001",
-        expect.objectContaining({ status: "failed" }),
+        expect.objectContaining({
+          status: "failed",
+          error: "Agent finished without calling task_done (after 3 retries)",
+          taskDoneRetryCount: 1,
+        }),
       );
+      expect(store.moveTask).toHaveBeenCalledWith("FN-001", "todo");
     });
 
     it("still checks completion blockers in fast mode", async () => {

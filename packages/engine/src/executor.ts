@@ -73,6 +73,10 @@ const STEP_STATUSES: StepStatus[] = ["pending", "in-progress", "done", "skipped"
 
 /** Maximum retry attempts for workflow step hard failures before giving up */
 const MAX_WORKFLOW_STEP_RETRIES = 3;
+/** Maximum in-session retries when an agent exits without calling task_done(). */
+const MAX_TASK_DONE_SESSION_RETRIES = 3;
+/** Maximum todo requeues after exhausting in-session task_done retries. */
+const MAX_TASK_DONE_REQUEUE_RETRIES = 3;
 
 /**
  * @deprecated Kept exported so existing unit tests in executor.test.ts still
@@ -1989,78 +1993,82 @@ export class TaskExecutor {
             executorLog.log(`✓ ${task.id} completed → in-review`);
             this.options.onComplete?.(task);
           } else {
-            // Agent finished without calling task_done — retry once with a fresh session
-            executorLog.log(`⚠ ${task.id} finished without task_done — retrying with new session`);
-            await this.store.logEntry(task.id, "Agent finished without calling task_done — retrying with new session", undefined, this.currentRunContext);
+            let taskDoneSessionRetries = 0;
+            while (!taskDone && taskDoneSessionRetries < MAX_TASK_DONE_SESSION_RETRIES) {
+              taskDoneSessionRetries++;
+              executorLog.log(
+                `⚠ ${task.id} finished without task_done — retrying with new session (${taskDoneSessionRetries}/${MAX_TASK_DONE_SESSION_RETRIES})`,
+              );
+              await this.store.logEntry(
+                task.id,
+                `Agent finished without calling task_done — retrying with new session (${taskDoneSessionRetries}/${MAX_TASK_DONE_SESSION_RETRIES})`,
+                undefined,
+                this.currentRunContext,
+              );
 
-            // Dispose old session and create a fresh one
-            this.activeSessions.delete(task.id);
-            session.dispose();
+              // Dispose old session and create a fresh one
+              this.activeSessions.delete(task.id);
+              session.dispose();
 
-            const { session: retrySession, sessionFile: retrySessionFile } = await createResolvedAgentSession({
-              sessionPurpose: "executor",
-              pluginRunner: this.options.pluginRunner,
-              cwd: worktreePath,
-              systemPrompt: executorSystemPrompt,
-              tools: "coding",
-              customTools,
-              onText: agentLogger.onText,
-              onThinking: agentLogger.onThinking,
-              onToolStart: agentLogger.onToolStart,
-              onToolEnd: agentLogger.onToolEnd,
-              defaultProvider: executorProvider,
-              defaultModelId: executorModelId,
-              fallbackProvider: executorFallbackProvider,
-              fallbackModelId: executorFallbackModelId,
-              defaultThinkingLevel: executorThinkingLevel,
-              sessionManager: SessionManager.create(worktreePath),
-              // Skill selection: use assigned agent skills if available, otherwise role fallback
-              ...(skillContext.skillSelectionContext ? { skillSelection: skillContext.skillSelectionContext } : {}),
-            });
-            // Update session file for the retry session (so pause/resume works)
-            if (retrySessionFile) {
-              this.store.updateTask(task.id, { sessionFile: retrySessionFile }).catch((err: unknown) => {
-                const msg = err instanceof Error ? err.message : String(err);
-                executorLog.warn(`${task.id} failed to persist retry sessionFile: ${msg}`);
+              const { session: retrySession, sessionFile: retrySessionFile } = await createResolvedAgentSession({
+                sessionPurpose: "executor",
+                pluginRunner: this.options.pluginRunner,
+                cwd: worktreePath,
+                systemPrompt: executorSystemPrompt,
+                tools: "coding",
+                customTools,
+                onText: agentLogger.onText,
+                onThinking: agentLogger.onThinking,
+                onToolStart: agentLogger.onToolStart,
+                onToolEnd: agentLogger.onToolEnd,
+                defaultProvider: executorProvider,
+                defaultModelId: executorModelId,
+                fallbackProvider: executorFallbackProvider,
+                fallbackModelId: executorFallbackModelId,
+                defaultThinkingLevel: executorThinkingLevel,
+                sessionManager: SessionManager.create(worktreePath),
+                // Skill selection: use assigned agent skills if available, otherwise role fallback
+                ...(skillContext.skillSelectionContext ? { skillSelection: skillContext.skillSelectionContext } : {}),
               });
-            }
+              if (retrySessionFile) {
+                this.store.updateTask(task.id, { sessionFile: retrySessionFile }).catch((err: unknown) => {
+                  const msg = err instanceof Error ? err.message : String(err);
+                  executorLog.warn(`${task.id} failed to persist retry sessionFile: ${msg}`);
+                });
+              }
 
-            // Reassign so finally{} disposes the correct session
-            session = retrySession;
-            sessionRef.current = retrySession;
-            this.activeSessions.set(task.id, {
-              session: retrySession,
-              seenSteeringIds,
-              lastModelProvider: detail.modelProvider,
-              lastModelId: detail.modelId,
-            });
-            stuckDetector?.trackTask(task.id, retrySession);
+              session = retrySession;
+              sessionRef.current = retrySession;
+              this.activeSessions.set(task.id, {
+                session: retrySession,
+                seenSteeringIds,
+                lastModelProvider: detail.modelProvider,
+                lastModelId: detail.modelId,
+              });
+              stuckDetector?.trackTask(task.id, retrySession);
 
-            const retryPrompt = [
-              "Your previous session ended without calling the task_done tool.",
-              "The task may already be complete — review the current state of the worktree and either:",
-              "1. If the work is done, call task_done with a summary of what was accomplished.",
-              "2. If there is remaining work, finish it and then call task_done.",
-              "",
-              "Original task:",
-              buildExecutionPrompt(detail, this.rootDir, settings, worktreePath),
-            ].join("\n");
+              const retryPrompt = [
+                "Your previous session ended without calling the task_done tool.",
+                "The task may already be complete — review the current state of the worktree and either:",
+                "1. If the work is done, call task_done with a summary of what was accomplished.",
+                "2. If there is remaining work, finish it and then call task_done.",
+                "",
+                "Original task:",
+                buildExecutionPrompt(detail, this.rootDir, settings, worktreePath),
+              ].join("\n");
 
-            stuckDetector?.recordActivity(task.id);
-            await promptWithFallback(retrySession, retryPrompt);
-            checkSessionError(retrySession);
+              stuckDetector?.recordActivity(task.id);
+              await promptWithFallback(retrySession, retryPrompt);
+              checkSessionError(retrySession);
 
-            // If the agent didn't explicitly call task_done, check whether
-            // all steps are already complete — if so, treat as implicit done.
-            // This handles context-overflow / compaction scenarios where the
-            // agent lost awareness of the task_done tool but finished the work.
-            if (!taskDone) {
-              const implicitCheck = await this.store.getTask(task.id);
-              if (implicitCheck.steps.length > 0 &&
-                  implicitCheck.steps.every((s) => s.status === "done" || s.status === "skipped")) {
-                taskDone = true;
-                executorLog.log(`${task.id} all steps done — treating as implicit task_done`);
-                await this.store.logEntry(task.id, "All steps complete — implicit task_done (agent did not call tool explicitly)", undefined, this.currentRunContext);
+              if (!taskDone) {
+                const implicitCheck = await this.store.getTask(task.id);
+                if (implicitCheck.steps.length > 0 &&
+                    implicitCheck.steps.every((s) => s.status === "done" || s.status === "skipped")) {
+                  taskDone = true;
+                  executorLog.log(`${task.id} all steps done — treating as implicit task_done`);
+                  await this.store.logEntry(task.id, "All steps complete — implicit task_done (agent did not call tool explicitly)", undefined, this.currentRunContext);
+                }
               }
             }
 
@@ -2076,12 +2084,10 @@ export class TaskExecutor {
               if (executionMode !== "fast") {
                 const workflowResult = await this.runWorkflowSteps(task, worktreePath, settings);
                 if (!workflowResult.allPassed) {
-                  // Check if revision was requested
                   if (workflowResult.revisionRequested) {
                     await this.handleWorkflowRevisionRequest(task, worktreePath, workflowResult.feedback, workflowResult.stepName);
                     return;
                   }
-                  // Hard failure - send back to in-progress for remediation
                   await this.sendTaskBackForFix(task, worktreePath, workflowResult.feedback, workflowResult.stepName || "Unknown", "Workflow step failed on retry");
                   return;
                 }
@@ -2090,18 +2096,36 @@ export class TaskExecutor {
                 await this.store.logEntry(task.id, "Fast mode — pre-merge workflow steps skipped", undefined, this.currentRunContext);
               }
 
-              // Reset retry counters on success
               await this.store.updateTask(task.id, { workflowStepRetries: undefined, taskDoneRetryCount: null });
 
               await this.store.moveTask(task.id, "in-review");
               executorLog.log(`✓ ${task.id} completed on retry → in-review`);
               this.options.onComplete?.(task);
             } else {
-              const errorMessage = "Agent finished without calling task_done (after retry)";
-              await this.store.updateTask(task.id, { status: "failed", error: errorMessage });
-              await this.store.logEntry(task.id, `${errorMessage} — moved to in-review for inspection`, undefined, this.currentRunContext);
-              await this.store.moveTask(task.id, "in-review");
-              executorLog.log(`✗ ${task.id} failed after retry — no task_done → in-review`);
+              const priorRequeues = task.taskDoneRetryCount ?? 0;
+              const nextRequeueCount = priorRequeues + 1;
+              const errorMessage = `Agent finished without calling task_done (after ${MAX_TASK_DONE_SESSION_RETRIES} retries)`;
+
+              if (priorRequeues < MAX_TASK_DONE_REQUEUE_RETRIES) {
+                await this.store.updateTask(task.id, {
+                  status: "failed",
+                  error: errorMessage,
+                  taskDoneRetryCount: nextRequeueCount,
+                });
+                await this.store.logEntry(
+                  task.id,
+                  `${errorMessage} — requeued to todo immediately (${nextRequeueCount}/${MAX_TASK_DONE_REQUEUE_RETRIES})`,
+                  undefined,
+                  this.currentRunContext,
+                );
+                await this.store.moveTask(task.id, "todo");
+                executorLog.log(`✗ ${task.id} failed after ${MAX_TASK_DONE_SESSION_RETRIES} retries — requeued to todo (${nextRequeueCount}/${MAX_TASK_DONE_REQUEUE_RETRIES})`);
+              } else {
+                await this.store.updateTask(task.id, { status: "failed", error: errorMessage });
+                await this.store.logEntry(task.id, `${errorMessage} — moved to in-review for inspection`, undefined, this.currentRunContext);
+                await this.store.moveTask(task.id, "in-review");
+                executorLog.log(`✗ ${task.id} failed after ${MAX_TASK_DONE_SESSION_RETRIES} retries — no task_done → in-review`);
+              }
               this.options.onError?.(task, new Error(errorMessage));
             }
           }
