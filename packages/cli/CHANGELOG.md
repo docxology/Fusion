@@ -1,5 +1,11 @@
 # @runfusion/fusion
 
+## 0.0.4
+
+### Patch Changes
+
+- 0da498a: Fix dashboard onboarding auth token controls, keep the AI planning modal footer visible on desktop, and add better terminal PTY spawn diagnostics.
+
 ## 0.0.3
 
 ### Patch Changes
