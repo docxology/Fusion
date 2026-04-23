@@ -1,6 +1,6 @@
 # Skipped Test Inventory
 
-_Last audited: 2026-04-23 (FN-2321)_
+_Last audited: 2026-04-23 (FN-2346)_
 
 This document tracks intentional skip usage in test suites so stale follow-up backlog items can be retired quickly.
 
@@ -30,11 +30,11 @@ Current results:
    - Rationale: these suites require real loopback binding support (`127.0.0.1`) and are intentionally environment-gated.
    - Auditability: when loopback binding is unavailable, skipped test names include a standardized reason and the suite scope label (`...; scope: <suite scope>`), making coverage gaps explicit in CI/test output.
 
-3. **Build-output-gated checks**
+3. **Build-output checks are now deterministic (no skip gate)**
    - `packages/cli/src/__tests__/bundle-output.test.ts`
    - `packages/dashboard/app/__tests__/build-output.test.ts`
-   - Pattern: `it.skipIf(...)` / `test.skipIf(...)`
-   - Rationale: assertions are valid only when build artifacts are present.
+   - Pattern: each suite builds required artifacts in `beforeAll` and then runs chunking/bundle assertions unconditionally.
+   - Rationale: clean worktrees and CI environments should execute real output-contract assertions instead of silently skipping when `dist/` is absent.
 
 ## Older Follow-up Reconciliation
 
