@@ -219,7 +219,17 @@ npx companies.sh add paperclipai/companies/gstack
 
 ## Quick start
 
-Zero-install, straight from npm:
+**Homebrew** (macOS & Linux):
+
+```bash
+brew tap runfusion/fusion
+brew install fusion
+fusion dashboard            # or: fn dashboard
+```
+
+Or as a one-liner (auto-taps): `brew install runfusion/fusion/fusion`.
+
+**npm** — zero-install, straight from the registry:
 
 ```bash
 npx @runfusion/fusion dashboard
@@ -232,7 +242,7 @@ npm install -g @runfusion/fusion
 fn dashboard                # or: fusion dashboard
 ```
 
-Or from a clone:
+**From a clone** (for development):
 
 ```bash
 pnpm dev dashboard

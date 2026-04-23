@@ -33,6 +33,9 @@ kb.db/
 # VS Code Local History (editor auto-saved snapshots)
 .history/
 
+# Sibling clone of the Homebrew tap (runfusion/homebrew-fusion); not part of this repo
+homebrew-tap/
+
 # Ad-hoc task completion notes left by agents after a run; per-session scratch,
 # never meant to be committed.
 .DONE

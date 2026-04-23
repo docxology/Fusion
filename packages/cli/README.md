@@ -20,7 +20,16 @@
 
 ## Install
 
-Zero install, straight from npm:
+**Homebrew** (macOS & Linux):
+
+```bash
+brew tap runfusion/fusion
+brew install fusion
+```
+
+Or as a one-liner: `brew install runfusion/fusion/fusion`.
+
+**npm** — zero install:
 
 ```bash
 npx @runfusion/fusion dashboard
