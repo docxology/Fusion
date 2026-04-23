@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://runfusion.ai/hermes-logo.svg?v=2" alt="Fusion" width="120" />
+<img src="./demo/assets/fusion-logo.png" alt="Fusion" width="120" />
 
 # Fusion
 
@@ -17,10 +17,9 @@
 
 <br />
 
-<video src="https://runfusion.ai/fusion-reel.mp4" poster="https://runfusion.ai/fusion-dashboard.png" autoplay muted loop playsinline width="900"></video>
+<img src="./demo/assets/fusion-reel.gif" alt="Fusion reel: from rough idea to production code" width="900" />
 
-<sub>▶ [Watch the reel on runfusion.ai](https://runfusion.ai/fusion-reel.mp4)</sub>
-
+<br />
 <br />
 
 <a href="https://runfusion.ai">
@@ -124,9 +123,7 @@ Tasks with dependencies are processed sequentially. Independent tasks run in par
 
 <div align="center">
 
-<video src="https://runfusion.ai/fusion-mesh.mp4" poster="https://runfusion.ai/fusion-dashboard.png" autoplay muted loop playsinline width="820"></video>
-
-<sub>▶ [Watch the mesh reel](https://runfusion.ai/fusion-mesh.mp4)</sub>
+<img src="./demo/assets/fusion-mesh.gif" alt="Fusion mesh: laptop, Mac mini, Linux server, cloud VM, phone — all synced" width="820" />
 
 </div>
 
@@ -138,9 +135,7 @@ Laptop, Mac mini, Linux server, cloud VM, phone — every node is a peer. Your t
 
 <div align="center">
 
-<video src="https://runfusion.ai/fusion-company-reel.mp4" poster="https://runfusion.ai/screenshot-task-detail.png" autoplay muted loop playsinline width="820"></video>
-
-<sub>▶ [Watch the company reel](https://runfusion.ai/fusion-company-reel.mp4)</sub>
+<img src="./demo/assets/fusion-company-reel.gif" alt="Fusion agent company: import a team, run it autonomously for weeks" width="820" />
 
 </div>
 
@@ -164,12 +159,6 @@ Then click the `Open:` URL printed in the terminal. It embeds a bearer token
 [CLI reference → fn dashboard → Authentication](./docs/cli-reference.md#fn-dashboard)
 for how to pin a stable token via `FUSION_DASHBOARD_TOKEN` or opt out with
 `--no-auth`.
-
-Or install globally from npm:
-
-```bash
-npm install -g @gsxdsm/fusion
-```
 
 ### First-run setup
 
