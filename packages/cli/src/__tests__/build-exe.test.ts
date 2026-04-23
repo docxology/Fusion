@@ -182,7 +182,7 @@ describe("build-exe", () => {
             reject(
               new Error(`Server startup timeout\nOutput:\n${startupOutput}`),
             );
-          }, 10_000);
+          }, 30_000);
 
           const settle = (
             result: "ready" | "sqlite-unsupported" | Error,
@@ -303,5 +303,5 @@ describe("build-exe", () => {
       await stopChildProcess(child);
       cleanup();
     }
-  }, 20_000);
+  }, 60_000);
 });

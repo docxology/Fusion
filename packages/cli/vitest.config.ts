@@ -8,14 +8,17 @@ process.env.VITEST_MAX_WORKERS = String(maxWorkers);
 
 export default defineConfig({
   resolve: {
-    // Use ordered aliases so the subpath match is resolved before @fusion/core.
+    // Keep these aliases exact and ordered (subpaths before package roots).
+    // In fresh worktrees, internal packages may not have dist/ built yet, and
+    // Vite otherwise resolves workspace package exports.import to dist/*.js.
+    // Anchored regex aliases force CLI tests to use source entrypoints instead.
     alias: [
-      { find: "@fusion/core/gh-cli", replacement: resolve(__dirname, "../core/src/gh-cli.ts") },
-      { find: "@fusion/core", replacement: resolve(__dirname, "../core/src/index.ts") },
-      { find: "@fusion/dashboard/planning", replacement: resolve(__dirname, "../dashboard/src/planning.ts") },
-      { find: "@fusion/dashboard", replacement: resolve(__dirname, "../dashboard/src/index.ts") },
-      { find: "@fusion/engine", replacement: resolve(__dirname, "../engine/src/index.ts") },
-      { find: "@fusion/test-utils", replacement: resolve(__dirname, "../core/src/__test-utils__/workspace.ts") },
+      { find: /^@fusion\/core\/gh-cli$/, replacement: resolve(__dirname, "../core/src/gh-cli.ts") },
+      { find: /^@fusion\/core$/, replacement: resolve(__dirname, "../core/src/index.ts") },
+      { find: /^@fusion\/dashboard\/planning$/, replacement: resolve(__dirname, "../dashboard/src/planning.ts") },
+      { find: /^@fusion\/dashboard$/, replacement: resolve(__dirname, "../dashboard/src/index.ts") },
+      { find: /^@fusion\/engine$/, replacement: resolve(__dirname, "../engine/src/index.ts") },
+      { find: /^@fusion\/test-utils$/, replacement: resolve(__dirname, "../core/src/__test-utils__/workspace.ts") },
     ],
   },
   test: {
