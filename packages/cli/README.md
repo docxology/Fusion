@@ -20,13 +20,17 @@
 
 ## Install
 
-**One-line install** (macOS & Linux):
+**Zero install, straight from npm:**
+
+```bash
+npx @runfusion/fusion dashboard
+```
+
+**One-line installer** (macOS & Linux — auto-picks Homebrew, falls back to npm):
 
 ```bash
 curl -fsSL https://runfusion.ai/install.sh | sh
 ```
-
-Picks Homebrew if available, falls back to npm.
 
 **Homebrew** (macOS & Linux):
 
@@ -37,13 +41,7 @@ brew install fusion
 
 Or as a one-liner: `brew install runfusion/fusion/fusion`.
 
-**npm** — zero install:
-
-```bash
-npx @runfusion/fusion dashboard
-```
-
-Globally:
+**npm global**:
 
 ```bash
 npm install -g @runfusion/fusion
