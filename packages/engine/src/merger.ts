@@ -2292,8 +2292,25 @@ export async function aiMergeTask(
       deletions = deletionsMatch ? Number.parseInt(deletionsMatch[1], 10) : 0;
     } catch { /* non-fatal */ }
 
+    // Guard: if the squash collapsed to an empty commit, recording its SHA
+    // misleads every consumer (TaskChangesTab shows "no changes" even though
+    // modifiedFiles is non-empty). Real cause: the branch contained commits
+    // already on main (duplicate cherry-picks), and conflict resolution
+    // dropped them. The actual landing typically happens later via PR merge
+    // on a different SHA — let recoverInterruptedMergingTasks /
+    // findLandedTaskCommit populate the right SHA when that lands. Until
+    // then, store mergeDetails without commitSha so the UI falls back to
+    // task.modifiedFiles instead of a broken diff.
+    const isEmptyCommit = filesChanged === 0;
+    const recordedSha = isEmptyCommit ? undefined : commitSha;
+    if (isEmptyCommit) {
+      mergerLog.warn(
+        `${taskId}: local squash produced an empty commit (${commitSha?.slice(0, 8)}) — branch likely contained dupes of main. Skipping commitSha; recovery will backfill when real commit lands.`,
+      );
+    }
+
     const mergeDetails: MergeDetails = {
-      commitSha,
+      commitSha: recordedSha,
       filesChanged,
       insertions,
       deletions,
@@ -2307,7 +2324,7 @@ export async function aiMergeTask(
     };
 
     await store.updateTask(taskId, { mergeDetails });
-    mergerLog.log(`${taskId}: merge details stored (commitSha: ${commitSha?.slice(0, 8)})`);
+    mergerLog.log(`${taskId}: merge details stored (commitSha: ${recordedSha?.slice(0, 8) ?? "<deferred>"})`);
   } catch (err: any) {
     mergerLog.warn(`${taskId}: failed to collect/store merge details: ${err.message}`);
   }

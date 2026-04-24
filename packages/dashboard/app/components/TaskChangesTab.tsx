@@ -13,6 +13,15 @@ interface TaskChangesTabProps {
   projectId?: string;
   column?: Column;
   mergeDetails?: MergeDetails;
+  /**
+   * Files modified by the task during execution, captured from the worktree.
+   * Used as a last-resort fallback when the recorded `mergeDetails.commitSha`
+   * resolves to an empty git commit (which can happen when the merger stores
+   * a per-branch SHA that gets collapsed into a different squash on main).
+   * Without this, the tab would show "no changes" while the card shows N —
+   * matches TaskCard.tsx:1090-1124's fallback ladder.
+   */
+  modifiedFiles?: string[];
 }
 
 function getStatusLabel(status: "added" | "modified" | "deleted" | "unknown"): string {
@@ -51,7 +60,7 @@ interface NormalizedFile {
  * changes. This prevents inflated file counts that don't match the card-level
  * display.
  */
-export function TaskChangesTab({ taskId, worktree, projectId, column, mergeDetails }: TaskChangesTabProps) {
+export function TaskChangesTab({ taskId, worktree, projectId, column, mergeDetails, modifiedFiles }: TaskChangesTabProps) {
   const [files, setFiles] = useState<NormalizedFile[]>([]);
   const [stats, setStats] = useState<{ filesChanged: number; additions: number; deletions: number }>({ filesChanged: 0, additions: 0, deletions: 0 });
   const [loading, setLoading] = useState(true);
@@ -192,6 +201,57 @@ export function TaskChangesTab({ taskId, worktree, projectId, column, mergeDetai
   }
 
   if (files.length === 0) {
+    // Done task with a commit SHA but the diff came back empty — almost
+    // always means the recorded SHA points to an empty commit (merger
+    // stored a per-branch SHA that became no-op after the squash collapsed
+    // onto main). Fall back to the executor-captured modifiedFiles so the
+    // tab agrees with the card. Patches are unavailable in this path.
+    if (isDone && modifiedFiles && modifiedFiles.length > 0) {
+      return (
+        <div className="detail-section task-changes-tab">
+          {isDone && mergeDetails && (
+            <div className="commit-diff-meta">
+              {mergeDetails.commitSha && (
+                <div className="commit-diff-sha">
+                  <GitCommit size={14} />
+                  <code>{mergeDetails.commitSha.slice(0, 7)}</code>
+                </div>
+              )}
+              {mergeDetails.mergedAt && (
+                <div className="commit-diff-timestamp">
+                  Merged {new Date(mergeDetails.mergedAt).toLocaleString()}
+                </div>
+              )}
+            </div>
+          )}
+          <div className="task-changes-state task-changes-state--empty">
+            <FileCode size={24} />
+            <p>{modifiedFiles.length} file{modifiedFiles.length === 1 ? "" : "s"} modified during execution.</p>
+            <span className="task-changes-state-hint">
+              The recorded merge commit has no diff (likely collapsed into a squash on main). Showing file paths only — patches unavailable.
+            </span>
+          </div>
+          <div className="changes-file-list task-changes-file-list--compact">
+            {modifiedFiles.map((path) => (
+              <div key={path} className="changes-file-item">
+                <div className="changes-file-header">
+                  <span
+                    className="changes-file-status changes-file-status--unknown"
+                    title="status unknown"
+                  >
+                    {getStatusLabel("unknown")}
+                  </span>
+                  <span className="changes-file-path" title={path}>
+                    {truncateMiddle(path)}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="detail-section">
         <div className="task-changes-state task-changes-state--empty">
