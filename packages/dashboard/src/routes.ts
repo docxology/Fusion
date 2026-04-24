@@ -77,6 +77,7 @@ import { rateLimit, RATE_LIMITS } from "./rate-limit.js";
 import { resolvePluginManifest } from "./plugin-routes.js";
 import { getAuthFileCandidates, getFusionAuthPath, type StoredAuthProvider } from "./auth-paths.js";
 import { createRuntimeLogger, type RuntimeLogger } from "./runtime-logger.js";
+import { createSessionDiagnostics } from "./ai-session-diagnostics.js";
 
 const TASK_DETAIL_ACTIVITY_LOG_LIMIT = 500;
 
@@ -1881,6 +1882,8 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
   const planningLogger = runtimeLogger.child("planning");
   const proxyLogger = runtimeLogger.child("proxy");
   const chatLogger = runtimeLogger.child("chat");
+  const summarizeDiagnostics = createSessionDiagnostics("ai-summarize");
+  const agentGenerationDiagnostics = createSessionDiagnostics("agent-generation");
 
   function prioritizeProjectsForCurrentDirectory<T extends { path: string }>(projects: T[]): T[] {
     const cwd = resolve(process.cwd());
@@ -9994,11 +9997,13 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         AiServiceError: _AiServiceError2,
       } = await import("@fusion/core");
 
-      // Debug logging
+      // Optional debug tracing for summarize flows.
       if (process.env.FUSION_DEBUG_AI) {
-        runtimeLogger.child("ai-summarize").info(
-          `Request from ${ip}, description length: ${description?.length || 0}`,
-        );
+        summarizeDiagnostics.info("Summarize title request", {
+          ip,
+          descriptionLength: typeof description === "string" ? description.length : 0,
+          operation: "summarize-title-request",
+        });
       }
 
       // Check rate limit first
@@ -10041,9 +10046,11 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         (settings.defaultProvider && settings.defaultModelId ? settings.defaultModelId : undefined);
 
       if (process.env.FUSION_DEBUG_AI) {
-        runtimeLogger.child("ai-summarize").info(
-          `Resolved model: ${resolvedProvider || "auto"}/${resolvedModelId || "auto"}`,
-        );
+        summarizeDiagnostics.info("Summarize title model resolved", {
+          provider: resolvedProvider ?? "auto",
+          modelId: resolvedModelId ?? "auto",
+          operation: "summarize-title-model-resolution",
+        });
       }
 
       // Process summarization
@@ -10066,8 +10073,8 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
       } else if (err instanceof Error && err.name === "ValidationError") {
         throw badRequest(err instanceof Error ? err.message : String(err));
       } else {
-        runtimeLogger.child("ai-summarize").error("Unexpected error", {
-          error: err instanceof Error ? err.message : String(err),
+        summarizeDiagnostics.errorFromException("Unexpected summarize title error", err, {
+          operation: "summarize-title",
         });
         rethrowAsApiError(err, "Failed to generate title");
       }
@@ -14474,8 +14481,8 @@ async function persistImportedSkills(
       if (err instanceof AgentGenerationRateLimitError) {
         throw rateLimited(err.message);
       }
-      runtimeLogger.child("agent-generation").error("Error starting session", {
-        error: err instanceof Error ? err.message : String(err),
+      agentGenerationDiagnostics.errorFromException("Error starting session", err, {
+        operation: "generate-start",
       });
       rethrowAsApiError(err, "Failed to start agent generation session");
     }
@@ -14507,8 +14514,8 @@ async function persistImportedSkills(
       if (err instanceof AgentGenerationSessionNotFoundError) {
         throw notFound(err instanceof Error ? err.message : String(err));
       }
-      runtimeLogger.child("agent-generation").error("Error generating spec", {
-        error: err instanceof Error ? err.message : String(err),
+      agentGenerationDiagnostics.errorFromException("Error generating spec", err, {
+        operation: "generate-spec",
       });
       rethrowAsApiError(err, "Failed to generate agent specification");
     }

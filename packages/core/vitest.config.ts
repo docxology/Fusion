@@ -22,6 +22,10 @@ export default defineConfig({
     maxWorkers,
     poolOptions: { threads: { minThreads: 1, maxThreads: maxWorkers }, forks: { minForks: 1, maxForks: maxWorkers } },
     fileParallelism: true,
+    // Core runs a large SQLite-heavy suite while other workspace packages test concurrently.
+    // Use a slightly higher timeout to reduce nondeterministic slow-machine flakes.
+    testTimeout: 15_000,
+    hookTimeout: 15_000,
     coverage: {
       enabled: false,
       reporter: ["text", "html", "json"],

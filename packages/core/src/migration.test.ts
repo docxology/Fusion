@@ -125,7 +125,7 @@ describe("FirstRunDetector", () => {
       } finally {
         await testCentral.close();
       }
-    });
+    }, 15_000);
 
     it("should return fresh-install when central DB exists but is unreadable", async () => {
       const tempProjectDir = useIsolatedCwd("kb-corrupt-central-");

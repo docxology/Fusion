@@ -16,6 +16,7 @@ import type { TaskStore, TaskAttachment, Routine, RoutineCreateInput, RoutineUpd
 import type { TaskDetail } from "@fusion/core";
 import type { AuthStorageLike, ModelRegistryLike } from "./routes.js";
 import { __resetBatchImportRateLimiter, __setCreateFnAgentForRefine } from "./routes.js";
+import * as agentGenerationModule from "./agent-generation.js";
 import { __resetPlanningState, __setCreateFnAgent, planningStreamManager } from "./planning.js";
 import * as planningModule from "./planning.js";
 import { __resetSubtaskBreakdownState, subtaskStreamManager } from "./subtask-breakdown.js";
@@ -25,6 +26,7 @@ import * as projectStoreResolver from "./project-store-resolver.js";
 import * as terminalServiceModule from "./terminal-service.js";
 import { get as performGet, request as performRequest } from "./test-request.js";
 import { resetRuntimeLogSink, setRuntimeLogSink } from "./runtime-logger.js";
+import { resetDiagnosticsSink, setDiagnosticsSink, type LogEntry } from "./ai-session-diagnostics.js";
 
 // Mock @fusion/core for gh CLI auth checks
 const mockCentralListProjects = vi.fn().mockResolvedValue([]);
@@ -241,6 +243,10 @@ afterAll(() => {
     rmSync(sharedGitTestRepo.root, { recursive: true, force: true });
     sharedGitTestRepo = null;
   }
+});
+
+afterEach(() => {
+  resetDiagnosticsSink();
 });
 
 describe("GET /tasks", () => {
@@ -9937,6 +9943,20 @@ describe("POST /api/ai/summarize-title", () => {
     return app;
   }
 
+  function captureDiagnostics(): LogEntry[] {
+    const entries: LogEntry[] = [];
+    setDiagnosticsSink((level, scope, message, context) => {
+      entries.push({
+        level,
+        scope,
+        message,
+        context,
+        timestamp: new Date(),
+      });
+    });
+    return entries;
+  }
+
   it("validates description is required", async () => {
     const res = await REQUEST(
       buildApp(),
@@ -10005,6 +10025,90 @@ describe("POST /api/ai/summarize-title", () => {
       "google",
       "gemini-2.5-pro",
     );
+  });
+
+  it("emits structured diagnostics for unexpected summarize failures", async () => {
+    const diagnostics = captureDiagnostics();
+    const fusionCore = await import("@fusion/core");
+    vi.spyOn(fusionCore, "summarizeTitle").mockRejectedValueOnce(new Error("summarize boom"));
+
+    const res = await REQUEST(
+      buildApp(),
+      "POST",
+      "/api/ai/summarize-title",
+      JSON.stringify({ description: "x".repeat(300) }),
+      { "Content-Type": "application/json" },
+    );
+
+    expect(res.status).toBe(500);
+    expect(res.body.error).toContain("summarize boom");
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        level: "error",
+        scope: "ai-summarize",
+        message: "Unexpected summarize title error",
+        context: expect.objectContaining({
+          operation: "summarize-title",
+          error: expect.objectContaining({ message: "summarize boom" }),
+        }),
+      }),
+    );
+  });
+
+  it("emits debug-gated summarize request and model diagnostics when FUSION_DEBUG_AI is enabled", async () => {
+    const diagnostics = captureDiagnostics();
+    const fusionCore = await import("@fusion/core");
+    vi.spyOn(fusionCore, "summarizeTitle").mockResolvedValueOnce("Generated title");
+
+    const previousDebug = process.env.FUSION_DEBUG_AI;
+    process.env.FUSION_DEBUG_AI = "1";
+
+    try {
+      const description = "x".repeat(320);
+      const res = await REQUEST(
+        buildApp(),
+        "POST",
+        "/api/ai/summarize-title",
+        JSON.stringify({
+          description,
+          provider: "google",
+          modelId: "gemini-2.5-pro",
+        }),
+        { "Content-Type": "application/json" },
+      );
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ title: "Generated title" });
+      expect(diagnostics).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            level: "info",
+            scope: "ai-summarize",
+            message: "Summarize title request",
+            context: expect.objectContaining({
+              descriptionLength: description.length,
+              operation: "summarize-title-request",
+            }),
+          }),
+          expect.objectContaining({
+            level: "info",
+            scope: "ai-summarize",
+            message: "Summarize title model resolved",
+            context: expect.objectContaining({
+              provider: "google",
+              modelId: "gemini-2.5-pro",
+              operation: "summarize-title-model-resolution",
+            }),
+          }),
+        ]),
+      );
+    } finally {
+      if (previousDebug === undefined) {
+        delete process.env.FUSION_DEBUG_AI;
+      } else {
+        process.env.FUSION_DEBUG_AI = previousDebug;
+      }
+    }
   });
 });
 
@@ -14756,6 +14860,89 @@ describe("POST /workflow-steps/:id/refine with projectId scoping", () => {
 });
 
 // ── Agent Generation Routes ────────────────────────────────────────────────
+
+describe("POST /api/agents/generate/* diagnostics", () => {
+  let store: TaskStore;
+
+  beforeEach(() => {
+    store = createMockStore();
+  });
+
+  function buildApp() {
+    const app = express();
+    app.use(express.json());
+    app.use("/api", createApiRoutes(store));
+    return app;
+  }
+
+  function captureDiagnostics(): LogEntry[] {
+    const entries: LogEntry[] = [];
+    setDiagnosticsSink((level, scope, message, context) => {
+      entries.push({
+        level,
+        scope,
+        message,
+        context,
+        timestamp: new Date(),
+      });
+    });
+    return entries;
+  }
+
+  it("emits structured diagnostics when /agents/generate/start fails unexpectedly", async () => {
+    const diagnostics = captureDiagnostics();
+    vi.spyOn(agentGenerationModule, "startAgentGeneration").mockRejectedValueOnce(new Error("start failed"));
+
+    const res = await REQUEST(
+      buildApp(),
+      "POST",
+      "/api/agents/generate/start",
+      JSON.stringify({ role: "Senior frontend reviewer" }),
+      { "Content-Type": "application/json" },
+    );
+
+    expect(res.status).toBe(500);
+    expect(res.body.error).toContain("start failed");
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        level: "error",
+        scope: "agent-generation",
+        message: "Error starting session",
+        context: expect.objectContaining({
+          operation: "generate-start",
+          error: expect.objectContaining({ message: "start failed" }),
+        }),
+      }),
+    );
+  });
+
+  it("emits structured diagnostics when /agents/generate/spec fails unexpectedly", async () => {
+    const diagnostics = captureDiagnostics();
+    vi.spyOn(agentGenerationModule, "generateAgentSpec").mockRejectedValueOnce(new Error("spec failed"));
+
+    const res = await REQUEST(
+      buildApp(),
+      "POST",
+      "/api/agents/generate/spec",
+      JSON.stringify({ sessionId: "session-123" }),
+      { "Content-Type": "application/json" },
+    );
+
+    expect(res.status).toBe(500);
+    expect(res.body.error).toContain("spec failed");
+    expect(diagnostics).toContainEqual(
+      expect.objectContaining({
+        level: "error",
+        scope: "agent-generation",
+        message: "Error generating spec",
+        context: expect.objectContaining({
+          operation: "generate-spec",
+          error: expect.objectContaining({ message: "spec failed" }),
+        }),
+      }),
+    );
+  });
+});
 
 describe("POST /agents/generate/spec with projectId scoping", () => {
   const projectId = "proj-agent-gen-scoped";

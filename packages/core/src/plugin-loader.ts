@@ -88,7 +88,7 @@ export class PluginLoader extends EventEmitter<{
   /** Cache of dynamically imported modules */
   private loadedModules: Map<string, unknown> = new Map();
 
-  /** Monotonic counter for deterministic cache-busting import URLs */
+  /** Monotonic nonce to guarantee unique cache-busting import URLs. */
   private importNonce = 0;
 
   constructor(private options: PluginLoaderOptions) {
