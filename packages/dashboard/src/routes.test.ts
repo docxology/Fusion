@@ -3718,6 +3718,53 @@ describe("GET /models", () => {
     expect(res.status).toBe(200);
     expect(res.body.models).toEqual([]);
   });
+
+  // Regression guard: FN-2370's auto-resolved squash inverted this filter,
+  // emptying every model picker in the UI. The filter is small but the
+  // failure mode is silent and project-wide — keep these tests close to the
+  // route so any future flip flips CI red immediately.
+  describe("useClaudeCli filter", () => {
+    function buildAppWithSetting(useClaudeCli: boolean | undefined, modelRegistry: ModelRegistryLike) {
+      const globalStore = createMockGlobalSettingsStore();
+      (globalStore.getSettings as ReturnType<typeof vi.fn>).mockResolvedValue(
+        useClaudeCli === undefined ? {} : { useClaudeCli },
+      );
+      (store.getGlobalSettingsStore as ReturnType<typeof vi.fn>).mockReturnValue(globalStore);
+      return buildApp(modelRegistry);
+    }
+
+    function registryWithCli(): ModelRegistryLike {
+      return createMockModelRegistry({
+        getAvailable: vi.fn().mockReturnValue([
+          { id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5", provider: "anthropic", reasoning: true, contextWindow: 200000 },
+          { id: "gpt-4o", name: "GPT-4o", provider: "openai", reasoning: false, contextWindow: 128000 },
+          { id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5 (CLI)", provider: "pi-claude-cli", reasoning: true, contextWindow: 200000 },
+        ]),
+      });
+    }
+
+    it("hides pi-claude-cli entries when useClaudeCli is false", async () => {
+      const res = await GET(buildAppWithSetting(false, registryWithCli()), "/api/models");
+      expect(res.status).toBe(200);
+      const providers = res.body.models.map((m: { provider: string }) => m.provider);
+      expect(providers).not.toContain("pi-claude-cli");
+      expect(providers).toEqual(expect.arrayContaining(["anthropic", "openai"]));
+    });
+
+    it("hides pi-claude-cli entries when setting is unset (default off)", async () => {
+      const res = await GET(buildAppWithSetting(undefined, registryWithCli()), "/api/models");
+      expect(res.status).toBe(200);
+      const providers = res.body.models.map((m: { provider: string }) => m.provider);
+      expect(providers).not.toContain("pi-claude-cli");
+    });
+
+    it("includes pi-claude-cli entries alongside other providers when useClaudeCli is true", async () => {
+      const res = await GET(buildAppWithSetting(true, registryWithCli()), "/api/models");
+      expect(res.status).toBe(200);
+      const providers = res.body.models.map((m: { provider: string }) => m.provider);
+      expect(providers).toEqual(expect.arrayContaining(["anthropic", "openai", "pi-claude-cli"]));
+    });
+  });
 });
 
 // --- Auth route tests ---

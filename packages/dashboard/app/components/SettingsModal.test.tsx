@@ -700,24 +700,21 @@ describe("SettingsModal", () => {
   });
 
   describe("Experimental Features section", () => {
+    const openExperimentalFeaturesSection = async () => {
+      const sectionLabel = await screen.findByText("Experimental Features");
+      await userEvent.click(sectionLabel);
+    };
+
     it("renders the Experimental Features section in the sidebar", async () => {
       renderModal();
 
-      await waitFor(() => {
-        expect(mockFetchSettings).toHaveBeenCalled();
-      });
-
-      expect(screen.getByText("Experimental Features")).toBeDefined();
+      expect(await screen.findByText("Experimental Features")).toBeInTheDocument();
     });
 
     it("shows known experimental features (Insights, Roadmaps) even when no custom features are configured", async () => {
       renderModal();
 
-      await waitFor(() => {
-        expect(mockFetchSettings).toHaveBeenCalled();
-      });
-
-      await userEvent.click(screen.getByText("Experimental Features"));
+      await openExperimentalFeaturesSection();
 
       // Known features should always be shown
       expect(screen.getByText("Insights")).toBeInTheDocument();
@@ -732,11 +729,7 @@ describe("SettingsModal", () => {
 
       renderModal();
 
-      await waitFor(() => {
-        expect(mockFetchSettings).toHaveBeenCalled();
-      });
-
-      await userEvent.click(screen.getByText("Experimental Features"));
+      await openExperimentalFeaturesSection();
 
       expect(screen.getByText("my-feature")).toBeInTheDocument();
       expect(screen.getByText("another-feature")).toBeInTheDocument();
@@ -750,11 +743,7 @@ describe("SettingsModal", () => {
 
       renderModal();
 
-      await waitFor(() => {
-        expect(mockFetchSettings).toHaveBeenCalled();
-      });
-
-      await userEvent.click(screen.getByText("Experimental Features"));
+      await openExperimentalFeaturesSection();
 
       const checkbox = screen.getByLabelText("my-feature") as HTMLInputElement;
       expect(checkbox.checked).toBe(false);
@@ -768,11 +757,7 @@ describe("SettingsModal", () => {
 
       renderModal();
 
-      await waitFor(() => {
-        expect(mockFetchSettings).toHaveBeenCalled();
-      });
-
-      await userEvent.click(screen.getByText("Experimental Features"));
+      await openExperimentalFeaturesSection();
 
       const checkbox = screen.getByLabelText("my-feature") as HTMLInputElement;
       expect(checkbox.checked).toBe(true);
@@ -786,11 +771,7 @@ describe("SettingsModal", () => {
 
       renderModal();
 
-      await waitFor(() => {
-        expect(mockFetchSettings).toHaveBeenCalled();
-      });
-
-      await userEvent.click(screen.getByText("Experimental Features"));
+      await openExperimentalFeaturesSection();
 
       const checkbox = screen.getByLabelText("my-feature") as HTMLInputElement;
       expect(checkbox.checked).toBe(false);
@@ -808,11 +789,7 @@ describe("SettingsModal", () => {
 
       renderModal();
 
-      await waitFor(() => {
-        expect(mockFetchSettings).toHaveBeenCalled();
-      });
-
-      await userEvent.click(screen.getByText("Experimental Features"));
+      await openExperimentalFeaturesSection();
 
       // Toggle the feature
       const checkbox = screen.getByLabelText("my-feature") as HTMLInputElement;
@@ -832,11 +809,7 @@ describe("SettingsModal", () => {
     it("shows project scope banner in Experimental Features section", async () => {
       renderModal();
 
-      await waitFor(() => {
-        expect(mockFetchSettings).toHaveBeenCalled();
-      });
-
-      await userEvent.click(screen.getByText("Experimental Features"));
+      await openExperimentalFeaturesSection();
 
       // Should show project scope indicator
       expect(screen.getByText(/only affect this project/i)).toBeInTheDocument();
@@ -850,11 +823,7 @@ describe("SettingsModal", () => {
 
       renderModal();
 
-      await waitFor(() => {
-        expect(mockFetchSettings).toHaveBeenCalled();
-      });
-
-      await userEvent.click(screen.getByText("Experimental Features"));
+      await openExperimentalFeaturesSection();
 
       // Known features should always be shown regardless of settings
       expect(screen.getByText("Insights")).toBeInTheDocument();
@@ -869,11 +838,7 @@ describe("SettingsModal", () => {
 
       renderModal();
 
-      await waitFor(() => {
-        expect(mockFetchSettings).toHaveBeenCalled();
-      });
-
-      await userEvent.click(screen.getByText("Experimental Features"));
+      await openExperimentalFeaturesSection();
 
       // Toggle feature-b to true
       const checkboxB = screen.getByLabelText("feature-b") as HTMLInputElement;

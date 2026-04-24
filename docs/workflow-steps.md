@@ -126,7 +126,7 @@ If a task is found in `in-review` with failed pre-merge workflow results and no 
 
 Workflow status is visible in multiple places:
 
-- **Task cards**: workflow checks are shown after normal implementation steps in the step list; each workflow row is labeled (`Workflow · Pre-merge` / `Workflow · Post-merge`) and progress counts include both implementation and workflow checks
+- **Task cards**: workflow checks are shown after normal implementation steps in the step list; each workflow row uses the compact `workflow` badge label (while still retaining pre/post-merge styling semantics) and progress counts include both implementation and workflow checks
 - **List view (desktop + mobile)**: progress labels/bars use the same unified step model as task cards
 - **Task detail modal**: includes a **Workflow** tab when workflow data exists
 

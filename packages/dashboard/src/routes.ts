@@ -19367,15 +19367,14 @@ function registerModelsRoute(
         }
       }
 
-      // When the user has opted to route AI through pi-claude-cli, only
-      // Anthropic Claude models are reachable — pi-claude-cli wraps the
-      // local Claude CLI and does not bridge other providers. Surface only
-      // those models so every picker in the app (settings, onboarding, per
-      // lane overrides) stays honest about what'll actually run.
-      // OpenRouter-proxied Claude (provider: "openrouter") is excluded on
-      // purpose: it hits OpenRouter's API, not the local CLI.
-      if (useClaudeCli) {
-        models = models.filter((m) => m.provider === "anthropic");
+      // The vendored pi-claude-cli extension registers its provider as
+      // "pi-claude-cli" (distinct from "anthropic") whenever it loads.
+      // When the toggle is OFF, hide those entries from pickers so users
+      // don't see CLI-routed models they haven't opted into. When ON,
+      // surface everything so the CLI-routed entries appear alongside any
+      // direct provider auth the user has connected.
+      if (!useClaudeCli) {
+        models = models.filter((m) => m.provider !== "pi-claude-cli");
       }
 
       res.json({ models, favoriteProviders, favoriteModels });
@@ -19592,12 +19591,10 @@ function registerAuthRoutes(
 
       res.json({
         enabled: next,
-        // Pi extension registrations can't be added/removed mid-process,
-        // so flipping on/off requires a restart for the model routing
-        // itself to take effect. Skill install/backfill happens
-        // immediately either way. Surface this so the UI can show a
-        // "Restart Fusion to activate" prompt when next !== prev.
-        restartRequired: prev !== next,
+        // The pi-claude-cli extension is now always loaded; toggling
+        // this setting only flips the /api/models filter, which takes
+        // effect on the next picker fetch. No restart needed.
+        restartRequired: false,
       });
     } catch (err: unknown) {
       if (err instanceof ApiError) {

@@ -106,6 +106,22 @@ const { stdout, stderr } = await execAsync(command, {
 - One commit per step (not per file change)
 - Always include the task ID prefix
 
+## Merging Branches Into Main
+
+Two rules, learned the hard way (FN-2370 silently reverted three commits' work):
+
+1. **If a branch contains commits that duplicate work already on main, rebase the branch onto main and drop the duplicates *before* merging.** This usually happens when a branch was rebased from a stale base while the same work was also landed directly on main. Subjects that match recent main commits are the tell — `git log main..branch --format=%s` should not overlap with `git log <base>..main --format=%s`. Auto-resolvers cannot tell which side of a duplicated change is canonical and will silently drop refinements from the newer side.
+
+2. **Prefer rebase-and-merge over squash for branches spanning multiple feature commits.** Squash collapses authorship and makes per-commit reverts impossible. Rebase-and-merge preserves the commit boundary so a regression can be reverted cleanly without losing the rest of the branch.
+
+After any squash that auto-resolved conflicts, the merging agent MUST run:
+
+```
+node scripts/audit-squash-merge.mjs <squash-sha>
+```
+
+The agent then reviews each flagged item itself (no human handoff): for every duplicate-cherry-pick subject, diff the matching main commit against HEAD and confirm its net contribution survived; for every touched-file overlap, confirm the recent main commits' changes still appear in HEAD. If anything was silently dropped, restore it as a follow-up commit on the same branch before reporting the merge complete. Only if the audit is clean (or all losses have been restored) is the merge done.
+
 ## Node Dashboard
 
 Fusion has a Node Dashboard view for managing mesh network nodes. See [docs/architecture.md](./docs/architecture.md) for dashboard components and API endpoints.

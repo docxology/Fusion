@@ -171,12 +171,17 @@ describe("TaskCard", () => {
     expect(dots[3]?.className).toContain("card-step-dot--failed");
     expect(dots[4]?.className).toContain("card-step-dot--pending");
 
-    const workflowBadges = Array.from(container.querySelectorAll(".card-step-workflow-badge")).map((el) => el.textContent);
-    expect(workflowBadges).toEqual([
-      "Pre-merge",
-      "Post-merge",
-      "Pre-merge",
-    ]);
+    const workflowBadgeElements = container.querySelectorAll(".card-step-workflow-badge");
+    const workflowBadges = Array.from(workflowBadgeElements).map((el) => el.textContent);
+    expect(workflowBadges).toEqual(["workflow", "workflow", "workflow"]);
+
+    expect(workflowBadgeElements[0]?.className).toContain("card-step-workflow-badge--pre-merge");
+    expect(workflowBadgeElements[1]?.className).toContain("card-step-workflow-badge--post-merge");
+    expect(workflowBadgeElements[2]?.className).toContain("card-step-workflow-badge--pre-merge");
+
+    workflowBadgeElements.forEach((badge) => {
+      expect(badge.getAttribute("title")).toBe("Workflow check");
+    });
   });
 
   it("falls back to workflow result name, then raw ID when lookup names are unavailable", () => {

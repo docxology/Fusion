@@ -36,13 +36,13 @@ export function createLogger(prefix) {
     const tag = `[${prefix}]`;
     return {
         log(message, ...args) {
-            console.error(withSeverityMarker("info", `${tag} ${message}`), ...args);
+            globalThis.console.error(withSeverityMarker("info", `${tag} ${message}`), ...args);
         },
         warn(message, ...args) {
-            console.warn(withSeverityMarker("warn", `${tag} ${message}`), ...args);
+            globalThis.console.warn(withSeverityMarker("warn", `${tag} ${message}`), ...args);
         },
         error(message, ...args) {
-            console.error(withSeverityMarker("error", `${tag} ${message}`), ...args);
+            globalThis.console.error(withSeverityMarker("error", `${tag} ${message}`), ...args);
         },
     };
 }
