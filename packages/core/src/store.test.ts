@@ -7906,6 +7906,50 @@ Task with acceptance criteria
       }
     });
 
+    it("logs outer promise-chain failure when inner warning logger throws", async () => {
+      const syntheticError = "Synthetic warn logger failure";
+      // Throw inside warn logging so the failure escapes the inner summarize try/catch
+      // and is handled by the outer Promise.resolve().then(...).catch(...) branch.
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {
+        throw new Error(syntheticError);
+      });
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const mockOnSummarize = vi.fn().mockRejectedValue(new Error("AI service failed"));
+
+      try {
+        const task = await store.createTask(
+          { description: "a".repeat(201) },
+          { onSummarize: mockOnSummarize, settings: { autoSummarizeTitles: true } }
+        );
+
+        expect(task.id).toMatch(/^FN-\d+$/);
+        expect(task.title).toBeUndefined();
+
+        await new Promise((resolve) => setTimeout(resolve, 10));
+
+        const updatedTask = await store.getTask(task.id);
+        expect(updatedTask.title).toBeUndefined();
+
+        const outerErrorCall = errorSpy.mock.calls.find(([message]) =>
+          typeof message === "string"
+          && message.includes("[task-store] Unexpected title summarization promise-chain failure")
+        );
+        expect(outerErrorCall).toBeDefined();
+
+        const [message, context] = outerErrorCall as [string, Record<string, unknown>];
+        expect(message).toContain("[task-store] Unexpected title summarization promise-chain failure");
+        expect(context).toMatchObject({
+          taskId: task.id,
+          descriptionLength: 201,
+          autoSummarizeEnabled: true,
+          error: syntheticError,
+        });
+      } finally {
+        warnSpy.mockRestore();
+        errorSpy.mockRestore();
+      }
+    });
+
     it("should trigger summarization at exactly 201 characters", async () => {
       const boundaryDescription = "a".repeat(201);
       const mockOnSummarize = vi.fn().mockResolvedValue("AI Title");

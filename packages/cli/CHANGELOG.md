@@ -1,5 +1,15 @@
 # @runfusion/fusion
 
+## 0.1.2
+
+### Patch Changes
+
+- 9bf2981: Add a `planning-awaiting-input` ntfy notification event so users can opt in to alerts when planning sessions pause for user input.
+- Fix the CLI init command import path for the Claude skills runner so tsup can resolve it during build.
+- 94473c8: Improve dashboard shutdown observability by logging non-fatal diagnostics when `CentralCore.close()` fails during dispose, normal signal shutdown, or dev-mode shutdown cleanup.
+- Fix dashboard and serve command plugin store initialization to support task store implementations that expose `getFusionDir()` without `getRootDir()`.
+- c01892d: Route dashboard runtime diagnostics through the shared injected runtime logger so TTY sessions can capture server/package logs in the TUI while preserving readable non-TTY startup banner output.
+
 ## 0.1.1
 
 ### Patch Changes

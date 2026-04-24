@@ -1,5 +1,16 @@
 # runfusion.ai
 
+## 0.1.2
+
+### Patch Changes
+
+- Updated dependencies [9bf2981]
+- Updated dependencies
+- Updated dependencies [94473c8]
+- Updated dependencies
+- Updated dependencies [c01892d]
+  - @runfusion/fusion@0.1.2
+
 ## 0.1.1
 
 Catch-up version bump so `runfusion.ai` stays in sync with `@runfusion/fusion`. The two packages are now grouped under changesets `fixed` in `.changeset/config.json` and will always share a version number from here on.
