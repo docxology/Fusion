@@ -3,3 +3,4 @@ packages:
   - "plugins/examples/*"
   - "plugins/fusion-plugin-paperclip-runtime"
   - "plugins/fusion-plugin-openclaw-runtime"
+  - "plugins/fusion-plugin-hermes-runtime"

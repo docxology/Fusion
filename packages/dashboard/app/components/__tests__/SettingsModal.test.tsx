@@ -2584,9 +2584,10 @@ describe("SettingsModal", () => {
 
   it("hides ntfyEvents checkboxes when ntfy is disabled", async () => {
     render(<SettingsModal onClose={onClose} addToast={addToast} />);
-    await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
 
+    await waitFor(() => expect(screen.queryByText("Loading…")).toBeNull());
     fireEvent.click(screen.getByText("Notifications"));
+
     expect(screen.queryByLabelText("Task completed (in-review)")).toBeNull();
     expect(screen.queryByLabelText("Task merged")).toBeNull();
     expect(screen.queryByLabelText("Task failed")).toBeNull();
