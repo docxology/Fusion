@@ -939,7 +939,8 @@ describe("AgentsView", () => {
       // Open create dialog
       fireEvent.click(screen.getByText("New Agent"));
 
-      // Step 0: Fill in agent name
+      // Step 0: switch to Custom tab and fill in agent name
+      fireEvent.click(screen.getByRole("tab", { name: "Custom agent" }));
       const nameInput = screen.getByPlaceholderText("e.g. Frontend Reviewer");
       fireEvent.change(nameInput, { target: { value: "My Agent" } });
 
@@ -972,10 +973,12 @@ describe("AgentsView", () => {
 
       fireEvent.click(screen.getByText("New Agent"));
 
-      // Wait for the dialog to settle after the model fetch completes
+      // Presets tab is default and custom fields appear after switching tabs
       await waitFor(() => {
-        expect(screen.getByPlaceholderText("e.g. Frontend Reviewer")).toBeTruthy();
+        expect(screen.getByRole("tab", { name: "Preset personas", selected: true })).toBeTruthy();
       });
+      fireEvent.click(screen.getByRole("tab", { name: "Custom agent" }));
+      expect(screen.getByPlaceholderText("e.g. Frontend Reviewer")).toBeTruthy();
     });
 
     it("does not allow proceeding with empty name", async () => {
@@ -1009,6 +1012,7 @@ describe("AgentsView", () => {
 
       fireEvent.click(screen.getByText("New Agent"));
 
+      fireEvent.click(screen.getByRole("tab", { name: "Custom agent" }));
       const nameInput = screen.getByPlaceholderText("e.g. Frontend Reviewer");
       fireEvent.change(nameInput, { target: { value: "Fail Agent" } });
 

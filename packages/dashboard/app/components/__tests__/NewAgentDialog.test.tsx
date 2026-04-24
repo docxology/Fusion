@@ -134,6 +134,23 @@ function clickModelOption(portal: HTMLElement, optionText: RegExp) {
   fireEvent.click(option!);
 }
 
+async function openPresetTab(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole("tab", { name: "Preset personas" }));
+}
+
+async function openCustomTab(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole("tab", { name: "Custom agent" }));
+}
+
+function openCustomTabSync() {
+  fireEvent.click(screen.getByRole("tab", { name: "Custom agent" }));
+}
+
+function getStepZeroField(label: string | RegExp) {
+  openCustomTabSync();
+  return screen.getByLabelText(label);
+}
+
 describe("NewAgentDialog", () => {
   const mockOnClose = vi.fn();
   const mockOnCreated = vi.fn();
@@ -164,17 +181,50 @@ describe("NewAgentDialog", () => {
       expect(screen.getByRole("dialog", { name: "Create new agent" })).toBeTruthy();
     });
 
-    it("shows Identity and Configuration section headers on step 0", async () => {
+    it("renders tabbed step-0 UI with preset tab active by default", async () => {
       await act(async () => {
         render(
           <NewAgentDialog isOpen={true} onClose={mockOnClose} onCreated={mockOnCreated} />,
         );
       });
 
-      expect(screen.getByText("Identity")).toBeInTheDocument();
-      expect(screen.getByText("Configuration")).toBeInTheDocument();
-      expect(screen.getByLabelText(/Name/)).toBeInTheDocument();
-      expect(screen.getByLabelText(/Reports To/)).toBeInTheDocument();
+      const tabList = screen.getByRole("tablist", { name: "Agent setup mode" });
+      expect(tabList).toBeInTheDocument();
+
+      const customTab = screen.getByRole("tab", { name: "Custom agent" });
+      const presetsTab = screen.getByRole("tab", { name: "Preset personas" });
+
+      expect(presetsTab).toHaveAttribute("aria-selected", "true");
+      expect(presetsTab).toHaveAttribute("aria-controls", "agent-dialog-panel-presets");
+      expect(customTab).toHaveAttribute("aria-selected", "false");
+      expect(customTab).toHaveAttribute("aria-controls", "agent-dialog-panel-custom");
+
+      expect(screen.getByRole("tabpanel", { name: "Preset personas" })).toBeInTheDocument();
+      expect(screen.getByTestId("preset-ceo")).toBeInTheDocument();
+      expect(screen.queryByText("Identity")).toBeNull();
+      expect(screen.queryByLabelText(/Name/)).toBeNull();
+    });
+
+    it("switches between tabs and preserves manual values", async () => {
+      const user = userEvent.setup();
+      render(
+        <NewAgentDialog isOpen={true} onClose={mockOnClose} onCreated={mockOnCreated} />,
+      );
+
+      await waitFor(() => expect(mockFetchModels).toHaveBeenCalledOnce());
+
+      await openCustomTab(user);
+      await user.type(screen.getByLabelText(/Name/), "Custom Value");
+      await openPresetTab(user);
+
+      expect(screen.getByRole("tabpanel", { name: "Preset personas" })).toBeInTheDocument();
+      expect(screen.getByTestId("preset-ceo")).toBeInTheDocument();
+      expect(screen.queryByLabelText(/Name/)).toBeNull();
+
+      await openCustomTab(user);
+
+      const nameInput = getStepZeroField(/Name/) as HTMLInputElement;
+      expect(nameInput.value).toBe("Custom Value");
     });
   });
 
@@ -198,7 +248,7 @@ describe("NewAgentDialog", () => {
         expect(mockFetchAgents).toHaveBeenCalledOnce();
       });
 
-      const reportsToSelect = screen.getByLabelText(/Reports To/) as HTMLSelectElement;
+      const reportsToSelect = getStepZeroField(/Reports To/) as HTMLSelectElement;
       expect(reportsToSelect.tagName).toBe("SELECT");
       expect(within(reportsToSelect).getByRole("option", { name: "No manager" })).toBeTruthy();
       expect(within(reportsToSelect).getByRole("option", { name: "Manager One (agent-manager-1)" })).toBeTruthy();
@@ -213,10 +263,10 @@ describe("NewAgentDialog", () => {
 
       await waitFor(() => expect(mockFetchAgents).toHaveBeenCalledOnce());
 
-      const nameInput = screen.getByLabelText(/Name/);
+      const nameInput = getStepZeroField(/Name/);
       await user.type(nameInput, "Agent With Manager");
 
-      const reportsToSelect = screen.getByLabelText(/Reports To/);
+      const reportsToSelect = getStepZeroField(/Reports To/);
       await user.selectOptions(reportsToSelect, "agent-manager-1");
 
       await user.click(screen.getByText("Next"));
@@ -245,7 +295,7 @@ describe("NewAgentDialog", () => {
 
       await waitFor(() => expect(mockFetchAgents).toHaveBeenCalledOnce());
 
-      await user.type(screen.getByLabelText(/Name/), "Agent Without Manager");
+      await user.type(getStepZeroField(/Name/), "Agent Without Manager");
       await user.click(screen.getByText("Next"));
       await user.click(screen.getByText("Next"));
       await user.click(screen.getByText("Create"));
@@ -269,11 +319,11 @@ describe("NewAgentDialog", () => {
         expect(mockFetchAgents).toHaveBeenCalledOnce();
       });
 
-      const reportsToSelect = screen.getByLabelText(/Reports To/) as HTMLSelectElement;
+      const reportsToSelect = getStepZeroField(/Reports To/) as HTMLSelectElement;
       expect(within(reportsToSelect).getByRole("option", { name: "No manager" })).toBeTruthy();
       expect(reportsToSelect.options).toHaveLength(1);
 
-      await user.type(screen.getByLabelText(/Name/), "Agent Works Without Managers");
+      await user.type(getStepZeroField(/Name/), "Agent Works Without Managers");
       await user.click(screen.getByText("Next"));
       await user.click(screen.getByText("Next"));
       await user.click(screen.getByText("Create"));
@@ -306,7 +356,7 @@ describe("NewAgentDialog", () => {
       );
 
       // Navigate to step 1 (model config step) by filling name and clicking Next
-      const nameInput = screen.getByLabelText(/Name/);
+      const nameInput = getStepZeroField(/Name/);
       await fireEvent.change(nameInput, { target: { value: "Test Agent" } });
       await fireEvent.click(screen.getByText("Next"));
 
@@ -332,7 +382,7 @@ describe("NewAgentDialog", () => {
       });
 
       // Navigate to step 1
-      const nameInput = screen.getByLabelText(/Name/);
+      const nameInput = getStepZeroField(/Name/);
       await user.type(nameInput, "Test Agent");
       await user.click(screen.getByText("Next"));
 
@@ -353,7 +403,7 @@ describe("NewAgentDialog", () => {
       });
 
       // Navigate to step 1
-      const nameInput = screen.getByLabelText(/Name/);
+      const nameInput = getStepZeroField(/Name/);
       await user.type(nameInput, "Test Agent");
       await user.click(screen.getByText("Next"));
 
@@ -372,7 +422,7 @@ describe("NewAgentDialog", () => {
       await waitFor(() => expect(mockFetchModels).toHaveBeenCalledOnce());
 
       // Navigate to step 1
-      const nameInput = screen.getByLabelText(/Name/);
+      const nameInput = getStepZeroField(/Name/);
       await user.type(nameInput, "Test Agent");
       await user.click(screen.getByText("Next"));
 
@@ -398,7 +448,7 @@ describe("NewAgentDialog", () => {
       await waitFor(() => expect(mockFetchModels).toHaveBeenCalledOnce());
 
       // Navigate to step 2
-      const nameInput = screen.getByLabelText(/Name/);
+      const nameInput = getStepZeroField(/Name/);
       await user.type(nameInput, "Test Agent");
       await user.click(screen.getByText("Next"));
       await user.click(screen.getByText("Next"));
@@ -418,7 +468,7 @@ describe("NewAgentDialog", () => {
       await waitFor(() => expect(mockFetchModels).toHaveBeenCalledOnce());
 
       // Navigate to step 1
-      const nameInput = screen.getByLabelText(/Name/);
+      const nameInput = getStepZeroField(/Name/);
       await user.type(nameInput, "Test Agent");
       await user.click(screen.getByText("Next"));
 
@@ -445,7 +495,7 @@ describe("NewAgentDialog", () => {
       await waitFor(() => expect(mockFetchModels).toHaveBeenCalledOnce());
 
       // Step 0: Fill name
-      const nameInput = screen.getByLabelText(/Name/);
+      const nameInput = getStepZeroField(/Name/);
       await user.type(nameInput, "Test Agent");
 
       // Step 1: Navigate and select model
@@ -477,7 +527,7 @@ describe("NewAgentDialog", () => {
       await waitFor(() => expect(mockFetchModels).toHaveBeenCalledOnce());
 
       // Step 0: Fill name
-      const nameInput = screen.getByLabelText(/Name/);
+      const nameInput = getStepZeroField(/Name/);
       await user.type(nameInput, "Test Agent");
 
       // Step 1: Leave model as default
@@ -506,7 +556,7 @@ describe("NewAgentDialog", () => {
       await waitFor(() => expect(mockFetchModels).toHaveBeenCalledOnce());
 
       // Step 0: Fill name
-      const nameInput = screen.getByLabelText(/Name/);
+      const nameInput = getStepZeroField(/Name/);
       await user.type(nameInput, "Thinking Agent");
 
       // Step 1: Select model and thinking level
@@ -545,7 +595,7 @@ describe("NewAgentDialog", () => {
       await waitFor(() => expect(mockFetchModels).toHaveBeenCalledOnce());
 
       // Navigate to step 1 — should still show the dropdown (empty models)
-      const nameInput = screen.getByLabelText(/Name/);
+      const nameInput = getStepZeroField(/Name/);
       await user.type(nameInput, "Test Agent");
       await user.click(screen.getByText("Next"));
 
@@ -564,7 +614,7 @@ describe("NewAgentDialog", () => {
       await waitFor(() => expect(mockFetchModels).toHaveBeenCalledOnce());
 
       // Fill in name
-      const nameInput = screen.getByLabelText(/Name/);
+      const nameInput = getStepZeroField(/Name/);
       await user.type(nameInput, "Agent Name");
 
       // Navigate to step 1 and select model
@@ -588,7 +638,7 @@ describe("NewAgentDialog", () => {
       await waitFor(() => expect(mockFetchModels).toHaveBeenCalledTimes(2));
 
       // Name should be empty
-      const newNameInput = screen.getByLabelText(/Name/) as HTMLInputElement;
+      const newNameInput = getStepZeroField(/Name/) as HTMLInputElement;
       expect(newNameInput.value).toBe("");
     });
   });
@@ -600,6 +650,7 @@ describe("NewAgentDialog", () => {
           <NewAgentDialog isOpen={true} onClose={mockOnClose} onCreated={mockOnCreated} />,
         );
       });
+      openCustomTabSync();
       expect(screen.getByText("Generate with AI")).toBeTruthy();
     });
 
@@ -615,6 +666,7 @@ describe("NewAgentDialog", () => {
       expect(screen.queryByTestId("agent-generation-modal")).toBeNull();
 
       // Click the Generate with AI button
+      openCustomTabSync();
       await user.click(screen.getByText("Generate with AI"));
 
       // Generation modal should now be open
@@ -630,6 +682,7 @@ describe("NewAgentDialog", () => {
       await waitFor(() => expect(mockFetchModels).toHaveBeenCalledOnce());
 
       // Open generation modal and apply spec
+      openCustomTabSync();
       await user.click(screen.getByText("Generate with AI"));
       await user.click(screen.getByTestId("generation-modal-apply"));
 
@@ -656,6 +709,7 @@ describe("NewAgentDialog", () => {
       await waitFor(() => expect(mockFetchModels).toHaveBeenCalledOnce());
 
       // Open generation modal and apply spec with role "reviewer"
+      openCustomTabSync();
       await user.click(screen.getByText("Generate with AI"));
       await user.click(screen.getByTestId("generation-modal-apply"));
 
@@ -676,6 +730,7 @@ describe("NewAgentDialog", () => {
       await waitFor(() => expect(mockFetchModels).toHaveBeenCalledOnce());
 
       // Open generation modal and apply spec with unknown role "security-auditor"
+      openCustomTabSync();
       await user.click(screen.getByText("Generate with AI"));
       await user.click(screen.getByTestId("generation-modal-apply-custom-role"));
 
@@ -696,6 +751,7 @@ describe("NewAgentDialog", () => {
       await waitFor(() => expect(mockFetchModels).toHaveBeenCalledOnce());
 
       // Open generation modal and apply spec
+      openCustomTabSync();
       await user.click(screen.getByText("Generate with AI"));
       await user.click(screen.getByTestId("generation-modal-apply"));
 
@@ -714,10 +770,11 @@ describe("NewAgentDialog", () => {
       );
 
       // Fill in a name first
-      const nameInput = screen.getByLabelText(/Name/);
+      const nameInput = getStepZeroField(/Name/);
       await user.type(nameInput, "Manual Name");
 
       // Open generation modal
+      openCustomTabSync();
       await user.click(screen.getByText("Generate with AI"));
       expect(screen.getByTestId("agent-generation-modal")).toBeTruthy();
 
@@ -725,7 +782,7 @@ describe("NewAgentDialog", () => {
       await user.click(screen.getByTestId("generation-modal-close"));
 
       // Should still be on step 0 with original name
-      const nameAfter = screen.getByLabelText(/Name/) as HTMLInputElement;
+      const nameAfter = getStepZeroField(/Name/) as HTMLInputElement;
       expect(nameAfter.value).toBe("Manual Name");
       expect(screen.queryByTestId("agent-generation-modal")).toBeNull();
     });
@@ -739,6 +796,7 @@ describe("NewAgentDialog", () => {
       await waitFor(() => expect(mockFetchModels).toHaveBeenCalledOnce());
 
       // Open generation modal and apply spec
+      openCustomTabSync();
       await user.click(screen.getByText("Generate with AI"));
       await user.click(screen.getByTestId("generation-modal-apply"));
 
@@ -763,23 +821,31 @@ describe("NewAgentDialog", () => {
   });
 
   describe("preset selection", () => {
-    it("renders all 20 preset cards in step 0", async () => {
+    it("renders all 20 preset cards in the preset tab", async () => {
+      const user = userEvent.setup();
       await act(async () => {
         render(
           <NewAgentDialog isOpen={true} onClose={mockOnClose} onCreated={mockOnCreated} />,
         );
       });
+
+      await openPresetTab(user);
+
       const presetCards = screen.getAllByTestId(/^preset-/);
       expect(presetCards).toHaveLength(20);
     });
 
-    it("shows the quick start header text", async () => {
+    it("shows the preset tab header text", async () => {
+      const user = userEvent.setup();
       await act(async () => {
         render(
           <NewAgentDialog isOpen={true} onClose={mockOnClose} onCreated={mockOnCreated} />,
         );
       });
-      expect(screen.getByText("Choose a preset or fill in details manually")).toBeTruthy();
+
+      await openPresetTab(user);
+
+      expect(screen.getByText("Choose a preset persona to prefill role, identity, soul, and instructions")).toBeTruthy();
     });
 
     it("clicking a preset populates name, title, icon, and role", async () => {
@@ -791,16 +857,18 @@ describe("NewAgentDialog", () => {
       await waitFor(() => expect(mockFetchModels).toHaveBeenCalledOnce());
 
       // Click the "Engineer" preset
+      await openPresetTab(user);
       await user.click(screen.getByTestId("preset-engineer"));
 
       // Should advance to step 1 (model config), go back to verify fields
       await user.click(screen.getByText("Back"));
+      await openCustomTab(user);
 
       // Verify form fields were populated
-      const nameInput = screen.getByLabelText(/Name/) as HTMLInputElement;
+      const nameInput = getStepZeroField(/Name/) as HTMLInputElement;
       expect(nameInput.value).toBe("Engineer");
 
-      const titleInput = screen.getByLabelText(/Title/) as HTMLInputElement;
+      const titleInput = getStepZeroField(/Title/) as HTMLInputElement;
       // Title should be set to the preset's description (not the professional title)
       expect(titleInput.value).toBe("Implements features, fixes bugs, and writes well-tested code across the full application stack.");
 
@@ -819,6 +887,7 @@ describe("NewAgentDialog", () => {
       await waitFor(() => expect(mockFetchModels).toHaveBeenCalledOnce());
 
       // Click the "CTO" preset
+      await openPresetTab(user);
       await user.click(screen.getByTestId("preset-cto"));
 
       // Should be on step 1 — model dropdown visible
@@ -834,6 +903,7 @@ describe("NewAgentDialog", () => {
       await waitFor(() => expect(mockFetchModels).toHaveBeenCalledOnce());
 
       // Click the "CEO" preset
+      await openPresetTab(user);
       await user.click(screen.getByTestId("preset-ceo"));
 
       // Go back to step 0 to verify visual feedback
@@ -852,10 +922,12 @@ describe("NewAgentDialog", () => {
       await waitFor(() => expect(mockFetchModels).toHaveBeenCalledOnce());
 
       // Click CEO preset
+      await openPresetTab(user);
       await user.click(screen.getByTestId("preset-ceo"));
       await user.click(screen.getByText("Back"));
 
       // Click CTO preset
+      await openPresetTab(user);
       await user.click(screen.getByTestId("preset-cto"));
       await user.click(screen.getByText("Back"));
 
@@ -864,7 +936,8 @@ describe("NewAgentDialog", () => {
       expect(screen.getByTestId("preset-ceo").classList.contains("selected")).toBe(false);
 
       // Name should be updated
-      const nameInput = screen.getByLabelText(/Name/) as HTMLInputElement;
+      await openCustomTab(user);
+      const nameInput = getStepZeroField(/Name/) as HTMLInputElement;
       expect(nameInput.value).toBe("CTO");
     });
 
@@ -877,11 +950,13 @@ describe("NewAgentDialog", () => {
       await waitFor(() => expect(mockFetchModels).toHaveBeenCalledOnce());
 
       // Select a preset
+      await openPresetTab(user);
       await user.click(screen.getByTestId("preset-engineer"));
       await user.click(screen.getByText("Back"));
+      await openCustomTab(user);
 
       // Override the name manually
-      const nameInput = screen.getByLabelText(/Name/) as HTMLInputElement;
+      const nameInput = getStepZeroField(/Name/) as HTMLInputElement;
       await user.clear(nameInput);
       await user.type(nameInput, "My Custom Engineer");
 
@@ -897,6 +972,7 @@ describe("NewAgentDialog", () => {
       await waitFor(() => expect(mockFetchModels).toHaveBeenCalledOnce());
 
       // Select a preset
+      await openPresetTab(user);
       await user.click(screen.getByTestId("preset-ceo"));
 
       // Close the dialog
@@ -914,10 +990,11 @@ describe("NewAgentDialog", () => {
       await waitFor(() => expect(mockFetchModels).toHaveBeenCalledTimes(2));
 
       // Name should be empty (no preset selected)
-      const nameInput = screen.getByLabelText(/Name/) as HTMLInputElement;
+      const nameInput = getStepZeroField(/Name/) as HTMLInputElement;
       expect(nameInput.value).toBe("");
 
       // No preset cards should be selected
+      await openPresetTab(user);
       const selectedCards = document.querySelectorAll(".agent-preset-card.selected");
       expect(selectedCards).toHaveLength(0);
     });
@@ -931,6 +1008,7 @@ describe("NewAgentDialog", () => {
       await waitFor(() => expect(mockFetchModels).toHaveBeenCalledOnce());
 
       // Click the "Reviewer" preset (advances to step 1)
+      await openPresetTab(user);
       await user.click(screen.getByTestId("preset-reviewer"));
 
       // Step 1: navigate to summary
@@ -964,11 +1042,14 @@ describe("NewAgentDialog", () => {
     });
 
     it("preset card titles show the professional title", async () => {
+      const user = userEvent.setup();
       await act(async () => {
         render(
           <NewAgentDialog isOpen={true} onClose={mockOnClose} onCreated={mockOnCreated} />,
         );
       });
+
+      await openPresetTab(user);
 
       const ceoCard = screen.getByTestId("preset-ceo");
       expect(ceoCard.getAttribute("title")).toBe("Chief Executive Officer");
@@ -978,11 +1059,14 @@ describe("NewAgentDialog", () => {
     });
 
     it("renders descriptions in all 20 preset cards", async () => {
+      const user = userEvent.setup();
       await act(async () => {
         render(
           <NewAgentDialog isOpen={true} onClose={mockOnClose} onCreated={mockOnCreated} />,
         );
       });
+
+      await openPresetTab(user);
 
       // Every preset should have a description element rendered
       const descriptionElements = screen.getAllByText(/.\./, {
@@ -998,11 +1082,14 @@ describe("NewAgentDialog", () => {
 
     it("all presets have non-empty description strings", async () => {
       // Import the array directly by checking the rendered cards
+      const user = userEvent.setup();
       await act(async () => {
         render(
           <NewAgentDialog isOpen={true} onClose={mockOnClose} onCreated={mockOnCreated} />,
         );
       });
+
+      await openPresetTab(user);
 
       const presetIds = [
         "ceo", "cto", "cmo", "cfo", "engineer", "backend-engineer",
@@ -1029,12 +1116,14 @@ describe("NewAgentDialog", () => {
       await waitFor(() => expect(mockFetchModels).toHaveBeenCalledOnce());
 
       // Click the CEO preset
+      await openPresetTab(user);
       await user.click(screen.getByTestId("preset-ceo"));
 
       // Go back to verify the title field
       await user.click(screen.getByText("Back"));
+      await openCustomTab(user);
 
-      const titleInput = screen.getByLabelText(/Title/) as HTMLInputElement;
+      const titleInput = getStepZeroField(/Title/) as HTMLInputElement;
       expect(titleInput.value).toBe("Oversees project strategy, sets priorities, and coordinates between departments to ensure alignment with business goals.");
     });
 
@@ -1046,6 +1135,7 @@ describe("NewAgentDialog", () => {
       });
 
       // On initial render (step 0, no preset), the * required indicator should be visible
+      openCustomTabSync();
       const nameLabel = screen.getByText("Name", { selector: "label" });
       const requiredSpan = nameLabel.querySelector(".agent-dialog-required");
       expect(requiredSpan).toBeTruthy();
@@ -1061,10 +1151,12 @@ describe("NewAgentDialog", () => {
       await waitFor(() => expect(mockFetchModels).toHaveBeenCalledOnce());
 
       // Select a preset
+      await openPresetTab(user);
       await user.click(screen.getByTestId("preset-engineer"));
 
       // Preset advances to step 1, go back to step 0
       await user.click(screen.getByText("Back"));
+      await openCustomTab(user);
 
       // The * required indicator should NOT be visible when a preset is selected
       const nameLabel = screen.getByText("Name", { selector: "label" });
@@ -1081,13 +1173,15 @@ describe("NewAgentDialog", () => {
       await waitFor(() => expect(mockFetchModels).toHaveBeenCalledOnce());
 
       // Select a preset (this fills the name and advances to step 1)
+      await openPresetTab(user);
       await user.click(screen.getByTestId("preset-ceo"));
 
       // Go back to step 0
       await user.click(screen.getByText("Back"));
+      await openCustomTab(user);
 
       // Clear the name field
-      const nameInput = screen.getByLabelText(/Name/) as HTMLInputElement;
+      const nameInput = getStepZeroField(/Name/) as HTMLInputElement;
       await user.clear(nameInput);
       expect(nameInput.value).toBe("");
 
@@ -1115,6 +1209,7 @@ describe("NewAgentDialog", () => {
       await waitFor(() => expect(mockFetchModels).toHaveBeenCalledOnce());
 
       // Click the QA Engineer preset
+      await openPresetTab(user);
       await user.click(screen.getByTestId("preset-qa-engineer"));
 
       // Navigate to summary and create
@@ -1143,13 +1238,15 @@ describe("NewAgentDialog", () => {
       await waitFor(() => expect(mockFetchModels).toHaveBeenCalledOnce());
 
       // Select a preset (advances to step 1)
+      await openPresetTab(user);
       await user.click(screen.getByTestId("preset-engineer"));
 
       // Go back to step 0 to override instructions
       await user.click(screen.getByText("Back"));
+      await openCustomTab(user);
 
       // Override the instructionsText manually
-      const instructionsTextarea = screen.getByLabelText(/Inline Instructions/) as HTMLTextAreaElement;
+      const instructionsTextarea = getStepZeroField(/Inline Instructions/) as HTMLTextAreaElement;
       await user.clear(instructionsTextarea);
       await user.type(instructionsTextarea, "My custom instructions");
 
@@ -1178,17 +1275,19 @@ describe("NewAgentDialog", () => {
       await waitFor(() => expect(mockFetchModels).toHaveBeenCalledOnce());
 
       // Click the CTO preset
+      await openPresetTab(user);
       await user.click(screen.getByTestId("preset-cto"));
 
       // Go back to step 0 to verify fields
       await user.click(screen.getByText("Back"));
+      await openCustomTab(user);
 
       // Verify soul was populated
-      const soulTextarea = screen.getByLabelText(/Soul/) as HTMLTextAreaElement;
+      const soulTextarea = getStepZeroField(/Soul/) as HTMLTextAreaElement;
       expect(soulTextarea.value).toContain("pragmatic technologist");
 
       // Verify instructionsText was populated
-      const instructionsTextarea = screen.getByLabelText(/Inline Instructions/) as HTMLTextAreaElement;
+      const instructionsTextarea = getStepZeroField(/Inline Instructions/) as HTMLTextAreaElement;
       expect(instructionsTextarea.value).toContain("Evaluate technology choices");
     });
 
@@ -1201,23 +1300,27 @@ describe("NewAgentDialog", () => {
       await waitFor(() => expect(mockFetchModels).toHaveBeenCalledOnce());
 
       // Select CEO preset
+      await openPresetTab(user);
       await user.click(screen.getByTestId("preset-ceo"));
       await user.click(screen.getByText("Back"));
 
       // Verify CEO soul is set
-      let soulTextarea = screen.getByLabelText(/Soul/) as HTMLTextAreaElement;
+      await openCustomTab(user);
+      let soulTextarea = getStepZeroField(/Soul/) as HTMLTextAreaElement;
       expect(soulTextarea.value).toContain("strategic leader");
 
       // Select a different preset (DevOps Engineer)
+      await openPresetTab(user);
       await user.click(screen.getByTestId("preset-devops-engineer"));
       await user.click(screen.getByText("Back"));
+      await openCustomTab(user);
 
       // Verify soul updated to DevOps
-      soulTextarea = screen.getByLabelText(/Soul/) as HTMLTextAreaElement;
+      soulTextarea = getStepZeroField(/Soul/) as HTMLTextAreaElement;
       expect(soulTextarea.value).toContain("infrastructure-minded engineer");
 
       // Verify instructions updated
-      const instructionsTextarea = screen.getByLabelText(/Inline Instructions/) as HTMLTextAreaElement;
+      const instructionsTextarea = getStepZeroField(/Inline Instructions/) as HTMLTextAreaElement;
       expect(instructionsTextarea.value).toContain("rollback plan");
     });
 
@@ -1230,6 +1333,7 @@ describe("NewAgentDialog", () => {
       await waitFor(() => expect(mockFetchModels).toHaveBeenCalledOnce());
 
       // Select a preset
+      await openPresetTab(user);
       await user.click(screen.getByTestId("preset-cto"));
 
       // Close the dialog — wait for the state updates to flush before unmounting
@@ -1245,10 +1349,10 @@ describe("NewAgentDialog", () => {
       await waitFor(() => expect(mockFetchModels).toHaveBeenCalledTimes(2));
 
       // Soul and instructionsText should be empty
-      const soulTextarea = screen.getByLabelText(/Soul/) as HTMLTextAreaElement;
+      const soulTextarea = getStepZeroField(/Soul/) as HTMLTextAreaElement;
       expect(soulTextarea.value).toBe("");
 
-      const instructionsTextarea = screen.getByLabelText(/Inline Instructions/) as HTMLTextAreaElement;
+      const instructionsTextarea = getStepZeroField(/Inline Instructions/) as HTMLTextAreaElement;
       expect(instructionsTextarea.value).toBe("");
     });
   });
@@ -1268,7 +1372,7 @@ describe("NewAgentDialog", () => {
       await waitFor(() => expect(mockFetchModels).toHaveBeenCalledOnce());
 
       const user = userEvent.setup();
-      const nameInput = screen.getByLabelText(/Name/);
+      const nameInput = getStepZeroField(/Name/);
       await user.type(nameInput, "Test Agent");
       await user.click(screen.getByText("Next"));
 
@@ -1300,7 +1404,7 @@ describe("NewAgentDialog", () => {
       });
 
       const user = userEvent.setup();
-      const nameInput = screen.getByLabelText(/Name/);
+      const nameInput = getStepZeroField(/Name/);
       await user.type(nameInput, "Test Agent");
       await user.click(screen.getByText("Next"));
 
@@ -1327,7 +1431,7 @@ describe("NewAgentDialog", () => {
       await waitFor(() => expect(mockFetchModels).toHaveBeenCalledOnce());
 
       // Navigate to step 1
-      const nameInput = screen.getByLabelText(/Name/);
+      const nameInput = getStepZeroField(/Name/);
       await user.type(nameInput, "Test Agent");
       await user.click(screen.getByText("Next"));
 
@@ -1344,7 +1448,7 @@ describe("NewAgentDialog", () => {
       await waitFor(() => expect(mockFetchModels).toHaveBeenCalledOnce());
 
       // Navigate to step 1 and add a skill
-      const nameInput = screen.getByLabelText(/Name/);
+      const nameInput = getStepZeroField(/Name/);
       await user.type(nameInput, "Test Agent");
       await user.click(screen.getByText("Next"));
 
@@ -1367,7 +1471,7 @@ describe("NewAgentDialog", () => {
       await waitFor(() => expect(mockFetchModels).toHaveBeenCalledOnce());
 
       // Navigate to step 1
-      const nameInput = screen.getByLabelText(/Name/);
+      const nameInput = getStepZeroField(/Name/);
       await user.type(nameInput, "Test Agent");
       await user.click(screen.getByText("Next"));
 
@@ -1396,7 +1500,7 @@ describe("NewAgentDialog", () => {
       await waitFor(() => expect(mockFetchModels).toHaveBeenCalledOnce());
 
       // Navigate through steps without adding skills
-      const nameInput = screen.getByLabelText(/Name/);
+      const nameInput = getStepZeroField(/Name/);
       await user.type(nameInput, "Test Agent");
       await user.click(screen.getByText("Next"));
       await user.click(screen.getByText("Next"));

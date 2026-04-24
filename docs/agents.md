@@ -181,7 +181,12 @@ There are two ways to provide custom instructions:
 
 ## New Agent Presets (Dashboard UI)
 
-The New Agent dialog in the dashboard provides quick-start presets for common agent roles. Each preset includes:
+The New Agent dialog keeps the existing 3-step flow, and step 0 is split into two tabs:
+
+- **Preset personas** (default) — quick-start persona cards that prefill the same fields and immediately advance to step 1 when selected
+- **Custom agent** — manual setup for identity, configuration, and the Generate with AI entry point
+
+The dashboard provides quick-start presets for common agent roles. Each preset includes:
 
 - **Name and icon** - Display identification
 - **Professional title** - Descriptive role title

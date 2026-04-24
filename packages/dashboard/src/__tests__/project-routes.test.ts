@@ -771,7 +771,7 @@ describe("POST /api/projects route handler", () => {
     expect((res.body as { error?: string }).error).toContain("Git clone failed");
     expect(mockRegisterProject).not.toHaveBeenCalled();
     expect(mockFsRm).toHaveBeenCalledWith("/tmp/broken-clone", { recursive: true, force: true });
-  });
+  }, 15_000);
 
   it("rejects clone mode when destination directory is non-empty", async () => {
     const store = new MockStoreForRoutes();

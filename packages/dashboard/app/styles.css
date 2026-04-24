@@ -29537,9 +29537,52 @@ html .column.drag-over * {
   border-bottom: 1px solid var(--border);
 }
 
+.agent-dialog-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-lg);
+}
+
+.agent-dialog-tab {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  color: var(--text-muted);
+  padding: var(--space-sm) var(--space-md);
+  font-size: calc(var(--space-sm) + var(--space-xs));
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background var(--transition-fast), color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.agent-dialog-tab:hover {
+  border-color: var(--todo);
+  color: var(--text);
+  background: var(--card-hover);
+}
+
+.agent-dialog-tab:focus-visible {
+  outline: none;
+  border-color: var(--todo);
+  box-shadow: var(--focus-ring-strong);
+}
+
+.agent-dialog-tab.active {
+  border-color: var(--todo);
+  color: var(--text);
+  background: color-mix(in srgb, var(--todo) 12%, transparent);
+}
+
+.agent-dialog-tab-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
 .agent-role-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(calc(var(--space-xl) * 3 + var(--space-sm)), 1fr));
   gap: var(--space-sm);
 }
 
@@ -29684,10 +29727,10 @@ html .column.drag-over * {
 
 .agent-presets-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(calc(var(--space-xl) * 5 + var(--space-lg) + var(--space-xs)), 1fr));
   gap: var(--space-sm);
   margin-bottom: var(--space-lg);
-  max-height: 400px;
+  max-height: calc(var(--space-xl) * 16 + var(--space-lg));
   overflow-y: auto;
 }
 
@@ -29708,6 +29751,12 @@ html .column.drag-over * {
 .agent-preset-card:hover {
   border-color: var(--todo);
   background: var(--bg-tertiary);
+}
+
+.agent-preset-card:focus-visible {
+  outline: none;
+  border-color: var(--todo);
+  box-shadow: var(--focus-ring-strong);
 }
 
 .agent-preset-card.selected {
@@ -34708,6 +34757,17 @@ html .column.drag-over * {
     flex: 1;
     width: auto;
     height: calc(var(--space-xs) - var(--space-xs) * 0.25);
+  }
+
+  .agent-dialog-tabs {
+    grid-template-columns: 1fr;
+    gap: calc(var(--space-sm) - var(--space-xs) * 0.5);
+    margin-bottom: var(--space-md);
+  }
+
+  .agent-dialog-tab {
+    min-height: calc(var(--space-lg) * 2 + var(--space-xs));
+    text-align: left;
   }
 
   /* Agent Import specific */

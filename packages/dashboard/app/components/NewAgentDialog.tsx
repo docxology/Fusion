@@ -35,8 +35,11 @@ interface RuntimeConfig {
   maxTurns: number;
 }
 
+type StepZeroTab = "presets" | "custom";
+
 export function NewAgentDialog({ isOpen, onClose, onCreated, projectId }: NewAgentDialogProps) {
   const [step, setStep] = useState(0);
+  const [stepZeroTab, setStepZeroTab] = useState<StepZeroTab>("presets");
   const [name, setName] = useState("");
   const [title, setTitle] = useState("");
   const [icon, setIcon] = useState("");
@@ -181,6 +184,7 @@ export function NewAgentDialog({ isOpen, onClose, onCreated, projectId }: NewAge
 
   const handleClose = () => {
     setStep(0);
+    setStepZeroTab("presets");
     setName("");
     setTitle("");
     setIcon("");
@@ -265,161 +269,208 @@ export function NewAgentDialog({ isOpen, onClose, onCreated, projectId }: NewAge
         <div className="agent-dialog-body">
           {step === 0 && (
             <div>
-              {/* Quick Start Presets */}
-              <div className="agent-presets">
-                <div className="agent-presets-header">
-                  Choose a preset or fill in details manually
-                </div>
-                <div className="agent-presets-grid">
-                  {AGENT_PRESETS.map(preset => (
-                    <button
-                      key={preset.id}
-                      type="button"
-                      className={`agent-preset-card${selectedPresetId === preset.id ? " selected" : ""}`}
-                      data-testid={`preset-${preset.id}`}
-                      onClick={() => handlePresetSelect(preset)}
-                      title={preset.title}
-                    >
-                      <span className="agent-preset-icon">{preset.icon}</span>
-                      <span className="agent-preset-name">{preset.name}</span>
-                      <span className="agent-preset-role">{preset.role}</span>
-                      {preset.description && (
-                        <span className="agent-preset-description">{preset.description}</span>
-                      )}
-                    </button>
-                  ))}
-                </div>
+              <div className="agent-dialog-tabs" role="tablist" aria-label="Agent setup mode">
+                <button
+                  id="agent-dialog-tab-presets"
+                  type="button"
+                  role="tab"
+                  aria-controls="agent-dialog-panel-presets"
+                  aria-selected={stepZeroTab === "presets"}
+                  tabIndex={stepZeroTab === "presets" ? 0 : -1}
+                  className={`agent-dialog-tab${stepZeroTab === "presets" ? " active" : ""}`}
+                  onClick={() => setStepZeroTab("presets")}
+                  data-testid="agent-dialog-tab-presets"
+                >
+                  Preset personas
+                </button>
+                <button
+                  id="agent-dialog-tab-custom"
+                  type="button"
+                  role="tab"
+                  aria-controls="agent-dialog-panel-custom"
+                  aria-selected={stepZeroTab === "custom"}
+                  tabIndex={stepZeroTab === "custom" ? 0 : -1}
+                  className={`agent-dialog-tab${stepZeroTab === "custom" ? " active" : ""}`}
+                  onClick={() => setStepZeroTab("custom")}
+                  data-testid="agent-dialog-tab-custom"
+                >
+                  Custom agent
+                </button>
               </div>
-              <div className="agent-dialog-section">
-                <div className="agent-dialog-section-header">Identity</div>
-                <div className="agent-dialog-field">
-                  <label htmlFor="agent-name">Name {!selectedPresetId && <span className="agent-dialog-required">*</span>}</label>
-                  <input
-                    id="agent-name"
-                    type="text"
-                    className="input"
-                    placeholder="e.g. Frontend Reviewer"
-                    value={name}
-                    onChange={e => setName(e.target.value)}
-                  />
-                </div>
-                <div className="agent-dialog-field">
-                  <label htmlFor="agent-title">Title <span className="agent-dialog-optional">(optional)</span></label>
-                  <input
-                    id="agent-title"
-                    type="text"
-                    className="input"
-                    placeholder="e.g. Senior Code Reviewer"
-                    value={title}
-                    onChange={e => setTitle(e.target.value)}
-                  />
-                </div>
-                <div className="agent-dialog-field">
-                  <label htmlFor="agent-icon">Icon <span className="agent-dialog-optional">(optional)</span></label>
-                  <input
-                    id="agent-icon"
-                    type="text"
-                    className="input"
-                    placeholder="e.g. 🤖"
-                    value={icon}
-                    onChange={e => setIcon(e.target.value)}
-                  />
-                </div>
-                <div className="agent-dialog-field">
-                  <label>Role</label>
-                  <div className="agent-role-grid">
-                    {AGENT_ROLES.map(r => (
-                      <button
-                        key={r.value}
-                        type="button"
-                        className={`agent-role-option${role === r.value ? " selected" : ""}`}
-                        onClick={() => setRole(r.value)}
-                      >
-                        <span className="agent-role-option-icon">{r.icon}</span>
-                        <span className="agent-role-option-label">{r.label}</span>
-                      </button>
-                    ))}
+
+              {stepZeroTab === "presets" && (
+                <div
+                  id="agent-dialog-panel-presets"
+                  className="agent-dialog-tab-panel"
+                  role="tabpanel"
+                  aria-labelledby="agent-dialog-tab-presets"
+                >
+                  <div className="agent-presets">
+                    <div className="agent-presets-header">
+                      Choose a preset persona to prefill role, identity, soul, and instructions
+                    </div>
+                    <div className="agent-presets-grid">
+                      {AGENT_PRESETS.map(preset => (
+                        <button
+                          key={preset.id}
+                          type="button"
+                          className={`agent-preset-card${selectedPresetId === preset.id ? " selected" : ""}`}
+                          data-testid={`preset-${preset.id}`}
+                          onClick={() => handlePresetSelect(preset)}
+                          title={preset.title}
+                        >
+                          <span className="agent-preset-icon">{preset.icon}</span>
+                          <span className="agent-preset-name">{preset.name}</span>
+                          <span className="agent-preset-role">{preset.role}</span>
+                          {preset.description && (
+                            <span className="agent-preset-description">{preset.description}</span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
-              </div>
-              <div className="agent-dialog-section">
-                <div className="agent-dialog-section-header">Configuration</div>
-                <div className="agent-dialog-field">
-                  <label htmlFor="agent-reports-to">Reports To <span className="agent-dialog-optional">(optional)</span></label>
-                  <select
-                    id="agent-reports-to"
-                    className="select"
-                    value={reportsTo}
-                    onChange={e => setReportsTo(e.target.value)}
-                    disabled={managersLoading}
-                  >
-                    <option value="">No manager</option>
-                    {availableManagers.map((manager) => (
-                      <option key={manager.id} value={manager.id}>
-                        {manager.name} ({manager.id})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="agent-dialog-field">
-                  <label htmlFor="agent-soul">Soul <span className="agent-dialog-optional">(optional)</span></label>
-                  <textarea
-                    id="agent-soul"
-                    className="input"
-                    rows={2}
-                    placeholder="Describe the agent's personality and communication style..."
-                    value={soul}
-                    onChange={e => setSoul(e.target.value)}
-                  />
-                </div>
-                <div className="agent-dialog-field">
-                  <label htmlFor="agent-memory">Agent Memory <span className="agent-dialog-optional">(optional)</span></label>
-                  <textarea
-                    id="agent-memory"
-                    className="input"
-                    rows={2}
-                    placeholder="Private to this agent — durable preferences, operating habits, and context it should carry across tasks..."
-                    value={memory}
-                    onChange={e => setMemory(e.target.value)}
-                  />
-                </div>
-                <div className="agent-dialog-field">
-                  <label htmlFor="agent-instructions-path">Instructions Path <span className="agent-dialog-optional">(optional)</span></label>
-                  <input
-                    id="agent-instructions-path"
-                    type="text"
-                    className="input"
-                    placeholder="e.g. .fusion/agents/reviewer.md"
-                    value={instructionsPath}
-                    onChange={e => setInstructionsPath(e.target.value)}
-                  />
-                </div>
-                <div className="agent-dialog-field">
-                  <label htmlFor="agent-instructions-text">Inline Instructions <span className="agent-dialog-optional">(optional)</span></label>
-                  <textarea
-                    id="agent-instructions-text"
-                    className="input"
-                    rows={4}
-                    placeholder="Add custom behavior instructions..."
-                    value={instructionsText}
-                    onChange={e => setInstructionsText(e.target.value)}
-                  />
-                </div>
-              </div>
-              {/* AI-assisted generation */}
-              <div className="agent-dialog-ai-generate">
-                <button
-                  type="button"
-                  className="btn btn--ai-generate"
-                  onClick={() => setIsGenerationModalOpen(true)}
+              )}
+
+              {stepZeroTab === "custom" && (
+                <div
+                  id="agent-dialog-panel-custom"
+                  className="agent-dialog-tab-panel"
+                  role="tabpanel"
+                  aria-labelledby="agent-dialog-tab-custom"
                 >
-                  <span>✨</span>
-                  Generate with AI
-                </button>
-                <p className="agent-dialog-ai-hint">
-                  Describe your agent&apos;s role and let AI generate a specification
-                </p>
-              </div>
+                  <div className="agent-dialog-section">
+                    <div className="agent-dialog-section-header">Identity</div>
+                    <div className="agent-dialog-field">
+                      <label htmlFor="agent-name">Name {!selectedPresetId && <span className="agent-dialog-required">*</span>}</label>
+                      <input
+                        id="agent-name"
+                        type="text"
+                        className="input"
+                        placeholder="e.g. Frontend Reviewer"
+                        value={name}
+                        onChange={e => setName(e.target.value)}
+                      />
+                    </div>
+                    <div className="agent-dialog-field">
+                      <label htmlFor="agent-title">Title <span className="agent-dialog-optional">(optional)</span></label>
+                      <input
+                        id="agent-title"
+                        type="text"
+                        className="input"
+                        placeholder="e.g. Senior Code Reviewer"
+                        value={title}
+                        onChange={e => setTitle(e.target.value)}
+                      />
+                    </div>
+                    <div className="agent-dialog-field">
+                      <label htmlFor="agent-icon">Icon <span className="agent-dialog-optional">(optional)</span></label>
+                      <input
+                        id="agent-icon"
+                        type="text"
+                        className="input"
+                        placeholder="e.g. 🤖"
+                        value={icon}
+                        onChange={e => setIcon(e.target.value)}
+                      />
+                    </div>
+                    <div className="agent-dialog-field">
+                      <label>Role</label>
+                      <div className="agent-role-grid">
+                        {AGENT_ROLES.map(r => (
+                          <button
+                            key={r.value}
+                            type="button"
+                            className={`agent-role-option${role === r.value ? " selected" : ""}`}
+                            onClick={() => setRole(r.value)}
+                          >
+                            <span className="agent-role-option-icon">{r.icon}</span>
+                            <span className="agent-role-option-label">{r.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="agent-dialog-section">
+                    <div className="agent-dialog-section-header">Configuration</div>
+                    <div className="agent-dialog-field">
+                      <label htmlFor="agent-reports-to">Reports To <span className="agent-dialog-optional">(optional)</span></label>
+                      <select
+                        id="agent-reports-to"
+                        className="select"
+                        value={reportsTo}
+                        onChange={e => setReportsTo(e.target.value)}
+                        disabled={managersLoading}
+                      >
+                        <option value="">No manager</option>
+                        {availableManagers.map((manager) => (
+                          <option key={manager.id} value={manager.id}>
+                            {manager.name} ({manager.id})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="agent-dialog-field">
+                      <label htmlFor="agent-soul">Soul <span className="agent-dialog-optional">(optional)</span></label>
+                      <textarea
+                        id="agent-soul"
+                        className="input"
+                        rows={2}
+                        placeholder="Describe the agent's personality and communication style..."
+                        value={soul}
+                        onChange={e => setSoul(e.target.value)}
+                      />
+                    </div>
+                    <div className="agent-dialog-field">
+                      <label htmlFor="agent-memory">Agent Memory <span className="agent-dialog-optional">(optional)</span></label>
+                      <textarea
+                        id="agent-memory"
+                        className="input"
+                        rows={2}
+                        placeholder="Private to this agent — durable preferences, operating habits, and context it should carry across tasks..."
+                        value={memory}
+                        onChange={e => setMemory(e.target.value)}
+                      />
+                    </div>
+                    <div className="agent-dialog-field">
+                      <label htmlFor="agent-instructions-path">Instructions Path <span className="agent-dialog-optional">(optional)</span></label>
+                      <input
+                        id="agent-instructions-path"
+                        type="text"
+                        className="input"
+                        placeholder="e.g. .fusion/agents/reviewer.md"
+                        value={instructionsPath}
+                        onChange={e => setInstructionsPath(e.target.value)}
+                      />
+                    </div>
+                    <div className="agent-dialog-field">
+                      <label htmlFor="agent-instructions-text">Inline Instructions <span className="agent-dialog-optional">(optional)</span></label>
+                      <textarea
+                        id="agent-instructions-text"
+                        className="input"
+                        rows={4}
+                        placeholder="Add custom behavior instructions..."
+                        value={instructionsText}
+                        onChange={e => setInstructionsText(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  {/* AI-assisted generation */}
+                  <div className="agent-dialog-ai-generate">
+                    <button
+                      type="button"
+                      className="btn btn--ai-generate"
+                      onClick={() => setIsGenerationModalOpen(true)}
+                    >
+                      <span>✨</span>
+                      Generate with AI
+                    </button>
+                    <p className="agent-dialog-ai-hint">
+                      Describe your agent&apos;s role and let AI generate a specification
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
