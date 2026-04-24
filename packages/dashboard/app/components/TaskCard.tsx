@@ -995,7 +995,7 @@ function TaskCardComponent({
               aria-expanded={showSteps}
               aria-label={showSteps ? "Hide steps" : "Show steps"}
             >
-              <span>{unifiedProgress.total} steps</span>
+              <span>{unifiedProgress.total} step{unifiedProgress.total === 1 ? "" : "s"}</span>
               <ChevronDown
                 size={14}
                 className={`card-steps-toggle-icon${showSteps ? " expanded" : ""}`}

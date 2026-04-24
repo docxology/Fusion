@@ -113,6 +113,21 @@ describe("TaskCard", () => {
     expect(screen.getByText("5 steps")).toBeDefined();
   });
 
+  it("uses singular step label when unified progress total is one", () => {
+    render(
+      <TaskCard
+        task={makeTask({
+          steps: [{ name: "Step 0", status: "done" }],
+        })}
+        onOpenDetail={noop}
+        addToast={noop}
+      />,
+    );
+
+    expect(screen.getByText("1 step")).toBeDefined();
+    expect(screen.queryByText("1 steps")).toBeNull();
+  });
+
   it("renders workflow checks after normal steps with mapped statuses", () => {
     const { container } = render(
       <TaskCard

@@ -2220,6 +2220,25 @@ describe("TaskDetailModal", () => {
       expect((segments[3] as HTMLElement).style.backgroundColor).toBe("var(--text-dim, #484f58)");
     });
 
+    it("displays singular completion label for one-step tasks", () => {
+      render(
+        <TaskDetailModal
+          task={makeTask({
+            steps: [{ name: "Step 1", status: "done" }],
+          })}
+          onClose={noop}
+          onMoveTask={noopMove}
+          onDeleteTask={noopDelete}
+          onMergeTask={noopMerge}
+          onOpenDetail={noopOpenDetail}
+          addToast={noop}
+        />,
+      );
+
+      expect(screen.getByText("1/1 step")).toBeTruthy();
+      expect(screen.queryByText("1/1 steps")).toBeNull();
+    });
+
     it("displays correct completion count", () => {
       render(
         <TaskDetailModal
@@ -2241,6 +2260,7 @@ describe("TaskDetailModal", () => {
       );
 
       expect(screen.getByText("2/4 steps")).toBeTruthy();
+      expect(screen.queryByText("2/4 step")).toBeNull();
     });
 
     it("has data-tooltip attribute with step name and status on each segment", () => {

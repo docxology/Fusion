@@ -1563,6 +1563,25 @@ describe("TaskCard steps toggle", () => {
     expect(toggle.textContent).toContain("2 steps");
   });
 
+  it("shows singular step label for one-step tasks", () => {
+    const task = makeTask({
+      column: "todo",
+      steps: [{ name: "Only step", status: "pending" }],
+    });
+
+    render(
+      <TaskCard
+        task={task}
+        onOpenDetail={vi.fn()}
+        addToast={noopToast}
+      />
+    );
+
+    const toggle = screen.getByRole("button", { name: /Show steps/i });
+    expect(toggle.textContent).toContain("1 step");
+    expect(toggle.textContent).not.toContain("1 steps");
+  });
+
   it("clicking toggle expands and shows step list", () => {
     // Use 'todo' column to test default collapsed behavior
     const task = makeTask({

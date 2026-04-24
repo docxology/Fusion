@@ -1415,7 +1415,7 @@ export function TaskDetailModal({
                   ))}
                 </div>
                 <span className="step-progress-label">
-                  {workingTask.steps.filter(s => s.status === "done").length}/{workingTask.steps.length} steps
+                  {workingTask.steps.filter(s => s.status === "done").length}/{workingTask.steps.length} step{workingTask.steps.length === 1 ? "" : "s"}
                 </span>
               </div>
             ) : (
