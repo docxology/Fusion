@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import type { Task, TaskCreateInput } from "@fusion/core";
+import { DEFAULT_TASK_PRIORITY, type Task, type TaskCreateInput, type TaskPriority } from "@fusion/core";
 import { getErrorMessage } from "@fusion/core";
 import type { ToastType } from "../hooks/useToast";
 import { uploadAttachment, fetchAgents } from "../api";
@@ -35,6 +35,7 @@ export function NewTaskModal({ isOpen, onClose, projectId, tasks, onCreateTask, 
   const [selectedWorkflowSteps, setSelectedWorkflowSteps] = useState<string[]>([]);
   const [workflowStepsExplicitlySet, setWorkflowStepsExplicitlySet] = useState(false);
   const [reviewLevel, setReviewLevel] = useState<number | undefined>(undefined);
+  const [priority, setPriority] = useState<TaskPriority>(DEFAULT_TASK_PRIORITY);
 
   // Agent assignment state
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
@@ -146,9 +147,10 @@ export function NewTaskModal({ isOpen, onClose, projectId, tasks, onCreateTask, 
       thinkingLevel !== "" ||
       selectedWorkflowSteps.length > 0 ||
       selectedAgentId !== null ||
-      reviewLevel !== undefined;
+      reviewLevel !== undefined ||
+      priority !== DEFAULT_TASK_PRIORITY;
     setHasDirtyState(isDirty);
-  }, [description, dependencies, pendingImages, executorModel, validatorModel, planningModel, thinkingLevel, selectedWorkflowSteps, selectedAgentId, reviewLevel]);
+  }, [description, dependencies, pendingImages, executorModel, validatorModel, planningModel, thinkingLevel, selectedWorkflowSteps, selectedAgentId, reviewLevel, priority]);
 
   const handleClose = useCallback(() => {
     if (hasDirtyState) {
@@ -171,6 +173,7 @@ export function NewTaskModal({ isOpen, onClose, projectId, tasks, onCreateTask, 
     setSelectedAgentId(null);
     setShowAgentPicker(false);
     setReviewLevel(undefined);
+    setPriority(DEFAULT_TASK_PRIORITY);
     setHasDirtyState(false);
     onClose();
   }, [hasDirtyState, onClose, pendingImages]);
@@ -203,6 +206,7 @@ export function NewTaskModal({ isOpen, onClose, projectId, tasks, onCreateTask, 
         planningModelId: planningModel && planningSlashIdx !== -1 ? planningModel.slice(planningSlashIdx + 1) : undefined,
         thinkingLevel: thinkingLevel !== "" ? thinkingLevel as "minimal" | "low" | "medium" | "high" : undefined,
         reviewLevel,
+        priority,
       });
 
       // Upload pending images as attachments
@@ -236,6 +240,7 @@ export function NewTaskModal({ isOpen, onClose, projectId, tasks, onCreateTask, 
       setSelectedAgentId(null);
       setShowAgentPicker(false);
       setReviewLevel(undefined);
+      setPriority(DEFAULT_TASK_PRIORITY);
 
       addToast(`Created ${task.id}`, "success");
       onClose();
@@ -244,7 +249,7 @@ export function NewTaskModal({ isOpen, onClose, projectId, tasks, onCreateTask, 
     } finally {
       setIsSubmitting(false);
     }
-  }, [description, dependencies, pendingImages, executorModel, validatorModel, planningModel, thinkingLevel, isSubmitting, onCreateTask, addToast, onClose, projectId, presetMode, selectedPresetId, selectedWorkflowSteps, workflowStepsExplicitlySet, selectedAgentId]);
+  }, [description, dependencies, pendingImages, executorModel, validatorModel, planningModel, thinkingLevel, isSubmitting, onCreateTask, addToast, onClose, projectId, presetMode, selectedPresetId, selectedWorkflowSteps, workflowStepsExplicitlySet, selectedAgentId, reviewLevel, priority]);
 
   // Handle keyboard shortcuts
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -445,6 +450,8 @@ export function NewTaskModal({ isOpen, onClose, projectId, tasks, onCreateTask, 
             onThinkingLevelChange={setThinkingLevel}
             reviewLevel={reviewLevel}
             onReviewLevelChange={setReviewLevel}
+            priority={priority}
+            onPriorityChange={setPriority}
             renderBelowPrimary={quickFields}
             hideDependencies={true}
           />

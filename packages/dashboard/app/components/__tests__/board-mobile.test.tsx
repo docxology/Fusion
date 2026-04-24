@@ -410,6 +410,13 @@ describe("InlineCreateCard mobile", () => {
     expectRuleToContain(mobileSection, ".inline-create-controls .btn", "min-height: 36px;");
   });
 
+  it("contains .inline-create-priority-select min-height: 36px in the mobile media block", () => {
+    const css = fs.readFileSync(stylesPath, "utf-8");
+    const mobileSection = getMainMobileSection(css);
+
+    expectRuleToContain(mobileSection, ".inline-create-priority-select", "min-height: 36px;");
+  });
+
   it("renders Plan and Subtask buttons when expanded", () => {
     render(
       <InlineCreateCard

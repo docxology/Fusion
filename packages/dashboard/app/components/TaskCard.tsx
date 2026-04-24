@@ -1,7 +1,7 @@
 import { memo, useCallback, useState, useRef, useEffect, useMemo } from "react";
 import { Link, Clock, Layers, Pencil, ChevronDown, Folder, Target, Bot, Trash2 } from "lucide-react";
-import type { Task, TaskDetail, Column, PrInfo, IssueInfo } from "@fusion/core";
-import { COLUMN_LABELS, VALID_TRANSITIONS, getErrorMessage } from "@fusion/core";
+import type { Task, TaskDetail, Column, PrInfo, IssueInfo, TaskPriority } from "@fusion/core";
+import { COLUMN_LABELS, DEFAULT_TASK_PRIORITY, TASK_PRIORITIES, VALID_TRANSITIONS, getErrorMessage } from "@fusion/core";
 import { fetchTaskDetail, uploadAttachment, fetchMission, fetchAgent } from "../api";
 import { GitHubBadge } from "./GitHubBadge";
 import { pickPreferredBadge } from "./TaskCardBadge";
@@ -62,6 +62,12 @@ async function getAgentName(agentId: string, projectId?: string): Promise<string
   } catch {
     return agentId;
   }
+}
+
+function normalizeTaskPriorityValue(priority: Task["priority"]): TaskPriority {
+  return typeof priority === "string" && (TASK_PRIORITIES as readonly string[]).includes(priority)
+    ? (priority as TaskPriority)
+    : DEFAULT_TASK_PRIORITY;
 }
 
 function abbreviateBadge(text: string, max: number): string {
@@ -252,6 +258,7 @@ function areTaskCardPropsEqual(previous: TaskCardProps, next: TaskCardProps): bo
     previousTask.updatedAt === nextTask.updatedAt &&
     previousTask.createdAt === nextTask.createdAt &&
     previousTask.status === nextTask.status &&
+    previousTask.priority === nextTask.priority &&
     previousTask.paused === nextTask.paused &&
     previousTask.error === nextTask.error &&
     previousTask.size === nextTask.size &&
@@ -536,6 +543,8 @@ function TaskCardComponent({
 
   const isFailed = task.status === "failed";
   const isPaused = task.paused === true;
+  const normalizedPriority = normalizeTaskPriorityValue(task.priority);
+  const showPriorityBadge = normalizedPriority !== DEFAULT_TASK_PRIORITY;
   const isStuck = isTaskStuck(task, taskStuckTimeoutMs, lastFetchTimeMs);
   const isAwaitingApproval = task.column === "triage" && task.status === "awaiting-approval";
   const isArchived = task.column === "archived";
@@ -884,6 +893,11 @@ function TaskCardComponent({
             prInfo={livePrInfo}
             issueInfo={liveIssueInfo}
           />
+        )}
+        {showPriorityBadge && (
+          <span className={`card-priority-badge card-priority-badge--${normalizedPriority}`}>
+            {normalizedPriority}
+          </span>
         )}
         {task.missionId && (
           <span

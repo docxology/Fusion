@@ -571,6 +571,37 @@ describe("TaskCard size badge", () => {
   });
 });
 
+describe("TaskCard priority badge", () => {
+  const noopToast = vi.fn();
+
+  it("renders a badge for non-default priorities", () => {
+    render(<TaskCard task={makeTask({ priority: "urgent" })} onOpenDetail={vi.fn()} addToast={noopToast} />);
+
+    const badge = screen.getByText("urgent");
+    expect(badge.classList.contains("card-priority-badge")).toBe(true);
+    expect(badge.classList.contains("card-priority-badge--urgent")).toBe(true);
+  });
+
+  it("hides the priority badge for default and missing priority", () => {
+    const { rerender } = render(<TaskCard task={makeTask({ priority: "normal" })} onOpenDetail={vi.fn()} addToast={noopToast} />);
+    expect(screen.queryByText("normal")).toBeNull();
+
+    rerender(<TaskCard task={makeTask({ priority: undefined })} onOpenDetail={vi.fn()} addToast={noopToast} />);
+    expect(screen.queryByText("normal")).toBeNull();
+  });
+
+  it("re-renders when priority changes", () => {
+    const task = makeTask({ id: "FN-PRIORITY", priority: "normal" });
+    const { rerender } = render(<TaskCard task={task} onOpenDetail={vi.fn()} addToast={noopToast} />);
+
+    expect(screen.queryByText("high")).toBeNull();
+
+    rerender(<TaskCard task={{ ...task, priority: "high" }} onOpenDetail={vi.fn()} addToast={noopToast} />);
+
+    expect(screen.getByText("high")).toBeDefined();
+  });
+});
+
 /**
  * Tests for inline editing functionality in TaskCard.
  */
@@ -3852,7 +3883,7 @@ describe("TaskCard PluginSlot integration", () => {
       description: "Test description",
       column: "todo",
       status: "todo",
-      priority: 0,
+      priority: "normal",
       size: "M",
       dependencies: ["FN-001"],
       steps: [],
@@ -3893,7 +3924,7 @@ describe("TaskCard PluginSlot integration", () => {
       title: "Task without deps",
       column: "todo",
       status: "todo",
-      priority: 0,
+      priority: "normal",
       size: "M",
       steps: [],
       createdAt: new Date().toISOString(),

@@ -4523,6 +4523,57 @@ describe("TaskDetailModal", () => {
       });
     });
 
+    it("includes priority in update payload only when changed", async () => {
+      const { updateTask } = await import("../../api");
+      const mockUpdate = vi.mocked(updateTask);
+      mockUpdate.mockResolvedValue({ id: "FN-001" } as Task);
+
+      const { container } = render(
+        <TaskDetailModal
+          task={makeTask({ id: "FN-001", column: "triage", title: "Test", description: "Desc", priority: "normal" })}
+          onClose={noop}
+          onMoveTask={noopMove}
+          onDeleteTask={noopDelete}
+          onMergeTask={noopMerge}
+          onOpenDetail={noopOpenDetail}
+          addToast={noop}
+        />,
+      );
+
+      fireEvent.click(container.querySelector(".modal-edit-btn")!);
+
+      fireEvent.click(screen.getByText("Save"));
+
+      await waitFor(() => {
+        expect(mockUpdate).not.toHaveBeenCalled();
+      });
+
+      fireEvent.click(container.querySelector(".modal-edit-btn")!);
+      fireEvent.click(screen.getByTestId("task-form-more-options-toggle"));
+      fireEvent.change(container.querySelector("#task-priority") as HTMLSelectElement, { target: { value: "urgent" } });
+      fireEvent.click(screen.getByText("Save"));
+
+      await waitFor(() => {
+        expect(mockUpdate).toHaveBeenCalledWith("FN-001", { priority: "urgent" }, undefined);
+      });
+    });
+
+    it("renders normalized priority in detail metadata", () => {
+      render(
+        <TaskDetailModal
+          task={makeTask({ id: "FN-001", column: "triage", description: "Priority metadata", priority: undefined })}
+          onClose={noop}
+          onMoveTask={noopMove}
+          onDeleteTask={noopDelete}
+          onMergeTask={noopMerge}
+          onOpenDetail={noopOpenDetail}
+          addToast={noop}
+        />,
+      );
+
+      expect(screen.getByText("Priority: normal")).toBeTruthy();
+    });
+
     it("pre-populates form with existing task values", () => {
       const { container } = render(
         <TaskDetailModal

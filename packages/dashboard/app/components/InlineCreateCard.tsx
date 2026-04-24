@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { Brain, Link, Lightbulb, ListTree, Zap, ChevronDown, ChevronUp, Bot, Maximize2, Minimize2 } from "lucide-react";
-import type { Task, TaskCreateInput, Settings } from "@fusion/core";
+import { DEFAULT_TASK_PRIORITY, TASK_PRIORITIES, type Task, type TaskCreateInput, type TaskPriority, type Settings } from "@fusion/core";
 import { getErrorMessage } from "@fusion/core";
 import type { ToastType } from "../hooks/useToast";
 import { fetchModels, uploadAttachment, fetchSettings, updateGlobalSettings, fetchAgents } from "../api";
@@ -92,6 +92,7 @@ export function InlineCreateCard({
   const [validatorProvider, setValidatorProvider] = useState<string | undefined>(undefined);
   const [validatorModelId, setValidatorModelId] = useState<string | undefined>(undefined);
   const [browserVerification, setBrowserVerification] = useState(false);
+  const [priority, setPriority] = useState<TaskPriority>(DEFAULT_TASK_PRIORITY);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelsError, setModelsError] = useState<string | null>(null);
   const [loadedModels, setLoadedModels] = useState<ModelInfo[]>(availableModels ?? []);
@@ -317,6 +318,7 @@ export function InlineCreateCard({
         validatorModelProvider: hasValidatorOverride ? validatorProvider : undefined,
         validatorModelId: hasValidatorOverride ? validatorModelId : undefined,
         enabledWorkflowSteps: browserVerification ? ["browser-verification"] : undefined,
+        priority,
       });
 
       // Upload pending images as attachments
@@ -348,6 +350,7 @@ export function InlineCreateCard({
       setValidatorProvider(undefined);
       setValidatorModelId(undefined);
       setBrowserVerification(false);
+      setPriority(DEFAULT_TASK_PRIORITY);
       setDependencies([]);
       setSelectedAgentId(null);
       setShowDeps(false);
@@ -379,6 +382,7 @@ export function InlineCreateCard({
     validatorProvider,
     validatorModelId,
     browserVerification,
+    priority,
     submitting,
     pendingImages,
     onSubmit,
@@ -872,6 +876,23 @@ export function InlineCreateCard({
             >
               {browserVerification ? "Browser Verify ✓" : "Browser Verify"}
             </button>
+
+            <label className="inline-create-priority-wrap" htmlFor="inline-create-priority-select">
+              <span className="visually-hidden">Priority</span>
+              <select
+                id="inline-create-priority-select"
+                className="select inline-create-priority-select"
+                data-testid="inline-create-priority-select"
+                value={priority}
+                onChange={(e) => setPriority(e.target.value as TaskPriority)}
+              >
+                {TASK_PRIORITIES.map((taskPriority) => (
+                  <option key={taskPriority} value={taskPriority}>
+                    {`Priority: ${taskPriority[0].toUpperCase()}${taskPriority.slice(1)}`}
+                  </option>
+                ))}
+              </select>
+            </label>
 
             <div className="inline-create-model-wrap">
               <button

@@ -59,6 +59,7 @@ import type {
   InsightStatus,
   InsightRun,
   InsightRunTrigger,
+  TaskPriority,
 } from "@fusion/core";
 import type { PlanningQuestion, PlanningSummary } from "@fusion/core";
 import type { ScheduledTask, ScheduledTaskCreateInput, ScheduledTaskUpdateInput, AutomationRunResult, Routine, RoutineCreateInput, RoutineUpdateInput, RoutineExecutionResult } from "@fusion/core";
@@ -227,6 +228,7 @@ export function createTask(input: TaskCreateInput, projectId?: string): Promise<
     summarize,
     reviewLevel,
     executionMode,
+    priority,
   } = input;
 
   return api<Task>(withProjectId("/tasks", projectId), {
@@ -250,11 +252,12 @@ export function createTask(input: TaskCreateInput, projectId?: string): Promise<
       summarize,
       reviewLevel,
       executionMode,
+      priority,
     }),
   });
 }
 
-export function updateTask(id: string, updates: { title?: string; description?: string; prompt?: string; dependencies?: string[]; enabledWorkflowSteps?: string[]; modelProvider?: string | null; modelId?: string | null; validatorModelProvider?: string | null; validatorModelId?: string | null; planningModelProvider?: string | null; planningModelId?: string | null; thinkingLevel?: string | null; reviewLevel?: number | null; executionMode?: "standard" | "fast" | null }, projectId?: string): Promise<Task> {
+export function updateTask(id: string, updates: { title?: string; description?: string; prompt?: string; dependencies?: string[]; enabledWorkflowSteps?: string[]; modelProvider?: string | null; modelId?: string | null; validatorModelProvider?: string | null; validatorModelId?: string | null; planningModelProvider?: string | null; planningModelId?: string | null; thinkingLevel?: string | null; reviewLevel?: number | null; executionMode?: "standard" | "fast" | null; priority?: TaskPriority | null }, projectId?: string): Promise<Task> {
   return api<Task>(withProjectId(`/tasks/${id}`, projectId), {
     method: "PATCH",
     body: JSON.stringify(updates),

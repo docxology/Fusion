@@ -2,8 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Pencil, Bot, X, ChevronDown } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { Task, TaskDetail, TaskAttachment, Column, MergeResult, Settings, AgentLogEntry, Agent } from "@fusion/core";
-import { COLUMN_LABELS, VALID_TRANSITIONS, getErrorMessage } from "@fusion/core";
+import type { Task, TaskDetail, TaskAttachment, Column, MergeResult, Settings, AgentLogEntry, Agent, TaskPriority } from "@fusion/core";
+import { COLUMN_LABELS, DEFAULT_TASK_PRIORITY, TASK_PRIORITIES, VALID_TRANSITIONS, getErrorMessage } from "@fusion/core";
 import { uploadAttachment, deleteAttachment, updateTask, pauseTask, unpauseTask, fetchTaskDetail, fetchSettings, requestSpecRevision, rebuildTaskSpec, approvePlan, rejectPlan, refineTask, fetchWorkflowResults, assignTask, fetchAgents, fetchAgent } from "../api";
 import type { WorkflowStepResult } from "@fusion/core";
 import type { ToastType } from "../hooks/useToast";
@@ -210,6 +210,12 @@ function splitModelSelection(value: string): { provider: string; modelId: string
   };
 }
 
+function normalizeTaskPriorityValue(priority: Task["priority"]): TaskPriority {
+  return typeof priority === "string" && (TASK_PRIORITIES as readonly string[]).includes(priority)
+    ? (priority as TaskPriority)
+    : DEFAULT_TASK_PRIORITY;
+}
+
 const DESCRIPTION_TRUNCATE_LENGTH = 200;
 
 const EDITABLE_COLUMNS: Set<Column> = new Set(["triage", "todo"]);
@@ -324,6 +330,7 @@ export function TaskDetailModal({
   const [editThinkingLevel, setEditThinkingLevel] = useState("");
   const [editPresetMode, setEditPresetMode] = useState<"default" | "preset" | "custom">("default");
   const [editReviewLevel, setEditReviewLevel] = useState<number | undefined>(undefined);
+  const [editPriority, setEditPriority] = useState<TaskPriority>(DEFAULT_TASK_PRIORITY);
   const [editSelectedPresetId, setEditSelectedPresetId] = useState("");
   const [editSelectedWorkflowSteps, setEditSelectedWorkflowSteps] = useState<string[]>(task.enabledWorkflowSteps || []);
   const [editPendingImages, setEditPendingImages] = useState<PendingImage[]>([]);
@@ -530,6 +537,7 @@ export function TaskDetailModal({
     setEditSelectedWorkflowSteps(task.enabledWorkflowSteps || []);
     setEditPendingImages([]);
     setEditReviewLevel(task.reviewLevel);
+    setEditPriority(normalizeTaskPriorityValue(task.priority));
   }, [canEdit, task]);
 
   const exitEditMode = useCallback(() => {
@@ -537,9 +545,10 @@ export function TaskDetailModal({
     setEditTitle(task.title || "");
     setEditDescription(task.description || "");
     setEditDependencies(task.dependencies || []);
+    setEditPriority(normalizeTaskPriorityValue(task.priority));
     editPendingImages.forEach((img) => URL.revokeObjectURL(img.previewUrl));
     setEditPendingImages([]);
-  }, [task.title, task.description, task.dependencies, editPendingImages]);
+  }, [task.title, task.description, task.dependencies, task.priority, editPendingImages]);
 
   const handleSave = useCallback(async () => {
     setIsSaving(true);
@@ -592,6 +601,11 @@ export function TaskDetailModal({
         updates.reviewLevel = editReviewLevel;
       }
 
+      const currentPriority = normalizeTaskPriorityValue(task.priority);
+      if (editPriority !== currentPriority) {
+        updates.priority = editPriority;
+      }
+
       const hasTaskUpdates = Object.keys(updates).length > 0;
       if (hasTaskUpdates) {
         const updatedTask = await updateTask(task.id, updates, projectId);
@@ -626,7 +640,7 @@ export function TaskDetailModal({
         setIsSaving(false);
       }
     }
-  }, [task, editTitle, editDescription, editDependencies, editExecutorModel, editValidatorModel, editPlanningModel, editThinkingLevel, editReviewLevel, editSelectedWorkflowSteps, editPendingImages, addToast, projectId, onTaskUpdated]);
+  }, [task, editTitle, editDescription, editDependencies, editExecutorModel, editValidatorModel, editPlanningModel, editThinkingLevel, editReviewLevel, editPriority, editSelectedWorkflowSteps, editPendingImages, addToast, projectId, onTaskUpdated]);
 
   const handleAutoSaveDescription = useCallback(async (description: string) => {
     try {
@@ -1180,6 +1194,8 @@ export function TaskDetailModal({
                 onAutoSaveDescription={handleAutoSaveDescription}
                 reviewLevel={editReviewLevel}
                 onReviewLevelChange={setEditReviewLevel}
+                priority={editPriority}
+                onPriorityChange={setEditPriority}
               />
             </div>
           ) : (
@@ -1205,7 +1221,10 @@ export function TaskDetailModal({
               })()}
               <div className="detail-meta">
                 Created {new Date(task.createdAt).toLocaleDateString()} · Updated{" "}
-                {new Date(task.updatedAt).toLocaleDateString()}
+                {new Date(task.updatedAt).toLocaleDateString()} ·
+                <span className={`detail-priority-chip detail-priority-chip--${normalizeTaskPriorityValue(task.priority)}`}>
+                  Priority: {normalizeTaskPriorityValue(task.priority)}
+                </span>
               </div>
             </>
           )}

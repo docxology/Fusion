@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef, type ReactNode } from "react";
-import type { Task, Settings, WorkflowStep } from "@fusion/core";
+import { DEFAULT_TASK_PRIORITY, TASK_PRIORITIES, type Task, type TaskPriority, type Settings, type WorkflowStep } from "@fusion/core";
 import type { ToastType } from "../hooks/useToast";
 import { fetchModels, fetchSettings, fetchWorkflowSteps, refineText, getRefineErrorMessage, updateGlobalSettings, type RefinementType, type ModelInfo } from "../api";
 import { applyPresetToSelection, getRecommendedPresetForSize } from "../utils/modelPresets";
@@ -40,6 +40,8 @@ export interface TaskFormProps {
   onDependenciesChange: (deps: string[]) => void;
 
   // Model configuration
+  priority?: TaskPriority;
+  onPriorityChange?: (value: TaskPriority) => void;
   executorModel: string;
   onExecutorModelChange: (value: string) => void;
   validatorModel: string;
@@ -96,6 +98,8 @@ export function TaskForm({
   onTitleChange,
   dependencies,
   onDependenciesChange,
+  priority,
+  onPriorityChange,
   executorModel,
   onExecutorModelChange,
   validatorModel,
@@ -132,6 +136,7 @@ export function TaskForm({
     pendingImages.length > 0 ||
     selectedWorkflowSteps.length > 0 ||
     presetMode !== "default" ||
+    (priority ?? DEFAULT_TASK_PRIORITY) !== DEFAULT_TASK_PRIORITY ||
     executorModel !== "" ||
     validatorModel !== "" ||
     (planningModel || "") !== "" ||
@@ -193,6 +198,7 @@ export function TaskForm({
     pendingImages.length > 0 ||
     selectedWorkflowSteps.length > 0 ||
     presetMode !== "default" ||
+    (priority ?? DEFAULT_TASK_PRIORITY) !== DEFAULT_TASK_PRIORITY ||
     executorModel !== "" ||
     validatorModel !== "" ||
     (planningModel || "") !== "" ||
@@ -841,6 +847,24 @@ export function TaskForm({
       {/* Model Selection */}
       <div className="form-group">
         <label>Model Configuration</label>
+        {onPriorityChange && (
+          <div className="model-select-row">
+            <label htmlFor="task-priority" className="model-select-label">Priority</label>
+            <select
+              id="task-priority"
+              data-testid="task-priority-select"
+              value={priority ?? DEFAULT_TASK_PRIORITY}
+              onChange={(e) => onPriorityChange(e.target.value as TaskPriority)}
+              disabled={disabled}
+            >
+              {TASK_PRIORITIES.map((taskPriority) => (
+                <option key={taskPriority} value={taskPriority}>
+                  {taskPriority[0].toUpperCase() + taskPriority.slice(1)}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         {modelsLoading ? (
           <div className="model-selector-loading">Loading models…</div>
         ) : availableModels.length === 0 ? (

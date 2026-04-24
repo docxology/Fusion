@@ -1610,6 +1610,32 @@ body {
   color: var(--triage);
 }
 
+.card-priority-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+}
+
+.card-priority-badge--low {
+  background: color-mix(in srgb, var(--color-info) 15%, transparent);
+  color: var(--color-info);
+}
+
+.card-priority-badge--high {
+  background: color-mix(in srgb, var(--color-warning) 18%, transparent);
+  color: var(--color-warning);
+}
+
+.card-priority-badge--urgent {
+  background: color-mix(in srgb, var(--color-error) 20%, transparent);
+  color: var(--color-error-dark);
+}
+
 .card.failed {
   border-left: 3px solid var(--color-error-dark);
 }
@@ -4399,6 +4425,37 @@ input[type="range"]:focus-visible {
   margin-bottom: var(--space-lg);
 }
 
+.detail-priority-chip {
+  display: inline-flex;
+  align-items: center;
+  margin-left: var(--space-xs);
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  text-transform: capitalize;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+
+.detail-priority-chip--low {
+  background: color-mix(in srgb, var(--color-info) 14%, transparent);
+  color: var(--color-info);
+}
+
+.detail-priority-chip--normal {
+  background: color-mix(in srgb, var(--text-muted) 18%, transparent);
+  color: var(--text-muted);
+}
+
+.detail-priority-chip--high {
+  background: color-mix(in srgb, var(--color-warning) 18%, transparent);
+  color: var(--color-warning);
+}
+
+.detail-priority-chip--urgent {
+  background: color-mix(in srgb, var(--color-error) 20%, transparent);
+  color: var(--color-error-dark);
+}
+
 /* Error alert in task detail modal */
 .detail-error-alert {
   display: flex;
@@ -6526,6 +6583,15 @@ input[type="range"]:focus-visible {
   padding: 3px 8px;
 }
 
+.inline-create-priority-wrap {
+  display: inline-flex;
+  align-items: center;
+}
+
+.inline-create-priority-select {
+  max-width: 180px;
+}
+
 .dep-dropdown {
   position: absolute;
   top: 100%;
@@ -7666,6 +7732,10 @@ input[type="range"]:focus-visible {
   .inline-create-controls .btn {
     min-height: 36px;
     font-size: 12px;
+  }
+
+  .inline-create-priority-select {
+    min-height: 36px;
   }
 
   /* Inline create: constrain dependency dropdown to card width */

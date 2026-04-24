@@ -706,6 +706,59 @@ describe("NewTaskModal", () => {
     });
   });
 
+  describe("priority selection payload", () => {
+    it("includes default normal priority in create payload", async () => {
+      const { props } = renderNewTaskModal();
+
+      fireEvent.change(screen.getByRole("textbox"), { target: { value: "Task with default priority" } });
+      fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
+
+      await waitFor(() => {
+        expect(props.onCreateTask).toHaveBeenCalledWith(
+          expect.objectContaining({
+            priority: "normal",
+          }),
+        );
+      });
+    });
+
+    it("includes selected priority and resets back to normal after submit", async () => {
+      const { props } = renderNewTaskModal();
+
+      fireEvent.click(screen.getByTestId("task-form-more-options-toggle"));
+      fireEvent.change(screen.getByTestId("task-priority-select"), { target: { value: "urgent" } });
+      fireEvent.change(screen.getByRole("textbox"), { target: { value: "Task with urgent priority" } });
+      fireEvent.click(screen.getByRole("button", { name: "Create Task" }));
+
+      await waitFor(() => {
+        expect(props.onCreateTask).toHaveBeenCalledWith(
+          expect.objectContaining({
+            priority: "urgent",
+          }),
+        );
+      });
+
+      await waitFor(() => {
+        expect(screen.getByTestId("task-priority-select")).toHaveValue("normal");
+      });
+    });
+
+    it("treats non-default priority as dirty state on cancel", () => {
+      renderNewTaskModal();
+
+      fireEvent.click(screen.getByTestId("task-form-more-options-toggle"));
+      fireEvent.change(screen.getByTestId("task-priority-select"), { target: { value: "high" } });
+
+      const originalConfirm = window.confirm;
+      window.confirm = vi.fn().mockReturnValue(false);
+
+      fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+      expect(window.confirm).toHaveBeenCalledWith("You have unsaved changes. Discard them?");
+      window.confirm = originalConfirm;
+    });
+  });
+
   // Agent assignment tests (FN-1483)
   describe("agent assignment", () => {
     it("renders agent picker button", () => {

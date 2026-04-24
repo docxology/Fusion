@@ -169,6 +169,29 @@ describe("TaskForm", () => {
     expect(screen.getByText(/Model Configuration/i)).toBeTruthy();
   });
 
+  it("renders priority select with default normal value when enabled", () => {
+    renderTaskForm({ onPriorityChange: vi.fn() });
+
+    fireEvent.click(screen.getByTestId("task-form-more-options-toggle"));
+    expect(screen.getByTestId("task-priority-select")).toHaveValue("normal");
+  });
+
+  it("calls onPriorityChange when priority selection changes", () => {
+    const onPriorityChange = vi.fn();
+    renderTaskForm({ onPriorityChange });
+
+    fireEvent.click(screen.getByTestId("task-form-more-options-toggle"));
+    fireEvent.change(screen.getByTestId("task-priority-select"), { target: { value: "urgent" } });
+
+    expect(onPriorityChange).toHaveBeenCalledWith("urgent");
+  });
+
+  it("auto-expands more options when priority is non-default", () => {
+    renderTaskForm({ priority: "high", onPriorityChange: vi.fn() });
+
+    expect(screen.getByTestId("task-form-more-options-toggle")).toHaveAttribute("aria-expanded", "true");
+  });
+
   it("fetches and stores favoriteModels from fetchModels response", async () => {
     const { fetchModels } = await import("../../api");
     vi.mocked(fetchModels).mockResolvedValueOnce({

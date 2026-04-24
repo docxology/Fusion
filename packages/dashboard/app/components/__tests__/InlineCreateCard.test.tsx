@@ -878,6 +878,29 @@ describe("InlineCreateCard button visibility when collapsed", () => {
     });
   });
 
+  it("includes priority in submit payload and resets to normal after successful create", async () => {
+    const mockOnSubmit = vi.fn().mockResolvedValue(createMockTask());
+    renderCard([], { onSubmit: mockOnSubmit });
+    expandCard();
+
+    fireEvent.change(screen.getByTestId("inline-create-priority-select"), { target: { value: "urgent" } });
+    fireEvent.change(screen.getByPlaceholderText("What needs to be done?"), {
+      target: { value: "Task with urgent priority" },
+    });
+    fireEvent.click(screen.getByTestId("save-button"));
+
+    await waitFor(() => {
+      expect(mockOnSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          priority: "urgent",
+        }),
+      );
+    });
+
+    expandCard();
+    expect(screen.getByTestId("inline-create-priority-select")).toHaveValue("normal");
+  });
+
   describe("Consolidated controls layout (FN-781, FN-1292)", () => {
     it("renders Plan, Subtask, Deps, Agent, and Models together in footer controls when expanded", () => {
       renderCard();
@@ -887,10 +910,11 @@ describe("InlineCreateCard button visibility when collapsed", () => {
       const controlsRow = document.querySelector(".inline-create-controls");
       expect(controlsRow).toBeTruthy();
 
-      // Plan, Subtask, Deps, Agent, Browser Verify, Preset, Models all in one row
+      // Plan, Subtask, Deps, Agent, Browser Verify, Priority, Preset, Models all in one row
       expect(controlsRow!.contains(screen.getByTestId("plan-button"))).toBe(true);
       expect(controlsRow!.contains(screen.getByTestId("subtask-button"))).toBe(true);
       expect(controlsRow!.contains(screen.getByTestId("inline-create-agent-button"))).toBe(true);
+      expect(controlsRow!.contains(screen.getByTestId("inline-create-priority-select"))).toBe(true);
       const depsButton = screen.getByText(/Deps/);
       expect(controlsRow!.contains(depsButton)).toBe(true);
       const modelsButton = screen.getByRole("button", { name: /Models/i });
