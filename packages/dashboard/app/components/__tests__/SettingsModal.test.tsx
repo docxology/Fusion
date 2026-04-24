@@ -3078,7 +3078,7 @@ describe("SettingsModal", () => {
     render(<SettingsModal onClose={onClose} addToast={addToast} />);
     await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
 
-    fireEvent.click(screen.getByText("Scheduling"));
+    fireEvent.click(await screen.findByText("Scheduling"));
     const checkbox = screen.getByLabelText("Enable automatic task archiving");
     expect(checkbox).toBeTruthy();
     expect(checkbox.getAttribute("type")).toBe("checkbox");

@@ -57,6 +57,16 @@ describe("TaskStore", () => {
     return store.createTask({ description: "Test task" });
   }
 
+  function createSourceIssueFixture() {
+    return {
+      provider: "github",
+      repository: "runfusion/fusion",
+      externalIssueId: "I_kgDOExample",
+      issueNumber: 2471,
+      url: "https://github.com/runfusion/fusion/issues/2471",
+    };
+  }
+
   async function createTaskWithSteps(): Promise<Task> {
     const task = await store.createTask({ description: "Task with steps" });
     // Write a PROMPT.md with steps so updateStep works
@@ -3441,6 +3451,58 @@ describe("TaskStore", () => {
       expect(updated.validatorModelProvider).toBe("openai");
       expect(updated.validatorModelId).toBe("gpt-4o");
       expect(updated.title).toBe("Updated title");
+    });
+
+    it("persists sourceIssue on create and reload", async () => {
+      const sourceIssue = createSourceIssueFixture();
+      const created = await store.createTask({
+        description: "Task with source issue",
+        sourceIssue,
+      });
+
+      expect(created.sourceIssue).toEqual(sourceIssue);
+
+      const reloaded = await store.getTask(created.id);
+      expect(reloaded.sourceIssue).toEqual(sourceIssue);
+    });
+
+    it("updates and clears sourceIssue via updateTask", async () => {
+      const sourceIssue = createSourceIssueFixture();
+      const task = await createTestTask();
+
+      const linked = await store.updateTask(task.id, { sourceIssue });
+      expect(linked.sourceIssue).toEqual(sourceIssue);
+
+      const reloaded = await store.getTask(task.id);
+      expect(reloaded.sourceIssue).toEqual(sourceIssue);
+
+      const cleared = await store.updateTask(task.id, { sourceIssue: null });
+      expect(cleared.sourceIssue).toBeUndefined();
+
+      const reloadedAfterClear = await store.getTask(task.id);
+      expect(reloadedAfterClear.sourceIssue).toBeUndefined();
+    });
+
+    it("preserves sourceIssue through archive and unarchive", async () => {
+      const sourceIssue = createSourceIssueFixture();
+      const task = await store.createTask({
+        description: "Archive source issue preservation",
+        sourceIssue,
+      });
+
+      await store.moveTask(task.id, "todo");
+      await store.moveTask(task.id, "in-progress");
+      await store.moveTask(task.id, "in-review");
+      await store.moveTask(task.id, "done");
+
+      await store.archiveTask(task.id, false);
+      const archived = await store.getTask(task.id);
+      expect(archived.column).toBe("archived");
+      expect(archived.sourceIssue).toEqual(sourceIssue);
+
+      const restored = await store.unarchiveTask(task.id);
+      expect(restored.column).toBe("done");
+      expect(restored.sourceIssue).toEqual(sourceIssue);
     });
 
     it("sets and clears mission linkage fields via updateTask", async () => {

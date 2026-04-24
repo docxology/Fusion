@@ -586,6 +586,13 @@ describe("migrateFromLegacy", () => {
         workflowStepResults: [{ workflowStepId: "WS-001", workflowStepName: "QA", status: "passed" }],
         prInfo: { url: "https://github.com/test/pr/1", number: 1, status: "open", title: "PR", headBranch: "feature", baseBranch: "main", commentCount: 3 },
         issueInfo: { url: "https://github.com/test/issues/1", number: 10, state: "open", title: "Issue" },
+        sourceIssue: {
+          provider: "github",
+          repository: "runfusion/fusion",
+          externalIssueId: "I_kgDOExample",
+          issueNumber: 10,
+          url: "https://github.com/test/issues/1",
+        },
         breakIntoSubtasks: true,
         enabledWorkflowSteps: ["WS-001", "WS-002"],
       };
@@ -629,6 +636,11 @@ describe("migrateFromLegacy", () => {
       expect(JSON.parse(row.workflowStepResults)).toHaveLength(1);
       expect(JSON.parse(row.prInfo).number).toBe(1);
       expect(JSON.parse(row.issueInfo).number).toBe(10);
+      expect(row.sourceIssueProvider).toBe("github");
+      expect(row.sourceIssueRepository).toBe("runfusion/fusion");
+      expect(row.sourceIssueExternalIssueId).toBe("I_kgDOExample");
+      expect(row.sourceIssueNumber).toBe(10);
+      expect(row.sourceIssueUrl).toBe("https://github.com/test/issues/1");
       expect(row.breakIntoSubtasks).toBe(1);
       expect(JSON.parse(row.enabledWorkflowSteps)).toEqual(["WS-001", "WS-002"]);
     });

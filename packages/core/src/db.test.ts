@@ -131,7 +131,7 @@ describe("Database", () => {
     });
 
     it("seeds schema version", () => {
-      expect(db.getSchemaVersion()).toBe(44);
+      expect(db.getSchemaVersion()).toBe(45);
     });
 
     it("seeds lastModified", () => {
@@ -154,7 +154,7 @@ describe("Database", () => {
 
     it("is idempotent - calling init() twice does not fail", () => {
       expect(() => db.init()).not.toThrow();
-      expect(db.getSchemaVersion()).toBe(44);
+      expect(db.getSchemaVersion()).toBe(45);
     });
 
     it("does not overwrite existing config on re-init", () => {
@@ -761,7 +761,7 @@ describe("schema migrations", () => {
     db.init();
 
     // Verify version bumped to 29 (includes v1→v2 through v26→v29)
-    expect(db.getSchemaVersion()).toBe(44);
+    expect(db.getSchemaVersion()).toBe(45);
 
     // Verify new columns exist and existing data is intact
     const cols = db.prepare("PRAGMA table_info(tasks)").all() as Array<{ name: string }>;
@@ -786,11 +786,11 @@ describe("schema migrations", () => {
     const db = new Database(fusionDir);
     db.init();
 
-    expect(db.getSchemaVersion()).toBe(44);
+    expect(db.getSchemaVersion()).toBe(45);
 
     // Re-init should not fail
     db.init();
-    expect(db.getSchemaVersion()).toBe(44);
+    expect(db.getSchemaVersion()).toBe(45);
 
     db.close();
   });
@@ -825,7 +825,7 @@ describe("schema migrations", () => {
 
     db.init();
 
-    expect(db.getSchemaVersion()).toBe(44);
+    expect(db.getSchemaVersion()).toBe(45);
 
     const cols = db.prepare("PRAGMA table_info(tasks)").all() as Array<{ name: string }>;
     expect(cols.map((col) => col.name)).toContain("priority");
@@ -866,7 +866,7 @@ describe("schema migrations", () => {
 
     db.init();
 
-    expect(db.getSchemaVersion()).toBe(44);
+    expect(db.getSchemaVersion()).toBe(45);
 
     const cols = db.prepare("PRAGMA table_info(tasks)").all() as Array<{ name: string }>;
     const colNames = cols.map((col) => col.name);
@@ -899,6 +899,72 @@ describe("schema migrations", () => {
     db.close();
   });
 
+  it("migrates v44 databases by adding source issue columns with null-compatible defaults", () => {
+    tmpDir = makeTmpDir();
+    const fusionDir = join(tmpDir, ".fusion");
+    const db = new Database(fusionDir);
+
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS __meta (key TEXT PRIMARY KEY, value TEXT);
+      CREATE TABLE IF NOT EXISTS tasks (
+        id TEXT PRIMARY KEY,
+        description TEXT NOT NULL,
+        "column" TEXT NOT NULL,
+        priority TEXT DEFAULT 'normal',
+        tokenUsageInputTokens INTEGER,
+        tokenUsageOutputTokens INTEGER,
+        tokenUsageCachedTokens INTEGER,
+        tokenUsageTotalTokens INTEGER,
+        tokenUsageFirstUsedAt TEXT,
+        tokenUsageLastUsedAt TEXT,
+        createdAt TEXT NOT NULL,
+        updatedAt TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS config (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        nextId INTEGER DEFAULT 1,
+        nextWorkflowStepId INTEGER DEFAULT 1,
+        settings TEXT DEFAULT '{}',
+        workflowSteps TEXT DEFAULT '[]',
+        updatedAt TEXT
+      );
+    `);
+    db.exec("INSERT INTO __meta (key, value) VALUES ('schemaVersion', '44')");
+    db.exec("INSERT INTO __meta (key, value) VALUES ('lastModified', '1000')");
+    db.exec(`INSERT INTO tasks (id, description, "column", createdAt, updatedAt) VALUES ('FN-3', 'legacy v44', 'todo', '2026-01-01', '2026-01-01')`);
+
+    db.init();
+
+    expect(db.getSchemaVersion()).toBe(45);
+
+    const cols = db.prepare("PRAGMA table_info(tasks)").all() as Array<{ name: string }>;
+    const colNames = cols.map((col) => col.name);
+    expect(colNames).toContain("sourceIssueProvider");
+    expect(colNames).toContain("sourceIssueRepository");
+    expect(colNames).toContain("sourceIssueExternalIssueId");
+    expect(colNames).toContain("sourceIssueNumber");
+    expect(colNames).toContain("sourceIssueUrl");
+
+    const task = db.prepare(`
+      SELECT
+        sourceIssueProvider,
+        sourceIssueRepository,
+        sourceIssueExternalIssueId,
+        sourceIssueNumber,
+        sourceIssueUrl
+      FROM tasks
+      WHERE id = 'FN-3'
+    `).get() as Record<string, null>;
+
+    expect(task.sourceIssueProvider).toBeNull();
+    expect(task.sourceIssueRepository).toBeNull();
+    expect(task.sourceIssueExternalIssueId).toBeNull();
+    expect(task.sourceIssueNumber).toBeNull();
+    expect(task.sourceIssueUrl).toBeNull();
+
+    db.close();
+  });
+
   it("applies migration 14+15 by creating agentRatings and ai_sessions indexes", () => {
     tmpDir = makeTmpDir();
     const fusionDir = join(tmpDir, ".fusion");
@@ -910,7 +976,7 @@ describe("schema migrations", () => {
 
     db.init();
 
-    expect(db.getSchemaVersion()).toBe(44);
+    expect(db.getSchemaVersion()).toBe(45);
 
     const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name = 'agentRatings'").all() as Array<{ name: string }>;
     expect(tables).toEqual([{ name: "agentRatings" }]);
@@ -934,7 +1000,7 @@ describe("schema migrations", () => {
 
     db.init();
 
-    expect(db.getSchemaVersion()).toBe(44);
+    expect(db.getSchemaVersion()).toBe(45);
 
     const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name = 'mission_events'").all() as Array<{ name: string }>;
     expect(tables).toEqual([{ name: "mission_events" }]);
@@ -1038,7 +1104,7 @@ describe("schema migrations", () => {
     db.init();
 
     // Verify version bumped to 29
-    expect(db.getSchemaVersion()).toBe(44);
+    expect(db.getSchemaVersion()).toBe(45);
 
     // Verify new columns exist and existing data is intact
     const cols = db.prepare("PRAGMA table_info(tasks)").all() as Array<{ name: string }>;
@@ -1407,7 +1473,7 @@ describe("createDatabase factory", () => {
     const db = createDatabase(fusionDir);
     db.init();
 
-    expect(db.getSchemaVersion()).toBe(44);
+    expect(db.getSchemaVersion()).toBe(45);
     expect(db.getLastModified()).toBeGreaterThan(0);
 
     db.close();

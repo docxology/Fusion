@@ -86,7 +86,7 @@ export function probeFts5(db: DatabaseSync): boolean {
 
 // ── Schema Definition ────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 44;
+const SCHEMA_VERSION = 45;
 
 function normalizeTaskComments(
   steeringComments: SteeringComment[] | undefined,
@@ -199,6 +199,11 @@ CREATE TABLE IF NOT EXISTS tasks (
   workflowStepResults TEXT DEFAULT '[]',
   prInfo TEXT,
   issueInfo TEXT,
+  sourceIssueProvider TEXT,
+  sourceIssueRepository TEXT,
+  sourceIssueExternalIssueId TEXT,
+  sourceIssueNumber INTEGER,
+  sourceIssueUrl TEXT,
   mergeDetails TEXT,
   breakIntoSubtasks INTEGER DEFAULT 0,
   enabledWorkflowSteps TEXT DEFAULT '[]',
@@ -1732,6 +1737,19 @@ export class Database {
         this.addColumnIfMissing("tasks", "tokenUsageTotalTokens", "INTEGER");
         this.addColumnIfMissing("tasks", "tokenUsageFirstUsedAt", "TEXT");
         this.addColumnIfMissing("tasks", "tokenUsageLastUsedAt", "TEXT");
+      });
+    }
+
+    // Source issue provenance contract (FN-2471)
+    // Persists durable source identity for imported issues separately from
+    // transient/live issueInfo status snapshots.
+    if (version < 45) {
+      this.applyMigration(45, () => {
+        this.addColumnIfMissing("tasks", "sourceIssueProvider", "TEXT");
+        this.addColumnIfMissing("tasks", "sourceIssueRepository", "TEXT");
+        this.addColumnIfMissing("tasks", "sourceIssueExternalIssueId", "TEXT");
+        this.addColumnIfMissing("tasks", "sourceIssueNumber", "INTEGER");
+        this.addColumnIfMissing("tasks", "sourceIssueUrl", "TEXT");
       });
     }
 

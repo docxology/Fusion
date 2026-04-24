@@ -222,11 +222,12 @@ async function migrateTasks(fusionDir: string, db: Database): Promise<void> {
       mergeRetries, recoveryRetryCount, nextRecoveryAt,
       error, summary, thinkingLevel, createdAt, updatedAt,
       columnMovedAt, dependencies, steps, log, attachments, steeringComments,
-      comments, workflowStepResults, prInfo, issueInfo, mergeDetails,
-      breakIntoSubtasks, enabledWorkflowSteps, modifiedFiles, sliceId
+      comments, workflowStepResults, prInfo, issueInfo,
+      sourceIssueProvider, sourceIssueRepository, sourceIssueExternalIssueId, sourceIssueNumber, sourceIssueUrl,
+      mergeDetails, breakIntoSubtasks, enabledWorkflowSteps, modifiedFiles, sliceId
     ) VALUES (
       ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-      ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+      ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
     )
   `);
 
@@ -283,6 +284,11 @@ async function migrateTasks(fusionDir: string, db: Database): Promise<void> {
         toJson(task.workflowStepResults || []),
         toJsonNullable(task.prInfo),
         toJsonNullable(task.issueInfo),
+        task.sourceIssue?.provider ?? null,
+        task.sourceIssue?.repository ?? null,
+        task.sourceIssue?.externalIssueId ?? null,
+        task.sourceIssue?.issueNumber ?? null,
+        task.sourceIssue?.url ?? null,
         toJsonNullable(task.mergeDetails),
         task.breakIntoSubtasks ? 1 : 0,
         toJson(task.enabledWorkflowSteps || []),

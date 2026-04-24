@@ -441,6 +441,26 @@ export interface IssueInfo {
   lastCheckedAt?: string;
 }
 
+/**
+ * Durable provenance metadata for tasks imported from external issue trackers.
+ *
+ * Distinct from {@link IssueInfo}, which captures live issue status snapshots.
+ * This contract stores source identity so the originating issue can be
+ * re-associated even when live status is unavailable.
+ */
+export interface TaskSourceIssue {
+  /** Issue provider key (for example: "github", "gitlab", "jira"). */
+  provider: string;
+  /** Repository/project identifier in provider-specific canonical form. */
+  repository: string;
+  /** Stable provider-specific external issue identifier (string to support non-numeric IDs). */
+  externalIssueId: string;
+  /** Human-visible issue number in the source tracker. */
+  issueNumber: number;
+  /** Optional canonical URL to the source issue. */
+  url?: string;
+}
+
 export interface BatchStatusRequest {
   taskIds: string[];
 }
@@ -731,6 +751,8 @@ export interface Task {
   mergeDetails?: MergeDetails;
   /** Issue information for tasks imported from GitHub issues */
   issueInfo?: IssueInfo;
+  /** Durable source provenance for the originating external issue. */
+  sourceIssue?: TaskSourceIssue;
   log: TaskLogEntry[];
   /** Durable aggregate token usage totals for the task. Undefined when no usage has been recorded yet. */
   tokenUsage?: TaskTokenUsage;
@@ -843,6 +865,8 @@ export interface InboxTask {
 export interface TaskCreateInput {
   title?: string;
   description: string;
+  /** Durable source provenance for the originating external issue. */
+  sourceIssue?: TaskSourceIssue;
   /** Optional persisted aggregate token usage snapshot for task creation/import paths. */
   tokenUsage?: TaskTokenUsage;
   /**
@@ -1616,6 +1640,8 @@ export interface ArchivedTaskEntry {
   executionMode?: ExecutionMode;
   prInfo?: PrInfo;
   issueInfo?: IssueInfo;
+  /** Durable source provenance for the originating external issue. */
+  sourceIssue?: TaskSourceIssue;
   /** Attachment metadata (filenames, mime types, etc.) without file content */
   attachments?: TaskAttachment[];
   /** User and agent comments remain searchable in the archive DB. */

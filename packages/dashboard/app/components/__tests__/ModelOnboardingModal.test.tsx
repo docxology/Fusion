@@ -3678,9 +3678,11 @@ describe("ModelOnboardingModal progressive disclosure", () => {
         expect(screen.getByText("Create Your First Task")).toBeTruthy();
       });
 
-      const aiProviderItem = getReadinessItem("AI Provider");
-      expect(aiProviderItem).toHaveAttribute("data-status", "skipped");
-      expect(aiProviderItem).toHaveTextContent(/AI agents won't be available/i);
+      await waitFor(() => {
+        const aiProviderItem = getReadinessItem("AI Provider");
+        expect(aiProviderItem).toHaveAttribute("data-status", "skipped");
+        expect(aiProviderItem).toHaveTextContent(/AI agents won't be available/i);
+      });
     });
 
     it("shows GitHub as missing when available but not connected", async () => {
