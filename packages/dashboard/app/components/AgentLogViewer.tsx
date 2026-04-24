@@ -1,6 +1,6 @@
 import type { AgentLogEntry } from "@fusion/core";
 import { ProviderIcon } from "./ProviderIcon";
-import { useRef, useEffect, useState, useCallback, useLayoutEffect } from "react";
+import { useRef, useEffect, useState, useCallback, useLayoutEffect, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Components } from "react-markdown";
@@ -51,12 +51,25 @@ const markdownComponents: Components = {
 
 const TOP_FOLLOW_THRESHOLD_PX = 50;
 
-function getEntryKey(entry: AgentLogEntry | undefined): string | null {
-  if (!entry) {
-    return null;
-  }
+function getEntrySignature(entry: AgentLogEntry): string {
+  return [
+    entry.taskId,
+    entry.timestamp,
+    entry.agent ?? "",
+    entry.type,
+    entry.text,
+    entry.detail ?? "",
+  ].join("|");
+}
 
-  return [entry.timestamp, entry.agent, entry.type, entry.text, entry.detail].join("|");
+function buildEntryRenderKeys(entries: AgentLogEntry[]): string[] {
+  const countsBySignature = new Map<string, number>();
+  return entries.map((entry) => {
+    const signature = getEntrySignature(entry);
+    const occurrence = countsBySignature.get(signature) ?? 0;
+    countsBySignature.set(signature, occurrence + 1);
+    return `${signature}|${occurrence}`;
+  });
 }
 
 interface ModelInfo {
@@ -115,6 +128,11 @@ export function AgentLogViewer({
   const [renderMarkdown, setRenderMarkdown] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
+  const chronologicalEntryKeys = useMemo(
+    () => buildEntryRenderKeys(entries),
+    [entries],
+  );
+
   // Newest entries render first. When streaming prepends content while the reader is away
   // from the top, keep the viewport anchored by offsetting scrollTop with the added height.
   // Near the top, preserve live-follow behavior by snapping back to the latest output.
@@ -125,7 +143,7 @@ export function AgentLogViewer({
     const newEntryCount = entries.length;
     const previousCount = previousEntryCountRef.current;
     const previousScrollHeight = previousScrollHeightRef.current;
-    const newestEntryKey = getEntryKey(entries[entries.length - 1]);
+    const newestEntryKey = chronologicalEntryKeys[chronologicalEntryKeys.length - 1] ?? null;
     const newestEntryChanged = previousNewestEntryKeyRef.current !== newestEntryKey;
 
     // Only adjust scroll for streaming updates (which append to chronological data
@@ -148,7 +166,7 @@ export function AgentLogViewer({
     previousEntryCountRef.current = newEntryCount;
     previousScrollHeightRef.current = container.scrollHeight;
     previousNewestEntryKeyRef.current = newestEntryKey;
-  }, [entries]);
+  }, [entries, chronologicalEntryKeys]);
 
   // Escape key handler to exit fullscreen mode
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
@@ -184,6 +202,7 @@ export function AgentLogViewer({
 
   // Reverse entries so newest appear first
   const reversedEntries = [...entries].reverse();
+  const reversedEntryKeys = [...chronologicalEntryKeys].reverse();
 
   const hasExecutorOverride = executorModel?.provider && executorModel?.modelId;
   const hasValidatorOverride = validatorModel?.provider && validatorModel?.modelId;
@@ -262,6 +281,7 @@ export function AgentLogViewer({
       )}
 
       {reversedEntries.map((entry, i) => {
+        const rowKey = reversedEntryKeys[i] ?? `${getEntrySignature(entry)}|fallback`;
         // Look at previous entry in reversed array (= next chronologically) for deduplication
         const prev = reversedEntries[i - 1];
         const isBlockLevel = entry.type === "tool" || entry.type === "tool_result" || entry.type === "tool_error";
@@ -284,7 +304,7 @@ export function AgentLogViewer({
 
         if (entry.type === "tool") {
           return (
-            <div key={i} className="agent-log-tool">
+            <div key={rowKey} className="agent-log-tool">
               {agentBadge}⚡ {entry.text}
               {entry.detail && <span className="agent-log-tool-detail">— {entry.detail}</span>}
             </div>
@@ -293,7 +313,7 @@ export function AgentLogViewer({
 
         if (entry.type === "thinking") {
           return (
-            <span key={i} className="agent-log-thinking">
+            <span key={rowKey} className="agent-log-thinking">
               {agentBadge}
               {renderMarkdown ? (
                 <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
@@ -308,7 +328,7 @@ export function AgentLogViewer({
 
         if (entry.type === "tool_result") {
           return (
-            <div key={i} className="agent-log-tool-result">
+            <div key={rowKey} className="agent-log-tool-result">
               {agentBadge}✓ {entry.text}
               {entry.detail && <span className="agent-log-tool-detail">— {entry.detail}</span>}
             </div>
@@ -317,7 +337,7 @@ export function AgentLogViewer({
 
         if (entry.type === "tool_error") {
           return (
-            <div key={i} className="agent-log-tool-error">
+            <div key={rowKey} className="agent-log-tool-error">
               {agentBadge}✗ {entry.text}
               {entry.detail && <span className="agent-log-tool-detail">— {entry.detail}</span>}
             </div>
@@ -326,7 +346,7 @@ export function AgentLogViewer({
 
         // Default: text entries
         return (
-          <span key={i} className="agent-log-text">
+          <span key={rowKey} className="agent-log-text">
             {agentBadge}
             {renderMarkdown ? (
               <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>

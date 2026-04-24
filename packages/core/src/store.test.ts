@@ -3949,6 +3949,45 @@ Task with acceptance criteria
       ]);
     });
 
+    it("preserves insertion order when multiple entries share the same timestamp", async () => {
+      const task = await createTestTask();
+      const tiedTimestamp = "2026-04-24T12:00:00.000Z";
+
+      insertLogEntryWithTimestamp(store, task.id, "first tied", "text", tiedTimestamp);
+      insertLogEntryWithTimestamp(store, task.id, "second tied", "text", tiedTimestamp);
+      insertLogEntryWithTimestamp(store, task.id, "third tied", "text", tiedTimestamp);
+
+      const logs = await store.getAgentLogs(task.id);
+      expect(logs.map((entry) => entry.text)).toEqual([
+        "first tied",
+        "second tied",
+        "third tied",
+      ]);
+    });
+
+    it("applies deterministic ordering for tied timestamps with limit/offset pagination", async () => {
+      const task = await createTestTask();
+      const tiedTimestamp = "2026-04-24T12:00:00.000Z";
+
+      insertLogEntryWithTimestamp(store, task.id, "first tied", "text", tiedTimestamp);
+      insertLogEntryWithTimestamp(store, task.id, "second tied", "text", tiedTimestamp);
+      insertLogEntryWithTimestamp(store, task.id, "third tied", "text", tiedTimestamp);
+      insertLogEntryWithTimestamp(store, task.id, "fourth tied", "text", tiedTimestamp);
+
+      await expect(store.getAgentLogs(task.id, { limit: 2 })).resolves.toMatchObject([
+        { text: "third tied" },
+        { text: "fourth tied" },
+      ]);
+      await expect(store.getAgentLogs(task.id, { limit: 2, offset: 1 })).resolves.toMatchObject([
+        { text: "second tied" },
+        { text: "third tied" },
+      ]);
+      await expect(store.getAgentLogs(task.id, { limit: 2, offset: 2 })).resolves.toMatchObject([
+        { text: "first tied" },
+        { text: "second tied" },
+      ]);
+    });
+
     it("preserves long entry fields when returning a bounded tail", async () => {
       const task = await createTestTask();
       const longText = [

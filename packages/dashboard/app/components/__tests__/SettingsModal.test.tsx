@@ -3097,7 +3097,7 @@ describe("SettingsModal", () => {
     render(<SettingsModal onClose={onClose} addToast={addToast} />);
     await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
 
-    fireEvent.click(screen.getByText("Scheduling"));
+    fireEvent.click(await screen.findByText("Scheduling"));
     const ageInput = screen.getByLabelText("Archive Completed Tasks After (days)") as HTMLInputElement;
     expect(ageInput.value).toBe("2");
 

@@ -127,6 +127,35 @@ describe("useAgentLogs", () => {
     expect(result.current.entries[1].text).toBe("new");
   });
 
+  it("keeps deterministic chronological order when history has tied timestamps and SSE appends tied timestamps", async () => {
+    mockFetchAgentLogsWithMeta.mockResolvedValueOnce({
+      entries: [
+        { timestamp: "2026-01-01T00:00:00Z", taskId: "FN-001", text: "hist-1", type: "text" as const },
+        { timestamp: "2026-01-01T00:00:00Z", taskId: "FN-001", text: "hist-2", type: "text" as const },
+      ],
+      total: 3,
+      hasMore: false,
+    });
+
+    const { result } = renderHook(() => useAgentLogs("FN-001", true));
+
+    await waitFor(() => {
+      expect(result.current.entries.map((entry) => entry.text)).toEqual(["hist-1", "hist-2"]);
+    });
+
+    const es = MockEventSource.instances[0];
+    act(() => {
+      es._emit("agent:log", {
+        timestamp: "2026-01-01T00:00:00Z",
+        taskId: "FN-001",
+        text: "live-3",
+        type: "text",
+      });
+    });
+
+    expect(result.current.entries.map((entry) => entry.text)).toEqual(["hist-1", "hist-2", "live-3"]);
+  });
+
   it("closes SSE when enabled changes to false", async () => {
     mockFetchAgentLogsWithMeta.mockResolvedValueOnce({ entries: [], total: 0, hasMore: false });
 
@@ -307,6 +336,38 @@ describe("useAgentLogs", () => {
       expect(result.current.entries[0].text).toBe("older");
       expect(result.current.entries[1].text).toBe("newer");
       expect(result.current.hasMore).toBe(false);
+    });
+
+    it("loadMore preserves chronological order with near-equal timestamps", async () => {
+      const initialLogs = [
+        { timestamp: "2026-01-01T00:00:01.001Z", taskId: "FN-001", text: "middle", type: "text" as const },
+        { timestamp: "2026-01-01T00:00:01.002Z", taskId: "FN-001", text: "newest", type: "text" as const },
+      ];
+      const olderLogs = [
+        { timestamp: "2026-01-01T00:00:00.999Z", taskId: "FN-001", text: "oldest-a", type: "text" as const },
+        { timestamp: "2026-01-01T00:00:00.999Z", taskId: "FN-001", text: "oldest-b", type: "text" as const },
+      ];
+
+      mockFetchAgentLogsWithMeta
+        .mockResolvedValueOnce({ entries: initialLogs, total: 4, hasMore: true })
+        .mockResolvedValueOnce({ entries: olderLogs, total: 4, hasMore: false });
+
+      const { result } = renderHook(() => useAgentLogs("FN-001", true));
+
+      await waitFor(() => {
+        expect(result.current.entries.map((entry) => entry.text)).toEqual(["middle", "newest"]);
+      });
+
+      await act(async () => {
+        await result.current.loadMore();
+      });
+
+      expect(result.current.entries.map((entry) => entry.text)).toEqual([
+        "oldest-a",
+        "oldest-b",
+        "middle",
+        "newest",
+      ]);
     });
 
     it("loadMore does not trigger when already loading more", async () => {

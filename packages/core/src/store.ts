@@ -4667,7 +4667,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       const rows = this.db.prepare(`
         SELECT * FROM agentLogEntries
         WHERE taskId = ?
-        ORDER BY timestamp DESC
+        ORDER BY timestamp DESC, id DESC
         LIMIT ?
       `).all(taskId, readCount) as Array<Record<string, unknown>>;
       const entries = rows.map((row) => this.mapAgentLogRow(row)).reverse();
@@ -4680,7 +4680,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
     const rows = this.db.prepare(`
       SELECT * FROM agentLogEntries
       WHERE taskId = ?
-      ORDER BY timestamp ASC
+      ORDER BY timestamp ASC, id ASC
     `).all(taskId) as Array<Record<string, unknown>>;
     const entries = rows.map((row) => this.mapAgentLogRow(row));
     if (offset > 0) {
@@ -4719,7 +4719,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
     const rows = this.db.prepare(`
       SELECT * FROM agentLogEntries
       WHERE taskId = ? AND timestamp >= ? AND timestamp <= ?
-      ORDER BY timestamp ASC
+      ORDER BY timestamp ASC, id ASC
     `).all(taskId, startIso, end) as Array<Record<string, unknown>>;
     return rows.map((row) => this.mapAgentLogRow(row));
   }

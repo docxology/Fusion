@@ -44,6 +44,70 @@ describe("AgentLogViewer", () => {
     expect(textSpans[1].textContent).toContain("first chunk");
   });
 
+  it("keeps existing DOM rows stable when a new live entry appears at the top", () => {
+    const initialEntries = [
+      makeEntry({ text: "first chunk", timestamp: "2026-01-01T00:00:00Z" }),
+      makeEntry({ text: "second chunk", timestamp: "2026-01-01T00:00:01Z" }),
+    ];
+
+    const { container, rerender } = render(
+      <AgentLogViewer entries={initialEntries} loading={false} />,
+    );
+
+    const initialTextRows = container.querySelectorAll(".agent-log-text");
+    const secondChunkNode = initialTextRows[0] as HTMLElement;
+    const firstChunkNode = initialTextRows[1] as HTMLElement;
+    expect(secondChunkNode.textContent).toContain("second chunk");
+    expect(firstChunkNode.textContent).toContain("first chunk");
+
+    const withLiveUpdate = [
+      ...initialEntries,
+      makeEntry({ text: "third chunk", timestamp: "2026-01-01T00:00:02Z" }),
+    ];
+
+    rerender(<AgentLogViewer entries={withLiveUpdate} loading={false} />);
+
+    const updatedTextRows = container.querySelectorAll(".agent-log-text");
+    expect(updatedTextRows).toHaveLength(3);
+    expect(updatedTextRows[0].textContent).toContain("third chunk");
+    expect(updatedTextRows[1].textContent).toContain("second chunk");
+    expect(updatedTextRows[2].textContent).toContain("first chunk");
+    expect(updatedTextRows[1]).toBe(secondChunkNode);
+    expect(updatedTextRows[2]).toBe(firstChunkNode);
+  });
+
+  it("avoids duplicate-key collisions when entries are exact duplicates", () => {
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const duplicateEntry = makeEntry({
+      timestamp: "2026-01-01T00:00:00Z",
+      taskId: "FN-001",
+      text: "same chunk",
+      type: "text",
+      agent: "executor",
+      detail: "same detail",
+    });
+
+    const { container, rerender } = render(
+      <AgentLogViewer entries={[duplicateEntry, { ...duplicateEntry }]} loading={false} />,
+    );
+
+    rerender(
+      <AgentLogViewer
+        entries={[duplicateEntry, { ...duplicateEntry }, { ...duplicateEntry }]}
+        loading={false}
+      />,
+    );
+
+    expect(container.querySelectorAll(".agent-log-text")).toHaveLength(3);
+    expect(
+      consoleErrorSpy.mock.calls.some((call) =>
+        String(call[0]).includes("Encountered two children with the same key"),
+      ),
+    ).toBe(false);
+
+    consoleErrorSpy.mockRestore();
+  });
+
   it("renders tool entries with distinct styling", () => {
     const entries = [
       makeEntry({ text: "Read", type: "tool" }),
