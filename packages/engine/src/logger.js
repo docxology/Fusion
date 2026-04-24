@@ -1,5 +1,3 @@
-/* eslint-env node */
-
 /**
  * Lightweight structured logger for the `@fusion/engine` package.
  *
@@ -17,8 +15,8 @@
  * of control for filtering, suppressing (e.g. in tests), or redirecting
  * engine log output in the future.
  */
-const LOG_LEVEL_MARKER_PREFIX = "\0fnlvl=";
-const LOG_LEVEL_MARKER_SUFFIX = "\0";
+const LOG_LEVEL_MARKER_PREFIX = "\u0000fnlvl=";
+const LOG_LEVEL_MARKER_SUFFIX = "\u0000";
 function withSeverityMarker(level, payload) {
     return `${LOG_LEVEL_MARKER_PREFIX}${level}${LOG_LEVEL_MARKER_SUFFIX}${payload}`;
 }
@@ -38,13 +36,13 @@ export function createLogger(prefix) {
     const tag = `[${prefix}]`;
     return {
         log(message, ...args) {
-            globalThis.console.error(withSeverityMarker("info", `${tag} ${message}`), ...args);
+            console.error(withSeverityMarker("info", `${tag} ${message}`), ...args);
         },
         warn(message, ...args) {
-            globalThis.console.warn(withSeverityMarker("warn", `${tag} ${message}`), ...args);
+            console.warn(withSeverityMarker("warn", `${tag} ${message}`), ...args);
         },
         error(message, ...args) {
-            globalThis.console.error(withSeverityMarker("error", `${tag} ${message}`), ...args);
+            console.error(withSeverityMarker("error", `${tag} ${message}`), ...args);
         },
     };
 }
@@ -84,4 +82,34 @@ export const remoteNodeLog = createLogger("remote-node");
 export const nodeHealthMonitorLog = createLogger("node-health-monitor");
 /** Logger for the peer exchange (gossip) subsystem. */
 export const peerExchangeLog = createLogger("peer-exchange");
+/**
+ * Extract both a short message and a full stack trace from an unknown caught
+ * value. Use this at catch sites instead of the
+ * `err instanceof Error ? err.message : String(err)` idiom so that the stack
+ * is preserved for logs, task `activityLog` entries, and surfaced diagnostics.
+ *
+ * `detail` is `message` when no stack is available and `message + "\n" + stack`
+ * otherwise — suitable for `store.logEntry(taskId, action, detail)`.
+ */
+export function formatError(err) {
+    if (err instanceof Error) {
+        const message = err.message || err.name || "Error";
+        const stack = err.stack;
+        const detail = stack && stack.includes(message) ? stack : stack ? `${message}\n${stack}` : message;
+        return { message, stack, detail };
+    }
+    let message;
+    if (typeof err === "string") {
+        message = err;
+    }
+    else {
+        try {
+            message = JSON.stringify(err);
+        }
+        catch {
+            message = String(err);
+        }
+    }
+    return { message, detail: message };
+}
 //# sourceMappingURL=logger.js.map

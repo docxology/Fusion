@@ -24,7 +24,7 @@ import { Type, type Static } from "@mariozechner/pi-ai";
 import { createTaskCreateTool, createTaskLogToolWithContext, createTaskDocumentWriteTool, createTaskDocumentReadTool, createListAgentsTool, createDelegateTaskTool, createSendMessageTool, createReadMessagesTool, createMemoryTools, taskCreateParams } from "./agent-tools.js";
 import { AgentLogger } from "./agent-logger.js";
 import { resolveAgentInstructionsWithRatings, buildSystemPromptWithInstructions } from "./agent-instructions.js";
-import { heartbeatLog } from "./logger.js";
+import { heartbeatLog, formatError } from "./logger.js";
 import { createRunAuditor, type EngineRunContext } from "./run-audit.js";
 
 // Lazy import for pi — avoids pulling the pi SDK into the module graph
@@ -1350,12 +1350,12 @@ export class HeartbeatMonitor {
 
           heartbeatLog.log(`Heartbeat completed for ${agentId} (${toolCallCount} tool calls, ~${estimatedOutputTokens} output tokens)`);
         } catch (err) {
-          const errorMessage = err instanceof Error ? err.message : String(err);
-          heartbeatLog.error(`Heartbeat execution failed for ${agentId}: ${errorMessage}`);
+          const errorDetail = formatError(err).detail;
+          heartbeatLog.error(`Heartbeat execution failed for ${agentId}: ${errorDetail}`);
           await flushAgentLogger();
           await this.completeRun(agentId, run.id, {
             status: "failed",
-            stderrExcerpt: errorMessage,
+            stderrExcerpt: errorDetail,
             stdoutExcerpt: stdoutExcerpt || undefined,
           });
         } finally {
@@ -1375,8 +1375,9 @@ export class HeartbeatMonitor {
 
         return (await this.store.getRunDetail(agentId, run.id))!;
       } catch (err) {
+        const errorDetail = formatError(err).detail;
         const errorMessage = err instanceof Error ? err.message : String(err);
-        heartbeatLog.error(`Heartbeat execution error for ${agentId}: ${errorMessage}`);
+        heartbeatLog.error(`Heartbeat execution error for ${agentId}: ${errorDetail}`);
         await flushAgentLogger();
 
         // Attempt to complete the run as failed if it's still active.
@@ -1385,7 +1386,7 @@ export class HeartbeatMonitor {
         try {
           await this.completeRun(agentId, run.id, {
             status: "failed",
-            stderrExcerpt: errorMessage,
+            stderrExcerpt: errorDetail,
           });
         } catch (completeRunErr) {
           const completeRunErrMsg = completeRunErr instanceof Error ? completeRunErr.message : String(completeRunErr);

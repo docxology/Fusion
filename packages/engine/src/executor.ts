@@ -18,7 +18,7 @@ import { ModelRegistry, SessionManager, type ToolDefinition, type AgentSession }
 import { PRIORITY_EXECUTE, type AgentSemaphore } from "./concurrency.js";
 import { getRegisteredWorktreePaths, isRegisteredGitWorktree, isUsableTaskWorktree, type WorktreePool } from "./worktree-pool.js";
 import { AgentLogger } from "./agent-logger.js";
-import { executorLog, reviewerLog } from "./logger.js";
+import { executorLog, reviewerLog, formatError } from "./logger.js";
 import { TokenCapDetector } from "./token-cap-detector.js";
 import { isUsageLimitError, checkSessionError, type UsageLimitPauser } from "./usage-limit-detector.js";
 import { isTransientError, isSilentTransientError } from "./transient-error-detector.js";
@@ -1572,7 +1572,7 @@ export class TaskExecutor {
             await retryableStepWork();
           }
         } catch (err: unknown) {
-          const errorMessage = err instanceof Error ? err.message : String(err);
+          const { message: errorMessage, detail: errorDetail, stack: errorStack } = formatError(err);
           if (this.depAborted.has(task.id)) {
             this.depAborted.delete(task.id);
             await this.handleDepAbortCleanup(task.id, worktreePath);
@@ -1619,7 +1619,10 @@ export class TaskExecutor {
               return;
             }
 
-            executorLog.error(`✗ ${task.id} transient error retries exhausted: ${errorMessage}`);
+            executorLog.error(`✗ ${task.id} transient error retries exhausted: ${errorDetail}`);
+            if (errorStack) {
+              await this.store.logEntry(task.id, `Transient error retries exhausted: ${errorMessage}`, errorStack, this.currentRunContext);
+            }
             await this.store.updateTask(task.id, {
               status: "failed",
               error: errorMessage,
@@ -1630,8 +1633,8 @@ export class TaskExecutor {
             executorLog.log(`✗ ${task.id} transient retries exhausted → in-review`);
             this.options.onError?.(task, err instanceof Error ? err : new Error(errorMessage));
           } else {
-            executorLog.error(`✗ ${task.id} step-session execution failed:`, errorMessage);
-            await this.store.logEntry(task.id, `Step-session execution failed: ${errorMessage}`, undefined, this.currentRunContext);
+            executorLog.error(`✗ ${task.id} step-session execution failed:`, errorDetail);
+            await this.store.logEntry(task.id, `Step-session execution failed: ${errorMessage}`, errorStack ?? errorDetail, this.currentRunContext);
             await this.store.updateTask(task.id, { status: "failed", error: errorMessage });
             await this.store.moveTask(task.id, "in-review");
             executorLog.log(`✗ ${task.id} step-session execution failed → in-review`);
@@ -2196,7 +2199,7 @@ export class TaskExecutor {
         await retryableWork();
       }
     } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
+      const { message: errorMessage, detail: errorDetail, stack: errorStack } = formatError(err);
       if (this.depAborted.has(task.id)) {
         // Dependency added mid-execution — discard worktree and move to triage
         this.depAborted.delete(task.id);
@@ -2384,8 +2387,8 @@ export class TaskExecutor {
           }
 
           // Recovery budget exhausted — escalate to real failure
-          executorLog.error(`✗ ${task.id} transient error retries exhausted (${MAX_RECOVERY_RETRIES} attempts): ${errorMessage}`);
-          await this.store.logEntry(task.id, `Transient error retries exhausted after ${MAX_RECOVERY_RETRIES} attempts: ${errorMessage}`, undefined, this.currentRunContext);
+          executorLog.error(`✗ ${task.id} transient error retries exhausted (${MAX_RECOVERY_RETRIES} attempts): ${errorDetail}`);
+          await this.store.logEntry(task.id, `Transient error retries exhausted after ${MAX_RECOVERY_RETRIES} attempts: ${errorMessage}`, errorStack ?? errorDetail, this.currentRunContext);
           await this.store.updateTask(task.id, {
             status: "failed",
             error: errorMessage,
@@ -2397,8 +2400,8 @@ export class TaskExecutor {
           this.options.onError?.(task, err instanceof Error ? err : new Error(errorMessage));
           return;
         }
-        executorLog.error(`✗ ${task.id} execution failed:`, errorMessage);
-        await this.store.logEntry(task.id, `Execution failed: ${errorMessage}`, undefined, this.currentRunContext);
+        executorLog.error(`✗ ${task.id} execution failed:`, errorDetail);
+        await this.store.logEntry(task.id, `Execution failed: ${errorMessage}`, errorStack ?? errorDetail, this.currentRunContext);
         await this.store.updateTask(task.id, { status: "failed", error: errorMessage });
         await this.store.moveTask(task.id, "in-review");
         executorLog.log(`✗ ${task.id} execution failed → in-review`);
@@ -3522,14 +3525,14 @@ ${failureFeedback}
           };
         }
       } catch (err: unknown) {
-        const errorMessage = err instanceof Error ? err.message : String(err);
+        const { message: errorMessage, detail: errorDetail, stack: errorStack } = formatError(err);
         const completedAt = new Date().toISOString();
         await this.store.logEntry(
           task.id,
           `[pre-merge] Workflow step failed: ${ws.name}`,
-          errorMessage,
+          errorStack ?? errorDetail,
         );
-        executorLog.error(`${task.id} — [pre-merge] workflow step error: ${ws.name} — ${errorMessage}`);
+        executorLog.error(`${task.id} — [pre-merge] workflow step error: ${ws.name} — ${errorDetail}`);
         // Update existing pending entry in place
         const existingIdx = results.findIndex(r => r.workflowStepId === ws.id);
         if (existingIdx >= 0) {

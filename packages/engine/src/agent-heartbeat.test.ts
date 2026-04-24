@@ -25,6 +25,15 @@ vi.mock("./logger.js", () => {
   return {
     createLogger: vi.fn(() => createMockLogger()),
     heartbeatLog: createMockLogger(),
+    formatError: (err: unknown) => {
+      if (err instanceof Error) {
+        const message = err.message || err.name || "Error";
+        const stack = err.stack;
+        return { message, stack, detail: stack ?? message };
+      }
+      const message = typeof err === "string" ? err : String(err);
+      return { message, detail: message };
+    },
   };
 });
 

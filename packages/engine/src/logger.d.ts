@@ -27,6 +27,10 @@ export interface Logger {
  * @returns A `Logger` whose output is prefixed and sent to stderr. Keeping
  *          engine logs off stdout prevents command/test output consumers from
  *          receiving Fusion execution chatter.
+ *
+ *          The logger prepends an internal control-character severity marker
+ *          so dashboard TUI console-capture can preserve info/warn/error
+ *          semantics even when `log()` is transported via `console.error`.
  */
 export declare function createLogger(prefix: string): Logger;
 /** Logger for the scheduler subsystem. */
@@ -65,4 +69,18 @@ export declare const remoteNodeLog: Logger;
 export declare const nodeHealthMonitorLog: Logger;
 /** Logger for the peer exchange (gossip) subsystem. */
 export declare const peerExchangeLog: Logger;
+/**
+ * Extract both a short message and a full stack trace from an unknown caught
+ * value. Use this at catch sites instead of the
+ * `err instanceof Error ? err.message : String(err)` idiom so that the stack
+ * is preserved for logs, task `activityLog` entries, and surfaced diagnostics.
+ *
+ * `detail` is `message` when no stack is available and `message + "\n" + stack`
+ * otherwise — suitable for `store.logEntry(taskId, action, detail)`.
+ */
+export declare function formatError(err: unknown): {
+    message: string;
+    stack?: string;
+    detail: string;
+};
 //# sourceMappingURL=logger.d.ts.map

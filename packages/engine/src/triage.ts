@@ -24,7 +24,7 @@ import { buildSessionSkillContext } from "./session-skill-context.js";
 import { PRIORITY_SPECIFY, type AgentSemaphore } from "./concurrency.js";
 import { AgentLogger } from "./agent-logger.js";
 import { resolveAgentInstructions, buildSystemPromptWithInstructions } from "./agent-instructions.js";
-import { triageLog, reviewerLog } from "./logger.js";
+import { triageLog, reviewerLog, formatError } from "./logger.js";
 import {
   isUsageLimitError,
   checkSessionError,
@@ -1084,7 +1084,7 @@ export class TriageProcessor {
         await retryableWork();
       }
     } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
+      const { message: errorMessage, detail: errorDetail, stack: errorStack } = formatError(err);
       // Race condition: task was deleted (e.g. as a duplicate) between listTasks()
       // and specifyTask(). The file is gone, so just log and skip — no point retrying.
       if ((err as Record<string, unknown>).code === "ENOENT") {
@@ -1172,7 +1172,13 @@ export class TriageProcessor {
           const msg = restoreErr instanceof Error ? restoreErr.message : String(restoreErr);
           triageLog.warn(`${task.id}: failed to restore status to '${restoreStatus}' after specification error: ${msg}`);
         });
-        triageLog.error(`✗ ${task.id} specification failed:`, errorMessage);
+        triageLog.error(`✗ ${task.id} specification failed:`, errorDetail);
+        if (errorStack) {
+          await this.store.logEntry(task.id, `Specification failed: ${errorMessage}`, errorStack).catch((logErr: unknown) => {
+            const msg = logErr instanceof Error ? logErr.message : String(logErr);
+            triageLog.warn(`${task.id}: failed to persist specification-failure stack trace: ${msg}`);
+          });
+        }
         this.options.onSpecifyError?.(task, err instanceof Error ? err : new Error(errorMessage));
       }
     } finally {

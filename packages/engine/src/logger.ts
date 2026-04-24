@@ -109,3 +109,32 @@ export const nodeHealthMonitorLog = createLogger("node-health-monitor");
 
 /** Logger for the peer exchange (gossip) subsystem. */
 export const peerExchangeLog = createLogger("peer-exchange");
+
+/**
+ * Extract both a short message and a full stack trace from an unknown caught
+ * value. Use this at catch sites instead of the
+ * `err instanceof Error ? err.message : String(err)` idiom so that the stack
+ * is preserved for logs, task `activityLog` entries, and surfaced diagnostics.
+ *
+ * `detail` is `message` when no stack is available and `message + "\n" + stack`
+ * otherwise — suitable for `store.logEntry(taskId, action, detail)`.
+ */
+export function formatError(err: unknown): { message: string; stack?: string; detail: string } {
+  if (err instanceof Error) {
+    const message = err.message || err.name || "Error";
+    const stack = err.stack;
+    const detail = stack && stack.includes(message) ? stack : stack ? `${message}\n${stack}` : message;
+    return { message, stack, detail };
+  }
+  let message: string;
+  if (typeof err === "string") {
+    message = err;
+  } else {
+    try {
+      message = JSON.stringify(err);
+    } catch {
+      message = String(err);
+    }
+  }
+  return { message, detail: message };
+}

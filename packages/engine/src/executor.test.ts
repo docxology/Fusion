@@ -43,6 +43,15 @@ vi.mock("./logger.js", () => {
     ipcLog: createMockLogger(),
     projectManagerLog: createMockLogger(),
     hybridExecutorLog: createMockLogger(),
+    formatError: (err: unknown) => {
+      if (err instanceof Error) {
+        const message = err.message || err.name || "Error";
+        const stack = err.stack;
+        return { message, stack, detail: stack ?? message };
+      }
+      const message = typeof err === "string" ? err : String(err);
+      return { message, detail: message };
+    },
   };
 });
 vi.mock("./merger.js", () => ({
