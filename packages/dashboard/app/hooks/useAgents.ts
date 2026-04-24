@@ -4,23 +4,43 @@ import { fetchAgents, fetchAgentStats } from "../api";
 import { isEphemeralAgent } from "@fusion/core";
 import { subscribeSse } from "../sse-bus";
 
-export function useAgents(projectId?: string) {
+interface UseAgentsOptions {
+  filterState?: AgentState | "all";
+  showSystemAgents?: boolean;
+}
+
+interface AgentFilter {
+  state?: AgentState;
+  role?: AgentCapability;
+  includeEphemeral?: boolean;
+}
+
+export function useAgents(projectId?: string, options?: UseAgentsOptions) {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [stats, setStats] = useState<AgentStats | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  const loadAgents = useCallback(async (filter?: { state?: AgentState; role?: AgentCapability }) => {
+  const loadAgents = useCallback(async (filter?: AgentFilter) => {
     setIsLoading(true);
     try {
-      // By default, fetchAgents excludes ephemeral agents (handled by API)
-      const data = await fetchAgents(filter, projectId);
+      const filterState = options?.filterState;
+      const baseFilter = filterState && filterState !== "all" ? { state: filterState } : undefined;
+      const includeEphemeral = options?.showSystemAgents ?? false;
+      const data = await fetchAgents(
+        {
+          ...baseFilter,
+          ...filter,
+          includeEphemeral: filter?.includeEphemeral ?? includeEphemeral,
+        },
+        projectId,
+      );
       setAgents(data);
     } catch (err) {
       console.error("Failed to load agents:", err);
     } finally {
       setIsLoading(false);
     }
-  }, [projectId]);
+  }, [projectId, options?.filterState, options?.showSystemAgents]);
 
   const loadStats = useCallback(async () => {
     try {
@@ -54,9 +74,13 @@ export function useAgents(projectId?: string) {
     });
   }, [projectId, loadAgents, loadStats]);
 
-  const activeAgents = agents.filter(a =>
-    (a.state === "active" || a.state === "running") && !isEphemeralAgent(a)
-  );
+  const showSystemAgents = options?.showSystemAgents ?? false;
+  const activeAgents = agents.filter((agent) => {
+    if (agent.state !== "active" && agent.state !== "running") {
+      return false;
+    }
+    return showSystemAgents || !isEphemeralAgent(agent);
+  });
 
   return { agents, activeAgents, stats, isLoading, loadAgents, loadStats };
 }

@@ -4608,6 +4608,10 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
     try {
       const { store: scopedStore } = await getProjectContext(req);
       const task = await scopedStore.getTask(req.params.id);
+      if (!task) {
+        res.status(404).json({ error: "Task not found" });
+        return;
+      }
       // Check worktree existence asynchronously to avoid blocking event loop
       if (!task.worktree) {
         res.json([]);
@@ -17427,7 +17431,8 @@ async function persistImportedSkills(
       const { store: scopedStore } = await getProjectContext(req);
       const task = await scopedStore.getTask(req.params.id);
       if (!task) {
-        throw notFound("Task not found");
+        res.status(404).json({ error: "Task not found" });
+        return;
       }
 
       // Done tasks: diff from the squash commit's first parent.
@@ -17645,6 +17650,10 @@ async function persistImportedSkills(
     try {
       const { store: scopedStore } = await getProjectContext(req);
       const task = await scopedStore.getTask(req.params.id);
+      if (!task) {
+        res.status(404).json({ error: "Task not found" });
+        return;
+      }
 
       // Done tasks: diff from the squash commit's first parent.
       // The merger only performs squash merges, so sha^..sha contains exactly

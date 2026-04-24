@@ -120,11 +120,16 @@ describe("AgentsView", () => {
       });
     });
 
-    it("fetches agents on mount", async () => {
+    it("fetches agents only once on mount (regression: no duplicate initial load path)", async () => {
       render(<AgentsView addToast={mockAddToast} />);
+
       await waitFor(() => {
-        expect(mockFetchAgents).toHaveBeenCalled();
+        expect(mockFetchAgents).toHaveBeenCalledTimes(1);
+        expect(mockFetchAgentStats).toHaveBeenCalledTimes(1);
       });
+
+      // Ensure the single-load path still powers dependent UI sections.
+      expect(screen.getByText("Active Agents (1)")).toBeTruthy();
     });
 
     it("passes projectId to agent fetches", async () => {
@@ -851,21 +856,22 @@ describe("AgentsView", () => {
       });
     });
 
-    it("shows system agents in agent list when checkbox is enabled", async () => {
+    it("hides system agents by default and reveals them when Show system agents is enabled", async () => {
       const systemAgents: Agent[] = [
         {
           id: "agent-sys-001",
           name: "executor-FN-TEST",
           role: "executor" as AgentCapability,
-          state: "terminated" as AgentState,
+          state: "active" as AgentState,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
           metadata: { agentKind: "task-worker" },
         },
       ];
 
-      // Mock returns only normal agents by default (excluding terminated)
-      mockFetchAgents.mockResolvedValue(mockAgents.slice(0, 3));
+      // Return system agent even when includeEphemeral is false to verify
+      // client-side filtering still hides it unless the toggle is enabled.
+      mockFetchAgents.mockResolvedValue([...mockAgents.slice(0, 3), ...systemAgents]);
 
       render(<AgentsView addToast={mockAddToast} projectId={projectId} />);
 
@@ -873,20 +879,14 @@ describe("AgentsView", () => {
         expect(screen.getByText("Test Agent 1")).toBeTruthy();
       });
 
-      // Normal agents should be visible
       expect(screen.queryByText("executor-FN-TEST")).toBeNull();
 
-      // Update mock to return system agents too (next call)
-      mockFetchAgents.mockResolvedValueOnce([...mockAgents.slice(0, 3), ...systemAgents]);
-
-      // Enable system agents toggle
       const checkbox = screen.getByLabelText("Show system agents");
       fireEvent.click(checkbox);
 
-      // Now the agents should be reloaded with system agents included
       await waitFor(() => {
         expect(mockFetchAgents).toHaveBeenCalledWith({ includeEphemeral: true }, projectId);
-        expect(screen.getByText("executor-FN-TEST")).toBeTruthy();
+        expect(screen.getAllByText("executor-FN-TEST").length).toBeGreaterThan(0);
       });
     });
   });

@@ -1,13 +1,12 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { Plus, Play, Pause, Activity, Trash2, RefreshCw, Bot, List, ChevronRight, ChevronDown, GitBranch, Filter, Upload, Network } from "lucide-react";
 import type { Agent, AgentCapability, AgentState, OrgTreeNode } from "../api";
-import { fetchAgents, updateAgent, updateAgentState, deleteAgent, startAgentRun, fetchOrgTree, fetchSettings, updateSettings } from "../api";
+import { updateAgent, updateAgentState, deleteAgent, startAgentRun, fetchOrgTree, fetchSettings, updateSettings } from "../api";
 import { AgentDetailView } from "./AgentDetailView";
 import { ActiveAgentsPanel } from "./ActiveAgentsPanel";
 import { AgentMetricsBar } from "./AgentMetricsBar";
 import { AgentEmptyState } from "./AgentEmptyState";
 import { useAgents } from "../hooks/useAgents";
-import { subscribeSse } from "../sse-bus";
 import { useAgentHierarchy } from "../hooks/useAgentHierarchy";
 import type { AgentNode } from "../hooks/useAgentHierarchy";
 import { NewAgentDialog } from "./NewAgentDialog";
@@ -250,12 +249,14 @@ function OrgChartNode({
 }
 
 export function AgentsView({ addToast, projectId }: AgentsViewProps) {
-  const { activeAgents, stats } = useAgents(projectId);
-  const [agents, setAgents] = useState<Agent[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [showSystemAgents, setShowSystemAgents] = useState(false);
+  const [filterState, setFilterState] = useState<AgentState | "all">("all");
+  const { agents, activeAgents, stats, isLoading, loadAgents } = useAgents(projectId, {
+    filterState,
+    showSystemAgents,
+  });
   const [isCreating, setIsCreating] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
-  const [filterState, setFilterState] = useState<AgentState | "all">("all");
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [agentView, setAgentView] = useState<"list" | "board" | "tree" | "org">(() => {
     if (typeof window === "undefined") return "list";
@@ -281,7 +282,6 @@ export function AgentsView({ addToast, projectId }: AgentsViewProps) {
 
   const [editingRoleForAgent, setEditingRoleForAgent] = useState<string | null>(null);
   const roleSelectRef = useRef<HTMLSelectElement>(null);
-  const [showSystemAgents, setShowSystemAgents] = useState(false);
   const [updatingHeartbeatAgentId, setUpdatingHeartbeatAgentId] = useState<string | null>(null);
   /** Agent ID currently showing custom heartbeat input */
   const [customHeartbeatAgentId, setCustomHeartbeatAgentId] = useState<string | null>(null);
@@ -350,23 +350,6 @@ export function AgentsView({ addToast, projectId }: AgentsViewProps) {
       .filter((n): n is OrgTreeNode => n !== null);
   }, [orgTree, showSystemAgents]);
 
-  const loadAgents = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const filter = filterState !== "all" ? { state: filterState } : undefined;
-      const data = await fetchAgents({ ...filter, includeEphemeral: showSystemAgents }, projectId);
-      setAgents(data);
-    } catch (err) {
-      addToast(`Failed to load agents: ${getErrorMessage(err)}`, "error");
-    } finally {
-      setIsLoading(false);
-    }
-  }, [filterState, showSystemAgents, addToast, projectId]);
-
-  useEffect(() => {
-    void loadAgents();
-  }, [loadAgents]);
-
   useEffect(() => {
     if (agentView !== "org") return;
 
@@ -395,25 +378,9 @@ export function AgentsView({ addToast, projectId }: AgentsViewProps) {
     };
   }, [agentView, projectId, showSystemAgents, addToast]);
 
-  // Refresh agent list on SSE events (independent from useAgents hook state)
-  useEffect(() => {
-    const query = projectId ? `?projectId=${encodeURIComponent(projectId)}` : "";
-    const refresh = () => {
-      void loadAgents();
-    };
-
-    return subscribeSse(`/api/events${query}`, {
-      events: {
-        "agent:created": refresh,
-        "agent:updated": refresh,
-        "agent:deleted": refresh,
-        "agent:stateChanged": refresh,
-      },
-    });
-  }, [projectId, loadAgents]);
-
   // Poll for agent updates to keep health statuses fresh (every 30 seconds)
-  // This ensures health badges stay current while the view is open
+  // This ensures health badges stay current while the view is open.
+  // SSE refreshes are handled by useAgents.
   useEffect(() => {
     const pollInterval = setInterval(() => {
       void loadAgents();
@@ -426,8 +393,6 @@ export function AgentsView({ addToast, projectId }: AgentsViewProps) {
 
   const handleStateChange = async (agentId: string, newState: AgentState) => {
     if (transitioningAgentIds.has(agentId)) return;
-    const previousAgent = agents.find(a => a.id === agentId);
-    setAgents(prev => prev.map(a => a.id === agentId ? { ...a, state: newState } : a));
     setTransitioningAgentIds(prev => new Set(prev).add(agentId));
     try {
       await updateAgentState(agentId, newState, projectId);
@@ -441,9 +406,6 @@ export function AgentsView({ addToast, projectId }: AgentsViewProps) {
       }
       void loadAgents();
     } catch (err) {
-      if (previousAgent) {
-        setAgents(prev => prev.map(a => a.id === agentId ? previousAgent : a));
-      }
       addToast(`Failed to update state: ${getErrorMessage(err)}`, "error");
     } finally {
       setTransitioningAgentIds(prev => { const next = new Set(prev); next.delete(agentId); return next; });
