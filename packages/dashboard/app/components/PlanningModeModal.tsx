@@ -96,6 +96,7 @@ export function PlanningModeModal({ isOpen, onClose, onTaskCreated, onTasksCreat
   // which would skip auto-start on the second (committed) render. Refs are
   // re-initialized on each render, ensuring the auto-start effect runs correctly.
   const hasAutoStartedRef = useRef(false);
+  const hasLoadedPersistedRef = useRef(false);
   const [streamingOutput, setStreamingOutput] = useState<string>("");
   const [showThinking, setShowThinking] = useState(true);
   const [isReconnecting, setIsReconnecting] = useState(false);
@@ -369,14 +370,24 @@ export function PlanningModeModal({ isOpen, onClose, onTaskCreated, onTasksCreat
         handleStartPlanning(initialPlanProp);
       }, 0);
       return () => clearTimeout(timer);
-    } else if (isOpen && !initialPlanProp && !hasAutoStartedRef.current && view.type === "initial") {
-      // Check localStorage for persisted description when no prop provided
+    } else if (
+      isOpen &&
+      !initialPlanProp &&
+      !hasAutoStartedRef.current &&
+      !hasLoadedPersistedRef.current &&
+      view.type === "initial"
+    ) {
+      // Restore the persisted description from localStorage on first open only.
+      // Without the ref this effect re-fires on every keystroke (handleStart-
+      // Planning depends on initialPlan), and each fire would clobber what
+      // the user just typed back to the persisted value.
+      hasLoadedPersistedRef.current = true;
       const persisted = getPlanningDescription(projectId);
       if (persisted) {
         setInitialPlan(persisted);
       }
     }
-  }, [isOpen, initialPlanProp, view.type, handleStartPlanning]);
+  }, [isOpen, initialPlanProp, view.type, handleStartPlanning, projectId]);
 
   // Resume a persisted background session
   useEffect(() => {
@@ -435,6 +446,7 @@ export function PlanningModeModal({ isOpen, onClose, onTaskCreated, onTasksCreat
   useEffect(() => {
     if (!isOpen) {
       hasAutoStartedRef.current = false;
+      hasLoadedPersistedRef.current = false;
       setIsReconnecting(false);
       setIsRetrying(false);
       setLockSessionId(null);
