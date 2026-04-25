@@ -12,18 +12,22 @@ export const FUSION_LOGO_LINES = [
   "╚═╝      ╚═════╝ ╚══════╝╚═╝ ╚═════╝ ╚═╝  ╚═══╝",
 ];
 
-// ANSI Shadow (extended) — ~70 cols × 10 rows. Same block-letter aesthetic
-// as the small variant, scaled up by extending vertical bodies and widening
-// letter cells. Used when the terminal has room for it.
+// ANSI Shadow doubled vertically — each row of FUSION_LOGO_LINES rendered
+// twice for a 2× taller block logo (47 cols × 12 rows). Preserves the same
+// block-letter aesthetic; just scaled up. Used when the terminal has room.
 export const FUSION_LOGO_LARGE_LINES = [
-  "███████╗ ██╗    ██╗ ███████╗ ██╗  ██████╗  ███╗   ██╗",
-  "██╔════╝ ██║    ██║ ██╔════╝ ██║ ██╔═══██╗ ████╗  ██║",
-  "██║      ██║    ██║ ██║      ██║ ██║   ██║ ██╔██╗ ██║",
-  "█████╗   ██║    ██║ ███████╗ ██║ ██║   ██║ ██║╚██╗██║",
-  "██╔══╝   ██║    ██║ ╚════██║ ██║ ██║   ██║ ██║ ╚████║",
-  "██║      ██║    ██║      ██║ ██║ ██║   ██║ ██║  ╚███║",
-  "██║      ╚██████╔═╝ ███████║ ██║ ╚██████╔╝ ██║   ╚██║",
-  "╚═╝       ╚═════╝   ╚══════╝ ╚═╝  ╚═════╝  ╚═╝    ╚═╝",
+  "███████╗██╗   ██╗███████╗██╗ ██████╗ ███╗   ██╗",
+  "███████╗██╗   ██╗███████╗██╗ ██████╗ ███╗   ██╗",
+  "██╔════╝██║   ██║██╔════╝██║██╔═══██╗████╗  ██║",
+  "██╔════╝██║   ██║██╔════╝██║██╔═══██╗████╗  ██║",
+  "█████╗  ██║   ██║███████╗██║██║   ██║██╔██╗ ██║",
+  "█████╗  ██║   ██║███████╗██║██║   ██║██╔██╗ ██║",
+  "██╔══╝  ██║   ██║╚════██║██║██║   ██║██║╚██╗██║",
+  "██╔══╝  ██║   ██║╚════██║██║██║   ██║██║╚██╗██║",
+  "██║     ╚██████╔╝███████║██║╚██████╔╝██║ ╚████║",
+  "██║     ╚██████╔╝███████║██║╚██████╔╝██║ ╚████║",
+  "╚═╝      ╚═════╝ ╚══════╝╚═╝ ╚═════╝ ╚═╝  ╚═══╝",
+  "╚═╝      ╚═════╝ ╚══════╝╚═╝ ╚═════╝ ╚═╝  ╚═══╝",
 ];
 
 export const FUSION_TAGLINE = "AI coding agent dashboard";
