@@ -834,6 +834,29 @@
 }
 
 @media (max-width: 768px) {
+  /* Stats cards: drop to a 2x2 grid with tighter padding so they
+     don't squeeze the labels off the card on narrow phones. */
+  .agent-metrics-bar {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-sm);
+    margin-bottom: var(--space-md);
+  }
+
+  .agent-metric-card {
+    padding: var(--space-sm) var(--space-md);
+    gap: var(--space-sm);
+    min-width: 0;
+  }
+
+  .agent-metric-value {
+    font-size: 16px;
+  }
+
+  .agent-metric-label {
+    font-size: calc(var(--space-sm) + var(--space-xs) * 0.5);
+  }
+
   .agent-org-chart {
     padding: var(--space-sm);
     padding-bottom: calc(var(--space-lg) + var(--space-sm));

@@ -157,7 +157,7 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-type TabId = "definition" | "logs" | "changes" | "comments" | "model" | "workflow" | "documents" | `plugin-${string}`;
+type TabId = "definition" | "logs" | "changes" | "comments" | "model" | "workflow" | "documents" | "stats" | `plugin-${string}`;
 
 interface TaskDetailModalProps {
   task: Task | TaskDetail;
@@ -1286,6 +1286,12 @@ export function TaskDetailModal({
             >
               Workflow
             </button>
+            <button
+              className={`detail-tab${activeTab === "stats" ? " detail-tab-active" : ""}`}
+              onClick={() => setActiveTab("stats")}
+            >
+              Stats
+            </button>
             {/* Plugin tabs */}
             {pluginTabSlots.map((entry, index) => {
               const pluginTabId = `plugin-${index}` as TabId;
@@ -1391,6 +1397,13 @@ export function TaskDetailModal({
             <div className="detail-section">
               <PluginSlot slotId="task-detail-tab" projectId={projectId} />
             </div>
+          ) : activeTab === "stats" ? (
+            <div className="detail-section">
+              <TaskTokenStatsPanel
+                tokenUsage={workingTask.tokenUsage}
+                loading={detailLoading}
+              />
+            </div>
           ) : (
           <>
           {/* Summary section - only for done tasks with summary */}
@@ -1481,12 +1494,6 @@ export function TaskDetailModal({
             ) : (
               <div className="step-progress-empty">(no steps defined)</div>
             )}
-          </div>
-          <div className="detail-section">
-            <TaskTokenStatsPanel
-              tokenUsage={workingTask.tokenUsage}
-              loading={detailLoading}
-            />
           </div>
           <div className="detail-section">
             {!isEditingSpec && (

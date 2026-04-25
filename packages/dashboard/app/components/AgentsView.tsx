@@ -749,10 +749,11 @@ export function AgentsView({ addToast, projectId }: AgentsViewProps) {
         <div
           ref={controlsPanelRef}
           id={controlsPanelId}
-          className="agent-controls-panel"
+          className="agent-controls-panel agent-controls-panel--scrollable"
           role="dialog"
           aria-label="Agent controls"
           aria-modal="false"
+          style={{ maxHeight: "70vh", overflowY: "auto" }}
         >
           <div className="agent-controls">
             <div className="agent-controls-filters">
@@ -846,10 +847,14 @@ export function AgentsView({ addToast, projectId }: AgentsViewProps) {
               </small>
             </div>
           </div>
+
+          <AgentTokenStatsPanel agents={displayAgents} />
         </div>
       )}
 
       <div className="agents-view-content">
+
+        <AgentMetricsBar stats={stats} />
 
         <NewAgentDialog
           isOpen={isCreating}
@@ -1266,8 +1271,6 @@ export function AgentsView({ addToast, projectId }: AgentsViewProps) {
         )}
 
         {/* Secondary sections after the main collection */}
-        <AgentMetricsBar stats={stats} />
-        <AgentTokenStatsPanel agents={displayAgents} />
         <ActiveAgentsPanel agents={activeAgents} projectId={projectId} onAgentSelect={setSelectedAgentId} />
       </div>
 
