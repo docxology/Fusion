@@ -4157,7 +4157,7 @@ describe("TaskDetailModal", () => {
       expect(sourceLink).toHaveAttribute("target", "_blank");
     });
 
-    it("renders empty source metadata state when no sourceIssue exists", () => {
+    it("hides source issue read section when sourceIssue metadata is missing", () => {
       render(
         <TaskDetailModal
           task={makeTask({ sourceIssue: undefined })}
@@ -4170,7 +4170,8 @@ describe("TaskDetailModal", () => {
         />,
       );
 
-      expect(screen.getByText("No source issue metadata recorded.")).toBeTruthy();
+      expect(screen.queryByText("Source Issue")).toBeNull();
+      expect(screen.queryByText("No source issue metadata recorded.")).toBeNull();
     });
 
     it("prefills source issue inputs in edit mode", async () => {

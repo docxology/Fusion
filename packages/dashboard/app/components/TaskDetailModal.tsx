@@ -1538,9 +1538,9 @@ export function TaskDetailModal({
             </div>
           )}
           <MergeDetails task={task} />
-          <div className="detail-section detail-source-section">
-            <h4>Source Issue</h4>
-            {task.sourceIssue ? (
+          {task.sourceIssue && (
+            <div className="detail-section detail-source-section">
+              <h4>Source Issue</h4>
               <dl className="detail-source-grid">
                 <div>
                   <dt>Provider</dt>
@@ -1572,10 +1572,8 @@ export function TaskDetailModal({
                   </dd>
                 </div>
               </dl>
-            ) : (
-              <div className="detail-empty-inline">No source issue metadata recorded.</div>
-            )}
-          </div>
+            </div>
+          )}
           <div className="detail-section detail-agent-section">
             <div className="detail-meta-row">
               <span className="detail-meta-label">
