@@ -215,6 +215,106 @@ describe("createSkillsAdapter - fetchCatalog fallback behavior", () => {
       expect(result.auth.fallbackUsed).toBe(false);
     }
   });
+
+  it.each([undefined, "", "a"]) (
+    "returns empty success result without upstream call when unauthenticated query is short (%s)",
+    async (query) => {
+      delete process.env.SKILLS_SH_TOKEN;
+
+      globalThis.fetch = vi.fn();
+
+      const adapter = createSkillsAdapter({
+        packageManager: { resolve: vi.fn().mockResolvedValue({ skills: [] }) },
+        getSettingsPath: vi.fn().mockReturnValue("/tmp/settings.json"),
+      });
+
+      const result = await adapter.fetchCatalog({ limit: 20, query });
+
+      expect(globalThis.fetch).not.toHaveBeenCalled();
+      expect("entries" in result).toBe(true);
+      if ("entries" in result) {
+        expect(result.entries).toEqual([]);
+        expect(result.auth).toEqual({
+          mode: "unauthenticated",
+          tokenPresent: false,
+          fallbackUsed: false,
+        });
+      }
+    },
+  );
+
+  it.each([400, 401, 403])(
+    "returns empty success fallback when auth request fails with %i and query is short",
+    async (status) => {
+      process.env.SKILLS_SH_TOKEN = "test-token";
+
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status,
+        statusText: "Bad Request",
+        json: () => Promise.resolve(null),
+      }) as unknown as typeof fetch;
+
+      const adapter = createSkillsAdapter({
+        packageManager: { resolve: vi.fn().mockResolvedValue({ skills: [] }) },
+        getSettingsPath: vi.fn().mockReturnValue("/tmp/settings.json"),
+      });
+
+      const result = await adapter.fetchCatalog({ limit: 20, query: "a" });
+
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+      expect("entries" in result).toBe(true);
+      if ("entries" in result) {
+        expect(result.entries).toEqual([]);
+        expect(result.auth).toEqual({
+          mode: "fallback-unauthenticated",
+          tokenPresent: true,
+          fallbackUsed: true,
+        });
+      }
+    },
+  );
+
+  it("keeps fallback public search behavior for valid queries", async () => {
+    process.env.SKILLS_SH_TOKEN = "test-token";
+
+    globalThis.fetch = vi.fn().mockImplementation((url: string | URL | Request) => {
+      const urlStr = typeof url === "string" ? url : url.toString();
+      if (urlStr.includes("/api/v1/skills")) {
+        return Promise.resolve({
+          ok: false,
+          status: 401,
+          statusText: "Unauthorized",
+          json: () => Promise.resolve(null),
+        });
+      }
+
+      expect(urlStr).toContain("/api/search");
+      expect(urlStr).toContain("q=react");
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        headers: new Map([["content-type", "application/json"]]),
+        json: () => Promise.resolve({ skills: [{ id: "search-1", name: "React Skill" }] }),
+      });
+    }) as unknown as typeof fetch;
+
+    const adapter = createSkillsAdapter({
+      packageManager: { resolve: vi.fn().mockResolvedValue({ skills: [] }) },
+      getSettingsPath: vi.fn().mockReturnValue("/tmp/settings.json"),
+    });
+
+    const result = await adapter.fetchCatalog({ limit: 20, query: "react" });
+
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+    expect("entries" in result).toBe(true);
+    if ("entries" in result) {
+      expect(result.entries).toHaveLength(1);
+      expect(result.entries[0]!.name).toBe("React Skill");
+      expect(result.auth.mode).toBe("fallback-unauthenticated");
+      expect(result.auth.fallbackUsed).toBe(true);
+    }
+  });
 });
 
 describe("createSkillsAdapter - readSkillContent", () => {

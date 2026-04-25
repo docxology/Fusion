@@ -314,8 +314,13 @@ Fetch the skills.sh catalog with optional authentication.
 
 **Authentication Flow:**
 1. If `SKILLS_SH_TOKEN` env var is present, use authenticated request
-2. If authenticated request returns `401/403`, retry without authentication (fallback mode)
+2. If authenticated request returns `400/401/403`, retry without authentication (fallback mode)
 3. If no token, use unauthenticated request directly
+
+**Unauthenticated Short-Query Behavior:**
+- Public `skills.sh /api/search` requests are only sent when `q` has at least 2 characters
+- For omitted, empty, or 1-character queries, the API returns `200` with `{ entries: [] }`
+- This applies both to direct unauthenticated mode and authenticated-to-unauthenticated fallback mode, preventing upstream `400 Bad Request` responses during initial load
 
 **Auth Mode Values:**
 - `authenticated` — Request made with token

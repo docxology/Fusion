@@ -63,15 +63,34 @@ export function SkillsView({ projectId, addToast, onClose }: SkillsViewProps) {
 
   // Fetch catalog
   const loadCatalog = useCallback(async (query: string) => {
+    const isCatalogUnavailableError = (error: unknown): boolean => {
+      if (!error || typeof error !== "object") {
+        return false;
+      }
+
+      const withStatus = error as { status?: unknown; details?: unknown };
+      if (typeof withStatus.status === "number" && withStatus.status >= 500) {
+        return true;
+      }
+
+      if (withStatus.details && typeof withStatus.details === "object") {
+        const details = withStatus.details as { code?: unknown };
+        if (typeof details.code === "string" && details.code.startsWith("upstream_")) {
+          return true;
+        }
+      }
+
+      const legacy = error as { error?: unknown; code?: unknown };
+      return typeof legacy.error === "string" && typeof legacy.code === "string";
+    };
+
     setIsLoadingCatalog(true);
     setCatalogError(null);
     try {
       const result = await fetchSkillsCatalog(query, 20, projectId);
       setCatalogEntries(result.entries);
     } catch (err) {
-      // Check for upstream error with code (502 etc.)
-      const error = err as { error?: string; code?: string };
-      if (error.error && error.code) {
+      if (isCatalogUnavailableError(err)) {
         setCatalogError("Catalog is temporarily unavailable. Please try again later.");
       } else {
         const message = err instanceof Error ? err.message : "Failed to load catalog";

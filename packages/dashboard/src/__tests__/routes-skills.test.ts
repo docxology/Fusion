@@ -531,7 +531,7 @@ describe("Skills routes", () => {
       expect(mockAdapter.fetchCatalog).toHaveBeenCalledWith({ limit: 20, query: "react" });
     });
 
-    it("returns results when query is omitted (adapter handles wildcard fallback)", async () => {
+    it("returns results when query is omitted (adapter handles default catalog behavior)", async () => {
       const mockAdapter = createMockSkillsAdapter({
         fetchCatalog: vi.fn().mockResolvedValue({
           entries: [

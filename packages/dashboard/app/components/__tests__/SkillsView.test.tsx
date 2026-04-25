@@ -336,11 +336,13 @@ describe("SkillsView", () => {
   });
 
   describe("error handling", () => {
-    it("shows error message for catalog fetch with upstream error", async () => {
-      mockFetchSkillsCatalog.mockRejectedValue({
-        error: "Service unavailable",
-        code: "upstream_http_error",
-      });
+    it("shows friendly error message for catalog fetch with upstream ApiRequestError", async () => {
+      mockFetchSkillsCatalog.mockRejectedValue(
+        Object.assign(new Error("Upstream returned 400: Bad Request"), {
+          status: 502,
+          details: { code: "upstream_http_error" },
+        })
+      );
 
       render(<SkillsView addToast={mockAddToast} onClose={onClose} />);
 
@@ -363,10 +365,12 @@ describe("SkillsView", () => {
     });
 
     it("shows Try Again button for catalog error", async () => {
-      mockFetchSkillsCatalog.mockRejectedValue({
-        error: "Service unavailable",
-        code: "upstream_http_error",
-      });
+      mockFetchSkillsCatalog.mockRejectedValue(
+        Object.assign(new Error("Upstream returned 400: Bad Request"), {
+          status: 502,
+          details: { code: "upstream_http_error" },
+        })
+      );
 
       render(<SkillsView addToast={mockAddToast} onClose={onClose} />);
 
@@ -569,10 +573,12 @@ describe("SkillsView", () => {
 
   describe("error-state retry", () => {
     it("retry button is displayed when catalog fetch fails", async () => {
-      mockFetchSkillsCatalog.mockRejectedValue({
-        error: "Service unavailable",
-        code: "upstream_http_error",
-      });
+      mockFetchSkillsCatalog.mockRejectedValue(
+        Object.assign(new Error("Upstream returned 400: Bad Request"), {
+          status: 502,
+          details: { code: "upstream_http_error" },
+        })
+      );
 
       render(<SkillsView addToast={mockAddToast} onClose={onClose} />);
 

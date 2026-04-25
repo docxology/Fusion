@@ -418,11 +418,20 @@ export function createSkillsAdapter(options: {
       // Get skills.sh token if available
       const token = process.env.SKILLS_SH_TOKEN;
       const catalogUrl = buildCatalogUrl(boundedLimit, query);
-      const searchUrl = buildSearchUrl(boundedLimit, query);
+      const publicSearchQuery = getPublicSearchQuery(query);
 
-      // No token available - use public search endpoint
+      // No token available - use public search endpoint for valid search queries only.
+      // Empty/short queries return a deterministic empty catalog result.
       if (!token) {
-        return fetchPublicCatalog(searchUrl, {
+        if (!publicSearchQuery) {
+          return buildEmptyCatalogResult({
+            mode: "unauthenticated",
+            tokenPresent: false,
+            fallbackUsed: false,
+          });
+        }
+
+        return fetchPublicCatalog(boundedLimit, publicSearchQuery, {
           mode: "unauthenticated",
           tokenPresent: false,
           fallbackUsed: false,
@@ -453,7 +462,15 @@ export function createSkillsAdapter(options: {
 
         // 400/401/403 from authenticated request - fall back to public search endpoint
         if (authResponse.status === 400 || authResponse.status === 401 || authResponse.status === 403) {
-          return fetchPublicCatalog(searchUrl, {
+          if (!publicSearchQuery) {
+            return buildEmptyCatalogResult({
+              mode: "fallback-unauthenticated",
+              tokenPresent: true,
+              fallbackUsed: true,
+            });
+          }
+
+          return fetchPublicCatalog(boundedLimit, publicSearchQuery, {
             mode: "fallback-unauthenticated",
             tokenPresent: true,
             fallbackUsed: true,
@@ -561,14 +578,11 @@ function buildCatalogUrl(limit: number, query?: string): string {
 /**
  * Build the public search URL.
  *
- * The search API requires a non-empty query. For initial catalog browsing,
- * use "*" as a wildcard query.
+ * The search API requires a non-empty query that meets minimum length.
  */
-function buildSearchUrl(limit: number, query?: string): string {
+function buildSearchUrl(limit: number, query: string): string {
   const params = new URLSearchParams();
-  const normalizedQuery = query?.trim();
-
-  params.set("q", normalizedQuery && normalizedQuery.length > 0 ? normalizedQuery : "*");
+  params.set("q", query);
   params.set("limit", String(limit));
 
   return `https://skills.sh/api/search?${params.toString()}`;
@@ -577,10 +591,27 @@ function buildSearchUrl(limit: number, query?: string): string {
 /**
  * Fetch and normalize catalog data from the public /api/search endpoint.
  */
+const MIN_PUBLIC_SEARCH_QUERY_LENGTH = 2;
+
+function getPublicSearchQuery(query?: string): string | null {
+  const normalized = query?.trim() ?? "";
+  return normalized.length >= MIN_PUBLIC_SEARCH_QUERY_LENGTH ? normalized : null;
+}
+
+function buildEmptyCatalogResult(auth: CatalogFetchResult["auth"]): CatalogFetchResult {
+  return {
+    entries: [],
+    auth,
+  };
+}
+
 async function fetchPublicCatalog(
-  url: string,
+  limit: number,
+  query: string,
   auth: CatalogFetchResult["auth"],
 ): Promise<CatalogFetchResult | UpstreamError> {
+  const url = buildSearchUrl(limit, query);
+
   try {
     const response = await fetch(url, {
       headers: { Accept: "application/json" },
