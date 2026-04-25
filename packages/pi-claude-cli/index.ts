@@ -14,7 +14,12 @@ import {
   killAllProcesses,
 } from "./src/process-manager.js";
 import { createHash } from "node:crypto";
-import { getCustomToolDefs, writeMcpConfig } from "./src/mcp-config.js";
+import {
+  getCustomToolDefs,
+  toolsFromContext,
+  writeMcpConfig,
+  type McpToolDef,
+} from "./src/mcp-config.js";
 
 // Kill all active Claude subprocesses on process exit to prevent orphans
 process.on("exit", killAllProcesses);
@@ -27,30 +32,46 @@ let cachedMcpConfig: { hash: string; configPath: string } | undefined;
  * Resolve the MCP config path for the current request, regenerating it when
  * the set of custom tools changes.
  *
- * Why per-call instead of once-and-lock:
- * - The engine registers session-scoped custom tools (e.g. `fn_review_spec`,
- *   `fn_review_step`) when it spawns triage/executor sessions. These appear
- *   in `pi.getAllTools()` only while that session is active.
- * - A locked-on-first-call cache would freeze in the global tool set and
- *   silently drop session tools, so the Claude CLI subprocess would refuse
- *   to call them ("unknown tool fn_review_spec").
- * - Hashing the tool defs lets us reuse the same temp files when the tool
- *   set is unchanged across calls, and produce fresh files (with the hash
- *   in the filename to avoid races) when it changes.
+ * Source of truth (in order of preference):
+ * 1. `context.tools` — the per-session tool list pi-ai actually hands to
+ *    `streamSimple`. This is what the session is asking the model to see, so
+ *    it includes session-scoped registrations (e.g. `fn_review_spec` and
+ *    `fn_review_step` injected by the engine's triage/executor sessions).
+ * 2. `pi.getAllTools()` — fallback for older callers that don't supply
+ *    `context.tools`.
+ *
+ * Why not a single once-and-lock cache:
+ * - The engine spawns triage/executor sessions with session-scoped tools.
+ *   A locked-on-first-call cache silently drops them and the Claude CLI
+ *   subprocess refuses with "unknown tool fn_review_spec".
+ * - Hashing the tool defs lets us reuse temp files when the tool set is
+ *   unchanged across calls and produce fresh files (with the hash in the
+ *   filename to avoid races) when it changes.
  *
  * Uses warn-don't-block: failure logs a warning but does not prevent the
  * provider from functioning (built-ins still work).
  */
-function ensureMcpConfig(pi: ExtensionAPI): string | undefined {
+function ensureMcpConfig(
+  pi: ExtensionAPI,
+  contextTools?: ReadonlyArray<{
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+  }>,
+): string | undefined {
   try {
-    const allTools = pi.getAllTools();
+    let toolDefs: McpToolDef[] = toolsFromContext(contextTools);
 
-    // Registry not ready yet — fall back to whatever we last computed (if any)
-    if (!Array.isArray(allTools)) {
-      return cachedMcpConfig?.configPath;
+    // Fallback to the pi runtime registry if the context didn't carry tools.
+    // (Older agent-loop versions don't populate Context.tools for streamSimple.)
+    if (toolDefs.length === 0) {
+      const allTools = pi.getAllTools();
+      if (!Array.isArray(allTools)) {
+        return cachedMcpConfig?.configPath;
+      }
+      toolDefs = getCustomToolDefs(pi);
     }
 
-    const toolDefs = getCustomToolDefs(pi);
     if (toolDefs.length === 0) {
       cachedMcpConfig = undefined;
       return undefined;
@@ -67,8 +88,9 @@ function ensureMcpConfig(pi: ExtensionAPI): string | undefined {
 
     const configPath = writeMcpConfig(toolDefs, hash);
     cachedMcpConfig = { hash, configPath };
+    const toolNames = toolDefs.map((t) => t.name).join(", ");
     console.error(
-      `[pi-claude-cli] MCP config refreshed with ${toolDefs.length} custom tool(s) (hash=${hash})`,
+      `[pi-claude-cli] MCP config refreshed with ${toolDefs.length} custom tool(s) [${toolNames}] (hash=${hash})`,
     );
     return configPath;
   } catch (err) {
@@ -133,7 +155,14 @@ export default function (pi: ExtensionAPI) {
       api: "pi-claude-cli",
       models,
       streamSimple: (model, context, options) => {
-        const configPath = ensureMcpConfig(pi);
+        const configPath = ensureMcpConfig(
+          pi,
+          (context as { tools?: ReadonlyArray<{
+            name: string;
+            description: string;
+            parameters: Record<string, unknown>;
+          }> }).tools,
+        );
         return streamViaCli(model, context, {
           ...options,
           mcpConfigPath: configPath,

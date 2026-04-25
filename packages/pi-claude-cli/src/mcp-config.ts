@@ -67,6 +67,31 @@ export function getCustomToolDefs(pi: PiInstance): McpToolDef[] {
     }));
 }
 
+/** Minimal pi-ai Tool shape (the subset we need from `Context.tools`). */
+interface PiAiToolLike {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+}
+
+/**
+ * Convert the pi-ai `Context.tools` array (the authoritative per-session tool
+ * list pi-coding-agent passes to streamSimple) into MCP tool defs, filtering
+ * out the 6 built-ins that pi handles natively.
+ */
+export function toolsFromContext(
+  contextTools: ReadonlyArray<PiAiToolLike> | undefined,
+): McpToolDef[] {
+  if (!Array.isArray(contextTools)) return [];
+  return contextTools
+    .filter((tool) => !BUILT_IN_TOOL_NAMES.has(tool.name))
+    .map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      inputSchema: tool.parameters,
+    }));
+}
+
 /**
  * Write MCP config and tool schemas to temp files.
  *
