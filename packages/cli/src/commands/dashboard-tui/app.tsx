@@ -777,53 +777,45 @@ function StatusBar({ state, controller: _controller }: { state: DashboardState; 
 
 function MainHeader({ state }: { state: DashboardState }) {
   const inInteractive = state.mode === "interactive";
-  const focused = state.activeSection;
   const interactiveView = state.interactiveView;
   const { stdout } = useStdout();
   const cols = stdout?.columns ?? 80;
   const rows = stdout?.rows ?? 24;
-  const interactiveTabs: Array<{ key: string; label: string; view: InteractiveView }> = [
-    { key: "b", label: "Board", view: "board" },
-    { key: "a", label: "Agents", view: "agents" },
-    { key: "g", label: "Settings", view: "settings" },
-    { key: "t", label: "Git", view: "git" },
-    { key: "e", label: "Explorer", view: "files" },
+  // Single unified tab strip. "Main" is the status mode; the rest are
+  // interactive views. Active key matches the current mode/view.
+  type Tab =
+    | { key: string; label: string; kind: "main" }
+    | { key: string; label: string; kind: "interactive"; view: InteractiveView };
+  const tabs: Tab[] = [
+    { key: "m", label: "Main", kind: "main" },
+    { key: "b", label: "Board", kind: "interactive", view: "board" },
+    { key: "a", label: "Agents", kind: "interactive", view: "agents" },
+    { key: "g", label: "Settings", kind: "interactive", view: "settings" },
+    { key: "t", label: "Git", kind: "interactive", view: "git" },
+    { key: "e", label: "Explorer", kind: "interactive", view: "files" },
   ];
-  // Keep FUSION on a single line by progressively dropping decoration as the
-  // terminal shrinks. Thresholds tuned to the natural widths of each segment:
-  //   * Help/quit (~20 chars) drops first.
-  //   * Inactive interactive tabs collapse to a `[k]` glyph.
-  //   * Inactive section tabs collapse to `[N]`.
-  //   * Active-only mode hides every inactive tab.
-  //   * Tiny mode drops the whole header — the row is too precious to spend.
   if (rows < 10) return null;
+  // Width tiers, measured against actual rendered content with 6 tabs:
+  //   * Full + help (cols >= 110): "[k] Label" tabs + help/quit hint.
+  //   * Full (90-109): "[k] Label" tabs, no help hint (~85 chars).
+  //   * Compact (50-89): "[k]" glyphs only — every shortcut still
+  //     visible, just no labels (~45 chars).
+  //   * Tiny (< 50): just FUSION + the active tab pill.
   const showHelpHint = cols >= 110;
-  const compactInteractive = cols < 100;
-  const compactSections = cols < 90;
-  const minimal = cols < 70;
+  const fullLabels = cols >= 90;
   const tiny = cols < 50;
+  const compact = !fullLabels && !tiny;
+  const isActive = (t: Tab) =>
+    t.kind === "main" ? !inInteractive : inInteractive && t.view === interactiveView;
   if (tiny) {
-    // Just FUSION + the single active tab. No dividers, no other tabs.
-    const activeSectionIdx = inInteractive
-      ? -1
-      : SECTION_ORDER.indexOf(focused);
-    const activeSectionLabel = activeSectionIdx >= 0
-      ? SECTION_ORDER[activeSectionIdx].charAt(0).toUpperCase() + SECTION_ORDER[activeSectionIdx].slice(1)
-      : null;
-    const activeInteractive = inInteractive
-      ? interactiveTabs.find((t) => t.view === interactiveView) ?? null
-      : null;
+    // Just FUSION + the active tab pill. Inactive shortcuts dropped here.
+    const active = tabs.find(isActive);
     return (
       <Box flexDirection="row" gap={1} paddingX={1}>
         <MiniLogo />
-        {activeSectionLabel && (
+        {active && (
           <Box flexShrink={0}>
-            <Text backgroundColor="cyan" color="black" bold>{` ${activeSectionIdx + 1} ${activeSectionLabel} `}</Text>
-          </Box>
-        )}
-        {activeInteractive && (
-          <Box flexShrink={0}>
-            <Text backgroundColor="cyan" color="black" bold>{` ${activeInteractive.key} ${activeInteractive.label} `}</Text>
+            <Text backgroundColor="cyan" color="black" bold>{` ${active.key} ${active.label} `}</Text>
           </Box>
         )}
       </Box>
@@ -832,39 +824,19 @@ function MainHeader({ state }: { state: DashboardState }) {
   return (
     <Box flexDirection="row" gap={1} paddingX={1} paddingY={0}>
       <MiniLogo />
-      {!minimal && <Box flexShrink={0}><Text dimColor>│</Text></Box>}
-      {SECTION_ORDER.map((section, i) => {
-        const isActive = !inInteractive && section === focused;
-        const label = section.charAt(0).toUpperCase() + section.slice(1);
-        if (minimal && !isActive) return null;
+      <Box flexShrink={0}><Text dimColor>│</Text></Box>
+      {tabs.map((t) => {
+        const active = isActive(t);
         return (
-          <Box key={section} marginRight={1} flexShrink={0}>
-            {isActive ? (
+          <Box key={t.key} marginRight={1} flexShrink={0}>
+            {active ? (
               <Text backgroundColor="cyan" color="black" bold>
-                {compactSections ? ` ${i + 1} ${label} ` : ` [${i + 1}] ${label} `}
+                {compact ? ` ${t.key} ` : ` [${t.key}] ${t.label} `}
               </Text>
-            ) : compactSections ? (
-              <Text dimColor>{`[${i + 1}]`}</Text>
+            ) : compact ? (
+              <Text dimColor>{`[${t.key}]`}</Text>
             ) : (
-              <Text dimColor>{`[${i + 1}] ${label}`}</Text>
-            )}
-          </Box>
-        );
-      })}
-      {!minimal && <Box flexShrink={0}><Text dimColor>│</Text></Box>}
-      {interactiveTabs.map(({ key, label, view }) => {
-        const isActive = inInteractive && view === interactiveView;
-        if (minimal && !isActive) return null;
-        return (
-          <Box key={view} marginRight={1} flexShrink={0}>
-            {isActive ? (
-              <Text backgroundColor="cyan" color="black" bold>
-                {compactInteractive ? ` ${key} ${label} ` : ` [${key}] ${label} `}
-              </Text>
-            ) : compactInteractive ? (
-              <Text dimColor>{`[${key}]`}</Text>
-            ) : (
-              <Text dimColor>{`[${key}] ${label}`}</Text>
+              <Text dimColor>{`[${t.key}] ${t.label}`}</Text>
             )}
           </Box>
         );
@@ -2048,8 +2020,18 @@ function SettingsInteractiveView({ state }: { state: DashboardState }) {
   }
 
   useInput((input, key) => {
+    // Tab cycles list ↔ detail. Left/right also switch — list = left,
+    // detail = right, matching the visual layout (consistent with AgentsView).
     if (key.tab) {
       setDetailFocused((f) => !f);
+      return;
+    }
+    if (key.leftArrow) {
+      setDetailFocused(false);
+      return;
+    }
+    if (key.rightArrow) {
+      setDetailFocused(true);
       return;
     }
 
@@ -3471,7 +3453,9 @@ export function DashboardApp({ controller }: DashboardAppProps) {
       return;
     }
 
-    if (input === "s" || input === "S") {
+    // 'm' / 's' (alias) — switch to Main (status mode). Lowercase only;
+    // capital S/M are reserved for vim-style "jump to end" semantics.
+    if (input === "m" || input === "s") {
       if (state.mode === "interactive") {
         controller.setMode("status");
         return;
