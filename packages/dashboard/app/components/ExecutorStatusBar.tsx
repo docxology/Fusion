@@ -1,7 +1,7 @@
 import "./ExecutorStatusBar.css";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type { Task } from "@fusion/core";
-import { AlertTriangle, Clock, Pause, Play, Zap } from "lucide-react";
+import { AlertTriangle, Clock, Folder, Pause, Play, Zap } from "lucide-react";
 import { useExecutorStats } from "../hooks/useExecutorStats";
 import type { ExecutorState, AiSessionSummary } from "../api";
 import { BackgroundTasksIndicator } from "./BackgroundTasksIndicator";
@@ -21,6 +21,10 @@ interface ExecutorStatusBarProps {
   onDismissBackgroundSession?: (id: string) => void;
   /** Timestamp (ms) when task data was last confirmed fresh from the server. Used for freshness-aware stuck detection. */
   lastFetchTimeMs?: number;
+  /** Absolute path for the currently selected project directory. */
+  currentProjectPath?: string;
+  /** Opens the workspace-aware file browser to the project workspace. */
+  onOpenProjectDirectory?: () => void;
 }
 
 /**
@@ -70,8 +74,9 @@ function getStateDisplay(state: ExecutorState): { label: string; color: string; 
  * - Executor state badge (idle/running/paused)
  * - Last activity timestamp
  */
-export function ExecutorStatusBar({ tasks, projectId, taskStuckTimeoutMs, backgroundSessions, backgroundGenerating, backgroundNeedsInput, onOpenBackgroundSession, onDismissBackgroundSession, lastFetchTimeMs }: ExecutorStatusBarProps) {
+export function ExecutorStatusBar({ tasks, projectId, taskStuckTimeoutMs, backgroundSessions, backgroundGenerating, backgroundNeedsInput, onOpenBackgroundSession, onDismissBackgroundSession, lastFetchTimeMs, currentProjectPath, onOpenProjectDirectory }: ExecutorStatusBarProps) {
   const { stats, loading, error } = useExecutorStats(tasks, projectId, taskStuckTimeoutMs, lastFetchTimeMs);
+  const [isProjectPathVisible, setIsProjectPathVisible] = useState(false);
 
   const stateDisplay = useMemo(() => getStateDisplay(stats.executorState), [stats.executorState]);
 
@@ -176,6 +181,34 @@ export function ExecutorStatusBar({ tasks, projectId, taskStuckTimeoutMs, backgr
         <span className="executor-status-bar__label">In Review</span>
         <span className="executor-status-bar__count">{stats.inReviewCount}</span>
       </div>
+
+      {currentProjectPath && onOpenProjectDirectory && (
+        <>
+          <span className="executor-status-bar__divider" aria-hidden="true" />
+          <div className="executor-status-bar__segment executor-status-bar__segment--project-directory">
+            <button
+              className={`executor-status-bar__folder-toggle${isProjectPathVisible ? " executor-status-bar__folder-toggle--active" : ""}`}
+              onClick={() => setIsProjectPathVisible((prev) => !prev)}
+              aria-label={isProjectPathVisible ? "Hide project directory" : "Show project directory"}
+              aria-expanded={isProjectPathVisible}
+              data-testid="executor-project-path-toggle"
+              title={isProjectPathVisible ? "Hide project directory" : "Show project directory"}
+            >
+              <Folder size={12} aria-hidden="true" />
+            </button>
+            {isProjectPathVisible && (
+              <button
+                className="executor-status-bar__project-path"
+                onClick={onOpenProjectDirectory}
+                title={currentProjectPath}
+                data-testid="executor-project-path-link"
+              >
+                {currentProjectPath}
+              </button>
+            )}
+          </div>
+        </>
+      )}
 
       {/* Spacer */}
       <div className="executor-status-bar__spacer" />

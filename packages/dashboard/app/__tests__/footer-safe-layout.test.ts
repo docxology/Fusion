@@ -76,9 +76,9 @@ describe("footer-safe project workspace layout", () => {
   describe(".project-content--with-footer mobile", () => {
     const mobileCss = extractMobileMediaBlocks(css);
 
-    it("overrides footer height token to 32px on mobile", () => {
+    it("overrides footer height token to mobile touch-safe size", () => {
       expect(mobileCss).toMatch(
-        /\.project-content--with-footer\s*\{[^}]*--executor-footer-height:\s*32px/,
+        /\.project-content--with-footer\s*\{[^}]*--executor-footer-height:\s*calc\(var\(--space-lg\)\s*\*\s*2\s*\+\s*var\(--space-xs\)\)/,
       );
     });
   });
@@ -137,10 +137,10 @@ describe("footer-safe project workspace layout", () => {
       );
     });
 
-    it("has height: 32px on mobile", () => {
+    it("has touch-safe height on mobile", () => {
       const mobileCss = extractMobileMediaBlocks(css);
       expect(mobileCss).toMatch(
-        /\.executor-status-bar\s*\{[^}]*height:\s*32px/,
+        /\.executor-status-bar\s*\{[^}]*height:\s*calc\(var\(--space-lg\)\s*\*\s*2\s*\+\s*var\(--space-xs\)\)/,
       );
     });
   });

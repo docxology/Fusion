@@ -138,6 +138,72 @@
   flex-shrink: 0;
 }
 
+/* Project directory toggle/link */
+.executor-status-bar__segment--project-directory {
+  min-width: 0;
+  flex-shrink: 1;
+}
+
+.executor-status-bar__folder-toggle {
+  --executor-status-touch-size: calc(var(--space-lg) * 2 + var(--space-xs));
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--executor-status-touch-size);
+  min-height: var(--executor-status-touch-size);
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.executor-status-bar__folder-toggle:hover {
+  background: var(--card-hover);
+  color: var(--text);
+  border-color: var(--text-dim);
+}
+
+.executor-status-bar__folder-toggle:focus-visible,
+.executor-status-bar__project-path:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring-strong);
+}
+
+.executor-status-bar__folder-toggle--active {
+  color: var(--todo);
+  border-color: var(--todo);
+}
+
+.executor-status-bar__project-path {
+  min-width: 0;
+  max-width: min(44ch, 34vw);
+  min-height: var(--executor-status-touch-size, calc(var(--space-lg) * 2 + var(--space-xs)));
+  display: inline-flex;
+  align-items: center;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font-size: inherit;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--text-muted) 70%, transparent);
+  text-underline-offset: calc(var(--space-xs) / 2);
+  padding: 0 var(--space-xs);
+}
+
+.executor-status-bar__project-path:hover {
+  color: var(--todo);
+  text-decoration-color: var(--todo);
+}
+
 /* Spacer to push right-aligned elements */
 .executor-status-bar__spacer {
   flex: 1;
@@ -187,14 +253,14 @@
 @media (max-width: 768px) {
   /* Update the footer height token for mobile - must be on the wrapper, not on :root */
   .project-content--with-footer {
-    --executor-footer-height: 32px;
+    --executor-footer-height: calc(var(--space-lg) * 2 + var(--space-xs));
   }
 
   .executor-status-bar {
     padding: var(--space-xs) var(--space-md);
     gap: 4px;
     font-size: 11px;
-    height: 32px;
+    height: calc(var(--space-lg) * 2 + var(--space-xs));
     overflow: hidden;
     bottom: calc(var(--mobile-nav-height) + env(safe-area-inset-bottom, 0px) + var(--standalone-bottom-gap));
   }
@@ -211,6 +277,10 @@
 
   .executor-status-bar__divider {
     height: 12px;
+  }
+
+  .executor-status-bar__project-path {
+    max-width: min(26ch, 30vw);
   }
 
   .background-tasks-indicator {

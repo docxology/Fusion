@@ -448,6 +448,11 @@ function AppInner() {
     setNodesOpen((prev) => !prev);
   }, [nodesEnabled]);
 
+  const handleOpenProjectDirectory = useCallback(() => {
+    modalManager.setFileWorkspace("project");
+    modalManager.openFiles();
+  }, [modalManager]);
+
   const handleRetryProjects = useCallback(async () => {
     setRetryingProjects(true);
     try {
@@ -854,6 +859,8 @@ function AppInner() {
           onOpenBackgroundSession={handleOpenBackgroundSession}
           onDismissBackgroundSession={bgDismiss}
           lastFetchTimeMs={lastFetchTimeMs}
+          currentProjectPath={currentProject.path}
+          onOpenProjectDirectory={handleOpenProjectDirectory}
         />
       )}
       <MobileNavBar

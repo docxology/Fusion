@@ -78,12 +78,15 @@ function ProjectSelector({
           <button
             className={`project-selector-trigger${isOpen ? " project-selector-trigger--open" : ""}`}
             onClick={() => setIsOpen((prev) => !prev)}
-            title="Switch project"
+            title={currentProject?.name ? `Switch project (current: ${currentProject.name})` : "Switch project"}
             aria-label="Switch project"
             aria-expanded={isOpen}
             aria-haspopup="listbox"
             data-testid="project-selector-trigger"
           >
+            <span className="project-selector-trigger-label">
+              {currentProject?.name ?? "Projects"}
+            </span>
             <ChevronDown size={12} className={`project-selector-chevron${isOpen ? " project-selector-chevron--open" : ""}`} />
           </button>
           {isOpen && (

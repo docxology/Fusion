@@ -338,6 +338,45 @@ describe("ExecutorStatusBar", () => {
     });
   });
 
+  describe("project directory toggle", () => {
+    it("reveals and hides the project path when the folder toggle is clicked", async () => {
+      const user = userEvent.setup();
+      render(
+        <ExecutorStatusBar
+          tasks={emptyTasks}
+          currentProjectPath="/workspace/project"
+          onOpenProjectDirectory={vi.fn()}
+        />
+      );
+
+      expect(screen.queryByTestId("executor-project-path-link")).not.toBeInTheDocument();
+
+      await user.click(screen.getByTestId("executor-project-path-toggle"));
+      expect(screen.getByTestId("executor-project-path-link")).toHaveTextContent("/workspace/project");
+
+      await user.click(screen.getByTestId("executor-project-path-toggle"));
+      expect(screen.queryByTestId("executor-project-path-link")).not.toBeInTheDocument();
+    });
+
+    it("calls onOpenProjectDirectory when the visible project path is clicked", async () => {
+      const user = userEvent.setup();
+      const onOpenProjectDirectory = vi.fn();
+
+      render(
+        <ExecutorStatusBar
+          tasks={emptyTasks}
+          currentProjectPath="/workspace/project"
+          onOpenProjectDirectory={onOpenProjectDirectory}
+        />
+      );
+
+      await user.click(screen.getByTestId("executor-project-path-toggle"));
+      await user.click(screen.getByTestId("executor-project-path-link"));
+
+      expect(onOpenProjectDirectory).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe("time display", () => {
     it("displays relative time for recent activity", () => {
       const now = new Date();

@@ -48,6 +48,12 @@ vi.mock("../../api", async (importOriginal) => {
     fetchAgents: vi.fn(() => Promise.resolve([])),
     fetchTaskDetail: vi.fn((id: string) => Promise.resolve({ id, title: `Task ${id}` })),
     fetchUnreadCount: vi.fn(() => Promise.resolve({ unreadCount: 0 })),
+    fetchExecutorStats: vi.fn(() => Promise.resolve({
+      globalPause: false,
+      enginePaused: false,
+      maxConcurrent: 2,
+      lastActivityAt: new Date().toISOString(),
+    })),
     fetchScripts: vi.fn(() => Promise.resolve({ build: "npm run build", test: "pnpm test" })),
     runScript: vi.fn(() => Promise.resolve({ sessionId: "sess-script-1", command: "echo hello" })),
     killPtyTerminalSession: vi.fn(() => Promise.resolve({ killed: true })),
@@ -1802,6 +1808,29 @@ describe("App footer-safe project layout", () => {
     // The board should be inside the footer-safe wrapper
     const wrapper = document.querySelector(".project-content--with-footer");
     expect(wrapper?.querySelector(".board")).toBeTruthy();
+  });
+
+  it("opens the built-in file browser from the footer project directory link", async () => {
+    localStorage.setItem("kb-dashboard-view-mode", "project");
+    mockProjectsState.projects = [mockCurrentProjectState.currentProject];
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("executor-project-path-toggle")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByTestId("executor-project-path-toggle"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("executor-project-path-link")).toHaveTextContent("/test");
+    });
+
+    fireEvent.click(screen.getByTestId("executor-project-path-link"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Files — Project")).toBeTruthy();
+    });
   });
 
   it("uses project-content wrapper without footer class in overview mode", async () => {

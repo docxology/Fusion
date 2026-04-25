@@ -4,15 +4,21 @@
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-xs);
   overflow: visible;
+  min-width: 0;
+  max-width: min(32ch, 24vw);
 }
 
-.project-selector-trigger {
+.project-selector-trigger,
+.project-selector__trigger {
   display: inline-flex;
   align-items: center;
+  gap: var(--space-xs);
   justify-content: center;
-  padding: 6px 6px;
+  min-width: 0;
+  max-width: 100%;
+  padding: calc(var(--space-xs) + var(--space-xs) / 2) calc(var(--space-xs) + var(--space-xs) / 2);
   background: transparent;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -21,26 +27,43 @@
   transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
 }
 
-.project-selector-trigger:hover {
+.project-selector-trigger-label,
+.project-selector__trigger-text {
+  min-width: 0;
+  max-width: min(24ch, 18vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1;
+}
+
+.project-selector-trigger:hover,
+.project-selector__trigger:hover {
   background: var(--card-hover);
   color: var(--text);
   border-color: var(--text-dim);
 }
 
-.project-selector-trigger--open {
+.project-selector-trigger--open,
+.project-selector__trigger.open {
   color: var(--text);
   border-color: var(--text-dim);
 }
 
-.project-selector-chevron {
+.project-selector-chevron,
+.project-selector__trigger-chevron {
   transition: transform var(--transition-fast);
 }
 
-.project-selector-chevron--open {
+.project-selector-chevron--open,
+.project-selector__trigger-chevron.rotate {
   transform: rotate(180deg);
 }
 
-.project-selector-dropdown {
+.project-selector-dropdown,
+.project-selector__dropdown {
   position: absolute;
   top: calc(100% + 8px);
   left: 0;
@@ -54,7 +77,8 @@
   box-shadow: var(--shadow-lg);
 }
 
-.project-selector-item {
+.project-selector-item,
+.project-selector__item {
   width: 100%;
   display: flex;
   align-items: center;
@@ -70,11 +94,14 @@
   transition: background var(--transition-fast);
 }
 
-.project-selector-item:hover {
+.project-selector-item:hover,
+.project-selector__item:hover,
+.project-selector__item.highlighted {
   background: var(--card-hover);
 }
 
-.project-selector-item--current {
+.project-selector-item--current,
+.project-selector__item[aria-selected="true"] {
   background: var(--card-hover);
 }
 
@@ -109,14 +136,119 @@
   box-shadow: var(--focus-ring-strong);
 }
 
-.project-selector-dot {
+.project-selector__trigger-icon {
   flex-shrink: 0;
+}
+
+.project-selector__search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-xs) var(--space-sm);
+  margin-bottom: var(--space-xs);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.project-selector__search-icon {
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+
+.project-selector__search-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.project-selector__search-input:focus-visible {
+  outline: none;
+}
+
+.project-selector__search-clear {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.project-selector__section {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.project-selector__section + .project-selector__section {
+  margin-top: var(--space-xs);
+}
+
+.project-selector__section-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-xs) calc(var(--space-sm) + var(--space-xs));
+  color: var(--text-dim);
+  font-size: calc(var(--space-sm) + var(--space-xs) * 0.75);
+}
+
+.project-selector__no-results {
+  padding: var(--space-sm) calc(var(--space-sm) + var(--space-xs));
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.project-selector__footer {
+  margin-top: var(--space-xs);
+  padding-top: var(--space-xs);
+  border-top: 1px solid var(--border);
+}
+
+.project-selector__view-all {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  justify-content: flex-start;
+  padding: var(--space-sm) calc(var(--space-sm) + var(--space-xs));
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-md);
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.project-selector__view-all:hover,
+.project-selector__view-all.highlighted {
+  background: var(--card-hover);
+}
+
+.project-selector__view-all:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring-strong);
+}
+
+.project-selector-dot,
+.project-selector__dot,
+.project-selector__item-check {
+  flex-shrink: 0;
+}
+
+.project-selector-dot,
+.project-selector__dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
 }
 
-.project-selector-info {
+.project-selector-info,
+.project-selector__item-info {
   flex: 1;
   min-width: 0;
   display: flex;
@@ -124,14 +256,16 @@
   gap: 2px;
 }
 
-.project-selector-name {
+.project-selector-name,
+.project-selector__item-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: 500;
 }
 
-.project-selector-path {
+.project-selector-path,
+.project-selector__item-path {
   font-size: calc(var(--space-sm) + var(--space-xs) * 0.75);
   color: var(--text-muted);
   overflow: hidden;
@@ -139,8 +273,8 @@
   white-space: nowrap;
 }
 
-.project-selector-check {
-  flex-shrink: 0;
+.project-selector-check,
+.project-selector__item-check {
   color: var(--todo);
 }
 
@@ -157,8 +291,9 @@
   background: var(--card-hover);
 }
 
-[data-theme="light"] .project-selector-item--current {
-  background: rgba(88, 166, 255, 0.1);
+[data-theme="light"] .project-selector-item--current,
+[data-theme="light"] .project-selector__item[aria-selected="true"] {
+  background: color-mix(in srgb, var(--todo) 10%, transparent);
 }
 
 /* === Mobile Project Switch (logo-adjacent dropdown) === */
@@ -185,6 +320,16 @@
 .mobile-project-switch-trigger:hover {
   background: var(--card-hover);
   color: var(--text);
+}
+
+.project-selector-trigger:focus-visible,
+.project-selector__trigger:focus-visible,
+.project-selector-item:focus-visible,
+.project-selector__item:focus-visible,
+.mobile-project-switch-trigger:focus-visible,
+.mobile-project-switch-item:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring-strong);
 }
 
 .mobile-project-switch-trigger--open {

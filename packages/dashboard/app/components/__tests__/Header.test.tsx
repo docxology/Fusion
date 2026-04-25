@@ -1088,6 +1088,45 @@ describe("Header", () => {
       expect(screen.getByTestId("project-selector-trigger")).toBeDefined();
     });
 
+    it("shows current project name in the desktop project selector trigger", () => {
+      renderHeader({
+        projects: singleProject,
+        currentProject: singleProject[0],
+        onViewAllProjects: noop,
+      }, "desktop");
+
+      const trigger = screen.getByTestId("project-selector-trigger");
+      expect(trigger).toHaveTextContent("Test Project");
+    });
+
+    it("includes the full active project name in the trigger title for truncated labels", () => {
+      const longName = "This is a very long project name that should be truncated in the header trigger";
+      const projects = [
+        { id: "1", name: longName, path: "/path/to/project", status: "active" as const },
+      ];
+
+      renderHeader({
+        projects,
+        currentProject: projects[0],
+        onViewAllProjects: noop,
+      }, "desktop");
+
+      const trigger = screen.getByTestId("project-selector-trigger");
+      expect(trigger).toHaveTextContent(longName);
+      expect(trigger).toHaveAttribute("title", `Switch project (current: ${longName})`);
+    });
+
+    it("falls back to 'Projects' label when current project is missing", () => {
+      renderHeader({
+        projects: singleProject,
+        currentProject: null,
+        onViewAllProjects: noop,
+      }, "desktop");
+
+      const trigger = screen.getByTestId("project-selector-trigger");
+      expect(trigger).toHaveTextContent("Projects");
+    });
+
     it("shows Manage Projects action in dropdown and calls onViewAllProjects", () => {
       const onViewAllProjects = vi.fn();
       renderHeader({

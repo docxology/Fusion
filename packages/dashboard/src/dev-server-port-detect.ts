@@ -128,6 +128,10 @@ function detectAngularLine(line: string): PortDetectionResult | null {
   return null;
 }
 
+function isNodeInspectorLine(line: string): boolean {
+  return /\binspector\b/i.test(line);
+}
+
 function detectGenericUrl(line: string): PortDetectionResult | null {
   const genericUrlMatch = line.match(/((?:https?:\/\/)?(?:localhost|127\.0\.0\.1):\d{2,5}(?:\/\S*)?)/i);
   if (!genericUrlMatch) {
@@ -175,6 +179,10 @@ export function detectPortFromLogLine(line: string): PortDetectionResult | null 
 
   const cleanLine = stripAnsi(line).trim();
   if (!cleanLine || isInspectorDiagnosticLine(cleanLine)) {
+    return null;
+  }
+
+  if (isNodeInspectorLine(cleanLine)) {
     return null;
   }
 

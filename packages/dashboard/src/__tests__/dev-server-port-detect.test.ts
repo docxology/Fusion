@@ -107,12 +107,9 @@ describe("dev-server-port-detect", () => {
     });
   });
 
-  it("ignores node inspector diagnostic URLs", () => {
+  it("ignores Node inspector log lines that include loopback URLs", () => {
     expect(
       detectPortFromLogLine("Starting inspector on 127.0.0.1:9229 failed: address already in use"),
-    ).toBeNull();
-    expect(
-      detectPortFromLogLine("Debugger listening on ws://127.0.0.1:9229/abc"),
     ).toBeNull();
   });
 
@@ -125,6 +122,19 @@ describe("dev-server-port-detect", () => {
     expect(result).toEqual({
       url: "http://localhost:5173",
       port: 5173,
+      source: "generic-url",
+    });
+  });
+
+  it("detectPortFromLogs skips inspector lines and uses the next valid preview URL", () => {
+    const result = detectPortFromLogs([
+      "ready at http://localhost:4173/",
+      "Starting inspector on 127.0.0.1:9229 failed: address already in use",
+    ]);
+
+    expect(result).toEqual({
+      url: "http://localhost:4173",
+      port: 4173,
       source: "generic-url",
     });
   });
