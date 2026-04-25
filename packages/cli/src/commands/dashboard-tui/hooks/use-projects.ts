@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import type { ProjectItem, TaskItem, InteractiveData } from "../state.js";
 
 export interface ProjectsState {
@@ -11,44 +11,60 @@ export interface TasksState {
   tasks: TaskItem[];
   loading: boolean;
   error: string | null;
+  refresh: () => void;
 }
 
 export function useProjects(interactiveData: InteractiveData | null): ProjectsState {
-  const [state, setState] = useState<ProjectsState>({ projects: [], loading: false, error: null });
+  const [projects, setProjects] = useState<ProjectItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!interactiveData) return;
-    setState({ projects: [], loading: true, error: null });
-    interactiveData.listProjects().then((projects) => {
-      setState({ projects, loading: false, error: null });
+    setLoading(true);
+    setError(null);
+    interactiveData.listProjects().then((p) => {
+      setProjects(p);
+      setLoading(false);
     }).catch((err: unknown) => {
-      const message = err instanceof Error ? err.message : String(err);
-      setState({ projects: [], loading: false, error: message });
+      setProjects([]);
+      setLoading(false);
+      setError(err instanceof Error ? err.message : String(err));
     });
   }, [interactiveData]);
 
-  return state;
+  return { projects, loading, error };
 }
 
 export function useTasks(
   interactiveData: InteractiveData | null,
   selectedProject: ProjectItem | null,
 ): TasksState {
-  const [state, setState] = useState<TasksState>({ tasks: [], loading: false, error: null });
+  const [tasks, setTasks] = useState<TaskItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [reloadTick, setReloadTick] = useState(0);
+
+  const refresh = useCallback(() => setReloadTick((n) => n + 1), []);
 
   useEffect(() => {
     if (!interactiveData || !selectedProject) {
-      setState({ tasks: [], loading: false, error: null });
+      setTasks([]);
+      setLoading(false);
+      setError(null);
       return;
     }
-    setState({ tasks: [], loading: true, error: null });
-    interactiveData.listTasks(selectedProject.path).then((tasks) => {
-      setState({ tasks, loading: false, error: null });
+    setLoading(true);
+    setError(null);
+    interactiveData.listTasks(selectedProject.path).then((t) => {
+      setTasks(t);
+      setLoading(false);
     }).catch((err: unknown) => {
-      const message = err instanceof Error ? err.message : String(err);
-      setState({ tasks: [], loading: false, error: message });
+      setTasks([]);
+      setLoading(false);
+      setError(err instanceof Error ? err.message : String(err));
     });
-  }, [interactiveData, selectedProject]);
+  }, [interactiveData, selectedProject, reloadTick]);
 
-  return state;
+  return { tasks, loading, error, refresh };
 }

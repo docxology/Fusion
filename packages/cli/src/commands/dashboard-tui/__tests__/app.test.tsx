@@ -45,6 +45,12 @@ function makeInteractiveData(opts: {
   return {
     listProjects: async () => projects,
     listTasks: async () => tasks,
+    createTask: async (_path: string, input: { title: string; description?: string }) => ({
+      id: "new",
+      title: input.title,
+      description: input.description ?? input.title,
+      column: "todo",
+    }) as TaskItem,
     listAgents: async () => agents,
     getAgentDetail: async (_id: string) => detail,
     updateAgentState: async (_id: string, _state: string) => {},

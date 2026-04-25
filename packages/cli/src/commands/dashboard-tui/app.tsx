@@ -1,6 +1,32 @@
 import React, { useState, useSyncExternalStore, useCallback, useEffect } from "react";
 import { Box, Text, useInput, useApp, useStdout } from "ink";
 import Spinner from "ink-spinner";
+import TextInput from "ink-text-input";
+import { spawn } from "node:child_process";
+
+// Open a URL in the user's default browser. Uses the platform-native opener
+// (macOS `open`, Windows `start`, Linux `xdg-open`). Detached + ignored stdio
+// so the spawned process doesn't block the TUI's input loop.
+function openInBrowser(url: string): void {
+  let cmd: string;
+  let args: string[];
+  if (process.platform === "darwin") {
+    cmd = "open";
+    args = [url];
+  } else if (process.platform === "win32") {
+    cmd = "cmd";
+    args = ["/c", "start", "", url];
+  } else {
+    cmd = "xdg-open";
+    args = [url];
+  }
+  try {
+    const child = spawn(cmd, args, { detached: true, stdio: "ignore" });
+    child.unref();
+  } catch {
+    // Best-effort — silently ignore if the platform tool isn't available.
+  }
+}
 import type { DashboardTUI } from "./controller.js";
 import type {
   DashboardState,
@@ -170,20 +196,38 @@ function SystemPanel({ state, isFocused }: { state: DashboardState; isFocused: b
             <>
               <Box flexDirection="row" gap={1}>
                 <Text dimColor>Auth:</Text>
-                <Text color="yellow">bearer token</Text>
+                <Text color="yellow">bearer token required</Text>
               </Box>
               {info.authToken && (
                 <Box flexDirection="row" gap={1}>
                   <Text dimColor>Token:</Text>
-                  <Text wrap="truncate">{info.authToken}</Text>
+                  <Text wrap="truncate" color="yellow">{info.authToken}</Text>
                 </Box>
               )}
+              {info.tokenizedUrl && (
+                <Box flexDirection="row" gap={1}>
+                  <Text dimColor>Open:</Text>
+                  <Text wrap="truncate" color="cyanBright">{info.tokenizedUrl}</Text>
+                </Box>
+              )}
+              <Box flexDirection="row" gap={1}>
+                <Text dimColor>Press</Text>
+                <Text color="cyanBright" bold>[Enter]</Text>
+                <Text dimColor>to open in browser</Text>
+              </Box>
             </>
           ) : (
-            <Box flexDirection="row" gap={1}>
-              <Text dimColor>Auth:</Text>
-              <Text dimColor>disabled</Text>
-            </Box>
+            <>
+              <Box flexDirection="row" gap={1}>
+                <Text dimColor>Auth:</Text>
+                <Text color="yellow">no auth</Text>
+              </Box>
+              <Box flexDirection="row" gap={1}>
+                <Text dimColor>Press</Text>
+                <Text color="cyanBright" bold>[Enter]</Text>
+                <Text dimColor>to open in browser</Text>
+              </Box>
+            </>
           )}
           <Box flexDirection="row" gap={1}>
             <Text dimColor>Engine:</Text>
@@ -833,7 +877,7 @@ function TaskDetailScreen({ task }: { task: TaskItem }) {
   );
 }
 
-type BoardSubView = "board" | "detail" | "picker";
+type BoardSubView = "board" | "detail" | "picker" | "create";
 
 function clamp(n: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, n));
@@ -870,6 +914,9 @@ function BoardView({ state }: { state: DashboardState }) {
     done: 0,
   });
   const [pickerOriginal, setPickerOriginal] = useState(0);
+  const [newTaskTitle, setNewTaskTitle] = useState("");
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
 
   const projectsState = useProjects(state.interactiveData);
   const selectedProject = projectsState.projects[projectIndex] ?? null;
@@ -910,9 +957,27 @@ function BoardView({ state }: { state: DashboardState }) {
       return;
     }
 
+    if (subView === "create") {
+      // TextInput owns most key handling; only Esc cancels here. Submit is
+      // wired through the TextInput's onSubmit prop.
+      if (key.escape) {
+        setSubView("board");
+        setNewTaskTitle("");
+        setCreateError(null);
+      }
+      return;
+    }
+
     if (input === "p" || input === "P") {
       setPickerOriginal(projectIndex);
       setSubView("picker");
+      return;
+    }
+    if (input === "n" || input === "N") {
+      if (!selectedProject) return;
+      setNewTaskTitle("");
+      setCreateError(null);
+      setSubView("create");
       return;
     }
     if (key.return) {
@@ -947,7 +1012,33 @@ function BoardView({ state }: { state: DashboardState }) {
     ? "↑↓ pick · Enter confirm · Esc cancel"
     : subView === "detail"
     ? "Esc back · q quit"
-    : "←→ column · ↑↓ task · Enter open · p project";
+    : subView === "create"
+    ? "type a task title · Enter create · Esc cancel"
+    : "←→ column · ↑↓ task · Enter open · n new · p project";
+
+  const submitNewTask = async () => {
+    const title = newTaskTitle.trim();
+    if (!title) {
+      setCreateError("Title cannot be empty");
+      return;
+    }
+    if (!state.interactiveData || !selectedProject) {
+      setCreateError("No project selected");
+      return;
+    }
+    setCreating(true);
+    setCreateError(null);
+    try {
+      await state.interactiveData.createTask(selectedProject.path, { title });
+      setNewTaskTitle("");
+      setSubView("board");
+      tasksState.refresh();
+    } catch (err) {
+      setCreateError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setCreating(false);
+    }
+  };
 
   return (
     <Box flexDirection="column" flexGrow={1}>
@@ -964,7 +1055,44 @@ function BoardView({ state }: { state: DashboardState }) {
 
       <Box height={1} />
 
-      {subView === "detail" && selectedTask ? (
+      {subView === "create" ? (
+        <Box justifyContent="center" alignItems="center" flexGrow={1}>
+          <Box
+            borderStyle="round"
+            borderColor="cyan"
+            flexDirection="column"
+            paddingX={2}
+            paddingY={1}
+            width={Math.min(80, Math.max(40, cols - 8))}
+          >
+            <Text bold color="cyanBright">New Task</Text>
+            <Text dimColor>Project: {selectedProject?.name ?? "(none)"}</Text>
+            <Box height={1} />
+            <Text dimColor>Title</Text>
+            <Box>
+              <Text color="cyanBright">▸ </Text>
+              <TextInput
+                value={newTaskTitle}
+                onChange={setNewTaskTitle}
+                onSubmit={() => void submitNewTask()}
+                placeholder="What needs doing?"
+              />
+            </Box>
+            <Box height={1} />
+            {createError && (
+              <Text color="red">{createError}</Text>
+            )}
+            {creating ? (
+              <Box flexDirection="row" gap={1}>
+                <Text color="cyanBright"><Spinner type="dots" /></Text>
+                <Text dimColor>Creating…</Text>
+              </Box>
+            ) : (
+              <Text dimColor>Enter to create · Esc to cancel</Text>
+            )}
+          </Box>
+        </Box>
+      ) : subView === "detail" && selectedTask ? (
         <Box flexGrow={1} paddingX={1}>
           <TaskDetailScreen task={selectedTask} />
         </Box>
@@ -1016,6 +1144,9 @@ function heartbeatFreshness(lastHeartbeatAt?: string): { fresh: boolean; label: 
 type AgentSubView = "list" | "confirm-delete";
 
 function AgentsView({ state }: { state: DashboardState }) {
+  const { stdout } = useStdout();
+  const cols = stdout?.columns ?? 80;
+  const isNarrow = cols < 80;
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [agents, setAgents] = useState<AgentItem[]>([]);
   const [detail, setDetail] = useState<AgentDetailItem | null>(null);
@@ -1146,13 +1277,15 @@ function AgentsView({ state }: { state: DashboardState }) {
           <Text color="yellow">{statusMsg}</Text>
         </Box>
       )}
-      <Box flexDirection="row" flexGrow={1} overflow="hidden">
-        {/* Left: agent list */}
+      <Box flexDirection={isNarrow ? "column" : "row"} flexGrow={1} overflow="hidden">
+        {/* List panel */}
         <Box
           borderStyle="round"
           borderColor={detailFocused ? "gray" : "cyan"}
           flexDirection="column"
-          width="30%"
+          width={isNarrow ? undefined : "30%"}
+          flexGrow={isNarrow ? 1 : 0}
+          flexShrink={0}
           overflow="hidden"
         >
           <Box paddingX={1}>
@@ -1270,7 +1403,7 @@ function AgentsView({ state }: { state: DashboardState }) {
 
       {/* Footer */}
       <Box paddingX={1}>
-        <Text dimColor>[s] start  [x] stop  [D] delete  [r] refresh  [Tab] switch panel focus  ↑↓ select</Text>
+        <Text dimColor>[s] start  [x] stop  [D] delete  [r] refresh  [Tab] focus  ↑↓ select</Text>
       </Box>
     </Box>
   );
@@ -1622,6 +1755,15 @@ export function DashboardApp({ controller }: DashboardAppProps) {
       return;
     }
 
+    // Status mode: Enter from the System panel opens the dashboard URL in
+    // the user's browser. Logs panel handles Enter itself (expand log entry)
+    // so we gate by activeSection.
+    if (key.return && state.activeSection === "system" && state.systemInfo) {
+      const url = state.systemInfo.tokenizedUrl ?? state.systemInfo.baseUrl;
+      openInBrowser(url);
+      return;
+    }
+
     // Number keys switch panels (status mode)
     if (input >= "1" && input <= "5") {
       const section = SECTION_ORDER[parseInt(input, 10) - 1];
@@ -1729,7 +1871,7 @@ export function DashboardApp({ controller }: DashboardAppProps) {
     );
   }
 
-  const isNarrow = cols < 100 || rows < 24;
+  const isNarrow = cols < 80 || rows < 20;
 
   return (
     <Box flexDirection="column" height={rows}>

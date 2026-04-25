@@ -110,6 +110,7 @@ export interface ModelItem {
 export interface InteractiveData {
   listProjects: () => Promise<ProjectItem[]>;
   listTasks: (projectPath: string) => Promise<TaskItem[]>;
+  createTask: (projectPath: string, input: { title: string; description?: string }) => Promise<TaskItem>;
   listAgents: () => Promise<AgentItem[]>;
   getAgentDetail: (id: string) => Promise<AgentDetailItem | null>;
   updateAgentState: (id: string, state: string) => Promise<void>;

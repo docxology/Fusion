@@ -1546,6 +1546,25 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
               agentState: (t as { agentState?: string }).agentState,
             }));
           },
+          createTask: async (projectPath: string, input: { title: string; description?: string }) => {
+            let projectStore = projectStores.get(projectPath);
+            if (!projectStore) {
+              projectStore = projectPath === cwd ? store : new TaskStore(projectPath);
+              if (projectPath !== cwd) await projectStore.init();
+              projectStores.set(projectPath, projectStore);
+            }
+            const created = await projectStore.createTask({
+              title: input.title,
+              description: input.description ?? input.title,
+            });
+            return {
+              id: created.id,
+              title: created.title,
+              description: created.description ?? "",
+              column: created.column,
+              agentState: (created as { agentState?: string }).agentState,
+            };
+          },
           listAgents: async () => {
             const list = await agentStore!.listAgents();
             return list.map((a) => ({
