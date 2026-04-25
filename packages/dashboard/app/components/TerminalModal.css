@@ -1,7 +1,7 @@
 /* === Terminal Modal === */
-.terminal-modal {
+.modal.terminal-modal {
   width: 90vw;
-  max-width: 1200px;
+  max-width: 1600px;
   min-height: 90vh;
   max-height: 90vh;
   background: var(--card);

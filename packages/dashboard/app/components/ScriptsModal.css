@@ -1662,8 +1662,8 @@
    ══════════════════════════════════════════════════════════════════ */
 
 /* Modal size override - flex layout for sidebar + content */
-.gm-modal {
-  width: 900px;
+.modal.gm-modal {
+  width: 1400px;
   max-width: 95vw;
   max-height: 85vh;
   display: flex;

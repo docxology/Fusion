@@ -1,7 +1,7 @@
 /* === File Browser === */
-.file-browser-modal {
+.modal.file-browser-modal {
   width: 90vw;
-  max-width: 1200px;
+  max-width: 1600px;
   height: 80vh;
   max-height: calc(100vh - 2 * var(--overlay-padding-top, 10vh));
   display: flex;
@@ -582,9 +582,9 @@
 
 
 /* === File Browser === */
-.file-browser-modal {
+.modal.file-browser-modal {
   width: 90vw;
-  max-width: 1200px;
+  max-width: 1600px;
   height: 80vh;
   max-height: calc(100vh - 2 * var(--overlay-padding-top, 10vh));
 }
@@ -664,7 +664,7 @@
 /* ChangesDiffModal — two-panel diff browser */
 .changes-diff-modal {
   width: 90vw;
-  max-width: 1200px;
+  max-width: 1600px;
   height: 80vh;
   max-height: calc(100vh - 2 * var(--overlay-padding-top, 10vh));
   display: flex;

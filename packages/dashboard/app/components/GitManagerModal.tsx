@@ -1,3 +1,4 @@
+import "./ScriptsModal.css";
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import type { Task } from "@fusion/core";
 import { getErrorMessage } from "@fusion/core";

@@ -1,6 +1,6 @@
 /* === Workflow Step Manager Modal === */
-.workflow-step-manager-modal {
-  width: 560px;
+.modal.workflow-step-manager-modal {
+  width: min(900px, calc(100vw - 32px));
   overflow: hidden;
 }
 
