@@ -4376,7 +4376,7 @@ describe("Pause/Unpause endpoints", () => {
       } finally {
         rmSync(tempDir, { recursive: true, force: true });
       }
-    });
+    }, 15_000);
 
     it("POST /tasks/:id/comments — skips heartbeat wake when task has no assigned agent", async () => {
       const heartbeatMonitor = {

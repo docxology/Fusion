@@ -33,6 +33,10 @@ export default defineConfig({
     poolOptions: { threads: { minThreads: 1, maxThreads: maxWorkers }, forks: { minForks: 1, maxForks: maxWorkers } },
     fileParallelism: true,
     isolate: true,
+    // Dashboard route and integration-heavy suites can exceed the Vitest
+    // 5s default under workspace-concurrent runs.
+    testTimeout: 15_000,
+    hookTimeout: 15_000,
     coverage: {
       enabled: false,
       reporter: ["text", "html", "json"],

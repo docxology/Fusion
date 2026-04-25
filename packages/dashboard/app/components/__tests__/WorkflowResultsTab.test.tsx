@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { WorkflowResultsTab } from "../WorkflowResultsTab";
 import { fetchWorkflowSteps } from "../../api";
 import type { WorkflowStep, WorkflowStepResult } from "@fusion/core";
@@ -33,6 +33,18 @@ describe("WorkflowResultsTab", () => {
       enabled: true,
       createdAt: "2026-04-01T00:00:00Z",
       updatedAt: "2026-04-01T00:00:00Z",
+    },
+    {
+      id: "WS-103",
+      name: "Browser Verification",
+      description: "Verify web application functionality using browser automation",
+      mode: "prompt",
+      phase: "pre-merge",
+      prompt: "Verify browser flows",
+      enabled: true,
+      createdAt: "2026-04-01T00:00:00Z",
+      updatedAt: "2026-04-01T00:00:00Z",
+      templateId: "browser-verification",
     },
   ];
 
@@ -555,7 +567,7 @@ describe("WorkflowResultsTab", () => {
       fireEvent.click(screen.getByTestId("workflow-steps-edit-toggle"));
       expect(screen.getByTestId("workflow-steps-editor")).toBeInTheDocument();
       await screen.findByTestId("workflow-step-checkbox-WS-101");
-      expect(screen.getByTestId("browser-verification-checkbox")).toBeInTheDocument();
+      expect(screen.getByTestId("workflow-step-checkbox-WS-103")).toBeInTheDocument();
 
       fireEvent.click(screen.getByTestId("workflow-steps-edit-toggle"));
       expect(screen.queryByTestId("workflow-steps-editor")).not.toBeInTheDocument();
@@ -658,6 +670,24 @@ describe("WorkflowResultsTab", () => {
       expect(screen.getByTestId("workflow-results-list")).toBeInTheDocument();
       expect(screen.getByTestId("workflow-steps-editor")).toBeInTheDocument();
       await screen.findByTestId("workflow-step-checkbox-WS-101");
+    });
+
+    it("renders Browser Verification exactly once when fetched steps include the template-backed option", async () => {
+      render(
+        <WorkflowResultsTab
+          taskId="FN-001"
+          results={[]}
+          canEdit
+          enabledWorkflowSteps={["WS-103"]}
+        />,
+      );
+
+      fireEvent.click(screen.getByTestId("workflow-steps-edit-toggle"));
+      const editor = await screen.findByTestId("workflow-steps-editor");
+      await screen.findByTestId("workflow-step-checkbox-WS-103");
+
+      expect(screen.queryByTestId("browser-verification-checkbox")).not.toBeInTheDocument();
+      expect(within(editor).getAllByText("Browser Verification")).toHaveLength(1);
     });
 
     it("fetches workflow step definitions when canEdit and projectId are provided", async () => {

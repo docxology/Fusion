@@ -233,22 +233,12 @@ export function WorkflowResultsTab({
   const selectedWorkflowSteps = enabledWorkflowSteps ?? [];
 
   const workflowStepOptions = useMemo<WorkflowStepOption[]>(() => {
-    const fetched = allWorkflowSteps.map((step) => ({
+    return allWorkflowSteps.map((step) => ({
       id: step.id,
       name: step.name,
       description: step.description,
       phase: (step.phase || "pre-merge") as "pre-merge" | "post-merge",
     }));
-
-    return [
-      ...fetched,
-      {
-        id: "browser-verification",
-        name: "Browser Verification",
-        description: "Verify web application functionality using browser automation (agent-browser)",
-        phase: "pre-merge",
-      },
-    ];
   }, [allWorkflowSteps]);
 
   const workflowStepLookup = useMemo(() => {
@@ -362,9 +352,7 @@ export function WorkflowResultsTab({
               <label
                 key={step.id}
                 className="checkbox-label workflow-step-item"
-                data-testid={step.id === "browser-verification"
-                  ? "browser-verification-checkbox"
-                  : `workflow-step-checkbox-${step.id}`}
+                data-testid={`workflow-step-checkbox-${step.id}`}
               >
                 <input
                   type="checkbox"
