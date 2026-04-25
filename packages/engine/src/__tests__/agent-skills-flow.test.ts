@@ -219,7 +219,7 @@ describe("agent skills flow - full integration", () => {
   it("flow with role fallback when assigned agent has no skills", async () => {
     // Step 1: Set up mock filesystem
     const projectRootDir = createMockProjectDir({
-      skills: ["+skills/executor/SKILL.md"],
+      skills: ["+skills/fusion/SKILL.md"],
     });
 
     // Step 2: Create mock AgentStore with agent that has NO skills
@@ -245,13 +245,13 @@ describe("agent skills flow - full integration", () => {
 
     // Verify role fallback
     expect(sessionResult.skillSource).toBe("role-fallback");
-    expect(sessionResult.resolvedSkillNames).toEqual(["executor"]);
-    expect(sessionResult.skillSelectionContext?.requestedSkillNames).toEqual(["executor"]);
+    expect(sessionResult.resolvedSkillNames).toEqual(["fusion"]);
+    expect(sessionResult.skillSelectionContext?.requestedSkillNames).toEqual(["fusion"]);
 
     // Step 4: Resolve session skills from settings
     const resolvedSkills = resolveSessionSkills(sessionResult.skillSelectionContext!);
 
     expect(resolvedSkills.filterActive).toBe(true);
-    expect(resolvedSkills.allowedSkillPaths.has("skills/executor/SKILL.md")).toBe(true);
+    expect(resolvedSkills.allowedSkillPaths.has("skills/fusion/SKILL.md")).toBe(true);
   });
 });

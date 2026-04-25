@@ -652,10 +652,10 @@ describe("reviewStep — skill selection resolver contract (FN-1510/FN-1511)", (
     vi.mocked(buildSessionSkillContext).mockResolvedValue({
       skillSelectionContext: {
         projectRootDir: "/tmp/project",
-        requestedSkillNames: ["reviewer"],
+        requestedSkillNames: ["fusion"],
         sessionPurpose: "reviewer",
       },
-      resolvedSkillNames: ["reviewer"],
+      resolvedSkillNames: ["fusion"],
       skillSource: "role-fallback",
     });
 
@@ -680,7 +680,7 @@ describe("reviewStep — skill selection resolver contract (FN-1510/FN-1511)", (
     const opts = mockedCreateFnAgent.mock.calls[0][0];
     expect(opts.skillSelection).toBeDefined();
     expect(opts.skillSelection!.projectRootDir).toBe("/tmp/project");
-    expect(opts.skillSelection!.requestedSkillNames).toEqual(["reviewer"]);
+    expect(opts.skillSelection!.requestedSkillNames).toEqual(["fusion"]);
     expect(opts.skillSelection!.sessionPurpose).toBe("reviewer");
   });
 
@@ -839,10 +839,10 @@ describe("reviewStep — skill selection resolver contract (FN-1510/FN-1511)", (
     vi.mocked(buildSessionSkillContext).mockResolvedValue({
       skillSelectionContext: {
         projectRootDir: "/tmp/project",
-        requestedSkillNames: ["reviewer"],
+        requestedSkillNames: ["fusion"],
         sessionPurpose: "reviewer",
       },
-      resolvedSkillNames: ["reviewer"],
+      resolvedSkillNames: ["fusion"],
       skillSource: "role-fallback",
     });
 

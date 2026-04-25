@@ -301,6 +301,16 @@ export function createSkillsOverrideFromSelection(
   const { allowedSkillPaths, excludedSkillPaths, filterActive } = selection;
   const { requestedSkillNames, sessionPurpose } = options;
 
+  const isBuiltInFallbackRequest = (name: string): boolean => {
+    const purposeUsesRoleFallback = sessionPurpose === "triage"
+      || sessionPurpose === "executor"
+      || sessionPurpose === "reviewer"
+      || sessionPurpose === "merger";
+    return purposeUsesRoleFallback
+      && requestedSkillNames?.length === 1
+      && name.toLowerCase() === "fusion";
+  };
+
   return (base: { skills: Skill[]; diagnostics: ResourceDiagnostic[] }) => {
     // If filtering is not active, return base unchanged
     if (!filterActive) {
@@ -374,7 +384,10 @@ export function createSkillsOverrideFromSelection(
     if (requestedSkillNames) {
       const discoveredNamesLower = new Set(base.skills.map((s) => s.name.toLowerCase()));
       for (const requestedName of requestedSkillNames) {
-        if (!discoveredNamesLower.has(requestedName.toLowerCase())) {
+        if (
+          !discoveredNamesLower.has(requestedName.toLowerCase())
+          && !isBuiltInFallbackRequest(requestedName)
+        ) {
           const purpose = sessionPurpose ? ` [${sessionPurpose}]` : "";
           newDiagnostics.push({
             type: "warning",

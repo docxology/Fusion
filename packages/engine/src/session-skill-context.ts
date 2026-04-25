@@ -11,11 +11,11 @@
  *    with valid normalized skills in `agent.metadata.skills`, those skills are used.
  *
  * 2. **Role Fallback Skills**: If assigned agent is missing or has no valid skills,
- *    use subsystem role fallback mapping:
- *    - `triage` → `triage`
- *    - `executor` / `step-session` → `executor`
- *    - `reviewer` → `reviewer`
- *    - `merger` → `merger`
+ *    use the built-in Fusion skill fallback mapping:
+ *    - `triage` → `fusion`
+ *    - `executor` / `step-session` → `fusion`
+ *    - `reviewer` → `fusion`
+ *    - `merger` → `fusion`
  *    - `heartbeat` → no role fallback (use waking agent only)
  *
  * 3. **No Skills**: If neither source provides valid skills, pass no requested skills.
@@ -36,7 +36,7 @@ import type { SkillSelectionContext } from "./skill-resolver.js";
 
 /**
  * Session purpose for skill selection context.
- * Maps to role fallback skills when no assigned agent is available.
+ * Maps to built-in fallback skills when no assigned agent is available.
  */
 export type SessionPurpose = "triage" | "executor" | "reviewer" | "merger" | "heartbeat";
 
@@ -114,10 +114,10 @@ export function normalizeAgentSkills(
  * Heartbeat has no role fallback (uses waking agent only).
  */
 const ROLE_FALLBACK_SKILLS: Record<Exclude<SessionPurpose, "heartbeat">, string[]> = {
-  triage: ["triage"],
-  executor: ["executor"],
-  reviewer: ["reviewer"],
-  merger: ["merger"],
+  triage: ["fusion"],
+  executor: ["fusion"],
+  reviewer: ["fusion"],
+  merger: ["fusion"],
 };
 
 /**

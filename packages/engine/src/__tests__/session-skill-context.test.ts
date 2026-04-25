@@ -171,7 +171,7 @@ describe("buildSessionSkillContextSync", () => {
       const result = buildSessionSkillContextSync(agent, "executor", projectRootDir);
 
       expect(result.skillSource).toBe("role-fallback");
-      expect(result.resolvedSkillNames).toEqual(["executor"]);
+      expect(result.resolvedSkillNames).toEqual(["fusion"]);
     });
 
     it("falls back to role when agent has no metadata", () => {
@@ -186,7 +186,7 @@ describe("buildSessionSkillContextSync", () => {
       const result = buildSessionSkillContextSync(agent, "executor", projectRootDir);
 
       expect(result.skillSource).toBe("role-fallback");
-      expect(result.resolvedSkillNames).toEqual(["executor"]);
+      expect(result.resolvedSkillNames).toEqual(["fusion"]);
     });
 
     it("falls back to role when agent has no metadata.skills", () => {
@@ -200,37 +200,37 @@ describe("buildSessionSkillContextSync", () => {
       const result = buildSessionSkillContextSync(agent, "executor", projectRootDir);
 
       expect(result.skillSource).toBe("role-fallback");
-      expect(result.resolvedSkillNames).toEqual(["executor"]);
+      expect(result.resolvedSkillNames).toEqual(["fusion"]);
     });
   });
 
   describe("role fallback skills", () => {
-    it("returns triage role fallback for triage purpose", () => {
+    it("returns fusion role fallback for triage purpose", () => {
       const result = buildSessionSkillContextSync(null, "triage", projectRootDir);
 
       expect(result.skillSource).toBe("role-fallback");
-      expect(result.resolvedSkillNames).toEqual(["triage"]);
+      expect(result.resolvedSkillNames).toEqual(["fusion"]);
     });
 
-    it("returns executor role fallback for executor purpose", () => {
+    it("returns fusion role fallback for executor purpose", () => {
       const result = buildSessionSkillContextSync(null, "executor", projectRootDir);
 
       expect(result.skillSource).toBe("role-fallback");
-      expect(result.resolvedSkillNames).toEqual(["executor"]);
+      expect(result.resolvedSkillNames).toEqual(["fusion"]);
     });
 
-    it("returns reviewer role fallback for reviewer purpose", () => {
+    it("returns fusion role fallback for reviewer purpose", () => {
       const result = buildSessionSkillContextSync(null, "reviewer", projectRootDir);
 
       expect(result.skillSource).toBe("role-fallback");
-      expect(result.resolvedSkillNames).toEqual(["reviewer"]);
+      expect(result.resolvedSkillNames).toEqual(["fusion"]);
     });
 
-    it("returns merger role fallback for merger purpose", () => {
+    it("returns fusion role fallback for merger purpose", () => {
       const result = buildSessionSkillContextSync(null, "merger", projectRootDir);
 
       expect(result.skillSource).toBe("role-fallback");
-      expect(result.resolvedSkillNames).toEqual(["merger"]);
+      expect(result.resolvedSkillNames).toEqual(["fusion"]);
     });
 
     it("returns no skills for heartbeat purpose (no role fallback)", () => {
@@ -342,7 +342,7 @@ describe("buildSessionSkillContext", () => {
     });
 
     expect(result.skillSource).toBe("role-fallback");
-    expect(result.resolvedSkillNames).toEqual(["executor"]);
+    expect(result.resolvedSkillNames).toEqual(["fusion"]);
   });
 
   it("falls back to role when no assignedAgentId", async () => {
@@ -358,7 +358,7 @@ describe("buildSessionSkillContext", () => {
     });
 
     expect(result.skillSource).toBe("role-fallback");
-    expect(result.resolvedSkillNames).toEqual(["executor"]);
+    expect(result.resolvedSkillNames).toEqual(["fusion"]);
     expect(mockAgentStore.getAgent).not.toHaveBeenCalled();
   });
 
@@ -375,7 +375,7 @@ describe("buildSessionSkillContext", () => {
     });
 
     expect(result.skillSource).toBe("role-fallback");
-    expect(result.resolvedSkillNames).toEqual(["triage"]);
+    expect(result.resolvedSkillNames).toEqual(["fusion"]);
   });
 
   it("falls back to role when agent lookup throws", async () => {
@@ -391,7 +391,7 @@ describe("buildSessionSkillContext", () => {
     });
 
     expect(result.skillSource).toBe("role-fallback");
-    expect(result.resolvedSkillNames).toEqual(["reviewer"]);
+    expect(result.resolvedSkillNames).toEqual(["fusion"]);
   });
 
   it("uses heartbeat with no skills when no assigned agent", async () => {
@@ -429,8 +429,8 @@ describe("SKILL_DIAGNOSTIC_MESSAGES", () => {
   });
 
   it("provides role fallback message template", () => {
-    const msg = SKILL_DIAGNOSTIC_MESSAGES.roleFallbackSkills("triage", ["triage"]);
-    expect(msg).toBe("Using role fallback skills for triage: [triage]");
+    const msg = SKILL_DIAGNOSTIC_MESSAGES.roleFallbackSkills("triage", ["fusion"]);
+    expect(msg).toBe("Using role fallback skills for triage: [fusion]");
   });
 
   it("provides no skills available message template", () => {

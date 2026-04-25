@@ -5444,10 +5444,10 @@ describe("aiMergeTask — skill selection resolver contract (FN-1510/FN-1511)", 
     vi.mocked(buildSessionSkillContext).mockResolvedValue({
       skillSelectionContext: {
         projectRootDir: "/tmp/root",
-        requestedSkillNames: ["merger"],
+        requestedSkillNames: ["fusion"],
         sessionPurpose: "merger",
       },
-      resolvedSkillNames: ["merger"],
+      resolvedSkillNames: ["fusion"],
       skillSource: "role-fallback",
     });
 
@@ -5482,7 +5482,7 @@ describe("aiMergeTask — skill selection resolver contract (FN-1510/FN-1511)", 
     const opts = firstCall[0];
     expect(opts.skillSelection).toBeDefined();
     expect(opts.skillSelection!.projectRootDir).toBe("/tmp/root");
-    expect(opts.skillSelection!.requestedSkillNames).toEqual(["merger"]);
+    expect(opts.skillSelection!.requestedSkillNames).toEqual(["fusion"]);
     expect(opts.skillSelection!.sessionPurpose).toBe("merger");
   });
 
@@ -5683,10 +5683,10 @@ describe("aiMergeTask — skill selection resolver contract (FN-1510/FN-1511)", 
     vi.mocked(buildSessionSkillContext).mockResolvedValue({
       skillSelectionContext: {
         projectRootDir: "/tmp/root",
-        requestedSkillNames: ["merger"],
+        requestedSkillNames: ["fusion"],
         sessionPurpose: "merger",
       },
-      resolvedSkillNames: ["merger"],
+      resolvedSkillNames: ["fusion"],
       skillSource: "role-fallback",
     });
 

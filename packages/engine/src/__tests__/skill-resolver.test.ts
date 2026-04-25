@@ -745,6 +745,36 @@ describe("createSkillsOverrideFromSelection", () => {
       expect(hasExecutorPrefix).toBe(true);
     });
 
+    it("does not emit missing-skill warnings for built-in fusion fallback requests", () => {
+      const selection: SkillSelectionResult = {
+        allowedSkillPaths: new Set<string>(),
+        excludedSkillPaths: new Set<string>(),
+        diagnostics: [],
+        filterActive: true,
+      };
+
+      const override = createSkillsOverrideFromSelection(selection, {
+        requestedSkillNames: ["fusion"],
+        sessionPurpose: "reviewer",
+      });
+
+      const result = override({
+        skills: [],
+        diagnostics: [],
+      });
+
+      expect(result.skills).toHaveLength(0);
+      expect(
+        result.diagnostics.find((d) =>
+          d.type === "warning"
+          && d.message.includes("Requested skill 'fusion' not found in discovered skills"),
+        ),
+      ).toBeUndefined();
+      expect(
+        mockPiLog.warn.mock.calls.some((c) => (c[0] as string).includes("Requested skill 'fusion' not found")),
+      ).toBe(false);
+    });
+
     it("uses structured piLog.warn for skill override diagnostics", () => {
       const selection: SkillSelectionResult = {
         allowedSkillPaths: new Set(["/path/ghost"]),

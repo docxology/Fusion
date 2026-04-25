@@ -11493,22 +11493,29 @@ describe("TaskExecutor skillSelection regression (FN-1511)", () => {
       });
     });
 
-    it("omits skillSelection when assigned agent has no skills", async () => {
+    it("uses role fallback skillSelection when assigned agent has no skills", async () => {
       const args = await captureCreateFnAgentArgs({
         assignedAgentId: "agent-001",
         assignedAgentSkills: [],
       });
 
       expect(args).not.toBeNull();
-      // When no skills, skillSelection may be undefined or executor uses role fallback
-      // The key is it doesn't crash and handles the case gracefully
+      expect(args.skillSelection).toMatchObject({
+        projectRootDir: projectRoot,
+        requestedSkillNames: expect.arrayContaining(["fusion"]),
+        sessionPurpose: "executor",
+      });
     });
 
-    it("omits skillSelection when no assigned agent", async () => {
+    it("uses role fallback skillSelection when no assigned agent", async () => {
       const args = await captureCreateFnAgentArgs({});
 
       expect(args).not.toBeNull();
-      // Legacy fallback: no skillSelection when no assigned agent
+      expect(args.skillSelection).toMatchObject({
+        projectRootDir: projectRoot,
+        requestedSkillNames: expect.arrayContaining(["fusion"]),
+        sessionPurpose: "executor",
+      });
     });
   });
 
@@ -11608,10 +11615,10 @@ describe("TaskExecutor skillSelection regression (FN-1511)", () => {
         assignedAgentSkills: [],
       });
 
-      // No explicit agent skills → executor falls back to role-based skill context
+      // No explicit agent skills → executor falls back to built-in fusion skill context
       expect(ctorOptions.skillSelection).toMatchObject({
         projectRootDir: projectRoot,
-        requestedSkillNames: expect.arrayContaining(["executor"]),
+        requestedSkillNames: expect.arrayContaining(["fusion"]),
         sessionPurpose: "executor",
       });
     });
@@ -11619,10 +11626,10 @@ describe("TaskExecutor skillSelection regression (FN-1511)", () => {
     it("uses role fallback skillSelection when no assigned agent", async () => {
       const ctorOptions = await captureStepSessionCtorOptions({});
 
-      // No assigned agent → executor falls back to role-based skill context
+      // No assigned agent → executor falls back to built-in fusion skill context
       expect(ctorOptions.skillSelection).toMatchObject({
         projectRootDir: projectRoot,
-        requestedSkillNames: expect.arrayContaining(["executor"]),
+        requestedSkillNames: expect.arrayContaining(["fusion"]),
         sessionPurpose: "executor",
       });
     });
