@@ -41,10 +41,7 @@
 .plugin-install-hint code {
   padding: 1px var(--space-xs);
   border-radius: var(--radius-sm);
-  background: var(
-    --bg-tertiary,
-    color-mix(in srgb, var(--text-muted) 12%, transparent)
-  );
+  background: color-mix(in srgb, var(--text-muted) 12%, transparent);
   font-size: 0.85em;
 }
 
