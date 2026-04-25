@@ -614,8 +614,10 @@ export function ModelOnboardingModal({
     { key: "first-task" as const, label: "First Task" },
   ];
 
-  // Get current step index for progress indicator
+  // Get current step index for progress indicator.
+  // Keep the stepper in a fully-complete visual state when the completion screen is shown.
   const currentStepIndex = steps.findIndex((s) => s.key === step);
+  const effectiveStepIndex = step === "complete" ? steps.length : currentStepIndex;
 
   // Persist step state whenever it changes (for resume functionality)
   useEffect(() => {
@@ -1327,10 +1329,14 @@ export function ModelOnboardingModal({
 
   // Complete onboarding
   const handleComplete = useCallback(async () => {
+    const nextCompletedSteps = [...new Set([...completedSteps, "first-task"])] as OnboardingStep[];
+
     setSaving(true);
     try {
       await completeOnboarding();
-      trackOnboardingEvent("onboarding:completed", { completedSteps, skippedSteps });
+      trackOnboardingEvent("onboarding:completed", { completedSteps: nextCompletedSteps, skippedSteps });
+      setCompletedSteps(nextCompletedSteps);
+      setSkippedSteps((prev) => prev.filter((s) => s !== "first-task"));
       setStep("complete");
     } finally {
       setSaving(false);
@@ -1757,9 +1763,10 @@ export function ModelOnboardingModal({
         {/* Step indicator - 3 progress steps + complete */}
         <div className="model-onboarding-steps">
           {steps.map((s, index) => {
-            // A step is done if it's in completedSteps AND is before current position
-            const isDone = completedSteps.includes(s.key) && currentStepIndex > index;
-            const isSkipped = skippedSteps.includes(s.key) && !completedSteps.includes(s.key) && currentStepIndex > index;
+            // A step is done/skipped only once we have progressed beyond it.
+            const hasProgressedPastStep = effectiveStepIndex > index;
+            const isDone = completedSteps.includes(s.key) && hasProgressedPastStep;
+            const isSkipped = skippedSteps.includes(s.key) && !completedSteps.includes(s.key) && hasProgressedPastStep;
             // Clickable if it's a completed/skipped step (can review)
             const isClickable = isDone || isSkipped;
             return (
@@ -1767,7 +1774,7 @@ export function ModelOnboardingModal({
                 {index > 0 && (
                   <div
                     className={`model-onboarding-step-connector ${
-                      index <= currentStepIndex ? "done" : ""
+                      index <= effectiveStepIndex ? "done" : ""
                     }`}
                   />
                 )}

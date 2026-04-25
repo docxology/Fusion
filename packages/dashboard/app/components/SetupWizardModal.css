@@ -565,8 +565,9 @@
 }
 
 .model-onboarding-step-indicator.done .step-number {
-  background: var(--success, #22c55e);
-  color: #fff;
+  background: var(--status-done-bg-deep);
+  border: 1px solid color-mix(in srgb, var(--done) 45%, transparent);
+  color: var(--done);
 }
 
 .model-onboarding-step-indicator.done {
@@ -618,7 +619,7 @@
 }
 
 .model-onboarding-step-connector.done {
-  background: var(--success, #22c55e);
+  background: var(--done);
 }
 
 /* Content area */

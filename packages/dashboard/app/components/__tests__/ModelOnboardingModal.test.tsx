@@ -2094,6 +2094,15 @@ describe("ModelOnboardingModal", () => {
         expect(screen.getByText("All Set!")).toBeTruthy();
       });
 
+      // Completed indicators should remain in done state on the completion screen.
+      const aiSetupIndicator = screen.getByRole("button", { name: "Go back to AI Setup" });
+      const githubIndicator = screen.getByRole("button", { name: "Go back to GitHub" });
+      const firstTaskIndicator = screen.getByRole("button", { name: "Go back to First Task" });
+      expect(aiSetupIndicator).toHaveClass("done");
+      expect(githubIndicator).toHaveClass("done");
+      expect(firstTaskIndicator).toHaveClass("done");
+      expect(document.querySelectorAll(".model-onboarding-step-connector.done")).toHaveLength(2);
+
       // Click Get Started to close
       fireEvent.click(screen.getByText("Get Started"));
       expect(onComplete).toHaveBeenCalled();
