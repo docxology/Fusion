@@ -535,6 +535,41 @@ export class TaskExecutor {
   }
 
   /**
+   * Abort the in-flight bash subprocess (if any) on every active agent session.
+   *
+   * Invoked at runtime shutdown so detached subprocess trees spawned by agent
+   * bash tools — including grandchildren like vitest workers — are killed via
+   * pi-coding-agent's killProcessTree. Without this, when the worker is killed
+   * those process groups are orphaned because they're detached.
+   *
+   * Sessions are not disposed here so any near-complete agent loop still has a
+   * chance to wrap up during the runtime's graceful drain window.
+   */
+  abortAllSessionBash(): void {
+    for (const [taskId, { session }] of this.activeSessions) {
+      try {
+        session.abortBash();
+      } catch (err) {
+        executorLog.warn(`abortAllSessionBash: failed for task ${taskId}: ${err}`);
+      }
+    }
+    for (const [agentId, session] of this.childSessions) {
+      try {
+        session.abortBash();
+      } catch (err) {
+        executorLog.warn(`abortAllSessionBash: failed for child agent ${agentId}: ${err}`);
+      }
+    }
+    for (const [taskId, stepExecutor] of this.activeStepExecutors) {
+      try {
+        stepExecutor.abortAllSessionBash();
+      } catch (err) {
+        executorLog.warn(`abortAllSessionBash: failed for step executor ${taskId}: ${err}`);
+      }
+    }
+  }
+
+  /**
    * @param store — Task store instance (also used to listen for events)
    * @param rootDir — Project root directory
    * @param options — Executor configuration

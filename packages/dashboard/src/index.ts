@@ -1,4 +1,5 @@
 export { createServer, loadTlsCredentialsFromEnv, type ServerOptions } from "./server.js";
+export { stopAllDevServers, destroyAllDevServerManagers, getActiveProcessManagers } from "./dev-server-routes.js";
 export {
   createRuntimeLogger,
   getRuntimeLogSink,

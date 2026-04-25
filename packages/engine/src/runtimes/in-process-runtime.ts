@@ -838,6 +838,22 @@ export class InProcessRuntime
         runtimeLog.log("MissionExecutionLoop stopped");
       }
 
+      // 7b. Abort in-flight bash subprocess trees on every active agent
+      // session. Each bash command was spawned with `detached: true` (own
+      // process group), so killing the worker alone leaks vitest / npm / build
+      // grandchildren as orphans. This call routes through pi-coding-agent's
+      // AbortController -> killProcessTree, taking down the whole subtree.
+      // Sessions are intentionally NOT disposed here so near-complete steps
+      // can still wrap up during the drain window below.
+      if (this.executor) {
+        try {
+          this.executor.abortAllSessionBash();
+          runtimeLog.log("Aborted in-flight bash subprocesses on active sessions");
+        } catch (err) {
+          runtimeLog.warn(`Failed to abort in-flight bash subprocesses: ${err}`);
+        }
+      }
+
       // 8. Wait for active tasks to complete (30 second timeout)
       const shutdownTimeout = 30000;
       const startTime = Date.now();

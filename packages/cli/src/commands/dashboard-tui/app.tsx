@@ -3555,11 +3555,15 @@ export function DashboardApp({ controller }: DashboardAppProps) {
 
   // Global key handling
   useInput((input, key) => {
-    // Quit
+    // Quit — route through SIGINT so the dashboard's shutdown handler runs
+    // (stops dev-server child process groups, engines, mesh, etc.). Calling
+    // process.exit(0) directly here orphans node/vitest children spawned by
+    // user-project dev servers.
     if (input === "q" || input === "Q" || (key.ctrl && input === "c")) {
       void controller.stop();
       exit();
-      process.exit(0);
+      process.kill(process.pid, "SIGINT");
+      return;
     }
 
     // View switching shortcuts — b/a/g enter interactive + set view

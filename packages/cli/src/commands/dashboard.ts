@@ -23,6 +23,7 @@ import {
   createSkillsAdapter,
   getProjectSettingsPath,
   loadTlsCredentialsFromEnv,
+  stopAllDevServers,
   type RuntimeLogger,
 } from "@fusion/dashboard";
 import { aiMergeTask, MissionAutopilot, MissionExecutionLoop, HeartbeatMonitor, HeartbeatTriggerScheduler, type WakeContext, ProjectEngineManager, PeerExchangeService } from "@fusion/engine";
@@ -1434,6 +1435,16 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
       dispose();
       stopDiagnosticInterval();
 
+      // Tear down user-project dev-server children (and their process groups)
+      // before exiting. server.close() is not awaited on this exit path, so
+      // its `close` listener that does the same cleanup may not run in time.
+      try {
+        await stopAllDevServers();
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        logSink.warn(`Failed to stop dev servers: ${message}`, "dashboard");
+      }
+
       // Stop all project engines uniformly
       await engineManager.stopAll();
 
@@ -1657,6 +1668,15 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
       stopDiagnosticInterval();
       if (triggerScheduler) triggerScheduler.stop();
       if (heartbeatMonitorImpl) heartbeatMonitorImpl.stop();
+
+      // Tear down user-project dev-server children (and their process groups)
+      // before exiting. process.exit below skips server.close()'s cleanup hook.
+      try {
+        await stopAllDevServers();
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        logSink.warn(`Failed to stop dev servers: ${message}`, "dashboard");
+      }
 
       // Stop peer exchange service
       if (peerExchangeService) {

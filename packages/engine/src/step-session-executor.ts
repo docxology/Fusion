@@ -543,6 +543,11 @@ const RETRY_DELAYS_MS = [1_000, 5_000, 15_000];
 /** A minimal session handle stored for termination support. */
 interface SessionHandle {
   dispose: () => void;
+  /** Abort the session's currently-running bash command (if any) so its
+   *  detached subprocess tree — including grandchildren like vitest workers —
+   *  is killed via pi-coding-agent's killProcessTree. dispose() alone only
+   *  disconnects listeners and leaves bash subtrees orphaned. */
+  abortBash: () => void;
 }
 
 function resolveExecutorModelPair(
@@ -695,6 +700,23 @@ export class StepSessionExecutor {
    * After calling this method, any in-progress or future `executeStep()` calls
    * will return a failed result immediately.
    */
+  /**
+   * Abort in-flight bash on every active step session without disposing the
+   * sessions. Used during runtime shutdown so detached bash subprocess trees
+   * (including vitest workers) are killed via pi-coding-agent's
+   * killProcessTree. Sessions remain alive so near-complete steps can still
+   * finish during the runtime's graceful drain window.
+   */
+  abortAllSessionBash(): void {
+    for (const [stepIdx, handle] of this.activeSessions) {
+      try {
+        handle.abortBash();
+      } catch (err) {
+        stepExecLog.warn(`Failed to abort bash for step ${stepIdx}: ${err}`);
+      }
+    }
+  }
+
   async terminateAllSessions(): Promise<void> {
     this.aborted = true;
     stepExecLog.log(
@@ -702,6 +724,11 @@ export class StepSessionExecutor {
     );
 
     for (const [stepIdx, handle] of this.activeSessions) {
+      try {
+        handle.abortBash();
+      } catch (err) {
+        stepExecLog.warn(`Failed to abort bash for step ${stepIdx}: ${err}`);
+      }
       try {
         handle.dispose();
       } catch (err) {
@@ -916,7 +943,10 @@ export class StepSessionExecutor {
           // Pass the canonical task ID (e.g. "FN-1452") as the third argument so
           // that stuck-kill callbacks (beforeRequeue, onStuck) operate on the real
           // task rather than the compound step key ("FN-1452-step-1").
-          const handle: SessionHandle = { dispose: () => session?.dispose() };
+          const handle: SessionHandle = {
+            dispose: () => session?.dispose(),
+            abortBash: () => session?.abortBash(),
+          };
           this.activeSessions.set(stepIndex, handle);
           stuckTaskDetector?.trackTask(trackingKey, { dispose: () => session?.dispose() }, taskDetail.id);
 
