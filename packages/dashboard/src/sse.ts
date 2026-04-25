@@ -19,8 +19,14 @@ let nextConnectionId = 1;
 
 const SSE_CLIENT_ID_MAX_LENGTH = 128;
 const SSE_CLIENT_STALE_MS = 5_000;
+// If a client's outbound buffer exceeds this, treat the connection as stuck
+// and close it. Without this, res.write() silently queues into res.outputData
+// for a paused/backgrounded client, and every store event for every entity
+// accumulates there until the process OOMs.
+const SSE_MAX_BUFFERED_BYTES = 4 * 1024 * 1024;
 
 type SSECloseReason =
+  | "backpressure"
   | "client-disconnect"
   | "close"
   | "error"
@@ -107,16 +113,23 @@ export function getSSEHighWaterMark(): number {
 
 /**
  * Safely write to an SSE response stream.
- * Returns `true` if the write succeeded, `false` if the connection is dead.
- * On failure the caller should clean up event listeners.
+ * Returns "ok" on success, "dead" if the socket is gone, or "backpressure" if
+ * the outbound buffer has grown past SSE_MAX_BUFFERED_BYTES (caller should
+ * tear down — Node will otherwise queue indefinitely into res.outputData).
  */
-function safeWrite(res: Response, data: string): boolean {
+type SafeWriteResult = "ok" | "dead" | "backpressure";
+
+function safeWrite(res: Response, data: string): SafeWriteResult {
   try {
-    if (res.writableEnded || res.destroyed) return false;
+    if (res.writableEnded || res.destroyed) return "dead";
+    // Pre-check: if the buffer is already full, refuse the write.
+    if (typeof res.writableLength === "number" && res.writableLength > SSE_MAX_BUFFERED_BYTES) {
+      return "backpressure";
+    }
     res.write(data);
-    return true;
+    return "ok";
   } catch {
-    return false;
+    return "dead";
   }
 }
 
@@ -299,9 +312,20 @@ export function createSSE(
     // Send initial heartbeat
     res.write(": connected\n\n");
 
-    /** Write an SSE message; clean up on failure. */
+    /** Write an SSE message; tear down on failure or backpressure. */
     const send = (data: string) => {
-      if (!safeWrite(res, data)) cleanup("send-failed");
+      const result = safeWrite(res, data);
+      if (result === "ok") return;
+      if (result === "backpressure") {
+        console.warn(
+          `[sse] connection ${connectionId} backpressure exceeded ` +
+            `(buffered=${res.writableLength}B, threshold=${SSE_MAX_BUFFERED_BYTES}B); closing`,
+        );
+        closeConnection("backpressure");
+        return;
+      }
+      // "dead" — socket already gone; cleanup is enough.
+      cleanup("send-failed");
     };
 
     // --- Event handler definitions ---

@@ -144,4 +144,41 @@ describe("createSSE client cleanup", () => {
     expect(connection.res.end).toHaveBeenCalledTimes(1);
     expect(getActiveSSEConnections()).toBe(baseline);
   });
+
+  it("closes the connection when the outbound buffer exceeds the backpressure threshold", () => {
+    // Capture the task:created listener so we can fire a send after the
+    // socket buffer has been bloated past the threshold.
+    let onCreated: ((task: unknown) => void) | undefined;
+    const store = {
+      on: vi.fn((event: string, handler: (task: unknown) => void) => {
+        if (event === "task:created") onCreated = handler;
+      }),
+      off: vi.fn(),
+    } as unknown as TaskStore;
+
+    const baseline = getActiveSSEConnections();
+    const socket = new MockSocket();
+    const req = new EventEmitter() as Request & { query: Record<string, string>; socket: MockSocket };
+    req.query = { clientId: "backpressure-client" };
+    req.socket = socket;
+    const res = new MockResponse(socket) as MockResponse & { writableLength: number };
+    res.writableLength = 0;
+
+    createSSE(store)(req, res as unknown as Response);
+    expect(getActiveSSEConnections()).toBe(baseline + 1);
+    expect(typeof onCreated).toBe("function");
+
+    // Simulate a stuck client: kernel + Node buffers full beyond 4 MB.
+    res.writableLength = 5 * 1024 * 1024;
+    const writeCountBefore = res.write.mock.calls.length;
+
+    onCreated?.({ id: "task-1" });
+
+    // Backpressure was detected before the write, so res.write must NOT have
+    // been called for this event, and the connection should be torn down.
+    expect(res.write.mock.calls.length).toBe(writeCountBefore);
+    expect(res.end).toHaveBeenCalledTimes(1);
+    expect(socket.destroy).toHaveBeenCalledTimes(1);
+    expect(getActiveSSEConnections()).toBe(baseline);
+  });
 });
