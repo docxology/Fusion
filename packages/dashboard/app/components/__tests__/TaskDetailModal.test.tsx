@@ -5393,6 +5393,7 @@ describe("TaskDetailModal", () => {
       );
 
       expect(screen.getByText("Loading specification…")).toBeDefined();
+      expect(screen.getByText("Loading token statistics…")).toBeDefined();
     });
 
     it("shows spec content after fetchTaskDetail resolves", async () => {
@@ -5414,6 +5415,14 @@ describe("TaskDetailModal", () => {
       const fullDetail: TaskDetail = {
         ...task,
         prompt: "# Async Spec\n\nThis is the loaded spec content.",
+        tokenUsage: {
+          inputTokens: 1200,
+          outputTokens: 450,
+          cachedTokens: 210,
+          totalTokens: 1860,
+          firstUsedAt: "2026-04-24T09:00:00.000Z",
+          lastUsedAt: "2026-04-24T10:15:00.000Z",
+        },
       } as TaskDetail;
 
       // Resolve with full detail
@@ -5442,6 +5451,54 @@ describe("TaskDetailModal", () => {
 
       // Loading indicator should be gone
       expect(screen.queryByText("Loading specification…")).toBeNull();
+      expect(screen.queryByText("Loading token statistics…")).toBeNull();
+      expect(screen.getByText((1200).toLocaleString())).toBeInTheDocument();
+      expect(screen.getByText((450).toLocaleString())).toBeInTheDocument();
+      expect(screen.getByText((210).toLocaleString())).toBeInTheDocument();
+      expect(screen.getByText((1860).toLocaleString())).toBeInTheDocument();
+      const firstUsed = container.querySelector('time[datetime="2026-04-24T09:00:00.000Z"]');
+      const lastUsed = container.querySelector('time[datetime="2026-04-24T10:15:00.000Z"]');
+      expect(firstUsed).toBeTruthy();
+      expect(lastUsed).toBeTruthy();
+    });
+
+    it("shows token stats empty state once detail is loaded without usage", async () => {
+      const { fetchTaskDetail } = await import("../../api");
+      const mockFetch = vi.mocked(fetchTaskDetail);
+
+      const task: Task = {
+        id: "FN-205",
+        description: "No token stats",
+        column: "todo",
+        dependencies: [],
+        steps: [],
+        currentStep: 0,
+        log: [],
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+      } as Task;
+
+      mockFetch.mockResolvedValueOnce({
+        ...task,
+        prompt: "# Async Spec\n\nSpec without usage.",
+        tokenUsage: undefined,
+      } as TaskDetail);
+
+      render(
+        <TaskDetailModal
+          task={task}
+          onClose={noop}
+          onMoveTask={noopMove}
+          onDeleteTask={noopDelete}
+          onMergeTask={noopMerge}
+          onOpenDetail={noopOpenDetail}
+          addToast={noop}
+        />,
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText("No token usage recorded for this task yet.")).toBeInTheDocument();
+      });
     });
   });
 

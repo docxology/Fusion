@@ -166,6 +166,15 @@ function createMockStore(overrides: Partial<TaskStore> = {}): TaskStore {
   } as unknown as TaskStore;
 }
 
+const TASK_TOKEN_USAGE_FIXTURE = {
+  inputTokens: 1200,
+  outputTokens: 450,
+  cachedTokens: 210,
+  totalTokens: 1860,
+  firstUsedAt: "2026-04-24T09:00:00.000Z",
+  lastUsedAt: "2026-04-24T10:15:00.000Z",
+};
+
 const FAKE_TASK_DETAIL: TaskDetail = {
   id: "FN-001",
   description: "Test task",
@@ -174,6 +183,7 @@ const FAKE_TASK_DETAIL: TaskDetail = {
   steps: [],
   currentStep: 0,
   log: [],
+  tokenUsage: TASK_TOKEN_USAGE_FIXTURE,
   createdAt: "2026-01-01T00:00:00.000Z",
   updatedAt: "2026-01-01T00:00:00.000Z",
   prompt: "# KB-001\n\nTest task",
@@ -506,6 +516,34 @@ describe("GET /tasks/:id", () => {
     expect(res.status).toBe(200);
     expect(res.body.id).toBe("FN-001");
     expect(res.body.prompt).toBe("# KB-001\n\nTest task");
+  });
+
+  it("returns tokenUsage unchanged when task detail includes usage totals", async () => {
+    (store.getTask as ReturnType<typeof vi.fn>).mockResolvedValue(FAKE_TASK_DETAIL);
+
+    const res = await GET(buildApp(), "/api/tasks/KB-001");
+
+    expect(res.status).toBe(200);
+    expect(res.body.tokenUsage).toEqual({
+      inputTokens: 1200,
+      outputTokens: 450,
+      cachedTokens: 210,
+      totalTokens: 1860,
+      firstUsedAt: "2026-04-24T09:00:00.000Z",
+      lastUsedAt: "2026-04-24T10:15:00.000Z",
+    });
+  });
+
+  it("leaves tokenUsage undefined when no task usage has been recorded", async () => {
+    (store.getTask as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ...FAKE_TASK_DETAIL,
+      tokenUsage: undefined,
+    });
+
+    const res = await GET(buildApp(), "/api/tasks/KB-001");
+
+    expect(res.status).toBe(200);
+    expect(res.body.tokenUsage).toBeUndefined();
   });
 
   it("caps task detail activity logs to keep the modal payload bounded", async () => {

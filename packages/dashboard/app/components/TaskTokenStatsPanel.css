@@ -1,0 +1,87 @@
+.task-token-stats-panel {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+  background: var(--card);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.task-token-stats-panel__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(calc(var(--space-2xl) * 3), 1fr));
+  gap: var(--space-sm);
+}
+
+.task-token-stats-panel__metric {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  padding: var(--space-sm) var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.task-token-stats-panel__label {
+  font-size: calc(var(--space-sm) + var(--space-xs));
+  text-transform: uppercase;
+  letter-spacing: calc(var(--space-xs) / 8);
+  color: var(--text-muted);
+}
+
+.task-token-stats-panel__value {
+  font-family: var(--font-mono);
+  font-size: calc(var(--space-lg) + var(--space-xs));
+  color: var(--text);
+  font-weight: 700;
+}
+
+.task-token-stats-panel__timestamps {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(calc(var(--space-2xl) * 4), 1fr));
+  gap: var(--space-sm);
+}
+
+.task-token-stats-panel__timestamp-row {
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--surface) 85%, transparent);
+  padding: var(--space-sm) var(--space-md);
+}
+
+.task-token-stats-panel__timestamp-row dt {
+  margin: 0;
+  font-size: calc(var(--space-sm) + var(--space-xs));
+  text-transform: uppercase;
+  letter-spacing: calc(var(--space-xs) / 8);
+  color: var(--text-muted);
+}
+
+.task-token-stats-panel__timestamp-row dd {
+  margin: var(--space-xs) 0 0;
+  color: var(--text);
+  font-size: calc(var(--space-sm) + var(--space-xs));
+}
+
+.task-token-stats-panel__empty,
+.task-token-stats-panel__loading {
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--surface) 85%, transparent);
+  color: var(--text-muted);
+  padding: var(--space-md);
+}
+
+@media (max-width: 768px) {
+  .task-token-stats-panel {
+    padding: var(--space-sm);
+  }
+
+  .task-token-stats-panel__timestamps {
+    grid-template-columns: 1fr;
+  }
+}

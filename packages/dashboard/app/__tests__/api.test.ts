@@ -77,6 +77,15 @@ import {
 import type { Task, TaskDetail, BatchStatusResponse, MergeResult } from "@fusion/core";
 import { clearAuthToken } from "../auth";
 
+const TASK_TOKEN_USAGE_FIXTURE = {
+  inputTokens: 1000,
+  outputTokens: 300,
+  cachedTokens: 125,
+  totalTokens: 1425,
+  firstUsedAt: "2026-04-24T08:00:00.000Z",
+  lastUsedAt: "2026-04-24T09:30:00.000Z",
+};
+
 const FAKE_DETAIL: TaskDetail = {
   id: "FN-001",
   description: "Test",
@@ -85,6 +94,7 @@ const FAKE_DETAIL: TaskDetail = {
   steps: [],
   currentStep: 0,
   log: [],
+  tokenUsage: TASK_TOKEN_USAGE_FIXTURE,
   createdAt: "2026-01-01T00:00:00.000Z",
   updatedAt: "2026-01-01T00:00:00.000Z",
   prompt: "# FN-001",
@@ -142,6 +152,32 @@ describe("fetchTaskDetail", () => {
     expect(globalThis.fetch).toHaveBeenCalledWith("/api/tasks/FN-001", {
       headers: { "Content-Type": "application/json" },
     });
+  });
+
+  it("preserves full tokenUsage payload from task detail responses", async () => {
+    globalThis.fetch = vi.fn().mockReturnValue(mockFetchResponse(true, FAKE_DETAIL));
+
+    const result = await fetchTaskDetail("FN-001");
+
+    expect(result.tokenUsage).toEqual({
+      inputTokens: 1000,
+      outputTokens: 300,
+      cachedTokens: 125,
+      totalTokens: 1425,
+      firstUsedAt: "2026-04-24T08:00:00.000Z",
+      lastUsedAt: "2026-04-24T09:30:00.000Z",
+    });
+  });
+
+  it("keeps tokenUsage undefined when server response omits task usage", async () => {
+    globalThis.fetch = vi.fn().mockReturnValue(mockFetchResponse(true, {
+      ...FAKE_DETAIL,
+      tokenUsage: undefined,
+    }));
+
+    const result = await fetchTaskDetail("FN-001");
+
+    expect(result.tokenUsage).toBeUndefined();
   });
 
   it("adds Authorization header when daemon token is present", async () => {

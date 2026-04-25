@@ -18,6 +18,7 @@ import { TaskChangesTab } from "./TaskChangesTab";
 import { TaskForm, type PendingImage } from "./TaskForm";
 import { WorkflowResultsTab } from "./WorkflowResultsTab";
 import { TaskDocumentsTab } from "./TaskDocumentsTab";
+import { TaskTokenStatsPanel } from "./TaskTokenStatsPanel";
 import { PluginSlot } from "./PluginSlot";
 import { subscribeSse } from "../sse-bus";
 import { usePluginUiSlots } from "../hooks/usePluginUiSlots";
@@ -1480,6 +1481,12 @@ export function TaskDetailModal({
             ) : (
               <div className="step-progress-empty">(no steps defined)</div>
             )}
+          </div>
+          <div className="detail-section">
+            <TaskTokenStatsPanel
+              tokenUsage={workingTask.tokenUsage}
+              loading={detailLoading}
+            />
           </div>
           <div className="detail-section">
             {!isEditingSpec && (
