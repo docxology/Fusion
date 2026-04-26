@@ -23,6 +23,20 @@ Include the changeset file in the same commit as the code change. The filename s
 
 Only create changesets for changes that affect the published `@runfusion/fusion` package — user-facing features, bug fixes, CLI changes, tool changes. Do NOT create changesets for internal docs (AGENTS.md, README), CI config, or refactors that don't change behavior.
 
+## Releasing
+
+Always use the repo release script for npm releases:
+
+```bash
+pnpm release --yes
+```
+
+Do not run `changeset version`, `pnpm publish`, manual git tags, or manual release commits as a substitute for the script. `scripts/release.mjs` is the source of truth for release flow: it performs preflight checks, applies changesets, updates the lockfile and root changelog, builds, commits the version bump, publishes npm packages, pushes `main`, and pushes the version tag.
+
+The release script is also the required path for keeping both public npm packages in sync:
+- `@runfusion/fusion`
+- `runfusion.ai`
+
 ## Package Structure
 
 - `@fusion/core` — domain model, task store (private, not published)
