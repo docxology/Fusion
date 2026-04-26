@@ -31,7 +31,11 @@ The context provides core cross-cutting plumbing:
 - `register-messaging-scripts.ts` — scripts API and mailbox/message routes
 - `register-git-github.ts` — git/GitHub workflows and related helpers
 - `register-files-terminal-workspaces.ts` — files, terminal, workspace file operations
-- `register-agents-projects-nodes.ts` — agents, project metadata, node routes
+- `register-agent-core-routes.ts` — core agent CRUD, lookups, stats/org-tree, hierarchy aliases (`/agents/:id/children|employees`)
+- `register-agent-runtime-routes.ts` — agent runtime/control-plane, heartbeats/runs, access/permissions, soul/memory, revisions/budget/keys, task/inbox surfaces
+- `register-agent-reflection-rating-routes.ts` — reflection/performance/context endpoints and ratings APIs
+- `register-agent-import-export-generation-routes.ts` — agent import/export, companies catalog, and `/agents/generate/*` session/spec lifecycle
+- `register-agent-skills-routes.ts` — skills discovery/content/execution/catalog endpoints coupled to agent capability flow
 - `register-plugins-automation.ts` — plugin CRUD, automation, routines/webhooks
 - `register-proxy.ts` — remote-node proxy forwarding and SSE proxy routes
 
@@ -42,6 +46,10 @@ Express matches in registration order. Keep registrar and in-registrar route ord
 1. **Specific operation routes before generic parameterized routes** (`/runs`, `/runs/:id`, `/copy`, `/delete` before `/:id` style handlers)
 2. **Specific operation routes before wildcard paths** (`/files/{*filepath}/copy|move|delete` before catch-all file write routes)
 3. **Do not move proxy/script/message/file wildcards ahead of specific routes**
+4. **Agent ordering constraints must stay intact**:
+   - `/agents/stats`, `/agents/org-tree`, `/agents/resolve/:shortname` before `/agents/:id`
+   - `/agents/:id/runs/stop` before `/agents/:id/runs/:runId`
+   - `/agents/:id/reflections/latest` before `/agents/:id/reflections`
 
 If adding a new endpoint, place it in the domain registrar and verify it does not shadow existing handlers.
 
