@@ -1382,6 +1382,30 @@ describe("TaskForm focus behavior (FN-1459)", () => {
       ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     });
 
+    it("renders renderBelowModelConfiguration content below model section in More options", async () => {
+      renderTaskForm({
+        renderBelowModelConfiguration: <div data-testid="injected-below-model">Bottom slot content</div>,
+      });
+
+      const toggle = screen.getByTestId("task-form-more-options-toggle");
+      fireEvent.click(toggle);
+
+      await waitFor(() => {
+        expect(toggle).toHaveAttribute("aria-expanded", "true");
+      });
+
+      const modelLabel = screen.getByText("Model Configuration");
+      const workflowLabel = screen.getByText("Workflow Steps");
+      const injectedBottom = screen.getByTestId("injected-below-model");
+
+      expect(
+        modelLabel.compareDocumentPosition(injectedBottom) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+      expect(
+        injectedBottom.compareDocumentPosition(workflowLabel) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    });
+
     it("hides dependencies section when hideDependencies is true", async () => {
       renderTaskForm({ hideDependencies: true });
 

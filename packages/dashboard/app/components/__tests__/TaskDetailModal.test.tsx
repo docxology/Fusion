@@ -4198,6 +4198,7 @@ describe("TaskDetailModal", () => {
       );
 
       fireEvent.click(container.querySelector(".modal-edit-btn")!);
+      fireEvent.click(screen.getByTestId("task-form-more-options-toggle"));
 
       await waitFor(() => {
         expect((screen.getByTestId("task-source-provider-input") as HTMLInputElement).value).toBe("github");
@@ -4205,6 +4206,45 @@ describe("TaskDetailModal", () => {
       expect((screen.getByTestId("task-source-repository-input") as HTMLInputElement).value).toBe("runfusion/fusion");
       expect((screen.getByTestId("task-source-external-id-input") as HTMLInputElement).value).toBe("I_kgDOExample");
       expect((screen.getByTestId("task-source-url-input") as HTMLInputElement).value).toBe("https://github.com/runfusion/fusion/issues/2473");
+    });
+
+    it("renders source issue block below Model Configuration in edit mode", async () => {
+      const { container } = render(
+        <TaskDetailModal
+          task={makeTask({
+            id: "FN-001",
+            column: "todo",
+            sourceIssue: {
+              provider: "github",
+              repository: "runfusion/fusion",
+              externalIssueId: "I_kgDOExample",
+              issueNumber: 2473,
+            },
+          })}
+          onClose={noop}
+          onMoveTask={noopMove}
+          onDeleteTask={noopDelete}
+          onMergeTask={noopMerge}
+          onOpenDetail={noopOpenDetail}
+          addToast={noop}
+        />,
+      );
+
+      fireEvent.click(container.querySelector(".modal-edit-btn")!);
+      fireEvent.click(screen.getByTestId("task-form-more-options-toggle"));
+
+      await waitFor(() => {
+        const modelLabel = screen.getByText("Model Configuration");
+        const sourceLabel = screen.getByText("Source Issue");
+        const workflowSection = screen.getByTestId("workflow-steps-section");
+
+        expect(
+          modelLabel.compareDocumentPosition(sourceLabel) & Node.DOCUMENT_POSITION_FOLLOWING,
+        ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+        expect(
+          sourceLabel.compareDocumentPosition(workflowSection) & Node.DOCUMENT_POSITION_FOLLOWING,
+        ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+      });
     });
 
     it("sends sourceIssue payload when source metadata is edited", async () => {
@@ -4235,6 +4275,7 @@ describe("TaskDetailModal", () => {
       );
 
       fireEvent.click(container.querySelector(".modal-edit-btn")!);
+      fireEvent.click(screen.getByTestId("task-form-more-options-toggle"));
       fireEvent.change(screen.getByTestId("task-source-provider-input"), { target: { value: "gitlab" } });
       fireEvent.change(screen.getByTestId("task-source-repository-input"), { target: { value: "runfusion/dashboard" } });
       fireEvent.change(screen.getByTestId("task-source-external-id-input"), { target: { value: "I_kgDONew" } });
@@ -4283,6 +4324,7 @@ describe("TaskDetailModal", () => {
       );
 
       fireEvent.click(container.querySelector(".modal-edit-btn")!);
+      fireEvent.click(screen.getByTestId("task-form-more-options-toggle"));
       fireEvent.change(screen.getByTestId("task-source-provider-input"), { target: { value: "" } });
       fireEvent.change(screen.getByTestId("task-source-repository-input"), { target: { value: "" } });
       fireEvent.change(screen.getByTestId("task-source-external-id-input"), { target: { value: "" } });
@@ -4323,6 +4365,7 @@ describe("TaskDetailModal", () => {
       );
 
       fireEvent.click(container.querySelector(".modal-edit-btn")!);
+      fireEvent.click(screen.getByTestId("task-form-more-options-toggle"));
       fireEvent.change(screen.getByTestId("task-source-provider-input"), { target: { value: "gitlab" } });
       fireEvent.click(screen.getByText("Save"));
 

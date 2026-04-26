@@ -90,6 +90,8 @@ export interface TaskFormProps {
 
   /** Optional content to render between the primary section and the "More options" toggle. */
   renderBelowPrimary?: React.ReactNode;
+  /** Optional content to render inside "More options" below Model Configuration. */
+  renderBelowModelConfiguration?: React.ReactNode;
   /** When true, skip rendering the Dependencies form-group inside "More options". Use when the parent renders its own dependency UI via renderBelowPrimary. */
   hideDependencies?: boolean;
   /** When true (default), More options auto-expands when non-default advanced selections are present. */
@@ -133,6 +135,7 @@ export function TaskForm({
   onSubtaskBreakdown,
   onClose,
   renderBelowPrimary,
+  renderBelowModelConfiguration,
   hideDependencies,
   autoExpandMoreOptionsOnSelection = true,
   reviewLevel,
@@ -1051,6 +1054,8 @@ export function TaskForm({
           </>
         )}
       </div>
+
+      {renderBelowModelConfiguration}
 
       {/* Workflow Steps */}
       <div className="form-group" data-testid="workflow-steps-section">

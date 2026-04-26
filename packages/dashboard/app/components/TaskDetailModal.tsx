@@ -1289,7 +1289,7 @@ export function TaskDetailModal({
                 onPriorityChange={setEditPriority}
                 executionMode={editExecutionMode}
                 onExecutionModeChange={setEditExecutionMode}
-                renderBelowPrimary={(
+                renderBelowModelConfiguration={(
                   <div className="form-group detail-source-edit-group">
                     <label>Source Issue</label>
                     <div className="detail-source-edit-grid">
