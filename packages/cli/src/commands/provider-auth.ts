@@ -47,6 +47,8 @@ const BUILT_IN_API_KEY_PROVIDERS: Array<{ id: string; name: string }> = [
   { id: "zai", name: "Zai" },
 ];
 
+const CLI_PROVIDER_IDS = new Set(["pi-claude-cli"]);
+
 function getProviderDisplayName(providerId: string): string {
   const knownProviderNames = new Map(
     BUILT_IN_API_KEY_PROVIDERS.map((provider) => [provider.id, provider.name]),
@@ -93,7 +95,12 @@ export function wrapAuthStorageWithApiKeyProviders(
 
       for (const model of modelRegistry.getAll()) {
         const providerId = model.provider;
-        if (!providerId || oauthProviderIds.has(providerId) || providers.has(providerId)) {
+        if (
+          !providerId ||
+          oauthProviderIds.has(providerId) ||
+          providers.has(providerId) ||
+          CLI_PROVIDER_IDS.has(providerId)
+        ) {
           continue;
         }
         providers.set(providerId, getProviderDisplayName(providerId));

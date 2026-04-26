@@ -85,6 +85,21 @@ describe("wrapAuthStorageWithApiKeyProviders", () => {
     expect(merged.list()).toEqual(expect.arrayContaining(["openrouter", "minimax"]));
   });
 
+  it("excludes pi-claude-cli models from API key providers", () => {
+    const fusionAuth = makeAuthStorage();
+    const modelRegistry = {
+      getAll: vi.fn(() => [
+        { provider: "pi-claude-cli", id: "claude-cli/sonnet" },
+        { provider: "openrouter", id: "openrouter/auto" },
+      ]),
+    } as any;
+
+    const wrapped = wrapAuthStorageWithApiKeyProviders(fusionAuth, modelRegistry);
+    const providerIds = wrapped.getApiKeyProviders().map((provider) => provider.id);
+
+    expect(providerIds).toContain("openrouter");
+    expect(providerIds).not.toContain("pi-claude-cli");
+  });
 
   it("reads legacy auth JSON without creating missing files", async () => {
     const tempDir = tempWorkspace("fusion-provider-auth-");
