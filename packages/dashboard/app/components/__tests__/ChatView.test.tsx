@@ -423,7 +423,7 @@ describe("ChatView", () => {
     expect(screen.getByText("Hi there!")).toBeInTheDocument();
   });
 
-  it("shows markdown/plain toggle in thread header for active sessions", () => {
+  it("does not render markdown/plain toggle controls in the thread header", () => {
     setupMockChat({
       activeSession: { id: "session-001", agentId: "agent-001", status: "active", title: "Test Chat", updatedAt: "2026-04-08T00:00:00.000Z" },
       messages: [{ id: "msg-001", sessionId: "session-001", role: "assistant", content: "Hello", createdAt: "2026-04-08T00:00:00.000Z" }],
@@ -431,165 +431,65 @@ describe("ChatView", () => {
 
     render(<ChatView projectId="proj-123" addToast={vi.fn()} />);
 
-    expect(screen.getByTestId("chat-render-mode-markdown")).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByTestId("chat-render-mode-plain")).toHaveAttribute("aria-pressed", "false");
+    expect(screen.queryByTestId("chat-render-mode-markdown")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("chat-render-mode-plain")).not.toBeInTheDocument();
   });
 
-  it("renders assistant messages as markdown by default and raw text in plain mode", async () => {
+  it("renders per-message eye toggles for assistant bubbles on desktop and isolates toggles by message", async () => {
     setupMockChat({
       activeSession: { id: "session-001", agentId: "agent-001", status: "active", title: "Test Chat", updatedAt: "2026-04-08T00:00:00.000Z" },
       messages: [
-        {
-          id: "msg-002",
-          sessionId: "session-001",
-          role: "assistant",
-          content: "**Bold**\n\n- item",
-          createdAt: "2026-04-08T00:01:00.000Z",
-        },
+        { id: "msg-001", sessionId: "session-001", role: "assistant", content: "**First** item", createdAt: "2026-04-08T00:00:00.000Z" },
+        { id: "msg-002", sessionId: "session-001", role: "assistant", content: "**Second** item", createdAt: "2026-04-08T00:01:00.000Z" },
       ],
     });
 
     render(<ChatView projectId="proj-123" addToast={vi.fn()} />);
 
-    const assistantBubble = screen.getByTestId("chat-message-msg-002");
-    expect(within(assistantBubble).getByText("Bold", { selector: "strong" })).toBeInTheDocument();
+    const firstBubble = screen.getByTestId("chat-message-msg-001");
+    const secondBubble = screen.getByTestId("chat-message-msg-002");
+    const [firstToggle, secondToggle] = screen.getAllByTestId("chat-message-render-toggle");
 
-    await userEvent.click(screen.getByTestId("chat-render-mode-plain"));
+    expect(firstToggle).toBeInTheDocument();
+    expect(secondToggle).toBeInTheDocument();
+    expect(within(firstBubble).getByText("First", { selector: "strong" })).toBeInTheDocument();
+    expect(within(secondBubble).getByText("Second", { selector: "strong" })).toBeInTheDocument();
 
-    expect(within(assistantBubble).getByText(/\*\*Bold\*\*/)).toBeInTheDocument();
-    expect(within(assistantBubble).queryByText("Bold", { selector: "strong" })).toBeNull();
+    await userEvent.click(firstToggle);
+
+    expect(within(firstBubble).getByText(/\*\*First\*\* item/)).toBeInTheDocument();
+    expect(within(firstBubble).queryByText("First", { selector: "strong" })).toBeNull();
+    expect(within(secondBubble).getByText("Second", { selector: "strong" })).toBeInTheDocument();
+
+    await userEvent.click(firstToggle);
+    expect(within(firstBubble).getByText("First", { selector: "strong" })).toBeInTheDocument();
   });
 
-  it("keeps user message rendering unchanged when toggling assistant render mode", async () => {
+  it("uses a dedicated streaming toggle sentinel without affecting persisted assistant messages", async () => {
     setupMockChat({
       activeSession: { id: "session-001", agentId: "agent-001", status: "active", title: "Test Chat", updatedAt: "2026-04-08T00:00:00.000Z" },
-      messages: [
-        { id: "msg-001", sessionId: "session-001", role: "user", content: "**User** plain", createdAt: "2026-04-08T00:00:00.000Z" },
-      ],
-    });
-
-    render(<ChatView projectId="proj-123" addToast={vi.fn()} />);
-
-    const userBubble = screen.getByTestId("chat-message-msg-001");
-    expect(within(userBubble).getByText(/\*\*User\*\* plain/)).toBeInTheDocument();
-    expect(within(userBubble).queryByText("User", { selector: "strong" })).toBeNull();
-
-    await userEvent.click(screen.getByTestId("chat-render-mode-plain"));
-
-    expect(within(userBubble).getByText(/\*\*User\*\* plain/)).toBeInTheDocument();
-    expect(within(userBubble).queryByText("User", { selector: "strong" })).toBeNull();
-  });
-
-  it("applies markdown/plain mode to streaming assistant text", async () => {
-    setupMockChat({
-      activeSession: { id: "session-001", agentId: "agent-001", status: "active", title: "Test Chat", updatedAt: "2026-04-08T00:00:00.000Z" },
-      messages: [{ id: "msg-001", sessionId: "session-001", role: "user", content: "Hello", createdAt: "2026-04-08T00:00:00.000Z" }],
+      messages: [{ id: "msg-001", sessionId: "session-001", role: "assistant", content: "**Persisted**", createdAt: "2026-04-08T00:00:00.000Z" }],
       isStreaming: true,
       streamingText: "**Live** stream",
     });
 
     render(<ChatView projectId="proj-123" addToast={vi.fn()} />);
 
+    const persistedBubble = screen.getByTestId("chat-message-msg-001");
     const streamingBubble = document.querySelector(".chat-message--streaming") as HTMLElement;
-    expect(within(streamingBubble).getByText("Live", { selector: "strong" })).toBeInTheDocument();
+    const [persistedToggle, streamingToggle] = screen.getAllByTestId("chat-message-render-toggle");
 
-    await userEvent.click(screen.getByTestId("chat-render-mode-plain"));
+    expect(within(streamingBubble).getByText("Live", { selector: "strong" })).toBeInTheDocument();
+    expect(within(persistedBubble).getByText("Persisted", { selector: "strong" })).toBeInTheDocument();
+
+    await userEvent.click(streamingToggle);
 
     expect(within(streamingBubble).getByText(/\*\*Live\*\* stream/)).toBeInTheDocument();
-  });
+    expect(within(persistedBubble).getByText("Persisted", { selector: "strong" })).toBeInTheDocument();
 
-  it("renders inline per-message render toggles for assistant bubbles on mobile", () => {
-    const restoreMatchMedia = mockViewportMode("mobile");
-    try {
-      setupMockChat({
-        activeSession: { id: "session-001", agentId: "agent-001", status: "active", title: "Test Chat", updatedAt: "2026-04-08T00:00:00.000Z" },
-        messages: [
-          { id: "msg-001", sessionId: "session-001", role: "assistant", content: "**First** item", createdAt: "2026-04-08T00:00:00.000Z" },
-          { id: "msg-002", sessionId: "session-001", role: "assistant", content: "**Second** item", createdAt: "2026-04-08T00:01:00.000Z" },
-        ],
-      });
-
-      render(<ChatView projectId="proj-123" addToast={vi.fn()} />);
-
-      expect(screen.getAllByTestId("chat-message-render-toggle")).toHaveLength(2);
-    } finally {
-      restoreMatchMedia();
-    }
-  });
-
-  it("toggles plain text for one mobile assistant message without affecting others", async () => {
-    const restoreMatchMedia = mockViewportMode("mobile");
-    try {
-      setupMockChat({
-        activeSession: { id: "session-001", agentId: "agent-001", status: "active", title: "Test Chat", updatedAt: "2026-04-08T00:00:00.000Z" },
-        messages: [
-          { id: "msg-001", sessionId: "session-001", role: "assistant", content: "**First** item", createdAt: "2026-04-08T00:00:00.000Z" },
-          { id: "msg-002", sessionId: "session-001", role: "assistant", content: "**Second** item", createdAt: "2026-04-08T00:01:00.000Z" },
-        ],
-      });
-
-      render(<ChatView projectId="proj-123" addToast={vi.fn()} />);
-
-      const firstBubble = screen.getByTestId("chat-message-msg-001");
-      const secondBubble = screen.getByTestId("chat-message-msg-002");
-      const [firstToggle] = screen.getAllByTestId("chat-message-render-toggle");
-
-      expect(within(firstBubble).getByText("First", { selector: "strong" })).toBeInTheDocument();
-      expect(within(secondBubble).getByText("Second", { selector: "strong" })).toBeInTheDocument();
-
-      await userEvent.click(firstToggle);
-
-      expect(within(firstBubble).getByText(/\*\*First\*\* item/)).toBeInTheDocument();
-      expect(within(firstBubble).queryByText("First", { selector: "strong" })).toBeNull();
-      expect(within(secondBubble).getByText("Second", { selector: "strong" })).toBeInTheDocument();
-    } finally {
-      restoreMatchMedia();
-    }
-  });
-
-  it("toggles mobile assistant message back to markdown when clicked again", async () => {
-    const restoreMatchMedia = mockViewportMode("mobile");
-    try {
-      setupMockChat({
-        activeSession: { id: "session-001", agentId: "agent-001", status: "active", title: "Test Chat", updatedAt: "2026-04-08T00:00:00.000Z" },
-        messages: [
-          { id: "msg-001", sessionId: "session-001", role: "assistant", content: "**First** item", createdAt: "2026-04-08T00:00:00.000Z" },
-        ],
-      });
-
-      render(<ChatView projectId="proj-123" addToast={vi.fn()} />);
-
-      const bubble = screen.getByTestId("chat-message-msg-001");
-      const toggle = screen.getByTestId("chat-message-render-toggle");
-
-      await userEvent.click(toggle);
-      expect(within(bubble).getByText(/\*\*First\*\* item/)).toBeInTheDocument();
-
-      await userEvent.click(toggle);
-      expect(within(bubble).getByText("First", { selector: "strong" })).toBeInTheDocument();
-    } finally {
-      restoreMatchMedia();
-    }
-  });
-
-  it("hides the header markdown/plain toggle controls on mobile via CSS", () => {
-    const restoreMatchMedia = mockViewportMode("mobile");
-    try {
-      setupMockChat({
-        activeSession: { id: "session-001", agentId: "agent-001", status: "active", title: "Test Chat", updatedAt: "2026-04-08T00:00:00.000Z" },
-        messages: [
-          { id: "msg-001", sessionId: "session-001", role: "assistant", content: "**First** item", createdAt: "2026-04-08T00:00:00.000Z" },
-        ],
-      });
-
-      render(<ChatView projectId="proj-123" addToast={vi.fn()} />);
-
-      expect(screen.queryByTestId("chat-render-mode-markdown")).toBeInTheDocument();
-      expect(screen.queryByTestId("chat-render-mode-plain")).toBeInTheDocument();
-      expect(document.querySelector(".chat-render-mode-toggle")).toBeInTheDocument();
-    } finally {
-      restoreMatchMedia();
-    }
+    await userEvent.click(persistedToggle);
+    expect(within(persistedBubble).getByText(/\*\*Persisted\*\*/)).toBeInTheDocument();
+    expect(within(streamingBubble).getByText(/\*\*Live\*\* stream/)).toBeInTheDocument();
   });
 
   it("renders tool calls from persisted messages", () => {
@@ -2150,11 +2050,7 @@ describe("ChatView mobile CSS contract", () => {
     expect(mobileRuleContains(".chat-sidebar-footer-btn", "justify-content: center")).toBe(true);
   });
 
-  it("mobile hides thread header markdown/plain toggle container", () => {
-    expect(mobileRuleContains(".chat-render-mode-toggle", "display: none")).toBe(true);
-  });
-
-  it("mobile shows inline assistant render toggle button", () => {
-    expect(mobileRuleContains(".chat-message-render-toggle", "display: inline-flex")).toBe(true);
+  it("mobile does not override assistant render toggle visibility", () => {
+    expect(mobileRuleNotContains(".chat-message-render-toggle", "display: inline-flex")).toBe(true);
   });
 });

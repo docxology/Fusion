@@ -482,7 +482,6 @@ export function ChatView({ projectId, addToast }: ChatViewProps) {
   const [mentionPopupVisible, setMentionPopupVisible] = useState(false);
   const [mentionHighlightIndex, setMentionHighlightIndex] = useState(0);
   const [mentionStartPos, setMentionStartPos] = useState(-1);
-  const [renderAssistantMarkdown, setRenderAssistantMarkdown] = useState(true);
   const [plainTextMessageIds, setPlainTextMessageIds] = useState<Set<string>>(() => new Set());
 
   // File mention state and hook
@@ -1048,7 +1047,7 @@ export function ChatView({ projectId, addToast }: ChatViewProps) {
 
   const renderAssistantContent = useCallback(
     (content: string, forcePlain = false) => {
-      const showPlainText = isMobile ? forcePlain : forcePlain || !renderAssistantMarkdown;
+      const showPlainText = forcePlain;
       if (showPlainText) {
         return <div className="chat-message-content chat-message-content--plain">{content}</div>;
       }
@@ -1061,7 +1060,7 @@ export function ChatView({ projectId, addToast }: ChatViewProps) {
         </div>
       );
     },
-    [isMobile, renderAssistantMarkdown],
+    [],
   );
 
   return (
@@ -1219,30 +1218,7 @@ export function ChatView({ projectId, addToast }: ChatViewProps) {
             <Bot size={16} />
             <span className="chat-thread-header-title">{threadHeaderTitle}</span>
             {showThreadHeaderModelTag && <span className="chat-model-tag">{activeModelTag}</span>}
-            {activeSession && (
-              <div className="chat-render-mode-toggle" role="group" aria-label="Assistant response render mode">
-                <button
-                  type="button"
-                  className={`chat-render-mode-btn${renderAssistantMarkdown ? " chat-render-mode-btn--active" : ""}`}
-                  aria-pressed={renderAssistantMarkdown}
-                  aria-label="Render assistant responses as markdown"
-                  data-testid="chat-render-mode-markdown"
-                  onClick={() => setRenderAssistantMarkdown(true)}
-                >
-                  Markdown
-                </button>
-                <button
-                  type="button"
-                  className={`chat-render-mode-btn${!renderAssistantMarkdown ? " chat-render-mode-btn--active" : ""}`}
-                  aria-pressed={!renderAssistantMarkdown}
-                  aria-label="Render assistant responses as plain text"
-                  data-testid="chat-render-mode-plain"
-                  onClick={() => setRenderAssistantMarkdown(false)}
-                >
-                  Plain
-                </button>
-              </div>
-            )}
+
           </div>
         )}
 
@@ -1273,17 +1249,15 @@ export function ChatView({ projectId, addToast }: ChatViewProps) {
                         <Bot size={14} />
                         <span>{agentName}</span>
                         {showAssistantModelTag && <span className="chat-model-tag">{activeModelTag}</span>}
-                        {isMobile && (
-                          <button
-                            type="button"
-                            className={`btn btn-icon chat-message-render-toggle${forcePlain ? " chat-message-render-toggle--plain" : ""}`}
-                            data-testid="chat-message-render-toggle"
-                            aria-label={forcePlain ? "Show rendered markdown" : "Show plain text"}
-                            onClick={() => toggleMessageRenderMode(message.id)}
-                          >
-                            {forcePlain ? <EyeOff size={14} /> : <Eye size={14} />}
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          className={`btn btn-icon chat-message-render-toggle${forcePlain ? " chat-message-render-toggle--plain" : ""}`}
+                          data-testid="chat-message-render-toggle"
+                          aria-label={forcePlain ? "Show rendered markdown" : "Show plain text"}
+                          onClick={() => toggleMessageRenderMode(message.id)}
+                        >
+                          {forcePlain ? <EyeOff size={14} /> : <Eye size={14} />}
+                        </button>
                       </div>
                     )}
                     {isAssistantMessage
@@ -1306,17 +1280,15 @@ export function ChatView({ projectId, addToast }: ChatViewProps) {
                     <Bot size={14} />
                     <span>{agentName}</span>
                     {showAssistantModelTag && <span className="chat-model-tag">{activeModelTag}</span>}
-                    {isMobile && (
-                      <button
-                        type="button"
-                        className={`btn btn-icon chat-message-render-toggle${plainTextMessageIds.has("__streaming__") ? " chat-message-render-toggle--plain" : ""}`}
-                        data-testid="chat-message-render-toggle"
-                        aria-label={plainTextMessageIds.has("__streaming__") ? "Show rendered markdown" : "Show plain text"}
-                        onClick={() => toggleMessageRenderMode("__streaming__")}
-                      >
-                        {plainTextMessageIds.has("__streaming__") ? <EyeOff size={14} /> : <Eye size={14} />}
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      className={`btn btn-icon chat-message-render-toggle${plainTextMessageIds.has("__streaming__") ? " chat-message-render-toggle--plain" : ""}`}
+                      data-testid="chat-message-render-toggle"
+                      aria-label={plainTextMessageIds.has("__streaming__") ? "Show rendered markdown" : "Show plain text"}
+                      onClick={() => toggleMessageRenderMode("__streaming__")}
+                    >
+                      {plainTextMessageIds.has("__streaming__") ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </button>
                   </div>
                   {streamingText ? (
                     renderAssistantContent(streamingText, plainTextMessageIds.has("__streaming__"))

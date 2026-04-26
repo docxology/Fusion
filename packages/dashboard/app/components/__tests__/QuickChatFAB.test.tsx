@@ -196,53 +196,43 @@ describe("QuickChatFAB", () => {
     });
   });
 
-  it("shows markdown/plain render toggle in quick chat header", async () => {
+  it("does not render markdown/plain render toggle in quick chat header", async () => {
     render(<QuickChatFAB addToast={addToast} />);
 
     fireEvent.click(screen.getByTestId("quick-chat-fab"));
 
     await waitFor(() => {
-      expect(screen.getByTestId("quick-chat-render-mode-markdown")).toHaveAttribute("aria-pressed", "true");
-      expect(screen.getByTestId("quick-chat-render-mode-plain")).toHaveAttribute("aria-pressed", "false");
+      expect(screen.getByTestId("quick-chat-panel")).toBeDefined();
     });
+
+    expect(screen.queryByTestId("quick-chat-render-mode-markdown")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("quick-chat-render-mode-plain")).not.toBeInTheDocument();
   });
 
-  it("renders persisted assistant messages as markdown and switches to raw plain text", async () => {
+  it("shows eye toggles only on received messages and toggles per message", async () => {
     mockFetchChatMessages.mockResolvedValueOnce({
       messages: [
         {
-          id: "msg-001",
-          sessionId: "session-001",
-          role: "assistant",
-          content: "**Bold**\n\n- item",
-          createdAt: new Date().toISOString(),
-        },
-      ],
-    });
-
-    render(<QuickChatFAB addToast={addToast} />);
-
-    fireEvent.click(screen.getByTestId("quick-chat-fab"));
-
-    const assistantBubble = await screen.findByTestId("quick-chat-message-msg-001");
-    expect(within(assistantBubble).getByText("Bold", { selector: "strong" })).toBeInTheDocument();
-
-    fireEvent.click(screen.getByTestId("quick-chat-render-mode-plain"));
-
-    expect(within(assistantBubble).getByText(/\*\*Bold\*\*/)).toBeInTheDocument();
-    expect(within(assistantBubble).queryByText("Bold", { selector: "strong" })).toBeNull();
-  });
-
-  it("keeps user message rendering unchanged when switching assistant render mode", async () => {
-    mockFetchChatMessages.mockResolvedValueOnce({
-      messages: [
-        {
-          id: "msg-001",
+          id: "msg-user",
           sessionId: "session-001",
           role: "user",
           content: "**User** plain",
           createdAt: new Date().toISOString(),
         },
+        {
+          id: "msg-assistant-1",
+          sessionId: "session-001",
+          role: "assistant",
+          content: "**Bold** one",
+          createdAt: new Date().toISOString(),
+        },
+        {
+          id: "msg-assistant-2",
+          sessionId: "session-001",
+          role: "assistant",
+          content: "**Bold** two",
+          createdAt: new Date().toISOString(),
+        },
       ],
     });
 
@@ -250,16 +240,41 @@ describe("QuickChatFAB", () => {
 
     fireEvent.click(screen.getByTestId("quick-chat-fab"));
 
-    const userBubble = await screen.findByTestId("quick-chat-message-msg-001");
-    expect(within(userBubble).getByText(/\*\*User\*\* plain/)).toBeInTheDocument();
+    const userBubble = await screen.findByTestId("quick-chat-message-msg-user");
+    const firstAssistantBubble = await screen.findByTestId("quick-chat-message-msg-assistant-1");
+    const secondAssistantBubble = await screen.findByTestId("quick-chat-message-msg-assistant-2");
 
-    fireEvent.click(screen.getByTestId("quick-chat-render-mode-plain"));
+    expect(within(userBubble).queryByTestId("quick-chat-message-render-toggle")).toBeNull();
 
+    const toggles = screen.getAllByTestId("quick-chat-message-render-toggle");
+    expect(toggles).toHaveLength(2);
+    expect(within(firstAssistantBubble).getByText("Bold", { selector: "strong" })).toBeInTheDocument();
+    expect(within(secondAssistantBubble).getByText("Bold", { selector: "strong" })).toBeInTheDocument();
+
+    fireEvent.click(toggles[0]);
+
+    expect(within(firstAssistantBubble).getByText(/\*\*Bold\*\* one/)).toBeInTheDocument();
+    expect(within(firstAssistantBubble).queryByText("Bold", { selector: "strong" })).toBeNull();
+    expect(within(secondAssistantBubble).getByText("Bold", { selector: "strong" })).toBeInTheDocument();
+
+    fireEvent.click(toggles[0]);
+    expect(within(firstAssistantBubble).getByText("Bold", { selector: "strong" })).toBeInTheDocument();
     expect(within(userBubble).getByText(/\*\*User\*\* plain/)).toBeInTheDocument();
-    expect(within(userBubble).queryByText("User", { selector: "strong" })).toBeNull();
   });
 
-  it("applies markdown/plain mode to streaming assistant text", async () => {
+  it("uses the streaming sentinel toggle without affecting persisted received messages", async () => {
+    mockFetchChatMessages.mockResolvedValueOnce({
+      messages: [
+        {
+          id: "msg-assistant",
+          sessionId: "session-001",
+          role: "assistant",
+          content: "**Persisted** message",
+          createdAt: new Date().toISOString(),
+        },
+      ],
+    });
+
     mockStreamChatResponse.mockImplementation((_sessionId, _content, handlers) => {
       handlers.onText?.("**Live** stream");
       return {
@@ -281,9 +296,18 @@ describe("QuickChatFAB", () => {
     fireEvent.click(screen.getByTestId("quick-chat-send"));
 
     const streamingText = await screen.findByTestId("quick-chat-streaming-text");
-    expect(within(streamingText).getByText("Live", { selector: "strong" })).toBeInTheDocument();
+    const persistedBubble = await screen.findByTestId("quick-chat-message-msg-assistant");
+    const [persistedToggle, streamingToggle] = screen.getAllByTestId("quick-chat-message-render-toggle");
 
-    fireEvent.click(screen.getByTestId("quick-chat-render-mode-plain"));
+    expect(within(streamingText).getByText("Live", { selector: "strong" })).toBeInTheDocument();
+    expect(within(persistedBubble).getByText("Persisted", { selector: "strong" })).toBeInTheDocument();
+
+    fireEvent.click(streamingToggle);
+    expect(within(streamingText).getByText(/\*\*Live\*\* stream/)).toBeInTheDocument();
+    expect(within(persistedBubble).getByText("Persisted", { selector: "strong" })).toBeInTheDocument();
+
+    fireEvent.click(persistedToggle);
+    expect(within(persistedBubble).getByText(/\*\*Persisted\*\* message/)).toBeInTheDocument();
     expect(within(streamingText).getByText(/\*\*Live\*\* stream/)).toBeInTheDocument();
   });
 

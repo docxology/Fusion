@@ -11,7 +11,7 @@ import {
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Components } from "react-markdown";
-import { MessageSquare, Send, Square, Wrench, X } from "lucide-react";
+import { Eye, EyeOff, MessageSquare, Send, Square, Wrench, X } from "lucide-react";
 import { fetchModels, type Agent, type ModelInfo } from "../api";
 import { CustomModelDropdown } from "./CustomModelDropdown";
 import { AgentMentionPopup } from "./AgentMentionPopup";
@@ -452,7 +452,7 @@ export function QuickChatFAB({
   const [mentionPopupVisible, setMentionPopupVisible] = useState(false);
   const [mentionHighlightIndex, setMentionHighlightIndex] = useState(0);
   const [mentionStartPos, setMentionStartPos] = useState(-1);
-  const [renderAssistantMarkdown, setRenderAssistantMarkdown] = useState(true);
+  const [plainTextMessageIds, setPlainTextMessageIds] = useState<Set<string>>(() => new Set());
 
   // File mention state and hook
   const [, setFileMentionPopupVisible] = useState(false);
@@ -893,9 +893,21 @@ export function QuickChatFAB({
     [mentionAgentsByName],
   );
 
+  const toggleMessageRenderMode = useCallback((messageId: string) => {
+    setPlainTextMessageIds((current) => {
+      const next = new Set(current);
+      if (next.has(messageId)) {
+        next.delete(messageId);
+      } else {
+        next.add(messageId);
+      }
+      return next;
+    });
+  }, []);
+
   const renderAssistantMessageContent = useCallback(
-    (content: string) => {
-      if (!renderAssistantMarkdown) {
+    (content: string, forcePlain = false) => {
+      if (forcePlain) {
         return <div className="quick-chat-message-content quick-chat-message-content--plain">{content}</div>;
       }
 
@@ -907,7 +919,7 @@ export function QuickChatFAB({
         </div>
       );
     },
-    [renderAssistantMarkdown],
+    [],
   );
 
   const handleInputKeyDown = useCallback(
@@ -1032,28 +1044,7 @@ export function QuickChatFAB({
               )}
             </div>
             <div className="quick-chat-panel-header-actions">
-              <div className="quick-chat-render-mode-toggle" role="group" aria-label="Assistant response render mode">
-                <button
-                  type="button"
-                  className={`quick-chat-render-mode-btn${renderAssistantMarkdown ? " quick-chat-render-mode-btn--active" : ""}`}
-                  data-testid="quick-chat-render-mode-markdown"
-                  aria-pressed={renderAssistantMarkdown}
-                  aria-label="Render assistant responses as markdown"
-                  onClick={() => setRenderAssistantMarkdown(true)}
-                >
-                  Markdown
-                </button>
-                <button
-                  type="button"
-                  className={`quick-chat-render-mode-btn${!renderAssistantMarkdown ? " quick-chat-render-mode-btn--active" : ""}`}
-                  data-testid="quick-chat-render-mode-plain"
-                  aria-pressed={!renderAssistantMarkdown}
-                  aria-label="Render assistant responses as plain text"
-                  onClick={() => setRenderAssistantMarkdown(false)}
-                >
-                  Plain
-                </button>
-              </div>
+
               <button
                 type="button"
                 className="btn btn-sm"
@@ -1148,6 +1139,7 @@ export function QuickChatFAB({
               <>
                 {messages.map((message: ChatMessageInfo) => {
                   const isSent = message.role === "user";
+                  const forcePlain = !isSent && plainTextMessageIds.has(message.id);
                   return (
                     <div
                       key={message.id}
@@ -1156,7 +1148,20 @@ export function QuickChatFAB({
                     >
                       {isSent
                         ? <p>{renderMessageContent(message.content)}</p>
-                        : renderAssistantMessageContent(message.content)}
+                        : (
+                          <>
+                            {renderAssistantMessageContent(message.content, forcePlain)}
+                            <button
+                              type="button"
+                              className={`btn btn-icon quick-chat-message-render-toggle${forcePlain ? " quick-chat-message-render-toggle--plain" : ""}`}
+                              data-testid="quick-chat-message-render-toggle"
+                              aria-label={forcePlain ? "Show rendered markdown" : "Show plain text"}
+                              onClick={() => toggleMessageRenderMode(message.id)}
+                            >
+                              {forcePlain ? <EyeOff size={12} /> : <Eye size={12} />}
+                            </button>
+                          </>
+                        )}
                       {renderToolCalls(message.toolCalls, true)}
                     </div>
                   );
@@ -1168,7 +1173,20 @@ export function QuickChatFAB({
                     data-testid="quick-chat-streaming-message"
                   >
                     {streamingText ? (
-                      <div data-testid="quick-chat-streaming-text">{renderAssistantMessageContent(streamingText)}</div>
+                      <>
+                        <div data-testid="quick-chat-streaming-text">
+                          {renderAssistantMessageContent(streamingText, plainTextMessageIds.has("__streaming__"))}
+                        </div>
+                        <button
+                          type="button"
+                          className={`btn btn-icon quick-chat-message-render-toggle${plainTextMessageIds.has("__streaming__") ? " quick-chat-message-render-toggle--plain" : ""}`}
+                          data-testid="quick-chat-message-render-toggle"
+                          aria-label={plainTextMessageIds.has("__streaming__") ? "Show rendered markdown" : "Show plain text"}
+                          onClick={() => toggleMessageRenderMode("__streaming__")}
+                        >
+                          {plainTextMessageIds.has("__streaming__") ? <EyeOff size={12} /> : <Eye size={12} />}
+                        </button>
+                      </>
                     ) : (
                       <p className="quick-chat-panel-waiting" data-testid="quick-chat-waiting">
                         {streamingThinking ? "Thinking…" : "Connecting…"}
