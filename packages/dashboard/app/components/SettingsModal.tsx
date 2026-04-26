@@ -276,6 +276,8 @@ export function SettingsModal({
   // Global concurrency state
   const [globalMaxConcurrent, setGlobalMaxConcurrent] = useState<number | undefined>(4);
   const initialGlobalMaxConcurrentRef = useRef<number | undefined>(4);
+  const hasFetchedGlobalConcurrencyRef = useRef(false);
+  const globalConcurrencyDirtyRef = useRef(false);
 
   // Import/Export state
   const [importDialogOpen, setImportDialogOpen] = useState(false);
@@ -293,7 +295,10 @@ export function SettingsModal({
     loading: memoryBackendLoading,
     error: memoryBackendError,
     refresh: refreshMemoryBackend,
-  } = useMemoryBackendStatus({ projectId });
+  } = useMemoryBackendStatus({
+    projectId,
+    enabled: activeSection === "memory",
+  });
 
   useEffect(() => {
     if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
@@ -335,15 +340,30 @@ export function SettingsModal({
   }, [addToast, projectId]);
 
   useEffect(() => {
+    if (activeSection !== "scheduling" || hasFetchedGlobalConcurrencyRef.current) {
+      return;
+    }
+
+    let cancelled = false;
     fetchGlobalConcurrency()
       .then((state) => {
-        setGlobalMaxConcurrent(state.globalMaxConcurrent);
+        if (cancelled) {
+          return;
+        }
+        if (!globalConcurrencyDirtyRef.current) {
+          setGlobalMaxConcurrent(state.globalMaxConcurrent);
+        }
         initialGlobalMaxConcurrentRef.current = state.globalMaxConcurrent;
+        hasFetchedGlobalConcurrencyRef.current = true;
       })
       .catch(() => {
         // Silently fail — global concurrency may not be available
       });
-  }, []);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSection]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1963,6 +1983,7 @@ export function SettingsModal({
                 value={globalMaxConcurrent ?? ""}
                 onChange={(e) => {
                   const val = e.target.value;
+                  globalConcurrencyDirtyRef.current = true;
                   setGlobalMaxConcurrent(val === "" ? undefined : Number(val));
                 }}
               />

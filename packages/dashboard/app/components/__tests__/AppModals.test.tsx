@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { AppModals } from "../AppModals";
 import type { ModalManager } from "../../hooks/useModalManager";
 import type { Toast } from "../../hooks/useToast";
@@ -9,8 +9,12 @@ vi.mock("../TaskDetailModal", () => ({
   TaskDetailModal: () => null,
 }));
 
+const mockSettingsModalProps = vi.fn();
 vi.mock("../SettingsModal", () => ({
-  SettingsModal: () => null,
+  SettingsModal: (props: any) => {
+    mockSettingsModalProps(props);
+    return <div data-testid="settings-modal">Settings Modal</div>;
+  },
 }));
 
 vi.mock("../GitHubImportModal", () => ({
@@ -189,6 +193,7 @@ describe("AppModals", () => {
     vi.clearAllMocks();
     mockScheduledTasksModalProps.mockClear();
     mockModelOnboardingModalProps.mockClear();
+    mockSettingsModalProps.mockClear();
   });
 
   it("renders without crashing", () => {
@@ -265,6 +270,34 @@ describe("AppModals", () => {
       expect(mockModelOnboardingModalProps).toHaveBeenCalledTimes(1);
       const props = mockModelOnboardingModalProps.mock.calls[0][0];
       expect(props.projectId).toBe("proj_123");
+    });
+  });
+
+  describe("Settings modal lazy loading", () => {
+    it("renders SettingsModal asynchronously when settingsOpen is true", async () => {
+      render(
+        <AppModals
+          projectId="proj-123"
+          tasks={[]}
+          projects={[]}
+          currentProject={null}
+          addToast={vi.fn()}
+          toasts={mockToasts}
+          removeToast={vi.fn()}
+          modalManager={{ ...mockModalManager, settingsOpen: true, settingsInitialSection: "memory" }}
+          projectActions={{ handleAddProject: vi.fn(), handleSetupComplete: vi.fn(), handleModelOnboardingComplete: vi.fn() }}
+          taskHandlers={{ handleModalCreate: vi.fn(), handlePlanningTaskCreated: vi.fn(), handlePlanningTasksCreated: vi.fn(), handleSubtaskTasksCreated: vi.fn(), handleGitHubImport: vi.fn() }}
+          taskOperations={{ moveTask: vi.fn(), deleteTask: vi.fn(), mergeTask: vi.fn(), retryTask: vi.fn(), duplicateTask: vi.fn() }}
+          deepLink={{ handleDetailClose: vi.fn() }}
+          settings={mockSettings}
+        />,
+      );
+
+      expect(await screen.findByTestId("settings-modal")).toBeInTheDocument();
+      await waitFor(() => expect(mockSettingsModalProps).toHaveBeenCalled());
+      const props = mockSettingsModalProps.mock.calls[0][0];
+      expect(props.projectId).toBe("proj-123");
+      expect(props.initialSection).toBe("memory");
     });
   });
 

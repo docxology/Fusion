@@ -8,6 +8,8 @@ interface UseMemoryBackendStatusOptions {
   pollInterval?: number;
   /** Whether to auto-refresh (default: false) */
   autoRefresh?: boolean;
+  /** Whether fetching is enabled (default: true) */
+  enabled?: boolean;
 }
 
 /**
@@ -22,10 +24,10 @@ interface UseMemoryBackendStatusOptions {
  * - Respects project context via optional projectId
  */
 export function useMemoryBackendStatus(options: UseMemoryBackendStatusOptions = {}) {
-  const { projectId, pollInterval = 60_000, autoRefresh = false } = options;
+  const { projectId, pollInterval = 60_000, autoRefresh = false, enabled = true } = options;
 
   const [status, setStatus] = useState<MemoryBackendStatus | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
@@ -35,6 +37,13 @@ export function useMemoryBackendStatus(options: UseMemoryBackendStatusOptions = 
   const mountedRef = useRef(true);
 
   const fetchStatus = useCallback(async () => {
+    if (!enabled) {
+      setLoading(false);
+      setError(null);
+      setStatus(null);
+      return;
+    }
+
     // Cancel any in-flight request
     if (abortRef.current) {
       abortRef.current.abort();
@@ -74,21 +83,34 @@ export function useMemoryBackendStatus(options: UseMemoryBackendStatusOptions = 
       setError(message);
       setLoading(false);
     }
-  }, [projectId]);
+  }, [enabled, projectId]);
 
-  // Initial fetch
+  // Initial fetch (or deferred fetch when enabled toggles to true)
   useEffect(() => {
     mountedRef.current = true;
+
+    if (!enabled) {
+      if (abortRef.current) {
+        abortRef.current.abort();
+      }
+      setStatus(null);
+      setError(null);
+      setLoading(false);
+      return () => {
+        mountedRef.current = false;
+      };
+    }
+
     fetchStatus();
 
     return () => {
       mountedRef.current = false;
     };
-  }, [fetchStatus]);
+  }, [enabled, fetchStatus]);
 
   // Auto-refresh polling
   useEffect(() => {
-    if (!autoRefresh) return;
+    if (!enabled || !autoRefresh) return;
 
     pollRef.current = setInterval(() => {
       fetchStatus();
@@ -100,7 +122,7 @@ export function useMemoryBackendStatus(options: UseMemoryBackendStatusOptions = 
         pollRef.current = null;
       }
     };
-  }, [autoRefresh, pollInterval, fetchStatus]);
+  }, [enabled, autoRefresh, pollInterval, fetchStatus]);
 
   // Cleanup on unmount
   useEffect(() => {

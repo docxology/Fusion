@@ -243,6 +243,41 @@ describe("SettingsModal", () => {
     vi.restoreAllMocks();
   });
 
+  describe("deferred settings fetches", () => {
+    it("does not fetch global concurrency until Scheduling is selected", async () => {
+      renderModal();
+      await waitForSettingsModalReady();
+
+      expect(mockFetchGlobalConcurrency).not.toHaveBeenCalled();
+
+      await userEvent.click(screen.getByRole("button", { name: /Scheduling/ }));
+
+      await waitFor(() => {
+        expect(mockFetchGlobalConcurrency).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    it("enables memory backend status hook only when Memory section is active", async () => {
+      renderModal();
+      await waitForSettingsModalReady();
+
+      expect(mockUseMemoryBackendStatus).toHaveBeenCalled();
+      const initialCallHasDisabled = mockUseMemoryBackendStatus.mock.calls.some(
+        (call) => call[0]?.enabled === false,
+      );
+      expect(initialCallHasDisabled).toBe(true);
+
+      await userEvent.click(screen.getByRole("button", { name: /Memory/ }));
+
+      await waitFor(() => {
+        const enabledCallSeen = mockUseMemoryBackendStatus.mock.calls.some(
+          (call) => call[0]?.enabled === true,
+        );
+        expect(enabledCallSeen).toBe(true);
+      });
+    });
+  });
+
   describe("settings version display", () => {
     it("renders the app version from the health endpoint", async () => {
       renderModal();

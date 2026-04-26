@@ -64,6 +64,36 @@ describe("useMemoryBackendStatus", () => {
     expect(result.current.lastUpdated).toBeInstanceOf(Date);
   });
 
+  it("does not fetch when enabled is false", () => {
+    mockFetchMemoryBackendStatus.mockResolvedValue(mockFileBackendStatus);
+
+    const { result } = renderHook(() =>
+      useMemoryBackendStatus({ autoRefresh: false, enabled: false }),
+    );
+
+    expect(mockFetchMemoryBackendStatus).not.toHaveBeenCalled();
+    expect(result.current.loading).toBe(false);
+    expect(result.current.status).toBeNull();
+  });
+
+  it("fetches when enabled toggles from false to true", async () => {
+    mockFetchMemoryBackendStatus.mockResolvedValue(mockFileBackendStatus);
+
+    const { result, rerender } = renderHook(
+      ({ enabled }) => useMemoryBackendStatus({ autoRefresh: false, enabled }),
+      { initialProps: { enabled: false } },
+    );
+
+    expect(mockFetchMemoryBackendStatus).not.toHaveBeenCalled();
+    expect(result.current.loading).toBe(false);
+
+    rerender({ enabled: true });
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(mockFetchMemoryBackendStatus).toHaveBeenCalledTimes(1);
+    expect(result.current.status).toEqual(mockFileBackendStatus);
+  });
+
   it("handles fetch errors", async () => {
     mockFetchMemoryBackendStatus.mockRejectedValue(new Error("Failed to connect"));
 

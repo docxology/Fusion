@@ -7,7 +7,6 @@ import type { UseTaskHandlersResult } from "../hooks/useTaskHandlers";
 import type { Toast, ToastType } from "../hooks/useToast";
 import { ModalErrorBoundary } from "./ErrorBoundary";
 import { TaskDetailModal } from "./TaskDetailModal";
-import { SettingsModal } from "./SettingsModal";
 import { GitHubImportModal } from "./GitHubImportModal";
 import { PlanningModeModal } from "./PlanningModeModal";
 import { SubtaskBreakdownModal } from "./SubtaskBreakdownModal";
@@ -25,6 +24,20 @@ import { ModelOnboardingModal } from "./ModelOnboardingModal";
 import { ToastContainer } from "./ToastContainer";
 
 const SetupWizardModal = lazy(() => import("./SetupWizardModal").then((m) => ({ default: m.SetupWizardModal })));
+const SettingsModal = lazy(() => import("./SettingsModal").then((m) => ({ default: m.SettingsModal })));
+
+function prefetchSettingsModal() {
+  const idle: (cb: () => void, opts?: { timeout?: number }) => number =
+    (typeof window !== "undefined" &&
+      (window as Window & {
+        requestIdleCallback?: (cb: () => void, opts?: { timeout?: number }) => number;
+      }).requestIdleCallback) ||
+    ((cb: () => void) => globalThis.setTimeout(cb, 200) as unknown as number);
+
+  idle(() => {
+    void import("./SettingsModal");
+  }, { timeout: 1_500 });
+}
 
 interface AppModalsProps {
   projectId?: string;
@@ -113,6 +126,10 @@ export function AppModals({
     }
   }, [modalManager.modelOnboardingOpen, firstCreatedTask]);
 
+  useEffect(() => {
+    prefetchSettingsModal();
+  }, []);
+
   return (
     <>
       {modalManager.detailTask && (
@@ -138,17 +155,19 @@ export function AppModals({
 
       {modalManager.settingsOpen && (
         <ModalErrorBoundary>
-          <SettingsModal
-            onClose={handleSettingsClose}
-            addToast={addToast}
-            initialSection={modalManager.settingsInitialSection}
-            projectId={projectId}
-            themeMode={settings.themeMode}
-            colorTheme={settings.colorTheme}
-            onThemeModeChange={settings.setThemeMode}
-            onColorThemeChange={settings.setColorTheme}
-            onReopenOnboarding={onReopenOnboarding}
-          />
+          <Suspense fallback={null}>
+            <SettingsModal
+              onClose={handleSettingsClose}
+              addToast={addToast}
+              initialSection={modalManager.settingsInitialSection}
+              projectId={projectId}
+              themeMode={settings.themeMode}
+              colorTheme={settings.colorTheme}
+              onThemeModeChange={settings.setThemeMode}
+              onColorThemeChange={settings.setColorTheme}
+              onReopenOnboarding={onReopenOnboarding}
+            />
+          </Suspense>
         </ModalErrorBoundary>
       )}
 
