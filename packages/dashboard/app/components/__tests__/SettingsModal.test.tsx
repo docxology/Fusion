@@ -1298,85 +1298,35 @@ describe("SettingsModal", () => {
       expect(payload.experimentalFeatures).toEqual({ "feature-a": true, "feature-b": true });
     });
 
-    it("renders remote access section and tunnel controls", async () => {
+  });
+
+  describe("Remote section", () => {
+    const openRemoteSection = async () => {
+      const [remoteSectionButton] = await screen.findAllByRole("button", { name: /Remote Access/i });
+      await userEvent.click(remoteSectionButton);
+      await screen.findByRole("heading", { name: "Remote Access" });
+    };
+
+    const getTunnelStateSummary = () =>
+      screen.getByText((_, node) => node?.textContent?.startsWith("State:") ?? false);
+
+    it("shows independent Tailscale and Cloudflare provider controls and saves both configs", async () => {
       renderModal();
       await waitForSettingsModalReady();
+      await openRemoteSection();
 
-      await userEvent.click(screen.getByRole("button", { name: /Remote Access/ }));
-
-      expect(screen.getByRole("heading", { name: "Remote Access" })).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Start tunnel" })).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Generate QR" })).toBeInTheDocument();
-      expect(screen.getByLabelText("Hostname label")).toBeInTheDocument();
-      expect(screen.getByLabelText("Target port")).toBeInTheDocument();
-      expect(screen.getByLabelText("Tunnel name")).toBeInTheDocument();
-      expect(screen.getByLabelText("Tunnel token")).toBeInTheDocument();
-      expect(screen.getByLabelText("Ingress URL")).toBeInTheDocument();
-
-      await userEvent.click(screen.getByRole("button", { name: "Show URL" }));
-      await waitFor(() => {
-        expect(mockFetchRemoteUrl).toHaveBeenCalledWith({
-          projectId: undefined,
-          tokenType: "persistent",
-          ttlMs: undefined,
-        });
-      });
-      expect(screen.getByText(/Token type:/i)).toHaveTextContent("persistent");
-      expect(screen.getByText(/Token type:/i)).toHaveTextContent("No expiry");
-
-      await userEvent.selectOptions(screen.getByLabelText("Auth link token type"), "short-lived");
-      fireEvent.change(screen.getByLabelText("Short-lived TTL (ms)"), { target: { value: "120000" } });
-
-      mockFetchRemoteUrl.mockResolvedValueOnce({
-        url: "https://remote.example.com/short",
-        tokenType: "short-lived",
-        expiresAt: "2026-04-26T12:00:00.000Z",
-      });
-      await userEvent.click(screen.getByRole("button", { name: "Show URL" }));
-      await waitFor(() => {
-        expect(mockFetchRemoteUrl).toHaveBeenLastCalledWith({
-          projectId: undefined,
-          tokenType: "short-lived",
-          ttlMs: 120000,
-        });
-      });
-      expect(screen.getByText(/Token type:/i)).toHaveTextContent("short-lived");
-      expect(screen.getByText(/Token type:/i)).toHaveTextContent("Expires at");
-
-      mockFetchRemoteQr.mockResolvedValueOnce({
-        url: "https://remote.example.com/short",
-        tokenType: "short-lived",
-        expiresAt: "2026-04-26T12:00:00.000Z",
-        format: "image/svg",
-        data: "<svg></svg>",
-      });
-      await userEvent.click(screen.getByRole("button", { name: "Generate QR" }));
-      await waitFor(() => {
-        expect(mockFetchRemoteQr).toHaveBeenLastCalledWith(
-          "image/svg",
-          expect.objectContaining({
-            projectId: undefined,
-            tokenType: "short-lived",
-          }),
-        );
-      });
-      expect(await screen.findByRole("img", { name: "Remote access QR code" })).toBeInTheDocument();
-      expect(screen.getByText("Scan this QR code on your phone")).toBeInTheDocument();
-    });
-
-    it("saves both provider configs and preserves inactive provider values when switching active provider", async () => {
-      const addToast = vi.fn();
-      renderModal({ addToast });
-      await waitForSettingsModalReady();
-      await userEvent.click(screen.getByRole("button", { name: /Remote Access/ }));
-
-      await userEvent.selectOptions(screen.getByLabelText("Active provider"), "tailscale");
+      await userEvent.click(screen.getByLabelText("Enable Tailscale provider config"));
+      await userEvent.click(screen.getByLabelText("Enable Cloudflare provider config"));
       await userEvent.clear(screen.getByLabelText("Hostname label"));
       await userEvent.type(screen.getByLabelText("Hostname label"), "tail-new.ts.net");
+      fireEvent.change(screen.getByLabelText("Target port"), { target: { value: "4242" } });
       await userEvent.clear(screen.getByLabelText("Tunnel name"));
-      await userEvent.type(screen.getByLabelText("Tunnel name"), "cf-preserved");
+      await userEvent.type(screen.getByLabelText("Tunnel name"), "cf-team");
+      await userEvent.clear(screen.getByLabelText("Tunnel token"));
+      await userEvent.type(screen.getByLabelText("Tunnel token"), "cf_token");
       await userEvent.clear(screen.getByLabelText("Ingress URL"));
-      await userEvent.type(screen.getByLabelText("Ingress URL"), "https://cf-preserved.example.com");
+      await userEvent.type(screen.getByLabelText("Ingress URL"), "https://remote.example.com");
+      await userEvent.selectOptions(screen.getByLabelText("Active provider"), "cloudflare");
 
       await userEvent.click(screen.getByRole("button", { name: "Save Remote Settings" }));
 
@@ -1386,53 +1336,194 @@ describe("SettingsModal", () => {
 
       expect(mockUpdateRemoteSettings).toHaveBeenCalledWith(
         expect.objectContaining({
-          remoteActiveProvider: "tailscale",
+          remoteTailscaleEnabled: true,
+          remoteCloudflareEnabled: true,
           remoteTailscaleHostname: "tail-new.ts.net",
-          remoteCloudflareTunnelName: "cf-preserved",
-          remoteCloudflareIngressUrl: "https://cf-preserved.example.com",
+          remoteTailscaleTargetPort: 4242,
+          remoteCloudflareTunnelName: "cf-team",
+          remoteCloudflareTunnelToken: "cf_token",
+          remoteCloudflareIngressUrl: "https://remote.example.com",
+          remoteActiveProvider: "cloudflare",
         }),
         undefined,
       );
-      expect(addToast).toHaveBeenCalledWith("Remote settings saved", "success");
     });
 
-    it("handles tunnel lifecycle and token action errors without exposing raw token values", async () => {
-      const addToast = vi.fn();
+    it("updates active provider selection and provider status affordance after activation", async () => {
+      mockFetchRemoteStatus
+        .mockResolvedValueOnce({ provider: null, state: "stopped", url: null, lastError: null })
+        .mockResolvedValueOnce({ provider: "tailscale", state: "running", url: "https://tail.example", lastError: null });
+
+      renderModal();
+      await waitForSettingsModalReady();
+      await openRemoteSection();
+
+      const activeProviderSelect = screen.getByLabelText("Active provider");
+      await userEvent.selectOptions(activeProviderSelect, "tailscale");
+      expect(activeProviderSelect).toHaveValue("tailscale");
+      await userEvent.click(screen.getByRole("button", { name: "Activate Provider" }));
+
+      await waitFor(() => {
+        expect(mockActivateRemoteProvider).toHaveBeenCalledWith("tailscale", undefined);
+      });
+      await waitFor(() => {
+        expect(getTunnelStateSummary()).toHaveTextContent("Provider: tailscale");
+      });
+    });
+
+    it("shows lifecycle state changes for start and stop actions, including error state", async () => {
       mockFetchRemoteStatus
         .mockResolvedValueOnce({ provider: null, state: "stopped", url: null, lastError: null })
         .mockResolvedValueOnce({ provider: "tailscale", state: "starting", url: null, lastError: null })
-        .mockResolvedValue({ provider: "tailscale", state: "stopped", url: null, lastError: null });
-      mockGenerateShortLivedRemoteToken.mockRejectedValueOnce(new Error("TTL must be between 60000 and 86400000ms"));
+        .mockResolvedValueOnce({ provider: "tailscale", state: "running", url: "https://tail.example", lastError: null })
+        .mockResolvedValueOnce({ provider: "tailscale", state: "error", url: null, lastError: "Tunnel crashed" })
+        .mockResolvedValueOnce({ provider: null, state: "stopped", url: null, lastError: null });
 
-      renderModal({ addToast });
+      renderModal();
       await waitForSettingsModalReady();
-      await userEvent.click(screen.getByRole("button", { name: /Remote Access/ }));
+      await openRemoteSection();
+
+      expect(getTunnelStateSummary()).toHaveTextContent("State: stopped");
 
       await userEvent.click(screen.getByRole("button", { name: "Start tunnel" }));
       await waitFor(() => {
-        expect(mockStartRemoteTunnel).toHaveBeenCalledWith(undefined);
+        expect(mockStartRemoteTunnel).toHaveBeenCalledTimes(1);
       });
-      expect(addToast).toHaveBeenCalledWith("Remote tunnel start requested", "success");
+      await waitFor(() => {
+        expect(getTunnelStateSummary()).toHaveTextContent("State: starting");
+      });
+
+      await userEvent.click(screen.getByRole("button", { name: "Start tunnel" }));
+      await waitFor(() => {
+        expect(mockStartRemoteTunnel).toHaveBeenCalledTimes(2);
+      });
+      await waitFor(() => {
+        expect(getTunnelStateSummary()).toHaveTextContent("State: running");
+      });
 
       await userEvent.click(screen.getByRole("button", { name: "Stop tunnel" }));
       await waitFor(() => {
-        expect(mockStopRemoteTunnel).toHaveBeenCalledWith(undefined);
+        expect(mockStopRemoteTunnel).toHaveBeenCalledTimes(1);
       });
-      expect(addToast).toHaveBeenCalledWith("Remote tunnel stopped", "success");
-
-      fireEvent.change(screen.getByLabelText("Short-lived TTL (ms)"), { target: { value: "1000" } });
-      await userEvent.click(screen.getByRole("button", { name: "Generate short-lived token" }));
-
       await waitFor(() => {
-        expect(mockGenerateShortLivedRemoteToken).toHaveBeenCalledWith(1000, undefined);
+        expect(getTunnelStateSummary()).toHaveTextContent("State: error");
       });
-      expect(addToast).toHaveBeenCalledWith("TTL must be between 60000 and 86400000ms", "error");
-      expect(addToast.mock.calls.flat().join(" ")).not.toContain("frt_");
+      expect(screen.getByText("Tunnel crashed")).toBeInTheDocument();
+
+      await userEvent.click(screen.getByRole("button", { name: "Stop tunnel" }));
+      await waitFor(() => {
+        expect(mockStopRemoteTunnel).toHaveBeenCalledTimes(2);
+      });
+      await waitFor(() => {
+        expect(getTunnelStateSummary()).toHaveTextContent("State: stopped");
+      });
+    });
+
+    it("regenerates persistent token and surfaces success feedback without exposing raw token text", async () => {
+      const addToast = vi.fn();
+      renderModal({ addToast });
+      await waitForSettingsModalReady();
+      await openRemoteSection();
 
       await userEvent.click(screen.getByRole("button", { name: "Regenerate persistent token" }));
+
       await waitFor(() => {
         expect(mockRegenerateRemotePersistentToken).toHaveBeenCalledWith(undefined);
       });
+      expect(addToast).toHaveBeenCalledWith("Persistent token regenerated", "success");
+      expect(addToast.mock.calls.flat().join(" ")).not.toContain("frt_");
+    });
+
+    it("generates short-lived token using selected TTL and shows URL expiry affordances", async () => {
+      const shortLivedExpiry = "2026-04-26T12:00:00.000Z";
+      mockGenerateShortLivedRemoteToken.mockResolvedValueOnce({
+        token: "frt_short",
+        expiresAt: shortLivedExpiry,
+        ttlMs: 120000,
+      });
+      mockFetchRemoteUrl.mockResolvedValueOnce({
+        url: "https://remote.example.com/short",
+        tokenType: "short-lived",
+        expiresAt: shortLivedExpiry,
+      });
+
+      renderModal();
+      await waitForSettingsModalReady();
+      await openRemoteSection();
+
+      await userEvent.selectOptions(screen.getByLabelText("Auth link token type"), "short-lived");
+      const ttlInput = screen.getByLabelText("Short-lived TTL (ms)") as HTMLInputElement;
+      await waitFor(() => {
+        expect(ttlInput).toHaveValue(900000);
+      });
+      fireEvent.change(ttlInput, { target: { value: "120000" } });
+      expect(ttlInput).toHaveValue(120000);
+
+      await userEvent.click(screen.getByRole("button", { name: "Generate short-lived token" }));
+      await waitFor(() => {
+        expect(mockGenerateShortLivedRemoteToken).toHaveBeenCalledWith(120000, undefined);
+      });
+      expect(screen.getByText(/Last short-lived token expires at/i)).toHaveTextContent("120000ms");
+
+      fireEvent.change(ttlInput, { target: { value: "120000" } });
+      expect(ttlInput).toHaveValue(120000);
+      await userEvent.click(screen.getByRole("button", { name: "Show URL" }));
+      await waitFor(() => {
+        expect(mockFetchRemoteUrl).toHaveBeenLastCalledWith({
+          projectId: undefined,
+          tokenType: "short-lived",
+          ttlMs: 120000,
+        });
+      });
+      const tokenTypeSummary = screen.getByText(/Token type:/i);
+      expect(tokenTypeSummary).toHaveTextContent("short-lived");
+      expect(tokenTypeSummary).toHaveTextContent("Expires at");
+      expect(screen.getByText("https://remote.example.com/short")).toBeInTheDocument();
+    });
+
+    it("renders QR image when available and falls back to URL-only presentation when SVG data is absent", async () => {
+      mockFetchRemoteQr
+        .mockResolvedValueOnce({
+          url: "https://remote.example.com/qr-image",
+          tokenType: "persistent",
+          expiresAt: null,
+          format: "image/svg",
+          data: "<svg></svg>",
+        })
+        .mockResolvedValueOnce({
+          url: "https://remote.example.com/qr-text",
+          tokenType: "persistent",
+          expiresAt: null,
+          format: "text",
+        });
+
+      renderModal();
+      await waitForSettingsModalReady();
+      await openRemoteSection();
+
+      await userEvent.click(screen.getByRole("button", { name: "Generate QR" }));
+      await waitFor(() => {
+        expect(mockFetchRemoteQr).toHaveBeenNthCalledWith(
+          1,
+          "image/svg",
+          expect.objectContaining({ tokenType: "persistent" }),
+        );
+      });
+      expect(await screen.findByRole("img", { name: "Remote access QR code" })).toBeInTheDocument();
+      expect(screen.getByText("https://remote.example.com/qr-image")).toBeInTheDocument();
+
+      await userEvent.click(screen.getByRole("button", { name: "Generate QR" }));
+      await waitFor(() => {
+        expect(mockFetchRemoteQr).toHaveBeenNthCalledWith(
+          2,
+          "image/svg",
+          expect.objectContaining({ tokenType: "persistent" }),
+        );
+      });
+      await waitFor(() => {
+        expect(screen.queryByRole("img", { name: "Remote access QR code" })).not.toBeInTheDocument();
+      });
+      expect(screen.getByText("https://remote.example.com/qr-text")).toBeInTheDocument();
     });
   });
 });

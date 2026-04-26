@@ -48,6 +48,12 @@ describe("TaskStore", () => {
   });
 
   afterEach(async () => {
+    // Some watcher/polling tests can leave an in-flight poll tick queued right
+    // before teardown. Stop watching first and yield once so pending callbacks
+    // settle before removing temp dirs.
+    store.stopWatching();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
     store.close();
     await rm(rootDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     await rm(globalDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
