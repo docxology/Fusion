@@ -238,7 +238,13 @@ function getProviderIconKey(providerName: string): string {
   if (normalized.includes('kimi') || normalized.includes('moonshot')) {
     return 'kimi';
   }
-  
+  if (normalized.includes('xai') || normalized.includes('grok')) {
+    return 'xai';
+  }
+  if (normalized.includes('opencode')) {
+    return 'opencode';
+  }
+
   // Return the original name as fallback (ProviderIcon will show a default icon)
   return providerName;
 }

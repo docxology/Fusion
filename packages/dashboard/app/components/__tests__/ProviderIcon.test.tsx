@@ -355,6 +355,74 @@ describe("ProviderIcon", () => {
     expect(paths[0]).toHaveAttribute("fill", "var(--provider-kimi)");
   });
 
+  // xAI provider tests
+  it("renders xAI brand icon for xai provider", () => {
+    render(<ProviderIcon provider="xai" />);
+    expect(screen.getByTestId("xai-icon")).toBeInTheDocument();
+    expect(screen.getByLabelText("xAI")).toBeInTheDocument();
+  });
+
+  it("applies theme-safe color for xai", () => {
+    render(<ProviderIcon provider="xai" />);
+    const icon = screen.getByTestId("xai-icon").parentElement;
+    expect(icon).toHaveStyle({ color: "var(--text)" });
+  });
+
+  it("passes correct color to SVG fill for xai", () => {
+    render(<ProviderIcon provider="xai" />);
+    const svg = screen.getByTestId("xai-icon");
+    const paths = svg.querySelectorAll("path");
+    expect(paths.length).toBeGreaterThan(0);
+    expect(paths[0]).toHaveAttribute("fill", "var(--text)");
+  });
+
+  it("normalizes Xai (capitalized) to xai", () => {
+    render(<ProviderIcon provider="Xai" />);
+    expect(screen.getByTestId("xai-icon")).toBeInTheDocument();
+    const wrapper = screen.getByTestId("xai-icon").parentElement;
+    expect(wrapper).toHaveAttribute("data-provider", "xai");
+  });
+
+  it("renders xAI brand icon for grok provider (alias)", () => {
+    render(<ProviderIcon provider="grok" />);
+    expect(screen.getByTestId("xai-icon")).toBeInTheDocument();
+    expect(screen.getByLabelText("xAI")).toBeInTheDocument();
+  });
+
+  it("applies theme-safe color for grok (alias)", () => {
+    render(<ProviderIcon provider="grok" />);
+    const icon = screen.getByTestId("xai-icon").parentElement;
+    expect(icon).toHaveStyle({ color: "var(--text)" });
+  });
+
+  // Opencode provider tests
+  it("renders Opencode brand icon for opencode provider", () => {
+    render(<ProviderIcon provider="opencode" />);
+    expect(screen.getByTestId("opencode-icon")).toBeInTheDocument();
+    expect(screen.getByLabelText("Opencode")).toBeInTheDocument();
+  });
+
+  it("applies provider-specific color for opencode", () => {
+    render(<ProviderIcon provider="opencode" />);
+    const icon = screen.getByTestId("opencode-icon").parentElement;
+    expect(icon).toHaveStyle({ color: "var(--provider-opencode)" });
+  });
+
+  it("passes correct color to SVG fill for opencode", () => {
+    render(<ProviderIcon provider="opencode" />);
+    const svg = screen.getByTestId("opencode-icon");
+    const paths = svg.querySelectorAll("path");
+    expect(paths.length).toBeGreaterThan(0);
+    expect(paths[0]).toHaveAttribute("fill", "var(--provider-opencode)");
+  });
+
+  it("normalizes Opencode (capitalized) to opencode", () => {
+    render(<ProviderIcon provider="Opencode" />);
+    expect(screen.getByTestId("opencode-icon")).toBeInTheDocument();
+    const wrapper = screen.getByTestId("opencode-icon").parentElement;
+    expect(wrapper).toHaveAttribute("data-provider", "opencode");
+  });
+
   // Regression test: verify the Kimi icon is the crescent moon shape, not the old "K" placeholder
   it("renders crescent moon icon geometry (not the old K placeholder)", () => {
     render(<ProviderIcon provider="kimi" />);

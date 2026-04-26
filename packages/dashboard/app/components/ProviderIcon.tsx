@@ -155,6 +155,44 @@ function KimiIcon({ size, color, label = "Kimi" }: { size: number; color: string
   );
 }
 
+function XaiIcon({ size, color, label = "xAI" }: { size: number; color: string; label?: string }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      data-testid="xai-icon"
+      aria-label={label}
+    >
+      <path
+        d="M2.21 3l7.964 11.386L2.13 21h1.974l6.843-7.07L17.165 21H22.1l-8.392-11.97L21.17 3h-1.974l-6.349 6.56L6.845 3z"
+        fill={color}
+      />
+    </svg>
+  );
+}
+
+function OpencodeIcon({ size, color, label = "Opencode" }: { size: number; color: string; label?: string }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      data-testid="opencode-icon"
+      aria-label={label}
+    >
+      <path
+        d="M9.4 16.6L4.8 12l4.6-4.6L8 6l-6 6 6 6zm5.2 0l4.6-4.6-4.6-4.6L16 6l6 6-6 6z"
+        fill={color}
+      />
+    </svg>
+  );
+}
+
 // OpenRouter ring mark — simplified geometric version of the OpenRouter brand symbol.
 function OpenRouterIcon({ size, color, label = "OpenRouter" }: { size: number; color: string; label?: string }) {
   return (
@@ -258,6 +296,11 @@ const providerConfig: Record<
   kimi: { component: KimiIcon, color: "var(--provider-kimi)" },
   moonshot: { component: KimiIcon, color: "var(--provider-kimi)" }, // Moonshot alias
   "kimi-coding": { component: KimiIcon, color: "var(--provider-kimi)", label: "Kimi" }, // Kimi alias
+
+  xai: { component: XaiIcon, color: "var(--text)" },
+  grok: { component: XaiIcon, color: "var(--text)", label: "xAI" },
+
+  opencode: { component: OpencodeIcon, color: "var(--provider-opencode)" },
 };
 
 export function ProviderIcon({ provider, size = "sm" }: ProviderIconProps) {
