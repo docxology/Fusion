@@ -480,15 +480,46 @@ export function generateShortLivedRemoteToken(ttlMs: number, projectId?: string)
   });
 }
 
-export function fetchRemoteUrl(projectId?: string): Promise<{ url: string; tokenType: "persistent" | "short-lived"; expiresAt: string | null }> {
-  return api<{ url: string; tokenType: "persistent" | "short-lived"; expiresAt: string | null }>(withProjectId("/remote/url", projectId));
+type RemoteAuthTokenType = "persistent" | "short-lived";
+
+type RemoteLinkRequestOptions = {
+  projectId?: string;
+  tokenType?: RemoteAuthTokenType;
+  ttlMs?: number;
+};
+
+function buildRemoteAuthQuery(
+  format: "text" | "image/svg" | null,
+  tokenType: RemoteAuthTokenType,
+  ttlMs?: number,
+): string {
+  const params = new URLSearchParams();
+  if (format) {
+    params.set("format", format);
+  }
+  params.set("tokenType", tokenType);
+  if (tokenType === "short-lived" && typeof ttlMs === "number" && Number.isFinite(ttlMs)) {
+    params.set("ttlMs", String(ttlMs));
+  }
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
+export function fetchRemoteUrl(
+  options: RemoteLinkRequestOptions = {},
+): Promise<{ url: string; tokenType: RemoteAuthTokenType; expiresAt: string | null }> {
+  const { projectId, tokenType = "persistent", ttlMs } = options;
+  const query = buildRemoteAuthQuery(null, tokenType, ttlMs);
+  return api<{ url: string; tokenType: RemoteAuthTokenType; expiresAt: string | null }>(withProjectId(`/remote/url${query}`, projectId));
 }
 
 export function fetchRemoteQr(
   format: "text" | "image/svg" = "text",
-  projectId?: string,
-): Promise<{ url: string; expiresAt: string | null; format: "text" | "image/svg"; data?: string }> {
-  return api<{ url: string; expiresAt: string | null; format: "text" | "image/svg"; data?: string }>(withProjectId(`/remote/qr?format=${encodeURIComponent(format)}`, projectId));
+  options: RemoteLinkRequestOptions = {},
+): Promise<{ url: string; tokenType: RemoteAuthTokenType; expiresAt: string | null; format: "text" | "image/svg"; data?: string }> {
+  const { projectId, tokenType = "persistent", ttlMs } = options;
+  const query = buildRemoteAuthQuery(format, tokenType, ttlMs);
+  return api<{ url: string; tokenType: RemoteAuthTokenType; expiresAt: string | null; format: "text" | "image/svg"; data?: string }>(withProjectId(`/remote/qr${query}`, projectId));
 }
 
 export function fetchMemory(projectId?: string): Promise<{ content: string }> {

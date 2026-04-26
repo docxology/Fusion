@@ -1178,6 +1178,49 @@ export interface GlobalSettings {
   vitestKillThresholdPct?: number;
 }
 
+export type RemoteAccessProvider = "tailscale" | "cloudflare";
+
+export interface RemoteAccessProvidersConfig {
+  tailscale: {
+    enabled: boolean;
+    hostname: string;
+    targetPort: number;
+    acceptRoutes: boolean;
+  };
+  cloudflare: {
+    enabled: boolean;
+    tunnelName: string;
+    tunnelToken: string | null;
+    ingressUrl: string;
+  };
+}
+
+export interface RemoteAccessTokenStrategyConfig {
+  persistent: {
+    enabled: boolean;
+    token: string | null;
+  };
+  shortLived: {
+    enabled: boolean;
+    ttlMs: number;
+    maxTtlMs: number;
+  };
+}
+
+export interface RemoteAccessLifecycleConfig {
+  rememberLastRunning: boolean;
+  wasRunningOnShutdown: boolean;
+  lastRunningProvider: RemoteAccessProvider | null;
+}
+
+export interface RemoteAccessProjectSettings {
+  enabled: boolean;
+  activeProvider: RemoteAccessProvider | null;
+  providers: RemoteAccessProvidersConfig;
+  tokenStrategy: RemoteAccessTokenStrategyConfig;
+  lifecycle: RemoteAccessLifecycleConfig;
+}
+
 /**
  * Project-level settings stored in `.fusion/config.json`.
  *
@@ -1569,6 +1612,10 @@ export interface ProjectSettings {
    *  "executor-completion", "triage-welcome", "triage-context", "reviewer-verdict",
    *  "merger-conflicts". */
   promptOverrides?: Record<string, string | null>;
+  /** Project-scoped remote access configuration persisted in `.fusion/config.json`.
+   *  Stores both provider configs, active provider selection, token strategy,
+   *  and lifecycle restart metadata for remote tunnel orchestration. */
+  remoteAccess?: RemoteAccessProjectSettings;
   /** Enable/disable agent self-reflection workflows. Default: false. */
   reflectionEnabled?: boolean;
   /** How often periodic reflections occur in milliseconds. Default: 3_600_000 (1 hour). */

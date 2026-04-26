@@ -260,7 +260,8 @@ export function SettingsModal({
   // Remote access state
   const [remoteStatus, setRemoteStatus] = useState<RemoteStatus | null>(null);
   const [remoteBusyAction, setRemoteBusyAction] = useState<string | null>(null);
-  const [remoteUrlPreview, setRemoteUrlPreview] = useState<{ url: string; expiresAt: string | null; tokenType?: "persistent" | "short-lived" } | null>(null);
+  const [remoteAuthLinkTokenType, setRemoteAuthLinkTokenType] = useState<"persistent" | "short-lived">("persistent");
+  const [remoteUrlPreview, setRemoteUrlPreview] = useState<{ url: string; expiresAt: string | null; tokenType: "persistent" | "short-lived" } | null>(null);
   const [remoteQrSvg, setRemoteQrSvg] = useState<string | null>(null);
   const [remoteShortLivedToken, setRemoteShortLivedToken] = useState<{ token: string; expiresAt: string; ttlMs: number } | null>(null);
 
@@ -3596,8 +3597,14 @@ export function SettingsModal({
                   className="btn btn-sm"
                   disabled={remoteBusyAction !== null}
                   onClick={() => void runRemoteAction("fetch remote url", async () => {
-                    const nextUrl = await fetchRemoteUrl(projectId);
+                    const ttlMs = Number(remoteForm.remoteShortLivedTtlMs ?? 900000);
+                    const nextUrl = await fetchRemoteUrl({
+                      projectId,
+                      tokenType: remoteAuthLinkTokenType,
+                      ttlMs: remoteAuthLinkTokenType === "short-lived" ? ttlMs : undefined,
+                    });
                     setRemoteUrlPreview(nextUrl);
+                    setRemoteQrSvg(null);
                   })}
                 >
                   Show URL
@@ -3607,14 +3614,32 @@ export function SettingsModal({
                   className="btn btn-sm"
                   disabled={remoteBusyAction !== null}
                   onClick={() => void runRemoteAction("generate QR", async () => {
-                    const qr = await fetchRemoteQr("image/svg", projectId);
-                    setRemoteUrlPreview({ url: qr.url, expiresAt: qr.expiresAt });
+                    const ttlMs = Number(remoteForm.remoteShortLivedTtlMs ?? 900000);
+                    const qr = await fetchRemoteQr("image/svg", {
+                      projectId,
+                      tokenType: remoteAuthLinkTokenType,
+                      ttlMs: remoteAuthLinkTokenType === "short-lived" ? ttlMs : undefined,
+                    });
+                    setRemoteUrlPreview({ url: qr.url, expiresAt: qr.expiresAt, tokenType: qr.tokenType });
                     setRemoteQrSvg(qr.data ?? null);
                   })}
                 >
                   Generate QR
                 </button>
               </div>
+              <label htmlFor="remoteAuthLinkTokenType">Auth link token type</label>
+              <select
+                id="remoteAuthLinkTokenType"
+                value={remoteAuthLinkTokenType}
+                onChange={(e) => setRemoteAuthLinkTokenType(e.target.value as "persistent" | "short-lived")}
+              >
+                <option value="persistent">Persistent token</option>
+                <option value="short-lived">Short-lived token</option>
+              </select>
+              <small>
+                URL and QR generation use the selected token type.
+                {remoteAuthLinkTokenType === "short-lived" ? ` TTL: ${Number(remoteForm.remoteShortLivedTtlMs ?? 900000)}ms.` : ""}
+              </small>
               <label htmlFor="remoteShortLivedEnabled" className="checkbox-label">
                 <input
                   id="remoteShortLivedEnabled"
@@ -3639,10 +3664,16 @@ export function SettingsModal({
                 </small>
               )}
               {remoteUrlPreview?.url && (
-                <small>
-                  Authenticated URL:
-                  <code className="settings-url-output">{remoteUrlPreview.url}</code>
-                </small>
+                <>
+                  <small>
+                    Authenticated URL:
+                    <code className="settings-url-output">{remoteUrlPreview.url}</code>
+                  </small>
+                  <small>
+                    Token type: <strong>{remoteUrlPreview.tokenType}</strong>
+                    {remoteUrlPreview.expiresAt ? ` · Expires at ${new Date(remoteUrlPreview.expiresAt).toLocaleString()}` : " · No expiry"}
+                  </small>
+                </>
               )}
               {remoteQrSvg && (
                 <div className="settings-qr-preview" aria-live="polite">

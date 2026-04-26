@@ -2620,6 +2620,132 @@ describe("TaskStore", () => {
     });
   });
 
+  describe("remoteAccess settings", () => {
+    const baseRemoteAccess = {
+      enabled: true,
+      activeProvider: "cloudflare" as const,
+      providers: {
+        tailscale: {
+          enabled: true,
+          hostname: "tailscale.example.ts.net",
+          targetPort: 5173,
+          acceptRoutes: true,
+        },
+        cloudflare: {
+          enabled: true,
+          tunnelName: "main-tunnel",
+          tunnelToken: "cf-secret-token",
+          ingressUrl: "https://project.example.com",
+        },
+      },
+      tokenStrategy: {
+        persistent: {
+          enabled: true,
+          token: "persist-token",
+        },
+        shortLived: {
+          enabled: false,
+          ttlMs: 900_000,
+          maxTtlMs: 86_400_000,
+        },
+      },
+      lifecycle: {
+        rememberLastRunning: true,
+        wasRunningOnShutdown: true,
+        lastRunningProvider: "cloudflare" as const,
+      },
+    };
+
+    it("patching remoteAccess.providers.tailscale preserves providers.cloudflare", async () => {
+      await store.updateSettings({ remoteAccess: baseRemoteAccess });
+
+      await store.updateSettings({
+        remoteAccess: {
+          providers: {
+            tailscale: {
+              enabled: false,
+              hostname: "alt-tail.ts.net",
+              targetPort: 3000,
+              acceptRoutes: false,
+            },
+          },
+        },
+      } as any);
+
+      const settings = await store.getSettings();
+      expect(settings.remoteAccess?.providers.cloudflare).toEqual(baseRemoteAccess.providers.cloudflare);
+    });
+
+    it("patching remoteAccess.tokenStrategy.shortLived preserves tokenStrategy.persistent", async () => {
+      await store.updateSettings({ remoteAccess: baseRemoteAccess });
+
+      await store.updateSettings({
+        remoteAccess: {
+          tokenStrategy: {
+            shortLived: {
+              enabled: true,
+              ttlMs: 120_000,
+              maxTtlMs: 300_000,
+            },
+          },
+        },
+      } as any);
+
+      const settings = await store.getSettings();
+      expect(settings.remoteAccess?.tokenStrategy.persistent).toEqual(baseRemoteAccess.tokenStrategy.persistent);
+    });
+
+    it("patching only activeProvider preserves providers, tokenStrategy, and lifecycle", async () => {
+      await store.updateSettings({ remoteAccess: baseRemoteAccess });
+
+      await store.updateSettings({
+        remoteAccess: {
+          activeProvider: "tailscale",
+        },
+      } as any);
+
+      const settings = await store.getSettings();
+      expect(settings.remoteAccess?.activeProvider).toBe("tailscale");
+      expect(settings.remoteAccess?.providers).toEqual(baseRemoteAccess.providers);
+      expect(settings.remoteAccess?.tokenStrategy).toEqual(baseRemoteAccess.tokenStrategy);
+      expect(settings.remoteAccess?.lifecycle).toEqual(baseRemoteAccess.lifecycle);
+    });
+
+    it("nested null clear only removes the targeted token field", async () => {
+      await store.updateSettings({ remoteAccess: baseRemoteAccess });
+
+      await store.updateSettings({
+        remoteAccess: {
+          tokenStrategy: {
+            persistent: {
+              token: null,
+            },
+          },
+        },
+      } as any);
+
+      const settings = await store.getSettings();
+      expect(settings.remoteAccess?.tokenStrategy.persistent.enabled).toBe(true);
+      expect(settings.remoteAccess?.tokenStrategy.persistent.token).toBeUndefined();
+      expect(settings.remoteAccess?.tokenStrategy.shortLived).toEqual(baseRemoteAccess.tokenStrategy.shortLived);
+    });
+
+    it("top-level null clear removes remoteAccess override and falls back to defaults", async () => {
+      await store.updateSettings({ remoteAccess: baseRemoteAccess });
+      await store.updateSettings({ remoteAccess: null as any });
+
+      const settings = await store.getSettings();
+      expect(settings.remoteAccess?.enabled).toBe(false);
+      expect(settings.remoteAccess?.activeProvider).toBeNull();
+      expect(settings.remoteAccess?.tokenStrategy.persistent.token).toBeNull();
+
+      const db = (store as any).db;
+      const row = db.prepare("SELECT settings FROM config WHERE id = 1").get() as { settings?: string } | undefined;
+      const projectSettings = row?.settings ? JSON.parse(row.settings) : {};
+      expect(projectSettings.remoteAccess).toBeUndefined();
+    });
+  });
+
   // ── Experimental Features Tests ─────────────────────────────────
 
   describe("experimentalFeatures settings", () => {

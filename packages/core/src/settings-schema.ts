@@ -156,6 +156,40 @@ export const DEFAULT_PROJECT_SETTINGS = {
   missionHealthCheckIntervalMs: 300_000,
   agentPrompts: undefined,
   promptOverrides: undefined,
+  remoteAccess: {
+    enabled: false,
+    activeProvider: null,
+    providers: {
+      tailscale: {
+        enabled: false,
+        hostname: "",
+        targetPort: 0,
+        acceptRoutes: false,
+      },
+      cloudflare: {
+        enabled: false,
+        tunnelName: "",
+        tunnelToken: null,
+        ingressUrl: "",
+      },
+    },
+    tokenStrategy: {
+      persistent: {
+        enabled: true,
+        token: null,
+      },
+      shortLived: {
+        enabled: false,
+        ttlMs: 900000,
+        maxTtlMs: 86400000,
+      },
+    },
+    lifecycle: {
+      rememberLastRunning: false,
+      wasRunningOnShutdown: false,
+      lastRunningProvider: null,
+    },
+  },
   reflectionEnabled: false,
   reflectionIntervalMs: 3_600_000,
   reflectionAfterTask: true,

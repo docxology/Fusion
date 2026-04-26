@@ -234,6 +234,38 @@ function canonicalizeSettings(settings: Settings): Settings {
   return base;
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function deepMergeWithNullDelete(
+  existingValue: unknown,
+  patchValue: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+  const merged: Record<string, unknown> = isPlainObject(existingValue) ? { ...existingValue } : {};
+
+  for (const [key, value] of Object.entries(patchValue)) {
+    if (value === null) {
+      delete merged[key];
+      continue;
+    }
+
+    if (isPlainObject(value)) {
+      const nested = deepMergeWithNullDelete(merged[key], value);
+      if (nested === undefined) {
+        delete merged[key];
+      } else {
+        merged[key] = nested;
+      }
+      continue;
+    }
+
+    merged[key] = value;
+  }
+
+  return Object.keys(merged).length > 0 ? merged : undefined;
+}
+
 export interface TaskStoreEvents {
   "task:created": [task: Task];
   "task:moved": [data: { task: Task; from: Column; to: Column }];
@@ -1448,6 +1480,24 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
         } else {
           (config.settings as unknown as Record<string, unknown>)["promptOverrides"] = mergedMap;
           (projectPatch as Record<string, unknown>)["promptOverrides"] = mergedMap;
+        }
+      }
+
+      // Handle deep merge + targeted null clear semantics for remoteAccess
+      const incomingRemoteAccess = (projectPatch as Record<string, unknown>)["remoteAccess"];
+      if (incomingRemoteAccess === null) {
+        delete (config.settings as unknown as Record<string, unknown>)["remoteAccess"];
+        delete (projectPatch as Record<string, unknown>)["remoteAccess"];
+      } else if (isPlainObject(incomingRemoteAccess)) {
+        const existingRemoteAccess = (config.settings as unknown as Record<string, unknown>)["remoteAccess"];
+        const mergedRemoteAccess = deepMergeWithNullDelete(existingRemoteAccess, incomingRemoteAccess);
+
+        if (mergedRemoteAccess === undefined) {
+          delete (config.settings as unknown as Record<string, unknown>)["remoteAccess"];
+          delete (projectPatch as Record<string, unknown>)["remoteAccess"];
+        } else {
+          (config.settings as unknown as Record<string, unknown>)["remoteAccess"] = mergedRemoteAccess;
+          (projectPatch as Record<string, unknown>)["remoteAccess"] = mergedRemoteAccess;
         }
       }
 

@@ -12986,6 +12986,84 @@ describe("PUT /settings", () => {
     expect(store.updateSettings).toHaveBeenCalledWith({ maxConcurrent: 8, autoMerge: false });
   });
 
+  it("accepts partial remoteAccess patches and GET /settings returns merged sibling branches", async () => {
+    const mergedRemoteAccess = {
+      enabled: true,
+      activeProvider: "tailscale",
+      providers: {
+        tailscale: {
+          enabled: true,
+          hostname: "tail.example.ts.net",
+          targetPort: 5173,
+          acceptRoutes: true,
+        },
+        cloudflare: {
+          enabled: false,
+          tunnelName: "existing-tunnel",
+          tunnelToken: null,
+          ingressUrl: "",
+        },
+      },
+      tokenStrategy: {
+        persistent: {
+          enabled: true,
+          token: null,
+        },
+        shortLived: {
+          enabled: false,
+          ttlMs: 900000,
+          maxTtlMs: 86400000,
+        },
+      },
+      lifecycle: {
+        rememberLastRunning: false,
+        wasRunningOnShutdown: false,
+        lastRunningProvider: null,
+      },
+    };
+
+    const updatedSettings = {
+      ...DEFAULT_SETTINGS,
+      remoteAccess: mergedRemoteAccess,
+    };
+
+    (store.updateSettings as ReturnType<typeof vi.fn>).mockResolvedValue(updatedSettings);
+    (store.getSettingsFast as ReturnType<typeof vi.fn>).mockResolvedValue(updatedSettings);
+
+    const app = buildApp();
+    const patch = {
+      remoteAccess: {
+        activeProvider: "tailscale",
+        providers: {
+          tailscale: {
+            enabled: true,
+            hostname: "tail.example.ts.net",
+            targetPort: 5173,
+            acceptRoutes: true,
+          },
+        },
+      },
+    };
+
+    const updateRes = await REQUEST(
+      app,
+      "PUT",
+      "/api/settings",
+      JSON.stringify(patch),
+      { "Content-Type": "application/json" },
+    );
+
+    expect(updateRes.status).toBe(200);
+    expect(store.updateSettings).toHaveBeenCalledWith(patch);
+
+    const getRes = await GET(app, "/api/settings");
+    expect(getRes.status).toBe(200);
+    expect(getRes.body.remoteAccess.providers.tailscale.hostname).toBe("tail.example.ts.net");
+    expect(getRes.body.remoteAccess.providers.cloudflare.tunnelName).toBe("existing-tunnel");
+    expect(getRes.body.remoteAccess.tokenStrategy.persistent.enabled).toBe(true);
+    expect(getRes.body.remoteAccess.lifecycle.rememberLastRunning).toBe(false);
+  });
+
   it("validates auto-archive age settings", async () => {
     const res = await REQUEST(
       buildApp(),
@@ -13377,6 +13455,54 @@ describe("GET /settings/scopes", () => {
     expect(res.body.project.planningModelId).toBe("claude-sonnet-4-5");
     expect(res.body.project.titleSummarizerProvider).toBe("google");
     expect(res.body.project.titleSummarizerModelId).toBe("gemini-2.5-pro");
+  });
+
+  it("returns remoteAccess only under project scope", async () => {
+    (store.getSettingsByScope as ReturnType<typeof vi.fn>).mockResolvedValue({
+      global: { themeMode: "dark" },
+      project: {
+        remoteAccess: {
+          enabled: true,
+          activeProvider: "tailscale",
+          providers: {
+            tailscale: {
+              enabled: true,
+              hostname: "tail.example.ts.net",
+              targetPort: 5173,
+              acceptRoutes: true,
+            },
+            cloudflare: {
+              enabled: false,
+              tunnelName: "",
+              tunnelToken: null,
+              ingressUrl: "",
+            },
+          },
+          tokenStrategy: {
+            persistent: {
+              enabled: true,
+              token: null,
+            },
+            shortLived: {
+              enabled: false,
+              ttlMs: 900000,
+              maxTtlMs: 86400000,
+            },
+          },
+          lifecycle: {
+            rememberLastRunning: false,
+            wasRunningOnShutdown: false,
+            lastRunningProvider: null,
+          },
+        },
+      },
+    });
+
+    const res = await GET(buildApp(), "/api/settings/scopes");
+
+    expect(res.status).toBe(200);
+    expect(res.body.project.remoteAccess).toBeDefined();
+    expect(res.body.global.remoteAccess).toBeUndefined();
   });
 
   it("returns 500 on store error", async () => {

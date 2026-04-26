@@ -246,7 +246,7 @@ describe("SettingsModal", () => {
     mockStopRemoteTunnel.mockResolvedValue({ state: "stopped", provider: null });
     mockRegenerateRemotePersistentToken.mockResolvedValue({ token: "token", maskedToken: "****" });
     mockGenerateShortLivedRemoteToken.mockResolvedValue({ token: "short", expiresAt: new Date(Date.now() + 60000).toISOString(), ttlMs: 60000 });
-    mockFetchRemoteQr.mockResolvedValue({ url: "https://remote.example.com", expiresAt: null, format: "image/svg", data: "<svg></svg>" });
+    mockFetchRemoteQr.mockResolvedValue({ url: "https://remote.example.com", tokenType: "persistent", expiresAt: null, format: "image/svg", data: "<svg></svg>" });
     mockFetchRemoteUrl.mockResolvedValue({ url: "https://remote.example.com", tokenType: "persistent", expiresAt: null });
     mockUseWorkspaceFileBrowser.mockReturnValue({
       entries: [],
@@ -1315,10 +1315,51 @@ describe("SettingsModal", () => {
 
       await userEvent.click(screen.getByRole("button", { name: "Show URL" }));
       await waitFor(() => {
-        expect(mockFetchRemoteUrl).toHaveBeenCalled();
+        expect(mockFetchRemoteUrl).toHaveBeenCalledWith({
+          projectId: undefined,
+          tokenType: "persistent",
+          ttlMs: undefined,
+        });
       });
+      expect(screen.getByText(/Token type:/i)).toHaveTextContent("persistent");
+      expect(screen.getByText(/Token type:/i)).toHaveTextContent("No expiry");
 
+      await userEvent.selectOptions(screen.getByLabelText("Auth link token type"), "short-lived");
+      fireEvent.change(screen.getByLabelText("Short-lived TTL (ms)"), { target: { value: "120000" } });
+
+      mockFetchRemoteUrl.mockResolvedValueOnce({
+        url: "https://remote.example.com/short",
+        tokenType: "short-lived",
+        expiresAt: "2026-04-26T12:00:00.000Z",
+      });
+      await userEvent.click(screen.getByRole("button", { name: "Show URL" }));
+      await waitFor(() => {
+        expect(mockFetchRemoteUrl).toHaveBeenLastCalledWith({
+          projectId: undefined,
+          tokenType: "short-lived",
+          ttlMs: 120000,
+        });
+      });
+      expect(screen.getByText(/Token type:/i)).toHaveTextContent("short-lived");
+      expect(screen.getByText(/Token type:/i)).toHaveTextContent("Expires at");
+
+      mockFetchRemoteQr.mockResolvedValueOnce({
+        url: "https://remote.example.com/short",
+        tokenType: "short-lived",
+        expiresAt: "2026-04-26T12:00:00.000Z",
+        format: "image/svg",
+        data: "<svg></svg>",
+      });
       await userEvent.click(screen.getByRole("button", { name: "Generate QR" }));
+      await waitFor(() => {
+        expect(mockFetchRemoteQr).toHaveBeenLastCalledWith(
+          "image/svg",
+          expect.objectContaining({
+            projectId: undefined,
+            tokenType: "short-lived",
+          }),
+        );
+      });
       expect(await screen.findByRole("img", { name: "Remote access QR code" })).toBeInTheDocument();
       expect(screen.getByText("Scan this QR code on your phone")).toBeInTheDocument();
     });

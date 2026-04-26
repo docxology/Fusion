@@ -50,7 +50,9 @@ describe("settings key parity", () => {
     expect(isGlobalSettingsKey("maxConcurrent")).toBe(false);
     expect(isProjectSettingsKey("maxConcurrent")).toBe(true);
     expect(isProjectSettingsKey("heartbeatMultiplier")).toBe(true);
+    expect(isProjectSettingsKey("remoteAccess")).toBe(true);
     expect(isProjectSettingsKey("themeMode")).toBe(false);
+    expect(isGlobalSettingsKey("remoteAccess")).toBe(false);
   });
 
   it("includes heartbeatMultiplier in project defaults", () => {

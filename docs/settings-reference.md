@@ -179,26 +179,66 @@ Defaults from `DEFAULT_PROJECT_SETTINGS`; key scope from `PROJECT_SETTINGS_KEYS`
 ### Remote Access settings (project-scoped)
 
 Remote access settings are project-only (stored in `.fusion/config.json`), not global.
+The canonical persisted shape is a nested `remoteAccess` object.
 
 | Setting | Type | Default | Description |
 |---|---|---:|---|
-| `remoteEnabled` | `boolean` | `false` | Master toggle for remote access orchestration. |
-| `remoteActiveProvider` | `"tailscale" \| "cloudflare" \| null` | `null` | Currently selected provider. |
-| `remoteTailscaleEnabled` | `boolean` | `false` | Enables Tailscale provider configuration. |
-| `remoteTailscaleHostname` | `string` | `""` | Optional serve hostname label for Tailscale. |
-| `remoteTailscaleTargetPort` | `number` | `4040` | Local port exposed by `tailscale serve`. |
-| `remoteTailscaleAcceptRoutes` | `boolean` | `false` | Accept subnet routes when supported by local Tailscale config. |
-| `remoteCloudflareEnabled` | `boolean` | `false` | Enables Cloudflare tunnel configuration. |
-| `remoteCloudflareTunnelName` | `string` | `""` | Named tunnel identifier for `cloudflared tunnel run`. |
-| `remoteCloudflareTunnelToken` | `string` | `null` | Tunnel token (stored in project config; masked by default in API/UI). |
-| `remoteCloudflareIngressUrl` | `string` | `""` | Optional preferred public ingress URL for display. |
-| `remotePersistentToken` | `string` | `null` | Persistent remote-auth token used for authenticated remote URLs. |
-| `remoteShortLivedEnabled` | `boolean` | `false` | Enables short-lived token generation. |
-| `remoteShortLivedTtlMs` | `number` | `900000` | Default short-lived token TTL in milliseconds (15 minutes). |
-| `remoteShortLivedMaxTtlMs` | `number` | `86400000` | Maximum allowed short-lived token TTL (24 hours). |
-| `remoteRememberLastRunning` | `boolean` | `false` | Restore prior running tunnel at startup when valid. |
-| `remoteWasRunningOnShutdown` | `boolean` | `false` | Internal state flag persisted on shutdown. |
-| `remoteLastStartedProvider` | `"tailscale" \| "cloudflare" \| null` | `null` | Internal last-known running provider for restore decisions. |
+| `remoteAccess.enabled` | `boolean` | `false` | Master toggle for remote access orchestration. |
+| `remoteAccess.activeProvider` | `"tailscale" \| "cloudflare" \| null` | `null` | Currently selected provider. |
+| `remoteAccess.providers.tailscale.enabled` | `boolean` | `false` | Enables Tailscale provider configuration. |
+| `remoteAccess.providers.tailscale.hostname` | `string` | `""` | Optional serve hostname label for Tailscale. |
+| `remoteAccess.providers.tailscale.targetPort` | `number` | `0` | Local port exposed by Tailscale when configured. |
+| `remoteAccess.providers.tailscale.acceptRoutes` | `boolean` | `false` | Accept subnet routes when supported by local Tailscale config. |
+| `remoteAccess.providers.cloudflare.enabled` | `boolean` | `false` | Enables Cloudflare tunnel configuration. |
+| `remoteAccess.providers.cloudflare.tunnelName` | `string` | `""` | Named tunnel identifier for `cloudflared tunnel run`. |
+| `remoteAccess.providers.cloudflare.tunnelToken` | `string \| null` | `null` | Tunnel token value (treat as secret; do not log raw values). |
+| `remoteAccess.providers.cloudflare.ingressUrl` | `string` | `""` | Optional preferred public ingress URL for display. |
+| `remoteAccess.tokenStrategy.persistent.enabled` | `boolean` | `true` | Enables persistent remote-auth token mode. |
+| `remoteAccess.tokenStrategy.persistent.token` | `string \| null` | `null` | Persistent remote-auth token. |
+| `remoteAccess.tokenStrategy.shortLived.enabled` | `boolean` | `false` | Enables short-lived token generation. |
+| `remoteAccess.tokenStrategy.shortLived.ttlMs` | `number` | `900000` | Default short-lived token TTL in milliseconds (15 minutes). |
+| `remoteAccess.tokenStrategy.shortLived.maxTtlMs` | `number` | `86400000` | Maximum allowed short-lived token TTL (24 hours). |
+| `remoteAccess.lifecycle.rememberLastRunning` | `boolean` | `false` | Restore prior running tunnel at startup when valid. |
+| `remoteAccess.lifecycle.wasRunningOnShutdown` | `boolean` | `false` | Internal state flag persisted on shutdown. |
+| `remoteAccess.lifecycle.lastRunningProvider` | `"tailscale" \| "cloudflare" \| null` | `null` | Internal last-known running provider for restore decisions. |
+
+Patch semantics for `PUT /api/settings`:
+- `remoteAccess` patches are **deep-merged** so sibling branches are preserved.
+- `remoteAccess: null` clears the full project override (falls back to defaults).
+- Nested `null` clears only the targeted nested key/branch.
+
+Examples:
+
+```json
+{
+  "remoteAccess": {
+    "providers": {
+      "tailscale": {
+        "enabled": true,
+        "hostname": "team.tail.ts.net",
+        "targetPort": 5173,
+        "acceptRoutes": true
+      }
+    }
+  }
+}
+```
+
+The payload above updates only `providers.tailscale` and keeps `providers.cloudflare`, `tokenStrategy`, and `lifecycle` unchanged.
+
+```json
+{
+  "remoteAccess": {
+    "tokenStrategy": {
+      "persistent": {
+        "token": null
+      }
+    }
+  }
+}
+```
+
+The payload above clears only `remoteAccess.tokenStrategy.persistent.token`.
 
 Runtime provider config/credential contract (engine remote-access manager):
 - The tunnel manager consumes **resolved provider configs** (`TunnelProviderConfig`) from callers; it does not read dashboard form state directly.
