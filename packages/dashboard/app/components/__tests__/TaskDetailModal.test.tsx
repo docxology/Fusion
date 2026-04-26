@@ -48,9 +48,11 @@ vi.mock("lucide-react", () => ({
   MessageSquare: () => null,
   ChevronUp: () => null,
   ChevronDown: () => null,
+  ChevronRight: () => null,
   X: () => null,
   Maximize2: () => null,
   Minimize2: () => null,
+  Loader2: () => null,
   Bot: () => null,
   CircleDot: () => null,
   XCircle: () => null,
@@ -1706,23 +1708,32 @@ describe("TaskDetailModal", () => {
       );
     }
 
-    it("shows resolved executor from settings when task has no explicit executor override", async () => {
-      const { container } = await setupModelTest({
-        defaultProvider: "anthropic",
-        defaultModelId: "claude-sonnet-4-5",
-      });
-
+    async function openAgentLogAndExpandModelDetails(container: HTMLElement) {
       fireEvent.click(screen.getByText("Logs"));
       fireEvent.click(screen.getByText("Agent Log"));
 
       await waitFor(() => {
         const header = container.querySelector("[data-testid='agent-log-model-header']");
         expect(header).toBeTruthy();
-        expect(header!.textContent).toContain("anthropic/claude-sonnet-4-5");
       });
 
+      const expandButton = screen.getByTestId("agent-log-model-expand") as HTMLButtonElement;
+      if (expandButton.getAttribute("aria-expanded") !== "true") {
+        fireEvent.click(expandButton);
+      }
+
+      return container.querySelector("[data-testid='agent-log-model-header']") as HTMLElement;
+    }
+
+    it("shows resolved executor from settings when task has no explicit executor override", async () => {
+      const { container } = await setupModelTest({
+        defaultProvider: "anthropic",
+        defaultModelId: "claude-sonnet-4-5",
+      });
+
+      const header = await openAgentLogAndExpandModelDetails(container);
+
       // Validator should also fall back to the default
-      const header = container.querySelector("[data-testid='agent-log-model-header']")!;
       expect(header.textContent).toContain("anthropic/claude-sonnet-4-5");
     });
 
@@ -1734,16 +1745,7 @@ describe("TaskDetailModal", () => {
         validatorModelId: "gpt-4o",
       });
 
-      fireEvent.click(screen.getByText("Logs"));
-      fireEvent.click(screen.getByText("Agent Log"));
-
-      await waitFor(() => {
-        const header = container.querySelector("[data-testid='agent-log-model-header']");
-        expect(header).toBeTruthy();
-        expect(header!.textContent).toContain("openai/gpt-4o");
-      });
-
-      const header = container.querySelector("[data-testid='agent-log-model-header']")!;
+      const header = await openAgentLogAndExpandModelDetails(container);
       // Executor falls back to default
       expect(header.textContent).toContain("anthropic/claude-sonnet-4-5");
       // Validator uses the validator-specific setting
@@ -1757,18 +1759,9 @@ describe("TaskDetailModal", () => {
         // No validatorProvider or validatorModelId
       });
 
-      fireEvent.click(screen.getByText("Logs"));
-      fireEvent.click(screen.getByText("Agent Log"));
-
-      await waitFor(() => {
-        const header = container.querySelector("[data-testid='agent-log-model-header']");
-        expect(header).toBeTruthy();
-        // Both executor and validator should resolve to the default
-        expect(header!.textContent).toContain("anthropic/claude-sonnet-4-5");
-      });
+      const header = await openAgentLogAndExpandModelDetails(container);
 
       // Count occurrences - should appear three times (once for executor, once for validator, once for planning)
-      const header = container.querySelector("[data-testid='agent-log-model-header']")!;
       const matches = header.textContent!.match(/anthropic\/claude-sonnet-4-5/g);
       expect(matches).toHaveLength(3);
     });
@@ -1779,18 +1772,9 @@ describe("TaskDetailModal", () => {
         { defaultProvider: "anthropic", defaultModelId: "claude-sonnet-4-5" },
       );
 
-      fireEvent.click(screen.getByText("Logs"));
-      fireEvent.click(screen.getByText("Agent Log"));
-
-      await waitFor(() => {
-        const header = container.querySelector("[data-testid='agent-log-model-header']");
-        expect(header).toBeTruthy();
-        // Task override should win
-        expect(header!.textContent).toContain("openai/gpt-4o");
-      });
+      const header = await openAgentLogAndExpandModelDetails(container);
 
       // Default model should not appear for executor
-      const header = container.querySelector("[data-testid='agent-log-model-header']")!;
       expect(header.textContent).toContain("openai/gpt-4o");
       // Validator falls back to default
       expect(header.textContent).toContain("anthropic/claude-sonnet-4-5");
@@ -1802,17 +1786,7 @@ describe("TaskDetailModal", () => {
         { defaultProvider: "anthropic", defaultModelId: "claude-sonnet-4-5", validatorProvider: "openai", validatorModelId: "gpt-4o" },
       );
 
-      fireEvent.click(screen.getByText("Logs"));
-      fireEvent.click(screen.getByText("Agent Log"));
-
-      await waitFor(() => {
-        const header = container.querySelector("[data-testid='agent-log-model-header']");
-        expect(header).toBeTruthy();
-        // Task validator override should win
-        expect(header!.textContent).toContain("google/gemini-pro");
-      });
-
-      const header = container.querySelector("[data-testid='agent-log-model-header']")!;
+      const header = await openAgentLogAndExpandModelDetails(container);
       // Executor falls back to default
       expect(header.textContent).toContain("anthropic/claude-sonnet-4-5");
       // Settings validator should not appear (task override wins)
@@ -1824,15 +1798,7 @@ describe("TaskDetailModal", () => {
         // No defaultProvider/defaultModelId
       });
 
-      fireEvent.click(screen.getByText("Logs"));
-      fireEvent.click(screen.getByText("Agent Log"));
-
-      await waitFor(() => {
-        const header = container.querySelector("[data-testid='agent-log-model-header']");
-        expect(header).toBeTruthy();
-      });
-
-      const header = container.querySelector("[data-testid='agent-log-model-header']")!;
+      const header = await openAgentLogAndExpandModelDetails(container);
       expect(header.textContent).toContain("Using default");
       // Should show "Using default" for executor, validator, and planning
       const defaultBadges = header.querySelectorAll(".model-badge-default");
@@ -1862,16 +1828,8 @@ describe("TaskDetailModal", () => {
         />,
       );
 
-      fireEvent.click(screen.getByText("Logs"));
-      fireEvent.click(screen.getByText("Agent Log"));
-
       // Wait for the failed fetch to settle
-      await waitFor(() => {
-        const header = container.querySelector("[data-testid='agent-log-model-header']");
-        expect(header).toBeTruthy();
-      });
-
-      const header = container.querySelector("[data-testid='agent-log-model-header']")!;
+      const header = await openAgentLogAndExpandModelDetails(container);
       expect(header.textContent).toContain("Using default");
       const defaultBadges = header.querySelectorAll(".model-badge-default");
       expect(defaultBadges).toHaveLength(3);
@@ -1892,16 +1850,7 @@ describe("TaskDetailModal", () => {
         },
       );
 
-      fireEvent.click(screen.getByText("Logs"));
-      fireEvent.click(screen.getByText("Agent Log"));
-
-      await waitFor(() => {
-        const header = container.querySelector("[data-testid='agent-log-model-header']");
-        expect(header).toBeTruthy();
-        expect(header!.textContent).toContain("google/gemini-pro");
-      });
-
-      const header = container.querySelector("[data-testid='agent-log-model-header']")!;
+      const header = await openAgentLogAndExpandModelDetails(container);
       // Executor uses task override
       expect(header.textContent).toContain("google/gemini-pro");
       // Validator uses settings-specific validator
@@ -1943,19 +1892,11 @@ describe("TaskDetailModal", () => {
           />,
         );
 
-        // Navigate to Agent Log subview
-        fireEvent.click(screen.getByText("Logs"));
-        fireEvent.click(screen.getByText("Agent Log"));
+        const header = await openAgentLogAndExpandModelDetails(container);
 
-        await waitFor(() => {
-          const header = container.querySelector("[data-testid='agent-log-model-header']");
-          expect(header).toBeTruthy();
-          // Planning should show the runtime triage marker, not settings default
-          expect(header!.textContent).toContain("Planning:");
-          expect(header!.textContent).toContain("google/gemini-pro");
-        });
-
-        const header = container.querySelector("[data-testid='agent-log-model-header']")!;
+        // Planning should show the runtime triage marker, not settings default
+        expect(header.textContent).toContain("Planning/Triage:");
+        expect(header.textContent).toContain("google/gemini-pro");
         // Executor/Validator should still show settings default
         expect(header.textContent).toContain("anthropic/claude-sonnet-4-5");
       });
@@ -1992,19 +1933,11 @@ describe("TaskDetailModal", () => {
           />,
         );
 
-        // Navigate to Agent Log subview
-        fireEvent.click(screen.getByText("Logs"));
-        fireEvent.click(screen.getByText("Agent Log"));
+        const header = await openAgentLogAndExpandModelDetails(container);
 
-        await waitFor(() => {
-          const header = container.querySelector("[data-testid='agent-log-model-header']");
-          expect(header).toBeTruthy();
-          // Planning should use planningProvider/planningModelId from settings
-          expect(header!.textContent).toContain("Planning:");
-          expect(header!.textContent).toContain("openai/gpt-4o");
-        });
-
-        const header = container.querySelector("[data-testid='agent-log-model-header']")!;
+        // Planning should use planningProvider/planningModelId from settings
+        expect(header.textContent).toContain("Planning/Triage:");
+        expect(header.textContent).toContain("openai/gpt-4o");
         // Executor/Validator should show default
         expect(header.textContent).toContain("anthropic/claude-sonnet-4-5");
         // Planning should NOT show the default
@@ -2017,19 +1950,12 @@ describe("TaskDetailModal", () => {
           defaultModelId: "claude-sonnet-4-5",
         });
 
-        // Navigate to Agent Log subview
-        fireEvent.click(screen.getByText("Logs"));
-        fireEvent.click(screen.getByText("Agent Log"));
+        const header = await openAgentLogAndExpandModelDetails(container);
 
-        await waitFor(() => {
-          const header = container.querySelector("[data-testid='agent-log-model-header']");
-          expect(header).toBeTruthy();
-          expect(header!.textContent).toContain("Planning:");
-          expect(header!.textContent).toContain("anthropic/claude-sonnet-4-5");
-        });
+        expect(header.textContent).toContain("Planning/Triage:");
+        expect(header.textContent).toContain("anthropic/claude-sonnet-4-5");
 
         // Planning falls back to default - same as executor/validator
-        const header = container.querySelector("[data-testid='agent-log-model-header']")!;
         const matches = header.textContent!.match(/anthropic\/claude-sonnet-4-5/g);
         expect(matches).toHaveLength(3); // executor, validator, planning
       });
@@ -2039,17 +1965,8 @@ describe("TaskDetailModal", () => {
           // No defaultProvider/defaultModelId
         });
 
-        // Navigate to Agent Log subview
-        fireEvent.click(screen.getByText("Logs"));
-        fireEvent.click(screen.getByText("Agent Log"));
-
-        await waitFor(() => {
-          const header = container.querySelector("[data-testid='agent-log-model-header']");
-          expect(header).toBeTruthy();
-        });
-
-        const header = container.querySelector("[data-testid='agent-log-model-header']")!;
-        expect(header.textContent).toContain("Planning:");
+        const header = await openAgentLogAndExpandModelDetails(container);
+        expect(header.textContent).toContain("Planning/Triage:");
         const defaultBadges = header.querySelectorAll(".model-badge-default");
         // 3 default badges: executor, validator, planning
         expect(defaultBadges).toHaveLength(3);
@@ -2091,19 +2008,10 @@ describe("TaskDetailModal", () => {
           />,
         );
 
-        // Navigate to Agent Log subview
-        fireEvent.click(screen.getByText("Logs"));
-        fireEvent.click(screen.getByText("Agent Log"));
-
-        await waitFor(() => {
-          const header = container.querySelector("[data-testid='agent-log-model-header']");
-          expect(header).toBeTruthy();
-          // Per-task override should take precedence over settings
-          expect(header!.textContent).toContain("Planning:");
-          expect(header!.textContent).toContain("google/gemini-2.5-pro");
-        });
-
-        const header = container.querySelector("[data-testid='agent-log-model-header']")!;
+        const header = await openAgentLogAndExpandModelDetails(container);
+        // Per-task override should take precedence over settings
+        expect(header.textContent).toContain("Planning/Triage:");
+        expect(header.textContent).toContain("google/gemini-2.5-pro");
         // Should NOT show the settings planning model
         expect(header.textContent).not.toContain("openai/gpt-4o");
       });
@@ -2143,18 +2051,9 @@ describe("TaskDetailModal", () => {
           />,
         );
 
-        // Navigate to Agent Log subview
-        fireEvent.click(screen.getByText("Logs"));
-        fireEvent.click(screen.getByText("Agent Log"));
-
-        await waitFor(() => {
-          const header = container.querySelector("[data-testid='agent-log-model-header']");
-          expect(header).toBeTruthy();
-          // Runtime marker should win over planning settings
-          expect(header!.textContent).toContain("google/gemini-pro");
-        });
-
-        const header = container.querySelector("[data-testid='agent-log-model-header']")!;
+        const header = await openAgentLogAndExpandModelDetails(container);
+        // Runtime marker should win over planning settings
+        expect(header.textContent).toContain("google/gemini-pro");
         // Should NOT show the planning settings model
         expect(header.textContent).not.toContain("openai/gpt-4o");
       });

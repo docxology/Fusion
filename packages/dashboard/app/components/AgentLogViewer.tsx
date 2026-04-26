@@ -4,7 +4,7 @@ import { useRef, useEffect, useState, useCallback, useLayoutEffect, useMemo } fr
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Components } from "react-markdown";
-import { Maximize2, Minimize2, Loader2 } from "lucide-react";
+import { Maximize2, Minimize2, Loader2, ChevronDown, ChevronRight } from "lucide-react";
 
 function formatTimestamp(iso: string): string {
   const date = new Date(iso);
@@ -127,6 +127,7 @@ export function AgentLogViewer({
   const previousNewestEntryKeyRef = useRef<string | null>(null);
   const [renderMarkdown, setRenderMarkdown] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [modelHeaderExpanded, setModelHeaderExpanded] = useState(false);
 
   const chronologicalEntryKeys = useMemo(
     () => buildEntryRenderKeys(entries),
@@ -208,6 +209,39 @@ export function AgentLogViewer({
   const hasValidatorOverride = validatorModel?.provider && validatorModel?.modelId;
   const hasPlanningOverride = planningModel?.provider && planningModel?.modelId;
 
+  const modelProviders = useMemo(() => {
+    const providers: Array<{ role: string; provider: string; modelId?: string }> = [];
+    if (hasExecutorOverride) {
+      providers.push({
+        role: "Executor",
+        provider: executorModel!.provider!,
+        modelId: executorModel!.modelId,
+      });
+    }
+    if (hasValidatorOverride) {
+      providers.push({
+        role: "Validator",
+        provider: validatorModel!.provider!,
+        modelId: validatorModel!.modelId,
+      });
+    }
+    if (hasPlanningOverride) {
+      providers.push({
+        role: "Planning",
+        provider: planningModel!.provider!,
+        modelId: planningModel!.modelId,
+      });
+    }
+    return providers;
+  }, [
+    hasExecutorOverride,
+    executorModel,
+    hasValidatorOverride,
+    validatorModel,
+    hasPlanningOverride,
+    planningModel,
+  ]);
+
   return (
     <div
       ref={containerRef}
@@ -216,39 +250,26 @@ export function AgentLogViewer({
     >
       {/* Model info header */}
       <div className="agent-log-model-header" data-testid="agent-log-model-header">
-        <div className="agent-log-model-group">
-          <span className="agent-log-model-label">Executor:</span>
-          {hasExecutorOverride ? (
-            <span className="agent-log-model-value">
-              <ProviderIcon provider={executorModel.provider!} size="sm" />
-              <span>{executorModel.provider}/{executorModel.modelId}</span>
-            </span>
-          ) : (
-            <span className="model-badge-default">Using default</span>
-          )}
+        <div className="agent-log-model-icons">
+          {modelProviders.map((modelProvider) => (
+            <ProviderIcon
+              key={`${modelProvider.role}-${modelProvider.provider}-${modelProvider.modelId ?? "default"}`}
+              provider={modelProvider.provider}
+              size="sm"
+            />
+          ))}
+          <button
+            className="agent-log-model-expand-btn"
+            onClick={() => setModelHeaderExpanded((prev) => !prev)}
+            aria-label={modelHeaderExpanded ? "Collapse model details" : "Expand model details"}
+            aria-expanded={modelHeaderExpanded}
+            aria-controls="agent-log-model-details"
+            data-testid="agent-log-model-expand"
+          >
+            {modelHeaderExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          </button>
         </div>
-        <div className="agent-log-model-group">
-          <span className="agent-log-model-label">Validator:</span>
-          {hasValidatorOverride ? (
-            <span className="agent-log-model-value">
-              <ProviderIcon provider={validatorModel.provider!} size="sm" />
-              <span>{validatorModel.provider}/{validatorModel.modelId}</span>
-            </span>
-          ) : (
-            <span className="model-badge-default">Using default</span>
-          )}
-        </div>
-        <div className="agent-log-model-group">
-          <span className="agent-log-model-label">Planning:</span>
-          {hasPlanningOverride ? (
-            <span className="agent-log-model-value">
-              <ProviderIcon provider={planningModel.provider!} size="sm" />
-              <span>{planningModel.provider}/{planningModel.modelId}</span>
-            </span>
-          ) : (
-            <span className="model-badge-default">Using default</span>
-          )}
-        </div>
+
         {/* Markdown render toggle */}
         <div className="agent-log-model-header-toggle">
           <button
@@ -271,6 +292,44 @@ export function AgentLogViewer({
             {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
           </button>
         </div>
+
+        {modelHeaderExpanded && (
+          <div id="agent-log-model-details" className="agent-log-model-details">
+            <div className="agent-log-model-group">
+              <span className="agent-log-model-label">Executor:</span>
+              {hasExecutorOverride ? (
+                <span className="agent-log-model-value">
+                  <ProviderIcon provider={executorModel.provider!} size="sm" />
+                  <span>{executorModel.provider}/{executorModel.modelId}</span>
+                </span>
+              ) : (
+                <span className="model-badge-default">Using default</span>
+              )}
+            </div>
+            <div className="agent-log-model-group">
+              <span className="agent-log-model-label">Validator:</span>
+              {hasValidatorOverride ? (
+                <span className="agent-log-model-value">
+                  <ProviderIcon provider={validatorModel.provider!} size="sm" />
+                  <span>{validatorModel.provider}/{validatorModel.modelId}</span>
+                </span>
+              ) : (
+                <span className="model-badge-default">Using default</span>
+              )}
+            </div>
+            <div className="agent-log-model-group">
+              <span className="agent-log-model-label">Planning/Triage:</span>
+              {hasPlanningOverride ? (
+                <span className="agent-log-model-value">
+                  <ProviderIcon provider={planningModel.provider!} size="sm" />
+                  <span>{planningModel.provider}/{planningModel.modelId}</span>
+                </span>
+              ) : (
+                <span className="model-badge-default">Using default</span>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Pagination summary */}

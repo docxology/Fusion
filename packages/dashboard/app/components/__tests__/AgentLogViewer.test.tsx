@@ -7,7 +7,10 @@ import type { AgentLogEntry } from "@fusion/core";
 vi.mock("lucide-react", () => ({
   Maximize2: () => null,
   Minimize2: () => null,
+  Loader2: () => null,
   Cpu: () => null,
+  ChevronDown: () => null,
+  ChevronRight: () => null,
 }));
 
 function makeEntry(overrides: Partial<AgentLogEntry> = {}): AgentLogEntry {
@@ -275,38 +278,34 @@ describe("AgentLogViewer", () => {
           entries={entries}
           loading={false}
           executorModel={{ provider: "anthropic", modelId: "claude-sonnet-4-5" }}
-        />
+        />,
       );
       const header = container.querySelector("[data-testid='agent-log-model-header']");
       expect(header).toBeTruthy();
+      expect(container.querySelector('[data-provider="anthropic"]')).toBeTruthy();
+      expect(header!.textContent).not.toContain("Executor:");
+
+      fireEvent.click(screen.getByTestId("agent-log-model-expand"));
       expect(header!.textContent).toContain("Executor:");
       expect(header!.textContent).toContain("anthropic/claude-sonnet-4-5");
-      expect(header!.textContent).toContain("Validator:");
-      expect(header!.textContent).toContain("Using default");
-      // Verify ProviderIcon is rendered for executor
-      expect(container.querySelector('[data-provider="anthropic"]')).toBeTruthy();
     });
 
     it("renders 'Using default' when no executor model override is set", () => {
       const entries = [makeEntry()];
       const { container } = render(
-        <AgentLogViewer entries={entries} loading={false} executorModel={null} />
+        <AgentLogViewer entries={entries} loading={false} executorModel={null} />,
       );
       const header = container.querySelector("[data-testid='agent-log-model-header']");
       expect(header).toBeTruthy();
-      expect(header!.textContent).toContain("Executor:");
-      expect(header!.textContent).toContain("Using default");
+      expect(header!.textContent).not.toContain("Using default");
     });
 
     it("renders 'Using default' when executorModel is undefined", () => {
       const entries = [makeEntry()];
-      const { container } = render(
-        <AgentLogViewer entries={entries} loading={false} />
-      );
+      const { container } = render(<AgentLogViewer entries={entries} loading={false} />);
       const header = container.querySelector("[data-testid='agent-log-model-header']");
       expect(header).toBeTruthy();
-      expect(header!.textContent).toContain("Executor:");
-      expect(header!.textContent).toContain("Using default");
+      expect(header!.textContent).not.toContain("Using default");
     });
 
     it("renders model info header with validator model when set", () => {
@@ -316,27 +315,26 @@ describe("AgentLogViewer", () => {
           entries={entries}
           loading={false}
           validatorModel={{ provider: "openai", modelId: "gpt-4o" }}
-        />
+        />,
       );
       const header = container.querySelector("[data-testid='agent-log-model-header']");
       expect(header).toBeTruthy();
+      expect(container.querySelector('[data-provider="openai"]')).toBeTruthy();
+      expect(header!.textContent).not.toContain("Validator:");
+
+      fireEvent.click(screen.getByTestId("agent-log-model-expand"));
       expect(header!.textContent).toContain("Validator:");
       expect(header!.textContent).toContain("openai/gpt-4o");
-      expect(header!.textContent).toContain("Executor:");
-      expect(header!.textContent).toContain("Using default");
-      // Verify ProviderIcon is rendered for validator
-      expect(container.querySelector('[data-provider="openai"]')).toBeTruthy();
     });
 
     it("renders 'Using default' when no validator model override is set", () => {
       const entries = [makeEntry()];
       const { container } = render(
-        <AgentLogViewer entries={entries} loading={false} validatorModel={null} />
+        <AgentLogViewer entries={entries} loading={false} validatorModel={null} />,
       );
       const header = container.querySelector("[data-testid='agent-log-model-header']");
       expect(header).toBeTruthy();
-      expect(header!.textContent).toContain("Validator:");
-      expect(header!.textContent).toContain("Using default");
+      expect(header!.textContent).not.toContain("Using default");
     });
 
     it("renders both models when both are configured", () => {
@@ -347,30 +345,26 @@ describe("AgentLogViewer", () => {
           loading={false}
           executorModel={{ provider: "anthropic", modelId: "claude-opus-4" }}
           validatorModel={{ provider: "openai", modelId: "gpt-4o" }}
-        />
+        />,
       );
       const header = container.querySelector("[data-testid='agent-log-model-header']");
       expect(header).toBeTruthy();
-      expect(header!.textContent).toContain("Executor:");
-      expect(header!.textContent).toContain("anthropic/claude-opus-4");
-      expect(header!.textContent).toContain("Validator:");
-      expect(header!.textContent).toContain("openai/gpt-4o");
-      // Verify both ProviderIcons are rendered
       expect(container.querySelector('[data-provider="anthropic"]')).toBeTruthy();
       expect(container.querySelector('[data-provider="openai"]')).toBeTruthy();
+      expect(header!.textContent).not.toContain("anthropic/claude-opus-4");
+      expect(header!.textContent).not.toContain("openai/gpt-4o");
+
+      fireEvent.click(screen.getByTestId("agent-log-model-expand"));
+      expect(header!.textContent).toContain("anthropic/claude-opus-4");
+      expect(header!.textContent).toContain("openai/gpt-4o");
     });
 
     it("renders header with 'Using default' for both models when both are null/undefined", () => {
       const entries = [makeEntry()];
-      const { container } = render(
-        <AgentLogViewer entries={entries} loading={false} />
-      );
+      const { container } = render(<AgentLogViewer entries={entries} loading={false} />);
       const header = container.querySelector("[data-testid='agent-log-model-header']");
       expect(header).toBeTruthy();
-      expect(header!.textContent).toContain("Executor:");
-      expect(header!.textContent).toContain("Using default");
-      expect(header!.textContent).toContain("Validator:");
-      expect(header!.textContent).toContain("Using default");
+      expect(header!.textContent).not.toContain("Using default");
     });
 
     it("shows 'Using default' when executorModel has only provider but no modelId", () => {
@@ -380,12 +374,11 @@ describe("AgentLogViewer", () => {
           entries={entries}
           loading={false}
           executorModel={{ provider: "anthropic" }}
-        />
+        />,
       );
       const header = container.querySelector("[data-testid='agent-log-model-header']");
       expect(header).toBeTruthy();
-      expect(header!.textContent).toContain("Executor:");
-      expect(header!.textContent).toContain("Using default");
+      expect(header!.textContent).not.toContain("Using default");
     });
 
     it("shows 'Using default' when executorModel has only modelId but no provider", () => {
@@ -395,12 +388,11 @@ describe("AgentLogViewer", () => {
           entries={entries}
           loading={false}
           executorModel={{ modelId: "claude-sonnet-4-5" }}
-        />
+        />,
       );
       const header = container.querySelector("[data-testid='agent-log-model-header']");
       expect(header).toBeTruthy();
-      expect(header!.textContent).toContain("Executor:");
-      expect(header!.textContent).toContain("Using default");
+      expect(header!.textContent).not.toContain("Using default");
     });
 
     it("renders model info header with planning model when set", () => {
@@ -410,36 +402,34 @@ describe("AgentLogViewer", () => {
           entries={entries}
           loading={false}
           planningModel={{ provider: "anthropic", modelId: "claude-opus-4" }}
-        />
+        />,
       );
       const header = container.querySelector("[data-testid='agent-log-model-header']");
       expect(header).toBeTruthy();
-      expect(header!.textContent).toContain("Planning:");
-      expect(header!.textContent).toContain("anthropic/claude-opus-4");
-      // Verify ProviderIcon is rendered for planning
       expect(container.querySelector('[data-provider="anthropic"]')).toBeTruthy();
+      expect(header!.textContent).not.toContain("Planning/Triage:");
+
+      fireEvent.click(screen.getByTestId("agent-log-model-expand"));
+      expect(header!.textContent).toContain("Planning/Triage:");
+      expect(header!.textContent).toContain("anthropic/claude-opus-4");
     });
 
     it("renders 'Using default' for planning when no planning model is set", () => {
       const entries = [makeEntry()];
       const { container } = render(
-        <AgentLogViewer entries={entries} loading={false} planningModel={null} />
+        <AgentLogViewer entries={entries} loading={false} planningModel={null} />,
       );
       const header = container.querySelector("[data-testid='agent-log-model-header']");
       expect(header).toBeTruthy();
-      expect(header!.textContent).toContain("Planning:");
-      expect(header!.textContent).toContain("Using default");
+      expect(header!.textContent).not.toContain("Using default");
     });
 
     it("renders 'Using default' for planning when planningModel is undefined", () => {
       const entries = [makeEntry()];
-      const { container } = render(
-        <AgentLogViewer entries={entries} loading={false} />
-      );
+      const { container } = render(<AgentLogViewer entries={entries} loading={false} />);
       const header = container.querySelector("[data-testid='agent-log-model-header']");
       expect(header).toBeTruthy();
-      expect(header!.textContent).toContain("Planning:");
-      expect(header!.textContent).toContain("Using default");
+      expect(header!.textContent).not.toContain("Using default");
     });
 
     it("renders all three models when all are configured", () => {
@@ -451,20 +441,21 @@ describe("AgentLogViewer", () => {
           executorModel={{ provider: "anthropic", modelId: "claude-opus-4" }}
           validatorModel={{ provider: "openai", modelId: "gpt-4o" }}
           planningModel={{ provider: "google", modelId: "gemini-pro" }}
-        />
+        />,
       );
       const header = container.querySelector("[data-testid='agent-log-model-header']");
       expect(header).toBeTruthy();
-      expect(header!.textContent).toContain("Executor:");
-      expect(header!.textContent).toContain("anthropic/claude-opus-4");
-      expect(header!.textContent).toContain("Validator:");
-      expect(header!.textContent).toContain("openai/gpt-4o");
-      expect(header!.textContent).toContain("Planning:");
-      expect(header!.textContent).toContain("google/gemini-pro");
-      // Verify all three ProviderIcons are rendered
       expect(container.querySelector('[data-provider="anthropic"]')).toBeTruthy();
       expect(container.querySelector('[data-provider="openai"]')).toBeTruthy();
       expect(container.querySelector('[data-provider="google"]')).toBeTruthy();
+      expect(header!.textContent).not.toContain("anthropic/claude-opus-4");
+      expect(header!.textContent).not.toContain("openai/gpt-4o");
+      expect(header!.textContent).not.toContain("google/gemini-pro");
+
+      fireEvent.click(screen.getByTestId("agent-log-model-expand"));
+      expect(header!.textContent).toContain("anthropic/claude-opus-4");
+      expect(header!.textContent).toContain("openai/gpt-4o");
+      expect(header!.textContent).toContain("google/gemini-pro");
     });
 
     it("shows 'Using default' for planning when planningModel has only provider but no modelId", () => {
@@ -474,12 +465,101 @@ describe("AgentLogViewer", () => {
           entries={entries}
           loading={false}
           planningModel={{ provider: "anthropic" }}
-        />
+        />,
       );
       const header = container.querySelector("[data-testid='agent-log-model-header']");
       expect(header).toBeTruthy();
-      expect(header!.textContent).toContain("Planning:");
-      expect(header!.textContent).toContain("Using default");
+      expect(header!.textContent).not.toContain("Using default");
+    });
+  });
+
+  describe("model header expand/collapse", () => {
+    it("shows only provider icons in collapsed state, hides model text", () => {
+      const entries = [makeEntry()];
+      const { container } = render(
+        <AgentLogViewer
+          entries={entries}
+          loading={false}
+          executorModel={{ provider: "anthropic", modelId: "claude-sonnet-4-5" }}
+        />,
+      );
+
+      expect(container.querySelector('[data-provider="anthropic"]')).toBeTruthy();
+      expect(screen.getByTestId("agent-log-model-expand")).toBeTruthy();
+      expect(container.textContent).not.toContain("Executor:");
+      expect(container.textContent).not.toContain("claude-sonnet-4-5");
+    });
+
+    it("shows model details when expand button is clicked", () => {
+      const entries = [makeEntry()];
+      const { container } = render(
+        <AgentLogViewer
+          entries={entries}
+          loading={false}
+          executorModel={{ provider: "anthropic", modelId: "claude-sonnet-4-5" }}
+        />,
+      );
+
+      fireEvent.click(screen.getByTestId("agent-log-model-expand"));
+      expect(container.textContent).toContain("Executor:");
+      expect(container.textContent).toContain("anthropic/claude-sonnet-4-5");
+    });
+
+    it("collapses model details when expand button is clicked again", () => {
+      const entries = [makeEntry()];
+      const { container } = render(
+        <AgentLogViewer
+          entries={entries}
+          loading={false}
+          executorModel={{ provider: "anthropic", modelId: "claude-sonnet-4-5" }}
+        />,
+      );
+
+      const button = screen.getByTestId("agent-log-model-expand");
+      fireEvent.click(button);
+      expect(container.textContent).toContain("Executor:");
+      fireEvent.click(button);
+      expect(container.textContent).not.toContain("Executor:");
+    });
+
+    it("shows no provider icons when no model overrides are set", () => {
+      const entries = [makeEntry()];
+      const { container } = render(<AgentLogViewer entries={entries} loading={false} />);
+
+      expect(container.querySelector("[data-provider]")).toBeNull();
+    });
+
+    it("has aria-expanded=false when collapsed and aria-expanded=true when expanded", () => {
+      const entries = [makeEntry()];
+      render(
+        <AgentLogViewer
+          entries={entries}
+          loading={false}
+          executorModel={{ provider: "anthropic", modelId: "claude-sonnet-4-5" }}
+        />,
+      );
+
+      const button = screen.getByTestId("agent-log-model-expand");
+      expect(button.getAttribute("aria-expanded")).toBe("false");
+      fireEvent.click(button);
+      expect(button.getAttribute("aria-expanded")).toBe("true");
+    });
+
+    it("renders multiple provider icons for multiple overrides", () => {
+      const entries = [makeEntry()];
+      const { container } = render(
+        <AgentLogViewer
+          entries={entries}
+          loading={false}
+          executorModel={{ provider: "anthropic", modelId: "claude-opus-4" }}
+          validatorModel={{ provider: "openai", modelId: "gpt-4o" }}
+          planningModel={{ provider: "google", modelId: "gemini-pro" }}
+        />,
+      );
+
+      expect(container.querySelector('[data-provider="anthropic"]')).toBeTruthy();
+      expect(container.querySelector('[data-provider="openai"]')).toBeTruthy();
+      expect(container.querySelector('[data-provider="google"]')).toBeTruthy();
     });
   });
 

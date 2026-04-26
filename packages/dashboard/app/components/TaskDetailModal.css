@@ -251,16 +251,56 @@
 .agent-log-model-header {
   display: flex;
   flex-wrap: wrap;
-  gap: 16px;
-  padding: 8px 12px;
-  margin-bottom: 12px;
+  gap: var(--space-lg);
+  padding: var(--space-sm) var(--space-md);
+  margin-bottom: var(--space-md);
   background: var(--bg-tertiary);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   font-size: 12px;
   color: var(--text-muted);
   overflow: hidden;
   min-width: 0;
   align-items: center;
+  justify-content: space-between;
+}
+
+.agent-log-model-icons {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.agent-log-model-expand-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-xs);
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: color var(--transition-fast);
+}
+
+.agent-log-model-expand-btn:hover {
+  color: var(--text);
+  background: var(--card-hover);
+}
+
+.agent-log-model-expand-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring-strong);
+}
+
+.agent-log-model-details {
+  display: flex;
+  flex-basis: 100%;
+  flex-wrap: wrap;
+  gap: var(--space-lg);
+  padding-top: var(--space-sm);
+  margin-top: var(--space-sm);
+  border-top: 1px solid var(--border);
 }
 
 .agent-log-model-group {
