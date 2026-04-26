@@ -10,5 +10,17 @@ export default defineConfig({
     pool: "threads",
     maxWorkers,
     poolOptions: { threads: { minThreads: 1, maxThreads: maxWorkers }, forks: { minForks: 1, maxForks: maxWorkers } },
+    // ── Engine guard ──────────────────────────────────────────────────────
+    // This setup file installs a vi.mock("@fusion/engine") that throws if
+    // the real engine is loaded. All plugin tests must mock "../pi-module.js"
+    // (the seam) to prevent the real @fusion/engine import chain.
+    //
+    // If you introduce a test that genuinely needs @fusion/engine:
+    //   1. Create a setup-test-isolation.ts (HOME override) following the
+    //      pattern in packages/core/src/__tests__/setup-test-isolation.ts
+    //   2. Add it to setupFiles BEFORE this guard
+    //   3. Add a vi.mock("@fusion/engine", ...) override in the test file
+    //      or a dedicated setup file to replace the throwing mock
+    setupFiles: ["./src/__tests__/setup-engine-guard.ts"],
   },
 });
