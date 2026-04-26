@@ -36,6 +36,19 @@ describe("AgentLogViewer", () => {
     expect(screen.getByText("No agent output yet.")).toBeTruthy();
   });
 
+  it("rerenders from empty state to populated logs without changing hook order", () => {
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const entry = makeEntry({ text: "streamed chunk" });
+    const { rerender } = render(<AgentLogViewer entries={[]} loading={false} />);
+
+    expect(() => {
+      rerender(<AgentLogViewer entries={[entry]} loading={false} />);
+    }).not.toThrow();
+
+    expect(screen.getByText("streamed chunk")).toBeTruthy();
+    consoleErrorSpy.mockRestore();
+  });
+
   it("renders text entries as spans in reverse order (newest first)", () => {
     const entries = [
       makeEntry({ text: "first chunk" }),

@@ -185,26 +185,6 @@ export function AgentLogViewer({
     }
   }, [isFullscreen, handleKeyDown]);
 
-  if (loading && entries.length === 0) {
-    return (
-      <div className="agent-log-viewer" data-testid="agent-log-viewer">
-        <div className="agent-log-loading">Loading agent logs…</div>
-      </div>
-    );
-  }
-
-  if (entries.length === 0) {
-    return (
-      <div className="agent-log-viewer" data-testid="agent-log-viewer">
-        <div className="agent-log-empty">No agent output yet.</div>
-      </div>
-    );
-  }
-
-  // Reverse entries so newest appear first
-  const reversedEntries = [...entries].reverse();
-  const reversedEntryKeys = [...chronologicalEntryKeys].reverse();
-
   const hasExecutorOverride = executorModel?.provider && executorModel?.modelId;
   const hasValidatorOverride = validatorModel?.provider && validatorModel?.modelId;
   const hasPlanningOverride = planningModel?.provider && planningModel?.modelId;
@@ -241,6 +221,26 @@ export function AgentLogViewer({
     hasPlanningOverride,
     planningModel,
   ]);
+
+  if (loading && entries.length === 0) {
+    return (
+      <div className="agent-log-viewer" data-testid="agent-log-viewer">
+        <div className="agent-log-loading">Loading agent logs…</div>
+      </div>
+    );
+  }
+
+  if (entries.length === 0) {
+    return (
+      <div className="agent-log-viewer" data-testid="agent-log-viewer">
+        <div className="agent-log-empty">No agent output yet.</div>
+      </div>
+    );
+  }
+
+  // Reverse entries so newest appear first
+  const reversedEntries = [...entries].reverse();
+  const reversedEntryKeys = [...chronologicalEntryKeys].reverse();
 
   return (
     <div
