@@ -321,6 +321,9 @@
 }
 
 .agent-log-model-header-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
   margin-left: auto;
 }
 
@@ -389,7 +392,12 @@
 
 /* Agent Log markdown/plain-text mode toggle */
 .agent-log-mode-toggle {
-  padding: 3px 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: calc(var(--space-xl) + var(--space-xl) + var(--space-xs));
+  min-height: calc(var(--space-lg) + var(--space-lg) + var(--space-xs));
+  padding: var(--space-xs) var(--space-sm);
   font-size: 11px;
   font-weight: 500;
   color: var(--text-muted);
@@ -397,7 +405,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all var(--transition-fast);
   line-height: 1;
 }
 

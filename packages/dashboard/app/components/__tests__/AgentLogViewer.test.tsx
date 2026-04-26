@@ -2,6 +2,8 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { AgentLogViewer } from "../AgentLogViewer";
 import type { AgentLogEntry } from "@fusion/core";
+import "../../styles.css";
+import "../TaskDetailModal.css";
 
 // Mock lucide-react icons used by AgentLogViewer and ProviderIcon
 vi.mock("lucide-react", () => ({
@@ -1252,6 +1254,35 @@ describe("AgentLogViewer", () => {
   });
 
   describe("fullscreen toggle", () => {
+    it("applies matching min dimensions to markdown and fullscreen header toggles", () => {
+      const entries = [makeEntry()];
+      const { container } = render(<AgentLogViewer entries={entries} loading={false} />);
+      const markdownToggle = container.querySelector(
+        "[data-testid='agent-log-mode-toggle']",
+      ) as HTMLButtonElement;
+      const fullscreenToggle = container.querySelector(
+        "[data-testid='agent-log-fullscreen-toggle']",
+      ) as HTMLButtonElement;
+
+      const markdownStyle = getComputedStyle(markdownToggle);
+      const fullscreenStyle = getComputedStyle(fullscreenToggle);
+
+      expect(markdownStyle.minWidth).toBe(fullscreenStyle.minWidth);
+      expect(markdownStyle.minHeight).toBe(fullscreenStyle.minHeight);
+      expect(markdownStyle.minWidth).not.toBe("0px");
+      expect(markdownStyle.minHeight).not.toBe("0px");
+    });
+
+    it("adds visible gap spacing between header toggle buttons", () => {
+      const entries = [makeEntry()];
+      const { container } = render(<AgentLogViewer entries={entries} loading={false} />);
+      const toggleGroup = container.querySelector(".agent-log-model-header-toggle") as HTMLElement;
+      const toggleGroupStyle = getComputedStyle(toggleGroup);
+
+      expect(toggleGroupStyle.gap).not.toBe("");
+      expect(toggleGroupStyle.gap).not.toBe("normal");
+    });
+
     it("renders the fullscreen toggle button in the model info header", () => {
       const entries = [makeEntry()];
       const { container } = render(<AgentLogViewer entries={entries} loading={false} />);
