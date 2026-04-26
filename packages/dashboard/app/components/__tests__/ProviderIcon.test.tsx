@@ -12,7 +12,7 @@ describe("ProviderIcon", () => {
   it("applies provider-specific color for openai-codex", () => {
     render(<ProviderIcon provider="openai-codex" />);
     const icon = screen.getByTestId("openai-icon").parentElement;
-    expect(icon).toHaveStyle({ color: "#10a37f" });
+    expect(icon).toHaveStyle({ color: "var(--provider-openai)" });
   });
 
   it("passes correct color to SVG fill for openai-codex", () => {
@@ -20,13 +20,22 @@ describe("ProviderIcon", () => {
     const svg = screen.getByTestId("openai-icon");
     const paths = svg.querySelectorAll("path");
     expect(paths.length).toBeGreaterThan(0);
-    expect(paths[0]).toHaveAttribute("fill", "#10a37f");
+    expect(paths[0]).toHaveAttribute("fill", "var(--provider-openai)");
   });
 
   it("renders Anthropic brand icon for anthropic provider", () => {
     render(<ProviderIcon provider="anthropic" />);
     expect(screen.getByTestId("anthropic-icon")).toBeInTheDocument();
     expect(screen.getByLabelText("Anthropic")).toBeInTheDocument();
+  });
+
+  it("renders claude-cli icon with tokenized contrast stroke", () => {
+    render(<ProviderIcon provider="claude-cli" />);
+    const svg = screen.getByTestId("claude-cli-icon");
+    expect(svg).toBeInTheDocument();
+    expect(screen.getByLabelText("Anthropic — via Claude CLI")).toBeInTheDocument();
+    const badgeGlyph = svg.querySelector('path[stroke]');
+    expect(badgeGlyph).toHaveAttribute("stroke", "var(--provider-icon-contrast)");
   });
 
   it("renders OpenAI brand icon for openai provider", () => {
@@ -82,25 +91,25 @@ describe("ProviderIcon", () => {
   it("applies provider-specific color for anthropic", () => {
     render(<ProviderIcon provider="anthropic" />);
     const icon = screen.getByTestId("anthropic-icon").parentElement;
-    expect(icon).toHaveStyle({ color: "#d4a27f" });
+    expect(icon).toHaveStyle({ color: "var(--provider-anthropic)" });
   });
 
   it("applies provider-specific color for openai", () => {
     render(<ProviderIcon provider="openai" />);
     const icon = screen.getByTestId("openai-icon").parentElement;
-    expect(icon).toHaveStyle({ color: "#10a37f" });
+    expect(icon).toHaveStyle({ color: "var(--provider-openai)" });
   });
 
   it("applies provider-specific color for google", () => {
     render(<ProviderIcon provider="google" />);
     const icon = screen.getByTestId("gemini-icon").parentElement;
-    expect(icon).toHaveStyle({ color: "#4285f4" });
+    expect(icon).toHaveStyle({ color: "var(--provider-gemini)" });
   });
 
-  it("applies provider-specific color for ollama", () => {
+  it("applies theme-safe color for ollama", () => {
     render(<ProviderIcon provider="ollama" />);
     const icon = screen.getByTestId("ollama-icon").parentElement;
-    expect(icon).toHaveStyle({ color: "#fff" });
+    expect(icon).toHaveStyle({ color: "var(--text)" });
   });
 
   it("applies default color for unknown providers", () => {
@@ -156,7 +165,7 @@ describe("ProviderIcon", () => {
     const paths = svg.querySelectorAll("path");
     expect(paths.length).toBeGreaterThan(0);
     // First path should have the provider color
-    expect(paths[0]).toHaveAttribute("fill", "#d4a27f");
+    expect(paths[0]).toHaveAttribute("fill", "var(--provider-anthropic)");
   });
 
   it("passes correct color to SVG fill for openai", () => {
@@ -164,7 +173,7 @@ describe("ProviderIcon", () => {
     const svg = screen.getByTestId("openai-icon");
     const paths = svg.querySelectorAll("path");
     expect(paths.length).toBeGreaterThan(0);
-    expect(paths[0]).toHaveAttribute("fill", "#10a37f");
+    expect(paths[0]).toHaveAttribute("fill", "var(--provider-openai)");
   });
 
   it("passes correct color to SVG fill for gemini", () => {
@@ -172,15 +181,15 @@ describe("ProviderIcon", () => {
     const svg = screen.getByTestId("gemini-icon");
     const paths = svg.querySelectorAll("path");
     expect(paths.length).toBeGreaterThan(0);
-    expect(paths[0]).toHaveAttribute("fill", "#4285f4");
+    expect(paths[0]).toHaveAttribute("fill", "var(--provider-gemini)");
   });
 
-  it("passes correct color to SVG fill for ollama", () => {
+  it("passes theme-safe color to SVG fill for ollama", () => {
     render(<ProviderIcon provider="ollama" />);
     const svg = screen.getByTestId("ollama-icon");
     const paths = svg.querySelectorAll("path");
     expect(paths.length).toBeGreaterThan(0);
-    expect(paths[0]).toHaveAttribute("fill", "#fff");
+    expect(paths[0]).toHaveAttribute("fill", "var(--text)");
   });
 
   it("renders MiniMax brand icon for minimax provider", () => {
@@ -192,7 +201,7 @@ describe("ProviderIcon", () => {
   it("applies provider-specific color for minimax", () => {
     render(<ProviderIcon provider="minimax" />);
     const icon = screen.getByTestId("minimax-icon").parentElement;
-    expect(icon).toHaveStyle({ color: "#E73562" });
+    expect(icon).toHaveStyle({ color: "var(--provider-minimax)" });
   });
 
   it("passes correct color to SVG fill for minimax", () => {
@@ -200,7 +209,7 @@ describe("ProviderIcon", () => {
     const svg = screen.getByTestId("minimax-icon");
     const paths = svg.querySelectorAll("path");
     expect(paths.length).toBeGreaterThan(0);
-    expect(paths[0]).toHaveAttribute("fill", "#E73562");
+    expect(paths[0]).toHaveAttribute("fill", "var(--provider-minimax)");
   });
 
   it("normalizes Minimax (capitalized) to minimax", () => {
@@ -219,7 +228,7 @@ describe("ProviderIcon", () => {
   it("applies provider-specific color for zai", () => {
     render(<ProviderIcon provider="zai" />);
     const icon = screen.getByTestId("zai-icon").parentElement;
-    expect(icon).toHaveStyle({ color: "#1A6DFF" });
+    expect(icon).toHaveStyle({ color: "var(--provider-zai)" });
   });
 
   it("passes correct color to SVG fill for zai", () => {
@@ -227,7 +236,7 @@ describe("ProviderIcon", () => {
     const svg = screen.getByTestId("zai-icon");
     const paths = svg.querySelectorAll("path");
     expect(paths.length).toBeGreaterThan(0);
-    expect(paths[0]).toHaveAttribute("fill", "#1A6DFF");
+    expect(paths[0]).toHaveAttribute("fill", "var(--provider-zai)");
   });
 
   it("normalizes Zai (capitalized) to zai", () => {
@@ -246,7 +255,7 @@ describe("ProviderIcon", () => {
   it("applies provider-specific color for kimi", () => {
     render(<ProviderIcon provider="kimi" />);
     const icon = screen.getByTestId("kimi-icon").parentElement;
-    expect(icon).toHaveStyle({ color: "#6C5CE7" });
+    expect(icon).toHaveStyle({ color: "var(--provider-kimi)" });
   });
 
   it("passes correct color to SVG fill for kimi", () => {
@@ -254,7 +263,7 @@ describe("ProviderIcon", () => {
     const svg = screen.getByTestId("kimi-icon");
     const paths = svg.querySelectorAll("path");
     expect(paths.length).toBeGreaterThan(0);
-    expect(paths[0]).toHaveAttribute("fill", "#6C5CE7");
+    expect(paths[0]).toHaveAttribute("fill", "var(--provider-kimi)");
   });
 
   it("normalizes Kimi (capitalized) to kimi", () => {
@@ -273,7 +282,7 @@ describe("ProviderIcon", () => {
   it("applies provider-specific color for moonshot (alias)", () => {
     render(<ProviderIcon provider="moonshot" />);
     const icon = screen.getByTestId("kimi-icon").parentElement;
-    expect(icon).toHaveStyle({ color: "#6C5CE7" });
+    expect(icon).toHaveStyle({ color: "var(--provider-kimi)" });
   });
 
   it("passes correct color to SVG fill for moonshot (alias)", () => {
@@ -281,7 +290,7 @@ describe("ProviderIcon", () => {
     const svg = screen.getByTestId("kimi-icon");
     const paths = svg.querySelectorAll("path");
     expect(paths.length).toBeGreaterThan(0);
-    expect(paths[0]).toHaveAttribute("fill", "#6C5CE7");
+    expect(paths[0]).toHaveAttribute("fill", "var(--provider-kimi)");
   });
 
   it("normalizes Moonshot (capitalized) to moonshot", () => {
@@ -289,6 +298,24 @@ describe("ProviderIcon", () => {
     expect(screen.getByTestId("kimi-icon")).toBeInTheDocument();
     const wrapper = screen.getByTestId("kimi-icon").parentElement;
     expect(wrapper).toHaveAttribute("data-provider", "moonshot");
+  });
+
+  it("renders OpenRouter brand icon for openrouter provider", () => {
+    render(<ProviderIcon provider="openrouter" />);
+    expect(screen.getByTestId("openrouter-icon")).toBeInTheDocument();
+    expect(screen.getByLabelText("OpenRouter")).toBeInTheDocument();
+  });
+
+  it("renders GitHub brand icon for github provider", () => {
+    render(<ProviderIcon provider="github" />);
+    expect(screen.getByTestId("github-icon")).toBeInTheDocument();
+    expect(screen.getByLabelText("GitHub")).toBeInTheDocument();
+  });
+
+  it("reuses GitHub icon for github-copilot alias", () => {
+    render(<ProviderIcon provider="github-copilot" />);
+    expect(screen.getByTestId("github-icon")).toBeInTheDocument();
+    expect(screen.getByLabelText("GitHub Copilot")).toBeInTheDocument();
   });
 
   it("renders Kimi brand icon for kimi-coding provider (alias)", () => {
@@ -300,7 +327,7 @@ describe("ProviderIcon", () => {
   it("applies provider-specific color for kimi-coding (alias)", () => {
     render(<ProviderIcon provider="kimi-coding" />);
     const icon = screen.getByTestId("kimi-icon").parentElement;
-    expect(icon).toHaveStyle({ color: "#6C5CE7" });
+    expect(icon).toHaveStyle({ color: "var(--provider-kimi)" });
   });
 
   it("passes correct color to SVG fill for kimi-coding (alias)", () => {
@@ -308,7 +335,7 @@ describe("ProviderIcon", () => {
     const svg = screen.getByTestId("kimi-icon");
     const paths = svg.querySelectorAll("path");
     expect(paths.length).toBeGreaterThan(0);
-    expect(paths[0]).toHaveAttribute("fill", "#6C5CE7");
+    expect(paths[0]).toHaveAttribute("fill", "var(--provider-kimi)");
   });
 
   // Regression test: verify the Kimi icon is the crescent moon shape, not the old "K" placeholder

@@ -161,6 +161,16 @@
   /* Logo & branding tokens */
   --logo-accent: var(--todo);
 
+  /* Provider brand tokens used by ProviderIcon in settings/onboarding auth flows. */
+  --provider-anthropic: #d4a27f;
+  --provider-openai: #10a37f;
+  --provider-gemini: #4285f4;
+  --provider-openrouter: #6f4cff;
+  --provider-minimax: #e73562;
+  --provider-zai: #1a6dff;
+  --provider-kimi: #6c5ce7;
+  --provider-icon-contrast: var(--bg);
+
   /* Task-creation CTA tokens */
   --cta-bg: #238636;
   --cta-border: #2ea043;

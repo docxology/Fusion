@@ -499,6 +499,20 @@ describe("ModelOnboardingModal", () => {
       expect(screen.queryByTestId("onboarding-advanced-provider-settings")).toBeNull();
     });
 
+    it("renders onboarding provider icon wrapper for connected advanced providers", async () => {
+      mockFetchAuthStatus.mockResolvedValueOnce({
+        providers: [
+          { id: "anthropic", name: "Anthropic", authenticated: false, type: "oauth" },
+          { id: "openrouter", name: "OpenRouter", authenticated: true, type: "api_key" },
+        ],
+      });
+
+      render(<ModelOnboardingModal onComplete={vi.fn()} addToast={vi.fn()} projectId="proj_123" />);
+
+      const openRouterWrapper = await screen.findByTestId("onboarding-provider-icon-openrouter");
+      expect(within(openRouterWrapper).getByTestId("provider-icon")).toHaveAttribute("data-provider", "openrouter");
+    });
+
     it("shows model dropdown in AI Setup step", async () => {
       render(<ModelOnboardingModal onComplete={vi.fn()} addToast={vi.fn()} projectId="proj_123" />);
 
@@ -754,7 +768,7 @@ describe("ModelOnboardingModal", () => {
       expect(description.closest(".onboarding-provider-card")).toBeTruthy();
     });
 
-    it("renders ProviderIcon for each provider card", async () => {
+    it("renders stable onboarding-provider-icon wrappers for provider cards", async () => {
       render(<ModelOnboardingModal onComplete={vi.fn()} addToast={vi.fn()} projectId="proj_123" />);
 
       await waitFor(() => {
@@ -762,15 +776,11 @@ describe("ModelOnboardingModal", () => {
         expect(screen.getByText("OpenAI")).toBeTruthy();
       });
 
-      // Verify provider icons are rendered for both providers
-      const icons = screen.getAllByTestId("provider-icon");
-      expect(icons.length).toBe(2);
+      const anthropicIconWrapper = screen.getByTestId("onboarding-provider-icon-anthropic");
+      const openaiIconWrapper = screen.getByTestId("onboarding-provider-icon-openai");
 
-      // Verify the data-provider attributes match expected IDs
-      const anthropicIcon = icons.find((icon) => icon.getAttribute("data-provider") === "anthropic");
-      const openaiIcon = icons.find((icon) => icon.getAttribute("data-provider") === "openai");
-      expect(anthropicIcon).toBeTruthy();
-      expect(openaiIcon).toBeTruthy();
+      expect(within(anthropicIconWrapper).getByTestId("provider-icon")).toHaveAttribute("data-provider", "anthropic");
+      expect(within(openaiIconWrapper).getByTestId("provider-icon")).toHaveAttribute("data-provider", "openai");
     });
 
     it("applies connected modifier class to authenticated provider cards", async () => {

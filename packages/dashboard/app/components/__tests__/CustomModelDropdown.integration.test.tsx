@@ -34,10 +34,10 @@ describe("CustomModelDropdown ProviderIcon Integration", () => {
     expect(openaiIcon).toBeInTheDocument();
     expect(openaiIcon).toHaveAttribute("aria-label", "OpenAI");
 
-    // Verify the SVG has the correct fill color (#10a37f - OpenAI green)
+    // Verify the SVG has the correct fill color (var(--provider-openai) - OpenAI green)
     const paths = openaiIcon.querySelectorAll("path");
     expect(paths.length).toBeGreaterThan(0);
-    expect(paths[0]).toHaveAttribute("fill", "#10a37f");
+    expect(paths[0]).toHaveAttribute("fill", "var(--provider-openai)");
   });
 
   it("renders actual OpenAI SVG icon in dropdown group header", async () => {
@@ -58,7 +58,7 @@ describe("CustomModelDropdown ProviderIcon Integration", () => {
     // Verify the icon has the correct color
     const paths = openaiIcon.querySelectorAll("path");
     expect(paths.length).toBeGreaterThan(0);
-    expect(paths[0]).toHaveAttribute("fill", "#10a37f");
+    expect(paths[0]).toHaveAttribute("fill", "var(--provider-openai)");
   });
 
   it("renders actual provider icons for all providers in dropdown", async () => {
@@ -71,17 +71,18 @@ describe("CustomModelDropdown ProviderIcon Integration", () => {
     const anthropicIcon = screen.getByTestId("anthropic-icon");
     expect(anthropicIcon).toBeInTheDocument();
     expect(anthropicIcon).toHaveAttribute("aria-label", "Anthropic");
-    expect(anthropicIcon.querySelector("path")).toHaveAttribute("fill", "#d4a27f");
+    expect(anthropicIcon.querySelector("path")).toHaveAttribute("fill", "var(--provider-anthropic)");
 
     const openaiIcon = screen.getByTestId("openai-icon");
     expect(openaiIcon).toBeInTheDocument();
     expect(openaiIcon).toHaveAttribute("aria-label", "OpenAI");
-    expect(openaiIcon.querySelector("path")).toHaveAttribute("fill", "#10a37f");
+    expect(openaiIcon.querySelector("path")).toHaveAttribute("fill", "var(--provider-openai)");
 
     const ollamaIcon = screen.getByTestId("ollama-icon");
     expect(ollamaIcon).toBeInTheDocument();
     expect(ollamaIcon).toHaveAttribute("aria-label", "Ollama");
-    expect(ollamaIcon.querySelector("path")).toHaveAttribute("fill", "#fff");
+    // Ollama icon is intentionally theme-aware (token-based) rather than hardcoded white.
+    expect(ollamaIcon.querySelector("path")).toHaveAttribute("fill", "var(--text)");
   });
 
   it("renders both trigger icon and group header icons when dropdown is open with OpenAI selected", async () => {
@@ -101,7 +102,7 @@ describe("CustomModelDropdown ProviderIcon Integration", () => {
     // Both should have correct attributes
     openaiIcons.forEach((icon) => {
       expect(icon).toHaveAttribute("aria-label", "OpenAI");
-      expect(icon.querySelector("path")).toHaveAttribute("fill", "#10a37f");
+      expect(icon.querySelector("path")).toHaveAttribute("fill", "var(--provider-openai)");
     });
   });
 
@@ -135,7 +136,7 @@ describe("CustomModelDropdown ProviderIcon Integration", () => {
     // Verify the first one has correct attributes
     const kimiIcon = kimiIcons[0];
     expect(kimiIcon).toHaveAttribute("aria-label", "Kimi");
-    expect(kimiIcon.querySelector("path")).toHaveAttribute("fill", "#6C5CE7");
+    expect(kimiIcon.querySelector("path")).toHaveAttribute("fill", "var(--provider-kimi)");
   });
 
   it("uses explicit icon/text layout hooks for favorited model rows", async () => {
@@ -178,7 +179,7 @@ describe("CustomModelDropdown ProviderIcon Integration", () => {
     const kimiIcon = screen.getByTestId("kimi-icon");
     expect(kimiIcon).toBeInTheDocument();
     expect(kimiIcon).toHaveAttribute("aria-label", "Kimi");
-    expect(kimiIcon.querySelector("path")).toHaveAttribute("fill", "#6C5CE7");
+    expect(kimiIcon.querySelector("path")).toHaveAttribute("fill", "var(--provider-kimi)");
   });
 
   it("renders Kimi icon in trigger when moonshot model is selected (alias)", () => {
@@ -187,6 +188,6 @@ describe("CustomModelDropdown ProviderIcon Integration", () => {
     const kimiIcon = screen.getByTestId("kimi-icon");
     expect(kimiIcon).toBeInTheDocument();
     expect(kimiIcon).toHaveAttribute("aria-label", "Kimi");
-    expect(kimiIcon.querySelector("path")).toHaveAttribute("fill", "#6C5CE7");
+    expect(kimiIcon.querySelector("path")).toHaveAttribute("fill", "var(--provider-kimi)");
   });
 });

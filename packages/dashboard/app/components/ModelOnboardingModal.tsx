@@ -1627,7 +1627,11 @@ export function ModelOnboardingModal({
           data-testid={`onboarding-provider-card-${provider.id}`}
           className={`onboarding-provider-card${provider.authenticated ? " onboarding-provider-card--connected" : ""}`}
         >
-          <div className="onboarding-provider-card__icon">
+          <div
+            className="onboarding-provider-card__icon"
+            data-testid={`onboarding-provider-icon-${provider.id}`}
+            aria-hidden="true"
+          >
             <ProviderIcon provider={provider.id} size="md" />
           </div>
           <div className="onboarding-provider-card__body">
@@ -1667,7 +1671,11 @@ export function ModelOnboardingModal({
         data-testid={`onboarding-provider-card-${provider.id}`}
         className={`onboarding-provider-card${provider.authenticated ? " onboarding-provider-card--connected" : ""}`}
       >
-        <div className="onboarding-provider-card__icon">
+        <div
+          className="onboarding-provider-card__icon"
+          data-testid={`onboarding-provider-icon-${provider.id}`}
+          aria-hidden="true"
+        >
           <ProviderIcon provider={provider.id} size="md" />
         </div>
         <div className="onboarding-provider-card__body">

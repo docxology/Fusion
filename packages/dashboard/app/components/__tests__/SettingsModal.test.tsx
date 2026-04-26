@@ -385,6 +385,45 @@ describe("SettingsModal", () => {
     });
   });
 
+  describe("Authentication provider icon wrappers", () => {
+    it("renders stable auth-provider-icon wrappers with branded and fallback SVG behavior", async () => {
+      mockFetchAuthStatus.mockResolvedValueOnce({
+        providers: [
+          { id: "openrouter", name: "OpenRouter", authenticated: true, type: "api_key" },
+          { id: "unknown-provider", name: "Unknown Provider", authenticated: false, type: "api_key" },
+        ],
+      });
+
+      renderModal();
+      await waitForSettingsModalReady();
+
+      const openRouterIconWrapper = await screen.findByTestId("auth-provider-icon-openrouter");
+      expect(within(openRouterIconWrapper).getByTestId("openrouter-icon")).toBeInTheDocument();
+
+      const unknownIconWrapper = screen.getByTestId("auth-provider-icon-unknown-provider");
+      const fallbackSvg = unknownIconWrapper.querySelector("svg");
+      expect(fallbackSvg).toBeInTheDocument();
+      expect(fallbackSvg).not.toHaveAttribute("data-testid");
+    });
+
+    it("renders icon wrappers for both authenticated and available provider rows", async () => {
+      mockFetchAuthStatus.mockResolvedValueOnce({
+        providers: [
+          { id: "github", name: "GitHub", authenticated: true, type: "oauth" },
+          { id: "openai", name: "OpenAI", authenticated: false, type: "api_key" },
+        ],
+      });
+
+      renderModal();
+      await waitForSettingsModalReady();
+
+      expect(screen.getByTestId("auth-provider-icon-github")).toBeInTheDocument();
+      expect(screen.getByTestId("auth-provider-icon-openai")).toBeInTheDocument();
+      expect(screen.getByTestId("auth-status-github")).toHaveTextContent("✓ Active");
+      expect(screen.getByTestId("auth-status-openai")).toHaveTextContent("✗ Not connected");
+    });
+  });
+
   describe("Plugins section navigation", () => {
     it("does not render a standalone Pi Extensions sidebar item", async () => {
       renderModal();

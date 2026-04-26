@@ -523,6 +523,17 @@
   font-weight: 500;
   color: var(--text);
 }
+.auth-provider-icon-slot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: calc(var(--space-md) + var(--space-xs) * 2);
+  block-size: calc(var(--space-md) + var(--space-xs) * 2);
+  flex-shrink: 0;
+}
+.auth-provider-icon-slot .provider-icon {
+  display: inline-flex;
+}
 .auth-hint {
   display: block;
   padding: 12px 4px 0;

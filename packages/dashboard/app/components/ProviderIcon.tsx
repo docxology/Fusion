@@ -155,6 +155,46 @@ function KimiIcon({ size, color, label = "Kimi" }: { size: number; color: string
   );
 }
 
+// OpenRouter ring mark — simplified geometric version of the OpenRouter brand symbol.
+function OpenRouterIcon({ size, color, label = "OpenRouter" }: { size: number; color: string; label?: string }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      data-testid="openrouter-icon"
+      aria-label={label}
+    >
+      <path
+        d="M12 2.5a9.5 9.5 0 1 0 9.5 9.5h-2.7a6.8 6.8 0 1 1-2-4.8l-3.1 3.1H22V2.5l-3.2 3.2A9.45 9.45 0 0 0 12 2.5"
+        fill={color}
+      />
+    </svg>
+  );
+}
+
+// GitHub logo (Octocat mark) from SimpleIcons.
+function GitHubIcon({ size, color, label = "GitHub" }: { size: number; color: string; label?: string }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      data-testid="github-icon"
+      aria-label={label}
+    >
+      <path
+        d="M12 0a12 12 0 0 0-3.79 23.39c.6.11.82-.26.82-.58v-2.23c-3.34.73-4.04-1.41-4.04-1.41-.55-1.39-1.34-1.76-1.34-1.76-1.09-.75.08-.74.08-.74 1.2.08 1.84 1.24 1.84 1.24 1.08 1.84 2.82 1.31 3.5 1 .1-.78.42-1.31.77-1.62-2.67-.3-5.47-1.34-5.47-5.95 0-1.31.47-2.38 1.24-3.22-.12-.31-.54-1.56.12-3.24 0 0 1.01-.32 3.3 1.23a11.3 11.3 0 0 1 6 0c2.29-1.55 3.3-1.23 3.3-1.23.66 1.68.24 2.93.12 3.24.77.84 1.24 1.91 1.24 3.22 0 4.62-2.8 5.64-5.48 5.94.43.37.82 1.1.82 2.22v3.29c0 .32.22.69.83.58A12 12 0 0 0 12 0"
+        fill={color}
+      />
+    </svg>
+  );
+}
+
 // Anthropic "A" mark composited with a small terminal "> _" badge in the
 // bottom-right, visually signalling "Anthropic, but via the local CLI".
 function ClaudeCliIcon({ size, color, label = "Anthropic — via Claude CLI" }: { size: number; color: string; label?: string }) {
@@ -179,7 +219,7 @@ function ClaudeCliIcon({ size, color, label = "Anthropic — via Claude CLI" }: 
       <rect x="13" y="13" width="10" height="9" rx="1.5" fill={color} />
       <path
         d="M15.2 16.2l1.6 1.4-1.6 1.4M18.6 19.6h2.4"
-        stroke="var(--bg-primary, #111)"
+        stroke="var(--provider-icon-contrast)"
         strokeWidth="1.2"
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -193,18 +233,30 @@ const providerConfig: Record<
   string,
   { component: typeof AnthropicIcon; color: string; label?: string }
 > = {
-  anthropic: { component: AnthropicIcon, color: "#d4a27f" }, // warm tan
-  "claude-cli": { component: ClaudeCliIcon, color: "#d4a27f", label: "Anthropic — via Claude CLI" },
-  openai: { component: OpenAIIcon, color: "#10a37f" }, // green
-  "openai-codex": { component: OpenAIIcon, color: "#10a37f", label: "OpenAI Codex" }, // green (same as openai)
-  google: { component: GeminiIcon, color: "#4285f4" }, // blue
-  gemini: { component: GeminiIcon, color: "#4285f4" }, // blue (same as google)
-  ollama: { component: OllamaIcon, color: "#fff" }, // white
-  minimax: { component: MiniMaxIcon, color: "#E73562" }, // pink/red
-  zai: { component: ZaiIcon, color: "#1A6DFF" }, // blue
-  kimi: { component: KimiIcon, color: "#6C5CE7" }, // purple
-  moonshot: { component: KimiIcon, color: "#6C5CE7" }, // purple (same as kimi)
-  "kimi-coding": { component: KimiIcon, color: "#6C5CE7", label: "Kimi" }, // purple (Kimi alias)
+  // Branded provider colors are tokenized in app/styles.css for theme-system consistency.
+  anthropic: { component: AnthropicIcon, color: "var(--provider-anthropic)" },
+  "claude-cli": { component: ClaudeCliIcon, color: "var(--provider-anthropic)", label: "Anthropic — via Claude CLI" },
+
+  openai: { component: OpenAIIcon, color: "var(--provider-openai)" },
+  "openai-codex": { component: OpenAIIcon, color: "var(--provider-openai)", label: "OpenAI Codex" }, // OpenAI alias
+
+  google: { component: GeminiIcon, color: "var(--provider-gemini)" },
+  gemini: { component: GeminiIcon, color: "var(--provider-gemini)" }, // Gemini alias family
+
+  // Monochrome marks use theme-aware text color for dark/light safety.
+  ollama: { component: OllamaIcon, color: "var(--text)" },
+  github: { component: GitHubIcon, color: "var(--text)" },
+  "github-copilot": { component: GitHubIcon, color: "var(--text)", label: "GitHub Copilot" },
+
+  // OpenRouter appears in onboarding auth cards and should not fall back to CPU.
+  openrouter: { component: OpenRouterIcon, color: "var(--provider-openrouter)" },
+
+  minimax: { component: MiniMaxIcon, color: "var(--provider-minimax)" },
+  zai: { component: ZaiIcon, color: "var(--provider-zai)" },
+
+  kimi: { component: KimiIcon, color: "var(--provider-kimi)" },
+  moonshot: { component: KimiIcon, color: "var(--provider-kimi)" }, // Moonshot alias
+  "kimi-coding": { component: KimiIcon, color: "var(--provider-kimi)", label: "Kimi" }, // Kimi alias
 };
 
 export function ProviderIcon({ provider, size = "sm" }: ProviderIconProps) {

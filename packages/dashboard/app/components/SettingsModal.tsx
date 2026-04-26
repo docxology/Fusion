@@ -17,6 +17,7 @@ const PiExtensionsManager = lazy(() => import("./PiExtensionsManager").then((m) 
 import { ClaudeCliProviderCard } from "./ClaudeCliProviderCard";
 import { PluginSlot } from "./PluginSlot";
 import { AgentPromptsManager } from "./AgentPromptsManager";
+import { ProviderIcon } from "./ProviderIcon";
 import { applyPresetToSelection, generateUniquePresetId } from "../utils/modelPresets";
 import { appendTokenQuery } from "../auth";
 import "./SettingsModal.css";
@@ -3441,6 +3442,14 @@ export function SettingsModal({
                     <div key={provider.id} className="auth-provider-card auth-provider-card--authenticated">
                       <div className="auth-provider-header">
                         <div className="auth-provider-info">
+                          {/* Stable icon wrapper contract for auth card tests: auth-provider-icon-<providerId> */}
+                          <span
+                            className="auth-provider-icon-slot"
+                            data-testid={`auth-provider-icon-${provider.id}`}
+                            aria-hidden="true"
+                          >
+                            <ProviderIcon provider={provider.id} size="md" />
+                          </span>
                           <strong>{provider.name}</strong>
                           <span
                             data-testid={`auth-status-${provider.id}`}
@@ -3516,6 +3525,14 @@ export function SettingsModal({
                     <div key={provider.id} className="auth-provider-card">
                       <div className="auth-provider-header">
                         <div className="auth-provider-info">
+                          {/* Stable icon wrapper contract for auth card tests: auth-provider-icon-<providerId> */}
+                          <span
+                            className="auth-provider-icon-slot"
+                            data-testid={`auth-provider-icon-${provider.id}`}
+                            aria-hidden="true"
+                          >
+                            <ProviderIcon provider={provider.id} size="md" />
+                          </span>
                           <strong>{provider.name}</strong>
                           <span
                             data-testid={`auth-status-${provider.id}`}
