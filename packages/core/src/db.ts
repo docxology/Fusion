@@ -86,7 +86,7 @@ export function probeFts5(db: DatabaseSync): boolean {
 
 // ── Schema Definition ────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 46;
+const SCHEMA_VERSION = 47;
 
 function normalizeTaskComments(
   steeringComments: SteeringComment[] | undefined,
@@ -1809,6 +1809,17 @@ export class Database {
         this.db.exec("CREATE INDEX IF NOT EXISTS idxTodoListsProjectId ON todo_lists(projectId)");
         this.db.exec("CREATE INDEX IF NOT EXISTS idxTodoItemsListId ON todo_items(listId)");
         this.db.exec("CREATE INDEX IF NOT EXISTS idxTodoItemsSortOrder ON todo_items(listId, sortOrder)");
+      });
+    }
+
+    // Status value rename (FN-2602)
+    // Rename stored status strings: specifying→planning, needs-respecify→needs-replan
+    if (version < 47) {
+      this.applyMigration(47, () => {
+        if (this.hasTable("tasks") && this.hasColumn("tasks", "status")) {
+          this.db.exec("UPDATE tasks SET status = 'planning' WHERE status = 'specifying'");
+          this.db.exec("UPDATE tasks SET status = 'needs-replan' WHERE status = 'needs-respecify'");
+        }
       });
     }
 

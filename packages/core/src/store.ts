@@ -4357,7 +4357,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       let invalidatedStatus = false;
       try {
         await this.updateTask(id, {
-          status: "needs-respecify",
+          status: "needs-replan",
         });
         invalidatedStatus = true;
       } catch (err) {
@@ -4365,7 +4365,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
           ...commentContextBase,
           phase: "addComment:awaiting-approval-invalidation",
           stage: "status-update",
-          nextStatus: "needs-respecify",
+          nextStatus: "needs-replan",
           error: err instanceof Error ? err.message : String(err),
         });
       }
@@ -4383,7 +4383,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
             ...commentContextBase,
             phase: "addComment:awaiting-approval-invalidation",
             stage: "post-invalidation-log-entry",
-            nextStatus: "needs-respecify",
+            nextStatus: "needs-replan",
             error: err instanceof Error ? err.message : String(err),
           });
         }

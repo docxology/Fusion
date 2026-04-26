@@ -1697,7 +1697,7 @@ export interface MergeResult extends MergeDetails {
 }
 
 export const COLUMN_LABELS: Record<Column, string> = {
-  triage: "Triage",
+  triage: "Planning",
   todo: "Todo",
   "in-progress": "In Progress",
   "in-review": "In Review",
@@ -1706,7 +1706,7 @@ export const COLUMN_LABELS: Record<Column, string> = {
 };
 
 export const COLUMN_DESCRIPTIONS: Record<Column, string> = {
-  triage: "Raw ideas — AI will specify these",
+  triage: "Raw ideas — AI will plan these",
   todo: "Specified and ready to start",
   "in-progress": "AI is working on this in a worktree",
   "in-review": "Complete — ready to merge",

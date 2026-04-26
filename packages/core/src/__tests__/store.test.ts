@@ -4895,7 +4895,7 @@ Task with acceptance criteria
           priorStatus: "awaiting-approval",
           phase: "addComment:awaiting-approval-invalidation",
           stage: "status-update",
-          nextStatus: "needs-respecify",
+          nextStatus: "needs-replan",
           runId: "run-invalidation-failure",
           agentId: "agent-invalidation",
           error: "status update failed",
@@ -4923,7 +4923,7 @@ Task with acceptance criteria
         const persisted = await store.getTask(task.id);
         expect(persisted.comments).toHaveLength(1);
         expect(persisted.comments![0].text).toBe("New user feedback");
-        expect(persisted.status).toBe("needs-respecify");
+        expect(persisted.status).toBe("needs-replan");
 
         expect(logEntrySpy).toHaveBeenCalled();
 
@@ -4941,7 +4941,7 @@ Task with acceptance criteria
           priorStatus: "awaiting-approval",
           phase: "addComment:awaiting-approval-invalidation",
           stage: "post-invalidation-log-entry",
-          nextStatus: "needs-respecify",
+          nextStatus: "needs-replan",
           runId: "run-post-invalidation-log-failure",
           agentId: "agent-invalidation",
           error: "log entry failed",
@@ -5005,7 +5005,7 @@ Task with acceptance criteria
       expect(read1.steeringComments).toHaveLength(1);
 
       // Simulate a write-back (updateTask writes via upsertTask)
-      await store.updateTask(task.id, { status: "specifying" });
+      await store.updateTask(task.id, { status: "planning" });
 
       // Read again — should still have exactly 1 comment, not 2
       const read2 = await store.getTask(task.id);
@@ -5025,7 +5025,7 @@ Task with acceptance criteria
         expect(fetched.comments).toHaveLength(2);
         expect(fetched.steeringComments).toHaveLength(2);
         // Write back via an innocuous update
-        await store.updateTask(task.id, { status: "specifying" });
+        await store.updateTask(task.id, { status: "planning" });
       }
 
       // Final read — still exactly 2 comments
@@ -5050,7 +5050,7 @@ Task with acceptance criteria
       for (let i = 0; i < 3; i++) {
         const fetched = await store.getTask(task.id);
         expect(fetched.comments).toHaveLength(2);
-        await store.updateTask(task.id, { status: "specifying" });
+        await store.updateTask(task.id, { status: "planning" });
       }
 
       const final = await store.getTask(task.id);
@@ -5076,7 +5076,7 @@ Task with acceptance criteria
       expect(refinement).toBeDefined();
     });
 
-    it("transitions awaiting-approval to needs-respecify when user comments on triage task", async () => {
+    it("transitions awaiting-approval to needs-replan when user comments on triage task", async () => {
       const task = await store.createTask({ description: "Task in triage" });
       // Keep in triage but set awaiting-approval status
       await store.updateTask(task.id, { status: "awaiting-approval" });
@@ -5086,15 +5086,15 @@ Task with acceptance criteria
       // Re-read the task to get the Phase 3 status update
       const updated = await store.getTask(task.id);
 
-      // Task should remain in triage but status should change to needs-respecify
+      // Task should remain in triage but status should change to needs-replan
       expect(updated.column).toBe("triage");
-      expect(updated.status).toBe("needs-respecify");
+      expect(updated.status).toBe("needs-replan");
       // Comment should still be added
       expect(updated.comments).toHaveLength(1);
       expect(updated.comments![0].text).toBe("I want to change the approach");
     });
 
-    it("does NOT transition to needs-respecify when agent comments on awaiting-approval task", async () => {
+    it("does NOT transition to needs-replan when agent comments on awaiting-approval task", async () => {
       const task = await store.createTask({ description: "Task in triage" });
       await store.updateTask(task.id, { status: "awaiting-approval" });
 
@@ -5106,7 +5106,7 @@ Task with acceptance criteria
       expect(updated.comments).toHaveLength(1);
     });
 
-    it("does NOT transition to needs-respecify when user comments on non-awaiting-approval triage task", async () => {
+    it("does NOT transition to needs-replan when user comments on non-awaiting-approval triage task", async () => {
       const task = await store.createTask({ description: "Task in triage" });
       // Task is in triage with no status (not awaiting-approval)
       expect(task.status).toBeUndefined();

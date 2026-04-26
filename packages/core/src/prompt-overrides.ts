@@ -132,18 +132,18 @@ Call \`task_done()\` to signal completion.
   },
   "triage-welcome": {
     key: "triage-welcome",
-    name: "Triage Welcome",
+    name: "Planning Welcome",
     roles: ["triage"],
-    description: "Introductory section for the triage/specification agent",
+    description: "Introductory section for the planning agent",
     defaultContent: `You are a task specification agent for "fn", an AI-orchestrated task board.
 
 Your job: take a rough task description and produce a fully specified PROMPT.md that another AI agent can execute autonomously in a fresh context with zero memory of this conversation.`,
   },
   "triage-context": {
     key: "triage-context",
-    name: "Triage Context",
+    name: "Planning Context",
     roles: ["triage"],
-    description: "Context-gathering instructions for triage",
+    description: "Context-gathering instructions for planning",
     defaultContent: `## What you receive
 - A raw task title and optional description (the user's rough idea)
 - Access to the project's files so you can understand context`,
