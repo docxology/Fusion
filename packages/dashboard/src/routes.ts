@@ -1224,23 +1224,13 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
    */
   router.get("/system-stats", async (req, res) => {
     try {
-      const { store: scopedStore } = await getProjectContext(req);
       const mem = process.memoryUsage();
       const heapStats = v8.getHeapStatistics();
       const load = os.loadavg();
       const vitestProcessIds = await getVitestProcessIds();
 
-      let vitestLastAutoKillAt: string | null = null;
-      const globalSettingsStore = scopedStore.getGlobalSettingsStore?.();
-      if (globalSettingsStore?.getSettings) {
-        const globalSettings = await globalSettingsStore.getSettings();
-        const candidate = (globalSettings as Record<string, unknown>).vitestLastAutoKillAt;
-        if (typeof candidate === "string" && candidate.length > 0) {
-          vitestLastAutoKillAt = candidate;
-        }
-      }
-
-      const tasks = await scopedStore.listTasks({ slim: true, includeArchived: false });
+      let totalTasks = 0;
+      let activeTasks = 0;
       const byColumn: Record<string, number> = {
         triage: 0,
         todo: 0,
@@ -1249,20 +1239,43 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
         done: 0,
         archived: 0,
       };
-      for (const task of tasks) {
-        byColumn[task.column] = (byColumn[task.column] ?? 0) + 1;
-      }
-
-      const { AgentStore } = await import("@fusion/core");
-      const agentStore = new AgentStore({ rootDir: scopedStore.getFusionDir() });
-      await agentStore.init();
-      const agents = await agentStore.listAgents();
       const agentCounts = { idle: 0, active: 0, running: 0, error: 0 };
-      for (const agent of agents) {
-        const state = agent.state as keyof typeof agentCounts;
-        if (state in agentCounts) {
-          agentCounts[state] += 1;
+      let vitestLastAutoKillAt: string | null = null;
+
+      try {
+        const { store: scopedStore } = await getProjectContext(req);
+
+        const globalSettingsStore = scopedStore.getGlobalSettingsStore?.();
+        if (globalSettingsStore?.getSettings) {
+          const globalSettings = await globalSettingsStore.getSettings();
+          const candidate = (globalSettings as Record<string, unknown>).vitestLastAutoKillAt;
+          if (typeof candidate === "string" && candidate.length > 0) {
+            vitestLastAutoKillAt = candidate;
+          }
         }
+
+        const tasks = await scopedStore.listTasks({ slim: true, includeArchived: false });
+        totalTasks = tasks.length;
+
+        for (const task of tasks) {
+          byColumn[task.column] = (byColumn[task.column] ?? 0) + 1;
+          if (task.column === "in-progress" || task.column === "in-review") {
+            activeTasks += 1;
+          }
+        }
+
+        const { AgentStore } = await import("@fusion/core");
+        const agentStore = new AgentStore({ rootDir: scopedStore.getFusionDir() });
+        await agentStore.init();
+        const agents = await agentStore.listAgents();
+        for (const agent of agents) {
+          const state = agent.state as keyof typeof agentCounts;
+          if (state in agentCounts) {
+            agentCounts[state] += 1;
+          }
+        }
+      } catch {
+        // System stats should still be available even when project resolution/scoped store fails.
       }
 
       res.json({
@@ -1283,9 +1296,9 @@ export function createApiRoutes(store: TaskStore, options?: ServerOptions): Rout
           platform: `${process.platform}/${process.arch}`,
         },
         taskStats: {
-          total: tasks.length,
+          total: totalTasks,
           byColumn,
-          active: tasks.filter((task) => task.column === "in-progress" || task.column === "in-review").length,
+          active: activeTasks,
           agents: agentCounts,
         },
         vitestProcessCount: vitestProcessIds.length,

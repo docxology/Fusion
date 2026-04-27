@@ -394,6 +394,52 @@ describe("GET /api/system-stats", () => {
     expect(defaultStore.listTasks).not.toHaveBeenCalled();
     expect(res.body.taskStats.byColumn.todo).toBe(1);
   });
+
+  it("returns system stats with zeroed task stats when scoped project resolution fails", async () => {
+    const defaultStore = createMockStore({
+      listTasks: vi.fn().mockResolvedValue([{ id: "FN-default", column: "triage" }]),
+      getFusionDir: vi.fn().mockReturnValue("/fake/default"),
+    });
+
+    vi.spyOn(projectStoreResolver, "getOrCreateProjectStore").mockRejectedValue(
+      new Error(`Project "${projectId}" not found`),
+    );
+    const initSpy = vi.spyOn(AgentStore.prototype, "init").mockResolvedValue(undefined);
+    const listAgentsSpy = vi.spyOn(AgentStore.prototype, "listAgents").mockResolvedValue([]);
+
+    const res = await GET(buildApp(defaultStore), `/api/system-stats?projectId=${projectId}`);
+
+    expect(res.status).toBe(200);
+    expect(projectStoreResolver.getOrCreateProjectStore).toHaveBeenCalledWith(projectId);
+    expect(defaultStore.listTasks).not.toHaveBeenCalled();
+    expect(initSpy).not.toHaveBeenCalled();
+    expect(listAgentsSpy).not.toHaveBeenCalled();
+    expect(res.body.systemStats).toEqual(
+      expect.objectContaining({
+        rss: expect.any(Number),
+        heapUsed: expect.any(Number),
+      }),
+    );
+    expect(res.body.taskStats).toEqual({
+      total: 0,
+      byColumn: {
+        triage: 0,
+        todo: 0,
+        "in-progress": 0,
+        "in-review": 0,
+        done: 0,
+        archived: 0,
+      },
+      active: 0,
+      agents: {
+        idle: 0,
+        active: 0,
+        running: 0,
+        error: 0,
+      },
+    });
+    expect(res.body.vitestLastAutoKillAt).toBeNull();
+  });
 });
 
 describe("POST /api/kill-vitest", () => {
