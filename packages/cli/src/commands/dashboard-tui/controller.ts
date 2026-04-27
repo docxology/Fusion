@@ -81,6 +81,12 @@ export class DashboardTUI {
   } & Record<string, unknown> | null = null;
   // Resize listener attached at start(), detached at stop().
   private resizeListener: (() => void) | null = null;
+  // Debounce timer for resize handling — coalesces tmux/ssh resize bursts.
+  private resizeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  // Last observed terminal dims, used by the dim-poll fallback to detect
+  // resizes that didn't deliver a SIGWINCH (common under tmux/ssh).
+  private lastObservedCols: number = 0;
+  private lastObservedRows: number = 0;
 
   // Uptime ticker to keep footer time live.
   private uptimeTimer: ReturnType<typeof setInterval> | null = null;
@@ -517,16 +523,55 @@ export class DashboardTUI {
     // terminal resize. Without this Ink keeps treating the previous frame's
     // line count as the clear region, leaving stale rows above/below the
     // new render until another unrelated rerender happens.
+    //
+    // Debounced: tmux and mosh fire resize bursts during pane negotiation,
+    // and `process.stdout.rows` can briefly read stale/zero values mid-burst.
+    // Coalescing to a single trailing edge lets dimensions settle before we
+    // clear+rerender, then a follow-up notify() forces React to re-read
+    // stdout dims one more time so any timer-driven render that landed
+    // mid-burst with stale rows is corrected.
     this.resizeListener = () => {
-      try {
-        this.inkInstance?.clear?.();
-      } catch {
-        // Ignore — clear is best-effort.
-      }
+      if (this.resizeDebounceTimer) clearTimeout(this.resizeDebounceTimer);
+      this.resizeDebounceTimer = setTimeout(() => {
+        this.resizeDebounceTimer = null;
+        const rows = process.stdout?.rows ?? 0;
+        const cols = process.stdout?.columns ?? 0;
+        if (rows <= 0 || cols <= 0) return;
+        // Full alt-screen wipe + cursor home before Ink redraws. Ink's
+        // clear() only resets log-update's tracked line count; if the
+        // previous frame painted more rows than the new terminal height
+        // (or content shrunk past a layout tier), those rows linger in the
+        // alt-screen buffer and the new frame paints on top, leaving
+        // garbage visible at the bottom. Writing \x1b[2J\x1b[H wipes the
+        // buffer so log-update's next render starts from a known-empty
+        // surface. Order matters: wipe first, then reset Ink's tracking,
+        // then notify so React reads fresh dims and rerenders cleanly.
+        if (process.stdout?.isTTY && typeof process.stdout.write === "function") {
+          try {
+            process.stdout.write("\x1b[2J\x1b[H");
+          } catch {
+            // Ignore — wipe is best-effort.
+          }
+        }
+        try {
+          this.inkInstance?.clear?.();
+        } catch {
+          // Ignore — clear is best-effort.
+        }
+        this.notify();
+      }, 50);
     };
     if (process.stdout && typeof process.stdout.on === "function") {
       process.stdout.on("resize", this.resizeListener);
     }
+
+    // Prime the observed-dims baseline so the systemStats poll below can
+    // detect when stdout dims change without a SIGWINCH (tmux/ssh
+    // sometimes drop the signal — the dims still update on the stream
+    // object, but no resize event fires, so the user sees a stuck
+    // layout). Polling every 2s catches that case at minor cost.
+    this.lastObservedCols = process.stdout?.columns ?? 0;
+    this.lastObservedRows = process.stdout?.rows ?? 0;
 
     this.uptimeTimer = setInterval(() => {
       if (this.isRunning) this.notify();
@@ -537,7 +582,47 @@ export class DashboardTUI {
     this.lastCpuSampleAt = Date.now();
     this.sampleSystemStats();
     this.systemStatsTimer = setInterval(() => {
-      if (this.isRunning) this.sampleSystemStats();
+      if (!this.isRunning) return;
+      this.sampleSystemStats();
+      // Dim-poll fallback: tmux/ssh sometimes drop SIGWINCH entirely, and
+      // Node only refreshes process.stdout.columns/rows when SIGWINCH
+      // arrives — so reading those properties returns stale values that
+      // never recover on their own. Force-query the OS via getWindowSize
+      // (ioctl-backed) and compare against Node's cached dims; if they
+      // diverge, SIGWINCH was lost. Calling _refreshSize() pokes Node to
+      // re-read and emit 'resize', which routes through our existing
+      // resize listener and triggers the full recovery path.
+      const stdout = process.stdout as (typeof process.stdout) & {
+        getWindowSize?: () => [number, number];
+        _refreshSize?: () => void;
+      };
+      try {
+        const [trueCols, trueRows] = stdout.getWindowSize?.() ?? [0, 0];
+        const cachedCols = stdout.columns ?? 0;
+        const cachedRows = stdout.rows ?? 0;
+        if (
+          trueCols > 0 &&
+          trueRows > 0 &&
+          (trueCols !== cachedCols || trueRows !== cachedRows)
+        ) {
+          // Node's cache is stale — force a refresh, which also emits
+          // 'resize' so the existing listener handles cleanup.
+          stdout._refreshSize?.();
+          this.lastObservedCols = trueCols;
+          this.lastObservedRows = trueRows;
+        } else if (
+          trueCols > 0 &&
+          trueRows > 0 &&
+          (trueCols !== this.lastObservedCols || trueRows !== this.lastObservedRows)
+        ) {
+          // Cache and OS agree but we never recorded this size — likely
+          // a resize event we already handled; just sync the baseline.
+          this.lastObservedCols = trueCols;
+          this.lastObservedRows = trueRows;
+        }
+      } catch {
+        // ioctl can fail in edge cases (detached pty, etc.) — ignore.
+      }
     }, 2000);
   }
 
@@ -558,6 +643,10 @@ export class DashboardTUI {
     if (this.resizeListener && process.stdout && typeof process.stdout.off === "function") {
       process.stdout.off("resize", this.resizeListener);
       this.resizeListener = null;
+    }
+    if (this.resizeDebounceTimer) {
+      clearTimeout(this.resizeDebounceTimer);
+      this.resizeDebounceTimer = null;
     }
 
     if (this.inkInstance) {

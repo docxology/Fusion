@@ -487,9 +487,19 @@ function LogsPanel({
 }: {
   state: DashboardState;
   isFocused: boolean;
-  availableRows: number;
+  // Optional override; when omitted LogsPanel reads stdout.rows itself so
+  // the windowing budget always reflects live terminal dimensions, even on
+  // timer-driven re-renders that race tmux/ssh resize bursts.
+  availableRows?: number;
 }) {
   const { logsSeverityFilter, logsWrapEnabled, logsExpandedMode, selectedLogIndex } = state;
+  const { stdout } = useStdout();
+  // Subtract the chrome (header ~2, status bar 1, panel borders/title ~3,
+  // utilities/settings sub-row ~5) from live rows. Same heuristic the parent
+  // grid used; keeping it co-located ensures we always read the freshest
+  // stdout.rows on every render.
+  const liveRows = stdout?.rows ?? 24;
+  const rowBudget = Math.max(1, availableRows ?? Math.max(4, liveRows - 11));
 
   const entries = logsSeverityFilter === "all"
     ? state.logEntries
@@ -504,7 +514,6 @@ function LogsPanel({
   // Slide the viewport so the cursor is always visible. Newest entries sit at
   // the bottom; oldest at the top — matching `tail`/`less` and how every
   // human reads a log file.
-  const rowBudget = Math.max(1, availableRows);
   const visibleStart = Math.max(0, Math.min(
     cursor - Math.floor(rowBudget / 2),
     entries.length - rowBudget,
@@ -693,16 +702,12 @@ const PANEL_ORDER: SectionId[] = ["system", "logs", "utilities", "stats", "setti
 
 function StatusModeGrid({
   state,
-  rows,
   controller,
 }: {
   state: DashboardState;
-  rows: number;
   controller: DashboardTUI;
 }) {
   const focused = state.activeSection;
-  const bodyRows = Math.max(8, rows - 7);
-  const logsAvailableRows = Math.max(4, bodyRows - 4);
 
   return (
     <Box flexDirection="column" flexGrow={1}>
@@ -719,7 +724,6 @@ function StatusModeGrid({
           <LogsPanel
             state={state}
             isFocused={focused === "logs"}
-            availableRows={logsAvailableRows}
           />
           <Box flexDirection="row" overflow="hidden">
             <Box flexDirection="column" flexGrow={1} overflow="hidden">
@@ -751,7 +755,7 @@ function StatusModeSingle({
   const activePanel = () => {
     switch (focused) {
       case "system": return <SystemPanel state={state} isFocused />;
-      case "logs": return <LogsPanel state={state} isFocused availableRows={Math.max(4, (process.stdout.rows ?? 24) - 8)} />;
+      case "logs": return <LogsPanel state={state} isFocused />;
       case "utilities": return <UtilitiesPanel state={state} isFocused />;
       case "stats": return <StatsPanel state={state} isFocused />;
       case "settings": return <SettingsPanel state={state} isFocused />;
@@ -796,7 +800,7 @@ function StatusBar({ state, controller: _controller }: { state: DashboardState; 
   // wrap to 2+ rows, throwing the layout's row budget off by 1-2 rows
   // and pushing the header off the top of the alt-screen.
   return (
-    <Box justifyContent="space-between" paddingX={1} flexShrink={0}>
+    <Box height={1} justifyContent="space-between" paddingX={1} flexShrink={0} overflow="hidden">
       <Text dimColor wrap="truncate-end">{hotkeys.join("  ·  ")}</Text>
       {statusParts.length > 0 && (
         <Text dimColor wrap="truncate-end">{statusParts.join(" | ")}</Text>
@@ -847,38 +851,45 @@ function MainHeader({ state }: { state: DashboardState }) {
     // Just FUSION + the active tab pill. Inactive shortcuts dropped here.
     const active = tabs.find(isActive);
     return (
-      <Box flexDirection="row" gap={1} paddingX={1} flexShrink={0} overflow="hidden">
+      <Box height={1} flexDirection="row" gap={1} paddingX={1} flexShrink={0} overflow="hidden">
         <MiniLogo />
         {active && (
           <Box flexShrink={0}>
-            <Text backgroundColor="cyan" color="black" bold>{` ${active.key} ${active.label} `}</Text>
+            <Text wrap="truncate-end" backgroundColor="cyan" color="black" bold>{` ${active.key} ${active.label} `}</Text>
           </Box>
         )}
       </Box>
     );
   }
+  // height={1} hard-caps the header at a single row. Without this, at
+  // certain boundary widths the default Text wrap="wrap" on a tab whose
+  // content lands one column past the parent width would push a second
+  // row, making the header 2 rows tall — which in turn makes the whole
+  // frame exceed terminal rows, so Ink pushes the top of the layout
+  // off-screen. Combined with wrap="truncate-end" on every tab Text
+  // below, both axes are protected against single-column overflow.
   return (
-    <Box flexDirection="row" gap={1} paddingX={1} paddingY={0} flexShrink={0} overflow="hidden">
+    <Box height={1} flexDirection="row" gap={1} paddingX={1} paddingY={0} flexShrink={0} overflow="hidden">
       <MiniLogo />
-      <Box flexShrink={0}><Text dimColor>│</Text></Box>
+      <Box flexShrink={0}><Text wrap="truncate-end" dimColor>│</Text></Box>
       {tabs.map((t) => {
         const active = isActive(t);
         return (
           <Box key={t.key} marginRight={1} flexShrink={0}>
             {active ? (
-              <Text backgroundColor="cyan" color="black" bold>
+              <Text wrap="truncate-end" backgroundColor="cyan" color="black" bold>
                 {compact ? ` ${t.key} ` : ` [${t.key}] ${t.label} `}
               </Text>
             ) : compact ? (
-              <Text dimColor>{`[${t.key}]`}</Text>
+              <Text wrap="truncate-end" dimColor>{`[${t.key}]`}</Text>
             ) : (
-              <Text dimColor>{`[${t.key}] ${t.label}`}</Text>
+              <Text wrap="truncate-end" dimColor>{`[${t.key}] ${t.label}`}</Text>
             )}
           </Box>
         );
       })}
       <Box flexGrow={1} />
-      {showHelpHint && <Box flexShrink={0}><Text dimColor>[?] help  [q] quit</Text></Box>}
+      {showHelpHint && <Box flexShrink={0}><Text wrap="truncate-end" dimColor>[?] help  [q] quit</Text></Box>}
     </Box>
   );
 }
@@ -3756,13 +3767,26 @@ export function DashboardApp({ controller }: DashboardAppProps) {
   // dimensions. (The controller separately calls inkInstance.clear() to
   // reset Ink's log-update line tracking — manually writing clear escape
   // codes here would desync that tracking and break subsequent renders.)
-  const [, setResizeTick] = useState(0);
+  const [resizeTick, setResizeTick] = useState(0);
   useEffect(() => {
     if (!stdout) return;
-    const onResize = () => setResizeTick((t) => t + 1);
+    let followup: ReturnType<typeof setTimeout> | null = null;
+    const onResize = () => {
+      // Bump immediately so React re-reads dims on the next render. Then
+      // schedule a follow-up bump ~60ms later (past the controller's 50ms
+      // resize debounce) to cover the case where stdout.columns/rows had
+      // not yet settled at the first render — common under tmux/ssh.
+      setResizeTick((t) => t + 1);
+      if (followup) clearTimeout(followup);
+      followup = setTimeout(() => {
+        followup = null;
+        setResizeTick((t) => t + 1);
+      }, 60);
+    };
     stdout.on("resize", onResize);
     return () => {
       stdout.off("resize", onResize);
+      if (followup) clearTimeout(followup);
     };
   }, [stdout]);
 
@@ -3978,7 +4002,11 @@ export function DashboardApp({ controller }: DashboardAppProps) {
   // diff a layout that's still bound to old dimensions, we throw the
   // tree away and rebuild from scratch with the new bounds. Cheap on
   // every keystroke (resize is rare), avoids subtle Yoga caching bugs.
-  const layoutKey = `${cols}x${rows}`;
+  // Include resizeTick so every resize event remounts even if stdout reports
+  // the same cols×rows string (stale-read race, or two consecutive resizes
+  // back to the same width). Without this, Yoga keeps the cached layout from
+  // the prior render and the screen stays broken until the next dim change.
+  const layoutKey = `${cols}x${rows}#${resizeTick}`;
 
   // Splash: show while systemInfo is not yet set.
   if (!state.systemInfo) {
@@ -3998,7 +4026,7 @@ export function DashboardApp({ controller }: DashboardAppProps) {
       ) : isNarrow ? (
         <StatusModeSingle state={state} controller={controller} />
       ) : (
-        <StatusModeGrid state={state} rows={rows} controller={controller} />
+        <StatusModeGrid state={state} controller={controller} />
       )}
       {state.showHelp && (
         <Box position="absolute" marginTop={3} marginLeft={4}>
