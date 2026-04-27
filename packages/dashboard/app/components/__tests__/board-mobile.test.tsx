@@ -274,9 +274,9 @@ describe("TaskCard mobile", () => {
     expectRuleToContain(css, ".card-footer-row", "flex-wrap: nowrap;");
   });
 
-  it("keeps TaskCard timer chip in-flow and reserves right alignment for header actions", () => {
+  it("keeps TaskCard timer chip in-flow and right-aligned in footer metadata row", () => {
     const css = loadAllAppCss();
-    expectRuleNotToContain(css, ".card-time-indicator", "margin-left: auto;");
+    expectRuleToContain(css, ".card-time-indicator", "margin-left: auto;");
     expectRuleToContain(css, ".card-header-actions", "margin-left: auto;");
   });
 

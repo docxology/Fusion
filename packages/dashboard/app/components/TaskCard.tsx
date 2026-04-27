@@ -1208,16 +1208,6 @@ function TaskCardComponent({
             {abbreviateMissionTitle(missionTitle ?? task.missionId)}
           </span>
         )}
-        {timeIndicator && (
-          <span
-            className="card-time-indicator"
-            title={timeIndicator.title}
-            aria-label={timeIndicator.ariaLabel}
-          >
-            <Clock size={12} />
-            <span>{timeIndicator.label}</span>
-          </span>
-        )}
         <div className="card-header-actions">
           {canEdit && (
             <button
@@ -1394,9 +1384,19 @@ function TaskCardComponent({
           </>
         );
       })()}
-      {filesChangedButton && (
+      {(filesChangedButton || timeIndicator) && (
         <div className="card-footer-row">
           {filesChangedButton}
+          {timeIndicator && (
+            <span
+              className="card-time-indicator"
+              title={timeIndicator.title}
+              aria-label={timeIndicator.ariaLabel}
+            >
+              <Clock size={12} />
+              <span>{timeIndicator.label}</span>
+            </span>
+          )}
         </div>
       )}
       {((task.dependencies && task.dependencies.length > 0) || queued || task.status === "queued" || task.blockedBy) && (

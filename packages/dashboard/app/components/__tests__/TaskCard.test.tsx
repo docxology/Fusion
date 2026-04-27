@@ -503,7 +503,7 @@ describe("TaskCard", () => {
     expect(timer?.getAttribute("aria-label")).toContain("Completed processing duration 2h");
   });
 
-  it("renders files-changed metadata in footer row and timer chip in header", () => {
+  it("renders files-changed metadata and timer chip in footer row", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-25T18:00:00.000Z"));
 
@@ -539,9 +539,9 @@ describe("TaskCard", () => {
     expect(filesChanged).not.toBeNull();
     expect(timer).not.toBeNull();
     expect(footerRow?.contains(filesChanged)).toBe(true);
-    expect(footerRow?.contains(timer)).toBe(false);
-    expect(header?.contains(timer)).toBe(true);
-    expect(Array.from(footerRow?.children ?? [])).toEqual([filesChanged]);
+    expect(footerRow?.contains(timer)).toBe(true);
+    expect(header?.contains(timer)).toBe(false);
+    expect(Array.from(footerRow?.children ?? [])).toEqual([filesChanged, timer]);
   });
   it.each(["triage", "todo", "in-review", "archived"] as const)(
     "does not render timer chip for %s cards",
