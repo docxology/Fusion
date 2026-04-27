@@ -221,7 +221,7 @@ describe("AgentLogViewer", () => {
       const { container } = render(<AgentLogViewer entries={entries} loading={false} />);
       const badges = container.querySelectorAll(".agent-log-agent-badge");
       expect(badges).toHaveLength(2);
-      expect(badges[0].textContent).toBe("[triage]");
+      expect(badges[0].textContent).toBe("[Plan]");
       expect(badges[1].textContent).toBe("[executor]");
     });
 
@@ -248,7 +248,7 @@ describe("AgentLogViewer", () => {
       const badges = container.querySelectorAll(".agent-log-agent-badge");
       expect(badges).toHaveLength(1);
       // In chronological order, the oldest (hmm) gets the badge
-      expect(badges[0].textContent).toBe("[triage]");
+      expect(badges[0].textContent).toBe("[Plan]");
     });
 
     it("always shows badge on tool entries regardless of surrounding entries", () => {
@@ -422,10 +422,10 @@ describe("AgentLogViewer", () => {
       const header = container.querySelector("[data-testid='agent-log-model-header']");
       expect(header).toBeTruthy();
       expect(container.querySelector('[data-provider="anthropic"]')).toBeTruthy();
-      expect(header!.textContent).not.toContain("Planning/Triage:");
+      expect(header!.textContent).not.toContain("Planning:");
 
       fireEvent.click(screen.getByTestId("agent-log-model-expand"));
-      expect(header!.textContent).toContain("Planning/Triage:");
+      expect(header!.textContent).toContain("Planning:");
       expect(header!.textContent).toContain("anthropic/claude-opus-4");
     });
 
@@ -721,7 +721,7 @@ describe("AgentLogViewer", () => {
 
       expect(badges).toHaveLength(3);
       expect(timestamps).toHaveLength(3);
-      expect(badges.map((badge) => badge.textContent)).toEqual(["[triage]", "[executor]", "[reviewer]"]);
+      expect(badges.map((badge) => badge.textContent)).toEqual(["[Plan]", "[executor]", "[reviewer]"]);
     });
 
     it("badge container includes both badge text and timestamp text", () => {

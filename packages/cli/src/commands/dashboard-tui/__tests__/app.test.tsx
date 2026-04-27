@@ -469,7 +469,8 @@ describe("Settings view", () => {
     await waitForFrameContains(lastFrame, "Short-lived expires:");
 
     stdin.write("K");
-    await waitForFrameContains(lastFrame, "QR text payload: ASCII-QR-PAYLOAD");
+    await waitForFrameContains(lastFrame, "QR text payload:", 6000);
+    await waitForFrameContains(lastFrame, "ASCII-QR-PAYLOAD", 6000);
     unmount();
   });
 

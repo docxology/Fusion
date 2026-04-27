@@ -51,6 +51,10 @@ const markdownComponents: Components = {
 
 const BOTTOM_FOLLOW_THRESHOLD_PX = 50;
 
+const AGENT_DISPLAY_NAMES: Record<string, string> = {
+  triage: "Plan",
+};
+
 function isNearBottom(container: HTMLDivElement): boolean {
   return container.scrollHeight - (container.scrollTop + container.clientHeight) <= BOTTOM_FOLLOW_THRESHOLD_PX;
 }
@@ -341,7 +345,7 @@ export function AgentLogViewer({
               )}
             </div>
             <div className="agent-log-model-group">
-              <span className="agent-log-model-label">Planning/Triage:</span>
+              <span className="agent-log-model-label">Planning:</span>
               {hasPlanningOverride ? (
                 <span className="agent-log-model-value">
                   <ProviderIcon provider={planningModel.provider!} size="sm" />
@@ -403,7 +407,7 @@ export function AgentLogViewer({
 
           const agentBadge = showBadge ? (
             <span className="agent-log-badge-row">
-              <span className="agent-log-agent-badge">[{entry.agent}]</span>
+              <span className="agent-log-agent-badge">[{AGENT_DISPLAY_NAMES[entry.agent!] ?? entry.agent}]</span>
               {timestampSpan}
             </span>
           ) : null;
