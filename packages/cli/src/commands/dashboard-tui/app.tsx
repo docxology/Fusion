@@ -760,11 +760,11 @@ function StatusModeGrid({
       </Box>
 
       <Box flexDirection="row" flexGrow={1} overflow="hidden">
-        <Box flexDirection="column" flexGrow={5} overflow="hidden">
+        <Box flexDirection="column" width="45%" flexGrow={0} flexShrink={1} overflow="hidden">
           <SystemPanel state={state} isFocused={focused === "system"} />
           <StatsPanel state={state} isFocused={focused === "stats"} />
         </Box>
-        <Box flexDirection="column" flexGrow={6} overflow="hidden">
+        <Box flexDirection="column" width="55%" flexGrow={0} flexShrink={1} overflow="hidden">
           <LogsPanel
             state={state}
             isFocused={focused === "logs"}

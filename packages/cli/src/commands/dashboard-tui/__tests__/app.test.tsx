@@ -163,6 +163,15 @@ async function waitForFrameContains(lastFrame: () => string | undefined, text: s
   throw new Error(`Timed out waiting for frame to include: ${text}`);
 }
 
+function findTokenPosition(frame: string, token: string): { row: number; col: number } {
+  const lines = frame.split("\n");
+  const row = lines.findIndex((line) => line.includes(token));
+  expect(row).toBeGreaterThanOrEqual(0);
+  const col = lines[row].indexOf(token);
+  expect(col).toBeGreaterThanOrEqual(0);
+  return { row, col };
+}
+
 describe("DashboardApp smoke", () => {
   it("renders the splash logo and tagline before systemInfo arrives", () => {
     const controller = newController();
@@ -608,6 +617,54 @@ describe("LogsPanel indicator", () => {
     // The selected entry shows the arrow; it should appear at least once
     expect(frame).toContain("▶");
     unmount();
+  });
+});
+
+describe("StatusModeGrid layout stability", () => {
+  it("keeps System and Logs panel anchors stable as log content length changes", async () => {
+    const controller = newController();
+    controller.setSystemInfo(makeSystemInfo());
+    controller.setActiveSection("logs");
+
+    const rendered = render(renderDashboardAppNode(controller));
+    setTerminalSize(rendered, 120, 28);
+    rendered.rerender(renderDashboardAppNode(controller));
+
+    controller.log("short msg", "app");
+    controller.log("small", "worker");
+    controller.log("ok", "db");
+    rendered.rerender(renderDashboardAppNode(controller));
+    await new Promise((r) => setTimeout(r, 10));
+
+    const shortFrame = rendered.lastFrame() ?? "";
+    const shortSystem = findTokenPosition(shortFrame, "System");
+    const shortLogs = findTokenPosition(shortFrame, "Logs (3/1000)");
+    const shortStatus = findTokenPosition(shortFrame, "http://localhost:4040");
+
+    controller.log(
+      "this is a deliberately long log message that should force truncation or wrapping and previously nudged grid widths",
+      "very-long-prefix-value",
+    );
+    controller.log(
+      "another long log payload with changing text widths to emulate timer and event updates in real sessions",
+      "background-scheduler",
+    );
+    controller.log(
+      "final long line for width stability regression coverage across re-renders",
+      "super-verbose-component-prefix",
+    );
+    rendered.rerender(renderDashboardAppNode(controller));
+    await new Promise((r) => setTimeout(r, 10));
+
+    const longFrame = rendered.lastFrame() ?? "";
+    const longSystem = findTokenPosition(longFrame, "System");
+    const longLogs = findTokenPosition(longFrame, "Logs (6/1000)");
+    const longStatus = findTokenPosition(longFrame, "http://localhost:4040");
+
+    expect(longSystem).toEqual(shortSystem);
+    expect(longLogs).toEqual(shortLogs);
+    expect(longStatus).toEqual(shortStatus);
+    rendered.unmount();
   });
 });
 
