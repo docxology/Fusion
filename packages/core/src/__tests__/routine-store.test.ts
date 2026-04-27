@@ -21,7 +21,8 @@ describe("RoutineStore", () => {
 
   beforeEach(async () => {
     rootDir = makeTmpDir();
-    store = new RoutineStore(rootDir);
+    // In-memory SQLite for test speed; see store.test.ts beforeEach.
+    store = new RoutineStore(rootDir, { inMemoryDb: true });
     await store.init();
   });
 

@@ -26,7 +26,8 @@ describe("PluginStore", () => {
 
   beforeEach(async () => {
     rootDir = makeTmpDir();
-    store = new PluginStore(rootDir);
+    // In-memory SQLite for test speed; see store.test.ts beforeEach.
+    store = new PluginStore(rootDir, { inMemoryDb: true });
     await store.init();
   });
 
@@ -38,6 +39,10 @@ describe("PluginStore", () => {
 
   describe("init", () => {
     it("creates the database file", async () => {
+      // Asserts a real file on disk exists, which the in-memory
+      // beforeEach store can't satisfy — open a disk-backed store.
+      const diskStore = new PluginStore(rootDir);
+      await diskStore.init();
       const dbPath = join(rootDir, ".fusion", "fusion.db");
       const { existsSync } = await import("node:fs");
       expect(existsSync(dbPath)).toBe(true);

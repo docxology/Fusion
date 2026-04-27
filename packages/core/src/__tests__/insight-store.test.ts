@@ -47,7 +47,10 @@ function createProvenance(overrides: Partial<InsightProvenance> = {}): InsightPr
 
 beforeEach(() => {
   fusionDir = makeTmpDir();
-  db = createDatabase(fusionDir);
+  // In-memory SQLite for test speed; see store.test.ts beforeEach.
+  // Tests below that exercise migration on a real on-disk DB construct
+  // their own disk-backed Database explicitly.
+  db = createDatabase(fusionDir, { inMemory: true });
   db.init();
   store = new InsightStore(db);
 });

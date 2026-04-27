@@ -31,7 +31,10 @@ describe("AgentStore", () => {
 
   beforeEach(async () => {
     rootDir = makeTmpDir();
-    store = new AgentStore({ rootDir });
+    // In-memory SQLite — see store.test.ts beforeEach for rationale.
+    // Tests that exercise cross-instance persistence (search for `store2`)
+    // construct disk-backed stores explicitly inside the test body.
+    store = new AgentStore({ rootDir, inMemoryDb: true });
     await store.init();
   });
 
@@ -102,6 +105,13 @@ describe("AgentStore", () => {
     });
 
     it("normalizes legacy durable agents to heartbeat enabled once", async () => {
+      // Migration test: opens a raw Database on disk to seed a meta key,
+      // then re-opens the AgentStore to assert migration ran. Needs both
+      // the store and the raw DB to be disk-backed.
+      store.close();
+      store = new AgentStore({ rootDir });
+      await store.init();
+
       const agent = await store.createAgent({
         name: "Legacy Durable Agent",
         role: "executor",
@@ -2459,6 +2469,12 @@ describe("AgentStore", () => {
     });
 
     it("API keys survive store reinitialization", async () => {
+      // Cross-instance persistence — swap in-memory beforeEach store for
+      // disk-backed so store2 (also disk-backed) can read what we wrote.
+      store.close();
+      store = new AgentStore({ rootDir });
+      await store.init();
+
       const agent = await store.createAgent({ name: "KeyPersistence", role: "executor" });
       const { key } = await store.createApiKey(agent.id, { label: "persist" });
 
@@ -2536,6 +2552,11 @@ describe("AgentStore", () => {
 
   describe("SQLite persistence", () => {
     it("agent data survives store reinitialization", async () => {
+      // Cross-instance persistence — see counterpart in API keys describe.
+      store.close();
+      store = new AgentStore({ rootDir });
+      await store.init();
+
       const agent = await store.createAgent({
         name: "Persistent",
         role: "reviewer",

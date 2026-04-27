@@ -54,12 +54,18 @@ export class ArchiveDatabase {
   private db: DatabaseSync;
   private readonly _fts5Available: boolean;
 
-  constructor(fusionDir: string) {
-    if (!existsSync(fusionDir)) {
+  constructor(fusionDir: string, options?: { inMemory?: boolean }) {
+    // See Database constructor in db.ts for the in-memory rationale —
+    // mirrors the same pattern so TaskStore can flip both DBs in lockstep
+    // for tests that don't exercise cross-instance persistence.
+    const inMemory = options?.inMemory === true;
+    if (!inMemory && !existsSync(fusionDir)) {
       mkdirSync(fusionDir, { recursive: true });
     }
-    this.db = new DatabaseSync(join(fusionDir, "archive.db"));
-    this.db.exec("PRAGMA journal_mode = WAL");
+    this.db = new DatabaseSync(inMemory ? ":memory:" : join(fusionDir, "archive.db"));
+    if (!inMemory) {
+      this.db.exec("PRAGMA journal_mode = WAL");
+    }
     this.db.exec("PRAGMA busy_timeout = 5000");
     this._fts5Available = probeFts5(this.db);
   }

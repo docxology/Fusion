@@ -82,6 +82,12 @@ export interface AgentStoreOptions {
   rootDir?: string;
   /** Optional TaskStore for checkout/release operations */
   taskStore?: TaskStore;
+  /**
+   * Test-only: open the underlying SQLite DB as `:memory:` instead of a
+   * disk-backed file. Skips per-test fsync and WAL setup; mirrors the
+   * pattern in TaskStore. Production callers must leave this unset.
+   */
+  inMemoryDb?: boolean;
 }
 
 /** Agent data as stored in SQLite JSON columns */
@@ -174,6 +180,7 @@ export class AgentStore extends EventEmitter {
   private locks: Map<string, AgentLock> = new Map();
   private _db: Database | null = null;
   private taskStore?: TaskStore;
+  private readonly inMemoryDb: boolean;
 
   constructor(options: AgentStoreOptions = {}) {
     super();
@@ -187,11 +194,12 @@ export class AgentStore extends EventEmitter {
     this.rootDir = options.rootDir ?? resolve(".fusion");
     this.agentsDir = join(this.rootDir, "agents");
     this.taskStore = options.taskStore;
+    this.inMemoryDb = options.inMemoryDb === true;
   }
 
   private get db(): Database {
     if (!this._db) {
-      this._db = new Database(this.rootDir);
+      this._db = new Database(this.rootDir, { inMemory: this.inMemoryDb });
       this._db.init();
     }
     return this._db;

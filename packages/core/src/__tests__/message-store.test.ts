@@ -13,7 +13,8 @@ describe("MessageStore", () => {
 
   beforeEach(() => {
     tempDir = mkdtempSync(join(tmpdir(), "kb-msg-test-"));
-    db = new Database(tempDir);
+    // In-memory SQLite for test speed; see store.test.ts beforeEach.
+    db = new Database(tempDir, { inMemory: true });
     db.init();
     store = new MessageStore(db);
   });

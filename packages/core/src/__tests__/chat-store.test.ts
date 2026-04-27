@@ -19,7 +19,8 @@ describe("ChatStore", () => {
   beforeEach(() => {
     tmpDir = makeTmpDir();
     fusionDir = join(tmpDir, ".fusion");
-    db = new Database(fusionDir);
+    // In-memory SQLite for test speed; see store.test.ts beforeEach.
+    db = new Database(fusionDir, { inMemory: true });
     db.init();
     store = new ChatStore(fusionDir, db);
   });

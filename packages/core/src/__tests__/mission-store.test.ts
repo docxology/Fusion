@@ -32,7 +32,10 @@ describe("MissionStore", () => {
   beforeEach(() => {
     tmpDir = makeTmpDir();
     fusionDir = join(tmpDir, ".fusion");
-    db = new Database(fusionDir);
+    // In-memory SQLite for test speed — see store.test.ts beforeEach for
+    // the broader rationale. MissionStore tests don't exercise
+    // cross-instance persistence, so this is safe across the whole file.
+    db = new Database(fusionDir, { inMemory: true });
     db.init();
     store = new MissionStore(fusionDir, db);
   });

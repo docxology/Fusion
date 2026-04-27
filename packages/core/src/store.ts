@@ -395,12 +395,24 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
   /** Cached TodoStore instance */
   private todoStore: TodoStore | null = null;
 
-  constructor(private rootDir: string, globalSettingsDir?: string) {
+  // Test-only: when true, both fusion.db and archive.db open as `:memory:`
+  // SQLite connections instead of disk-backed files. Production code never
+  // sets this; it's gated through an opt-in TaskStoreOptions field below.
+  // Tests that need cross-instance persistence (open store A, close,
+  // open store B on the same dir, expect data) must leave this false.
+  private readonly inMemoryDb: boolean;
+
+  constructor(
+    private rootDir: string,
+    globalSettingsDir?: string,
+    options?: { inMemoryDb?: boolean },
+  ) {
     super();
     this.setMaxListeners(100);
     this.fusionDir = join(rootDir, ".fusion");
     this.tasksDir = join(this.fusionDir, "tasks");
     this.configPath = join(this.fusionDir, "config.json");
+    this.inMemoryDb = options?.inMemoryDb === true;
     const resolvedGlobalSettingsDir = globalSettingsDir
       ?? (process.env.VITEST === "true" ? join(rootDir, ".fusion-global-settings") : undefined);
     this.globalSettingsStore = new GlobalSettingsStore(resolvedGlobalSettingsDir);
@@ -412,7 +424,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
    */
   private get db(): Database {
     if (!this._db) {
-      this._db = new Database(this.fusionDir);
+      this._db = new Database(this.fusionDir, { inMemory: this.inMemoryDb });
       this._db.init();
       // Auto-migrate legacy data if needed
       if (detectLegacyData(this.fusionDir)) {
@@ -426,7 +438,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
 
   private get archiveDb(): ArchiveDatabase {
     if (!this._archiveDb) {
-      this._archiveDb = new ArchiveDatabase(this.fusionDir);
+      this._archiveDb = new ArchiveDatabase(this.fusionDir, { inMemory: this.inMemoryDb });
       this._archiveDb.init();
       this.migrateLegacyArchiveEntriesToArchiveDb();
     }
@@ -438,7 +450,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
     
     // Initialize SQLite database
     if (!this._db) {
-      this._db = new Database(this.fusionDir);
+      this._db = new Database(this.fusionDir, { inMemory: this.inMemoryDb });
       this._db.init();
     }
     

@@ -43,7 +43,12 @@ describe("TaskStore", () => {
   beforeEach(async () => {
     rootDir = makeTmpDir();
     globalDir = makeTmpDir();
-    store = new TaskStore(rootDir, globalDir);
+    // In-memory SQLite cuts per-test setup from ~50ms to ~5ms by avoiding
+    // disk open + WAL fsync for both fusion.db and archive.db. The few
+    // tests below that exercise cross-instance persistence (open store A,
+    // close, open store B on same dir, expect data) construct disk-backed
+    // stores explicitly — they are flagged with a comment at each site.
+    store = new TaskStore(rootDir, globalDir, { inMemoryDb: true });
     await store.init();
   });
 
@@ -292,6 +297,13 @@ describe("TaskStore", () => {
     });
 
     it("persists token usage across TaskStore reinitialization", async () => {
+      // Cross-instance persistence test — swap beforeEach's in-memory
+      // store for disk-backed so the second `new TaskStore` below can
+      // observe what this instance writes.
+      store.close();
+      store = new TaskStore(rootDir, globalDir);
+      await store.init();
+
       const tokenUsage = {
         inputTokens: 300,
         outputTokens: 120,
@@ -315,6 +327,11 @@ describe("TaskStore", () => {
     });
 
     it("clears token usage via null update and keeps it absent after reload", async () => {
+      // Cross-instance persistence test — see counterpart above.
+      store.close();
+      store = new TaskStore(rootDir, globalDir);
+      await store.init();
+
       const task = await store.createTask({
         description: "Clear token usage",
         tokenUsage: {
@@ -2663,6 +2680,13 @@ describe("TaskStore", () => {
     };
 
     it("round-trips nested remoteAccess settings with both providers, token strategy, and lifecycle", async () => {
+      // Cross-instance persistence test — beforeEach uses in-memory DB
+      // for speed, but this case reloads via a second TaskStore on the
+      // same dir, so we need disk-backed for both.
+      store.close();
+      store = new TaskStore(rootDir, globalDir);
+      await store.init();
+
       await store.updateSettings({ remoteAccess: baseRemoteAccess });
 
       const settings = await store.getSettings();
@@ -6918,6 +6942,12 @@ Task with acceptance criteria
 
   describe("cleanupArchivedTasks", () => {
     it("writes compact entry to archive DB with compact agent log", async () => {
+      // This test asserts the archive.db file exists on disk, which the
+      // in-memory beforeEach store can't satisfy. Swap to disk-backed.
+      store.close();
+      store = new TaskStore(rootDir, globalDir);
+      await store.init();
+
       // Create and archive a task
       const task = await store.createTask({ description: "Test cleanup", title: "Cleanup Task" });
       await store.moveTask(task.id, "todo");
@@ -7335,6 +7365,14 @@ Task with acceptance criteria
 
   describe("archive log persistence", () => {
     it("archive log survives TaskStore reinitialization", async () => {
+      // Cross-instance persistence test — beforeEach creates an in-memory
+      // store, but this test verifies disk persistence. Swap to a
+      // disk-backed store before doing any work so newStore (also
+      // disk-backed) can read what the first instance wrote.
+      store.close();
+      store = new TaskStore(rootDir, globalDir);
+      await store.init();
+
       const task = await store.createTask({ description: "Survival test" });
       await store.moveTask(task.id, "todo");
       await store.moveTask(task.id, "in-progress");
@@ -7515,6 +7553,12 @@ Task with acceptance criteria
     });
 
     it("activity log survives TaskStore reinitialization", async () => {
+      // Cross-instance persistence test — see archive-log counterpart
+      // above for the in-memory carve-out rationale.
+      store.close();
+      store = new TaskStore(rootDir, globalDir);
+      await store.init();
+
       await store.recordActivity({ type: "task:created", taskId: "FN-001", details: "Test" });
 
       // Create new store instance
@@ -9233,6 +9277,12 @@ Task with acceptance criteria
     });
 
     it("recovery metadata persists across store re-initialization", async () => {
+      // Cross-instance persistence test — see archive-log counterpart in
+      // this file for the in-memory carve-out rationale.
+      store.close();
+      store = new TaskStore(rootDir, globalDir);
+      await store.init();
+
       const task = await createTestTask();
       const futureTime = new Date(Date.now() + 60_000).toISOString();
       await store.updateTask(task.id, {

@@ -28,7 +28,10 @@ describe("RoadmapStore", () => {
 
   beforeEach(() => {
     tmpDir = makeTmpDir();
-    db = new Database(join(tmpDir, ".fusion"));
+    // In-memory SQLite for test speed; see store.test.ts beforeEach.
+    // Cross-instance persistence sub-tests below construct disk-backed
+    // Database instances explicitly (search for `persistDb`).
+    db = new Database(join(tmpDir, ".fusion"), { inMemory: true });
     db.init();
     store = new RoadmapStore(db);
   });

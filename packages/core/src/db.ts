@@ -657,22 +657,35 @@ export class Database {
   private transactionDepth = 0;
   private readonly _fts5Available: boolean;
 
-  constructor(fusionDir: string) {
-    this.dbPath = join(fusionDir, "fusion.db");
+  constructor(fusionDir: string, options?: { inMemory?: boolean }) {
+    // In-memory mode is a test-only fast path that swaps the on-disk
+    // SQLite file for SQLite's `:memory:` connection. Schema + data live
+    // entirely in process RAM, eliminating per-test disk open/sync cost
+    // (~30-50ms × hundreds of tests in store.test.ts). Production code
+    // never sets this — it's plumbed through TaskStore for tests that
+    // don't need cross-instance persistence.
+    const inMemory = options?.inMemory === true;
+    this.dbPath = inMemory ? ":memory:" : join(fusionDir, "fusion.db");
 
-    if (!isAbsolute(fusionDir)) {
+    if (!inMemory && !isAbsolute(fusionDir)) {
       throw new Error(`[fusion] Database constructor requires an absolute fusionDir path, got: ${fusionDir}`);
     }
 
-    // Ensure .fusion directory exists
-    if (!existsSync(fusionDir)) {
+    // Ensure .fusion directory exists (only meaningful for disk-backed mode;
+    // in-memory mode never touches the filesystem here).
+    if (!inMemory && !existsSync(fusionDir)) {
       mkdirSync(fusionDir, { recursive: true });
     }
 
     this.db = new DatabaseSync(this.dbPath);
 
-    // Enable WAL mode for concurrent reader/writer access
-    this.db.exec("PRAGMA journal_mode = WAL");
+    // WAL is meaningless for `:memory:` connections — SQLite ignores it
+    // and there's no other writer to coordinate with — so we skip it. The
+    // remaining pragmas apply uniformly.
+    if (!inMemory) {
+      // Enable WAL mode for concurrent reader/writer access
+      this.db.exec("PRAGMA journal_mode = WAL");
+    }
     // Wait up to 5s for locks to clear before returning SQLITE_BUSY
     this.db.exec("PRAGMA busy_timeout = 5000");
     // Enable foreign key enforcement
@@ -2022,8 +2035,8 @@ export class Database {
  * @param fusionDir - Path to the `.fusion` directory (e.g., `/path/to/project/.fusion`)
  * @returns Database instance (not yet initialized)
  */
-export function createDatabase(fusionDir: string): Database {
-  return new Database(fusionDir);
+export function createDatabase(fusionDir: string, options?: { inMemory?: boolean }): Database {
+  return new Database(fusionDir, options);
 }
 
 export { normalizeTaskComments };

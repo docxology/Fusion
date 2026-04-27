@@ -28,7 +28,10 @@ describe("AutomationStore", () => {
 
   beforeEach(async () => {
     rootDir = makeTmpDir();
-    store = new AutomationStore(rootDir);
+    // In-memory SQLite for test speed; see store.test.ts beforeEach.
+    // Cross-instance persistence sub-test below opens a disk-backed
+    // secondStore explicitly.
+    store = new AutomationStore(rootDir, { inMemoryDb: true });
     await store.init();
   });
 
@@ -179,6 +182,12 @@ describe("AutomationStore", () => {
     });
 
     it("persists schedule to database", async () => {
+      // Cross-instance persistence — swap to disk-backed for both stores.
+      // AutomationStore has no close() method; the in-memory beforeEach
+      // store is dropped on reassignment and its DB connection is GC'd.
+      store = new AutomationStore(rootDir);
+      await store.init();
+
       const schedule = await store.createSchedule({
         name: "Persist test",
         command: "echo persist",

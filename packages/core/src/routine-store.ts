@@ -67,8 +67,11 @@ export class RoutineStore extends EventEmitter<RoutineStoreEvents> {
   /** Per-routine promise chain for serializing writes. */
   private routineLocks: Map<string, Promise<void>> = new Map();
 
-  constructor(private rootDir: string) {
+  private readonly inMemoryDb: boolean;
+
+  constructor(private rootDir: string, options?: { inMemoryDb?: boolean }) {
     super();
+    this.inMemoryDb = options?.inMemoryDb === true;
   }
 
   // ── Database Access ────────────────────────────────────────────────
@@ -79,7 +82,7 @@ export class RoutineStore extends EventEmitter<RoutineStoreEvents> {
   private get db(): Database {
     if (!this._db) {
       const fusionDir = `${this.rootDir}/.fusion`;
-      this._db = new Database(fusionDir);
+      this._db = new Database(fusionDir, { inMemory: this.inMemoryDb });
       this._db.init();
     }
     return this._db;
