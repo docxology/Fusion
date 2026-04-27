@@ -296,7 +296,12 @@ export function TaskDetailModal({
 
   // Derive a working task that always has all available fields.
   // Falls back to the optimistic Task while loading, uses fullDetail once loaded.
-  const workingTask: TaskDetail = fullDetail ?? { ...task, prompt: "" } as TaskDetail;
+  // Live fields (tokenUsage, log, workflowStepResults, status, column, …) are
+  // taken from the parent `task` prop which receives SSE updates, so the stats
+  // tab keeps populating while a task runs after the modal was opened.
+  const workingTask: TaskDetail = fullDetail
+    ? ({ ...fullDetail, ...task, prompt: fullDetail.prompt } as TaskDetail)
+    : ({ ...task, prompt: "" } as TaskDetail);
   const canRetryTask =
     task.status === "failed" ||
     task.status === "stuck-killed" ||

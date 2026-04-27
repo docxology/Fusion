@@ -11,6 +11,7 @@ import { findWorktreeUser } from "./merger.js";
 import { generateWorktreeName, slugify } from "./worktree-names.js";
 import { Type, type Static } from "@mariozechner/pi-ai";
 import { describeModel, promptWithFallback, compactSessionContext } from "./pi.js";
+import { accumulateSessionTokenUsage } from "./session-token-usage.js";
 import { createResolvedAgentSession, extractRuntimeHint } from "./agent-session-helpers.js";
 import { buildSessionSkillContext } from "./session-skill-context.js";
 import { reviewStep, type ReviewVerdict } from "./reviewer.js";
@@ -2015,6 +2016,7 @@ export class TaskExecutor {
           // session.prompt() resolves normally even when retries are exhausted —
           // the error is stored on session.state.error instead of being thrown.
           checkSessionError(session);
+          await accumulateSessionTokenUsage(this.store, task.id, session);
 
           // Check if proactive context compaction is needed based on token cap setting.
           // This runs after the main prompt completes to avoid interrupting active work.
@@ -2072,6 +2074,7 @@ export class TaskExecutor {
 
             await promptWithFallback(session, resumePrompt);
             checkSessionError(session);
+            await accumulateSessionTokenUsage(this.store, task.id, session);
           }
 
           // If dependency was added during execution, discard worktree and move to triage
@@ -2233,6 +2236,7 @@ export class TaskExecutor {
               stuckDetector?.recordActivity(task.id);
               await promptWithFallback(retrySession, retryPrompt);
               checkSessionError(retrySession);
+              await accumulateSessionTokenUsage(this.store, task.id, retrySession);
 
               if (!taskDone) {
                 const implicitCheck = await this.store.getTask(task.id);
@@ -2439,6 +2443,7 @@ export class TaskExecutor {
 
               await promptWithFallback(activeEntry.session, reducedPrompt);
               checkSessionError(activeEntry.session);
+              await accumulateSessionTokenUsage(this.store, task.id, activeEntry.session);
 
               // Reduced-prompt retry succeeded — return to let the finally block clean up
               // without marking the task as failed.
@@ -3881,6 +3886,7 @@ and show an appropriate message to the user.\`
       );
 
       checkSessionError(session);
+      await accumulateSessionTokenUsage(this.store, task.id, session);
       session.dispose();
       await agentLogger.flush();
 

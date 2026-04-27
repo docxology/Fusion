@@ -1,4 +1,5 @@
-import type { Task, TaskLogEntry, TaskTokenUsage, WorkflowStepResult } from "@fusion/core";
+import type { Task, TaskTokenUsage, WorkflowStepResult } from "@fusion/core";
+import { extractTimingEvents, type TimingEvent } from "../utils/taskTiming";
 import "./TaskTokenStatsPanel.css";
 
 interface TaskTokenStatsPanelProps {
@@ -25,12 +26,6 @@ interface TaskTokenStatsPanelProps {
     | "blockedBy"
     | "sessionFile"
   >;
-}
-
-interface TimingEvent {
-  timestamp: string;
-  durationMs?: number;
-  summary: string;
 }
 
 interface WorkflowTimingSummary {
@@ -64,50 +59,31 @@ function formatDuration(valueMs: number): string {
   return `${minutes}m ${seconds}s`;
 }
 
-function summarizeTimingLabel(entry: TaskLogEntry): string {
-  const timingText = entry.action || entry.outcome || "";
-  const stripped = timingText
-    .replace(/^\[timing\]\s*/i, "")
-    .replace(/^\[[^\]]+\]\s*/i, "")
-    .replace(/\s+in\s+\d+(?:\.\d+)?ms\b/i, "")
-    .replace(/\s+after\s+\d+(?:\.\d+)?ms\b/i, "")
-    .trim();
-  return stripped || "Timing event";
-}
-
-function extractTimingEvents(logEntries: TaskLogEntry[]): TimingEvent[] {
-  return logEntries
-    .filter((entry) => {
-      const actionText = typeof entry.action === "string" ? entry.action : "";
-      const outcomeText = typeof entry.outcome === "string" ? entry.outcome : "";
-      return actionText.includes("[timing]") || outcomeText.includes("[timing]");
-    })
-    .map((entry) => {
-      const haystack = `${entry.action ?? ""}\n${entry.outcome ?? ""}`;
-      const durationMatch = haystack.match(/(\d+(?:\.\d+)?)ms\b/i);
-      const durationMs = durationMatch ? Number(durationMatch[1]) : undefined;
-      return {
-        timestamp: entry.timestamp,
-        durationMs: Number.isFinite(durationMs) ? durationMs : undefined,
-        summary: summarizeTimingLabel(entry),
-      };
-    });
-}
-
 function summarizeWorkflowTiming(results: WorkflowStepResult[]): WorkflowTimingSummary {
+  const nowMs = Date.now();
   const timedResults = results
     .map((step) => {
-      if (!step.startedAt || !step.completedAt) {
+      if (!step.startedAt) {
         return null;
       }
       const startedMs = new Date(step.startedAt).getTime();
-      const completedMs = new Date(step.completedAt).getTime();
-      if (Number.isNaN(startedMs) || Number.isNaN(completedMs) || completedMs < startedMs) {
+      if (Number.isNaN(startedMs)) {
         return null;
+      }
+      // Completed step → use completedAt. In-progress step → live elapsed.
+      let endMs: number;
+      if (step.completedAt) {
+        const completedMs = new Date(step.completedAt).getTime();
+        if (Number.isNaN(completedMs) || completedMs < startedMs) {
+          return null;
+        }
+        endMs = completedMs;
+      } else {
+        endMs = Math.max(startedMs, nowMs);
       }
       return {
         name: step.workflowStepName || step.workflowStepId,
-        durationMs: completedMs - startedMs,
+        durationMs: endMs - startedMs,
       };
     })
     .filter((value): value is { name: string; durationMs: number } => value !== null);

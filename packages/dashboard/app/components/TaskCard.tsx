@@ -13,6 +13,7 @@ import { getFreshBatchData } from "../hooks/useBatchBadgeFetch";
 import { useTaskDiffStats } from "../hooks/useTaskDiffStats";
 import { isTaskStuck } from "../utils/taskStuck";
 import { getUnifiedTaskProgress } from "../utils/taskProgress";
+import { getTimedDurationMs } from "../utils/taskTiming";
 import type { ToastType } from "../hooks/useToast";
 import { useConfirm } from "../hooks/useConfirm";
 
@@ -154,12 +155,8 @@ function formatElapsedDuration(elapsedMs: number): string {
 
   if (elapsedMs < 60_000) return "<1m";
 
-  const elapsedSeconds = elapsedMs / 1000;
-  const elapsedMinutes = Math.floor(elapsedSeconds / 60);
-  if (elapsedMinutes < 60) {
-    const remSeconds = Math.round(elapsedSeconds % 60);
-    return remSeconds > 0 ? `${elapsedMinutes}m ${remSeconds}s` : `${elapsedMinutes}m`;
-  }
+  const elapsedMinutes = Math.floor(elapsedMs / 60_000);
+  if (elapsedMinutes < 60) return `${elapsedMinutes}m`;
 
   const elapsedHours = Math.floor(elapsedMinutes / 60);
   if (elapsedHours < 24) return `${elapsedHours}h`;
@@ -700,6 +697,18 @@ function TaskCardComponent({
     }
 
     if (task.column === "in-progress") {
+      const timedDurationMs = getTimedDurationMs(task.log);
+      if (timedDurationMs != null) {
+        const elapsedLabel = formatElapsedDuration(timedDurationMs);
+        if (elapsedLabel) {
+          return {
+            label: elapsedLabel,
+            title: `Timed duration ${elapsedLabel}`,
+            ariaLabel: `Timed duration ${elapsedLabel}`,
+          };
+        }
+      }
+
       const startMs = getInProgressTimeIndicatorStartMs(task);
       if (startMs == null) {
         return null;
@@ -717,12 +726,27 @@ function TaskCardComponent({
       };
     }
 
-    // Done cards report agent execution time (sum of workflow step durations),
-    // matching the Workflow runtime metric in the stats tab. Fall back to
-    // wallclock processing duration when no workflow timing data is available.
+    // Done cards report the same "Timed duration" metric shown in the stats tab
+    // (sum of [timing]-tagged log events). Fall back to workflow step runtime,
+    // then to wallclock processing duration when no instrumentation exists.
     const completionMs = getDoneCompletionMs(task);
     if (completionMs == null) {
       return null;
+    }
+
+    const timedDurationMs = getTimedDurationMs(task.log);
+    if (timedDurationMs != null) {
+      const elapsedLabel = formatElapsedDuration(timedDurationMs);
+      if (!elapsedLabel) {
+        return null;
+      }
+
+      const completedAt = new Date(completionMs).toLocaleString();
+      return {
+        label: elapsedLabel,
+        title: `Timed duration ${elapsedLabel}. Completed ${completedAt}`,
+        ariaLabel: `Timed duration ${elapsedLabel}. Completed ${completedAt}`,
+      };
     }
 
     const workflowRuntimeMs = getDoneWorkflowRuntimeMs(task);
@@ -756,7 +780,7 @@ function TaskCardComponent({
       title: `Processing took ${elapsedLabel}. Completed ${completedAt}`,
       ariaLabel: `Completed processing duration ${elapsedLabel}. Completed ${completedAt}`,
     };
-  }, [task.column, task.columnMovedAt, task.updatedAt, task.createdAt, task.workflowStepResults, timeIndicatorNowMs]);
+  }, [task.column, task.columnMovedAt, task.updatedAt, task.createdAt, task.workflowStepResults, task.log, timeIndicatorNowMs]);
 
   useEffect(() => {
     if (!hasGitHubBadge || !isInViewport) {

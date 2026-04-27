@@ -128,6 +128,7 @@ import { join } from "node:path";
 import { getTaskMergeBlocker, type TaskStore, type MergeResult, type MergeDetails, type WorkflowStep, type WorkflowStepResult, type Settings, type AgentPromptsConfig } from "@fusion/core";
 import { resolveAgentPrompt } from "@fusion/core";
 import { describeModel, promptWithFallback } from "./pi.js";
+import { accumulateSessionTokenUsage } from "./session-token-usage.js";
 import { createResolvedAgentSession, extractRuntimeHint } from "./agent-session-helpers.js";
 import { buildSessionSkillContext } from "./session-skill-context.js";
 import type { WorktreePool } from "./worktree-pool.js";
@@ -976,6 +977,7 @@ ${failureContext.output.slice(0, VERIFICATION_LOG_MAX_CHARS)}
         },
         signal: options.signal,
       });
+      await accumulateSessionTokenUsage(store, taskId, session);
 
       // Re-run deterministic verification command after the fix attempt.
       await store.logEntry(
@@ -1843,6 +1845,7 @@ You are assisting with a paused \`git pull --rebase\`.
       },
       signal: options?.signal,
     });
+    await accumulateSessionTokenUsage(store, taskId, session);
   } finally {
     session.dispose();
   }
@@ -3634,6 +3637,7 @@ async function runAiAgentForCommit(params: AiAgentParams): Promise<{ success: bo
 
     throw err;
   } finally {
+    await accumulateSessionTokenUsage(store, taskId, session);
     await agentLogger.flush();
     session.dispose();
   }
@@ -4022,6 +4026,7 @@ If issues are found that need attention, describe them clearly.`;
     );
 
     checkSessionError(session);
+    await accumulateSessionTokenUsage(store, taskId, session);
     session.dispose();
     await agentLogger.flush();
 
