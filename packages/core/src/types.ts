@@ -1089,6 +1089,9 @@ export interface GlobalSettings {
    *  the OpenRouter API at startup so the model picker shows all available
    *  OpenRouter models (not just the static built-in list). Default: true. */
   openrouterModelSync?: boolean;
+  /** When true (default), checks npm daily for new versions of @runfusion/fusion
+   *  and shows update notices in the CLI and dashboard. */
+  updateCheckEnabled?: boolean;
   /** When true, indicates the user has completed the AI model onboarding flow
    *  (connected at least one provider and selected a default model). When
    *  false/undefined, the dashboard will auto-open the onboarding modal.

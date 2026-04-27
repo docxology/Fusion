@@ -499,6 +499,21 @@ A `prefetchLazyViews()` function runs once on mount via `requestIdleCallback` to
   - Response: `{ status: "ok", version: string, uptime: number }`
   - No authentication required
 
+### Node settings sync and update-check endpoints
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/nodes/:id/settings` | Fetch settings from a remote node. |
+| POST | `/api/nodes/:id/settings/push` | Push local settings to a remote node. |
+| POST | `/api/nodes/:id/settings/pull` | Pull settings from a remote node. |
+| GET | `/api/nodes/:id/settings/sync-status` | Get sync status and diff summary. |
+| POST | `/api/nodes/:id/auth/sync` | Sync model auth credentials. |
+| POST | `/api/settings/sync-receive` | Receive pushed settings (inbound). |
+| POST | `/api/settings/auth-receive` | Receive auth credentials (inbound). |
+| GET | `/api/settings/auth-export` | Export local auth credentials. |
+| GET | `/api/update-check` | Read cached/TTL-guarded npm update status for `@runfusion/fusion` (respects `updateCheckEnabled`). |
+| POST | `/api/update-check/refresh` | Clear cached update data and force a fresh npm update check. |
+
 ### Run Audit API
 The run-audit system records every mutation performed by the engine across three domains:
 - **Database** — task:create, task:update, task:move, etc.

@@ -13,6 +13,7 @@ import { DashboardLoader, type DashboardLoaderStage } from "./components/Dashboa
 import { ExecutorStatusBar } from "./components/ExecutorStatusBar";
 import { SessionNotificationBanner } from "./components/SessionNotificationBanner";
 import { SetupWarningBanner } from "./components/SetupWarningBanner";
+import { UpdateAvailableBanner } from "./components/UpdateAvailableBanner";
 import { OnboardingResumeCard } from "./components/OnboardingResumeCard";
 import { PostOnboardingRecommendations } from "./components/PostOnboardingRecommendations";
 import {
@@ -37,6 +38,7 @@ import { useDeepLink } from "./hooks/useDeepLink";
 import { useFavorites } from "./hooks/useFavorites";
 import { useAuthOnboarding } from "./hooks/useAuthOnboarding";
 import { useSetupReadiness } from "./hooks/useSetupReadiness";
+import { useUpdateCheck } from "./hooks/useUpdateCheck";
 import { useViewState, type TaskView } from "./hooks/useViewState";
 import { useProjectActions } from "./hooks/useProjectActions";
 import { useTaskHandlers } from "./hooks/useTaskHandlers";
@@ -115,6 +117,13 @@ function AppInner() {
     loading: setupReadinessLoading,
     hasWarnings,
   } = useSetupReadiness(currentProject?.id);
+  const {
+    updateAvailable,
+    latestVersion,
+    currentVersion,
+    dismissed: updateBannerDismissed,
+    dismiss: dismissUpdateBanner,
+  } = useUpdateCheck();
   
   // Sync node context with useNodes() results:
   // - Resolve saved node ID to full NodeConfig when nodes list loads
@@ -848,6 +857,13 @@ function AppInner() {
         <PostOnboardingRecommendations
           onOpenModelOnboarding={modalManager.openModelOnboarding}
           onOpenSettings={(section) => modalManager.openSettings(section as SectionId)}
+        />
+      )}
+      {viewMode === "project" && currentProject && updateAvailable && latestVersion && currentVersion && !updateBannerDismissed && (
+        <UpdateAvailableBanner
+          latestVersion={latestVersion}
+          currentVersion={currentVersion}
+          onDismiss={dismissUpdateBanner}
         />
       )}
       {viewMode === "project" && currentProject && !setupReadinessLoading && hasWarnings && !setupWarningDismissed && (

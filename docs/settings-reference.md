@@ -48,6 +48,7 @@ Defaults from `DEFAULT_GLOBAL_SETTINGS`; key scope from `GLOBAL_SETTINGS_KEYS`.
 | `favoriteProviders` | `string[]` | `undefined` | Pinned providers shown first in model selectors. |
 | `favoriteModels` | `string[]` | `undefined` | Pinned models in `{provider}/{modelId}` format. |
 | `openrouterModelSync` | `boolean` | `true` | Sync OpenRouter model catalog into model pickers at startup. |
+| `updateCheckEnabled` | `boolean` | `true` | When enabled, Fusion performs a daily npm registry check for new `@runfusion/fusion` versions and shows update notices in CLI/dashboard. |
 | `modelOnboardingComplete` | `boolean` | `undefined` | Whether AI onboarding has been completed or dismissed. |
 | `executionGlobalProvider` | `string` | `undefined` | Global baseline provider for task execution. Project `executionProvider` overrides this. |
 | `executionGlobalModelId` | `string` | `undefined` | Global baseline model ID for task execution. |
@@ -66,6 +67,12 @@ Defaults from `DEFAULT_GLOBAL_SETTINGS`; key scope from `GLOBAL_SETTINGS_KEYS`.
 | `settingsSyncConflictResolution` | `"last-write-wins" \| "always-ask" \| "keep-local" \| "keep-remote"` | `"last-write-wins"` | Conflict strategy for divergent synced settings. |
 | `dashboardCurrentNodeId` | `string` | `undefined` | Currently selected dashboard node ID. Restores the last-viewed node on fresh browser/PWA sessions. `undefined` means viewing the local node. |
 | `dashboardCurrentProjectIdByNode` | `Record<string, string>` | `undefined` | Map of node ID to last-selected project ID. Use key `"local"` for the local node. Persists project context across browser restarts and PWA sessions. |
+
+Disable daily update checks globally:
+
+```bash
+fn settings set updateCheckEnabled false
+```
 
 ---
 

@@ -34,17 +34,32 @@ import * as terminalServiceModule from "../terminal-service.js";
 import { get as performGet, request as performRequest } from "../test-request.js";
 import { resetRuntimeLogSink, setRuntimeLogSink } from "../runtime-logger.js";
 import { resetDiagnosticsSink, setDiagnosticsSink, type LogEntry } from "../ai-session-diagnostics.js";
+import * as updateCheckModule from "../update-check.js";
 
 // Mock @fusion/core for gh CLI auth checks
 const mockCentralListProjects = vi.fn().mockResolvedValue([]);
 const mockCentralInit = vi.fn().mockResolvedValue(undefined);
 const mockCentralClose = vi.fn().mockResolvedValue(undefined);
 const mockCentralReconcileProjectStatuses = vi.fn().mockResolvedValue(undefined);
+const { mockPerformUpdateCheck, mockClearUpdateCheckCache } = vi.hoisted(() => ({
+  mockPerformUpdateCheck: vi.fn(),
+  mockClearUpdateCheckCache: vi.fn(),
+}));
+
+vi.mock("../update-check.js", async () => {
+  const actual = await vi.importActual<typeof import("../update-check.js")>("../update-check.js");
+  return {
+    ...actual,
+    performUpdateCheck: mockPerformUpdateCheck,
+    clearUpdateCheckCache: mockClearUpdateCheckCache,
+  };
+});
 
 vi.mock("@fusion/core", async () => {
   const actual = await vi.importActual<typeof import("@fusion/core")>("@fusion/core");
   return {
     ...actual,
+    resolveGlobalDir: vi.fn().mockReturnValue("/tmp/fusion-test"),
     isGhAvailable: vi.fn(),
     isGhAuthenticated: vi.fn(),
     isQmdAvailable: vi.fn().mockResolvedValue(false),
@@ -4130,6 +4145,71 @@ describe("GET /usage", () => {
 
     expect(res.status).toBe(500);
     expect(res.body.error).toBe("usage boom");
+  });
+});
+
+describe("/update-check routes", () => {
+  let store: TaskStore;
+
+  beforeEach(() => {
+    store = createMockStore();
+    mockPerformUpdateCheck.mockReset();
+    mockClearUpdateCheckCache.mockReset();
+  });
+
+  function buildApp() {
+    const app = express();
+    app.use(express.json());
+    app.use("/api", createApiRoutes(store));
+    return app;
+  }
+
+  it("GET /update-check returns disabled payload when update checks are disabled", async () => {
+    const mockGlobalStore = createMockGlobalSettingsStore();
+    mockGlobalStore.getSettings.mockResolvedValue({ updateCheckEnabled: false });
+    (store.getGlobalSettingsStore as ReturnType<typeof vi.fn>).mockReturnValue(mockGlobalStore);
+
+    const res = await GET(buildApp(), "/api/update-check");
+
+    expect(res.status).toBe(200);
+    expect(res.body.updateAvailable).toBe(false);
+    expect(res.body.disabled).toBe(true);
+    expect(mockPerformUpdateCheck).not.toHaveBeenCalled();
+  });
+
+  it("GET /update-check performs update check when enabled", async () => {
+    const mockGlobalStore = createMockGlobalSettingsStore();
+    mockGlobalStore.getSettings.mockResolvedValue({ updateCheckEnabled: true });
+    (store.getGlobalSettingsStore as ReturnType<typeof vi.fn>).mockReturnValue(mockGlobalStore);
+
+    mockPerformUpdateCheck.mockResolvedValue({
+      currentVersion: "0.1.0",
+      latestVersion: "0.2.0",
+      updateAvailable: true,
+      lastChecked: 123,
+    });
+
+    const res = await GET(buildApp(), "/api/update-check");
+
+    expect(res.status).toBe(200);
+    expect(res.body.updateAvailable).toBe(true);
+    expect(res.body.latestVersion).toBe("0.2.0");
+    expect(updateCheckModule.performUpdateCheck).toHaveBeenCalledOnce();
+  });
+
+  it("POST /update-check/refresh clears cache then rechecks", async () => {
+    mockPerformUpdateCheck.mockResolvedValue({
+      currentVersion: "0.1.0",
+      latestVersion: "0.1.0",
+      updateAvailable: false,
+      lastChecked: 123,
+    });
+
+    const res = await REQUEST(buildApp(), "POST", "/api/update-check/refresh");
+
+    expect(res.status).toBe(200);
+    expect(updateCheckModule.clearUpdateCheckCache).toHaveBeenCalledOnce();
+    expect(updateCheckModule.performUpdateCheck).toHaveBeenCalledOnce();
   });
 });
 

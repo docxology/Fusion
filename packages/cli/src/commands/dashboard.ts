@@ -46,6 +46,7 @@ import {
   resolveClaudeCliExtensionPaths,
   setCachedClaudeCliResolution,
 } from "./claude-cli-extension.js";
+import { getCachedUpdateStatus, isUpdateCheckEnabled } from "../update-cache.js";
 import { resolveSelfExtension } from "./self-extension.js";
 import { DashboardTUI, DashboardLogSink, isTTYAvailable, type SystemInfo, type GitStatus, type GitCommit, type GitCommitDetail, type GitBranch, type GitWorktree, type FileEntry, type FileReadResult, type TaskStep as TUITaskStep, type TaskLogEntry as TUITaskLogEntry, type TaskDetailData, type TaskEvent } from "./dashboard-tui/index.js";
 
@@ -1812,6 +1813,30 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
       ? `${baseUrl}/?token=${encodeURIComponent(dashboardAuthToken)}`
       : baseUrl;
 
+    const updateMessage = await (async (): Promise<string | null> => {
+      try {
+        const updateCheckEnabled = await Promise.race<boolean>([
+          isUpdateCheckEnabled(),
+          new Promise<boolean>((resolve) => {
+            setTimeout(() => resolve(false), 3_000);
+          }),
+        ]);
+
+        if (!updateCheckEnabled) {
+          return null;
+        }
+
+        const cachedUpdate = getCachedUpdateStatus();
+        if (!cachedUpdate?.updateAvailable) {
+          return null;
+        }
+
+        return `⬆ Update available: v${cachedUpdate.latestVersion} (current: v${cachedUpdate.currentVersion})`;
+      } catch {
+        return null;
+      }
+    })();
+
     // ── TTY Mode: Set system info on TUI ───────────────────────────────
     //
     // In TTY mode, we populate the TUI System panel instead of printing
@@ -2290,6 +2315,9 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
         tui.log("AI engine paused");
       }
       tui.log("File watcher active");
+      if (updateMessage) {
+        tui.log(updateMessage);
+      }
     } else {
       // ── Non-TTY Mode: Print plain-text banner ───────────────────────────
       //
@@ -2320,6 +2348,9 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
         console.log(`    • cron: scheduled task execution`);
       }
       console.log(`  File watcher: ✓ active`);
+      if (updateMessage) {
+        console.log(`  ${updateMessage}`);
+      }
       console.log(`  Press Ctrl+C to stop`);
       console.log();
     }

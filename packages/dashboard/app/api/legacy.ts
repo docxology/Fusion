@@ -410,6 +410,25 @@ export function updateSettings(settings: Partial<Settings>, projectId?: string):
   });
 }
 
+export interface UpdateCheckResponse {
+  currentVersion?: string;
+  latestVersion?: string | null;
+  updateAvailable: boolean;
+  lastChecked?: number;
+  disabled?: boolean;
+  error?: string;
+}
+
+export function checkForUpdate(projectId?: string): Promise<UpdateCheckResponse> {
+  return api<UpdateCheckResponse>(withProjectId("/update-check", projectId));
+}
+
+export function refreshUpdateCheck(projectId?: string): Promise<UpdateCheckResponse> {
+  return api<UpdateCheckResponse>(withProjectId("/update-check/refresh", projectId), {
+    method: "POST",
+  });
+}
+
 export interface RemoteSettings {
   remoteActiveProvider: "tailscale" | "cloudflare" | null;
   remoteTailscaleEnabled: boolean;
