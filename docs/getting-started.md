@@ -6,7 +6,12 @@ This guide gets Fusion running, explains first-run setup, and walks through your
 
 ## Prerequisites
 
-Fusion uses the `pi` agent runtime for AI sessions.
+Fusion and `pi` are separate tools:
+
+- **Pi** is the AI agent runtime (similar to how Node.js is a runtime).
+- **Fusion** is the orchestrator built on top of that runtime (similar to a framework/tooling layer).
+
+Fusion requires `pi` because Fusion agents run through the pi runtime. You can also use pi by itself without Fusion if you prefer.
 
 1. Install pi:
 
@@ -98,17 +103,32 @@ For OpenClaw-specific details, see the [OpenClaw Runtime Plugin documentation](.
 
 ## Install Fusion
 
+Fusion can be installed in two different ways depending on where you want to use it:
+
+### Path A: Global CLI (required for `fn` in your shell)
+
 Install the published CLI package globally:
 
 ```bash
 npm i -g @runfusion/fusion
-```
-
-Then verify install:
-
-```bash
 fn --help
 ```
+
+This gives you the `fn` command in your terminal/shell.
+
+### Path B: Pi extension (optional — adds `/fn` inside pi sessions)
+
+Install Fusion as a pi extension:
+
+```bash
+pi install npm:@runfusion/fusion
+```
+
+This adds Fusion tools (`fn_task_create`, `fn_task_list`, etc.) and a `/fn` command inside pi chat sessions.
+
+> **Important:** `pi install npm:@runfusion/fusion` only provides the `/fn` command and Fusion tools *inside pi sessions*. It does **not** make the `fn` CLI available in your terminal. For that, you must also run `npm i -g @runfusion/fusion`.
+
+> **Windows troubleshooting:** If `fn` is not recognized after `npm install -g @runfusion/fusion`, check that the npm global bin directory is in your PATH. You can find it with `npm config get prefix` — the `fn` binary lives in the `bin` subdirectory of that path. The `fn plugin install` command requires the global CLI to be installed first.
 
 ## Initialize a Project
 

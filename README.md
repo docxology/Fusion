@@ -181,6 +181,8 @@ Fusion is built on top of **Pi** — the minimal, extensible coding-agent CLI. E
 pi install npm:@runfusion/fusion
 ```
 
+> This installs the **Pi extension** — it provides Fusion tools and `/fn` inside pi sessions only. To get the `fn` CLI in your terminal, install globally: `npm install -g @runfusion/fusion`.
+
 <br />
 
 <div align="center">
@@ -254,6 +256,8 @@ Or as a one-liner (auto-taps): `brew install runfusion/fusion/fusion`.
 npm install -g @runfusion/fusion
 fn dashboard                # or: fusion dashboard
 ```
+
+> **Pi extension (optional):** To use Fusion tools inside Pi chat sessions, also run `pi install npm:@runfusion/fusion`. This adds a `/fn` command and Fusion tools within pi — but does not install the `fn` CLI globally.
 
 **From a clone** (for development):
 
