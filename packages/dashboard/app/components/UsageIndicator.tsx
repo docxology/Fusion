@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import type { CSSProperties } from "react";
-import { X, RefreshCw, Activity, TrendingUp, CheckCircle, AlertTriangle, Eye, EyeOff } from "lucide-react";
+import { X, RefreshCw, Activity, TrendingUp, CheckCircle, AlertTriangle, Eye } from "lucide-react";
 import type { ProviderUsage, UsageWindow } from "../api";
 import { useUsageData } from "../hooks/useUsageData";
 import { ProviderIcon } from "./ProviderIcon";
@@ -187,14 +187,16 @@ function UsageWindowRow({ window, viewMode, isHidden, onToggleHidden }: UsageWin
         <span className="usage-window-label">{window.label}</span>
         <div className="usage-window-header-controls">
           {!isHidden && <span className="usage-window-percentage">{headerText}</span>}
-          <button
-            className="btn-icon usage-window-hide-btn"
-            onClick={onToggleHidden}
-            aria-label={`${isHidden ? "Show" : "Hide"} ${window.label}`}
-            data-testid="usage-window-hide-btn"
-          >
-            {isHidden ? <EyeOff size={14} /> : <Eye size={14} />}
-          </button>
+          {!isHidden && (
+            <button
+              className="btn-icon usage-window-hide-btn"
+              onClick={onToggleHidden}
+              aria-label={`Hide ${window.label}`}
+              data-testid="usage-window-hide-btn"
+            >
+              <Eye size={14} />
+            </button>
+          )}
         </div>
       </div>
       <div className="usage-progress-wrapper">

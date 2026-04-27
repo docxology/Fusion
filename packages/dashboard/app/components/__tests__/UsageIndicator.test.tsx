@@ -673,6 +673,7 @@ describe("UsageIndicator", () => {
     expect(hiddenRow).toHaveClass("usage-window--hidden");
     expect(sessionLabel).not.toBeVisible();
     expect(screen.queryByText("45% used")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Hide Session (5h)" })).not.toBeInTheDocument();
   });
 
   it("persists hidden windows to localStorage", () => {
@@ -748,6 +749,8 @@ describe("UsageIndicator", () => {
     expect(screen.queryByTestId("usage-show-hidden-btn")).not.toBeInTheDocument();
     expect(screen.getByText("Session (5h)").closest(".usage-window")).not.toHaveClass("usage-window--hidden");
     expect(screen.getByText("Weekly").closest(".usage-window")).not.toHaveClass("usage-window--hidden");
+    expect(screen.getByRole("button", { name: "Hide Session (5h)" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Hide Weekly" })).toBeInTheDocument();
   });
 
   it("does not show provider-level show hidden button when no windows are hidden", () => {
@@ -764,22 +767,6 @@ describe("UsageIndicator", () => {
     expect(screen.queryByTestId("usage-show-hidden-btn")).not.toBeInTheDocument();
   });
 
-  it("allows un-hiding a specific hidden window", () => {
-    mockUseUsageData.mockReturnValue({
-      providers: mockProviders,
-      loading: false,
-      error: null,
-      lastUpdated: new Date(),
-      refresh: mockRefresh,
-    });
-
-    render(<UsageIndicator isOpen={true} onClose={mockOnClose} projectId={TEST_PROJECT_ID} />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Hide Session (5h)" }));
-    fireEvent.click(screen.getByRole("button", { name: "Show Session (5h)" }));
-
-    expect(screen.getByText("Session (5h)").closest(".usage-window")).not.toHaveClass("usage-window--hidden");
-  });
 
   // ProviderIcon integration tests
   it("renders SVG provider icons instead of emoji", () => {
