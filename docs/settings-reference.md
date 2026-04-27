@@ -666,6 +666,7 @@ Common built-in dashboard flags include:
 - `skillsView`
 - `nodesView`
 - `devServerView`
+- `todoView`
 
 ---
 

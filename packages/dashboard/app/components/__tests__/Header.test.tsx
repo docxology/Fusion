@@ -146,13 +146,13 @@ describe("Header", () => {
       expect(listBtn.getAttribute("aria-pressed")).toBe("false");
     });
 
-    it("renders view overflow trigger so Todos remains reachable", () => {
-      renderHeader({ onChangeView: noop });
+    it("renders view overflow trigger when todoView experimental flag is enabled", () => {
+      renderHeader({ onChangeView: noop, experimentalFeatures: { todoView: true } });
       expect(screen.getByTestId("view-toggle-overflow-trigger")).toBeDefined();
     });
 
-    it("shows the Todos entry in view overflow", () => {
-      renderHeader({ onChangeView: noop });
+    it("shows the Todos entry in view overflow when todoView is enabled", () => {
+      renderHeader({ onChangeView: noop, experimentalFeatures: { todoView: true } });
       fireEvent.click(screen.getByTestId("view-toggle-overflow-trigger"));
       expect(screen.getByTestId("view-overflow-todos")).toBeInTheDocument();
     });
@@ -167,13 +167,13 @@ describe("Header", () => {
       expect(screen.getByTestId("view-toggle-overflow-trigger")).toBeDefined();
     });
 
-    it("still renders view overflow trigger when overflow feature flags are explicitly false", () => {
+    it("does not render view overflow trigger when all overflow feature flags are false", () => {
       renderHeader({
         onChangeView: noop,
         showSkillsTab: false,
-        experimentalFeatures: { insights: false, roadmap: false, memoryView: false },
+        experimentalFeatures: { insights: false, roadmap: false, memoryView: false, devServerView: false, todoView: false },
       });
-      expect(screen.getByTestId("view-toggle-overflow-trigger")).toBeDefined();
+      expect(screen.queryByTestId("view-toggle-overflow-trigger")).toBeNull();
     });
   });
 

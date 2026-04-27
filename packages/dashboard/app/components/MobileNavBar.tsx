@@ -63,7 +63,7 @@ export interface MobileNavBarProps {
   /** Whether to show the skills tab */
   showSkillsTab?: boolean;
   /** Experimental feature flags controlling visibility of nav items. */
-  experimentalFeatures?: { insights?: boolean; roadmap?: boolean; memoryView?: boolean; devServer?: boolean; devServerView?: boolean };
+  experimentalFeatures?: { insights?: boolean; roadmap?: boolean; memoryView?: boolean; devServer?: boolean; devServerView?: boolean; todoView?: boolean };
 }
 
 function GitHubLogo({ size = 20 }: { size?: number }) {
@@ -176,6 +176,7 @@ export function MobileNavBar({
 
   const roadmapEnabled = Boolean(experimentalFeatures?.roadmap);
   const skillsEnabled = Boolean(showSkillsTab);
+  const todoViewEnabled = Boolean(experimentalFeatures?.todoView);
 
   // Keep a maximum of one optional primary tab visible at once to preserve touch-target width.
   // Overflowed destinations remain available in the More sheet.
@@ -189,7 +190,7 @@ export function MobileNavBar({
     || view === "memory"
     || view === "devserver"
     || view === "dev-server"
-    || view === "todos"
+    || (view === "todos" && todoViewEnabled)
     || (view === "roadmaps" && !showRoadmapsTopLevel)
     || (view === "skills" && !showSkillsTopLevel);
 
@@ -596,15 +597,17 @@ export function MobileNavBar({
               </button>
             )}
 
-            <button
-              type="button"
-              className="mobile-more-item"
-              data-testid="mobile-more-item-todos"
-              onClick={() => handleMoreAction(() => onChangeView("todos"))}
-            >
-              <CheckSquare size={14} />
-              <span>Todos</span>
-            </button>
+            {todoViewEnabled && (
+              <button
+                type="button"
+                className="mobile-more-item"
+                data-testid="mobile-more-item-todos"
+                onClick={() => handleMoreAction(() => onChangeView("todos"))}
+              >
+                <CheckSquare size={14} />
+                <span>Todos</span>
+              </button>
+            )}
 
             <div className="mobile-more-separator" />
 

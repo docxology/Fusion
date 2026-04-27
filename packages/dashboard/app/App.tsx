@@ -341,6 +341,7 @@ function AppInner() {
     roadmapEnabled,
     memoryEnabled,
     devServerEnabled,
+    todosEnabled,
     toggleAutoMerge,
     toggleGlobalPause,
     toggleEnginePause,
@@ -370,7 +371,10 @@ function AppInner() {
     if ((taskView === "devserver" || taskView === "dev-server") && !devServerEnabled) {
       handleChangeTaskView("board");
     }
-  }, [taskView, insightsEnabled, roadmapEnabled, experimentalFeatures, handleChangeTaskView, agentsEnabled, memoryEnabled, devServerEnabled]);
+    if (taskView === "todos" && !todosEnabled) {
+      handleChangeTaskView("board");
+    }
+  }, [taskView, insightsEnabled, roadmapEnabled, experimentalFeatures, handleChangeTaskView, agentsEnabled, memoryEnabled, devServerEnabled, todosEnabled]);
 
   // Auto-close nodes overlay if feature flag is toggled off while overlay is open
   useEffect(() => {
@@ -841,6 +845,7 @@ function AppInner() {
           memoryView: memoryEnabled,
           devServer: devServerEnabled,
           devServerView: devServerEnabled,
+          todoView: todosEnabled,
         }}
       />
       {viewMode === "project" && currentProject && !nodesOpen && taskView !== "missions" && !modalManager.isPlanningOpen && (
@@ -925,6 +930,7 @@ function AppInner() {
           memoryView: memoryEnabled,
           devServer: devServerEnabled,
           devServerView: devServerEnabled,
+          todoView: todosEnabled,
         }}
       />
       {viewMode === "project" && currentProject && taskView !== "chat" && taskView !== "mailbox" && taskView !== "insights" && taskView !== "devserver" && taskView !== "dev-server" && (

@@ -217,7 +217,7 @@ export interface HeaderProps {
   /** Whether the current view is a remote node */
   isRemote?: boolean;
   /** Experimental feature flags controlling visibility of nav items. */
-  experimentalFeatures?: { insights?: boolean; roadmap?: boolean; memoryView?: boolean; devServer?: boolean; devServerView?: boolean };
+  experimentalFeatures?: { insights?: boolean; roadmap?: boolean; memoryView?: boolean; devServer?: boolean; devServerView?: boolean; todoView?: boolean };
 }
 
 export function Header({
@@ -325,17 +325,15 @@ export function Header({
   }, [overflowScripts]);
 
   const hasViewOverflowItems = useMemo(() => {
-    const hasTodosView = Boolean(onChangeView);
-
     return !!(
-      hasTodosView ||
+      experimentalFeatures?.todoView ||
       experimentalFeatures?.insights ||
       experimentalFeatures?.roadmap ||
       showSkillsTab ||
       experimentalFeatures?.memoryView ||
       experimentalFeatures?.devServerView
     );
-  }, [experimentalFeatures, onChangeView, showSkillsTab]);
+  }, [experimentalFeatures, showSkillsTab]);
 
   const getEffectiveViewport = useCallback(() => {
     const vv = window.visualViewport;
@@ -1109,7 +1107,7 @@ export function Header({
               <>
                 <button
                   ref={viewOverflowTriggerRef}
-                  className={`view-toggle-btn${["skills", "roadmaps", "insights", "memory", "dev-server", "devserver", "todos"].includes(view) ? " active" : ""}`}
+                  className={`view-toggle-btn${["skills", "roadmaps", "insights", "memory", "dev-server", "devserver"].includes(view) || (experimentalFeatures?.todoView && view === "todos") ? " active" : ""}`}
                   onClick={() => setIsViewOverflowOpen((prev) => !prev)}
                   title="More views"
                   aria-label="More views"
@@ -1197,18 +1195,20 @@ export function Header({
                         <span className="visually-hidden" data-testid="view-toggle-dev-server" />
                       </button>
                     )}
-                    <button
-                      className={`view-toggle-overflow-item${view === "todos" ? " active" : ""}`}
-                      onClick={() => {
-                        onChangeView("todos");
-                        setIsViewOverflowOpen(false);
-                      }}
-                      role="menuitem"
-                      data-testid="view-overflow-todos"
-                    >
-                      <CheckSquare size={14} />
-                      <span>Todos</span>
-                    </button>
+                    {experimentalFeatures?.todoView && (
+                      <button
+                        className={`view-toggle-overflow-item${view === "todos" ? " active" : ""}`}
+                        onClick={() => {
+                          onChangeView("todos");
+                          setIsViewOverflowOpen(false);
+                        }}
+                        role="menuitem"
+                        data-testid="view-overflow-todos"
+                      >
+                        <CheckSquare size={14} />
+                        <span>Todos</span>
+                      </button>
+                    )}
                   </div>
                 )}
               </>

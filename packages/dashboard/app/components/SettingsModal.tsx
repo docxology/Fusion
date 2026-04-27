@@ -107,6 +107,7 @@ const KNOWN_EXPERIMENTAL_FEATURES: Record<string, string> = {
   skillsView: "Skills View",
   nodesView: "Nodes View",
   devServerView: "Dev Server",
+  todoView: "Todo List",
 };
 
 const EXPERIMENTAL_FEATURE_LEGACY_ALIASES: Record<string, string> = {

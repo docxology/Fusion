@@ -179,4 +179,24 @@ describe("useAppSettings", () => {
       expect(result.current.devServerEnabled).toBe(true);
     });
   });
+
+  it("derives todosEnabled from experimentalFeatures.todoView", async () => {
+    mockFetchSettings.mockResolvedValueOnce({
+      autoMerge: false,
+      globalPause: false,
+      enginePaused: false,
+      prAuthAvailable: true,
+      taskStuckTimeoutMs: 600000,
+      showQuickChatFAB: false,
+      experimentalFeatures: {
+        todoView: true,
+      },
+    } as never);
+
+    const { result } = renderHook(() => useAppSettings("proj_123"));
+
+    await waitFor(() => {
+      expect(result.current.todosEnabled).toBe(true);
+    });
+  });
 });

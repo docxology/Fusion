@@ -18,6 +18,7 @@ export interface UseAppSettingsResult {
   roadmapEnabled: boolean;
   memoryEnabled: boolean;
   devServerEnabled: boolean;
+  todosEnabled: boolean;
   toggleAutoMerge: () => Promise<void>;
   toggleGlobalPause: () => Promise<void>;
   toggleEnginePause: () => Promise<void>;
@@ -43,6 +44,7 @@ export function useAppSettings(projectId?: string): UseAppSettingsResult {
   const [roadmapEnabled, setRoadmapEnabled] = useState(false);
   const [memoryEnabled, setMemoryEnabled] = useState(false);
   const [devServerEnabled, setDevServerEnabled] = useState(false);
+  const [todosEnabled, setTodosEnabled] = useState(false);
 
   /**
    * Fetches config and settings from the backend and updates local state.
@@ -73,6 +75,7 @@ export function useAppSettings(projectId?: string): UseAppSettingsResult {
       setRoadmapEnabled(features.roadmap === true);
       setMemoryEnabled(features.memoryView === true);
       setDevServerEnabled(features.devServerView === true || features.devServer === true);
+      setTodosEnabled(features.todoView === true);
     }
   }, [projectId]);
 
@@ -144,6 +147,7 @@ export function useAppSettings(projectId?: string): UseAppSettingsResult {
     roadmapEnabled,
     memoryEnabled,
     devServerEnabled,
+    todosEnabled,
     toggleAutoMerge,
     toggleGlobalPause,
     toggleEnginePause,
