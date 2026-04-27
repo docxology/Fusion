@@ -3,6 +3,24 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { loadAllAppCss } from "../test/cssFixture";
 
+function getStandaloneDisplayModeBlock(css: string): string {
+  const match = /@media\s*\(\s*display-mode:\s*standalone\s*\)\s*\{/.exec(css);
+  expect(match).toBeTruthy();
+
+  const start = match!.index;
+  const open = css.indexOf("{", start);
+  let depth = 1;
+  let i = open + 1;
+
+  while (i < css.length && depth > 0) {
+    if (css[i] === "{") depth++;
+    else if (css[i] === "}") depth--;
+    i++;
+  }
+
+  return css.slice(start, i);
+}
+
 describe("PWA configuration", () => {
   it("manifest defines required PWA fields and icon sizes", () => {
     const manifestPath = resolve(__dirname, "../public/manifest.json");
@@ -36,11 +54,13 @@ describe("PWA configuration", () => {
     expect(indexHtml).toMatch(/<meta\s+name="viewport"[^>]*content="[^"]*viewport-fit=cover[^"]*"/i);
   });
 
-  it("CSS includes display-mode: standalone rule with safe-area-inset-bottom for PWA home bar spacing", () => {
+  it("CSS includes display-mode: standalone rule with a :root token override only", () => {
     const cssContent = loadAllAppCss();
+    const standaloneBlock = getStandaloneDisplayModeBlock(cssContent);
 
-    expect(cssContent).toMatch(/@media\s*\(\s*display-mode:\s*standalone\s*\)/);
-    expect(cssContent).toMatch(/@media\s*\(\s*display-mode:\s*standalone\s*\)\s*\{[\s\S]*?#root\s*\{[\s\S]*?env\(safe-area-inset-bottom,\s*0px\)/);
+    expect(standaloneBlock).toContain("@media (display-mode: standalone)");
+    expect(standaloneBlock).toMatch(/:root\s*\{[\s\S]*?--standalone-bottom-gap:\s*8px/);
+    expect(standaloneBlock).not.toContain("#root {");
   });
 
   it("CSS includes --standalone-bottom-gap token with 8px value in standalone mode", () => {
@@ -52,11 +72,12 @@ describe("PWA configuration", () => {
     expect(cssContent).toMatch(/--standalone-bottom-gap:\s*8px/);
   });
 
-  it("CSS uses additive bottom spacing in standalone mode (safe-area + gap)", () => {
+  it("CSS applies standalone bottom gap via scoped mobile layout rules, not global #root padding", () => {
     const cssContent = loadAllAppCss();
 
-    // #root should use var(--standalone-bottom-gap) in a calc expression for additive spacing
-    expect(cssContent).toContain("var(--standalone-bottom-gap))");
+    expect(cssContent).toMatch(/\.project-content--with-mobile-nav\s*\{[^}]*var\(--standalone-bottom-gap\)/);
+    expect(cssContent).toMatch(/\.executor-status-bar\s*\{[^}]*var\(--standalone-bottom-gap\)/);
+    expect(cssContent).not.toMatch(/#root\s*\{[^}]*var\(--standalone-bottom-gap\)/);
   });
 
   it("service worker contains lifecycle handlers and versioned cache name", () => {

@@ -39,7 +39,7 @@
 
   /* Content padding: both mobile nav AND footer */
   .project-content--with-footer.project-content--with-mobile-nav {
-    padding-bottom: calc(32px + var(--mobile-nav-height) + env(safe-area-inset-bottom, 0px) + var(--standalone-bottom-gap));
+    padding-bottom: calc(var(--executor-footer-height) + var(--mobile-nav-height) + env(safe-area-inset-bottom, 0px) + var(--standalone-bottom-gap));
   }
 }
 

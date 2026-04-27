@@ -2690,11 +2690,6 @@ input[type="range"]:focus-visible {
     /* PWA standalone mode: 8px extra breathing room for iOS home indicator */
     --standalone-bottom-gap: 8px;
   }
-
-  #root {
-    /* FN-1626: additive bottom spacing = safe-area inset + standalone home bar gap */
-    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + var(--standalone-bottom-gap));
-  }
 }
 
 /* === Mobile Responsive Overrides ===

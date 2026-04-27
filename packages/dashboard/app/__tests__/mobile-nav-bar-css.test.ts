@@ -92,6 +92,8 @@ describe("mobile-nav-bar.css", () => {
   it("defines content padding rule for mobile nav", () => {
     expect(mobileMediaBlock).toContain(".project-content--with-mobile-nav");
     expect(cssContent).toContain(".project-content--with-footer.project-content--with-mobile-nav");
+    expect(cssContent).toContain("var(--executor-footer-height)");
+    expect(cssContent).not.toContain("calc(32px + var(--mobile-nav-height)");
   });
 
   it("mobile-more-sheet uses additive safe-area padding (not max) to prevent Settings clipping", () => {
