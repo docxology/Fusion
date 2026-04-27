@@ -663,56 +663,41 @@
   font-weight: 500;
 }
 
-.agent-runtime-mode-toggle {
+.config-runtime-tabs {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 1fr 1fr;
   gap: var(--space-sm);
+  margin-bottom: var(--space-md);
 }
 
-.agent-runtime-mode-option {
-  position: relative;
-  display: flex;
-}
-
-.agent-runtime-mode-option input {
-  position: absolute;
-  width: var(--space-xs);
-  height: var(--space-xs);
-  margin: 0;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.agent-runtime-mode-option span {
-  width: 100%;
+.config-runtime-tab {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--card);
   color: var(--text-muted);
   padding: var(--space-sm) var(--space-md);
-  text-align: center;
   font-size: calc(var(--space-sm) + var(--space-xs));
   font-weight: 600;
   cursor: pointer;
-  transition: border-color var(--transition-fast), color var(--transition-fast), background var(--transition-fast), box-shadow var(--transition-fast);
+  transition: border-color var(--transition-fast), background var(--transition-fast), color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
-.agent-runtime-mode-option input:checked + span {
+.config-runtime-tab:hover {
   border-color: var(--todo);
   color: var(--text);
-  background: color-mix(in srgb, var(--todo) 12%, transparent);
+  background: var(--card-hover);
 }
 
-.agent-runtime-mode-option input:focus-visible + span {
+.config-runtime-tab:focus-visible {
   outline: none;
   border-color: var(--todo);
   box-shadow: var(--focus-ring-strong);
 }
 
-.agent-runtime-mode-option span:hover {
+.config-runtime-tab.active {
   border-color: var(--todo);
   color: var(--text);
-  background: var(--card-hover);
+  background: color-mix(in srgb, var(--todo) 12%, transparent);
 }
 
 .config-hint {
@@ -983,7 +968,7 @@
 
 /* === Agent Detail View Mobile Responsive === */
 @media (max-width: 768px) {
-  .agent-runtime-mode-toggle {
+  .config-runtime-tabs {
     grid-template-columns: 1fr;
   }
 

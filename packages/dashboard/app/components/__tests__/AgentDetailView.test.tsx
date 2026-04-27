@@ -1408,8 +1408,8 @@ describe("AgentDetailView", () => {
 
       await navigateToSettings(user);
 
-      const runtimeRadio = screen.getByRole("radio", { name: "Plugin Runtime" }) as HTMLInputElement;
-      expect(runtimeRadio.checked).toBe(true);
+      const runtimeTab = screen.getByRole("tab", { name: "Plugin Runtime" });
+      expect(runtimeTab).toHaveAttribute("aria-selected", "true");
       expect(screen.queryByLabelText("Agent Model")).toBeNull();
       expect((screen.getByLabelText("Runtime") as HTMLSelectElement).value).toBe("openclaw");
     });

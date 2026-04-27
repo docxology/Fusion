@@ -3141,30 +3141,30 @@ function ConfigTab({
         <div className="config-fields">
           <div className="config-field">
             <label>Runtime Source</label>
-            <div className="agent-runtime-mode-toggle" role="radiogroup" aria-label="Runtime source">
-              <label className="agent-runtime-mode-option">
-                <input
-                  type="radio"
-                  name="agent-runtime-mode"
-                  value="model"
-                  checked={runtimeMode === "model"}
-                  onChange={() => {
-                    setRuntimeMode("model");
-                    setSelectedRuntimeId("");
-                  }}
-                />
-                <span>Built-in Model</span>
-              </label>
-              <label className="agent-runtime-mode-option">
-                <input
-                  type="radio"
-                  name="agent-runtime-mode"
-                  value="runtime"
-                  checked={runtimeMode === "runtime"}
-                  onChange={() => setRuntimeMode("runtime")}
-                />
-                <span>Plugin Runtime</span>
-              </label>
+            <div className="config-runtime-tabs" role="tablist" aria-label="Runtime source">
+              <button
+                type="button"
+                className={`config-runtime-tab${runtimeMode === "model" ? " active" : ""}`}
+                role="tab"
+                aria-selected={runtimeMode === "model"}
+                tabIndex={runtimeMode === "model" ? 0 : -1}
+                onClick={() => {
+                  setRuntimeMode("model");
+                  setSelectedRuntimeId("");
+                }}
+              >
+                Built-in Model
+              </button>
+              <button
+                type="button"
+                className={`config-runtime-tab${runtimeMode === "runtime" ? " active" : ""}`}
+                role="tab"
+                aria-selected={runtimeMode === "runtime"}
+                tabIndex={runtimeMode === "runtime" ? 0 : -1}
+                onClick={() => setRuntimeMode("runtime")}
+              >
+                Plugin Runtime
+              </button>
             </div>
           </div>
 

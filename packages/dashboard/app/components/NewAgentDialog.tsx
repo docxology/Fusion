@@ -523,27 +523,27 @@ export function NewAgentDialog({ isOpen, onClose, onCreated, projectId }: NewAge
             <div>
               <div className="agent-dialog-field">
                 <label>Runtime Source</label>
-                <div className="agent-runtime-mode-toggle" role="radiogroup" aria-label="Runtime source">
-                  <label className="agent-runtime-mode-option">
-                    <input
-                      type="radio"
-                      name="agent-runtime-mode"
-                      value="model"
-                      checked={runtimeMode === "model"}
-                      onChange={() => handleRuntimeModeChange("model")}
-                    />
-                    <span>Built-in Model</span>
-                  </label>
-                  <label className="agent-runtime-mode-option">
-                    <input
-                      type="radio"
-                      name="agent-runtime-mode"
-                      value="runtime"
-                      checked={runtimeMode === "runtime"}
-                      onChange={() => handleRuntimeModeChange("runtime")}
-                    />
-                    <span>Plugin Runtime</span>
-                  </label>
+                <div className="agent-dialog-tabs" role="tablist" aria-label="Runtime source">
+                  <button
+                    type="button"
+                    className={`agent-dialog-tab${runtimeMode === "model" ? " active" : ""}`}
+                    role="tab"
+                    aria-selected={runtimeMode === "model"}
+                    tabIndex={runtimeMode === "model" ? 0 : -1}
+                    onClick={() => handleRuntimeModeChange("model")}
+                  >
+                    Built-in Model
+                  </button>
+                  <button
+                    type="button"
+                    className={`agent-dialog-tab${runtimeMode === "runtime" ? " active" : ""}`}
+                    role="tab"
+                    aria-selected={runtimeMode === "runtime"}
+                    tabIndex={runtimeMode === "runtime" ? 0 : -1}
+                    onClick={() => handleRuntimeModeChange("runtime")}
+                  >
+                    Plugin Runtime
+                  </button>
                 </div>
               </div>
               {runtimeMode === "model" ? (
