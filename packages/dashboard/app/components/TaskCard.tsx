@@ -131,12 +131,36 @@ function getDoneProcessingStartMs(task: Task, completionMs: number): number | nu
   return validStart ?? null;
 }
 
+function getDoneWorkflowRuntimeMs(task: Task): number | null {
+  const results = task.workflowStepResults;
+  if (!results || results.length === 0) return null;
+
+  let total = 0;
+  let counted = 0;
+  for (const step of results) {
+    if (!step.startedAt || !step.completedAt) continue;
+    const startedMs = parseTimestampToMs(step.startedAt);
+    const completedMs = parseTimestampToMs(step.completedAt);
+    if (startedMs == null || completedMs == null || completedMs < startedMs) continue;
+    total += completedMs - startedMs;
+    counted += 1;
+  }
+  return counted > 0 ? total : null;
+}
+
 function formatElapsedDuration(elapsedMs: number): string {
   if (!Number.isFinite(elapsedMs) || elapsedMs < 0) return "";
 
-  const elapsedMinutes = Math.floor(elapsedMs / 60_000);
-  if (elapsedMinutes < 1) return "<1m";
-  if (elapsedMinutes < 60) return `${elapsedMinutes}m`;
+  if (elapsedMs < 1000) return `${Math.round(elapsedMs)}ms`;
+
+  const elapsedSeconds = elapsedMs / 1000;
+  if (elapsedSeconds < 60) return `${elapsedSeconds.toFixed(1)}s`;
+
+  const elapsedMinutes = Math.floor(elapsedSeconds / 60);
+  if (elapsedMinutes < 60) {
+    const remSeconds = Math.round(elapsedSeconds % 60);
+    return remSeconds > 0 ? `${elapsedMinutes}m ${remSeconds}s` : `${elapsedMinutes}m`;
+  }
 
   const elapsedHours = Math.floor(elapsedMinutes / 60);
   if (elapsedHours < 24) return `${elapsedHours}h`;
@@ -693,11 +717,27 @@ function TaskCardComponent({
       };
     }
 
-    // Done cards should report a fixed processing duration (start → completion),
-    // not elapsed time since the task entered the done column.
+    // Done cards report agent execution time (sum of workflow step durations),
+    // matching the Workflow runtime metric in the stats tab. Fall back to
+    // wallclock processing duration when no workflow timing data is available.
     const completionMs = getDoneCompletionMs(task);
     if (completionMs == null) {
       return null;
+    }
+
+    const workflowRuntimeMs = getDoneWorkflowRuntimeMs(task);
+    if (workflowRuntimeMs != null) {
+      const elapsedLabel = formatElapsedDuration(workflowRuntimeMs);
+      if (!elapsedLabel) {
+        return null;
+      }
+
+      const completedAt = new Date(completionMs).toLocaleString();
+      return {
+        label: elapsedLabel,
+        title: `Workflow runtime ${elapsedLabel}. Completed ${completedAt}`,
+        ariaLabel: `Workflow runtime ${elapsedLabel}. Completed ${completedAt}`,
+      };
     }
 
     const startMs = getDoneProcessingStartMs(task, completionMs);
@@ -716,7 +756,7 @@ function TaskCardComponent({
       title: `Processing took ${elapsedLabel}. Completed ${completedAt}`,
       ariaLabel: `Completed processing duration ${elapsedLabel}. Completed ${completedAt}`,
     };
-  }, [task.column, task.columnMovedAt, task.updatedAt, task.createdAt, timeIndicatorNowMs]);
+  }, [task.column, task.columnMovedAt, task.updatedAt, task.createdAt, task.workflowStepResults, timeIndicatorNowMs]);
 
   useEffect(() => {
     if (!hasGitHubBadge || !isInViewport) {
