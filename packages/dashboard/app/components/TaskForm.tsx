@@ -79,7 +79,7 @@ export interface TaskFormProps {
 
   // Review level (0=None, 1=Plan Only, 2=Plan and Code, 3=Full)
   reviewLevel?: number;
-  onReviewLevelChange?: (value: number) => void;
+  onReviewLevelChange?: (value: number | undefined) => void;
   executionMode?: TaskExecutionModeSelection;
   onExecutionModeChange?: (value: TaskExecutionModeSelection) => void;
 
@@ -1040,10 +1040,10 @@ export function TaskForm({
                 <select
                   id="review-level"
                   value={reviewLevel ?? ""}
-                  onChange={(e) => onReviewLevelChange(e.target.value === "" ? 0 : parseInt(e.target.value, 10))}
+                  onChange={(e) => onReviewLevelChange(e.target.value === "" ? undefined : parseInt(e.target.value, 10))}
                   disabled={disabled}
                 >
-                  <option value="">Default (None)</option>
+                  <option value="">Default (Auto — triage decides)</option>
                   <option value="0">0 — None</option>
                   <option value="1">1 — Plan Only</option>
                   <option value="2">2 — Plan and Code</option>
