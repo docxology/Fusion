@@ -2,6 +2,45 @@
 
 User-facing release notes aggregated across all packages. This file is auto-synced from each `packages/*/CHANGELOG.md` by `scripts/release.mjs` — do not edit by hand.
 
+## 0.6.0
+
+### @fusion/dashboard
+
+#### Patch Changes
+
+- @fusion/core@0.6.0
+- @fusion/engine@0.6.0
+
+### @fusion/engine
+
+#### Patch Changes
+
+- @fusion/core@0.6.0
+- @fusion/pi-claude-cli@0.6.0
+
+### @fusion/plugin-sdk
+
+#### Patch Changes
+
+- @fusion/core@0.6.0
+
+### @runfusion/fusion
+
+#### Minor Changes
+
+- f4d98ed: Add a `--git` flag to `fn init` to auto-initialize a git repository (including an initial commit) when the target directory is not already a git repo.
+- 6caab17: Add project settings to auto-comment on imported GitHub issues when tasks move to done, plus dashboard GitHub integration support for posting issue comments.
+- fdf8ca9: Reframe the CLI splash to "multi node agent orchestrator" with `runfusion.ai` and the current version, and surface the version alongside URL/host/auth/uptime in the dashboard System panel and status bar.
+
+### runfusion.ai
+
+#### Patch Changes
+
+- Updated dependencies [f4d98ed]
+- Updated dependencies [6caab17]
+- Updated dependencies [fdf8ca9]
+  - @runfusion/fusion@0.6.0
+
 ## 0.5.0
 
 ### @fusion/dashboard
