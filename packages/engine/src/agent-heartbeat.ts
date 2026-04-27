@@ -857,6 +857,32 @@ export class HeartbeatMonitor {
           heartbeatLog.warn(`Agent ${agentId} budget status check failed: ${budgetErr instanceof Error ? budgetErr.message : String(budgetErr)} — proceeding without budget check`);
         }
 
+        // Pause governance: globalPause blocks all heartbeat sources;
+        // enginePaused is a soft pause that only blocks timer ticks.
+        try {
+          const settings = await taskStore.getSettings();
+          if (settings.globalPause) {
+            heartbeatLog.log(`Agent ${agentId} heartbeat skipped — global pause active (source=${source})`);
+            await this.completeRun(agentId, run.id, {
+              status: "completed",
+              resultJson: { reason: "global_pause", source },
+              skipStateTransition: true,
+            });
+            return (await this.store.getRunDetail(agentId, run.id))!;
+          }
+          if (settings.enginePaused && source === "timer") {
+            heartbeatLog.log(`Agent ${agentId} timer heartbeat skipped — engine paused (soft pause)`);
+            await this.completeRun(agentId, run.id, {
+              status: "completed",
+              resultJson: { reason: "engine_paused", source },
+              skipStateTransition: true,
+            });
+            return (await this.store.getRunDetail(agentId, run.id))!;
+          }
+        } catch (pauseErr) {
+          heartbeatLog.warn(`Pause status check failed for ${agentId}: ${pauseErr instanceof Error ? pauseErr.message : String(pauseErr)} — proceeding`);
+        }
+
         // Resolve agent
         const agent = preloadedAgent ?? await this.store.getAgent(agentId);
         if (!agent) {
@@ -2063,6 +2089,20 @@ export class HeartbeatTriggerScheduler {
       if (activeRun) {
         heartbeatLog.log(`Timer tick skipped for ${agentId} (active run)`);
         return;
+      }
+
+      // Global/engine pause guard: scheduler should not dispatch timer callbacks
+      // while globally paused (hard stop) or engine paused (soft stop for timers).
+      if (this.taskStore) {
+        const settings = await this.taskStore.getSettings();
+        if (settings.globalPause) {
+          heartbeatLog.log(`Timer tick skipped for ${agentId} (global pause active)`);
+          return;
+        }
+        if (settings.enginePaused) {
+          heartbeatLog.log(`Timer tick skipped for ${agentId} (engine paused)`);
+          return;
+        }
       }
 
       // Budget enforcement is handled in HeartbeatMonitor.executeHeartbeat() for timer sources.

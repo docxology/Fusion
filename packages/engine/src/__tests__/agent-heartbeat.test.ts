@@ -3462,6 +3462,87 @@ describe("HeartbeatMonitor", () => {
         expect(mockedCreateFnAgent).toHaveBeenCalledOnce();
       });
     });
+
+    describe("Pause Governance", () => {
+      it("skips heartbeat on global pause for timer source", async () => {
+        const store = createStoreWithAgentForExec();
+        const pauseAwareTaskStore = createMockTaskStore({
+          getSettings: vi.fn().mockResolvedValue({ globalPause: true, enginePaused: false }),
+        });
+        const monitor = new HeartbeatMonitor({ store, taskStore: pauseAwareTaskStore, rootDir: "/tmp" });
+
+        const result = await monitor.executeHeartbeat({ agentId: "agent-001", source: "timer" });
+
+        expect(result.status).toBe("completed");
+        expect(result.resultJson).toMatchObject({ reason: "global_pause", source: "timer" });
+        expect(mockedCreateFnAgent).not.toHaveBeenCalled();
+      });
+
+      it("skips heartbeat on global pause for assignment source", async () => {
+        const store = createStoreWithAgentForExec();
+        const pauseAwareTaskStore = createMockTaskStore({
+          getSettings: vi.fn().mockResolvedValue({ globalPause: true, enginePaused: false }),
+        });
+        const monitor = new HeartbeatMonitor({ store, taskStore: pauseAwareTaskStore, rootDir: "/tmp" });
+
+        const result = await monitor.executeHeartbeat({ agentId: "agent-001", source: "assignment" });
+
+        expect(result.status).toBe("completed");
+        expect(result.resultJson).toMatchObject({ reason: "global_pause", source: "assignment" });
+        expect(mockedCreateFnAgent).not.toHaveBeenCalled();
+      });
+
+      it("skips timer heartbeat on engine pause but allows assignment", async () => {
+        const timerStore = createStoreWithAgentForExec();
+        const pauseAwareTaskStore = createMockTaskStore({
+          getSettings: vi.fn().mockResolvedValue({ globalPause: false, enginePaused: true }),
+        });
+        const timerMonitor = new HeartbeatMonitor({ store: timerStore, taskStore: pauseAwareTaskStore, rootDir: "/tmp" });
+
+        const timerResult = await timerMonitor.executeHeartbeat({ agentId: "agent-001", source: "timer" });
+
+        expect(timerResult.status).toBe("completed");
+        expect(timerResult.resultJson).toMatchObject({ reason: "engine_paused", source: "timer" });
+        expect(mockedCreateFnAgent).not.toHaveBeenCalled();
+
+        const assignmentStore = createStoreWithAgentForExec();
+        const mockSession = createMockAgentSession();
+        mockedCreateFnAgent.mockResolvedValue({ session: mockSession as any });
+        const assignmentMonitor = new HeartbeatMonitor({
+          store: assignmentStore,
+          taskStore: pauseAwareTaskStore,
+          rootDir: "/tmp",
+        });
+
+        const assignmentResult = await assignmentMonitor.executeHeartbeat({
+          agentId: "agent-001",
+          source: "assignment",
+        });
+
+        expect(assignmentResult.status).toBe("completed");
+        expect((assignmentResult.resultJson as Record<string, unknown>)?.reason).not.toBe("engine_paused");
+        expect(mockedCreateFnAgent).toHaveBeenCalledOnce();
+      });
+
+      it("proceeds when pause flags are false", async () => {
+        const store = createStoreWithAgentForExec();
+        const mockSession = createMockAgentSession();
+        mockedCreateFnAgent.mockResolvedValue({ session: mockSession as any });
+        const pauseAwareTaskStore = createMockTaskStore({
+          getSettings: vi.fn().mockResolvedValue({ globalPause: false, enginePaused: false }),
+        });
+        const monitor = new HeartbeatMonitor({ store, taskStore: pauseAwareTaskStore, rootDir: "/tmp" });
+
+        const timerResult = await monitor.executeHeartbeat({ agentId: "agent-001", source: "timer" });
+        const onDemandResult = await monitor.executeHeartbeat({ agentId: "agent-001", source: "on_demand" });
+        const assignmentResult = await monitor.executeHeartbeat({ agentId: "agent-001", source: "assignment" });
+
+        expect(timerResult.status).toBe("completed");
+        expect(onDemandResult.status).toBe("completed");
+        expect(assignmentResult.status).toBe("completed");
+        expect(mockedCreateFnAgent).toHaveBeenCalledTimes(3);
+      });
+    });
   });
 
   // ── Task Creation Tracking Tests ──────────────────────────────────────
@@ -4370,6 +4451,54 @@ describe("HeartbeatTriggerScheduler", () => {
       await vi.advanceTimersByTimeAsync(5000);
 
       expect(callback).not.toHaveBeenCalled();
+    });
+
+    it("skips timer dispatch when global pause is active", async () => {
+      scheduler.stop();
+      const taskStore = {
+        getSettings: vi.fn().mockResolvedValue({ globalPause: true, enginePaused: false }),
+      } as unknown as TaskStore;
+      scheduler = new HeartbeatTriggerScheduler(store, callback, taskStore);
+      scheduler.start();
+
+      scheduler.registerAgent("agent-001", { heartbeatIntervalMs: 5000 });
+      await vi.advanceTimersByTimeAsync(5000);
+
+      expect(callback).not.toHaveBeenCalled();
+      expect(heartbeatLog.log).toHaveBeenCalledWith("Timer tick skipped for agent-001 (global pause active)");
+    });
+
+    it("skips timer dispatch when engine pause is active", async () => {
+      scheduler.stop();
+      const taskStore = {
+        getSettings: vi.fn().mockResolvedValue({ globalPause: false, enginePaused: true }),
+      } as unknown as TaskStore;
+      scheduler = new HeartbeatTriggerScheduler(store, callback, taskStore);
+      scheduler.start();
+
+      scheduler.registerAgent("agent-001", { heartbeatIntervalMs: 5000 });
+      await vi.advanceTimersByTimeAsync(5000);
+
+      expect(callback).not.toHaveBeenCalled();
+    });
+
+    it("dispatches timer callback when pause flags are false", async () => {
+      scheduler.stop();
+      const taskStore = {
+        getSettings: vi.fn().mockResolvedValue({ globalPause: false, enginePaused: false }),
+      } as unknown as TaskStore;
+      scheduler = new HeartbeatTriggerScheduler(store, callback, taskStore);
+      scheduler.start();
+
+      scheduler.registerAgent("agent-001", { heartbeatIntervalMs: 5000 });
+      await vi.advanceTimersByTimeAsync(5000);
+
+      expect(callback).toHaveBeenCalledOnce();
+      expect(callback).toHaveBeenCalledWith("agent-001", "timer", {
+        wakeReason: "timer",
+        triggerDetail: "scheduled",
+        intervalMs: 5000,
+      });
     });
 
     it("respects maxConcurrentRuns from config", async () => {

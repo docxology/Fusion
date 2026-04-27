@@ -415,6 +415,10 @@ Fusion's `HeartbeatTriggerScheduler` supports five trigger types:
 
 All triggers respect per-agent `maxConcurrentRuns` and produce structured wake context metadata.
 
+Pause governance for heartbeat execution:
+- `globalPause` is a hard stop: timer, assignment, and on-demand heartbeats are skipped with observable run reasons.
+- `enginePaused` is a soft stop for heartbeat timers: timer triggers are skipped, while assignment/on-demand triggers remain allowed for critical responsiveness paths.
+
 ### Control-Plane Lane (No Task Concurrency Gating)
 
 Heartbeat runs from the Agents panel run on a **separate control-plane lane** that is independent of task execution concurrency limits. This ensures agent responsiveness is preserved even when task pipelines are saturated.
@@ -576,7 +580,7 @@ Budget enforcement is centralized in `HeartbeatMonitor.executeHeartbeat()`:
 - **Timer triggers**: Budget is enforced in `executeHeartbeat()` which creates explicit run records with `budget_exhausted` or `budget_threshold_exceeded` reasons. This makes timer budget skips observable rather than silent drops — users see explicit "skipped" run records in the dashboard instead of timer ticks that appear to "not run".
 - **Assignment and on-demand triggers**: Budget is enforced in `executeHeartbeat()` with the same outcome recording. These triggers are allowed when over threshold (but not over budget) to maintain responsiveness.
 
-The `HeartbeatTriggerScheduler` always dispatches timer callbacks regardless of budget status, delegating budget enforcement to the execution layer. This ensures every timer tick produces a heartbeat run record that is visible in the agent's run history.
+When the engine is not paused, the `HeartbeatTriggerScheduler` dispatches timer callbacks regardless of budget status, delegating budget enforcement to the execution layer. This ensures every eligible timer tick produces a heartbeat run record that is visible in the agent's run history.
 
 Agents can be paused by budget exhaustion. Timer-triggered heartbeats skip when over threshold to avoid runaway costs, but assignment-triggered and on-demand runs may still execute for responsiveness.
 
