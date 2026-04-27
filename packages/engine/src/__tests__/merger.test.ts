@@ -3355,6 +3355,130 @@ describe("aiMergeTask — deterministic merge verification", () => {
     expect(verificationOrder).toEqual(["test", "build"]);
   });
 
+  it("writes verification start/success entries to agent log", async () => {
+    mockedExecSync.mockImplementation((cmd: any) => {
+      const cmdStr = String(cmd);
+      if (cmdStr.includes("rev-parse --verify")) return Buffer.from("abc123");
+      if (cmdStr.includes("git log")) return "- feat: something" as any;
+      if (cmdStr.includes("merge-base")) return Buffer.from("abc123");
+      if (cmdStr.includes("git diff") && cmdStr.includes("--stat")) return "1 file changed" as any;
+      if (cmdStr.includes("merge --squash")) return Buffer.from("");
+      if (cmdStr.includes("vitest run")) return Buffer.from("");
+      if (cmdStr.includes("diff --cached --quiet")) return "1" as any;
+      if (cmdStr.includes("diff --cached") && !cmdStr.includes("--quiet")) return "" as any;
+      if (cmdStr.includes("branch -d") || cmdStr.includes("branch -D")) return Buffer.from("");
+      if (cmdStr.includes("worktree remove")) return Buffer.from("");
+      if (cmdStr === "git rev-parse HEAD" || cmdStr.startsWith("git rev-parse HEAD ")) return "mergedcommit123";
+      if (cmdStr.includes("show --shortstat")) return "1 file changed, 1 insertion(+)" as any;
+      return Buffer.from("");
+    });
+
+    mockedCreateFnAgent.mockResolvedValue({
+      session: {
+        prompt: vi.fn().mockResolvedValue(undefined),
+        dispose: vi.fn(),
+      },
+    } as any);
+
+    const store = createMockStore(
+      { id: "FN-050", worktree: "/tmp/root/.worktrees/KB-050" },
+      [{ id: "FN-050", worktree: "/tmp/root/.worktrees/KB-050", column: "in-review" } as Task],
+    );
+    (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ...DEFAULT_SETTINGS,
+      testCommand: "vitest run",
+    });
+
+    const result = await aiMergeTask(store, "/tmp/root", "FN-050");
+
+    expect(result.merged).toBe(true);
+    expect(store.appendAgentLog).toHaveBeenCalledWith(
+      "FN-050",
+      "Running deterministic merge verification (test: vitest run)",
+      "text",
+      undefined,
+      "merger",
+    );
+    expect(store.appendAgentLog).toHaveBeenCalledWith(
+      "FN-050",
+      "Running test command",
+      "tool",
+      "vitest run",
+      "merger",
+    );
+
+    const appendAgentLogCalls = (store.appendAgentLog as ReturnType<typeof vi.fn>).mock.calls;
+    const successCall = appendAgentLogCalls.find(
+      ([task, message, type]) => task === "FN-050"
+        && message === "test command succeeded (exit 0)"
+        && type === "tool_result",
+    );
+    expect(successCall).toBeTruthy();
+    expect(successCall?.[3]).toMatch(/^\d+ms$/);
+    expect(successCall?.[4]).toBe("merger");
+
+    expect(store.appendAgentLog).toHaveBeenCalledWith(
+      "FN-050",
+      "Deterministic merge verification passed",
+      "text",
+      undefined,
+      "merger",
+    );
+  });
+
+  it("writes verification failure output summaries to agent log", async () => {
+    mockedExecSync.mockImplementation((cmd: any) => {
+      const cmdStr = String(cmd);
+      if (cmdStr.includes("rev-parse --verify")) return Buffer.from("abc123");
+      if (cmdStr.includes("git log")) return "- feat: something" as any;
+      if (cmdStr.includes("merge-base")) return Buffer.from("abc123");
+      if (cmdStr.includes("git diff") && cmdStr.includes("--stat")) return "1 file changed" as any;
+      if (cmdStr.includes("merge --squash")) return Buffer.from("");
+      if (cmdStr.includes("vitest run")) {
+        const error = new Error("Test failed") as any;
+        error.status = 1;
+        error.stdout = "FAIL: some test failed";
+        error.stderr = "";
+        throw error;
+      }
+      if (cmdStr.includes("diff --cached --quiet")) return "1" as any;
+      if (cmdStr.includes("branch -d") || cmdStr.includes("branch -D")) return Buffer.from("");
+      if (cmdStr.includes("worktree remove")) return Buffer.from("");
+      return Buffer.from("");
+    });
+
+    mockedCreateFnAgent.mockResolvedValue({
+      session: {
+        prompt: vi.fn().mockResolvedValue(undefined),
+        dispose: vi.fn(),
+      },
+    } as any);
+
+    const store = createMockStore(
+      { id: "FN-050", worktree: "/tmp/root/.worktrees/KB-050" },
+      [{ id: "FN-050", worktree: "/tmp/root/.worktrees/KB-050", column: "in-review" } as Task],
+    );
+    (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ...DEFAULT_SETTINGS,
+      testCommand: "vitest run",
+      verificationFixRetries: 0,
+    });
+
+    await expect(aiMergeTask(store, "/tmp/root", "FN-050")).rejects.toThrow(
+      "Deterministic test verification failed",
+    );
+
+    const appendAgentLogCalls = (store.appendAgentLog as ReturnType<typeof vi.fn>).mock.calls;
+    const failureCall = appendAgentLogCalls.find(
+      ([task, message, type]) => task === "FN-050"
+        && message === "test command failed (exit 1)"
+        && type === "tool_error",
+    );
+    expect(failureCall).toBeTruthy();
+    expect(failureCall?.[3]).toContain("full output available in engine logs");
+    expect(failureCall?.[4]).toBe("merger");
+  });
+
   it("fails merge when testCommand fails and does not move task to done", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     mockedExecSync.mockImplementation((cmd: any) => {

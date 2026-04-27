@@ -655,12 +655,12 @@ async function runDeterministicVerification(
     (hasTestCommand ? ` [test:${testSourceLabel} ${normalizedTestCommand}]` : "") +
     (hasBuildCommand ? ` [build:${buildSourceLabel} ${normalizedBuildCommand}]` : ""),
   );
-  await store.logEntry(
-    taskId,
+  const deterministicVerificationMessage =
     "Running deterministic merge verification" +
     (hasTestCommand ? ` (test${testSource === "inferred" ? " [inferred]" : ""}: ${normalizedTestCommand})` : "") +
-    (hasBuildCommand ? ` (build${buildSource === "inferred" ? " [inferred]" : ""}: ${normalizedBuildCommand})` : ""),
-  );
+    (hasBuildCommand ? ` (build${buildSource === "inferred" ? " [inferred]" : ""}: ${normalizedBuildCommand})` : "");
+  await store.logEntry(taskId, deterministicVerificationMessage);
+  await store.appendAgentLog(taskId, deterministicVerificationMessage, "text", undefined, "merger");
 
   // Run test command first if configured
   if (hasTestCommand) {
@@ -676,6 +676,13 @@ async function runDeterministicVerification(
         taskId,
         `Deterministic test verification failed (exit ${testResult.exitCode}) — see prior [verification] entry for truncated output`,
         "VerificationError",
+      );
+      await store.appendAgentLog(
+        taskId,
+        "Verification failed",
+        "tool_error",
+        `exit ${testResult.exitCode}`,
+        "merger",
       );
       throw new VerificationError(
         `Deterministic test verification failed for ${taskId}`,
@@ -699,6 +706,13 @@ async function runDeterministicVerification(
         `Deterministic build verification failed (exit ${buildResult.exitCode}) — see prior [verification] entry for truncated output`,
         "VerificationError",
       );
+      await store.appendAgentLog(
+        taskId,
+        "Verification failed",
+        "tool_error",
+        `exit ${buildResult.exitCode}`,
+        "merger",
+      );
       throw new VerificationError(
         `Deterministic build verification failed for ${taskId}`,
         result,
@@ -708,6 +722,7 @@ async function runDeterministicVerification(
 
   mergerLog.log(`${taskId}: deterministic verification passed`);
   await store.logEntry(taskId, "Deterministic merge verification passed");
+  await store.appendAgentLog(taskId, "Deterministic merge verification passed", "text", undefined, "merger");
   return result;
 }
 
@@ -722,6 +737,7 @@ async function runVerificationCommand(
   throwIfAborted(signal, taskId);
   mergerLog.log(`${taskId}: running ${type} command: ${command}`);
   await store.logEntry(taskId, `[verification] Running ${type} command: ${command}`);
+  await store.appendAgentLog(taskId, `Running ${type} command`, "tool", command, "merger");
 
   const result: VerificationCommandResult = {
     command,
@@ -748,15 +764,30 @@ async function runVerificationCommand(
     result.success = true;
 
     const verificationDurationMs = Date.now() - verificationStartedAt;
+    const timingDetail = `${verificationDurationMs}ms`;
     if (bufferOverflow) {
       mergerLog.log(`${taskId}: ${type} command succeeded (exit 0, output exceeded buffer) in ${verificationDurationMs}ms`);
       await store.logEntry(
         taskId,
         `[timing] [verification] ${type} command succeeded (exit 0, output exceeded buffer) in ${verificationDurationMs}ms`,
       );
+      await store.appendAgentLog(
+        taskId,
+        `${type} command succeeded (exit 0)`,
+        "tool_result",
+        timingDetail,
+        "merger",
+      );
     } else {
       mergerLog.log(`${taskId}: ${type} command succeeded in ${verificationDurationMs}ms`);
       await store.logEntry(taskId, `[timing] [verification] ${type} command succeeded (exit 0) in ${verificationDurationMs}ms`);
+      await store.appendAgentLog(
+        taskId,
+        `${type} command succeeded (exit 0)`,
+        "tool_result",
+        timingDetail,
+        "merger",
+      );
     }
     return result;
   } catch (error: any) {
@@ -779,6 +810,13 @@ async function runVerificationCommand(
         taskId,
         `[timing] [verification] ${type} command succeeded (exit 0, output exceeded buffer) in ${verificationDurationMs}ms`,
       );
+      await store.appendAgentLog(
+        taskId,
+        `${type} command succeeded (exit 0)`,
+        "tool_result",
+        `${verificationDurationMs}ms`,
+        "merger",
+      );
       return result;
     }
 
@@ -790,6 +828,13 @@ async function runVerificationCommand(
     await store.logEntry(
       taskId,
       `[timing] [verification] ${type} command failed (exit ${result.exitCode}) after ${verificationDurationMs}ms:\n${summary}`,
+    );
+    await store.appendAgentLog(
+      taskId,
+      `${type} command failed (exit ${result.exitCode})`,
+      "tool_error",
+      summary,
+      "merger",
     );
   }
 
@@ -890,6 +935,13 @@ A merge has been applied and the verification command failed. Your job is to fix
       taskId,
       `In-merge verification fix agent started (model: ${describeModel(session)}, runId: ${runId ?? "unknown"}, agentId: ${agentId})`,
     );
+    await store.appendAgentLog(
+      taskId,
+      `Fix agent started (model: ${describeModel(session)})`,
+      "text",
+      undefined,
+      "merger",
+    );
 
     try {
       // Build the fix prompt
@@ -926,6 +978,13 @@ ${failureContext.output.slice(0, VERIFICATION_LOG_MAX_CHARS)}
         taskId,
         `Re-running deterministic merge verification (attempt ${fixAttemptNumber ?? "unknown"})`,
       );
+      await store.appendAgentLog(
+        taskId,
+        `Re-running verification (attempt ${fixAttemptNumber ?? "unknown"})`,
+        "text",
+        undefined,
+        "merger",
+      );
       const reRunResult = await runVerificationCommand(
         store,
         rootDir,
@@ -946,6 +1005,7 @@ ${failureContext.output.slice(0, VERIFICATION_LOG_MAX_CHARS)}
     const errorMessage = err instanceof Error ? err.message : String(err);
     mergerLog.warn(`${taskId}: in-merge fix agent error: ${errorMessage}`);
     await store.logEntry(taskId, "In-merge verification fix agent encountered an error", errorMessage);
+    await store.appendAgentLog(taskId, "Fix agent encountered an error", "tool_error", errorMessage, "merger");
     return false;
   }
 }
@@ -2401,6 +2461,13 @@ export async function aiMergeTask(
         if (maxFixRetries > 0 && (verificationErr.verificationResult.testResult || verificationErr.verificationResult.buildResult)) {
           mergerLog.log(`${taskId}: deterministic verification failed — attempting in-merge fix (up to ${maxFixRetries} attempts)`);
           await store.logEntry(taskId, `Verification failed during merge — attempting in-merge fix (up to ${maxFixRetries} attempts)`);
+          await store.appendAgentLog(
+            taskId,
+            `Verification failed — attempting in-merge fix (up to ${maxFixRetries} attempts)`,
+            "text",
+            undefined,
+            "merger",
+          );
 
           // Extract failure context from the VerificationError
           const failedResult = verificationErr.verificationResult.testResult?.success === false
@@ -2416,6 +2483,13 @@ export async function aiMergeTask(
               const fixAttemptStartedAt = Date.now();
               mergerLog.log(`${taskId}: in-merge verification fix attempt ${fixAttempt}/${maxFixRetries}`);
               await store.logEntry(taskId, `In-merge verification fix attempt ${fixAttempt}/${maxFixRetries}`);
+              await store.appendAgentLog(
+                taskId,
+                `In-merge verification fix attempt ${fixAttempt}/${maxFixRetries}`,
+                "text",
+                undefined,
+                "merger",
+              );
 
               throwIfAborted(options.signal, taskId);
               fixSuccess = await attemptInMergeVerificationFix(
@@ -2438,11 +2512,25 @@ export async function aiMergeTask(
               if (fixSuccess) {
                 mergerLog.log(`${taskId}: in-merge verification fix succeeded on attempt ${fixAttempt} in ${fixAttemptDurationMs}ms`);
                 await store.logEntry(taskId, `[timing] In-merge verification fix succeeded on attempt ${fixAttempt} in ${fixAttemptDurationMs}ms — verification now passes`);
+                await store.appendAgentLog(
+                  taskId,
+                  `In-merge verification fix succeeded on attempt ${fixAttempt}`,
+                  "tool_result",
+                  `${fixAttemptDurationMs}ms — verification now passes`,
+                  "merger",
+                );
                 break;
               }
 
               mergerLog.warn(`${taskId}: in-merge verification fix attempt ${fixAttempt} — verification still fails (${fixAttemptDurationMs}ms)`);
               await store.logEntry(taskId, `[timing] In-merge verification fix attempt ${fixAttempt} — verification still fails (${fixAttemptDurationMs}ms)`);
+              await store.appendAgentLog(
+                taskId,
+                `In-merge verification fix attempt ${fixAttempt} failed`,
+                "tool_error",
+                `${fixAttemptDurationMs}ms — verification still fails`,
+                "merger",
+              );
             }
 
             if (fixSuccess) {
@@ -2467,6 +2555,13 @@ export async function aiMergeTask(
         if (maxFixRetries > 0 && (effectiveTestCommand || effectiveBuildCommand)) {
           mergerLog.log(`${taskId}: build verification failed — attempting in-merge fix`);
           await store.logEntry(taskId, `Build verification failed during merge — attempting in-merge fix`);
+          await store.appendAgentLog(
+            taskId,
+            "Build verification failed — attempting in-merge fix",
+            "text",
+            undefined,
+            "merger",
+          );
 
           const fixCommand = effectiveBuildCommand || effectiveTestCommand!;
           const fixType = effectiveBuildCommand ? "build" as const : "test" as const;
@@ -2476,6 +2571,13 @@ export async function aiMergeTask(
             const fixAttemptStartedAt = Date.now();
             mergerLog.log(`${taskId}: in-merge verification fix attempt ${fixAttempt}/${maxFixRetries}`);
             await store.logEntry(taskId, `In-merge verification fix attempt ${fixAttempt}/${maxFixRetries}`);
+            await store.appendAgentLog(
+              taskId,
+              `In-merge verification fix attempt ${fixAttempt}/${maxFixRetries}`,
+              "text",
+              undefined,
+              "merger",
+            );
 
             throwIfAborted(options.signal, taskId);
             fixSuccess = await attemptInMergeVerificationFix(
@@ -2498,9 +2600,23 @@ export async function aiMergeTask(
             if (fixSuccess) {
               mergerLog.log(`${taskId}: in-merge verification fix succeeded on attempt ${fixAttempt} in ${fixAttemptDurationMs}ms`);
               await store.logEntry(taskId, `[timing] In-merge verification fix succeeded on attempt ${fixAttempt} in ${fixAttemptDurationMs}ms`);
+              await store.appendAgentLog(
+                taskId,
+                `In-merge verification fix succeeded on attempt ${fixAttempt}`,
+                "tool_result",
+                `${fixAttemptDurationMs}ms`,
+                "merger",
+              );
               break;
             }
             await store.logEntry(taskId, `[timing] In-merge verification fix attempt ${fixAttempt} — verification still fails (${fixAttemptDurationMs}ms)`);
+            await store.appendAgentLog(
+              taskId,
+              `In-merge verification fix attempt ${fixAttempt} failed`,
+              "tool_error",
+              `${fixAttemptDurationMs}ms — verification still fails`,
+              "merger",
+            );
           }
 
           if (fixSuccess) {
