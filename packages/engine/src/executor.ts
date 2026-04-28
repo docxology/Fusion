@@ -800,6 +800,14 @@ export class TaskExecutor {
           executorLog.log(`Global pause — terminating agent session for ${taskId}`);
           this.pausedAborted.add(taskId);
           this.options.stuckTaskDetector?.untrackTask(taskId);
+          // abort() interrupts any in-flight LLM stream / tool call;
+          // dispose() then releases session resources.
+          const sessionWithAbort = session as unknown as { abort?: () => Promise<void> };
+          if (typeof sessionWithAbort.abort === "function") {
+            void sessionWithAbort.abort().catch((err) => {
+              executorLog.warn(`Failed to abort agent session for ${taskId}: ${err}`);
+            });
+          }
           session.dispose();
           // Clean up all in-memory state so nothing leaks when tasks are later unpaused
           this.loopRecoveryState.delete(taskId);

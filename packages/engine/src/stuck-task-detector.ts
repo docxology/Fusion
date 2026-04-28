@@ -437,6 +437,12 @@ export class StuckTaskDetector {
       return; // Can't read settings — skip this cycle
     }
 
+    // Pause gate: when globalPause or enginePaused is on, sessions are
+    // intentionally idle (engine listeners dispose them on transition) and
+    // long pauses would otherwise look like inactivity → trigger spurious
+    // stuck-kill / requeue cycles. Skip detection while paused.
+    if (settings.globalPause || settings.enginePaused) return;
+
     const timeoutMs = settings.taskStuckTimeoutMs;
     if (!timeoutMs || timeoutMs <= 0) return; // Disabled
 

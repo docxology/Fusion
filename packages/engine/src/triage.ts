@@ -494,6 +494,14 @@ export class TriageProcessor {
           );
           this.pauseAborted.add(taskId);
           this.options.stuckTaskDetector?.untrackTask(taskId);
+          // abort() interrupts any in-flight LLM stream / tool call;
+          // dispose() then releases session resources.
+          const sessionWithAbort = session as { abort?: () => Promise<void>; dispose: () => void };
+          if (typeof sessionWithAbort.abort === "function") {
+            void sessionWithAbort.abort().catch((err) => {
+              planLog.warn(`Failed to abort triage session for ${taskId}: ${err}`);
+            });
+          }
           session.dispose();
         }
       }

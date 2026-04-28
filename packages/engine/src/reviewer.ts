@@ -252,6 +252,39 @@ export async function reviewStep(
   baseline?: string,
   options: ReviewOptions = {},
 ): Promise<ReviewResult> {
+  // Pause gate: do not spawn a reviewer subprocess while the engine is paused.
+  // Re-read settings from the store so a stale `options.settings` snapshot can't
+  // leak a reviewer past a pause that flipped on after the parent agent started.
+  let liveSettings: Settings | undefined = options.settings;
+  if (options.store) {
+    try {
+      liveSettings = await options.store.getSettings();
+    } catch {
+      // Fall back to the snapshot — better to spawn than crash on a transient store error.
+    }
+  }
+  if (liveSettings?.globalPause || liveSettings?.enginePaused) {
+    const reason = liveSettings.globalPause ? "Global pause" : "Engine paused";
+    reviewerLog.log(
+      `${taskId}: ${reviewType} review for Step ${stepNumber} skipped — ${reason} active`,
+    );
+    if (options.store && options.taskId) {
+      try {
+        await options.store.logEntry(
+          options.taskId,
+          `${reviewType} review skipped — ${reason} active`,
+        );
+      } catch {
+        // best-effort
+      }
+    }
+    return {
+      verdict: "UNAVAILABLE",
+      review: `${reason} active — reviewer not spawned. Stop calling fn_review_* and exit cleanly; the parent task will resume after unpause.`,
+      summary: `Skipped: ${reason}`,
+    };
+  }
+
   // Build the review request
   const request = buildReviewRequest(
     taskId, stepNumber, stepName, reviewType, promptContent, cwd, baseline, options.userComments,
