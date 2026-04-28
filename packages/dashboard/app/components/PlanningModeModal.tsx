@@ -16,6 +16,7 @@ import {
   createTasksFromPlanning,
   fetchModels,
   cancelPlanning,
+  stopPlanningGeneration,
   updateGlobalSettings,
   type PlanningSession,
   type SubtaskItem,
@@ -30,7 +31,7 @@ import {
   getPlanningDescription,
   clearPlanningDescription,
 } from "../hooks/modalPersistence";
-import { Lightbulb, X, Loader2, CheckCircle, ArrowLeft, ArrowRight, Sparkles, ListTree, GripVertical, ArrowUp, ArrowDown, Plus, Trash2, RefreshCw, Lock, ChevronLeft, MessageSquarePlus, AlertCircle, Clock, HelpCircle } from "lucide-react";
+import { Lightbulb, X, Loader2, CheckCircle, ArrowLeft, ArrowRight, Sparkles, ListTree, GripVertical, ArrowUp, ArrowDown, Plus, Trash2, RefreshCw, Lock, ChevronLeft, MessageSquarePlus, AlertCircle, Clock, HelpCircle, StopCircle } from "lucide-react";
 import { CustomModelDropdown } from "./CustomModelDropdown";
 import { ConversationHistory } from "./ConversationHistory";
 import { useSessionLock } from "../hooks/useSessionLock";
@@ -106,6 +107,8 @@ export function PlanningModeModal({ isOpen, onClose, onTaskCreated, onTasksCreat
   const [showThinking, setShowThinking] = useState(true);
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [isRetrying, setIsRetrying] = useState(false);
+  const [generationStartTime, setGenerationStartTime] = useState<number | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const modalRef = useRef<HTMLDivElement>(null);
   const streamConnectionRef = useRef<{ close: () => void; isConnected: () => boolean } | null>(null);
@@ -163,6 +166,24 @@ export function PlanningModeModal({ isOpen, onClose, onTaskCreated, onTasksCreat
       node.scrollTop = node.scrollHeight;
     }
   }, [streamingOutput]);
+
+  useEffect(() => {
+    if (view.type !== "loading") {
+      setGenerationStartTime(null);
+      setElapsedSeconds(0);
+      return;
+    }
+
+    const startedAt = Date.now();
+    setGenerationStartTime(startedAt);
+    setElapsedSeconds(0);
+
+    const timer = setInterval(() => {
+      setElapsedSeconds(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [view.type]);
 
   const resetDetailState = useCallback(() => {
     setInitialPlan("");
@@ -827,6 +848,30 @@ export function PlanningModeModal({ isOpen, onClose, onTaskCreated, onTasksCreat
     [projectId, sessionTabId, view]
   );
 
+  const handleStopGeneration = useCallback(async () => {
+    const sessionId = currentSessionIdRef.current;
+    if (!sessionId) {
+      return;
+    }
+
+    try {
+      await stopPlanningGeneration(sessionId, projectId, sessionTabId);
+    } catch {
+      // best-effort; server-side timeout/stop event may have already fired
+    }
+
+    streamConnectionRef.current?.close();
+    streamConnectionRef.current = null;
+    setIsReconnecting(false);
+    setIsRetrying(false);
+    setView({
+      type: "error",
+      session: { sessionId, currentQuestion: null, summary: null },
+      errorMessage: "Generation stopped by user. You can retry or start a new session.",
+    });
+    setStreamingOutput("");
+  }, [projectId, sessionTabId]);
+
   const handleRetryFromError = useCallback(async () => {
     if (view.type !== "error") {
       return;
@@ -1206,6 +1251,9 @@ export function PlanningModeModal({ isOpen, onClose, onTaskCreated, onTasksCreat
             <div className="planning-loading">
               <Loader2 size={40} className="spin icon-todo" />
               <p>{streamingOutput ? "AI is thinking..." : "Generating next question..."}</p>
+              {generationStartTime && (
+                <div className="planning-elapsed">Thinking… ({elapsedSeconds}s)</div>
+              )}
               <div className="planning-thinking-container">
                 <button
                   className="planning-thinking-toggle"
@@ -1214,6 +1262,12 @@ export function PlanningModeModal({ isOpen, onClose, onTaskCreated, onTasksCreat
                 >
                   {showThinking ? "Hide thinking" : "Show thinking"}
                 </button>
+                <div className="planning-loading-actions">
+                  <button className="btn planning-stop-btn" type="button" onClick={() => void handleStopGeneration()}>
+                    <StopCircle size={14} />
+                    <span className="icon-ml-6">Stop</span>
+                  </button>
+                </div>
                 {showThinking && streamingOutput && (
                   <div className="planning-thinking-output" ref={thinkingOutputRef}>
                     <pre>{streamingOutput}</pre>

@@ -12,6 +12,7 @@ import {
   submitResponse,
   retrySession,
   cancelSession,
+  stopGeneration,
   getSession,
   getCurrentQuestion,
   getSummary,
@@ -32,6 +33,7 @@ import {
   generateSubtasksFromPlanning,
   formatInterviewQA,
   SESSION_TTL_MS,
+  GENERATION_TIMEOUT_MS,
 } from "../planning.js";
 import { createApiRoutes } from "../routes.js";
 import { request, get } from "../test-request.js";
@@ -1106,6 +1108,66 @@ describe("planning module", () => {
 
     it("throws SessionNotFoundError for non-existent session", async () => {
       await expect(cancelSession("non-existent-id")).rejects.toThrow(SessionNotFoundError);
+    });
+  });
+
+  describe("generation controls", () => {
+    it("returns false when stopping unknown session", () => {
+      expect(stopGeneration("missing-session")).toBe(false);
+    });
+
+    it("stops in-flight generation and sets user-visible error", async () => {
+      let resolvePrompt: (() => void) | undefined;
+      const hangingAgent = {
+        session: {
+          state: { messages: [] as Array<{ role: string; content: string }> },
+          prompt: vi.fn(
+            () =>
+              new Promise<void>((resolve) => {
+                resolvePrompt = resolve;
+              }),
+          ),
+          dispose: vi.fn(),
+        },
+      };
+      __setCreateFnAgent(async () => hangingAgent as any);
+
+      const sessionId = await createSessionWithAgent(getUniqueIp(), initialPlan, TEST_ROOT_DIR);
+      await vi.waitFor(() => {
+        expect(hangingAgent.session.prompt).toHaveBeenCalledTimes(1);
+      });
+
+      const stopped = stopGeneration(sessionId);
+      expect(stopped).toBe(true);
+      expect(hangingAgent.session.dispose).toHaveBeenCalled();
+
+      await flushAsyncWork();
+      expect(getSession(sessionId)?.error).toContain("Generation stopped by user");
+
+      resolvePrompt?.();
+    });
+
+    it("times out stalled generation and transitions session to error", async () => {
+      vi.useFakeTimers();
+      try {
+        const hangingAgent = {
+          session: {
+            state: { messages: [] as Array<{ role: string; content: string }> },
+            prompt: vi.fn(() => new Promise<void>(() => {})),
+            dispose: vi.fn(),
+          },
+        };
+        __setCreateFnAgent(async () => hangingAgent as any);
+
+        const sessionId = await createSessionWithAgent(getUniqueIp(), initialPlan, TEST_ROOT_DIR);
+
+        await vi.advanceTimersByTimeAsync(GENERATION_TIMEOUT_MS + 10);
+        await flushAsyncWork();
+
+        expect(getSession(sessionId)?.error).toContain("timed out");
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 

@@ -179,6 +179,9 @@ const MAX_SESSIONS_PER_IP_PER_HOUR = 5;
 /** Rate limiting window in milliseconds (1 hour) */
 const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
 
+/** Generation timeout in milliseconds (120 seconds). */
+export const GENERATION_TIMEOUT_MS = 120_000;
+
 // ── Types ───────────────────────────────────────────────────────────────────
 
 /** SSE event types for planning session streaming */
@@ -236,6 +239,9 @@ const sessions = new Map<string, Session>();
 /** Rate limiting state indexed by IP */
 const rateLimits = new Map<string, RateLimitEntry>();
 
+/** Active planning generations keyed by session ID. */
+const activeGenerations = new Map<string, { abortController: AbortController; timer: NodeJS.Timeout }>();
+
 // ── AI Session Persistence ────────────────────────────────────────────────
 
 /** Optional store for persisting session state across reloads/browsers. */
@@ -279,6 +285,12 @@ function cleanupInMemorySession(sessionId: string): boolean {
   const session = sessions.get(sessionId);
   if (!session) {
     return false;
+  }
+
+  const activeGeneration = activeGenerations.get(sessionId);
+  if (activeGeneration) {
+    clearTimeout(activeGeneration.timer);
+    activeGenerations.delete(sessionId);
   }
 
   if (session.agent) {
@@ -1030,14 +1042,71 @@ const MAX_PARSE_RETRIES = 1;
  * one retry attempt is made with a reformat prompt before emitting a
  * terminal session error.
  */
+function setSessionError(session: Session, message: string): void {
+  session.error = message;
+  session.updatedAt = new Date();
+  persistSession(session, "error", message);
+  planningStreamManager.broadcast(session.id, {
+    type: "error",
+    data: message,
+  });
+}
+
+function createAbortError(): Error {
+  const error = new Error("Generation aborted");
+  error.name = "AbortError";
+  return error;
+}
+
+async function runGenerationWithTimeout<T>(session: Session, operation: () => Promise<T>): Promise<T> {
+  const existing = activeGenerations.get(session.id);
+  if (existing) {
+    clearTimeout(existing.timer);
+    existing.abortController.abort();
+  }
+
+  const abortController = new AbortController();
+  let timeoutTriggered = false;
+  const timer = setTimeout(() => {
+    timeoutTriggered = true;
+    setSessionError(session, "AI generation timed out. You can retry or start a new session.");
+    abortController.abort();
+  }, GENERATION_TIMEOUT_MS);
+
+  activeGenerations.set(session.id, { abortController, timer });
+
+  const abortPromise = new Promise<never>((_, reject) => {
+    abortController.signal.addEventListener(
+      "abort",
+      () => reject(createAbortError()),
+      { once: true },
+    );
+  });
+
+  try {
+    return await Promise.race([operation(), abortPromise]);
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      if (!timeoutTriggered && !session.error) {
+        setSessionError(session, "Generation stopped by user. You can retry or start a new session.");
+      }
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+    activeGenerations.delete(session.id);
+  }
+}
+
 async function continueAgentConversation(session: Session, message: string): Promise<void> {
   if (!session.agent) {
     throw new InvalidSessionStateError("AI agent not initialized");
   }
 
   try {
-    // Clear thinking output for this turn
-    session.thinkingOutput = "";
+    await runGenerationWithTimeout(session, async () => {
+      // Clear thinking output for this turn
+      session.thinkingOutput = "";
 
     // Send message to agent using .prompt() - it will stream thinking via onThinking callback
     await session.agent.session.prompt(message);
@@ -1137,39 +1206,38 @@ async function continueAgentConversation(session: Session, message: string): Pro
       return;
     }
 
-    if (parsed.type === "question") {
-      session.currentQuestion = parsed.data;
-      session.error = undefined;
-      session.lastGeneratedThinking = session.thinkingOutput;
-      session.updatedAt = new Date();
-      persistSession(session, "awaiting_input");
-      void maybeNotifyPlanningAwaitingInput(session, parsed.data);
-      planningStreamManager.broadcast(session.id, {
-        type: "question",
-        data: parsed.data,
-      });
-    } else if (parsed.type === "complete") {
-      session.summary = parsed.data;
-      session.currentQuestion = undefined;
-      session.error = undefined;
-      session.updatedAt = new Date();
-      persistSession(session, "complete");
-      planningStreamManager.broadcast(session.id, {
-        type: "summary",
-        data: parsed.data,
-      });
-      planningStreamManager.broadcast(session.id, { type: "complete" });
-    }
+      if (parsed.type === "question") {
+        session.currentQuestion = parsed.data;
+        session.error = undefined;
+        session.lastGeneratedThinking = session.thinkingOutput;
+        session.updatedAt = new Date();
+        persistSession(session, "awaiting_input");
+        void maybeNotifyPlanningAwaitingInput(session, parsed.data);
+        planningStreamManager.broadcast(session.id, {
+          type: "question",
+          data: parsed.data,
+        });
+      } else if (parsed.type === "complete") {
+        session.summary = parsed.data;
+        session.currentQuestion = undefined;
+        session.error = undefined;
+        session.updatedAt = new Date();
+        persistSession(session, "complete");
+        planningStreamManager.broadcast(session.id, {
+          type: "summary",
+          data: parsed.data,
+        });
+        planningStreamManager.broadcast(session.id, { type: "complete" });
+      }
+    });
   } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      return;
+    }
+
     const errorMessage = err instanceof Error ? err.message : "AI processing failed";
     diagnostics.errorFromException("Agent conversation error for session", err, { sessionId: session.id, operation: "conversation" });
-    session.error = errorMessage;
-    session.updatedAt = new Date();
-    persistSession(session, "error", errorMessage);
-    planningStreamManager.broadcast(session.id, {
-      type: "error",
-      data: errorMessage,
-    });
+    setSessionError(session, errorMessage);
   }
 }
 
@@ -1452,6 +1520,32 @@ export async function retrySession(
   await continueAgentConversation(session, replayMessage);
 }
 
+export function stopGeneration(sessionId: string): boolean {
+  const session = sessions.get(sessionId);
+  const activeGeneration = activeGenerations.get(sessionId);
+
+  if (!session || !activeGeneration) {
+    return false;
+  }
+
+  activeGeneration.abortController.abort();
+  clearTimeout(activeGeneration.timer);
+  activeGenerations.delete(sessionId);
+
+  if (session.agent) {
+    nonfatal(
+      () => session.agent?.session.dispose?.(),
+      diagnostics,
+      "Error disposing agent for stop-generation",
+      { sessionId, operation: "stop-generation-dispose" },
+    );
+    session.agent = undefined;
+  }
+
+  setSessionError(session, "Generation stopped by user. You can retry or start a new session.");
+  return true;
+}
+
 /**
  * Format user response as a message for the AI agent.
  */
@@ -1702,6 +1796,7 @@ export function __resetPlanningState(): void {
   sessions.clear();
   rateLimits.clear();
   planningStreamManager.reset();
+  activeGenerations.clear();
 
   if (_aiSessionStore && _aiSessionDeletedListener) {
     _aiSessionStore.off("ai_session:deleted", _aiSessionDeletedListener);

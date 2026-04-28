@@ -9852,6 +9852,27 @@ describe("Planning Mode Routes", () => {
       });
     });
 
+    describe("POST /planning/:sessionId/stop", () => {
+      it("stops an active generation", async () => {
+        const stopSpy = vi.spyOn(planningModule, "stopGeneration").mockReturnValue(true);
+
+        const res = await REQUEST(buildApp(), "POST", "/api/planning/session-123/stop");
+
+        expect(res.status).toBe(200);
+        expect(res.body).toEqual({ success: true });
+        expect(stopSpy).toHaveBeenCalledWith("session-123");
+      });
+
+      it("returns 404 when session is missing", async () => {
+        vi.spyOn(planningModule, "stopGeneration").mockReturnValue(false);
+
+        const res = await REQUEST(buildApp(), "POST", "/api/planning/session-404/stop");
+
+        expect(res.status).toBe(404);
+        expect(res.body.error).toContain("not found");
+      });
+    });
+
     describe("POST /planning/cancel", () => {
       it("cancels an active session", async () => {
         // Create a session first

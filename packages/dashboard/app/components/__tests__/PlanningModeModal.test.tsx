@@ -14,6 +14,7 @@ const mockConnectPlanningStream = vi.fn();
 const mockRespondToPlanning = vi.fn();
 const mockRetryPlanningSession = vi.fn();
 const mockCancelPlanning = vi.fn();
+const mockStopPlanningGeneration = vi.fn();
 const mockCreateTaskFromPlanning = vi.fn();
 const mockStartPlanningBreakdown = vi.fn();
 const mockCreateTasksFromPlanning = vi.fn();
@@ -41,6 +42,7 @@ vi.mock("../../api", () => ({
   respondToPlanning: (...args: any[]) => mockRespondToPlanning(...args),
   retryPlanningSession: (...args: any[]) => mockRetryPlanningSession(...args),
   cancelPlanning: (...args: any[]) => mockCancelPlanning(...args),
+  stopPlanningGeneration: (...args: any[]) => mockStopPlanningGeneration(...args),
   createTaskFromPlanning: (...args: any[]) => mockCreateTaskFromPlanning(...args),
   startPlanningBreakdown: (...args: any[]) => mockStartPlanningBreakdown(...args),
   createTasksFromPlanning: (...args: any[]) => mockCreateTasksFromPlanning(...args),
@@ -216,6 +218,7 @@ describe("PlanningModeModal", () => {
     mockReleaseSessionLock.mockResolvedValue(undefined);
     mockForceAcquireSessionLock.mockResolvedValue(undefined);
     mockCancelPlanning.mockResolvedValue(undefined);
+    mockStopPlanningGeneration.mockResolvedValue({ success: true });
 
     // Default: simulate receiving a question after a brief delay
     mockConnectPlanningStream.mockImplementation((_sessionId: string, _projectId: string | undefined, handlers: any) => {
@@ -575,6 +578,49 @@ describe("PlanningModeModal", () => {
           "tab-self",
         );
       });
+    });
+
+    it("shows stop action in loading and stops generation", async () => {
+      let streamHandlers: any;
+      const closeSpy = vi.fn();
+      mockConnectPlanningStream.mockImplementationOnce((_sessionId: string, _projectId: string | undefined, handlers: any) => {
+        streamHandlers = handlers;
+        return {
+          close: closeSpy,
+          isConnected: vi.fn().mockReturnValue(true),
+        };
+      });
+
+      render(
+        <PlanningModeModal
+          isOpen={true}
+          onClose={mockOnClose}
+          onTaskCreated={mockOnTaskCreated}
+          onTasksCreated={vi.fn()}
+          tasks={mockTasks}
+        />
+      );
+
+      fireEvent.change(screen.getByPlaceholderText(/e.g., Build a user authentication/), {
+        target: { value: "Build auth system" },
+      });
+      fireEvent.click(screen.getByText("Start Planning"));
+
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Stop" })).toBeDefined();
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+
+      await waitFor(() => {
+        expect(mockStopPlanningGeneration).toHaveBeenCalledWith("session-123", undefined, expect.any(String));
+      });
+      expect(closeSpy).toHaveBeenCalled();
+      expect(screen.getByText("Generation stopped by user. You can retry or start a new session.")).toBeDefined();
+      expect(screen.getByRole("button", { name: "Retry" })).toBeDefined();
+
+      // avoid dangling handlers reference lint
+      expect(streamHandlers).toBeDefined();
     });
 
     it("shows error message when planning fails", async () => {

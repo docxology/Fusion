@@ -604,6 +604,40 @@ export function registerPlanningSubtaskRoutes(ctx: ApiRoutesContext, deps: Plann
     }
   });
 
+  router.post("/planning/:sessionId/stop", async (req, res) => {
+    try {
+      const { sessionId } = req.params;
+      if (!sessionId || typeof sessionId !== "string") {
+        throw badRequest("sessionId is required");
+      }
+
+      const tabId = typeof req.body?.tabId === "string" && req.body.tabId.trim().length > 0
+        ? req.body.tabId.trim()
+        : undefined;
+      const lockCheck = checkSessionLock(sessionId, tabId, aiSessionStore);
+      if (!lockCheck.allowed) {
+        res.status(409).json({
+          error: "Session locked by another tab",
+          lockedByTab: lockCheck.currentHolder,
+        });
+        return;
+      }
+
+      const { stopGeneration } = await import("../planning.js");
+      const stopped = stopGeneration(sessionId);
+      if (!stopped) {
+        throw notFound(`Planning session ${sessionId} not found or expired`);
+      }
+
+      res.json({ success: true });
+    } catch (err: unknown) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      rethrowAsApiError(err, "Failed to stop planning session");
+    }
+  });
+
   /**
    * POST /api/planning/cancel
    * Cancel and cleanup a planning session.
@@ -1113,6 +1147,7 @@ export function registerPlanningSubtaskRoutes(ctx: ApiRoutesContext, deps: Plann
       "POST /planning/start-streaming",
       "POST /planning/respond",
       "POST /planning/:sessionId/retry",
+      "POST /planning/:sessionId/stop",
       "POST /planning/cancel",
       "POST /planning/create-task",
       "POST /planning/start-breakdown",

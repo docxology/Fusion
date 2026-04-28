@@ -2357,6 +2357,21 @@ export function retryPlanningSession(
   );
 }
 
+/** Stop in-flight planning generation for a session */
+export function stopPlanningGeneration(
+  sessionId: string,
+  projectId?: string,
+  tabId?: string,
+): Promise<{ success: boolean }> {
+  return api<{ success: boolean }>(
+    withProjectId(`/planning/${encodeURIComponent(sessionId)}/stop`, projectId),
+    {
+      method: "POST",
+      ...(tabId ? { body: JSON.stringify({ tabId }) } : {}),
+    },
+  );
+}
+
 /** Cancel an active planning session */
 export function cancelPlanning(sessionId: string, projectId?: string, tabId?: string): Promise<void> {
   return api<void>(withProjectId("/planning/cancel", projectId), {

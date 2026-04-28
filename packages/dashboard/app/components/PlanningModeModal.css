@@ -972,6 +972,35 @@
   color: var(--text);
 }
 
+.planning-loading-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-md);
+  margin-top: var(--space-md);
+}
+
+.planning-stop-btn {
+  border-color: var(--color-error);
+  color: var(--color-error);
+  background: color-mix(in srgb, var(--color-error) 12%, transparent);
+}
+
+.planning-stop-btn:hover {
+  border-color: var(--color-error-dark);
+  color: var(--color-error-dark);
+  background: color-mix(in srgb, var(--color-error) 18%, transparent);
+}
+
+.planning-stop-btn {
+  min-height: 36px;
+}
+
+.planning-elapsed {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
 /* Subtask Drag-and-Drop Styles */
 .subtask-item {
   transition: opacity var(--transition-fast), transform var(--transition-fast);
@@ -1157,6 +1186,17 @@
 
   .planning-thinking-output pre {
     font-size: 12px;
+  }
+
+  .planning-loading-actions {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .planning-loading-actions .btn {
+    width: 100%;
+    min-height: 36px;
+    justify-content: center;
   }
 
   /* Prevent mobile zoom on focus for planning text inputs (16px minimum) */
