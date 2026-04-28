@@ -16,6 +16,7 @@ interface WorktreeGroupProps {
     id: string,
     updates: { title?: string; description?: string; dependencies?: string[] }
   ) => Promise<Task>;
+  onRetryTask?: (id: string) => Promise<Task>;
   onOpenDetailWithTab?: (task: Task | TaskDetail, initialTab: "changes") => void;
   /** Project-level stuck task timeout in milliseconds (undefined = disabled) */
   taskStuckTimeoutMs?: number;
@@ -36,6 +37,7 @@ function WorktreeGroupComponent({
   addToast,
   globalPaused,
   onUpdateTask,
+  onRetryTask,
   onOpenDetailWithTab,
   taskStuckTimeoutMs,
   onOpenMission,
@@ -51,7 +53,7 @@ function WorktreeGroupComponent({
         <span className="worktree-label">{label}</span>
       </div>
       {activeTasks.map((task) => (
-        <TaskCard key={task.id} task={task} projectId={projectId} onOpenDetail={onOpenDetail} addToast={addToast} globalPaused={globalPaused} onUpdateTask={onUpdateTask} onOpenDetailWithTab={onOpenDetailWithTab} taskStuckTimeoutMs={taskStuckTimeoutMs} onOpenMission={onOpenMission} lastFetchTimeMs={lastFetchTimeMs} workflowStepNameLookup={workflowStepNameLookup} />
+        <TaskCard key={task.id} task={task} projectId={projectId} onOpenDetail={onOpenDetail} addToast={addToast} globalPaused={globalPaused} onUpdateTask={onUpdateTask} onRetryTask={onRetryTask} onOpenDetailWithTab={onOpenDetailWithTab} taskStuckTimeoutMs={taskStuckTimeoutMs} onOpenMission={onOpenMission} lastFetchTimeMs={lastFetchTimeMs} workflowStepNameLookup={workflowStepNameLookup} />
       ))}
       {queuedTasks.map((task) => (
         <TaskCard
@@ -63,6 +65,7 @@ function WorktreeGroupComponent({
           addToast={addToast}
           globalPaused={globalPaused}
           onUpdateTask={onUpdateTask}
+          onRetryTask={onRetryTask}
           onOpenDetailWithTab={onOpenDetailWithTab}
           taskStuckTimeoutMs={taskStuckTimeoutMs}
           onOpenMission={onOpenMission}

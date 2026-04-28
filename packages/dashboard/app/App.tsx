@@ -732,6 +732,7 @@ function AppInner() {
             onToggleAutoMerge={toggleAutoMerge}
             globalPaused={globalPaused}
             onUpdateTask={updateTask}
+            onRetryTask={retryTask}
             onArchiveTask={archiveTask}
             onUnarchiveTask={unarchiveTask}
             onDeleteTask={deleteTask}
@@ -759,6 +760,7 @@ function AppInner() {
           tasks={isRemote && remoteData.tasks.length > 0 ? remoteData.tasks : tasks}
           projectId={currentProject?.id}
           onMoveTask={moveTask}
+          onRetryTask={retryTask}
           onOpenDetail={modalManager.openDetailTask}
           addToast={addToast}
           globalPaused={globalPaused}

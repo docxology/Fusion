@@ -16,6 +16,7 @@ vi.mock("lucide-react", () => ({
   Target: () => null,
   Bot: () => null,
   Trash2: () => null,
+  RotateCw: () => null,
 }));
 
 vi.mock("../ProviderIcon", () => ({
@@ -117,6 +118,79 @@ describe("TaskCard", () => {
     );
 
     expect(container.querySelector(".card-execution-mode-badge")?.textContent).toBe("Fast");
+  });
+
+  describe("retry button on failed tasks", () => {
+    it("renders when task is failed and onRetryTask is provided", () => {
+      const onRetryTask = vi.fn(async () => ({}) as Task);
+      render(
+        <TaskCard
+          task={makeTask({ column: "todo", status: "failed", error: "Executor crashed" })}
+          onOpenDetail={noop}
+          addToast={noop}
+          onRetryTask={onRetryTask}
+        />,
+      );
+
+      expect(screen.getByRole("button", { name: "Retry" })).toBeDefined();
+    });
+
+    it("does not render for non-failed tasks", () => {
+      const onRetryTask = vi.fn(async () => ({}) as Task);
+      render(
+        <TaskCard task={makeTask({ column: "todo", status: "done", error: "Executor crashed" })} onOpenDetail={noop} addToast={noop} onRetryTask={onRetryTask} />,
+      );
+
+      expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+    });
+
+    it("calls onRetryTask with task id", async () => {
+      const onRetryTask = vi.fn(async () => ({}) as Task);
+      render(
+        <TaskCard task={makeTask({ column: "todo", status: "failed", error: "Executor crashed" })} onOpenDetail={noop} addToast={noop} onRetryTask={onRetryTask} />,
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+      await waitFor(() => expect(onRetryTask).toHaveBeenCalledWith("FN-001"));
+    });
+
+    it("shows loading and disabled state while retry is in progress", async () => {
+      let resolveRetry: ((value: Task) => void) | null = null;
+      const onRetryTask = vi.fn(() => new Promise<Task>((resolve) => { resolveRetry = resolve; }));
+
+      render(
+        <TaskCard task={makeTask({ column: "todo", status: "failed", error: "Executor crashed" })} onOpenDetail={noop} addToast={noop} onRetryTask={onRetryTask} />,
+      );
+
+      const button = screen.getByRole("button", { name: "Retry" }) as HTMLButtonElement;
+      fireEvent.click(button);
+
+      expect(screen.getByRole("button", { name: "Retrying…" })).toBeDefined();
+      expect(button.disabled).toBe(true);
+
+      await act(async () => {
+        resolveRetry?.({} as Task);
+      });
+
+      await waitFor(() => expect(screen.getByRole("button", { name: "Retry" })).toBeDefined());
+    });
+
+    it("shows toast when retry fails", async () => {
+      const addToast = vi.fn();
+      const onRetryTask = vi.fn(async () => {
+        throw new Error("network down");
+      });
+
+      render(
+        <TaskCard task={makeTask({ column: "todo", status: "failed", error: "Executor crashed" })} onOpenDetail={noop} addToast={addToast} onRetryTask={onRetryTask} />,
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+      await waitFor(() => {
+        expect(addToast).toHaveBeenCalledWith("Failed to retry FN-001: network down", "error");
+      });
+    });
   });
 
   it("renders unified progress counts for task steps + workflow checks", () => {

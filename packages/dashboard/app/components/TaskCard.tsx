@@ -1,6 +1,6 @@
 import "./TaskCard.css";
 import { memo, useCallback, useState, useRef, useEffect, useMemo } from "react";
-import { Link, Clock, Layers, Pencil, ChevronDown, Folder, Target, Bot, Trash2 } from "lucide-react";
+import { Link, Clock, Layers, Pencil, ChevronDown, Folder, Target, Bot, Trash2, RotateCw } from "lucide-react";
 import type { Task, TaskDetail, Column, PrInfo, IssueInfo, TaskPriority } from "@fusion/core";
 import { COLUMN_LABELS, DEFAULT_TASK_PRIORITY, TASK_PRIORITIES, VALID_TRANSITIONS, getErrorMessage } from "@fusion/core";
 import { fetchTaskDetail, uploadAttachment, fetchMission, fetchAgent } from "../api";
@@ -184,6 +184,7 @@ interface TaskCardProps {
   onArchiveTask?: (id: string) => Promise<Task>;
   onUnarchiveTask?: (id: string) => Promise<Task>;
   onDeleteTask?: (id: string, options?: { removeDependencyReferences?: boolean }) => Promise<Task>;
+  onRetryTask?: (id: string) => Promise<Task>;
   onOpenDetailWithTab?: (task: Task | TaskDetail, initialTab: "changes") => void;
   /** Project-level stuck task timeout in milliseconds (undefined = disabled) */
   taskStuckTimeoutMs?: number;
@@ -326,6 +327,7 @@ function areTaskCardPropsEqual(previous: TaskCardProps, next: TaskCardProps): bo
     previous.onArchiveTask === next.onArchiveTask &&
     previous.onUnarchiveTask === next.onUnarchiveTask &&
     previous.onDeleteTask === next.onDeleteTask &&
+    previous.onRetryTask === next.onRetryTask &&
     previous.onOpenDetailWithTab === next.onOpenDetailWithTab &&
     previous.onOpenMission === next.onOpenMission &&
     previous.onMoveTask === next.onMoveTask &&
@@ -380,6 +382,7 @@ function TaskCardComponent({
   onArchiveTask,
   onUnarchiveTask,
   onDeleteTask,
+  onRetryTask,
   onOpenDetailWithTab,
   taskStuckTimeoutMs,
   onOpenMission,
@@ -399,6 +402,7 @@ function TaskCardComponent({
   const [missionTitle, setMissionTitle] = useState<string | null>(null);
   const [agentName, setAgentName] = useState<string | null>(null);
   const [showSendBackMenu, setShowSendBackMenu] = useState(false);
+  const [isRetrying, setIsRetrying] = useState(false);
   const [timeIndicatorNowMs, setTimeIndicatorNowMs] = useState(() => Date.now());
 
   const descTextareaRef = useRef<HTMLTextAreaElement>(null);
@@ -985,6 +989,20 @@ function TaskCardComponent({
     });
   }, [addToast, onMoveTask, task.id]);
 
+  const handleRetryTask = useCallback(async (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+    if (!onRetryTask || isRetrying) return;
+
+    setIsRetrying(true);
+    try {
+      await onRetryTask(task.id);
+    } catch (err) {
+      addToast(`Failed to retry ${task.id}: ${getErrorMessage(err)}`, "error");
+    } finally {
+      setIsRetrying(false);
+    }
+  }, [addToast, isRetrying, onRetryTask, task.id]);
+
   const cardClass = `card${dragging ? " dragging" : ""}${queued ? " queued" : ""}${isAgentActive ? " agent-active" : ""}${isFailed ? " failed" : ""}${isPaused ? " paused" : ""}${isStuck ? " stuck" : ""}${isAwaitingApproval ? " awaiting-approval" : ""}${fileDragOver ? " file-drop-target" : ""}${isEditing ? " card-editing" : ""}${isSaving ? " card-saving" : ""}`;
 
   const filesChangedButton = (() => {
@@ -1275,6 +1293,17 @@ function TaskCardComponent({
         <div className="card-error" title={task.error}>
           <span className="card-error-icon">⚠</span>
           <span className="card-error-text">{task.error.length > 60 ? task.error.slice(0, 60) + "…" : task.error}</span>
+          {onRetryTask && (
+            <button
+              type="button"
+              className="btn btn-sm card-error-retry-btn"
+              onClick={handleRetryTask}
+              disabled={isRetrying}
+            >
+              <RotateCw size={12} />
+              {isRetrying ? "Retrying…" : "Retry"}
+            </button>
+          )}
         </div>
       )}
       <div className="card-title" title={task.title || task.description || undefined}>

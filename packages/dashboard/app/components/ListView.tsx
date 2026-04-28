@@ -118,6 +118,7 @@ function readSelectedTaskIds(projectId?: string): Set<string> {
 interface ListViewProps {
   tasks: Task[];
   onMoveTask: (id: string, column: Column) => Promise<Task>;
+  onRetryTask?: (id: string) => Promise<Task>;
   onOpenDetail: (task: Task | TaskDetail) => void;
   addToast: (message: string, type?: ToastType) => void;
   globalPaused?: boolean;

@@ -246,12 +246,12 @@
 .card-error {
   display: flex;
   align-items: flex-start;
-  gap: 6px;
-  margin: 6px 0;
-  padding: 6px var(--space-sm);
-  background: rgba(218, 54, 51, 0.1);
-  border: 1px solid rgba(218, 54, 51, 0.3);
-  border-radius: var(--radius);
+  gap: var(--space-xs);
+  margin: var(--space-xs) 0;
+  padding: var(--space-xs) var(--space-sm);
+  background: color-mix(in srgb, var(--color-error) 10%, transparent);
+  border: var(--btn-border-width) solid color-mix(in srgb, var(--color-error-dark) 25%, transparent);
+  border-radius: var(--radius-sm);
   font-size: 11px;
   color: var(--color-error-dark);
   line-height: 1.4;
@@ -264,6 +264,38 @@
 
 .card-error-text {
   word-break: break-word;
+}
+
+.card-error-retry-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  flex-shrink: 0;
+  min-height: 24px;
+  padding: var(--space-xs) calc(var(--space-sm) - (var(--space-xs) / 2));
+  border-radius: var(--radius-sm);
+  border-color: color-mix(in srgb, var(--color-error-dark) 20%, transparent);
+  background: color-mix(in srgb, var(--color-error) 10%, transparent);
+  color: var(--color-error-dark);
+}
+
+.card-error-retry-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-error) 16%, transparent);
+}
+
+.card-error-retry-btn:focus-visible {
+  box-shadow: var(--focus-ring-strong);
+}
+
+.card-error-retry-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+@media (max-width: 768px) {
+  .card-error-retry-btn {
+    min-height: 36px;
+  }
 }
 
 /* Awaiting manual plan approval: amber left border + subtle pulsing background to signal human review needed.

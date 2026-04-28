@@ -295,8 +295,9 @@ export function useQuickChat(
         return;
       }
 
-      // Clear old messages immediately so stale conversation doesn't briefly flash
-      // while the new session loads
+      // Clear old session/messages immediately so stale conversation doesn't briefly flash
+      // and input remains disabled until the new target session is ready.
+      setActiveSession(null);
       setMessages([]);
 
       // New chat target — initialize session
@@ -331,6 +332,7 @@ export function useQuickChat(
     setStreamingToolCalls([]);
     setIsStreaming(false);
     setMessages([]);
+    setActiveSession(null);
 
     setSessionsLoading(true);
     try {

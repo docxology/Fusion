@@ -972,7 +972,7 @@ export function QuickChatFAB({
     return "Select a model to start chatting";
   }, [chatMode, selectedAgent, selectedModelTag]);
 
-  const inputDisabled = !hasChatTarget || !activeSession || sessionsLoading;
+  const inputDisabled = !hasChatTarget || !activeSession;
 
   const pendingPreview = pendingMessage.length > 50
     ? `${pendingMessage.slice(0, 50)}…`
