@@ -133,7 +133,7 @@ async function execWithProcessGroup(
 }
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { getTaskMergeBlocker, type TaskStore, type MergeResult, type MergeDetails, type WorkflowStep, type WorkflowStepResult, type Settings, type AgentPromptsConfig, type MergeConflictStrategy } from "@fusion/core";
+import { getTaskMergeBlocker, normalizeMergeConflictStrategy, type TaskStore, type MergeResult, type MergeDetails, type WorkflowStep, type WorkflowStepResult, type Settings, type AgentPromptsConfig, type CanonicalMergeConflictStrategy } from "@fusion/core";
 import { resolveAgentPrompt } from "@fusion/core";
 import { describeModel, promptWithFallback } from "./pi.js";
 import { accumulateSessionTokenUsage } from "./session-token-usage.js";
@@ -2170,7 +2170,17 @@ export async function aiMergeTask(
   const includeTaskId = settings.includeTaskIdInCommit !== false;
   // Support both setting names: smartConflictResolution (new) and autoResolveConflicts (legacy)
   const smartConflictResolution = (settings.smartConflictResolution ?? settings.autoResolveConflicts) !== false;
-  const mergeConflictStrategy: NonNullable<MergeConflictStrategy> = settings.mergeConflictStrategy ?? "smart";
+  const mergeConflictStrategy: CanonicalMergeConflictStrategy = normalizeMergeConflictStrategy(
+    settings.mergeConflictStrategy,
+  );
+
+  // Pre-merge sync: for the smart strategies, opportunistically fast-forward
+  // local main from origin so a freshly-pushed sibling commit isn't clobbered
+  // by `-X ours`/`-X theirs` falling back to a stale base. Best-effort: any
+  // failure (no remote, network down, divergent local) logs and continues.
+  if (mergeConflictStrategy === "smart-prefer-main" || mergeConflictStrategy === "smart-prefer-branch") {
+    await tryFastForwardFromOrigin(rootDir, taskId);
+  }
 
   // 3. Check branch exists
   try {
@@ -2779,7 +2789,7 @@ export async function aiMergeTask(
     merged = await mergeAttempt(2);
   }
 
-  // Attempt 3: -X theirs (smart) or -X ours (prefer-main) fallback.
+  // Attempt 3: -X theirs (smart-prefer-branch) or -X ours (smart-prefer-main) fallback.
   // Skipped for "ai-only" (no silent side-pick) and "abort" (one shot only).
   if (
     !merged
@@ -3012,6 +3022,61 @@ export async function aiMergeTask(
   return result;
 }
 
+/** Best-effort `git fetch origin <currentBranch>` + fast-forward of local
+ *  HEAD when origin is strictly ahead. Returns silently on any failure
+ *  (no remote configured, network down, divergent local commits, etc.).
+ *  Only called for the smart strategies, which want to avoid resolving a
+ *  conflict against a stale local base. */
+async function tryFastForwardFromOrigin(rootDir: string, taskId: string): Promise<void> {
+  let currentBranch: string;
+  try {
+    currentBranch = execSync("git rev-parse --abbrev-ref HEAD", {
+      cwd: rootDir,
+      encoding: "utf-8",
+      stdio: "pipe",
+    }).trim();
+  } catch {
+    return;
+  }
+  if (!currentBranch || currentBranch === "HEAD") return;
+
+  try {
+    await execAsync(`git fetch origin "${currentBranch}"`, { cwd: rootDir });
+  } catch (err) {
+    mergerLog.log(`${taskId}: pre-merge fetch failed (continuing): ${err instanceof Error ? err.message : String(err)}`);
+    return;
+  }
+
+  // Detect divergence: local must be strictly behind remote (no local-only commits).
+  let behind = 0;
+  let ahead = 0;
+  try {
+    const counts = execSync(`git rev-list --left-right --count "origin/${currentBranch}...HEAD"`, {
+      cwd: rootDir,
+      encoding: "utf-8",
+      stdio: "pipe",
+    }).trim();
+    const [b, a] = counts.split(/\s+/).map((n) => Number.parseInt(n, 10) || 0);
+    behind = b;
+    ahead = a;
+  } catch {
+    return;
+  }
+
+  if (behind === 0) return; // already up to date
+  if (ahead > 0) {
+    mergerLog.log(`${taskId}: local ${currentBranch} has ${ahead} unpushed commit(s); skipping fast-forward`);
+    return;
+  }
+
+  try {
+    await execAsync(`git merge --ff-only "origin/${currentBranch}"`, { cwd: rootDir });
+    mergerLog.log(`${taskId}: fast-forwarded ${currentBranch} by ${behind} commit(s) from origin`);
+  } catch (err) {
+    mergerLog.log(`${taskId}: fast-forward failed (continuing): ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
 /** Get the resolution strategy based on attempt number and settings.
  *  `mergeConflictStrategy` controls the FALLBACK on attempt 3 (and gates the
  *  whole cascade on "abort"); attempts 1–2 always try AI then auto-resolve so
@@ -3019,7 +3084,7 @@ export async function aiMergeTask(
 function getResolutionStrategy(
   attemptNum: 1 | 2 | 3,
   smartConflictResolution: boolean,
-  mergeConflictStrategy: NonNullable<MergeConflictStrategy> = "smart",
+  mergeConflictStrategy: CanonicalMergeConflictStrategy = "smart-prefer-main",
 ): MergeResult["resolutionStrategy"] {
   if (!smartConflictResolution || attemptNum === 1) {
     return "ai";
@@ -3031,11 +3096,11 @@ function getResolutionStrategy(
   switch (mergeConflictStrategy) {
     case "ai-only":
       return "ai";
-    case "prefer-main":
+    case "smart-prefer-main":
       return "ours";
     case "abort":
       return "abort";
-    case "smart":
+    case "smart-prefer-branch":
     default:
       return "theirs";
   }
@@ -3071,7 +3136,7 @@ interface MergeAttemptParams {
   diffStat: string;
   includeTaskId: boolean;
   smartConflictResolution: boolean;
-  mergeConflictStrategy: NonNullable<MergeConflictStrategy>;
+  mergeConflictStrategy: CanonicalMergeConflictStrategy;
   attemptNum: 1 | 2 | 3;
   options: MergerOptions;
   result: MergeResult;
@@ -3123,10 +3188,9 @@ async function executeMergeAttempt(
 
   // Attempt 3: dispatch on the configured fallback strategy.
   // Note: "ai-only" and "abort" are filtered out by the mergeAttempt cascade
-  // before reaching here — only "smart" (theirs) and "prefer-main" (ours)
-  // legitimately run attempt 3.
+  // before reaching here — only the two smart variants legitimately run attempt 3.
   if (attemptNum === 3) {
-    if (params.mergeConflictStrategy === "prefer-main") {
+    if (params.mergeConflictStrategy === "smart-prefer-main") {
       return attemptWithSideStrategy(params, "ours");
     }
     return attemptWithSideStrategy(params, "theirs");
@@ -3404,8 +3468,8 @@ async function executeMergeAttempt(
 /**
  * Attempt 3: Use git merge -X{theirs,ours} --squash strategy.
  * Side controls which version wins on conflicts:
- *   - "theirs" — the task branch wins (default fallback)
- *   - "ours" — the main branch wins (used by mergeConflictStrategy="prefer-main")
+ *   - "theirs" — the task branch wins (mergeConflictStrategy="smart-prefer-branch")
+ *   - "ours" — the main branch wins (mergeConflictStrategy="smart-prefer-main", default)
  */
 async function attemptWithSideStrategy(
   params: MergeAttemptParams,

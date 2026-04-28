@@ -93,15 +93,57 @@ export type ColorTheme = (typeof COLOR_THEMES)[number];
 export type PrStatus = "open" | "closed" | "merged";
 export type MergeStrategy = "direct" | "pull-request";
 /** How merge conflicts are resolved when the AI agent can't (or shouldn't) decide.
- *  - "smart" (default): try AI, then auto-resolve lock/generated/trivial files,
- *    then fall back to `-X theirs` (task branch wins). Backwards-compatible.
+ *
+ *  Both `smart-*` strategies share the same cascade: pre-merge fetch +
+ *  fast-forward of local main from origin (graceful degrade on failure),
+ *  then AI, then auto-resolve lock/generated/trivial files. They differ only
+ *  in the final per-file fallback when conflicts remain:
+ *
+ *  - "smart-prefer-main" (default): fall back to `-X ours` so main's state
+ *    wins. Best when concurrent tasks could regress just-merged sibling work.
+ *  - "smart-prefer-branch": fall back to `-X theirs` so the task branch wins.
+ *    Best when one agent at a time is dominant and you trust their output.
  *  - "ai-only": run AI on every attempt; never silently prefer one side.
- *  - "prefer-main": after AI/auto-resolve, fall back to `-X ours` so main's
- *    state wins. Best when concurrent tasks frequently regress just-merged
- *    sibling work.
  *  - "abort": run AI once; if conflict remains, fail the merge so a human
- *    can resolve it. */
-export type MergeConflictStrategy = "smart" | "ai-only" | "prefer-main" | "abort";
+ *    can resolve it.
+ *
+ *  Legacy values `"smart"` and `"prefer-main"` are accepted for backwards
+ *  compatibility and normalized via {@link normalizeMergeConflictStrategy}.
+ *  `"smart"` maps to `"smart-prefer-branch"` (its historical fallback) and
+ *  `"prefer-main"` maps to `"smart-prefer-main"`. */
+export type MergeConflictStrategy =
+  | "smart-prefer-main"
+  | "smart-prefer-branch"
+  | "ai-only"
+  | "abort"
+  /** @deprecated use "smart-prefer-branch" */
+  | "smart"
+  /** @deprecated use "smart-prefer-main" */
+  | "prefer-main";
+
+/** Canonical (post-migration) values that the merger actually dispatches on. */
+export type CanonicalMergeConflictStrategy = Exclude<
+  MergeConflictStrategy,
+  "smart" | "prefer-main"
+>;
+
+/** Translate legacy `mergeConflictStrategy` values into their canonical form.
+ *  Pass-through for already-canonical values; defaults to "smart-prefer-main"
+ *  when the input is undefined. */
+export function normalizeMergeConflictStrategy(
+  value: MergeConflictStrategy | undefined,
+): CanonicalMergeConflictStrategy {
+  switch (value) {
+    case "smart":
+      return "smart-prefer-branch";
+    case "prefer-main":
+      return "smart-prefer-main";
+    case undefined:
+      return "smart-prefer-main";
+    default:
+      return value;
+  }
+}
 /** Policy for handling task execution when the selected node is unavailable/unhealthy. */
 export type UnavailableNodePolicy = "block" | "fallback-local";
 

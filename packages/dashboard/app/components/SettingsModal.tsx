@@ -2993,26 +2993,28 @@ export function SettingsModal({
               <label htmlFor="mergeConflictStrategy">Conflict Fallback Strategy</label>
               <select
                 id="mergeConflictStrategy"
-                value={form.mergeConflictStrategy ?? "smart"}
+                value={form.mergeConflictStrategy ?? "smart-prefer-main"}
                 onChange={(e) =>
-                  setForm((f) => ({ ...f, mergeConflictStrategy: e.target.value as "smart" | "ai-only" | "prefer-main" | "abort" }))
+                  setForm((f) => ({ ...f, mergeConflictStrategy: e.target.value as "smart-prefer-main" | "smart-prefer-branch" | "ai-only" | "abort" }))
                 }
               >
-                <option value="smart">Smart, prefer task on fallback — AI → auto-resolve → -X theirs (default, original behavior)</option>
-                <option value="prefer-main">Smart, prefer main on fallback — AI → auto-resolve → -X ours (protects just-merged sibling work)</option>
+                <option value="smart-prefer-main">Smart, prefer main on fallback — fetch+ff origin → AI → auto-resolve → -X ours (default; protects just-merged sibling work)</option>
+                <option value="smart-prefer-branch">Smart, prefer task on fallback — fetch+ff origin → AI → auto-resolve → -X theirs (legacy "smart" behavior; task branch wins)</option>
                 <option value="ai-only">AI only — AI → auto-resolve → AI retry; never silently pick a side</option>
                 <option value="abort">Abort — one AI attempt; require manual resolution if it fails</option>
               </select>
               <small>
-                Every option starts with the same first two attempts: an AI agent resolves the conflict, then auto-resolve handles lock/generated/trivial files. They differ only in the <em>final fallback</em>:
+                Both <strong>Smart</strong> options start with a best-effort <code>git fetch</code> + fast-forward of local main from <code>origin</code> (so a freshly-pushed sibling commit doesn't get clobbered), then run an AI agent, then auto-resolve handles lock/generated/trivial files. They differ only in the <em>final fallback</em>:
+                {" "}
+                <strong>Smart, prefer main</strong> uses <code>-X ours</code> so main wins — protects just-merged sibling work and is the new default.
                 {" "}
                 <strong>Smart, prefer task</strong> uses <code>-X theirs</code> so the task branch wins — fast, but can resurrect code an earlier sibling task deleted (the FN-2887 class of regression).
-                {" "}
-                <strong>Smart, prefer main</strong> uses <code>-X ours</code> so main wins instead — same speed, protects just-merged sibling work.
                 {" "}
                 <strong>AI only</strong> retries the AI agent rather than auto-picking a side.
                 {" "}
                 <strong>Abort</strong> stops after the first AI attempt and waits for a human.
+                {" "}
+                <em>Legacy <code>"smart"</code> and <code>"prefer-main"</code> values from older settings are migrated automatically.</em>
               </small>
             </div>
             <div className="form-group">

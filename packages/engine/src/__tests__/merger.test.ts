@@ -164,8 +164,12 @@ function createMockStore(taskOverrides: Partial<Task> = {}, allTasks: Task[] = [
  * rev-parse, log, diff, merge --squash, diff --cached --quiet (squash check),
  * diff --cached (post-agent verify), branch -d
  *
- * For tests that want the merge to fail after 3 AI attempts (before -X theirs succeeds),
- * call setupFailingTheirsStrategy() instead.
+ * Both `-X ours` and `-X theirs` final-fallback merges return success — the
+ * default settings strategy is "smart-prefer-main" (-X ours), but a few tests
+ * still exercise -X theirs explicitly via `mergeConflictStrategy: "smart-prefer-branch"`.
+ *
+ * For tests that want the merge to fail after 3 attempts, call
+ * setupFailingFallbackStrategy() instead.
  */
 function setupHappyPathExecSync() {
   mockedExecSync.mockImplementation((cmd: any) => {
@@ -176,7 +180,9 @@ function setupHappyPathExecSync() {
     if (cmdStr.includes("merge-base")) return Buffer.from("abc123");
     if (cmdStr.includes("git diff") && cmdStr.includes("--stat")) return "1 file changed" as any;
     if (cmdStr.includes("merge --squash")) return Buffer.from("");
-    if (cmdStr.includes("merge -X theirs --squash")) return Buffer.from("");
+    if (cmdStr.includes("merge -X theirs --squash") || cmdStr.includes("merge -X ours --squash")) {
+      return Buffer.from("");
+    }
     // Post-squash check: --quiet means "did squash stage anything?" → "1" = yes
     if (cmdStr.includes("diff --cached --quiet")) return "1" as any;
     // Post-agent check: "did agent commit?" → "0" = yes
@@ -189,10 +195,11 @@ function setupHappyPathExecSync() {
 }
 
 /**
- * Same as setupHappyPathExecSync but makes -X theirs merge fail.
- * Use this for tests that expect the merge to throw after 3 AI attempts fail.
+ * Same as setupHappyPathExecSync but makes the final fallback merge fail
+ * (both `-X theirs` and `-X ours`). Use this for tests that expect the merge
+ * to throw after 3 attempts fail.
  */
-function setupFailingTheirsStrategy() {
+function setupFailingFallbackStrategy() {
   mockedExecSync.mockImplementation((cmd: any) => {
     const cmdStr = String(cmd);
     if (cmdStr.includes("rev-parse --verify")) return Buffer.from("abc123");
@@ -201,9 +208,9 @@ function setupFailingTheirsStrategy() {
     if (cmdStr.includes("merge-base")) return Buffer.from("abc123");
     if (cmdStr.includes("git diff") && cmdStr.includes("--stat")) return "1 file changed" as any;
     if (cmdStr.includes("merge --squash")) return Buffer.from("");
-    // -X theirs should fail for these tests (they expect merge to throw)
-    if (cmdStr.includes("merge -X theirs --squash")) {
-      const err = new Error("fatal: git merge -X theirs failed with unresolved conflicts");
+    // -X theirs / -X ours should fail for these tests (they expect merge to throw)
+    if (cmdStr.includes("merge -X theirs --squash") || cmdStr.includes("merge -X ours --squash")) {
+      const err = new Error("fatal: git merge -X fallback failed with unresolved conflicts");
       err.name = "ExecSyncError";
       throw err;
     }
@@ -217,6 +224,9 @@ function setupFailingTheirsStrategy() {
     return Buffer.from("");
   });
 }
+
+/** @deprecated Renamed to setupFailingFallbackStrategy. */
+const setupFailingTheirsStrategy = setupFailingFallbackStrategy;
 
 describe("findWorktreeUser", () => {
   it("returns null when no other task uses the worktree", async () => {
@@ -243,6 +253,140 @@ describe("findWorktreeUser", () => {
     ]);
     const result = await findWorktreeUser(store, "/tmp/wt", "FN-050");
     expect(result).toBeNull();
+  });
+});
+
+describe("aiMergeTask pre-merge fetch + fast-forward (smart strategies)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockedExistsSync.mockReturnValue(true);
+    mockedCreateFnAgent.mockResolvedValue({
+      session: {
+        prompt: vi.fn().mockResolvedValue(undefined),
+        dispose: vi.fn(),
+      },
+    } as any);
+  });
+
+  function setupSyncMock({
+    behind,
+    ahead,
+    fetchFails = false,
+  }: {
+    behind: number;
+    ahead: number;
+    fetchFails?: boolean;
+  }) {
+    let fetchCalled = false;
+    let ffCalled = false;
+    mockedExecSync.mockImplementation((cmd: any) => {
+      const cmdStr = String(cmd);
+      if (cmdStr.includes("rev-parse --abbrev-ref HEAD")) return "main" as any;
+      if (cmdStr.includes("rev-parse --verify")) return Buffer.from("abc123");
+      if (cmdStr === "git rev-parse HEAD" || cmdStr.startsWith("git rev-parse HEAD ")) return "mergedcommit123";
+      if (cmdStr.includes("rev-list --left-right --count")) {
+        return `${behind}\t${ahead}` as any;
+      }
+      if (cmdStr.includes("git fetch origin")) {
+        fetchCalled = true;
+        if (fetchFails) throw new Error("fatal: unable to access remote");
+        return Buffer.from("");
+      }
+      if (cmdStr.includes("merge --ff-only")) {
+        ffCalled = true;
+        return Buffer.from("");
+      }
+      if (cmdStr.includes("git log")) return "- feat: something" as any;
+      if (cmdStr.includes("merge-base")) return Buffer.from("abc123");
+      if (cmdStr.includes("git diff") && cmdStr.includes("--stat")) return "1 file changed" as any;
+      if (cmdStr.includes("merge --squash")) return Buffer.from("");
+      if (cmdStr.includes("merge -X theirs --squash") || cmdStr.includes("merge -X ours --squash")) {
+        return Buffer.from("");
+      }
+      if (cmdStr.includes("diff --cached --quiet")) return "1" as any;
+      if (cmdStr.includes("diff --cached")) return "0" as any;
+      if (cmdStr.includes("show --shortstat")) return "3 files changed, 10 insertions(+), 2 deletions(-)" as any;
+      if (cmdStr.includes("branch -d") || cmdStr.includes("branch -D")) return Buffer.from("");
+      if (cmdStr.includes("worktree remove")) return Buffer.from("");
+      return Buffer.from("");
+    });
+    return {
+      get fetchCalled() { return fetchCalled; },
+      get ffCalled() { return ffCalled; },
+    };
+  }
+
+  it("fast-forwards local main when origin is strictly ahead (default smart-prefer-main)", async () => {
+    const store = createMockStore(
+      { id: "FN-050", worktree: "/tmp/root/.worktrees/KB-050" },
+      [{ id: "FN-050", worktree: "/tmp/root/.worktrees/KB-050", column: "in-review" } as Task],
+    );
+    const probe = setupSyncMock({ behind: 2, ahead: 0 });
+
+    await aiMergeTask(store, "/tmp/root", "FN-050");
+
+    expect(probe.fetchCalled).toBe(true);
+    expect(probe.ffCalled).toBe(true);
+  });
+
+  it("skips fast-forward when local main has unpushed commits (divergent)", async () => {
+    const store = createMockStore(
+      { id: "FN-050", worktree: "/tmp/root/.worktrees/KB-050" },
+      [{ id: "FN-050", worktree: "/tmp/root/.worktrees/KB-050", column: "in-review" } as Task],
+    );
+    const probe = setupSyncMock({ behind: 1, ahead: 1 });
+
+    await aiMergeTask(store, "/tmp/root", "FN-050");
+
+    expect(probe.fetchCalled).toBe(true);
+    expect(probe.ffCalled).toBe(false);
+  });
+
+  it("continues merge when fetch fails (graceful degrade)", async () => {
+    const store = createMockStore(
+      { id: "FN-050", worktree: "/tmp/root/.worktrees/KB-050" },
+      [{ id: "FN-050", worktree: "/tmp/root/.worktrees/KB-050", column: "in-review" } as Task],
+    );
+    const probe = setupSyncMock({ behind: 0, ahead: 0, fetchFails: true });
+
+    const result = await aiMergeTask(store, "/tmp/root", "FN-050");
+
+    expect(probe.fetchCalled).toBe(true);
+    expect(probe.ffCalled).toBe(false);
+    expect(result.merged).toBe(true);
+  });
+
+  it("does not fetch for ai-only strategy", async () => {
+    const store = createMockStore(
+      { id: "FN-050", worktree: "/tmp/root/.worktrees/KB-050" },
+      [{ id: "FN-050", worktree: "/tmp/root/.worktrees/KB-050", column: "in-review" } as Task],
+    );
+    (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ...DEFAULT_SETTINGS,
+      mergeConflictStrategy: "ai-only",
+    });
+    const probe = setupSyncMock({ behind: 5, ahead: 0 });
+
+    await aiMergeTask(store, "/tmp/root", "FN-050");
+
+    expect(probe.fetchCalled).toBe(false);
+  });
+
+  it("normalizes legacy 'smart' setting and still fetches", async () => {
+    const store = createMockStore(
+      { id: "FN-050", worktree: "/tmp/root/.worktrees/KB-050" },
+      [{ id: "FN-050", worktree: "/tmp/root/.worktrees/KB-050", column: "in-review" } as Task],
+    );
+    (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ...DEFAULT_SETTINGS,
+      mergeConflictStrategy: "smart" as any,
+    });
+    const probe = setupSyncMock({ behind: 1, ahead: 0 });
+
+    await aiMergeTask(store, "/tmp/root", "FN-050");
+
+    expect(probe.fetchCalled).toBe(true);
+    expect(probe.ffCalled).toBe(true);
   });
 });
 
@@ -1945,6 +2089,12 @@ describe("aiMergeTask — retry logic with escalating strategies", () => {
       { id: "FN-050", worktree: "/tmp/root/.worktrees/KB-050" },
       [{ id: "FN-050", worktree: "/tmp/root/.worktrees/KB-050", column: "in-review" } as Task],
     );
+    // Pin the strategy: default is now "smart-prefer-main" (-X ours), but
+    // this test specifically exercises the -X theirs fallback path.
+    (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ...DEFAULT_SETTINGS,
+      mergeConflictStrategy: "smart-prefer-branch",
+    });
 
     let squashCallCount = 0;
     let theirsCallCount = 0;
@@ -2297,7 +2447,7 @@ describe("aiMergeTask — retry logic with escalating strategies", () => {
     const resetFailureMessage = "retry cleanup reset failed";
     let mergeSquashCalls = 0;
     let resetCalls = 0;
-    let usedTheirsStrategy = false;
+    let usedFallbackStrategy = false;
 
     mockedExecSync.mockImplementation((cmd: any) => {
       const cmdStr = String(cmd);
@@ -2316,13 +2466,13 @@ describe("aiMergeTask — retry logic with escalating strategies", () => {
         return Buffer.from("");
       }
 
-      if (cmdStr.includes("merge -X theirs --squash")) {
-        usedTheirsStrategy = true;
+      if (cmdStr.includes("merge -X theirs --squash") || cmdStr.includes("merge -X ours --squash")) {
+        usedFallbackStrategy = true;
         return Buffer.from("");
       }
 
       if (cmdStr.includes("diff --name-only --diff-filter=U")) {
-        if (!usedTheirsStrategy && mergeSquashCalls === 2) {
+        if (!usedFallbackStrategy && mergeSquashCalls === 2) {
           return "src/complex.ts\n";
         }
         return "";
@@ -2519,7 +2669,7 @@ describe("aiMergeTask — reset cleanup failure diagnostics", () => {
         return Buffer.from("");
       }
 
-      if (cmdStr.includes("merge -X theirs --squash")) {
+      if (cmdStr.includes("merge -X theirs --squash") || cmdStr.includes("merge -X ours --squash")) {
         throw new Error("Merge conflict");
       }
 

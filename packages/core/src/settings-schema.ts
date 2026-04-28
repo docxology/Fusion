@@ -115,7 +115,7 @@ export const DEFAULT_PROJECT_SETTINGS = {
   worktreeRebaseBeforeMerge: true,
   worktreeRebaseRemote: "",
   worktreeRebaseLocalBase: true,
-  mergeConflictStrategy: "smart",
+  mergeConflictStrategy: "smart-prefer-main",
   workflowStepTimeoutMs: 360_000,
   strictScopeEnforcement: false,
   buildRetryCount: 0,

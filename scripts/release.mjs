@@ -193,7 +193,7 @@ function computeReleasePlan() {
     fail(`Failed to compute release plan:\n${r.stderr || r.stdout}`);
   }
   const plan = JSON.parse(readFileSync(out, "utf8"));
-  try { unlinkSync(out); } catch {}
+  try { unlinkSync(out); } catch { /* tmp cleanup is best-effort */ }
 
   const bumpedReleases = (plan.releases || []).filter((rel) => rel.type !== "none");
   if (bumpedReleases.length === 0) {
@@ -290,7 +290,7 @@ function findPackageDir(name) {
       try {
         const pkg = JSON.parse(readFileSync(p, "utf8"));
         if (pkg.name === name) return join(root, entry);
-      } catch {}
+      } catch { /* skip unreadable/broken package.json */ }
     }
   }
   return null;
