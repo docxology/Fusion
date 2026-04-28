@@ -595,7 +595,10 @@ export class TaskExecutor {
       executorLog.log(`[event:task:moved] ${task.id}: ${from} → ${to}`);
       if (to === "in-progress") {
         executorLog.log(`[event:task:moved] Initiating execute() for ${task.id}`);
-        this.execute(task).catch((err) =>
+        void (async () => {
+          const taskForExecution = await this.resetMergeStateIfNeeded(task, from);
+          await this.execute(taskForExecution);
+        })().catch((err) =>
           executorLog.error(`Failed to start ${task.id}:`, err),
         );
       } else if (from === "in-progress") {
@@ -839,6 +842,71 @@ export class TaskExecutor {
   private isTaskWorkComplete(task: Task): boolean {
     if (task.steps.length === 0) return false;
     return task.steps.every((s) => s.status === "done" || s.status === "skipped");
+  }
+
+  private async resetMergeStateIfNeeded(task: Task, from: Task["column"]): Promise<Task> {
+    if (from !== "in-review" && from !== "done") {
+      return task;
+    }
+
+    const hasMergeEvidence = Boolean(task.mergeDetails)
+      || (task.mergeRetries ?? 0) > 0
+      || (task.verificationFailureCount ?? 0) > 0
+      || task.status === "merging"
+      || task.status === "merging-pr";
+
+    if (!hasMergeEvidence) {
+      return task;
+    }
+
+    return this.cleanupMergeStateForReverification(
+      task,
+      `Task returned to in-progress from ${from} column — resetting verification steps and merge state for re-verification`,
+    );
+  }
+
+  private async cleanupMergeStateForReverification(task: Task, logMessage: string): Promise<Task> {
+    await this.store.updateTask(task.id, {
+      mergeDetails: null,
+      mergeRetries: 0,
+      verificationFailureCount: 0,
+      workflowStepResults: [],
+    });
+
+    const refreshedTask = await this.store.getTask(task.id);
+    const steps = refreshedTask.steps ?? [];
+    if (steps.length > 0) {
+      const allStepsComplete = this.isTaskWorkComplete(refreshedTask);
+      if (allStepsComplete) {
+        await this.reopenLastStepForRevision(task.id, refreshedTask);
+      } else {
+        const resetIndexes = new Set<number>();
+        for (let i = 0; i < steps.length; i++) {
+          const name = steps[i].name.toLowerCase();
+          if (/testing|verification/.test(name) || /documentation|delivery/.test(name)) {
+            resetIndexes.add(i);
+          }
+        }
+
+        if (resetIndexes.size === 0) {
+          const reopened = await this.reopenLastStepForRevision(task.id, refreshedTask);
+          if (reopened) {
+            resetIndexes.add(reopened.index);
+          }
+        } else {
+          for (const index of resetIndexes) {
+            if (steps[index].status !== "pending") {
+              await this.store.updateStep(task.id, index, "pending");
+            }
+          }
+          const earliestIndex = Math.min(...Array.from(resetIndexes));
+          await this.store.updateTask(task.id, { currentStep: earliestIndex });
+        }
+      }
+    }
+
+    await this.store.logEntry(task.id, logMessage, undefined, this.currentRunContext);
+    return this.store.getTask(task.id);
   }
 
   private isNoProgressNoTaskDoneFailure(task: Task): boolean {
@@ -1156,7 +1224,7 @@ export class TaskExecutor {
     for (const task of inProgress) {
       // Fast-path: if the task already completed its work (all steps done),
       // move it directly to in-review instead of re-executing from scratch.
-      if (this.isTaskWorkComplete(task)) {
+      if (this.isTaskWorkComplete(task) && !task.mergeDetails) {
         if (this.recoveringCompleted.has(task.id)) {
           executorLog.log(`${task.id} completed-task recovery already running - skipping duplicate startup recovery`);
           continue;
@@ -1337,6 +1405,14 @@ export class TaskExecutor {
     // executor can still recover by falling through to the fresh-worktree
     // path below, but we emit a loud audit record so these states stop being
     // silent.
+    if (task.column === "in-progress" && task.mergeDetails) {
+      executorLog.warn(`${task.id}: stale mergeDetails found while executing in-progress task — resetting merge state before continuing`);
+      task = await this.cleanupMergeStateForReverification(
+        task,
+        "Executor detected stale merge state while task was in-progress — reset verification steps and merge metadata before resuming",
+      );
+    }
+
     if (task.column === "in-progress" && !task.worktree) {
       executorLog.error(
         `${task.id}: drift detected — task is in-progress with no worktree. ` +

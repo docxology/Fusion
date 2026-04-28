@@ -147,8 +147,8 @@ function useGitHubStarCount(): number | null {
  * The sidebar is organized into three groups:
  *   - Account: Scope-less sections (authentication)
  *   - Global: Global-scoped sections (appearance, notifications, node-sync, global-models)
- *   - Project: Project-scoped sections (project-models, general, scheduling, worktrees, commands,
- *     merge, memory, experimental, prompts, backups, plugins)
+ *   - Project: Project-scoped sections (project-models, general, scheduling, node-routing,
+ *     worktrees, commands, merge, memory, experimental, prompts, backups, plugins)
  *
  * To add a new section:
  *   1. Add an entry to SETTINGS_SECTIONS with a unique id, label, and scope
@@ -190,6 +190,7 @@ const SETTINGS_SECTIONS: SettingsSection[] = [
   { id: "general", label: "General", scope: "project" },
   { id: "project-models", label: "Project Models", scope: "project" },
   { id: "scheduling", label: "Scheduling", scope: "project" },
+  { id: "node-routing", label: "Node Routing", scope: "project" },
   { id: "worktrees", label: "Worktrees", scope: "project" },
   { id: "commands", label: "Commands", scope: "project" },
   { id: "merge", label: "Merge", scope: "project" },
@@ -2410,55 +2411,6 @@ export function SettingsModal({
               <small>Maximum concurrent planning agents</small>
             </div>
             <div className="form-group">
-              <label htmlFor="defaultNodeId">Default Execution Node</label>
-              <select
-                id="defaultNodeId"
-                className="select"
-                value={typeof form.defaultNodeId === "string" ? form.defaultNodeId : ""}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setForm((f) => ({ ...f, defaultNodeId: val || undefined } as SettingsFormState));
-                }}
-              >
-                <option value="">Local execution (no default node)</option>
-                {nodes.map((node) => (
-                  <option key={node.id} value={node.id}>
-                    {node.name} ({getNodeStatusLabel(node.status)})
-                  </option>
-                ))}
-              </select>
-              {(() => {
-                const selectedNode = nodes.find((node) => node.id === form.defaultNodeId);
-                if (!selectedNode) return null;
-                return (
-                  <div className={`settings-node-status ${getNodeStatusClass(selectedNode.status)}`}>
-                    <span className="settings-node-status__dot" aria-hidden="true" />
-                    <span>{`Selected node: ${getNodeStatusLabel(selectedNode.status)}`}</span>
-                  </div>
-                );
-              })()}
-              <small>Used when a task has no node override. Node status is shown for safer routing selection.</small>
-            </div>
-            <div className="form-group">
-              <label htmlFor="unavailableNodePolicy">Unavailable Node Policy</label>
-              <select
-                id="unavailableNodePolicy"
-                className="select"
-                value={
-                  form.unavailableNodePolicy === "fallback-local" ? "fallback-local" : "block"
-                }
-                onChange={(e) =>
-                  setForm((f) => ({
-                    ...f,
-                    unavailableNodePolicy: e.target.value as "block" | "fallback-local",
-                  } as SettingsFormState))
-                }
-              >
-                <option value="block">Block execution</option>
-                <option value="fallback-local">Fallback to local</option>
-              </select>
-            </div>
-            <div className="form-group">
               <label htmlFor="pollIntervalMs">Poll Interval (ms)</label>
               <input
                 id="pollIntervalMs"
@@ -2686,6 +2638,63 @@ export function SettingsModal({
             </div>
           </>
         );
+      case "node-routing":
+        return (
+          <>
+            {renderScopeBanner()}
+            <h4 className="settings-section-heading">Node Routing</h4>
+            <div className="form-group">
+              <label htmlFor="defaultNodeId">Default Execution Node</label>
+              <select
+                id="defaultNodeId"
+                className="select"
+                value={typeof form.defaultNodeId === "string" ? form.defaultNodeId : ""}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setForm((f) => ({ ...f, defaultNodeId: val || undefined } as SettingsFormState));
+                }}
+              >
+                <option value="">Local execution (no default node)</option>
+                {nodes.map((node) => (
+                  <option key={node.id} value={node.id}>
+                    {node.name} ({getNodeStatusLabel(node.status)})
+                  </option>
+                ))}
+              </select>
+              {(() => {
+                const selectedNode = nodes.find((node) => node.id === form.defaultNodeId);
+                if (!selectedNode) return null;
+                return (
+                  <div className={`settings-node-status ${getNodeStatusClass(selectedNode.status)}`}>
+                    <span className="settings-node-status__dot" aria-hidden="true" />
+                    <span>{`Selected node: ${getNodeStatusLabel(selectedNode.status)}`}</span>
+                  </div>
+                );
+              })()}
+              <small>Used when a task has no node override. Node status is shown for safer routing selection.</small>
+            </div>
+            <div className="form-group">
+              <label htmlFor="unavailableNodePolicy">Unavailable Node Policy</label>
+              <select
+                id="unavailableNodePolicy"
+                className="select"
+                value={
+                  form.unavailableNodePolicy === "fallback-local" ? "fallback-local" : "block"
+                }
+                onChange={(e) =>
+                  setForm((f) => ({
+                    ...f,
+                    unavailableNodePolicy: e.target.value as "block" | "fallback-local",
+                  } as SettingsFormState))
+                }
+              >
+                <option value="block">Block execution</option>
+                <option value="fallback-local">Fallback to local</option>
+              </select>
+            </div>
+          </>
+        );
+
       case "worktrees":
         return (
           <>

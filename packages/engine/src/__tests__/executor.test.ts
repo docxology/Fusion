@@ -10324,6 +10324,127 @@ describe("TaskExecutor agent execution flow (FN-978)", () => {
     expect(mockedCreateFnAgent).not.toHaveBeenCalled();
   });
 
+  describe("merge-state reset when returning to in-progress (FN-2883)", () => {
+    it("resets merge state on in-review → in-progress move", async () => {
+      const store = createMockStore();
+      const executor = new TaskExecutor(store, "/tmp/test");
+      const executeSpy = vi.spyOn(executor, "execute").mockResolvedValue(undefined);
+
+      const movedTask = {
+        id: "FN-2883-A",
+        title: "Merge retry",
+        description: "desc",
+        column: "in-progress" as const,
+        dependencies: [],
+        steps: [
+          { name: "Step 0: Preflight", status: "done" },
+          { name: "Step 1: Implementation", status: "done" },
+          { name: "Step 2: Testing & Verification", status: "done" },
+          { name: "Step 3: Documentation & Delivery", status: "done" },
+        ],
+        currentStep: 3,
+        log: [],
+        mergeDetails: { strategy: "manual" } as any,
+        mergeRetries: 2,
+        verificationFailureCount: 1,
+        workflowStepResults: [{ id: "wf-1", status: "passed" }],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      store.getTask.mockResolvedValue(movedTask);
+      store._trigger("task:moved", { task: movedTask, from: "in-review", to: "in-progress" });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      expect(store.updateTask).toHaveBeenCalledWith("FN-2883-A", expect.objectContaining({
+        mergeDetails: null,
+        mergeRetries: 0,
+        verificationFailureCount: 0,
+        workflowStepResults: [],
+      }));
+      expect(store.updateStep).toHaveBeenCalledWith("FN-2883-A", 3, "pending");
+      expect(store.logEntry).toHaveBeenCalledWith(
+        "FN-2883-A",
+        expect.stringContaining("Task returned to in-progress from in-review column"),
+        undefined,
+        undefined,
+      );
+      expect(executeSpy).toHaveBeenCalled();
+    });
+
+    it("resets merge state on done → in-progress move", async () => {
+      const store = createMockStore();
+      const executor = new TaskExecutor(store, "/tmp/test");
+      vi.spyOn(executor, "execute").mockResolvedValue(undefined);
+
+      const movedTask = {
+        id: "FN-2883-B",
+        title: "Done rollback",
+        description: "desc",
+        column: "in-progress" as const,
+        dependencies: [],
+        steps: [
+          { name: "Step 0: Preflight", status: "done" },
+          { name: "Step 1: Testing & Verification", status: "done" },
+          { name: "Step 2: Documentation & Delivery", status: "done" },
+        ],
+        currentStep: 2,
+        log: [],
+        mergeDetails: { strategy: "ours" } as any,
+        mergeRetries: 1,
+        verificationFailureCount: 2,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      store.getTask.mockResolvedValue(movedTask);
+      store._trigger("task:moved", { task: movedTask, from: "done", to: "in-progress" });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      expect(store.updateTask).toHaveBeenCalledWith("FN-2883-B", expect.objectContaining({
+        mergeDetails: null,
+        mergeRetries: 0,
+        verificationFailureCount: 0,
+        workflowStepResults: [],
+      }));
+      expect(store.updateStep).toHaveBeenCalledWith("FN-2883-B", 2, "pending");
+      expect(store.logEntry).toHaveBeenCalledWith(
+        "FN-2883-B",
+        expect.stringContaining("Task returned to in-progress from done column"),
+        undefined,
+        undefined,
+      );
+    });
+
+    it("does not reset merge state on todo → in-progress move", async () => {
+      const store = createMockStore();
+      const executor = new TaskExecutor(store, "/tmp/test");
+      vi.spyOn(executor, "execute").mockResolvedValue(undefined);
+
+      const movedTask = {
+        id: "FN-2883-C",
+        title: "Fresh start",
+        description: "desc",
+        column: "in-progress" as const,
+        dependencies: [],
+        steps: [{ name: "Step 0: Preflight", status: "pending" }],
+        currentStep: 0,
+        log: [],
+        mergeDetails: null,
+        mergeRetries: 0,
+        verificationFailureCount: 0,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      store._trigger("task:moved", { task: movedTask, from: "todo", to: "in-progress" });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      expect(store.updateTask).not.toHaveBeenCalledWith("FN-2883-C", expect.objectContaining({ mergeDetails: null }));
+      expect(store.updateStep).not.toHaveBeenCalled();
+    });
+  });
+
   describe("when task is moved away from in-progress", () => {
     it("terminates active session and removes from activeSessions map", async () => {
       const store = createMockStore();
@@ -10740,6 +10861,87 @@ describe("TaskExecutor agent execution flow (FN-978)", () => {
       expect.objectContaining({ id: "FN-978" }),
       expect.any(Error),
     );
+  });
+});
+
+describe("FN-2883 fast-path guards", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockedExistsSync.mockReturnValue(true);
+  });
+
+  it("execute() defensively clears stale mergeDetails for in-progress tasks", async () => {
+    const store = createMockStore();
+    const executor = new TaskExecutor(store, "/tmp/test");
+
+    const cleanupSpy = vi.spyOn(executor as any, "cleanupMergeStateForReverification")
+      .mockResolvedValue({
+        id: "FN-2883-D",
+        title: "stale merge",
+        description: "desc",
+        column: "in-progress",
+        dependencies: [],
+        steps: [{ name: "Step 0", status: "pending" }],
+        currentStep: 0,
+        log: [],
+        mergeDetails: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+
+    const task = {
+      id: "FN-2883-D",
+      title: "stale merge",
+      description: "desc",
+      column: "in-progress" as const,
+      dependencies: [],
+      steps: [{ name: "Step 0", status: "pending" }],
+      currentStep: 0,
+      log: [],
+      mergeDetails: { strategy: "theirs" } as any,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    await executor.execute(task as any);
+
+    expect(cleanupSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "FN-2883-D" }),
+      expect.stringContaining("stale merge state"),
+    );
+  });
+
+  it("resumeOrphaned does not fast-path completed tasks that still have mergeDetails", async () => {
+    const store = createMockStore();
+    const executor = new TaskExecutor(store, "/tmp/test");
+
+    store.listTasks.mockResolvedValue([
+      {
+        id: "FN-2883-E",
+        title: "orphan",
+        description: "desc",
+        column: "in-progress",
+        paused: false,
+        dependencies: [],
+        steps: [
+          { name: "Step 0", status: "done" },
+          { name: "Step 1", status: "done" },
+        ],
+        currentStep: 1,
+        log: [],
+        mergeDetails: { strategy: "manual" },
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    ]);
+
+    const executeSpy = vi.spyOn(executor, "execute").mockResolvedValue(undefined);
+    const recoverSpy = vi.spyOn(executor, "recoverCompletedTask").mockResolvedValue(false);
+
+    await executor.resumeOrphaned();
+
+    expect(recoverSpy).not.toHaveBeenCalled();
+    expect(executeSpy).toHaveBeenCalledWith(expect.objectContaining({ id: "FN-2883-E" }));
   });
 });
 
