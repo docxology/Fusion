@@ -22,6 +22,7 @@ import { subscribeSse } from "../sse-bus";
 import { DEFAULT_HEARTBEAT_INTERVAL_MS, formatHeartbeatInterval, resolveHeartbeatIntervalMs } from "../utils/heartbeatIntervals";
 import { CustomModelDropdown } from "./CustomModelDropdown";
 import { useConfirm } from "../hooks/useConfirm";
+import { useModalResizePersist } from "../hooks/useModalResizePersist";
 
 /**
  * Simple className utility - joins class names conditionally
@@ -126,6 +127,9 @@ export function AgentDetailView({ agentId, projectId, onClose, addToast, onChild
   const [isStreaming, setIsStreaming] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const logContainerRef = useRef<HTMLDivElement>(null);
+  const agentDetailModalRef = useRef<HTMLDivElement>(null);
+  const overlayMouseDownRef = useRef(false);
+  useModalResizePersist(agentDetailModalRef, true, "fusion:agent-detail-modal-size");
   const onCloseRef = useRef(onClose);
   const addToastRef = useRef(addToast);
   const agentRef = useRef<AgentDetail | null>(null);
@@ -370,8 +374,17 @@ export function AgentDetailView({ agentId, projectId, onClose, addToast, onChild
 
   if (isLoading) {
     return (
-      <div className="agent-detail-overlay" onClick={(e) => e.target === e.currentTarget && onClose()} role="dialog" aria-modal="true">
-        <div className="agent-detail-modal">
+      <div
+        className="agent-detail-overlay"
+        onMouseDown={(e) => { if (e.target === e.currentTarget) overlayMouseDownRef.current = true; }}
+        onMouseUp={(e) => {
+          if (overlayMouseDownRef.current && e.target === e.currentTarget) onClose();
+          overlayMouseDownRef.current = false;
+        }}
+        role="dialog"
+        aria-modal="true"
+      >
+        <div className="agent-detail-modal" ref={agentDetailModalRef}>
           <div className="agent-detail-loading">
             <Loader2 className="animate-spin" size={24} />
             <span>Loading agent...</span>

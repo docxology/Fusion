@@ -7,13 +7,24 @@
 }
 
 .modal.terminal-modal {
-  width: min(1800px, calc(100vw - (var(--space-xl) * 2)));
+  /* Initial dimensions are applied only when no persisted size has been
+     restored — see :not([style*=...]) selectors below. */
+  min-width: 480px;
+  min-height: 320px;
   max-width: calc(100vw - (var(--space-xl) * 2));
-  min-height: 80vh;
-  max-height: 85vh;
+  max-height: calc(100dvh - 40px);
   background: var(--card);
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+  resize: both;
+}
+
+.modal.terminal-modal:not([style*="width"]) {
+  width: min(1800px, calc(100vw - (var(--space-xl) * 2)));
+}
+.modal.terminal-modal:not([style*="height"]) {
+  height: min(85vh, calc(100dvh - 40px));
 }
 
 .terminal-header {
@@ -828,16 +839,19 @@
 /* === Terminal Modal Mobile Responsive === */
 @media (max-width: 768px) {
   .modal.terminal-modal {
-    width: 100%;
+    width: 100% !important;
     max-width: 100%;
     min-height: 100vh;
     min-height: 100dvh;
-    height: 100vh;
-    height: 100dvh;
+    height: 100vh !important;
+    height: 100dvh !important;
     max-height: 100vh;
     max-height: 100dvh;
     border-radius: 0;
     border: none;
+    /* Disable user resize on mobile — fullscreen layout. !important above
+       overrides any persisted desktop dimensions. */
+    resize: none;
   }
 
   /* Stack tabs and actions on separate rows */

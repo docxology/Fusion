@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { useTerminal } from "../hooks/useTerminal";
 import { useTerminalSessions } from "../hooks/useTerminalSessions";
+import { useModalResizePersist } from "../hooks/useModalResizePersist";
 import "@xterm/xterm/css/xterm.css";
 
 import type { Terminal as XTerm, ITerminalAddon } from "@xterm/xterm";
@@ -238,6 +239,8 @@ export function TerminalModal({ isOpen, onClose, initialCommand, projectId }: Te
   
   const terminalRef = useRef<HTMLDivElement>(null);
   const modalRef = useRef<HTMLDivElement>(null);
+  const overlayMouseDownRef = useRef(false);
+  useModalResizePersist(modalRef, isOpen, "fusion:terminal-modal-size");
   const xtermRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<ITerminalAddon | null>(null);
   const hasInitialCommandRun = useRef<string | false>(false);
@@ -372,6 +375,35 @@ export function TerminalModal({ isOpen, onClose, initialCommand, projectId }: Te
       }
       setKeyboardOverlap(0);
       setViewportHeight(null);
+    };
+  }, [fitAndResizeForSession, isOpen]);
+
+  // Refit xterm whenever the user drags the modal's CSS resize grip.
+  // The window/visualViewport listeners only fire on viewport changes; native
+  // `resize: both` does NOT emit window resize, so we observe the modal node
+  // directly and ask xterm to refit to the new pixel box.
+  useEffect(() => {
+    if (!isOpen) return;
+    const node = modalRef.current;
+    if (!node || typeof ResizeObserver === "undefined") return;
+
+    let pendingFrame: number | null = null;
+    const observer = new ResizeObserver(() => {
+      if (pendingFrame !== null) cancelAnimationFrame(pendingFrame);
+      pendingFrame = requestAnimationFrame(() => {
+        pendingFrame = null;
+        const sessionId =
+          typeof xtermInitializedRef.current === "string"
+            ? xtermInitializedRef.current
+            : undefined;
+        fitAndResizeForSession(sessionId);
+      });
+    });
+    observer.observe(node);
+
+    return () => {
+      observer.disconnect();
+      if (pendingFrame !== null) cancelAnimationFrame(pendingFrame);
     };
   }, [fitAndResizeForSession, isOpen]);
 
@@ -940,10 +972,23 @@ export function TerminalModal({ isOpen, onClose, initialCommand, projectId }: Te
     return unsub;
   }, [onSessionInvalid, replaceActiveTabSession]);
 
-  // Handle overlay click to close
-  const handleOverlayClick = useCallback(
+  // Overlay dismiss — track mousedown source so a click that starts on the
+  // modal but releases on the overlay (e.g. when dragging the resize grip
+  // beyond the modal's edge) does NOT dismiss. Native CSS `resize: both`
+  // would otherwise let a resize-drag end on the overlay and synthesise a
+  // click event whose target is the overlay.
+  const handleOverlayMouseDown = useCallback(
     (e: React.MouseEvent) => {
-      if (e.target === e.currentTarget) onClose();
+      if (e.target === e.currentTarget) overlayMouseDownRef.current = true;
+    },
+    []
+  );
+  const handleOverlayMouseUp = useCallback(
+    (e: React.MouseEvent) => {
+      if (overlayMouseDownRef.current && e.target === e.currentTarget) {
+        onClose();
+      }
+      overlayMouseDownRef.current = false;
     },
     [onClose]
   );
@@ -1054,7 +1099,8 @@ export function TerminalModal({ isOpen, onClose, initialCommand, projectId }: Te
   return (
     <div
       className="modal-overlay open"
-      onClick={handleOverlayClick}
+      onMouseDown={handleOverlayMouseDown}
+      onMouseUp={handleOverlayMouseUp}
       role="dialog"
       aria-modal="true"
       data-testid="terminal-modal-overlay"

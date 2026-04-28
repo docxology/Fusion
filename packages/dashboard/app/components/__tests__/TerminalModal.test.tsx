@@ -476,10 +476,27 @@ describe("TerminalModal", () => {
 
     await waitFor(() => {
       const overlay = screen.getByTestId("terminal-modal-overlay");
-      fireEvent.click(overlay);
+      // Overlay dismiss is wired via mousedown→mouseup so a resize-drag that
+      // ends on the overlay (after starting inside the modal) doesn't close.
+      // A real click on the overlay fires both events on the overlay.
+      fireEvent.mouseDown(overlay);
+      fireEvent.mouseUp(overlay);
     });
 
     expect(mockOnClose).toHaveBeenCalled();
+  });
+
+  it("does NOT close when mousedown is on the modal but mouseup is on the overlay (resize drag)", async () => {
+    render(<TerminalModal isOpen={true} onClose={mockOnClose} />);
+
+    await waitFor(() => {
+      const overlay = screen.getByTestId("terminal-modal-overlay");
+      const modal = screen.getByTestId("terminal-modal");
+      fireEvent.mouseDown(modal);
+      fireEvent.mouseUp(overlay);
+    });
+
+    expect(mockOnClose).not.toHaveBeenCalled();
   });
 
   it("shows reconnect button when disconnected", async () => {
