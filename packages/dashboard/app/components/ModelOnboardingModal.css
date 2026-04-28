@@ -1293,19 +1293,70 @@
     min-height: 36px;
   }
 
+  /* Compact provider card on mobile.
+     Earlier rule forced flex-direction: column so the icon, body, and
+     actions each took their own full-width row — combined with --space-lg
+     padding that made every card ~140px tall on a phone. Keep the icon
+     inline beside the name + description (the row layout the desktop
+     already uses, just tighter), and rely on flex-wrap so the
+     API-key/actions block still drops to its own row underneath. */
   .onboarding-provider-card {
-    flex-direction: column;
+    /* Inherits flex-direction: row from the base rule. */
     gap: var(--space-sm);
+    padding: var(--space-sm) var(--space-md);
+    align-items: center;
+    row-gap: var(--space-xs);
   }
 
+  /* Shrink the leading icon container so it reads as a list-item bullet
+     rather than a hero image. */
+  .onboarding-provider-card__icon {
+    width: calc(var(--space-lg) + var(--space-xs));
+    height: calc(var(--space-lg) + var(--space-xs));
+    align-self: center;
+  }
+
+  .onboarding-provider-card__icon svg {
+    width: var(--space-lg);
+    height: var(--space-lg);
+  }
+
+  /* Drop the name's bottom margin and tighten line-heights so
+     name + description + status fit in ~3 short lines. */
+  .onboarding-provider-card__body {
+    flex: 1 1 0;
+    gap: 2px;
+  }
+
+  .onboarding-provider-card__name {
+    font-size: 13px;
+  }
+
+  .onboarding-provider-card__description {
+    font-size: 11px;
+    line-height: 1.35;
+  }
+
+  /* Actions row collapses below the icon+body header on its own line and
+     stretches its buttons full-width — easier to tap on a phone. */
   .onboarding-provider-card__actions {
     align-items: stretch;
     flex-direction: row;
     justify-content: flex-end;
+    width: 100%;
+    flex: 1 0 100%;
+    min-width: 0;
   }
 
   .onboarding-provider-card__actions--api-key {
     width: 100%;
+  }
+
+  /* When actions are simple buttons (Connect / Skip), make them split the
+     row evenly — looks tidier than right-aligned with awkward gaps. */
+  .onboarding-provider-card__actions:not(.onboarding-provider-card__actions--api-key) > .btn {
+    flex: 1;
+    min-width: 0;
   }
 
   .onboarding-apikey-input {
