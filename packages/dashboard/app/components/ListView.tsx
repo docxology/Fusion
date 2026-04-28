@@ -3,8 +3,8 @@ import { useState, useCallback, useMemo, Fragment, useEffect, useRef } from "rea
 import { ArrowUpDown, ArrowUp, ArrowDown, Link, Columns3, EyeOff, Eye, ChevronRight } from "lucide-react";
 import type { Task, TaskDetail, Column, TaskCreateInput } from "@fusion/core";
 import { COLUMN_LABELS, COLUMNS, getErrorMessage } from "@fusion/core";
-import { batchUpdateTaskModels, updateTask } from "../api";
-import type { ModelInfo } from "../api";
+import { batchUpdateTaskModels, fetchNodes } from "../api";
+import type { ModelInfo, NodeInfo } from "../api";
 import { QuickEntryBox } from "./QuickEntryBox";
 import { CustomModelDropdown } from "./CustomModelDropdown";
 import { isTaskStuck } from "../utils/taskStuck";
@@ -12,7 +12,6 @@ import type { ToastType } from "../hooks/useToast";
 import { useViewportMode } from "../hooks/useViewportMode";
 import { getScopedItem, setScopedItem } from "../utils/projectStorage";
 import { getUnifiedTaskProgress } from "../utils/taskProgress";
-import { useNodes } from "../hooks/useNodes";
 
 const COLUMN_COLOR_MAP: Record<Column, string> = {
   triage: "var(--triage)",
@@ -25,30 +24,19 @@ const COLUMN_COLOR_MAP: Record<Column, string> = {
 
 const ACTIVE_STATUSES = new Set(["planning", "researching", "executing", "finalizing", "merging"]);
 
-function isTaskActivelyExecuting(task: Task): boolean {
-  return task.column === "in-progress" || ACTIVE_STATUSES.has(task.status as string);
-}
-
-function getNodeStatusLabel(status: "online" | "offline" | "connecting" | "error"): string {
-  if (status === "online") return "Online";
-  if (status === "connecting") return "Connecting";
-  if (status === "error") return "Error";
-  return "Offline";
-}
-
-function getNodeStatusClass(status: "online" | "offline" | "connecting" | "error"): string {
-  if (status === "online") return "list-view-node-status--online";
-  if (status === "connecting") return "list-view-node-status--connecting";
-  if (status === "error") return "list-view-node-status--error";
-  return "list-view-node-status--offline";
-}
-
 type SortField = "id" | "title" | "status" | "column";
 type SortDirection = "asc" | "desc";
 
 // Column visibility types
 const ALL_LIST_COLUMNS = ["id", "title", "status", "column", "dependencies", "progress"] as const;
 type ListColumn = typeof ALL_LIST_COLUMNS[number];
+
+function getNodeStatusLabel(status: NodeInfo["status"]): string {
+  if (status === "online") return "Online";
+  if (status === "connecting") return "Connecting";
+  if (status === "error") return "Error";
+  return "Offline";
+}
 
 function readVisibleColumns(projectId?: string): Set<ListColumn> {
   try {
@@ -466,9 +454,40 @@ export function ListView({
   // Bulk edit state and handlers (must be after groupedTasks and clearSelection definition)
   const [executorModel, setExecutorModel] = useState<string>("__no_change__");
   const [validatorModel, setValidatorModel] = useState<string>("__no_change__");
-  const [bulkNodeId, setBulkNodeId] = useState<string>("__no_change__");
+  const [nodeOverride, setNodeOverride] = useState<string>("__no_change__");
+  const [availableNodes, setAvailableNodes] = useState<NodeInfo[]>([]);
+  const [isLoadingNodes, setIsLoadingNodes] = useState(false);
   const [isApplying, setIsApplying] = useState(false);
-  const { nodes } = useNodes();
+
+  useEffect(() => {
+    if (selectedTaskIds.size === 0) return;
+    let isCancelled = false;
+
+    const loadNodes = async () => {
+      setIsLoadingNodes(true);
+      try {
+        const nodes = await fetchNodes();
+        if (!isCancelled) {
+          setAvailableNodes(nodes);
+        }
+      } catch (err) {
+        console.error("Failed to fetch nodes for bulk edit", err);
+        if (!isCancelled) {
+          setAvailableNodes([]);
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsLoadingNodes(false);
+        }
+      }
+    };
+
+    void loadNodes();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [selectedTaskIds.size]);
 
   // Handle apply bulk model update
   const handleApplyBulkUpdate = useCallback(async () => {
@@ -484,10 +503,6 @@ export function ListView({
       return;
     }
 
-    const selectedTasks = taskIds
-      .map((id) => tasks.find((task) => task.id === id))
-      .filter((task): task is Task => Boolean(task));
-
     // Build payload - only include fields that changed from "__no_change__"
     const payload: {
       taskIds: string[];
@@ -495,6 +510,7 @@ export function ListView({
       modelId?: string | null;
       validatorModelProvider?: string | null;
       validatorModelId?: string | null;
+      nodeId?: string | null;
     } = { taskIds };
 
     if (executorModel !== "__no_change__") {
@@ -525,77 +541,51 @@ export function ListView({
       }
     }
 
-    const hasNodeChange = bulkNodeId !== "__no_change__";
-    const activeTasks = hasNodeChange ? selectedTasks.filter((task) => isTaskActivelyExecuting(task)) : [];
-    const nodeEligibleTaskIds = hasNodeChange
-      ? selectedTasks.filter((task) => !isTaskActivelyExecuting(task)).map((task) => task.id)
-      : [];
-
-    // Check if any changes were made
-    if (Object.keys(payload).length === 1 && !hasNodeChange) {
-      addToast("No changes to apply", "info");
-      return;
+    if (nodeOverride !== "__no_change__") {
+      if (nodeOverride === "") {
+        payload.nodeId = null;
+      } else {
+        payload.nodeId = nodeOverride;
+      }
     }
 
-    if (hasNodeChange && nodeEligibleTaskIds.length === 0 && Object.keys(payload).length === 1) {
-      addToast("Node override cannot be changed for active tasks. Stop the tasks and try again.", "error");
+    // Check if any changes were made
+    if (Object.keys(payload).length === 1) {
+      addToast("No changes to apply", "info");
       return;
     }
 
     setIsApplying(true);
     try {
-      const updatedTasks: Task[] = [];
-      if (Object.keys(payload).length > 1) {
-        const result = await batchUpdateTaskModels(
-          payload.taskIds,
-          payload.modelProvider,
-          payload.modelId,
-          payload.validatorModelProvider,
-          payload.validatorModelId,
-          undefined,
-          undefined,
-          projectId,
-        );
-        updatedTasks.push(...result.updated);
+      const result = await batchUpdateTaskModels(
+        payload.taskIds,
+        payload.modelProvider,
+        payload.modelId,
+        payload.validatorModelProvider,
+        payload.validatorModelId,
+        undefined,
+        undefined,
+        payload.nodeId,
+        projectId,
+      );
+
+      if (onTasksUpdated) {
+        onTasksUpdated(result.updated);
       }
 
-      if (hasNodeChange) {
-        for (const taskId of nodeEligibleTaskIds) {
-          const updated = await updateTask(taskId, { nodeId: bulkNodeId === "" ? null : bulkNodeId } as never, projectId);
-          updatedTasks.push(updated);
-        }
-      }
-
-      if (onTasksUpdated && updatedTasks.length > 0) {
-        onTasksUpdated(updatedTasks);
-      }
-
-      const updatedCount = Object.keys(payload).length > 1
-        ? taskIds.length
-        : hasNodeChange
-          ? nodeEligibleTaskIds.length
-          : taskIds.length;
-      const skippedIds = activeTasks.map((task) => task.id);
-      if (hasNodeChange && skippedIds.length > 0) {
-        addToast(
-          `Updated ${updatedCount} task${updatedCount === 1 ? "" : "s"}. Skipped active tasks: ${skippedIds.join(", ")}`,
-          "warning",
-        );
-      } else {
-        addToast(`Updated ${updatedCount} task${updatedCount === 1 ? "" : "s"}`, "success");
-      }
+      addToast(`Updated ${taskIds.length} task${taskIds.length === 1 ? "" : "s"}`, "success");
 
       // Reset state
       clearSelection();
       setExecutorModel("__no_change__");
       setValidatorModel("__no_change__");
-      setBulkNodeId("__no_change__");
+      setNodeOverride("__no_change__");
     } catch (err) {
       addToast(getErrorMessage(err) || "Failed to update models", "error");
     } finally {
       setIsApplying(false);
     }
-  }, [selectedTaskIds, tasks, executorModel, validatorModel, bulkNodeId, projectId, addToast, clearSelection, onTasksUpdated]);
+  }, [selectedTaskIds, tasks, executorModel, validatorModel, nodeOverride, projectId, addToast, clearSelection, onTasksUpdated]);
 
   const handleRowClick = useCallback(
     (task: Task) => {
@@ -771,29 +761,25 @@ export function ListView({
                 onToggleModelFavorite={onToggleModelFavorite}
               />
             </div>
-            <div className="bulk-edit-dropdown bulk-edit-node-wrap">
-              <select className="select" value={bulkNodeId} onChange={(e) => setBulkNodeId(e.target.value)}>
-                <option value="__no_change__">Node: No change</option>
-                <option value="">Node: Clear override</option>
-                {nodes.map((node) => (
-                  <option key={node.id} value={node.id}>{node.name} ({getNodeStatusLabel(node.status)})</option>
+            <div className="bulk-edit-dropdown">
+              <select
+                className="select bulk-node-select"
+                value={nodeOverride}
+                onChange={(e) => setNodeOverride(e.target.value)}
+                aria-label="Node Override"
+                disabled={isLoadingNodes}
+              >
+                <option value="__no_change__">No change</option>
+                <option value="">Use project default</option>
+                {availableNodes.map((node) => (
+                  <option key={node.id} value={node.id}>{`${node.name || node.id} (${getNodeStatusLabel(node.status)})`}</option>
                 ))}
               </select>
-              {(() => {
-                const selectedNode = nodes.find((node) => node.id === bulkNodeId);
-                if (!selectedNode) return null;
-                return (
-                  <span className={`list-view-node-status ${getNodeStatusClass(selectedNode.status)}`}>
-                    <span className="list-view-node-status__dot" aria-hidden="true" />
-                    {getNodeStatusLabel(selectedNode.status)}
-                  </span>
-                );
-              })()}
             </div>
             <button
               className="btn btn-primary btn-sm bulk-edit-apply-btn"
               onClick={handleApplyBulkUpdate}
-              disabled={isApplying || (executorModel === "__no_change__" && validatorModel === "__no_change__" && bulkNodeId === "__no_change__")}
+              disabled={isApplying || (executorModel === "__no_change__" && validatorModel === "__no_change__" && nodeOverride === "__no_change__")}
             >
               {isApplying ? "Applying..." : "Apply"}
             </button>

@@ -2858,6 +2858,95 @@ describe("POST /tasks/batch-update-models", () => {
     expect(res.body.error).toContain("non-empty strings");
   });
 
+  it("bulk sets nodeId", async () => {
+    const task1 = { ...FAKE_TASK_DETAIL, id: "FN-001" };
+    const updated1 = { ...task1, nodeId: "node-abc" };
+
+    (store.getTask as ReturnType<typeof vi.fn>).mockResolvedValueOnce(task1);
+    (store.updateTask as ReturnType<typeof vi.fn>).mockResolvedValueOnce(updated1);
+
+    const res = await REQUEST(buildApp(), "POST", "/api/tasks/batch-update-models", JSON.stringify({
+      taskIds: ["FN-001"],
+      nodeId: "node-abc",
+    }), {
+      "Content-Type": "application/json",
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(1);
+    expect(res.body.updated[0].nodeId).toBe("node-abc");
+    expect(store.updateTask).toHaveBeenCalledWith("FN-001", expect.objectContaining({ nodeId: "node-abc" }));
+  });
+
+  it("bulk clears nodeId", async () => {
+    const task1 = { ...FAKE_TASK_DETAIL, id: "FN-001", nodeId: "node-abc" };
+    const updated1 = { ...task1, nodeId: undefined };
+
+    (store.getTask as ReturnType<typeof vi.fn>).mockResolvedValueOnce(task1);
+    (store.updateTask as ReturnType<typeof vi.fn>).mockResolvedValueOnce(updated1);
+
+    const res = await REQUEST(buildApp(), "POST", "/api/tasks/batch-update-models", JSON.stringify({
+      taskIds: ["FN-001"],
+      nodeId: null,
+    }), {
+      "Content-Type": "application/json",
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.updated[0].nodeId).toBeUndefined();
+    expect(store.updateTask).toHaveBeenCalledWith("FN-001", expect.objectContaining({ nodeId: null }));
+  });
+
+  it("accepts nodeId without model fields", async () => {
+    const task1 = { ...FAKE_TASK_DETAIL, id: "FN-001" };
+    const updated1 = { ...task1, nodeId: "node-abc" };
+
+    (store.getTask as ReturnType<typeof vi.fn>).mockResolvedValueOnce(task1);
+    (store.updateTask as ReturnType<typeof vi.fn>).mockResolvedValueOnce(updated1);
+
+    const res = await REQUEST(buildApp(), "POST", "/api/tasks/batch-update-models", JSON.stringify({
+      taskIds: ["FN-001"],
+      nodeId: "node-abc",
+    }), {
+      "Content-Type": "application/json",
+    });
+
+    expect(res.status).toBe(200);
+  });
+
+  it("returns 400 for invalid nodeId type", async () => {
+    const res = await REQUEST(buildApp(), "POST", "/api/tasks/batch-update-models", JSON.stringify({
+      taskIds: ["FN-001"],
+      nodeId: 123,
+    }), {
+      "Content-Type": "application/json",
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("nodeId must be a string, null, or undefined");
+  });
+
+  it("updates nodeId across multiple tasks", async () => {
+    const task1 = { ...FAKE_TASK_DETAIL, id: "FN-001" };
+    const task2 = { ...FAKE_TASK_DETAIL, id: "FN-002" };
+    const updated1 = { ...task1, nodeId: "node-xyz" };
+    const updated2 = { ...task2, nodeId: "node-xyz" };
+
+    (store.getTask as ReturnType<typeof vi.fn>).mockResolvedValueOnce(task1).mockResolvedValueOnce(task2);
+    (store.updateTask as ReturnType<typeof vi.fn>).mockResolvedValueOnce(updated1).mockResolvedValueOnce(updated2);
+
+    const res = await REQUEST(buildApp(), "POST", "/api/tasks/batch-update-models", JSON.stringify({
+      taskIds: ["FN-001", "FN-002"],
+      nodeId: "node-xyz",
+    }), {
+      "Content-Type": "application/json",
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(2);
+    expect(res.body.updated).toHaveLength(2);
+  });
+
   it("returns 400 when no model fields provided", async () => {
     const res = await REQUEST(buildApp(), "POST", "/api/tasks/batch-update-models", JSON.stringify({
       taskIds: ["FN-001"],

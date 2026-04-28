@@ -823,6 +823,56 @@ describe("batchUpdateTaskModels", () => {
     );
   });
 
+  it("includes nodeId when provided", async () => {
+    const mockResponse = { updated: [{ id: "FN-001", nodeId: "node-abc" }], count: 1 };
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+      mockFetchResponse(true, mockResponse)
+    );
+
+    const { batchUpdateTaskModels } = await import("../api");
+    await batchUpdateTaskModels(
+      ["FN-001"],
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      "node-abc",
+      "proj-123"
+    );
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      "/api/tasks/batch-update-models?projectId=proj-123",
+      expect.objectContaining({
+        body: JSON.stringify({
+          taskIds: ["FN-001"],
+          nodeId: "node-abc",
+        }),
+      })
+    );
+  });
+
+  it("includes null nodeId when clearing override", async () => {
+    const mockResponse = { updated: [{ id: "FN-001" }], count: 1 };
+    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+      mockFetchResponse(true, mockResponse)
+    );
+
+    const { batchUpdateTaskModels } = await import("../api");
+    await batchUpdateTaskModels(["FN-001"], undefined, undefined, undefined, undefined, undefined, undefined, null);
+
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      "/api/tasks/batch-update-models",
+      expect.objectContaining({
+        body: JSON.stringify({
+          taskIds: ["FN-001"],
+          nodeId: null,
+        }),
+      })
+    );
+  });
+
   it("throws on 400 validation error", async () => {
     (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
       mockFetchResponse(false, { error: "taskIds must be an array" }, 400)

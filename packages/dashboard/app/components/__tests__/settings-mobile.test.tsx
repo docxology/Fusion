@@ -209,11 +209,12 @@ describe("SettingsModal mobile adaptations", () => {
 
   it("renders form controls inside settings-content for 16px mobile targeting", async () => {
     const user = userEvent.setup();
-    const { container, getByText } = render(<SettingsModal onClose={vi.fn()} addToast={vi.fn()} />);
+    const { container, findAllByText } = render(<SettingsModal onClose={vi.fn()} addToast={vi.fn()} />);
     await waitFor(() => expect(fetchSettings).toHaveBeenCalled());
 
     // Authentication is first by default, so click General to see form controls
-    await user.click(getByText("General"));
+    const generalTabs = await findAllByText("General");
+    await user.click(generalTabs[0]);
 
     const controls = container.querySelectorAll(".settings-content input, .settings-content select, .settings-content textarea");
     expect(controls.length).toBeGreaterThan(0);

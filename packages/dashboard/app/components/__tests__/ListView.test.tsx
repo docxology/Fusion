@@ -20,9 +20,10 @@ vi.mock("../../api", () => ({
   }),
   fetchTaskDetail: vi.fn(),
   batchUpdateTaskModels: vi.fn(),
+  fetchNodes: vi.fn().mockResolvedValue([]),
 }));
 
-import { fetchTaskDetail, batchUpdateTaskModels } from "../../api";
+import { fetchTaskDetail, batchUpdateTaskModels, fetchNodes } from "../../api";
 
 const mockAddToast = vi.fn();
 const TEST_PROJECT_ID = "proj-123";
@@ -2181,6 +2182,69 @@ describe("ListView - Bulk Selection", () => {
       expect(clearApplyArgs?.[2]).toBeNull();
       expect(clearApplyArgs?.[3]).toBeUndefined();
       expect(clearApplyArgs?.[4]).toBeUndefined();
+    });
+  });
+
+  describe("Bulk node override", () => {
+    const availableModels = [
+      { provider: "openai", id: "gpt-4o", name: "GPT-4o", reasoning: false, contextWindow: 128000 },
+    ];
+
+    it("shows node override selector with node status labels when tasks are selected", async () => {
+      const tasks = [createMockTask({ id: "FN-001" })];
+      vi.mocked(fetchNodes).mockResolvedValue([{ id: "node-1", name: "Node One", status: "online" } as never]);
+
+      render(<ListView tasks={tasks} onMoveTask={vi.fn()} onOpenDetail={vi.fn()} addToast={mockAddToast} projectId={TEST_PROJECT_ID} availableModels={availableModels} />);
+      fireEvent.click(screen.getByLabelText("Select FN-001"));
+
+      expect(await screen.findByLabelText("Node Override")).toBeInTheDocument();
+      expect(await screen.findByRole("option", { name: "Node One (Online)" })).toBeInTheDocument();
+    });
+
+    it("applies explicit node override through batchUpdateTaskModels", async () => {
+      const user = userEvent.setup();
+      const tasks = [createMockTask({ id: "FN-001" })];
+      vi.mocked(fetchNodes).mockResolvedValue([{ id: "node-abc", name: "Node ABC", status: "online" } as never]);
+      vi.mocked(batchUpdateTaskModels).mockResolvedValue({ updated: tasks, count: 1 });
+
+      render(<ListView tasks={tasks} onMoveTask={vi.fn()} onOpenDetail={vi.fn()} addToast={mockAddToast} projectId={TEST_PROJECT_ID} availableModels={availableModels} />);
+      await user.click(screen.getByLabelText("Select FN-001"));
+
+      const nodeSelect = await screen.findByLabelText("Node Override");
+      await user.selectOptions(nodeSelect, "node-abc");
+      await user.click(screen.getByRole("button", { name: "Apply" }));
+
+      await waitFor(() => {
+        const args = vi.mocked(batchUpdateTaskModels).mock.calls.at(-1);
+        expect(args?.[7]).toBe("node-abc");
+      });
+    });
+
+    it("uses null nodeId when selecting Use project default", async () => {
+      const user = userEvent.setup();
+      const tasks = [createMockTask({ id: "FN-001" })];
+      vi.mocked(fetchNodes).mockResolvedValue([{ id: "node-abc", name: "Node ABC", status: "online" } as never]);
+      vi.mocked(batchUpdateTaskModels).mockResolvedValue({ updated: tasks, count: 1 });
+
+      render(<ListView tasks={tasks} onMoveTask={vi.fn()} onOpenDetail={vi.fn()} addToast={mockAddToast} projectId={TEST_PROJECT_ID} availableModels={availableModels} />);
+      await user.click(screen.getByLabelText("Select FN-001"));
+      await user.selectOptions(await screen.findByLabelText("Node Override"), "");
+      await user.click(screen.getByRole("button", { name: "Apply" }));
+
+      await waitFor(() => {
+        const args = vi.mocked(batchUpdateTaskModels).mock.calls.at(-1);
+        expect(args?.[7]).toBeNull();
+      });
+    });
+
+    it("keeps apply disabled when all controls are no change", async () => {
+      const tasks = [createMockTask({ id: "FN-001" })];
+      vi.mocked(fetchNodes).mockResolvedValue([{ id: "node-abc", name: "Node ABC", status: "online" } as never]);
+
+      render(<ListView tasks={tasks} onMoveTask={vi.fn()} onOpenDetail={vi.fn()} addToast={mockAddToast} projectId={TEST_PROJECT_ID} availableModels={availableModels} />);
+      fireEvent.click(screen.getByLabelText("Select FN-001"));
+
+      expect(await screen.findByRole("button", { name: "Apply" })).toBeDisabled();
     });
   });
 

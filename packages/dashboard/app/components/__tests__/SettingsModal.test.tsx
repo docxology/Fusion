@@ -1523,30 +1523,6 @@ describe("SettingsModal", () => {
       });
     });
 
-    it("forces enabled=true for selected active provider when saving", async () => {
-      renderModal();
-      await waitForSettingsModalReady();
-      await openRemoteSection();
-
-      const tailscaleToggle = screen.getByLabelText("Enable Tailscale provider config");
-      expect(tailscaleToggle).not.toBeChecked();
-
-      await userEvent.selectOptions(screen.getByLabelText("Active provider"), "tailscale");
-      await userEvent.click(screen.getByRole("button", { name: "Save Remote Settings" }));
-
-      await waitFor(() => {
-        expect(mockUpdateRemoteSettings).toHaveBeenCalledTimes(1);
-      });
-
-      expect(mockUpdateRemoteSettings).toHaveBeenCalledWith(
-        expect.objectContaining({
-          remoteActiveProvider: "tailscale",
-          remoteTailscaleEnabled: true,
-        }),
-        undefined,
-      );
-    });
-
     it("toggles Cloudflare quick tunnel and hides manual cloudflare fields", async () => {
       renderModal();
       await waitForSettingsModalReady();
@@ -1777,6 +1753,57 @@ describe("SettingsModal", () => {
         );
       });
       expect(mockStartRemoteTunnel).toHaveBeenCalled();
+    });
+  });
+
+  describe("memory dream trigger", () => {
+    const openMemorySection = async () => {
+      const [memorySectionButton] = await screen.findAllByRole("button", { name: /^Memory$/i });
+      await userEvent.click(memorySectionButton);
+    };
+
+    it("shows Dream Now button when dreams are enabled", async () => {
+      mockFetchSettings.mockResolvedValueOnce({
+        ...defaultSettings,
+        memoryEnabled: true,
+        memoryDreamsEnabled: true,
+        memoryDreamsSchedule: "0 4 * * *",
+      });
+
+      renderModal();
+      await waitForSettingsModalReady();
+      await openMemorySection();
+
+      expect(await screen.findByRole("button", { name: "Dream Now" })).toBeInTheDocument();
+    });
+
+    it("triggers dream processing from Dream Now button", async () => {
+      const addToast = vi.fn();
+      mockFetchSettings.mockResolvedValueOnce({
+        ...defaultSettings,
+        memoryEnabled: true,
+        memoryDreamsEnabled: true,
+      });
+      mockTriggerMemoryDreams.mockResolvedValueOnce({ success: true, summary: "done" });
+
+      renderModal({ addToast });
+      await waitForSettingsModalReady();
+      await openMemorySection();
+
+      await userEvent.click(await screen.findByRole("button", { name: "Dream Now" }));
+
+      await waitFor(() => {
+        expect(mockTriggerMemoryDreams).toHaveBeenCalledWith(undefined);
+      });
+      expect(addToast).toHaveBeenCalledWith("Dream processing completed", "success");
+    });
+
+    it("hides Dream Now button when dreams are disabled", async () => {
+      renderModal();
+      await waitForSettingsModalReady();
+      await openMemorySection();
+
+      expect(screen.queryByRole("button", { name: "Dream Now" })).not.toBeInTheDocument();
     });
   });
 

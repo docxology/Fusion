@@ -415,7 +415,16 @@ export function registerTaskWorkflowRoutes(ctx: ApiRoutesContext, deps: TaskWork
   router.post("/tasks/batch-update-models", async (req, res) => {
     try {
       const { store: scopedStore } = await getProjectContext(req);
-      const { taskIds, modelProvider, modelId, validatorModelProvider, validatorModelId, planningModelProvider, planningModelId } = req.body;
+      const {
+        taskIds,
+        modelProvider,
+        modelId,
+        validatorModelProvider,
+        validatorModelId,
+        planningModelProvider,
+        planningModelId,
+        nodeId,
+      } = req.body;
 
       // Validate taskIds
       if (!Array.isArray(taskIds)) {
@@ -428,12 +437,17 @@ export function registerTaskWorkflowRoutes(ctx: ApiRoutesContext, deps: TaskWork
         throw badRequest("taskIds must contain non-empty strings");
       }
 
-      // Validate that at least one model field is being updated
+      // Validate that at least one model field or node override is being updated
       const hasExecutorModel = modelProvider !== undefined || modelId !== undefined;
       const hasValidatorModel = validatorModelProvider !== undefined || validatorModelId !== undefined;
       const hasPlanningModel = planningModelProvider !== undefined || planningModelId !== undefined;
-      if (!hasExecutorModel && !hasValidatorModel && !hasPlanningModel) {
-        throw badRequest("At least one model field must be provided");
+      const hasNodeId = nodeId !== undefined;
+      if (!hasExecutorModel && !hasValidatorModel && !hasPlanningModel && !hasNodeId) {
+        throw badRequest("At least one model field or nodeId must be provided");
+      }
+
+      if (nodeId !== undefined && nodeId !== null && typeof nodeId !== "string") {
+        throw badRequest("nodeId must be a string, null, or undefined");
       }
 
       // Validate model field pairs (both provider and modelId must be provided together or neither)
@@ -486,7 +500,15 @@ export function registerTaskWorkflowRoutes(ctx: ApiRoutesContext, deps: TaskWork
       }
 
       // Build update payload (only include fields that were explicitly provided)
-      const updates: { modelProvider?: string | null; modelId?: string | null; validatorModelProvider?: string | null; validatorModelId?: string | null; planningModelProvider?: string | null; planningModelId?: string | null } = {};
+      const updates: {
+        modelProvider?: string | null;
+        modelId?: string | null;
+        validatorModelProvider?: string | null;
+        validatorModelId?: string | null;
+        planningModelProvider?: string | null;
+        planningModelId?: string | null;
+        nodeId?: string | null;
+      } = {};
       if (validatedExecutor.provider !== undefined) {
         updates.modelProvider = validatedExecutor.provider;
       }
@@ -504,6 +526,9 @@ export function registerTaskWorkflowRoutes(ctx: ApiRoutesContext, deps: TaskWork
       }
       if (validatedPlanning.modelId !== undefined) {
         updates.planningModelId = validatedPlanning.modelId;
+      }
+      if (nodeId !== undefined) {
+        updates.nodeId = nodeId;
       }
 
       // Update all tasks in parallel

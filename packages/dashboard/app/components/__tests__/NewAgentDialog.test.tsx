@@ -1589,8 +1589,11 @@ describe("NewAgentDialog", () => {
         expect(mockUpdateGlobalSettings).toHaveBeenCalled();
       });
 
-      const portalAfterRollback = document.body.querySelector('[data-testid="model-combobox-portal"]') as HTMLElement;
-      expect(within(portalAfterRollback).getByRole("button", { name: "Remove anthropic from favorites" })).toBeTruthy();
+      await waitFor(() => {
+        const portalAfterRollback = document.body.querySelector('[data-testid="model-combobox-portal"]') as HTMLElement | null;
+        expect(portalAfterRollback).toBeTruthy();
+        expect(within(portalAfterRollback as HTMLElement).getByRole("button", { name: "Remove anthropic from favorites" })).toBeTruthy();
+      });
     });
   });
 
