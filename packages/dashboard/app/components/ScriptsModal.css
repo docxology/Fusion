@@ -3213,12 +3213,36 @@
 
   .modal.gm-modal {
     width: 100vw;
+    min-width: 0;
     max-width: 100vw;
     height: 100dvh;
+    min-height: 0;
     max-height: 100dvh;
     margin: 0;
     border: none;
     border-radius: 0;
+    resize: none;
+  }
+
+  /* Same treatment for the Automations modal — same min-width: 480px would
+     otherwise force it wider than narrow viewports. */
+  .modal-overlay:has(.automation-modal) {
+    padding-top: 0;
+    align-items: stretch;
+    justify-content: stretch;
+  }
+
+  .modal.automation-modal {
+    width: 100vw;
+    min-width: 0;
+    max-width: 100vw;
+    height: 100dvh;
+    min-height: 0;
+    max-height: 100dvh;
+    margin: 0;
+    border: none;
+    border-radius: 0;
+    resize: none;
   }
 
   .gm-layout {

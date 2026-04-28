@@ -740,12 +740,15 @@
 
   .modal.github-import-modal {
     width: 100vw;
+    min-width: 0;
     max-width: 100vw;
     height: 100dvh;
+    min-height: 0;
     max-height: 100dvh;
     margin: 0;
     border: none;
     border-radius: 0;
+    resize: none;
   }
 
   .github-import-modal__body {

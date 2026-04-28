@@ -70,70 +70,71 @@
   transition: background var(--transition-fast);
 }
 
-/* Edge handles */
+/* Edge handles — inset matches corner handle size so they don't overlap. */
 .quick-chat-resize-handle[data-resize-direction="n"] {
   cursor: n-resize;
   top: 0;
-  left: 10px;
-  right: 10px;
+  left: 16px;
+  right: 16px;
   height: 6px;
 }
 
 .quick-chat-resize-handle[data-resize-direction="s"] {
   cursor: s-resize;
   bottom: 0;
-  left: 10px;
-  right: 10px;
+  left: 16px;
+  right: 16px;
   height: 6px;
 }
 
 .quick-chat-resize-handle[data-resize-direction="e"] {
   cursor: e-resize;
-  top: 10px;
+  top: 16px;
   right: 0;
-  bottom: 10px;
+  bottom: 16px;
   width: 6px;
 }
 
 .quick-chat-resize-handle[data-resize-direction="w"] {
   cursor: w-resize;
-  top: 10px;
+  top: 16px;
   left: 0;
-  bottom: 10px;
+  bottom: 16px;
   width: 6px;
 }
 
-/* Corner handles */
+/* Corner handles — sized to clear the panel's 12px border-radius so the
+   diagonal hit target reaches outside the curve. */
 .quick-chat-resize-handle[data-resize-direction="nw"] {
   cursor: nw-resize;
   top: 0;
   left: 0;
-  width: 10px;
-  height: 10px;
+  width: 16px;
+  height: 16px;
 }
 
 .quick-chat-resize-handle[data-resize-direction="ne"] {
   cursor: ne-resize;
   top: 0;
   right: 0;
-  width: 10px;
-  height: 10px;
+  width: 16px;
+  height: 16px;
 }
 
 .quick-chat-resize-handle[data-resize-direction="sw"] {
   cursor: sw-resize;
   bottom: 0;
   left: 0;
-  width: 10px;
-  height: 10px;
+  width: 16px;
+  height: 16px;
 }
 
 .quick-chat-resize-handle[data-resize-direction="se"] {
   cursor: se-resize;
   bottom: 0;
   right: 0;
-  width: 10px;
-  height: 10px;
+  width: 16px;
+  height: 16px;
 }
 
 /* Subtle hover accent on edge handles */
@@ -154,6 +155,20 @@
     transparent 30%,
     color-mix(in srgb, var(--border) 60%, transparent) 50%,
     transparent 70%
+  );
+}
+
+/* Subtle hover accent on corner handles — small radial dot that hints at
+   the diagonal grip without competing with the panel's rounded border. */
+.quick-chat-resize-handle[data-resize-direction="nw"]:hover,
+.quick-chat-resize-handle[data-resize-direction="ne"]:hover,
+.quick-chat-resize-handle[data-resize-direction="sw"]:hover,
+.quick-chat-resize-handle[data-resize-direction="se"]:hover {
+  background: radial-gradient(
+    circle at center,
+    color-mix(in srgb, var(--border) 70%, transparent) 0%,
+    color-mix(in srgb, var(--border) 30%, transparent) 50%,
+    transparent 75%
   );
 }
 

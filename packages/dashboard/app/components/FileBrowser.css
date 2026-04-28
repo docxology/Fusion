@@ -894,12 +894,15 @@
 
   .modal.file-browser-modal {
     width: 100vw;
+    min-width: 0;
     height: 100dvh;
+    min-height: 0;
     max-width: 100vw;
     max-height: 100dvh;
     margin: 0;
     border: none;
     border-radius: 0;
+    resize: none;
   }
 
   .file-browser-body {

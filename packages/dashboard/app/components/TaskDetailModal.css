@@ -742,6 +742,28 @@
   .detail-move-split-btn__chevron {
     min-width: calc(var(--space-md) + var(--space-sm));
   }
+
+  /* Full-screen sheet on mobile. Desktop `min-width: 480px` would otherwise
+     push the modal off narrow viewports; overlay padding-top leaves awkward
+     gaps. Resize is disabled (touchscreens can't drag the grip). */
+  .modal-overlay:has(.task-detail-modal) {
+    padding-top: 0;
+    align-items: stretch;
+    justify-content: stretch;
+  }
+
+  .modal.task-detail-modal {
+    width: 100vw;
+    min-width: 0;
+    max-width: 100vw;
+    height: 100dvh;
+    min-height: 0;
+    max-height: 100dvh;
+    margin: 0;
+    border: none;
+    border-radius: 0;
+    resize: none;
+  }
 }
 
 .detail-actions-menu-item-danger {

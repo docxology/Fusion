@@ -265,6 +265,26 @@
 
 /* Mobile: stack — only one pane visible at a time */
 @media (max-width: 720px) {
+  /* Full-screen sheet — drop overlay padding so the modal fills the
+     viewport instead of being pushed below it, and disable resize since
+     touchscreen users can't drag the corner grip anyway. */
+  .modal-overlay:has(.planning-modal) {
+    padding-top: 0;
+    align-items: stretch;
+    justify-content: stretch;
+  }
+  .modal.planning-modal {
+    width: 100vw;
+    min-width: 0;
+    max-width: 100vw;
+    height: 100dvh;
+    min-height: 0;
+    max-height: 100dvh;
+    margin: 0;
+    border: none;
+    border-radius: 0;
+    resize: none;
+  }
   .planning-modal-body--split {
     flex-direction: column;
   }

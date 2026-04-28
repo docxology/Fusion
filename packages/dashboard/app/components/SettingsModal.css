@@ -68,6 +68,32 @@
   resize: both;
 }
 
+/* Mobile: full-screen sheet. The desktop `min-width: 520px` was forcing the
+   modal wider than narrow viewports, pushing it off-screen; the desktop
+   `height: 80vh` left awkward strips of overlay above and below. Drop the
+   overlay's default top padding so the modal actually fills the viewport,
+   and disable resize (touchscreen users can't drag the grip anyway). */
+@media (max-width: 768px) {
+  .modal-overlay:has(.settings-modal) {
+    padding-top: 0;
+    align-items: stretch;
+    justify-content: stretch;
+  }
+
+  .modal.settings-modal {
+    width: 100vw;
+    min-width: 0;
+    max-width: 100vw;
+    height: 100dvh;
+    min-height: 0;
+    max-height: 100dvh;
+    margin: 0;
+    border: none;
+    border-radius: 0;
+    resize: none;
+  }
+}
+
 /* === Settings Layout === */
 .settings-modal-heading {
   display: flex;
