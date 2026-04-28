@@ -9,7 +9,15 @@ import { Sparkles, ChevronUp, ChevronDown, X, Maximize2, Minimize2 } from "lucid
 function getNodeStatusLabel(status: NodeInfo["status"]): string {
   if (status === "online") return "Online";
   if (status === "connecting") return "Connecting";
+  if (status === "error") return "Error";
   return "Offline";
+}
+
+function getNodeStatusClass(status: NodeInfo["status"]): string {
+  if (status === "online") return "task-form-node-status--online";
+  if (status === "connecting") return "task-form-node-status--connecting";
+  if (status === "error") return "task-form-node-status--error";
+  return "task-form-node-status--offline";
 }
 
 const ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
@@ -838,6 +846,16 @@ export function TaskForm({
               </option>
             ))}
           </select>
+          {(() => {
+            const selectedNode = (nodeOptions ?? []).find((node) => node.id === nodeId);
+            if (!selectedNode) return null;
+            return (
+              <div className={`task-form-node-status ${getNodeStatusClass(selectedNode.status)}`}>
+                <span className="task-form-node-status__dot" aria-hidden="true" />
+                <span>{`Selected node: ${getNodeStatusLabel(selectedNode.status)}`}</span>
+              </div>
+            );
+          })()}
           <small>
             {nodeOverrideDisabledReason ?? "Task override takes priority over project default node routing."}
           </small>

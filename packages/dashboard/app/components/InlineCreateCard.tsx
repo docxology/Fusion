@@ -45,7 +45,15 @@ interface InlineCreateCardProps {
 function getNodeStatusLabel(status: NodeInfo["status"]): string {
   if (status === "online") return "Online";
   if (status === "connecting") return "Connecting";
+  if (status === "error") return "Error";
   return "Offline";
+}
+
+function getNodeStatusClass(status: NodeInfo["status"]): string {
+  if (status === "online") return "inline-create-node-status--online";
+  if (status === "connecting") return "inline-create-node-status--connecting";
+  if (status === "error") return "inline-create-node-status--error";
+  return "inline-create-node-status--offline";
 }
 
 function getModelSelectionValue(provider?: string, modelId?: string): string {
@@ -846,6 +854,16 @@ export function InlineCreateCard({
                   </option>
                 ))}
               </select>
+              {(() => {
+                const selectedNode = nodes.find((node) => node.id === nodeId);
+                if (!selectedNode) return null;
+                return (
+                  <span className={`inline-create-node-status ${getNodeStatusClass(selectedNode.status)}`}>
+                    <span className="inline-create-node-status__dot" aria-hidden="true" />
+                    {getNodeStatusLabel(selectedNode.status)}
+                  </span>
+                );
+              })()}
             </label>
 
             <div className="agent-trigger-wrap" ref={agentPickerRef}>

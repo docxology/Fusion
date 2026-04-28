@@ -39,7 +39,15 @@ const GITHUB_STAR_CLICKED_KEY = "fusion:github-star-clicked";
 function getNodeStatusLabel(status: "online" | "offline" | "connecting" | "error"): string {
   if (status === "online") return "Online";
   if (status === "connecting") return "Connecting";
+  if (status === "error") return "Error";
   return "Offline";
+}
+
+function getNodeStatusClass(status: "online" | "offline" | "connecting" | "error"): string {
+  if (status === "online") return "settings-node-status--online";
+  if (status === "connecting") return "settings-node-status--connecting";
+  if (status === "error") return "settings-node-status--error";
+  return "settings-node-status--offline";
 }
 
 /**
@@ -2419,12 +2427,23 @@ export function SettingsModal({
                   </option>
                 ))}
               </select>
+              {(() => {
+                const selectedNode = nodes.find((node) => node.id === form.defaultNodeId);
+                if (!selectedNode) return null;
+                return (
+                  <div className={`settings-node-status ${getNodeStatusClass(selectedNode.status)}`}>
+                    <span className="settings-node-status__dot" aria-hidden="true" />
+                    <span>{`Selected node: ${getNodeStatusLabel(selectedNode.status)}`}</span>
+                  </div>
+                );
+              })()}
               <small>Used when a task has no node override. Node status is shown for safer routing selection.</small>
             </div>
             <div className="form-group">
               <label htmlFor="unavailableNodePolicy">Unavailable Node Policy</label>
               <select
                 id="unavailableNodePolicy"
+                className="select"
                 value={
                   form.unavailableNodePolicy === "fallback-local" ? "fallback-local" : "block"
                 }

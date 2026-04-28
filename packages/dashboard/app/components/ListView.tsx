@@ -32,7 +32,15 @@ function isTaskActivelyExecuting(task: Task): boolean {
 function getNodeStatusLabel(status: "online" | "offline" | "connecting" | "error"): string {
   if (status === "online") return "Online";
   if (status === "connecting") return "Connecting";
+  if (status === "error") return "Error";
   return "Offline";
+}
+
+function getNodeStatusClass(status: "online" | "offline" | "connecting" | "error"): string {
+  if (status === "online") return "list-view-node-status--online";
+  if (status === "connecting") return "list-view-node-status--connecting";
+  if (status === "error") return "list-view-node-status--error";
+  return "list-view-node-status--offline";
 }
 
 type SortField = "id" | "title" | "status" | "column";
@@ -762,7 +770,7 @@ export function ListView({
                 onToggleModelFavorite={onToggleModelFavorite}
               />
             </div>
-            <div className="bulk-edit-dropdown">
+            <div className="bulk-edit-dropdown bulk-edit-node-wrap">
               <select className="select" value={bulkNodeId} onChange={(e) => setBulkNodeId(e.target.value)}>
                 <option value="__no_change__">Node: No change</option>
                 <option value="">Node: Clear override</option>
@@ -770,6 +778,16 @@ export function ListView({
                   <option key={node.id} value={node.id}>{node.name} ({getNodeStatusLabel(node.status)})</option>
                 ))}
               </select>
+              {(() => {
+                const selectedNode = nodes.find((node) => node.id === bulkNodeId);
+                if (!selectedNode) return null;
+                return (
+                  <span className={`list-view-node-status ${getNodeStatusClass(selectedNode.status)}`}>
+                    <span className="list-view-node-status__dot" aria-hidden="true" />
+                    {getNodeStatusLabel(selectedNode.status)}
+                  </span>
+                );
+              })()}
             </div>
             <button
               className="btn btn-primary btn-sm bulk-edit-apply-btn"

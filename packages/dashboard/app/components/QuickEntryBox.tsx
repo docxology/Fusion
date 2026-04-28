@@ -66,7 +66,15 @@ interface QuickEntryBoxProps {
 function getNodeStatusLabel(status: NodeInfo["status"]): string {
   if (status === "online") return "Online";
   if (status === "connecting") return "Connecting";
+  if (status === "error") return "Error";
   return "Offline";
+}
+
+function getNodeStatusClass(status: NodeInfo["status"]): string {
+  if (status === "online") return "quick-entry-node-status--online";
+  if (status === "connecting") return "quick-entry-node-status--connecting";
+  if (status === "error") return "quick-entry-node-status--error";
+  return "quick-entry-node-status--offline";
 }
 
 function getModelSelectionValue(provider?: string, modelId?: string): string {
@@ -1388,6 +1396,16 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
                   </option>
                 ))}
               </select>
+              {(() => {
+                const selectedNode = nodes.find((node) => node.id === nodeId);
+                if (!selectedNode) return null;
+                return (
+                  <span className={`quick-entry-node-status ${getNodeStatusClass(selectedNode.status)}`}>
+                    <span className="quick-entry-node-status__dot" aria-hidden="true" />
+                    {getNodeStatusLabel(selectedNode.status)}
+                  </span>
+                );
+              })()}
             </label>
 
             <div className="agent-trigger-wrap" ref={agentPickerRef}>
