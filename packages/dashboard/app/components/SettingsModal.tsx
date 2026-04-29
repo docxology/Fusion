@@ -428,6 +428,7 @@ export function SettingsModal({
   const [remoteUrlPreview, setRemoteUrlPreview] = useState<{ url: string; expiresAt: string | null; tokenType: "persistent" | "short-lived" } | null>(null);
   const [remoteQrSvg, setRemoteQrSvg] = useState<string | null>(null);
   const [remoteShortLivedToken, setRemoteShortLivedToken] = useState<{ token: string; expiresAt: string; ttlMs: number } | null>(null);
+  const [tunnelShareLink, setTunnelShareLink] = useState<{ url: string; qrSvg: string | null } | null>(null);
 
   // Project memory state
   const [memoryContent, setMemoryContent] = useState("");
@@ -675,6 +676,36 @@ export function SettingsModal({
       setRemoteStatus(null);
     });
   }, [activeSection, loadRemoteData]);
+
+  // When the tunnel is running, fetch a persistent-token authenticated URL +
+  // QR so the user can share/scan it without digging into Advanced Settings.
+  useEffect(() => {
+    if (activeSection !== "remote") return;
+    if (remoteStatus?.state !== "running") {
+      setTunnelShareLink(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const qr = await fetchRemoteQr("image/svg", { projectId, tokenType: "persistent" });
+        if (cancelled) return;
+        setTunnelShareLink({ url: qr.url, qrSvg: qr.data ?? null });
+      } catch {
+        if (cancelled) return;
+        try {
+          const link = await fetchRemoteUrl({ projectId, tokenType: "persistent" });
+          if (cancelled) return;
+          setTunnelShareLink({ url: link.url, qrSvg: null });
+        } catch {
+          if (!cancelled) setTunnelShareLink(null);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSection, projectId, remoteStatus?.state, remoteStatus?.url]);
 
   // Lazy-load git remotes for the rebase-remote dropdown when the Worktrees
   // section becomes visible. Failure is non-fatal: the dropdown falls back
@@ -3952,6 +3983,29 @@ export function SettingsModal({
               {remoteStatus?.url && <code className="remote-status-url">{remoteStatus.url}</code>}
               {remoteStatus?.lastError && <span className="field-error">{remoteStatus.lastError}</span>}
             </div>
+            {tunnelState === "running" && (remoteStatus?.url || tunnelShareLink) && (
+              <div className="remote-share-block">
+                {remoteStatus?.url && (
+                  <div className="remote-share-row">
+                    <small>Tunnel URL:</small>
+                    <code className="settings-url-output">{remoteStatus.url}</code>
+                  </div>
+                )}
+                {tunnelShareLink?.url && (
+                  <div className="remote-share-row">
+                    <small>Scan to access:</small>
+                    <code className="settings-url-output">{tunnelShareLink.url}</code>
+                    {tunnelShareLink.qrSvg && (
+                      <img
+                        src={`data:image/svg+xml;utf8,${encodeURIComponent(tunnelShareLink.qrSvg)}`}
+                        alt="Remote access QR code"
+                        className="settings-qr-preview-image"
+                      />
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="form-group">
               <div className="remote-provider-selector" role="radiogroup" aria-label="Remote provider">

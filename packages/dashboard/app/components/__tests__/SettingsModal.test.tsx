@@ -1695,7 +1695,7 @@ describe("SettingsModal", () => {
 
       await userEvent.click(screen.getByRole("button", { name: "Start Tunnel" }));
       await waitFor(() => {
-        expect(screen.getByText("https://tail.example")).toBeInTheDocument();
+        expect(screen.getByText("https://tail.example", { selector: ".remote-status-url" })).toBeInTheDocument();
       });
     });
 

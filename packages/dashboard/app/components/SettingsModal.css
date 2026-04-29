@@ -556,6 +556,27 @@
   --status-color: var(--text-muted);
 }
 
+.remote-share-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  margin: 0 var(--space-xl) var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--text-muted) 5%, transparent);
+}
+
+.remote-share-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.remote-share-row .settings-qr-preview-image {
+  margin-top: var(--space-xs);
+}
+
 .remote-status-dot {
   width: var(--space-sm);
   height: var(--space-sm);

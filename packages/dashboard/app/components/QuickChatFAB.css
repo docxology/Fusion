@@ -566,10 +566,12 @@
     top: 0 !important;
     width: 100vw !important;
     height: 100vh !important;
-    height: var(--vv-height, calc(100dvh - var(--keyboard-overlap, 0px))) !important;
+    height: 100dvh !important;
+    height: var(--vv-height, 100dvh) !important;
     max-width: 100vw;
     max-height: 100vh;
-    max-height: var(--vv-height, calc(100dvh - var(--keyboard-overlap, 0px)));
+    max-height: 100dvh;
+    max-height: var(--vv-height, 100dvh);
     border-radius: 0;
     border: none;
     z-index: 1100;
@@ -617,16 +619,34 @@
   }
 
   .quick-chat-panel-header {
-    flex-wrap: wrap;
-    row-gap: var(--space-sm);
+    flex-wrap: nowrap;
+    row-gap: 0;
     /* iOS PWA: status bar (black-translucent) overlays the panel from top: 0,
        clipping the close button. Reserve top inset on mobile. */
     padding-top: calc(10px + env(safe-area-inset-top, 0px));
   }
 
+  .quick-chat-panel-title-wrap {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .quick-chat-panel-header h3 {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .quick-chat-model-tag {
+    max-width: 12ch;
+    flex-shrink: 1;
+  }
+
   .quick-chat-panel-header-actions {
-    width: 100%;
-    justify-content: space-between;
+    width: auto;
+    flex-shrink: 0;
+    justify-content: flex-end;
+    min-width: 0;
   }
 
   .chat-tool-calls-group-summary {

@@ -149,7 +149,19 @@ const tailscaleAdapter: TunnelProviderAdapter = {
     return buildCommand(config);
   },
   parseReadiness(line: string, _stream: TunnelOutputStream) {
-    return parseCommonReadiness(line);
+    // tailscale funnel prints "Available on the internet:" first (no URL),
+    // then a follow-up line with https://<host>.ts.net/. Don't signal ready
+    // until we have the URL itself, otherwise the manager freezes status
+    // before the URL line arrives.
+    const normalized = line.trim();
+    if (!normalized) return null;
+    const urlMatch = normalized.match(URL_PATTERN);
+    const url = urlMatch?.[1];
+    if (!url) return null;
+    if (/\bts\.net\b/i.test(url) || /\b(tailscale|funnel|serve)\b/i.test(normalized)) {
+      return { ready: true, url };
+    }
+    return null;
   },
 };
 

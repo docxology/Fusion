@@ -41,6 +41,7 @@ import {
   updatePiExtensionDisabledIds,
 } from "@fusion/core";
 import { createFnAgent as engineCreateFnAgent } from "@fusion/engine";
+import QRCode from "qrcode";
 import { ApiError, badRequest } from "../api-error.js";
 import { generateRemoteToken, issueRemoteAuthToken, maskRemoteToken } from "../remote-auth.js";
 import { invalidateAllGlobalSettingsCaches } from "../project-store-resolver.js";
@@ -607,7 +608,12 @@ export function registerSettingsMemoryRoutes(ctx: ApiRoutesContext, deps: Settin
       const format = req.query.format === "image/svg" ? "image/svg" : "text";
       const payload = await buildRemoteLoginUrlForTokenType(scopedStore, tokenType, getCurrentTunnelUrl(engine ?? options?.engine));
       if (format === "image/svg") {
-        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="80"><rect width="100%" height="100%" fill="white"/><text x="10" y="42" font-size="12" fill="black">${payload.loginUrl.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</text></svg>`;
+        const svg = await QRCode.toString(payload.loginUrl, {
+          type: "svg",
+          errorCorrectionLevel: "M",
+          margin: 1,
+          width: 256,
+        });
         res.json({ url: payload.loginUrl, tokenType: payload.tokenType, expiresAt: payload.expiresAt, format, data: svg });
         return;
       }

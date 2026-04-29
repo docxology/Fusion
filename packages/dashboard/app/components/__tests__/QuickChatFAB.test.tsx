@@ -273,14 +273,16 @@ describe("QuickChatFAB", () => {
 
     expect(screen.getByTestId("quick-chat-input")).toBeDisabled();
 
-    resolveSessionCreation?.({
-      session: {
-        ...mockSession,
-        id: "session-002",
-        agentId: "__fn_agent__",
-        modelProvider: "openai",
-        modelId: "gpt-4o",
-      },
+    await act(async () => {
+      resolveSessionCreation?.({
+        session: {
+          ...mockSession,
+          id: "session-002",
+          agentId: "__fn_agent__",
+          modelProvider: "openai",
+          modelId: "gpt-4o",
+        },
+      });
     });
 
     await waitFor(() => {
