@@ -277,6 +277,119 @@ describe("resolveDiffBase", () => {
 
     expect(diffBase).toBe("parent-123");
   });
+
+  it("display recovery: uses merge-base(HEAD, main) when baseCommitSha stale and baseBranch missing", async () => {
+    // Regression: FN-2957 showed only 2 changed files in review (the last
+    // commit's files) instead of all 6. Cause: baseBranch was unset and
+    // baseCommitSha pointed to a pre-rebase commit that was no longer an
+    // ancestor of HEAD, so resolveDiffBase fell to HEAD~1. The display-only
+    // recovery path widens to merge-base(HEAD, main) when callers opt in.
+    const runGit = vi.fn(async (args: string[]) => {
+      if (args.join(" ") === "merge-base --is-ancestor stale-base HEAD") {
+        throw new Error("stale base sha");
+      }
+      if (args.join(" ") === "merge-base HEAD main") return "rebased-base-456";
+      if (args.join(" ") === "rev-parse HEAD~1") return "parent-123";
+      throw new Error(`Unexpected command: ${args.join(" ")}`);
+    });
+
+    const diffBase = await resolveDiffBase(
+      { baseCommitSha: "stale-base" }, // no baseBranch
+      "/tmp/worktree",
+      "HEAD",
+      runGit,
+      { enableDisplayRecovery: true },
+    );
+
+    expect(diffBase).toBe("rebased-base-456");
+    expect(runGit).not.toHaveBeenCalledWith(
+      ["rev-parse", "HEAD~1"],
+      "/tmp/worktree",
+      5000,
+    );
+  });
+
+  it("display recovery: falls back to origin/main when local main is missing", async () => {
+    const runGit = vi.fn(async (args: string[]) => {
+      if (args.join(" ") === "merge-base --is-ancestor stale-base HEAD") {
+        throw new Error("stale base sha");
+      }
+      if (args.join(" ") === "merge-base HEAD main") {
+        throw new Error("no local main");
+      }
+      if (args.join(" ") === "merge-base HEAD origin/main") return "origin-base-789";
+      if (args.join(" ") === "rev-parse HEAD~1") return "parent-123";
+      throw new Error(`Unexpected command: ${args.join(" ")}`);
+    });
+
+    const diffBase = await resolveDiffBase(
+      { baseCommitSha: "stale-base" },
+      "/tmp/worktree",
+      "HEAD",
+      runGit,
+      { enableDisplayRecovery: true },
+    );
+
+    expect(diffBase).toBe("origin-base-789");
+  });
+
+  it("display recovery: still falls to HEAD~1 when both main and origin/main are missing", async () => {
+    const runGit = vi.fn(async (args: string[]) => {
+      if (args.join(" ") === "merge-base --is-ancestor stale-base HEAD") {
+        throw new Error("stale base sha");
+      }
+      if (args.join(" ") === "merge-base HEAD main") {
+        throw new Error("no local main");
+      }
+      if (args.join(" ") === "merge-base HEAD origin/main") {
+        throw new Error("no remote main");
+      }
+      if (args.join(" ") === "rev-parse HEAD~1") return "parent-123";
+      throw new Error(`Unexpected command: ${args.join(" ")}`);
+    });
+
+    const diffBase = await resolveDiffBase(
+      { baseCommitSha: "stale-base" },
+      "/tmp/worktree",
+      "HEAD",
+      runGit,
+      { enableDisplayRecovery: true },
+    );
+
+    expect(diffBase).toBe("parent-123");
+  });
+
+  it("display recovery: does NOT trigger when baseBranch is set (merger-parity case)", async () => {
+    // When baseBranch is recorded, the regular merge-base path runs first.
+    // Recovery is only meant for the post-rebase "no baseBranch + stale
+    // baseCommitSha" hole. This guards against widening when the original
+    // ordering was tried and intentionally produced no merge-base.
+    const runGit = vi.fn(async (args: string[]) => {
+      if (args.join(" ") === "merge-base HEAD main") {
+        throw new Error("no local main");
+      }
+      if (args.join(" ") === "merge-base HEAD origin/main") {
+        throw new Error("no remote main");
+      }
+      if (args.join(" ") === "merge-base --is-ancestor stale-base HEAD") {
+        throw new Error("stale base sha");
+      }
+      if (args.join(" ") === "rev-parse HEAD~1") return "parent-123";
+      throw new Error(`Unexpected command: ${args.join(" ")}`);
+    });
+
+    const diffBase = await resolveDiffBase(
+      { baseBranch: "main", baseCommitSha: "stale-base" },
+      "/tmp/worktree",
+      "HEAD",
+      runGit,
+      { enableDisplayRecovery: true },
+    );
+
+    // Same result as without recovery — baseBranch was tried, no extra
+    // recovery attempted.
+    expect(diffBase).toBe("parent-123");
+  });
 });
 
 describe("diff-base parity between dashboard and merger", () => {

@@ -34,19 +34,41 @@ export interface ResolveDiffBaseTaskInput {
   baseBranch?: string;
 }
 
+export interface ResolveDiffBaseOptions {
+  /**
+   * Display-only recovery: when the normal resolution would fall through to
+   * `headRef~1` (because `baseBranch` is missing AND `baseCommitSha` is no
+   * longer an ancestor of HEAD — e.g., the worktree was rebased onto
+   * `origin/main` after `baseCommitSha` was recorded), attempt one final
+   * `merge-base(headRef, "main")` (then `origin/main`) before giving up to
+   * `headRef~1`.
+   *
+   * This is for the dashboard "files changed" UI only. The merger never opts
+   * in — its scope checks must stay tied to the recorded task base, not a
+   * widened display range.
+   *
+   * Default: false.
+   */
+  enableDisplayRecovery?: boolean;
+}
+
 /**
  * Resolve the diff base ref for a task worktree.
  *
  * IMPORTANT: `packages/engine/src/merger.ts` mirrors this exact ordering for
  * merge-time scope warnings. Keep both implementations in sync so dashboard
  * changed-files views and merger scope enforcement evaluate the same range.
+ * The `enableDisplayRecovery` option is *display-only* and intentionally not
+ * mirrored in the merger.
  *
  * Strategy (in priority order):
  * 1. **Branch merge-base** — Prefer the live merge-base between `headRef` and
  *    local `{baseBranch}` (fallback: `origin/{baseBranch}`).
  * 2. **Task-scoped baseCommitSha** — If merge-base is unavailable or equals
  *    `headRef`, use `baseCommitSha` when still an ancestor of `headRef`.
- * 3. **headRef~1** — Last-resort fallback.
+ * 3. **Display recovery (opt-in)** — `merge-base(headRef, "main")` /
+ *    `origin/main` when steps 1 and 2 yielded nothing.
+ * 4. **headRef~1** — Last-resort fallback.
  *
  * Note: callers must validate the worktree still belongs to the task (e.g.
  * compare `git rev-parse --abbrev-ref HEAD` to `task.branch`) before invoking
@@ -59,6 +81,7 @@ export async function resolveDiffBase(
   cwd: string,
   headRef = "HEAD",
   runGit: (args: string[], cwd?: string, timeout?: number) => Promise<string> = runGitCommand,
+  options: ResolveDiffBaseOptions = {},
 ): Promise<string | undefined> {
   // When baseBranch was nulled (e.g., upstream dep merged and its branch was
   // deleted) but a task-scoped baseCommitSha is still recorded, skip the
@@ -97,6 +120,25 @@ export async function resolveDiffBase(
       return task.baseCommitSha;
     } catch {
       // stale or unreachable — fall through
+    }
+  }
+
+  // Display-only recovery before the HEAD~1 fallback. Only kicks in when the
+  // caller explicitly opted in AND the original resolution skipped the
+  // merge-base step (no baseBranch was recorded). This catches the case where
+  // a worktree got rebased onto origin/main after baseCommitSha was
+  // recorded, leaving the SHA as a non-ancestor of HEAD.
+  if (options.enableDisplayRecovery && !task.baseBranch?.trim()) {
+    try {
+      const out = (await runGit(["merge-base", headRef, "main"], cwd, 5000)).trim();
+      if (out) return out;
+    } catch {
+      try {
+        const out = (await runGit(["merge-base", headRef, "origin/main"], cwd, 5000)).trim();
+        if (out) return out;
+      } catch {
+        // no recovery possible — fall through to HEAD~1
+      }
     }
   }
 

@@ -240,9 +240,13 @@ export function registerSessionDiffRoutes(router: Router, deps: SessionDiffRoute
       }
       const cwd = resolvedWorktree;
 
-      const diffBase = await resolveDiffBase(task, cwd);
+      const diffBase = await resolveDiffBase(task, cwd, "HEAD", undefined, { enableDisplayRecovery: true });
       const diffRange = diffBase ? `${diffBase}..HEAD` : "HEAD";
 
+      // Only count files actually changed by the task: committed (base..HEAD)
+      // + staged + unstaged. Untracked files are intentionally excluded — at
+      // review time they're almost always build artifacts/cache/logs that
+      // weren't in .gitignore, not real task changes.
       const fileMap = new Map<string, string>();
 
       if (diffBase) {
@@ -283,15 +287,6 @@ export function registerSessionDiffRoutes(router: Router, deps: SessionDiffRoute
         // working tree diff failed
       }
 
-      try {
-        const untrackedOutput = (await runGitCommand(["ls-files", "--others", "--exclude-standard"], cwd, 10000)).trim();
-        for (const line of untrackedOutput.split("\n").filter(Boolean)) {
-          fileMap.set(line, "U");
-        }
-      } catch {
-        // untracked listing failed
-      }
-
       const files: Array<{
         path: string;
         status: "added" | "modified" | "deleted";
@@ -304,17 +299,13 @@ export function registerSessionDiffRoutes(router: Router, deps: SessionDiffRoute
         if (!filePath) continue;
 
         let status: "added" | "modified" | "deleted";
-        if (statusCode.startsWith("A") || statusCode === "U") status = "added";
+        if (statusCode.startsWith("A")) status = "added";
         else if (statusCode.startsWith("D")) status = "deleted";
         else status = "modified";
 
         let patch = "";
         try {
-          if (statusCode === "U") {
-            patch = await runGitCommand(["diff", "--no-index", "/dev/null", filePath], cwd, 10000).catch(() => "");
-          } else {
-            patch = await runGitCommand(["diff", diffRange, "--", filePath], cwd, 10000);
-          }
+          patch = await runGitCommand(["diff", diffRange, "--", filePath], cwd, 10000);
         } catch {
           // ignore individual file errors
         }
@@ -423,8 +414,12 @@ export function registerSessionDiffRoutes(router: Router, deps: SessionDiffRoute
       }
 
       const cwd = worktree;
-      const diffBase = await resolveDiffBase(task, cwd);
-      const fileMap = new Map<string, { statusCode: string; oldPath?: string; isUntracked?: boolean }>();
+      const diffBase = await resolveDiffBase(task, cwd, "HEAD", undefined, { enableDisplayRecovery: true });
+
+      // Only files actually changed by the task: committed + staged + unstaged.
+      // Untracked files (build artifacts, cache, logs) are intentionally
+      // excluded so the count matches "ACTUAL files changed by the task".
+      const fileMap = new Map<string, { statusCode: string; oldPath?: string }>();
 
       if (diffBase) {
         try {
@@ -479,24 +474,13 @@ export function registerSessionDiffRoutes(router: Router, deps: SessionDiffRoute
         // ignore unstaged diff failures
       }
 
-      try {
-        const untrackedOutput = (await runGitCommand(["ls-files", "--others", "--exclude-standard"], cwd, 5000)).trim();
-        for (const line of untrackedOutput.split("\n").filter(Boolean)) {
-          if (line && !fileMap.has(line)) {
-            fileMap.set(line, { statusCode: "U", isUntracked: true });
-          }
-        }
-      } catch {
-        // ignore untracked listing failures
-      }
-
       const diffRange = diffBase ? `${diffBase}..HEAD` : "HEAD";
       const files = [];
 
-      for (const [filePath, { statusCode, oldPath, isUntracked }] of fileMap.entries()) {
+      for (const [filePath, { statusCode, oldPath }] of fileMap.entries()) {
         let status: "added" | "modified" | "deleted" | "renamed" = "modified";
 
-        if (statusCode.startsWith("A") || statusCode === "U") {
+        if (statusCode.startsWith("A")) {
           status = "added";
         } else if (statusCode.startsWith("D")) {
           status = "deleted";
@@ -506,16 +490,12 @@ export function registerSessionDiffRoutes(router: Router, deps: SessionDiffRoute
 
         let diff = "";
         try {
-          if (isUntracked) {
-            diff = await runGitCommand(["diff", "--no-index", "/dev/null", filePath], cwd, 5000).catch(() => "");
-          } else {
-            diff = await runGitCommand(["diff", diffRange, "--", filePath], cwd, 5000);
-          }
+          diff = await runGitCommand(["diff", diffRange, "--", filePath], cwd, 5000);
         } catch {
           diff = "";
         }
 
-        if (!diff && !isUntracked) {
+        if (!diff) {
           continue;
         }
 
