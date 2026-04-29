@@ -2330,13 +2330,15 @@ function SettingsInteractiveView({ state, controller }: { state: DashboardState;
       return;
     }
 
-    if (input === "R") {
+    const inputUpper = input.toUpperCase();
+
+    if (inputUpper === "R") {
       void refreshRemoteStatus();
       setStatusMsg("Remote status refreshed");
       return;
     }
 
-    if (data?.remote && input === "C") {
+    if (data?.remote && inputUpper === "C") {
       const provider = localSettings.remoteActiveProvider;
       if (!provider) {
         setStatusMsg("Select a remote provider first");
@@ -2349,19 +2351,19 @@ function SettingsInteractiveView({ state, controller }: { state: DashboardState;
       return;
     }
 
-    if (data?.remote && input === "V") {
+    if (data?.remote && inputUpper === "V") {
       void data.remote.startTunnel().then(() => refreshRemoteStatus()).then(() => setStatusMsg("Remote tunnel starting"))
         .catch((err) => setStatusMsg(`Error: ${err instanceof Error ? err.message : String(err)}`));
       return;
     }
 
-    if (data?.remote && input === "X") {
+    if (data?.remote && inputUpper === "X") {
       void data.remote.stopTunnel().then(() => refreshRemoteStatus()).then(() => setStatusMsg("Remote tunnel stopped"))
         .catch((err) => setStatusMsg(`Error: ${err instanceof Error ? err.message : String(err)}`));
       return;
     }
 
-    if (data?.remote && input === "P") {
+    if (data?.remote && inputUpper === "P") {
       void data.remote.regeneratePersistentToken()
         .then((result) => {
           setPersistentMaskedToken(result.maskedToken ?? null);
@@ -2371,21 +2373,21 @@ function SettingsInteractiveView({ state, controller }: { state: DashboardState;
       return;
     }
 
-    if (data?.remote && input === "L") {
+    if (data?.remote && inputUpper === "L") {
       setTtlInputValue(String(localSettings.remoteShortLivedTtlMs));
       setTtlInputMode(true);
       setStatusMsg("Enter TTL milliseconds and press Enter");
       return;
     }
 
-    if (data?.remote && input === "U") {
+    if (data?.remote && inputUpper === "U") {
       void handleFetchRemoteUrl("persistent")
         .then(() => setStatusMsg("Remote URL fetched"))
         .catch((err) => setStatusMsg(`Error: ${err instanceof Error ? err.message : String(err)}`));
       return;
     }
 
-    if (data?.remote && input === "K") {
+    if (data?.remote && inputUpper === "K") {
       void handleFetchRemoteQr("persistent")
         .then(() => setStatusMsg("QR payload fetched"))
         .catch((err) => setStatusMsg(`Error: ${err instanceof Error ? err.message : String(err)}`));

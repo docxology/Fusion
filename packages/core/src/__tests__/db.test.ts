@@ -965,6 +965,46 @@ describe("schema migrations", () => {
     db.close();
   });
 
+  it("migrates v50 databases by adding chat message attachments column", () => {
+    tmpDir = makeTmpDir();
+    const fusionDir = join(tmpDir, ".fusion");
+    const db = new Database(fusionDir);
+
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS __meta (key TEXT PRIMARY KEY, value TEXT);
+      CREATE TABLE IF NOT EXISTS chat_messages (
+        id TEXT PRIMARY KEY,
+        sessionId TEXT NOT NULL,
+        role TEXT NOT NULL,
+        content TEXT NOT NULL,
+        createdAt TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS config (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        nextId INTEGER DEFAULT 1,
+        nextWorkflowStepId INTEGER DEFAULT 1,
+        settings TEXT DEFAULT '{}',
+        workflowSteps TEXT DEFAULT '[]',
+        updatedAt TEXT
+      );
+    `);
+    db.exec("INSERT INTO __meta (key, value) VALUES ('schemaVersion', '50')");
+    db.exec("INSERT INTO __meta (key, value) VALUES ('lastModified', '1000')");
+    db.exec(`INSERT INTO chat_messages (id, sessionId, role, content, createdAt) VALUES ('msg-1', 'chat-1', 'user', 'hello', '2026-01-01T00:00:00.000Z')`);
+
+    db.init();
+
+    expect(db.getSchemaVersion()).toBe(51);
+
+    const cols = db.prepare("PRAGMA table_info(chat_messages)").all() as Array<{ name: string }>;
+    expect(cols.map((col) => col.name)).toContain("attachments");
+
+    const row = db.prepare("SELECT attachments FROM chat_messages WHERE id = 'msg-1'").get() as { attachments: string | null };
+    expect(row.attachments).toBeNull();
+
+    db.close();
+  });
+
   it("applies migration 14+15 by creating agentRatings and ai_sessions indexes", () => {
     tmpDir = makeTmpDir();
     const fusionDir = join(tmpDir, ".fusion");
