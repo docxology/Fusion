@@ -249,7 +249,7 @@ describe("AgentsView", () => {
       });
     });
 
-    it("renders metrics above the main collection and active panel after it", async () => {
+    it("renders metrics, then active panel, then the main collection", async () => {
       const { container } = render(<AgentsView addToast={mockAddToast} />);
 
       await waitFor(() => {
@@ -262,10 +262,11 @@ describe("AgentsView", () => {
       const metrics = container.querySelector(".agent-metrics-bar");
       const activePanel = container.querySelector(".active-agents-panel");
       expect(list && metrics && activePanel).toBeTruthy();
-      // Metrics bar sits above the agent list (top-of-view stats placement).
-      expect(metrics!.compareDocumentPosition(list!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-      // Active agents panel comes after the main agent collection.
-      expect(list!.compareDocumentPosition(activePanel!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      // Metrics bar sits at the very top of the view content.
+      expect(metrics!.compareDocumentPosition(activePanel!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      // Active agents panel sits between metrics and the main agent list,
+      // so live work is visible without scrolling past the full directory.
+      expect(activePanel!.compareDocumentPosition(list!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     });
 
     it("fetches agents only once on mount (regression: no duplicate initial load path)", async () => {

@@ -28,6 +28,18 @@
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.live-agent-card:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-strong, var(--border));
+}
+
+.live-agent-card:focus-visible {
+  outline: 2px solid var(--accent, var(--color-primary));
+  outline-offset: 2px;
 }
 
 .live-agent-card-header {
@@ -115,6 +127,22 @@
   display: flex;
   align-items: center;
   gap: var(--space-sm);
+}
+
+.live-agent-card-footer-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.live-agent-card-next-heartbeat {
+  color: var(--text-muted);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .live-agent-card-logs-btn {

@@ -906,6 +906,8 @@ export function AgentsView({ addToast, projectId, onOpenTaskLogs }: AgentsViewPr
 
         <AgentMetricsBar stats={stats} />
 
+        <ActiveAgentsPanel agents={displayActiveAgents} projectId={projectId} onAgentSelect={setSelectedAgentId} onOpenTaskLogs={onOpenTaskLogs} />
+
         <NewAgentDialog
           isOpen={isCreating}
           onClose={() => setIsCreating(false)}
@@ -1313,9 +1315,6 @@ export function AgentsView({ addToast, projectId, onOpenTaskLogs }: AgentsViewPr
           )}
         </div>
         )}
-
-        {/* Secondary sections after the main collection */}
-        <ActiveAgentsPanel agents={displayActiveAgents} projectId={projectId} onAgentSelect={setSelectedAgentId} onOpenTaskLogs={onOpenTaskLogs} />
       </div>
 
       {/* Agent Detail Modal */}

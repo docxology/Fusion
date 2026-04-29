@@ -5,6 +5,7 @@ import type { TaskDetail } from "@fusion/core";
 import { fetchTaskDetail } from "../api";
 import "./ActiveAgentsPanel.css";
 import { useLiveTranscript } from "../hooks/useLiveTranscript";
+import { resolveHeartbeatIntervalMs } from "../utils/heartbeatIntervals";
 
 interface LiveAgentCardProps {
   agent: Agent;
@@ -51,6 +52,21 @@ function LiveAgentCard({ agent, projectId, onSelect, onOpenTaskLogs }: LiveAgent
   const elapsed = agent.lastHeartbeatAt
     ? Math.floor((Date.now() - new Date(agent.lastHeartbeatAt).getTime()) / 1000)
     : 0;
+
+  // Compute next heartbeat ETA from last + interval. Negative deltas mean the
+  // beat is overdue — surface that explicitly rather than rendering a stale
+  // future time.
+  const nextHeartbeatLabel = (() => {
+    if (!agent.lastHeartbeatAt) return null;
+    const intervalMs = resolveHeartbeatIntervalMs(
+      (agent.runtimeConfig as { heartbeatIntervalMs?: number } | undefined)?.heartbeatIntervalMs,
+    );
+    const nextMs = new Date(agent.lastHeartbeatAt).getTime() + intervalMs;
+    const deltaSec = Math.round((nextMs - Date.now()) / 1000);
+    if (!Number.isFinite(deltaSec)) return null;
+    if (deltaSec <= 0) return `Heartbeat overdue ${formatElapsed(-deltaSec)}`;
+    return `Next heartbeat in ${formatElapsed(deltaSec)}`;
+  })();
 
   const currentStep = task?.steps?.[task.currentStep ?? 0];
   const totalSteps = task?.steps?.length ?? 0;
@@ -132,7 +148,16 @@ function LiveAgentCard({ agent, projectId, onSelect, onOpenTaskLogs }: LiveAgent
         )}
       </div>
       <div className="live-agent-card-footer">
-        <span className="text-secondary">{formatElapsed(elapsed)}</span>
+        <div className="live-agent-card-footer-meta">
+          <span className="text-secondary" title="Time since last heartbeat">
+            {formatElapsed(elapsed)}
+          </span>
+          {nextHeartbeatLabel && (
+            <span className="live-agent-card-next-heartbeat" title={nextHeartbeatLabel}>
+              {nextHeartbeatLabel}
+            </span>
+          )}
+        </div>
         <div className="live-agent-card-footer-actions">
           {agent.taskId && onOpenTaskLogs && (
             <button
