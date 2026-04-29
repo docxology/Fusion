@@ -138,6 +138,7 @@ import {
   normalizeMergeConflictStrategy,
   resolveProjectDefaultModel,
   resolveAgentPrompt,
+  summarizeCommitBody,
   type TaskStore,
   type MergeResult,
   type MergeDetails,
@@ -1882,9 +1883,9 @@ function quoteArg(value: string): string {
  * Cascade — most informative first, deterministic fallback at the end so
  * the function NEVER returns an empty string and NEVER throws:
  *   1. The branch's commit log if non-empty.
- *   2. AI-generated body, summarized from the diff stat. Bounded by
- *      `aiTimeoutMs` (default 30s); any failure / timeout / empty response
- *      falls through.
+ *   2. AI-generated body via `summarizeCommitBody` from `@fusion/core`,
+ *      using the title-summarizer model lane when configured. Bounded by
+ *      a timeout; any failure / timeout / empty response falls through.
  *   3. The diff stat formatted as a "Files changed" listing.
  *   4. A synthetic `- merge <branch>` placeholder.
  */
@@ -1903,57 +1904,11 @@ async function resolveSafeCommitBody(opts: {
 
   const cleanStat = opts.diffStat.trim();
   if (cleanStat.length > 0) {
-    const ai = await aiGenerateCommitBody({
-      rootDir: opts.rootDir,
-      taskId: opts.taskId,
-      branch: opts.branch,
-      diffStat: cleanStat,
-      settings: opts.settings,
-      signal: opts.signal,
-      timeoutMs: opts.aiTimeoutMs ?? 30_000,
-    }).catch(() => null);
-    if (ai && ai.trim().length > 0) return ai.trim();
-    return `Files changed:\n\n${cleanStat}`;
-  }
-
-  return `- merge ${opts.branch}`;
-}
-
-/**
- * Try to summarize a diff stat into a short commit body via a fresh
- * readonly AI session. Returns null on any failure (no runtime,
- * timeout, empty response, error). Bounded so it can't stall a merge.
- */
-async function aiGenerateCommitBody(opts: {
-  rootDir: string;
-  taskId: string;
-  branch: string;
-  diffStat: string;
-  settings: Settings;
-  signal?: AbortSignal;
-  timeoutMs: number;
-}): Promise<string | null> {
-  const truncatedStat = truncateWithEllipsis(opts.diffStat, 4000);
-  const systemPrompt =
-    `You write concise commit message bodies. Output ONLY the body text — no code fences, no preamble, no subject line. ` +
-    `2–6 short bullet points starting with "- ". Be specific about what changed; reference filenames where helpful.`;
-  const userPrompt =
-    `Branch: ${opts.branch}\nTask: ${opts.taskId}\n\nFiles changed (\`git diff --stat\`):\n${truncatedStat}\n\n` +
-    `Write the commit body now.`;
-
-  const aborter = new AbortController();
-  const timer = setTimeout(() => aborter.abort(), opts.timeoutMs);
-  if (opts.signal) {
-    if (opts.signal.aborted) aborter.abort();
-    else opts.signal.addEventListener("abort", () => aborter.abort(), { once: true });
-  }
-
-  let session: Awaited<ReturnType<typeof createResolvedAgentSession>>["session"] | undefined;
-  try {
-    // Prefer the dedicated title-summarization model from settings — it's a
-    // small, fast model intended exactly for short summarization tasks like
-    // this. Falls back to the merger's default model only when the
-    // summarization model isn't configured.
+    // Prefer the dedicated title-summarization model — a small, fast tier
+    // intended for short summarization. Falls back to the project / global
+    // default model when the summarizer lane isn't configured. The core
+    // `summarizeCommitBody` helper handles missing-runtime / timeout / empty
+    // response gracefully and returns null.
     const useTitleSummarizer =
       !!opts.settings.titleSummarizerProvider && !!opts.settings.titleSummarizerModelId;
     const provider = useTitleSummarizer
@@ -1967,52 +1922,17 @@ async function aiGenerateCommitBody(opts: {
           ? opts.settings.defaultModelIdOverride
           : opts.settings.defaultModelId);
 
-    const created = await createResolvedAgentSession({
-      sessionPurpose: "merger",
-      cwd: opts.rootDir,
-      systemPrompt,
-      tools: "readonly",
-      defaultProvider: provider,
-      defaultModelId: modelId,
-    });
-    session = created.session;
-    await session.prompt(userPrompt);
-    if (aborter.signal.aborted) return null;
-
-    const messages = (session.state?.messages ?? []) as Array<{
-      role?: string;
-      content?: unknown;
-    }>;
-    const last = messages.filter((m) => m.role === "assistant").pop();
-    if (!last || !last.content) return null;
-
-    let text = "";
-    if (typeof last.content === "string") {
-      text = last.content;
-    } else if (Array.isArray(last.content)) {
-      for (const block of last.content) {
-        if (
-          block &&
-          typeof block === "object" &&
-          "text" in block &&
-          typeof (block as { text: unknown }).text === "string"
-        ) {
-          text += (block as { text: string }).text;
-        }
-      }
-    }
-    text = text.trim();
-    return text.length > 0 ? text : null;
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(timer);
-    try {
-      session?.dispose?.();
-    } catch {
-      // ignore disposal errors
-    }
+    const ai = await summarizeCommitBody(cleanStat, opts.rootDir, provider, modelId, {
+      branch: opts.branch,
+      taskId: opts.taskId,
+      signal: opts.signal,
+      timeoutMs: opts.aiTimeoutMs,
+    }).catch(() => null);
+    if (ai && ai.trim().length > 0) return ai.trim();
+    return `Files changed:\n\n${cleanStat}`;
   }
+
+  return `- merge ${opts.branch}`;
 }
 
 /**

@@ -184,13 +184,18 @@ export type {
 
 export {
   summarizeTitle,
+  summarizeCommitBody,
   checkRateLimit,
   getRateLimitResetTime,
   validateDescription,
   SUMMARIZE_SYSTEM_PROMPT,
+  COMMIT_BODY_SYSTEM_PROMPT,
   MAX_DESCRIPTION_LENGTH,
   MIN_DESCRIPTION_LENGTH,
   MAX_TITLE_LENGTH,
+  MAX_COMMIT_BODY_INPUT_LENGTH,
+  MAX_COMMIT_BODY_LENGTH,
+  DEFAULT_COMMIT_BODY_TIMEOUT_MS,
   MAX_REQUESTS_PER_HOUR,
   ValidationError,
   RateLimitError,

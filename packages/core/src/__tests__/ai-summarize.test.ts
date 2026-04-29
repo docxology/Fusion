@@ -1,13 +1,18 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import {
   summarizeTitle,
+  summarizeCommitBody,
   checkRateLimit,
   getRateLimitResetTime,
   validateDescription,
   SUMMARIZE_SYSTEM_PROMPT,
+  COMMIT_BODY_SYSTEM_PROMPT,
   MAX_DESCRIPTION_LENGTH,
   MIN_DESCRIPTION_LENGTH,
   MAX_TITLE_LENGTH,
+  MAX_COMMIT_BODY_INPUT_LENGTH,
+  MAX_COMMIT_BODY_LENGTH,
+  DEFAULT_COMMIT_BODY_TIMEOUT_MS,
   MAX_REQUESTS_PER_HOUR,
   ValidationError,
   RateLimitError,
@@ -159,6 +164,73 @@ describe("ai-summarize", () => {
       await expect(
         summarizeTitle(longDesc, "/tmp", "anthropic", "claude-sonnet-4-5")
       ).rejects.toThrow(AiServiceError);
+    });
+  });
+
+  describe("summarizeCommitBody", () => {
+    it("returns null for empty diff stat (nothing to summarize)", async () => {
+      expect(await summarizeCommitBody("", "/tmp")).toBeNull();
+      expect(await summarizeCommitBody("   \n  ", "/tmp")).toBeNull();
+    });
+
+    it("returns null when AI engine is unavailable (graceful, never throws)", async () => {
+      const result = await summarizeCommitBody(
+        "src/foo.ts | 5 +++--\n1 file changed",
+        "/tmp",
+      );
+      expect(result).toBeNull();
+    });
+
+    it("returns null when AI engine is unavailable even with model selection", async () => {
+      // Should NOT throw — the contract is fail-soft so the merger can fall
+      // back to its deterministic body cascade without losing the merge.
+      const result = await summarizeCommitBody(
+        "src/foo.ts | 5 +++--\n1 file changed",
+        "/tmp",
+        "anthropic",
+        "claude-sonnet-4-5",
+      );
+      expect(result).toBeNull();
+    });
+
+    it("returns null when caller's abort signal is already aborted", async () => {
+      const ac = new AbortController();
+      ac.abort();
+      const result = await summarizeCommitBody(
+        "src/foo.ts | 5 +++--\n1 file changed",
+        "/tmp",
+        undefined,
+        undefined,
+        { signal: ac.signal },
+      );
+      expect(result).toBeNull();
+    });
+
+    it("respects custom timeout (returns null on timeout, never hangs)", async () => {
+      // Timeout is 1ms — faster than any real AI call, and the helper aborts
+      // the in-flight session and returns null instead of hanging the merge.
+      const start = Date.now();
+      const result = await summarizeCommitBody(
+        "src/foo.ts | 5 +++--\n1 file changed",
+        "/tmp",
+        undefined,
+        undefined,
+        { timeoutMs: 1 },
+      );
+      const elapsed = Date.now() - start;
+      expect(result).toBeNull();
+      // Belt-and-braces: even if the engine isn't available the call should
+      // return very quickly. The 1s ceiling guards against future regressions
+      // that might accidentally block.
+      expect(elapsed).toBeLessThan(1000);
+    });
+
+    it("exposes sensible constants", () => {
+      expect(COMMIT_BODY_SYSTEM_PROMPT.length).toBeGreaterThan(0);
+      expect(COMMIT_BODY_SYSTEM_PROMPT).toContain("commit message");
+      expect(MAX_COMMIT_BODY_INPUT_LENGTH).toBeGreaterThan(1000);
+      expect(MAX_COMMIT_BODY_LENGTH).toBeGreaterThan(100);
+      expect(DEFAULT_COMMIT_BODY_TIMEOUT_MS).toBeGreaterThan(0);
     });
   });
 

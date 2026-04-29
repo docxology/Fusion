@@ -311,6 +311,174 @@ export async function summarizeTitle(
   }
 }
 
+// ── Commit Body Summarization ────────────────────────────────────────────
+
+/** System prompt for fallback merge commit body generation. */
+export const COMMIT_BODY_SYSTEM_PROMPT = `You write concise commit message bodies for merge commits.
+
+Your job is to summarize the changes described in a \`git diff --stat\` into a short, useful body.
+
+## Guidelines
+- Output ONLY the body text — no code fences, no preamble, no subject line
+- 2–6 short bullet points starting with "- "
+- Be specific about what changed; reference filenames where helpful
+- Keep total output under 600 characters
+- Do not invent details that aren't in the input — if uncertain, stay general`;
+
+/**
+ * Maximum input length for commit body summarization. Diff stats can be
+ * large; we truncate before sending so the prompt stays bounded.
+ */
+export const MAX_COMMIT_BODY_INPUT_LENGTH = 4000;
+
+/**
+ * Maximum output length for the generated commit body, in characters.
+ * Bounded so a runaway response doesn't bloat the commit message.
+ */
+export const MAX_COMMIT_BODY_LENGTH = 2000;
+
+/**
+ * Default timeout for commit body summarization, in milliseconds. Bounded
+ * so a slow / wedged AI session can't stall a merge indefinitely.
+ */
+export const DEFAULT_COMMIT_BODY_TIMEOUT_MS = 30_000;
+
+/**
+ * Summarize a `git diff --stat` (and optional context) into a short
+ * commit body via AI.
+ *
+ * Used by the merger as a fallback when the branch's commit log is empty
+ * (no unique commits, or `git log` failed) and we need to commit on the
+ * AI agent's behalf with a non-empty body.
+ *
+ * Best-effort: returns null on any failure (no AI runtime, timeout, empty
+ * response, error). Caller is expected to have a deterministic fallback
+ * (e.g. the diff stat itself or a synthetic placeholder) ready.
+ *
+ * Bounded by `timeoutMs` (default 30s) so it can't stall a merge
+ * indefinitely. The optional `signal` lets callers (engine pause / shutdown)
+ * tear down the AI session promptly.
+ *
+ * @param diffStat - Output of `git diff --stat` describing what changed.
+ * @param rootDir - Project root directory for AI agent context.
+ * @param provider - AI model provider (typically the title-summarizer lane).
+ * @param modelId - AI model ID.
+ * @param opts - Optional context (branch, taskId), abort signal, timeout.
+ * @returns The generated body, or null on any failure.
+ */
+export async function summarizeCommitBody(
+  diffStat: string,
+  rootDir: string,
+  provider?: string,
+  modelId?: string,
+  opts?: {
+    branch?: string;
+    taskId?: string;
+    signal?: AbortSignal;
+    timeoutMs?: number;
+  },
+): Promise<string | null> {
+  const trimmedStat = (diffStat ?? "").trim();
+  if (trimmedStat.length === 0) {
+    return null;
+  }
+
+  const truncatedStat = trimmedStat.length > MAX_COMMIT_BODY_INPUT_LENGTH
+    ? trimmedStat.slice(0, MAX_COMMIT_BODY_INPUT_LENGTH) + "\n…(truncated)"
+    : trimmedStat;
+
+  const userPromptParts: string[] = [];
+  if (opts?.branch) userPromptParts.push(`Branch: ${opts.branch}`);
+  if (opts?.taskId) userPromptParts.push(`Task: ${opts.taskId}`);
+  if (userPromptParts.length > 0) userPromptParts.push("");
+  userPromptParts.push("Files changed (`git diff --stat`):");
+  userPromptParts.push(truncatedStat);
+  userPromptParts.push("");
+  userPromptParts.push("Write the commit body now.");
+  const userPrompt = userPromptParts.join("\n");
+
+  const timeoutMs = opts?.timeoutMs ?? DEFAULT_COMMIT_BODY_TIMEOUT_MS;
+  const aborter = new AbortController();
+  const timer = setTimeout(() => aborter.abort(), timeoutMs);
+  if (opts?.signal) {
+    if (opts.signal.aborted) aborter.abort();
+    else opts.signal.addEventListener("abort", () => aborter.abort(), { once: true });
+  }
+
+  let session: Awaited<ReturnType<NonNullable<Awaited<ReturnType<typeof getFnAgent>>>>>["session"] | undefined;
+  try {
+    const createFnAgent = await getFnAgent();
+    if (!createFnAgent) {
+      if (DEBUG) console.log("[ai-summarize] AI engine not available for commit body");
+      return null;
+    }
+
+    const agentOptions: {
+      cwd: string;
+      systemPrompt: string;
+      tools: "readonly";
+      defaultProvider?: string;
+      defaultModelId?: string;
+    } = {
+      cwd: rootDir,
+      systemPrompt: COMMIT_BODY_SYSTEM_PROMPT,
+      tools: "readonly",
+    };
+    if (provider && modelId) {
+      agentOptions.defaultProvider = provider;
+      agentOptions.defaultModelId = modelId;
+    }
+
+    const agentResult = await createFnAgent(agentOptions);
+    if (!agentResult?.session) return null;
+    session = agentResult.session;
+
+    await session.prompt(userPrompt);
+    if (aborter.signal.aborted) return null;
+
+    if (session.state?.error) {
+      if (DEBUG) console.log(`[ai-summarize] Commit-body session error: ${session.state.error}`);
+      return null;
+    }
+
+    const messages: AgentMessage[] = session.state?.messages ?? [];
+    const assistant = messages.filter((m: AgentMessage) => m.role === "assistant").pop();
+    if (!assistant?.content) return null;
+
+    let body = "";
+    if (typeof assistant.content === "string") {
+      body = assistant.content;
+    } else if (Array.isArray(assistant.content)) {
+      body = assistant.content
+        .filter((c: { type: string; text?: string }): c is { type: "text"; text: string } =>
+          c.type === "text" && typeof c.text === "string",
+        )
+        .map((c) => c.text)
+        .join("");
+    }
+    body = body.trim();
+    if (!body) return null;
+
+    if (body.length > MAX_COMMIT_BODY_LENGTH) {
+      body = body.slice(0, MAX_COMMIT_BODY_LENGTH).trim();
+    }
+    return body;
+  } catch (err) {
+    if (DEBUG) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.log(`[ai-summarize] Commit-body generation failed: ${message}`);
+    }
+    return null;
+  } finally {
+    clearTimeout(timer);
+    try {
+      session?.dispose?.();
+    } catch {
+      // ignore disposal errors
+    }
+  }
+}
+
 // ── Test Helpers ───────────────────────────────────────────────────────────
 
 /**
