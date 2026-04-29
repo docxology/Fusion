@@ -7,6 +7,7 @@ import {
   type MissionStore,
   type MissionFeature,
   type PrInfo,
+  type UnavailableNodePolicy,
 } from "@fusion/core";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
@@ -18,6 +19,7 @@ import { type PrMonitor, type PrComment } from "./pr-monitor.js";
 import { reconcileMissionFeatureState } from "./mission-feature-sync.js";
 import { evaluateSpecStaleness, getPromptPath } from "./spec-staleness.js";
 import { resolveEffectiveNode } from "./effective-node.js";
+import { applyUnavailableNodePolicy } from "./node-routing-policy.js";
 
 /**
  * Check whether two sets of file scope paths overlap.
@@ -165,6 +167,8 @@ export class Scheduler {
   private pausedTaskIds = new Set<string>();
   /** Tracks mission-linked tasks observed with status=failed before moveTask clears status/error. */
   private failedTaskIds = new Set<string>();
+  /** Tracks tasks blocked by unavailable-node policy to deduplicate block log entries. */
+  private blockedNodeTaskIds = new Set<string>();
 
   /**
    * Async listener guard convention:
@@ -397,6 +401,7 @@ export class Scheduler {
       this.options.missionAutopilot.stop();
     }
     this.failedTaskIds.clear();
+    this.blockedNodeTaskIds.clear();
     schedulerLog.log("Stopped");
   }
 
@@ -754,8 +759,45 @@ export class Scheduler {
         }
 
         // Resolve effective node for routing
-        const effectiveNode = resolveEffectiveNode(freshTask, settings);
+        let effectiveNode = resolveEffectiveNode(freshTask, settings);
         schedulerLog.log(`Task ${task.id} routed to node=${effectiveNode.nodeId ?? "local"} (source=${effectiveNode.source})`);
+
+        // Enforce unavailable-node policy
+        if (effectiveNode.nodeId !== undefined && this.options.nodeHealthMonitor) {
+          const nodeStatus = this.options.nodeHealthMonitor.getNodeHealth(effectiveNode.nodeId);
+          const policyResult = applyUnavailableNodePolicy(
+            nodeStatus,
+            settings.unavailableNodePolicy as UnavailableNodePolicy | undefined,
+            false,
+          );
+
+          if (!policyResult.allowed) {
+            if (!this.blockedNodeTaskIds.has(task.id)) {
+              this.blockedNodeTaskIds.add(task.id);
+              schedulerLog.log(
+                `Task ${task.id} dispatch blocked — node ${effectiveNode.nodeId} is ${nodeStatus ?? "unknown"} (policy: block)`,
+              );
+              await this.store.logEntry(
+                task.id,
+                `Routing blocked: node ${effectiveNode.nodeId} is ${nodeStatus ?? "unknown"}, policy=block`,
+              );
+            }
+            continue;
+          }
+
+          this.blockedNodeTaskIds.delete(task.id);
+
+          if (policyResult.fallbackToLocal) {
+            schedulerLog.log(
+              `Task ${task.id} falling back to local — node ${effectiveNode.nodeId} is ${nodeStatus ?? "unknown"} (policy: fallback-local)`,
+            );
+            await this.store.logEntry(
+              task.id,
+              `Routing fallback to local: node ${effectiveNode.nodeId} is ${nodeStatus ?? "unknown"}, policy=fallback-local`,
+            );
+            effectiveNode = { nodeId: undefined, source: "local" };
+          }
+        }
 
         // Clear status, reserve worktree path, and then move to in-progress
         schedulerLog.log(`Starting ${task.id}: ${task.title || task.id} (deps satisfied)`);

@@ -196,21 +196,20 @@ When the task includes \`breakIntoSubtasks: true\`, first decide whether it shou
 - If not splitting: proceed with a normal PROMPT.md specification.
 
 ## Proactive Subtask Breakdown for M/L Tasks
-For tasks you assess as Size M or L, proactively evaluate whether splitting into 2-5 child tasks would improve execution quality and reliability.
+For tasks you assess as Size M or L, consider whether splitting into 2-5 child tasks would improve execution quality. Default to keeping the task whole; only split when the work is genuinely large or has clearly independent deliverables.
 
-**Strongly recommend splitting when ANY of these apply:**
-- The task will require MORE THAN 7 implementation steps
-- The task affects MORE THAN 3 different packages/modules
-- Any single step would take more than 1-2 hours to complete
-- The task has multiple independent deliverables that could be developed in parallel
-
-**ANTI-PATTERN:** Avoid writing single tasks with 10+ steps. If you find yourself planning more than 7 steps, STOP and create 2-5 child tasks instead.
+**Consider splitting when ANY of these apply:**
+- The task will require more than 10 implementation steps
+- The task affects more than 5 different packages/modules with distinct concerns (a typed field change that naturally touches core types + store + UI + tests is NOT 4 distinct concerns — it's one coherent change)
+- Any single step would take more than 3-4 hours to complete
+- The task has multiple clearly independent deliverables that could be developed and shipped in parallel by different people
 
 **Splitting guidance:**
 - Even when \`breakIntoSubtasks\` is not set to \`true\`, apply these thresholds proactively
 - Keep explicit user intent first: when \`breakIntoSubtasks: true\`, follow the mandatory breakdown flow above
-- Size S tasks should generally NOT be split because the overhead usually outweighs the benefit
-- Only keep a task as one unit if it genuinely has 5 or fewer focused steps with a clear scope
+- Size S tasks should NOT be split — the overhead outweighs the benefit
+- A task with 7-10 focused steps within a coherent scope is fine as one unit; do not split it
+- Coordination overhead (worktrees, dependency wiring, merge sequencing) is real — only split when the parallelism or scope-clarity benefit clearly outweighs it
 - If you decide not to split an M/L task, proceed with a normal PROMPT.md specification
 
 ## Triage tools
@@ -1489,7 +1488,7 @@ export class TriageProcessor {
         "Create a child task (subtask) while breaking a larger task into smaller pieces. " +
         "Use this when the work can be split into 2-5 independently executable tasks, " +
         "either because the user requested subtask breakdown or because the task is " +
-        "oversized (8+ steps, 3+ packages, multiple independent deliverables). " +
+        "genuinely oversized (12+ steps OR multiple clearly independent deliverables that could ship separately). " +
         "The created task will be a child of the current task being triaged. " +
         "IMPORTANT: `dependencies` may ONLY reference other subtasks you have created " +
         "in this same triage session. Never depend on the parent task — the parent is " +
@@ -2150,28 +2149,29 @@ The user has requested that this task be broken into smaller subtasks if it is c
     subtaskSection = `
 
 ## Subtask Consideration
-The user did not explicitly request subtask breakdown, so you should first assess the likely task size and complexity.
+The user did not explicitly request subtask breakdown. Default to keeping the task whole; only split when the work is genuinely large or has clearly independent deliverables.
 
 **Split into 2-5 child tasks when ANY of these apply:**
-- The task will require MORE THAN 7 implementation steps
-- The task affects MORE THAN 3 different packages/modules
-- Any single step would take more than 1-2 hours to complete
-- The task has multiple independent deliverables that could be developed in parallel
+- The task will require more than 10 implementation steps
+- The task affects more than 5 different packages/modules with distinct concerns (touching multiple packages as a coherent vertical change does NOT count — e.g. types + store + UI + tests for one feature is one task)
+- Any single step would take more than 3-4 hours to complete
+- The task has multiple clearly independent deliverables that could be developed and shipped in parallel by different people
 
 **GOOD TO SPLIT:**
-- A task that would require 8+ implementation steps across multiple packages
-- A feature involving backend API changes, frontend UI, and database migrations
-- A refactor touching 4+ modules with different concerns
+- A task that would require 12+ implementation steps spanning genuinely separate concerns
+- A multi-feature epic where each feature can be shipped independently
+- A refactor that has both a "rip out the old" phase and an "add the new" phase that can land separately
 
-**NOT NECESSARY TO SPLIT:**
-- A 3-step bug fix with clear scope
-- A single-file refactor with 4 focused steps
-- Adding a small feature to one module with 5 steps
+**NOT NECESSARY TO SPLIT (and SHOULD NOT be split):**
+- A bug fix with clear scope, regardless of how many files it touches
+- A single-file refactor
+- A vertical feature that touches core + dashboard + tests as one coherent unit (this is the common case in this monorepo — keep it together)
+- Any task with 10 or fewer focused steps within a coherent scope
 
 **How to decide:**
 - If you choose to split: use the \\\`fn_task_create\\\` tool to create the child tasks, set dependencies where needed, and then stop without writing a PROMPT.md for the parent task.
 - **Subtask dependencies must only reference sibling subtasks created earlier in this same split, or pre-existing tasks. NEVER depend on the parent task being split — the parent is deleted after splitting, and the tool will reject parent-id dependencies.**
-- If the work appears to be Size S, or if an M/L task genuinely has 5 or fewer focused steps with a clear scope, proceed with a normal PROMPT.md specification.
+- When in doubt, do NOT split. Coordination overhead (worktrees, dependency wiring, merge sequencing) is real — splitting must clearly pay for itself.
 - If size is uncertain at first, make a quick assessment from the available context before deciding.`;
   }
 

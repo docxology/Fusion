@@ -118,7 +118,7 @@ access to the codebase and can run commands to inspect code.
 - **Testing requirements:** [Real automated tests required, not just typechecks?]
 - **Documentation completeness:** [Must Update / Check If Affected sections present?]
 - **Sizing & review level:** [Size and review level appropriate for the work?]
-- **Subtask breakdown:** [Were complex tasks appropriately split into 2-5 child tasks? A task with 8+ implementation steps, affecting 3+ packages, should have been divided]
+- **Subtask breakdown:** [Only flag genuinely oversized specs (12+ implementation steps, OR 5+ truly independent deliverables that could ship separately). Do NOT flag a coherent vertical change just because it touches multiple packages. When borderline, prefer leaving the task whole.]
 - **User comment coverage:** [Were all user comments addressed? Every user comment must be reflected in the spec — missing coverage is a blocking REVISE]
 
 ### Suggestions
@@ -127,27 +127,34 @@ access to the codebase and can run commands to inspect code.
 
 ## Spec Review — Undersplit Task Detection
 
-When reviewing specs, actively assess whether the task should have been broken into subtasks:
+When reviewing specs, assess whether the task should have been broken into subtasks. The bar for splitting is high — most tasks should remain whole. Coordination overhead (worktrees, dependency wiring, merge sequencing) is real, so splitting must clearly pay for itself.
 
-**Flag as REVISE if:**
-- A task has 8 or more implementation steps
-- A task affects 3+ different packages but wasn't split
-- A task has multiple clearly independent deliverables combined into one
+**Default position:** do NOT flag undersplit. Reach for it only when the spec is genuinely oversized.
 
-**How to flag an undersplit task:**
+**Flag as REVISE only when ALL of the following are true:**
+- The spec has 12+ implementation steps, OR contains 5+ clearly independent deliverables that could be shipped separately by different people
+- The deliverables are NOT a coherent vertical change (a single feature touching core + dashboard + tests is coherent — do not split it)
+- Splitting would produce children that each have ≥4 steps and a clearly distinct scope
+
+If the spec is borderline (under those thresholds, or arguable), put your splitting suggestion in the **Suggestions** section instead of REVISE — the planner can take it or leave it.
+
+**How to flag an undersplit task (only when the criteria above are met):**
 Say explicitly: "This task should be broken into subtasks because [specific reason]."
 Recommend the number of child tasks (2-5) and what each should cover.
-**Critically**, instruct the planner to take these actions in your REVISE feedback:
+Instruct the planner to:
 1. Use the \`fn_task_create\` tool to create 2–5 child tasks from the oversized spec
 2. Do NOT write a parent PROMPT.md — the parent will be closed automatically after children are created
-3. Each child task should cover one coherent deliverable with clear scope boundaries
+   (Not write a parent PROMPT.md is also unacceptable.)
+3. Make each child cover one coherent deliverable with clear scope boundaries
 
-Example REVISE feedback for an undersplit task:
-"This task should be broken into 3 subtasks because it spans the engine, dashboard, and CLI packages with independent deliverables. Use fn_task_create to create: (1) engine logic, (2) dashboard UI, (3) CLI integration. Do not write a parent PROMPT."
+Example REVISE feedback for a genuinely oversized task:
+"This task has 14 steps and contains 4 independent deliverables (engine integration, dashboard UI, CLI command, migration tooling) that could ship separately. Use fn_task_create to split into: (1) engine logic, (2) dashboard UI, (3) CLI integration, (4) migration tooling. Do not write a parent PROMPT."
 
-**Do NOT flag if:**
+**Do NOT flag if ANY of these apply:**
+- The spec has 11 or fewer implementation steps
 - Steps are sequential and tightly coupled (e.g., a pipeline where each step depends on the previous)
-- The task has 5-7 steps but they're all within a single module/package
+- The task is a vertical change touching multiple packages for one coherent feature (typical in this monorepo)
+- The task is a bug fix, regardless of how many files it touches
 - Splitting would create coordination overhead that exceeds the benefit
 
 ## Plan Granularity

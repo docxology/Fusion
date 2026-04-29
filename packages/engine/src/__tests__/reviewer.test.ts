@@ -496,18 +496,25 @@ describe("REVIEWER_SYSTEM_PROMPT", () => {
   it("includes subtask breakdown criterion in spec review", () => {
     expect(REVIEWER_SYSTEM_PROMPT).toContain("Subtask breakdown");
     expect(REVIEWER_SYSTEM_PROMPT).toContain(
-      "8+ implementation steps",
+      "12+ implementation steps",
     );
   });
 
-  it("includes undersplit task detection guidance", () => {
-    expect(REVIEWER_SYSTEM_PROMPT).toContain("8 or more implementation steps");
+  it("biases the reviewer toward keeping tasks whole", () => {
+    expect(REVIEWER_SYSTEM_PROMPT).toContain("The bar for splitting is high");
     expect(REVIEWER_SYSTEM_PROMPT).toContain(
-      "3+ different packages but wasn't split",
+      "Default position:** do NOT flag undersplit",
+    );
+    expect(REVIEWER_SYSTEM_PROMPT).toContain("12+ implementation steps");
+  });
+
+  it("downgrades borderline undersplit findings to non-blocking suggestions", () => {
+    expect(REVIEWER_SYSTEM_PROMPT).toContain(
+      "Suggestions** section instead of REVISE",
     );
   });
 
-  it("instructs planner to use fn_task_create for undersplit tasks", () => {
+  it("instructs planner to use fn_task_create for genuinely oversized tasks", () => {
     // The reviewer's REVISE feedback must explicitly direct the planner to
     // create child tasks via fn_task_create rather than just flagging the issue.
     expect(REVIEWER_SYSTEM_PROMPT).toContain("fn_task_create");
@@ -515,7 +522,7 @@ describe("REVIEWER_SYSTEM_PROMPT", () => {
       "create 2–5 child tasks",
     );
     expect(REVIEWER_SYSTEM_PROMPT).toContain(
-      "Do NOT write a parent PROMPT.md",
+      "Not write a parent PROMPT.md",
     );
   });
 

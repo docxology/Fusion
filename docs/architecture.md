@@ -760,10 +760,16 @@ Task dispatch routing is resolved in two layers:
 
 ### Dispatch flow in scheduler
 
-On dispatch (`packages/engine/src/scheduler.ts`), scheduler:
-- resolves effective node/source,
-- persists `effectiveNodeId` + `effectiveNodeSource` on the task,
-- logs activity: `Node routing resolved: <node|local> (source: <source>)`.
+### Unavailable-node policy
+
+`unavailableNodePolicy` is a validated/stored project setting (`block` default, `fallback-local` allowed) and is enforced during scheduler dispatch when both conditions are true:
+- effective routing selected a remote node, and
+- `SchedulerOptions.nodeHealthMonitor` is configured.
+
+Behavior summary:
+- **`block`** (default): unhealthy node status (`offline`, `error`, `connecting`) blocks dispatch for that poll cycle and keeps the task in `todo`.
+- **`fallback-local`**: unhealthy remote node reroutes dispatch to local execution (`effectiveNodeId: null`, `effectiveNodeSource: "local"`).
+- unknown node health (`undefined`) is treated as allow/continue.
 
 ### Active-task node-override guard
 
@@ -773,11 +779,6 @@ On dispatch (`packages/engine/src/scheduler.ts`), scheduler:
 
 `TaskStore.updateTask()` applies this guard before persisting `nodeId` changes.
 
-### Unavailable-node policy status
-
-`unavailableNodePolicy` is a validated/stored project setting (`block` default, `fallback-local` allowed) and is exposed in dashboard/CLI controls.
-
-Current implementation note: scheduler dispatch does **not yet** enforce health-based `block`/`fallback-local` behavior; node-health enforcement is reserved for a follow-up path (see scheduler `nodeHealthMonitor` reserved comment).
 
 ### Routing activity visibility
 
