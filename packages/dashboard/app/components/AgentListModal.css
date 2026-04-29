@@ -81,6 +81,11 @@
   background: var(--card-hover);
 }
 
+.agent-list-modal .agent-card[data-state="active"]:hover,
+.agent-list-modal .agent-card[data-state="running"]:hover {
+  background: color-mix(in srgb, var(--state-active-border) 20%, var(--card-hover));
+}
+
 .agent-list-modal .agent-card:focus-within {
   box-shadow: var(--focus-ring);
 }
@@ -150,7 +155,10 @@
 
 .agent-list-modal .agent-board-card[data-state="idle"] { border-top-color: var(--state-idle-border); }
 .agent-list-modal .agent-board-card[data-state="active"],
-.agent-list-modal .agent-board-card[data-state="running"] { border-top-color: var(--state-active-border); }
+.agent-list-modal .agent-board-card[data-state="running"] {
+  background: var(--state-active-bg);
+  border-top-color: var(--state-active-border);
+}
 .agent-list-modal .agent-board-card[data-state="paused"] { border-top-color: var(--state-paused-border); }
 .agent-list-modal .agent-board-card[data-state="error"],
 .agent-list-modal .agent-board-card[data-state="terminated"] { border-top-color: var(--state-error-border); }
@@ -209,7 +217,10 @@
 
 .agent-list-modal .agent-card[data-state="idle"] { border-left-color: var(--state-idle-border); }
 .agent-list-modal .agent-card[data-state="active"],
-.agent-list-modal .agent-card[data-state="running"] { border-left-color: var(--state-active-border); }
+.agent-list-modal .agent-card[data-state="running"] {
+  background: var(--state-active-bg);
+  border-left-color: var(--state-active-border);
+}
 .agent-list-modal .agent-card[data-state="paused"] { border-left-color: var(--state-paused-border); }
 .agent-list-modal .agent-card[data-state="error"],
 .agent-list-modal .agent-card[data-state="terminated"] { border-left-color: var(--state-error-border); }

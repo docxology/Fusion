@@ -201,6 +201,33 @@ describe("AgentListModal", () => {
       });
     });
 
+    it("marks active cards with data-state in list and board views", async () => {
+      render(
+        <AgentListModal
+          isOpen={true}
+          onClose={mockOnClose}
+          addToast={mockAddToast}
+          projectId={TEST_PROJECT_ID}
+        />
+      );
+
+      const activeName = await screen.findByText("Test Agent 2");
+      const activeListCard = activeName.closest(".agent-card");
+      expect(activeListCard?.getAttribute("data-state")).toBe("active");
+
+      fireEvent.click(screen.getByTitle("Board view"));
+      await waitFor(() => {
+        expect(document.querySelector(".agent-board")).toBeTruthy();
+      });
+
+      const activeBoardCard = Array.from(document.querySelectorAll(".agent-board-card")).find((card) =>
+        card.textContent?.includes("Test Agent 2"),
+      );
+      expect(activeBoardCard?.getAttribute("data-state")).toBe("active");
+
+      localStorage.removeItem(AGENT_VIEW_KEY);
+    });
+
     it("shows terminated agents when explicitly filtered", async () => {
       render(
         <AgentListModal

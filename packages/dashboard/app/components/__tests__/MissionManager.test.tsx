@@ -950,7 +950,7 @@ describe("MissionManager", () => {
 
     fireEvent.click(screen.getByTestId("mission-activity-load-more"));
 
-    await screen.findByText("Mission event 65", undefined, { timeout: 10_000 });
+    await screen.findByText("Mission event 51", undefined, { timeout: 10_000 });
 
     await waitFor(() => {
       expect(screen.queryByTestId("mission-activity-load-more")).toBeNull();

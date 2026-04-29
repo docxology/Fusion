@@ -391,6 +391,11 @@
   border-color: var(--text-muted);
 }
 
+.agent-board-card--active:hover,
+.agent-board-card--running:hover {
+  background: color-mix(in srgb, var(--state-active-border) 20%, var(--card-hover));
+}
+
 .agent-board-header {
   display: flex;
   align-items: center;
@@ -675,6 +680,11 @@
 .agent-card--running {
   border-left-color: var(--state-active-border);
   background: var(--state-active-bg);
+}
+
+.agent-card--active:hover,
+.agent-card--running:hover {
+  background: color-mix(in srgb, var(--state-active-border) 20%, var(--card-hover));
 }
 .agent-card--paused { border-left-color: var(--state-paused-border); }
 .agent-card--error,
