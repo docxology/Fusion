@@ -416,29 +416,38 @@ export function registerAgentRuntimeRoutes(ctx: ApiRoutesContext, deps: AgentRun
         ? heartbeatMonitor
         : null;
 
-      if (nextState === "paused" && projectHeartbeatMonitor) {
-        const activeRun = await agentStore.getActiveHeartbeatRun(agentId);
-        if (activeRun) {
-          await projectHeartbeatMonitor.stopRun(agentId);
-        }
-      }
-
       const updatedAgent = await agentStore.updateAgentState(agentId, nextState);
-
-      if (nextState === "active" && projectHeartbeatMonitor) {
-        await projectHeartbeatMonitor.executeHeartbeat({
-          agentId,
-          source: "on_demand",
-          triggerDetail: "Triggered from state resume",
-          contextSnapshot: {
-            wakeReason: "on_demand",
-            triggerDetail: "Triggered from state resume",
-            triggerSource: "state-resume",
-          },
-        });
-      }
-
       res.json(updatedAgent);
+
+      void (async () => {
+        try {
+          if (nextState === "paused" && projectHeartbeatMonitor) {
+            const activeRun = await agentStore.getActiveHeartbeatRun(agentId);
+            if (activeRun) {
+              await projectHeartbeatMonitor.stopRun(agentId);
+              const agentAfterStop = await agentStore.getAgent(agentId);
+              if (agentAfterStop && agentAfterStop.state !== "paused") {
+                await agentStore.updateAgentState(agentId, "paused");
+              }
+            }
+          }
+
+          if (nextState === "active" && projectHeartbeatMonitor) {
+            await projectHeartbeatMonitor.executeHeartbeat({
+              agentId,
+              source: "on_demand",
+              triggerDetail: "Triggered from state resume",
+              contextSnapshot: {
+                wakeReason: "on_demand",
+                triggerDetail: "Triggered from state resume",
+                triggerSource: "state-resume",
+              },
+            });
+          }
+        } catch (err) {
+          console.error(`[agent-state] async heartbeat work failed for ${agentId}:`, err);
+        }
+      })();
     } catch (err: unknown) {
       if (err instanceof ApiError) {
         throw err;

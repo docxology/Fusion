@@ -424,7 +424,7 @@ describe("Agent runs routes (with HeartbeatMonitor)", () => {
   });
 
   describe("POST /api/agents/:id/state", () => {
-    it("pauses by stopping active run before updating state", async () => {
+    it("pauses and stops active run asynchronously after responding", async () => {
       mockGetActiveHeartbeatRun.mockResolvedValue(createMockRun({ id: "run-pause-1" }));
       mockStopRun.mockResolvedValue(undefined);
       mockUpdateAgentState.mockResolvedValue({ id: "agent-001", state: "paused" });
@@ -439,12 +439,13 @@ describe("Agent runs routes (with HeartbeatMonitor)", () => {
 
       expect(response.status).toBe(200);
       expect(response.body).toEqual({ id: "agent-001", state: "paused" });
-      expect(mockStopRun).toHaveBeenCalledWith("agent-001");
       expect(mockUpdateAgentState).toHaveBeenCalledWith("agent-001", "paused");
-      expect(mockStopRun.mock.invocationCallOrder[0]).toBeLessThan(mockUpdateAgentState.mock.invocationCallOrder[0]);
+      await vi.waitFor(() => {
+        expect(mockStopRun).toHaveBeenCalledWith("agent-001");
+      });
     });
 
-    it("resuming to active triggers immediate on-demand heartbeat exactly once", async () => {
+    it("resuming to active triggers on-demand heartbeat exactly once", async () => {
       mockGetAgent.mockResolvedValue({ id: "agent-001", state: "paused" });
       mockUpdateAgentState.mockResolvedValue({ id: "agent-001", state: "active" });
       mockExecuteHeartbeat.mockResolvedValue(createMockRun({ id: "run-resume-1", status: "completed" }));
@@ -459,7 +460,9 @@ describe("Agent runs routes (with HeartbeatMonitor)", () => {
 
       expect(response.status).toBe(200);
       expect(response.body).toEqual({ id: "agent-001", state: "active" });
-      expect(mockExecuteHeartbeat).toHaveBeenCalledTimes(1);
+      await vi.waitFor(() => {
+        expect(mockExecuteHeartbeat).toHaveBeenCalledTimes(1);
+      });
       expect(mockExecuteHeartbeat).toHaveBeenCalledWith({
         agentId: "agent-001",
         source: "on_demand",
