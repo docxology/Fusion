@@ -37,6 +37,50 @@ export const registerAuthRoutes: ApiRouteRegistrar = (ctx) => {
    */
   const loginInProgress = new Map<string, AbortController>();
 
+  function isSecureRequest(req: { secure?: boolean; headers?: Record<string, string | string[] | undefined> }): boolean {
+    const forwardedProto = req.headers?.["x-forwarded-proto"];
+    const normalizedProto = Array.isArray(forwardedProto) ? forwardedProto[0] : forwardedProto;
+    return Boolean(req.secure) || normalizedProto === "https";
+  }
+
+  function rewriteRedirectUri(authUrl: string, reqHost: string, secure: boolean): string {
+    const trimmedHost = reqHost.trim();
+    if (!trimmedHost) {
+      return authUrl;
+    }
+
+    let authUrlObj: URL;
+    try {
+      authUrlObj = new URL(authUrl);
+    } catch {
+      return authUrl;
+    }
+
+    const redirectUri = authUrlObj.searchParams.get("redirect_uri");
+    if (!redirectUri) {
+      return authUrl;
+    }
+
+    let redirectUriUrl: URL;
+    try {
+      redirectUriUrl = new URL(redirectUri);
+    } catch {
+      return authUrl;
+    }
+
+    if (redirectUriUrl.hostname !== "localhost" && redirectUriUrl.hostname !== "127.0.0.1") {
+      return authUrl;
+    }
+
+    const hostUrl = new URL(`http://${trimmedHost}`);
+    redirectUriUrl.hostname = hostUrl.hostname;
+    redirectUriUrl.port = hostUrl.port;
+    redirectUriUrl.protocol = secure ? "https:" : "http:";
+
+    authUrlObj.searchParams.set("redirect_uri", redirectUriUrl.toString());
+    return authUrlObj.toString();
+  }
+
   /**
    * GET /api/auth/status
    * Returns list of all providers with their authentication status and type.
@@ -325,7 +369,11 @@ export const registerAuthRoutes: ApiRouteRegistrar = (ctx) => {
 
       const authInfo = await authUrlPromise;
       clearTimeout(timeout);
-      res.json({ url: authInfo.url, instructions: authInfo.instructions });
+
+      const reqHost = req.get("host");
+      const rewrittenUrl = reqHost ? rewriteRedirectUri(authInfo.url, reqHost, isSecureRequest(req)) : authInfo.url;
+
+      res.json({ url: rewrittenUrl, instructions: authInfo.instructions });
     } catch (err: unknown) {
       if (err instanceof ApiError) {
         throw err;

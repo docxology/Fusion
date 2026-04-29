@@ -4810,6 +4810,82 @@ describe("POST /auth/login", () => {
     expect(res.body.instructions).toBe("Open in browser");
   });
 
+  it("rewrites localhost redirect_uri to request hostname", async () => {
+    (authStorage.login as ReturnType<typeof vi.fn>).mockImplementation((_provider: string, callbacks: any) => {
+      callbacks.onAuth({
+        url: "https://accounts.example.com/o/oauth2/v2/auth?redirect_uri=http%3A%2F%2Flocalhost%3A4040%2Fapi%2Fauth%2Fcallback",
+        instructions: "Open in browser",
+      });
+      return Promise.resolve();
+    });
+
+    const res = await REQUEST(buildApp(), "POST", "/api/auth/login", JSON.stringify({ provider: "anthropic" }), {
+      "Content-Type": "application/json",
+      Host: "192.168.1.2:8080",
+    });
+
+    expect(res.status).toBe(200);
+    const returnedUrl = new URL(res.body.url);
+    const redirectUri = new URL(returnedUrl.searchParams.get("redirect_uri") ?? "");
+    expect(redirectUri.toString()).toBe("http://192.168.1.2:8080/api/auth/callback");
+  });
+
+  it("rewrites redirect_uri protocol to https when request is secure", async () => {
+    (authStorage.login as ReturnType<typeof vi.fn>).mockImplementation((_provider: string, callbacks: any) => {
+      callbacks.onAuth({
+        url: "https://accounts.example.com/o/oauth2/v2/auth?redirect_uri=http%3A%2F%2Flocalhost%3A4040%2Fapi%2Fauth%2Fcallback",
+      });
+      return Promise.resolve();
+    });
+
+    const res = await REQUEST(buildApp(), "POST", "/api/auth/login", JSON.stringify({ provider: "anthropic" }), {
+      "Content-Type": "application/json",
+      Host: "dashboard.example.com",
+      "X-Forwarded-Proto": "https",
+    });
+
+    expect(res.status).toBe(200);
+    const returnedUrl = new URL(res.body.url);
+    const redirectUri = new URL(returnedUrl.searchParams.get("redirect_uri") ?? "");
+    expect(redirectUri.toString()).toBe("https://dashboard.example.com/api/auth/callback");
+  });
+
+  it("leaves auth URL unchanged when redirect_uri is not localhost", async () => {
+    const unchangedUrl =
+      "https://accounts.example.com/o/oauth2/v2/auth?redirect_uri=https%3A%2F%2Fdashboard.example.com%2Fapi%2Fauth%2Fcallback";
+
+    (authStorage.login as ReturnType<typeof vi.fn>).mockImplementation((_provider: string, callbacks: any) => {
+      callbacks.onAuth({ url: unchangedUrl });
+      return Promise.resolve();
+    });
+
+    const res = await REQUEST(buildApp(), "POST", "/api/auth/login", JSON.stringify({ provider: "anthropic" }), {
+      "Content-Type": "application/json",
+      Host: "192.168.1.2:8080",
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.url).toBe(unchangedUrl);
+  });
+
+  it("leaves auth URL unchanged when Host header is missing", async () => {
+    const unchangedUrl =
+      "https://accounts.example.com/o/oauth2/v2/auth?redirect_uri=http%3A%2F%2Flocalhost%3A4040%2Fapi%2Fauth%2Fcallback";
+
+    (authStorage.login as ReturnType<typeof vi.fn>).mockImplementation((_provider: string, callbacks: any) => {
+      callbacks.onAuth({ url: unchangedUrl });
+      return Promise.resolve();
+    });
+
+    const res = await REQUEST(buildApp(), "POST", "/api/auth/login", JSON.stringify({ provider: "anthropic" }), {
+      "Content-Type": "application/json",
+      Host: "",
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.url).toBe(unchangedUrl);
+  });
+
   it("returns 400 when provider is missing", async () => {
     const res = await REQUEST(buildApp(), "POST", "/api/auth/login", JSON.stringify({}), {
       "Content-Type": "application/json",
