@@ -24,13 +24,22 @@ describe("Changeset configuration", () => {
   });
 
   it("should have changeset scripts in root package.json", () => {
-    // These scripts drive the changesets CLI workflow: changeset (add), version (bump), release:version (apply)
+    // These scripts drive the changesets CLI workflow: changeset (add), version (bump), release:version (apply + sync workspace version)
     const pkgPath = join(repoRoot, "package.json");
     const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
 
     expect(pkg.scripts.changeset).toBe("changeset");
     expect(pkg.scripts.version).toBe("changeset version");
-    expect(pkg.scripts["release:version"]).toBe("changeset version");
+    expect(pkg.scripts["release:version"]).toBe("changeset version && node scripts/sync-workspace-version.mjs");
+  });
+
+  it("should keep the workspace package.json version aligned with the published CLI package", () => {
+    const workspacePkgPath = join(repoRoot, "package.json");
+    const cliPkgPath = join(repoRoot, "packages", "cli", "package.json");
+    const workspacePkg = JSON.parse(readFileSync(workspacePkgPath, "utf-8"));
+    const cliPkg = JSON.parse(readFileSync(cliPkgPath, "utf-8"));
+
+    expect(workspacePkg.version).toBe(cliPkg.version);
   });
 
   it("should have .github/workflows/version.yml configured for manual releases", () => {

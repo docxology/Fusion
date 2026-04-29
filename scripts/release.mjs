@@ -366,6 +366,7 @@ info("Applying changesets (version bump + CHANGELOG)…");
 run("pnpm release:version");
 
 overrideVersion(releases, proposedVersion, chosenVersion);
+run("node scripts/sync-workspace-version.mjs");
 
 info("Updating lockfile…");
 run("pnpm install --no-frozen-lockfile");
@@ -374,6 +375,10 @@ const cliPkg = JSON.parse(readFileSync("packages/cli/package.json", "utf8"));
 const version = cliPkg.version;
 if (version !== chosenVersion) {
   fail(`Post-bump version mismatch: package reports ${version}, expected ${chosenVersion}.`);
+}
+const workspacePkg = JSON.parse(readFileSync("package.json", "utf8"));
+if (workspacePkg.version !== chosenVersion) {
+  fail(`Post-bump workspace version mismatch: package.json reports ${workspacePkg.version}, expected ${chosenVersion}.`);
 }
 ok(`New version: ${version}`);
 
