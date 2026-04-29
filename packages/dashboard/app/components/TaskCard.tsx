@@ -117,6 +117,13 @@ function getDoneCompletionMs(task: Task): number | null {
   return completionMs;
 }
 
+function getInProgressElapsedMs(task: Task, nowMs: number): number | null {
+  const startedMs = parseTimestampToMs(task.columnMovedAt ?? task.updatedAt);
+  if (startedMs == null) return null;
+
+  return Math.max(0, nowMs - startedMs);
+}
+
 // Mirrors summarizeWorkflowTiming in TaskTokenStatsPanel: completed steps use
 // completedAt-startedAt; in-progress steps contribute live elapsed (now-startedAt).
 function getWorkflowRuntimeMs(task: Task, nowMs: number): number | null {
@@ -687,10 +694,9 @@ function TaskCardComponent({
     }
 
     if (task.column === "in-progress") {
-      const hasInProgressStep = (task.workflowStepResults ?? []).some(
-        (step) => step.startedAt && !step.completedAt,
-      );
-      if (!hasInProgressStep) {
+      const elapsedMs = getInProgressElapsedMs(task, Date.now());
+      const instrumentedMs = getInstrumentedDurationMs(task, Date.now());
+      if (elapsedMs == null && instrumentedMs == null) {
         return;
       }
     }
@@ -708,29 +714,37 @@ function TaskCardComponent({
     }, LIVE_TIME_INDICATOR_POLL_MS);
 
     return () => window.clearInterval(interval);
-  }, [task.column, task.workflowStepResults, task.timedExecutionMs]);
+  }, [task.column, task.columnMovedAt, task.updatedAt, task.workflowStepResults, task.timedExecutionMs]);
 
   const timeIndicator = useMemo(() => {
     if (!TIME_INDICATOR_COLUMNS.has(task.column)) {
       return null;
     }
 
-    const instrumentedMs = getInstrumentedDurationMs(task, timeIndicatorNowMs);
-    if (instrumentedMs == null) {
-      return null;
-    }
-
     if (task.column === "in-progress") {
-      const elapsedLabel = formatElapsedDuration(instrumentedMs);
+      const elapsedMs =
+        getInProgressElapsedMs(task, timeIndicatorNowMs)
+        ?? getInstrumentedDurationMs(task, timeIndicatorNowMs);
+      if (elapsedMs == null) {
+        return null;
+      }
+
+      const elapsedLabel = formatElapsedDuration(elapsedMs);
       if (!elapsedLabel) {
         return null;
       }
 
+      const hasColumnElapsed = getInProgressElapsedMs(task, timeIndicatorNowMs) != null;
       return {
         label: elapsedLabel,
-        title: `Execution time ${elapsedLabel}`,
-        ariaLabel: `Execution time ${elapsedLabel}`,
+        title: hasColumnElapsed ? `In progress ${elapsedLabel}` : `Execution time ${elapsedLabel}`,
+        ariaLabel: hasColumnElapsed ? `In progress ${elapsedLabel}` : `Execution time ${elapsedLabel}`,
       };
+    }
+
+    const instrumentedMs = getInstrumentedDurationMs(task, timeIndicatorNowMs);
+    if (instrumentedMs == null) {
+      return null;
     }
 
     const elapsedLabel = formatElapsedDurationDone(instrumentedMs);
@@ -1039,9 +1053,17 @@ function TaskCardComponent({
   const cardClass = `card${dragging ? " dragging" : ""}${queued ? " queued" : ""}${isAgentActive ? " agent-active" : ""}${isFailed ? " failed" : ""}${isPaused ? " paused" : ""}${isStuck ? " stuck" : ""}${isAwaitingApproval ? " awaiting-approval" : ""}${fileDragOver ? " file-drop-target" : ""}${isEditing ? " card-editing" : ""}${isSaving ? " card-saving" : ""}`;
 
   const filesChangedButton = (() => {
-    if (task.worktree && task.column === "in-progress") {
-      const activeCount = diffStats?.filesChanged;
-      if (activeCount == null || activeCount === 0) {
+    if (task.column === "in-progress") {
+      const activeDiffCount = diffStats?.filesChanged;
+      const fallbackCount =
+        activeDiffCount == null || activeDiffCount === 0
+          ? task.modifiedFiles?.length
+          : undefined;
+      const displayCount =
+        activeDiffCount != null && activeDiffCount > 0
+          ? activeDiffCount
+          : fallbackCount;
+      if (displayCount == null || displayCount === 0) {
         return null;
       }
 
@@ -1053,15 +1075,21 @@ function TaskCardComponent({
           disabled={!onOpenDetailWithTab}
         >
           <Folder size={12} />
-          <span>{activeCount} {activeCount === 1 ? "file" : "files"} changed</span>
+          <span>{displayCount} {displayCount === 1 ? "file" : "files"} changed</span>
         </button>
       );
     }
 
     if (task.column === "in-review") {
       const reviewDiffCount = diffStats?.filesChanged;
-      const fallbackCount = reviewDiffCount == null ? task.modifiedFiles?.length : undefined;
-      const displayCount = reviewDiffCount ?? fallbackCount;
+      const fallbackCount =
+        reviewDiffCount == null || reviewDiffCount === 0
+          ? task.modifiedFiles?.length
+          : undefined;
+      const displayCount =
+        reviewDiffCount != null && reviewDiffCount > 0
+          ? reviewDiffCount
+          : fallbackCount;
       if (displayCount == null || displayCount === 0) {
         return null;
       }

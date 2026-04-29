@@ -16,11 +16,11 @@ interface TaskChangesTabProps {
   mergeDetails?: MergeDetails;
   /**
    * Files modified by the task during execution, captured from the worktree.
-   * Used as a last-resort fallback when the recorded `mergeDetails.commitSha`
-   * resolves to an empty git commit (which can happen when the merger stores
-   * a per-branch SHA that gets collapsed into a different squash on main).
-   * Without this, the tab would show "no changes" while the card shows N —
-   * matches TaskCard.tsx:1090-1124's fallback ladder.
+   * Used as a last-resort fallback when the live worktree diff is empty or the
+   * recorded `mergeDetails.commitSha` resolves to an empty git commit (which
+   * can happen when the merger stores a per-branch SHA that gets collapsed
+   * into a different squash on main). Without this, the tab would show "no
+   * changes" while the card shows N.
    */
   modifiedFiles?: string[];
 }
@@ -36,6 +36,58 @@ function getStatusLabel(status: "added" | "modified" | "deleted" | "unknown"): s
     default:
       return "?";
   }
+}
+
+function renderModifiedFilesFallback(
+  modifiedFiles: string[],
+  isDone: boolean,
+  mergeDetails?: MergeDetails,
+) {
+  return (
+    <div className="detail-section task-changes-tab">
+      {isDone && mergeDetails && (
+        <div className="commit-diff-meta">
+          {mergeDetails.commitSha && (
+            <div className="commit-diff-sha">
+              <GitCommit size={14} />
+              <code>{mergeDetails.commitSha.slice(0, 7)}</code>
+            </div>
+          )}
+          {mergeDetails.mergedAt && (
+            <div className="commit-diff-timestamp">
+              Merged {new Date(mergeDetails.mergedAt).toLocaleString()}
+            </div>
+          )}
+        </div>
+      )}
+      <div className="task-changes-state task-changes-state--empty">
+        <FileCode size={24} />
+        <p>{modifiedFiles.length} file{modifiedFiles.length === 1 ? "" : "s"} modified during execution.</p>
+        <span className="task-changes-state-hint">
+          {isDone
+            ? "The recorded merge commit has no diff (likely collapsed into a squash on main). Showing file paths only — patches unavailable."
+            : "The live worktree diff is empty. Showing the last file paths captured during execution — patches unavailable."}
+        </span>
+      </div>
+      <div className="changes-file-list task-changes-file-list--compact">
+        {modifiedFiles.map((path) => (
+          <div key={path} className="changes-file-item">
+            <div className="changes-file-header changes-file-header--static">
+              <span
+                className="changes-file-status changes-file-status--unknown"
+                title="status unknown"
+              >
+                {getStatusLabel("unknown")}
+              </span>
+              <span className="changes-file-path" title={path}>
+                <bdo dir="ltr">{path}</bdo>
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 /** Normalized file entry used by both worktree-backed and commit-backed paths */
@@ -164,6 +216,10 @@ export function TaskChangesTab({ taskId, worktree, projectId, column, mergeDetai
 
   // Non-done task without a worktree → show worktree empty state
   if (!isDone && !worktree) {
+    if (modifiedFiles && modifiedFiles.length > 0) {
+      return renderModifiedFilesFallback(modifiedFiles, false);
+    }
+
     return (
       <div className="detail-section">
         <div className="task-changes-state task-changes-state--empty">
@@ -181,6 +237,10 @@ export function TaskChangesTab({ taskId, worktree, projectId, column, mergeDetai
   // We must NOT fetch detailed diffs here because the server would fall back
   // to a repository-wide scan, producing an inflated/unrelated file list.
   if (isDone && !isDoneWithCommit) {
+    if (modifiedFiles && modifiedFiles.length > 0) {
+      return renderModifiedFilesFallback(modifiedFiles, true, mergeDetails);
+    }
+
     const summaryFiles = mergeDetails?.filesChanged;
     const summaryAdditions = mergeDetails?.insertions;
     const summaryDeletions = mergeDetails?.deletions;
@@ -202,55 +262,8 @@ export function TaskChangesTab({ taskId, worktree, projectId, column, mergeDetai
   }
 
   if (files.length === 0) {
-    // Done task with a commit SHA but the diff came back empty — almost
-    // always means the recorded SHA points to an empty commit (merger
-    // stored a per-branch SHA that became no-op after the squash collapsed
-    // onto main). Fall back to the executor-captured modifiedFiles so the
-    // tab agrees with the card. Patches are unavailable in this path.
-    if (isDone && modifiedFiles && modifiedFiles.length > 0) {
-      return (
-        <div className="detail-section task-changes-tab">
-          {isDone && mergeDetails && (
-            <div className="commit-diff-meta">
-              {mergeDetails.commitSha && (
-                <div className="commit-diff-sha">
-                  <GitCommit size={14} />
-                  <code>{mergeDetails.commitSha.slice(0, 7)}</code>
-                </div>
-              )}
-              {mergeDetails.mergedAt && (
-                <div className="commit-diff-timestamp">
-                  Merged {new Date(mergeDetails.mergedAt).toLocaleString()}
-                </div>
-              )}
-            </div>
-          )}
-          <div className="task-changes-state task-changes-state--empty">
-            <FileCode size={24} />
-            <p>{modifiedFiles.length} file{modifiedFiles.length === 1 ? "" : "s"} modified during execution.</p>
-            <span className="task-changes-state-hint">
-              The recorded merge commit has no diff (likely collapsed into a squash on main). Showing file paths only — patches unavailable.
-            </span>
-          </div>
-          <div className="changes-file-list task-changes-file-list--compact">
-            {modifiedFiles.map((path) => (
-              <div key={path} className="changes-file-item">
-                <div className="changes-file-header changes-file-header--static">
-                  <span
-                    className="changes-file-status changes-file-status--unknown"
-                    title="status unknown"
-                  >
-                    {getStatusLabel("unknown")}
-                  </span>
-                  <span className="changes-file-path" title={path}>
-                    <bdo dir="ltr">{path}</bdo>
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      );
+    if (modifiedFiles && modifiedFiles.length > 0) {
+      return renderModifiedFilesFallback(modifiedFiles, isDone, mergeDetails);
     }
 
     return (

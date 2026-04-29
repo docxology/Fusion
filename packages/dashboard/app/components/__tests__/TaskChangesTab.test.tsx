@@ -68,6 +68,25 @@ describe("TaskChangesTab — worktree-backed (non-done tasks)", () => {
     });
   });
 
+  it("shows modifiedFiles fallback when an active task has no worktree diff", async () => {
+    mockFetchTaskDiff.mockResolvedValue({ files: [], stats: { filesChanged: 0, additions: 0, deletions: 0 } });
+
+    render(
+      <TaskChangesTab
+        taskId="FN-001"
+        worktree={undefined}
+        column="in-progress"
+        modifiedFiles={["packages/core/src/store.ts", "packages/core/src/types.ts"]}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("2 files modified during execution.")).toBeTruthy();
+    });
+    expect(screen.getByText("packages/core/src/store.ts")).toBeTruthy();
+    expect(screen.getByText("packages/core/src/types.ts")).toBeTruthy();
+  });
+
   it("loads diff from fetchTaskDiff for in-progress task with worktree", async () => {
     mockFetchTaskDiff.mockResolvedValue({
       files: [
@@ -437,6 +456,25 @@ describe("TaskChangesTab — regression: non-done tasks still use worktree path"
       expect(screen.getByText("Detailed file changes unavailable.")).toBeTruthy();
     });
     expect(screen.getByText("Merge summary: 1 file changed, +5 additions, -0 deletions.")).toBeTruthy();
+  });
+
+  it("done task without commitSha falls back to modifiedFiles when available", async () => {
+    render(
+      <TaskChangesTab
+        taskId="FN-001"
+        worktree={undefined}
+        column="done"
+        mergeDetails={{ filesChanged: 0, insertions: 0, deletions: 0 }}
+        modifiedFiles={["packages/cli/src/commands/__tests__/settings.test.ts", "packages/cli/src/commands/__tests__/task.test.ts"]}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("2 files modified during execution.")).toBeTruthy();
+    });
+    expect(screen.getByText("packages/cli/src/commands/__tests__/settings.test.ts")).toBeTruthy();
+    expect(screen.getByText("packages/cli/src/commands/__tests__/task.test.ts")).toBeTruthy();
+    expect(mockFetchTaskDiff).not.toHaveBeenCalled();
   });
 
   it("done task without commitSha and no mergeDetails shows fallback without summary", async () => {

@@ -413,6 +413,31 @@ describe("TaskCard", () => {
     expect(onOpenDetailWithTab).toHaveBeenCalledWith(task, "changes");
   });
 
+  it("shows in-progress files-changed chip from modifiedFiles fallback when no live diff is available", () => {
+    const onOpenDetailWithTab = vi.fn();
+    const task = makeTask({
+      column: "in-progress",
+      worktree: undefined,
+      modifiedFiles: ["packages/core/src/store.ts", "packages/core/src/types.ts"],
+    });
+
+    render(
+      <TaskCard
+        task={task}
+        onOpenDetail={noop}
+        addToast={noop}
+        onOpenDetailWithTab={onOpenDetailWithTab}
+      />,
+    );
+
+    const filesChangedButton = screen.getByRole("button", { name: "2 files changed" });
+    expect(filesChangedButton).toBeDefined();
+    expect((filesChangedButton as HTMLButtonElement).disabled).toBe(false);
+
+    fireEvent.click(filesChangedButton);
+    expect(onOpenDetailWithTab).toHaveBeenCalledWith(task, "changes");
+  });
+
   it("shows error toast when upload fails", async () => {
     const mockUpload = vi.mocked(uploadAttachment);
     mockUpload.mockRejectedValue(new Error("Upload failed"));
@@ -565,13 +590,11 @@ describe("TaskCard", () => {
   });
 
   it("updates the in-progress timer when timedExecutionMs changes", () => {
-    const updatedAt = "2026-04-25T12:00:00.000Z";
     const { container, rerender } = render(
       <TaskCard
         task={makeTask({
           column: "in-progress",
           timedExecutionMs: 60_000,
-          updatedAt,
         })}
         onOpenDetail={noop}
         addToast={noop}
@@ -585,7 +608,6 @@ describe("TaskCard", () => {
         task={makeTask({
           column: "in-progress",
           timedExecutionMs: 120_000,
-          updatedAt,
         })}
         onOpenDetail={noop}
         addToast={noop}
@@ -760,7 +782,10 @@ describe("TaskCard", () => {
     },
   );
 
-  it("does not render timer chip when no instrumentation data is recorded", () => {
+  it("shows wall-clock timer for in-progress cards when columnMovedAt is available", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-25T12:05:00.000Z"));
+
     const { container } = render(
       <TaskCard
         task={makeTask({
@@ -774,7 +799,9 @@ describe("TaskCard", () => {
       />,
     );
 
-    expect(container.querySelector(".card-time-indicator")).toBeNull();
+    const timer = container.querySelector(".card-time-indicator");
+    expect(timer?.textContent).toContain("5m");
+    expect(timer?.getAttribute("title")).toContain("In progress 5m");
   });
 
   it("does not render timer chip on done card without instrumentation, even with old timestamps", () => {
