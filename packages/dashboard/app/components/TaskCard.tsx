@@ -84,6 +84,7 @@ function abbreviateBadge(text: string, max: number): string {
 const EDITABLE_COLUMNS: Set<Column> = new Set(["triage", "todo"]);
 
 const ACTIVE_STATUSES = new Set(["planning", "researching", "executing", "finalizing", "merging"]);
+const ACTIVE_MERGE_STATUSES = new Set(["merging", "merging-pr"]);
 
 const COLUMN_PROGRESS_COLOR_MAP: Record<Column, string> = {
   triage: "var(--triage)",
@@ -693,7 +694,9 @@ function TaskCardComponent({
       return;
     }
 
-    if (task.column === "in-progress") {
+    const merging = task.status != null && ACTIVE_MERGE_STATUSES.has(task.status);
+
+    if (!merging && task.column === "in-progress") {
       const elapsedMs = getInProgressElapsedMs(task, Date.now());
       const instrumentedMs = getInstrumentedDurationMs(task, Date.now());
       if (elapsedMs == null && instrumentedMs == null) {
@@ -701,7 +704,7 @@ function TaskCardComponent({
       }
     }
 
-    if (task.column === "in-review") {
+    if (!merging && task.column === "in-review") {
       const instrumentedMs = getInstrumentedDurationMs(task, Date.now());
       if (instrumentedMs == null) {
         return;
@@ -714,11 +717,30 @@ function TaskCardComponent({
     }, LIVE_TIME_INDICATOR_POLL_MS);
 
     return () => window.clearInterval(interval);
-  }, [task.column, task.columnMovedAt, task.updatedAt, task.workflowStepResults, task.timedExecutionMs]);
+  }, [task.column, task.status, task.columnMovedAt, task.updatedAt, task.workflowStepResults, task.timedExecutionMs]);
 
   const timeIndicator = useMemo(() => {
     if (!TIME_INDICATOR_COLUMNS.has(task.column)) {
       return null;
+    }
+
+    // While a merge is actively running, the per-step instrumented duration
+    // is frozen (the merge phase isn't tracked as a workflow step). Show
+    // live elapsed since `updatedAt` — which the merger sets when it flips
+    // status to "merging" — so stuck merges don't appear stuck at "3m".
+    if (task.status != null && ACTIVE_MERGE_STATUSES.has(task.status)) {
+      const startedMs = parseTimestampToMs(task.updatedAt);
+      if (startedMs != null) {
+        const elapsedMs = Math.max(0, timeIndicatorNowMs - startedMs);
+        const elapsedLabel = formatElapsedDuration(elapsedMs);
+        if (elapsedLabel) {
+          return {
+            label: elapsedLabel,
+            title: `Merging ${elapsedLabel}`,
+            ariaLabel: `Merging ${elapsedLabel}`,
+          };
+        }
+      }
     }
 
     if (task.column === "in-progress") {
@@ -767,7 +789,7 @@ function TaskCardComponent({
       title: `Execution time ${elapsedLabel}. Completed ${completedAt}`,
       ariaLabel: `Execution time ${elapsedLabel}. Completed ${completedAt}`,
     };
-  }, [task.column, task.columnMovedAt, task.timedExecutionMs, task.updatedAt, task.workflowStepResults, task.log, timeIndicatorNowMs]);
+  }, [task.column, task.status, task.columnMovedAt, task.timedExecutionMs, task.updatedAt, task.workflowStepResults, task.log, timeIndicatorNowMs]);
 
   useEffect(() => {
     if (!hasGitHubBadge || !isInViewport) {

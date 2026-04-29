@@ -738,6 +738,42 @@ describe("TaskCard", () => {
     expect(timer?.getAttribute("title")).toContain("Execution time 12m");
   });
 
+  it("shows live merge elapsed in timer chip while task.status is merging", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-25T13:45:00.000Z"));
+
+    try {
+      const { container } = render(
+        <TaskCard
+          task={makeTask({
+            column: "in-review",
+            status: "merging",
+            updatedAt: "2026-04-25T13:00:00.000Z",
+            workflowStepResults: [
+              {
+                workflowStepId: "step-1",
+                workflowStepName: "Plan",
+                phase: "pre-merge" as const,
+                status: "passed" as const,
+                startedAt: "2026-04-25T12:00:00.000Z",
+                completedAt: "2026-04-25T12:03:00.000Z",
+              },
+            ],
+          })}
+          onOpenDetail={noop}
+          addToast={noop}
+        />,
+      );
+
+      const timer = container.querySelector(".card-time-indicator");
+      expect(timer).not.toBeNull();
+      expect(timer?.textContent).toContain("45m");
+      expect(timer?.getAttribute("title")).toBe("Merging 45m");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("does not render timer chip for in-review cards without instrumentation data", () => {
     const { container } = render(
       <TaskCard
