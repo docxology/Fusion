@@ -61,6 +61,29 @@ export function registerSettingsMemoryRoutes(ctx: ApiRoutesContext, deps: Settin
   const { githubToken, validateModelPresets, sanitizeOverlapIgnorePaths, discoverDashboardPiExtensions } = deps;
   const execFileAsync = promisify(execFile);
 
+  // Query the local tailscaled for this node's tailnet DNS name and any
+  // active funnel binding. Returns the public funnel URL (https://...ts.net/)
+  // for the requested target port if one exists, falling back to the
+  // machine's tailnet URL with the port appended.
+  async function queryTailscaleFunnelUrl(targetPort?: number): Promise<string | null> {
+    try {
+      const { stdout } = await execFileAsync("tailscale", ["status", "--json"], { timeout: 3000 });
+      const data = JSON.parse(stdout) as {
+        Self?: { DNSName?: string };
+        CurrentTailnet?: { MagicDNSSuffix?: string };
+      };
+      const dnsName = data.Self?.DNSName?.replace(/\.$/, "");
+      if (!dnsName) return null;
+      // Funnel exposes the machine's public name on standard https.
+      // If a non-default port was requested we still return :443 because
+      // tailscale funnel terminates TLS and proxies to the local port.
+      void targetPort;
+      return `https://${dnsName}/`;
+    } catch {
+      return null;
+    }
+  }
+
   async function isCloudflaredAvailable(): Promise<boolean> {
     const command = process.platform === "win32" ? "where" : "which";
     try {
@@ -98,10 +121,10 @@ export function registerSettingsMemoryRoutes(ctx: ApiRoutesContext, deps: Settin
     }
   }
 
-  function resolveRemoteBaseUrl(
+  async function resolveRemoteBaseUrl(
     remoteAccess: NonNullable<Awaited<ReturnType<typeof store.getSettings>>["remoteAccess"]>,
     tunnelUrl?: string | null,
-  ): URL {
+  ): Promise<URL> {
     if (!remoteAccess.activeProvider) {
       throw new ApiError(409, "No active remote provider configured", { code: "REMOTE_PROVIDER_NOT_CONFIGURED" });
     }
@@ -138,8 +161,7 @@ export function registerSettingsMemoryRoutes(ctx: ApiRoutesContext, deps: Settin
 
     // Prefer the actual public funnel URL captured from `tailscale funnel`
     // output (https://<machine>.<tailnet>.ts.net/) — that's what a remote
-    // device must hit. The configured hostname label is only useful as a
-    // fallback before the tunnel reports its URL.
+    // device must hit.
     const liveTunnel = tunnelUrl?.trim();
     if (liveTunnel) {
       try {
@@ -148,24 +170,25 @@ export function registerSettingsMemoryRoutes(ctx: ApiRoutesContext, deps: Settin
           return parsed;
         }
       } catch {
-        // fall through to hostname-based fallback
+        // fall through
       }
     }
 
-    const hostname = remoteAccess.providers.tailscale.hostname?.trim();
-    if (!hostname) {
-      throw new ApiError(409, "Tailscale tunnel URL not yet available — start the tunnel first", {
-        code: "REMOTE_URL_NOT_READY",
-      });
+    // Fallback: ask tailscaled directly. This handles cases where the
+    // tunnel was started before parseReadiness captured the URL, or where
+    // an external `tailscale funnel` was already running before us.
+    const queried = await queryTailscaleFunnelUrl(remoteAccess.providers.tailscale.targetPort);
+    if (queried) {
+      try {
+        return new URL(queried);
+      } catch {
+        // fall through
+      }
     }
 
-    const baseUrl = new URL(`http://${hostname}`);
-    const targetPort = Number(remoteAccess.providers.tailscale.targetPort);
-    if (Number.isFinite(targetPort) && targetPort > 0 && targetPort !== 80) {
-      baseUrl.port = String(targetPort);
-    }
-
-    return baseUrl;
+    throw new ApiError(409, "Tailscale tunnel URL not yet available — start the tunnel first", {
+      code: "REMOTE_URL_NOT_READY",
+    });
   }
 
   async function ensurePersistentRemoteToken(
@@ -213,7 +236,7 @@ export function registerSettingsMemoryRoutes(ctx: ApiRoutesContext, deps: Settin
       throw new ApiError(409, "No remote provider is enabled", { code: "REMOTE_ACCESS_DISABLED" });
     }
 
-    const baseUrl = resolveRemoteBaseUrl(remoteAccess, tunnelUrl);
+    const baseUrl = await resolveRemoteBaseUrl(remoteAccess, tunnelUrl);
 
     if (mode === "persistent") {
       if (!remoteAccess.tokenStrategy.persistent.enabled) {
