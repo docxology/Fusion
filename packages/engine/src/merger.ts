@@ -3013,11 +3013,18 @@ export async function aiMergeTask(
       );
     }
 
+    // When the merge was empty (no commit made), the captured stats describe
+    // pre-merge HEAD's commit, not anything this task did. Clear them so
+    // consumers don't display unrelated numbers next to "no commit landed".
+    const recordedFilesChanged = mergeWasEmpty ? 0 : filesChanged;
+    const recordedInsertions = mergeWasEmpty ? 0 : insertions;
+    const recordedDeletions = mergeWasEmpty ? 0 : deletions;
+
     const mergeDetails: MergeDetails = {
       commitSha: recordedSha,
-      filesChanged,
-      insertions,
-      deletions,
+      filesChanged: recordedFilesChanged,
+      insertions: recordedInsertions,
+      deletions: recordedDeletions,
       mergeCommitMessage: commitLog,
       mergedAt: new Date().toISOString(),
       mergeConfirmed: true,
@@ -3042,7 +3049,7 @@ export async function aiMergeTask(
     } else if (isEmptyCommit) {
       summaryParts.push("squash collapsed to empty (sha deferred)");
     }
-    if (filesChanged !== undefined) {
+    if (!mergeWasEmpty && filesChanged !== undefined) {
       summaryParts.push(`${filesChanged} file${filesChanged === 1 ? "" : "s"} changed (+${insertions ?? 0}/-${deletions ?? 0})`);
     }
     await store.appendAgentLog(
