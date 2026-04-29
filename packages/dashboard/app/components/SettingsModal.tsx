@@ -3996,29 +3996,45 @@ export function SettingsModal({
               {remoteStatus?.url && <code className="remote-status-url">{remoteStatus.url}</code>}
               {remoteStatus?.lastError && <span className="field-error">{remoteStatus.lastError}</span>}
             </div>
-            {tunnelState === "running" && (remoteStatus?.url || tunnelShareLink) && (
-              <div className="remote-share-block">
-                {remoteStatus?.url && (
-                  <div className="remote-share-row">
-                    <small>Tunnel URL:</small>
-                    <code className="settings-url-output">{remoteStatus.url}</code>
-                  </div>
-                )}
-                {tunnelShareLink?.url && (
-                  <div className="remote-share-row">
-                    <small>Scan to access:</small>
-                    <code className="settings-url-output">{tunnelShareLink.url}</code>
-                    {tunnelShareLink.qrSvg && (
+            {tunnelState === "running" && (remoteStatus?.url || tunnelShareLink) && (() => {
+              let accessCode: string | null = null;
+              let tailnetUrl: string | null = remoteStatus?.url ?? null;
+              if (tunnelShareLink?.url) {
+                try {
+                  const parsed = new URL(tunnelShareLink.url);
+                  accessCode = parsed.searchParams.get("rt");
+                  if (!tailnetUrl) tailnetUrl = `${parsed.origin}/`;
+                } catch {
+                  // fall through
+                }
+              }
+              return (
+                <div className="remote-share-block">
+                  {tailnetUrl && (
+                    <div className="remote-share-row">
+                      <small>Tailnet URL:</small>
+                      <code className="settings-url-output">{tailnetUrl}</code>
+                    </div>
+                  )}
+                  {accessCode && (
+                    <div className="remote-share-row">
+                      <small>Remote access code:</small>
+                      <code className="settings-url-output">{accessCode}</code>
+                    </div>
+                  )}
+                  {tunnelShareLink?.qrSvg && (
+                    <div className="remote-share-row">
+                      <small>Scan to connect:</small>
                       <img
                         src={`data:image/svg+xml;utf8,${encodeURIComponent(tunnelShareLink.qrSvg)}`}
                         alt="Remote access QR code"
                         className="settings-qr-preview-image"
                       />
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             <div className="form-group">
               <div className="remote-provider-selector" role="radiogroup" aria-label="Remote provider">
@@ -4038,9 +4054,7 @@ export function SettingsModal({
               <div className="form-group remote-provider-settings">
                 {activeProvider === "tailscale" ? (
                   <>
-                    <small>Tailscale Funnel exposes the configured port on your tailnet's public {`https://<machine>.<tailnet>.ts.net/`} URL — no hostname configuration is needed.</small>
-                    <label htmlFor="remoteTailscaleTargetPort">Target port</label>
-                    <input id="remoteTailscaleTargetPort" type="number" min={1} max={65535} value={Number(remoteForm.remoteTailscaleTargetPort ?? 4040)} onChange={(e) => setForm((f) => ({ ...f, remoteTailscaleTargetPort: Number(e.target.value || 4040) } as SettingsFormState))} />
+                    <small>Tailscale Funnel will expose this dashboard on your tailnet's public {`https://<machine>.<tailnet>.ts.net/`} URL — no hostname or port configuration needed.</small>
                     <label htmlFor="remoteTailscaleAcceptRoutes" className="checkbox-label">
                       <input id="remoteTailscaleAcceptRoutes" type="checkbox" checked={Boolean(remoteForm.remoteTailscaleAcceptRoutes)} onChange={(e) => setForm((f) => ({ ...f, remoteTailscaleAcceptRoutes: e.target.checked } as SettingsFormState))} />
                       Accept routes
@@ -4100,7 +4114,14 @@ export function SettingsModal({
                     remoteActiveProvider: activeProvider,
                     remoteTailscaleEnabled: activeProvider === "tailscale",
                     remoteTailscaleHostname: String(formState.remoteTailscaleHostname ?? ""),
-                    remoteTailscaleTargetPort: Number(formState.remoteTailscaleTargetPort ?? 4040),
+                    remoteTailscaleTargetPort: (() => {
+                      const livePort = typeof window !== "undefined" ? Number(window.location.port) : NaN;
+                      if (Number.isFinite(livePort) && livePort > 0) return livePort;
+                      const proto = typeof window !== "undefined" ? window.location.protocol : "";
+                      if (proto === "https:") return 443;
+                      if (proto === "http:") return 80;
+                      return Number(formState.remoteTailscaleTargetPort ?? 4040);
+                    })(),
                     remoteTailscaleAcceptRoutes: Boolean(formState.remoteTailscaleAcceptRoutes),
                     remoteCloudflareEnabled: activeProvider === "cloudflare",
                     remoteCloudflareQuickTunnel: Boolean(formState.remoteCloudflareQuickTunnel ?? true),
