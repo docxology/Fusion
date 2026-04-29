@@ -1,6 +1,6 @@
 import "./SetupWizardModal.css";
 import { useState, useCallback } from "react";
-import { X, Loader2, Sparkles, CheckCircle, ChevronRight } from "lucide-react";
+import { X, Loader2, CheckCircle, ChevronRight } from "lucide-react";
 import type { ProjectInfo, ProjectCreateInput } from "../api";
 import { registerProject } from "../api";
 import { getAuthToken, setAuthToken, clearAuthToken } from "../auth";
@@ -189,73 +189,6 @@ export function SetupWizardModal({
           {/* Manual Step */}
           {state.step === "manual" && (
             <div className="setup-wizard-manual">
-              <div className="welcome-icon">
-                <Sparkles size={32} />
-              </div>
-              <p className="welcome-text">
-                Let&apos;s set up your first project. Register an existing directory or clone a git repository into a destination folder, then register it.
-              </p>
-
-              <fieldset className="setup-wizard-mode-switch" aria-label="Project setup mode">
-                <legend>Setup Mode</legend>
-                <label
-                  className={`setup-wizard-mode-option${isExistingMode ? " selected" : ""}`}
-                >
-                  <input
-                    type="radio"
-                    name="setup-mode"
-                    value="existing"
-                    checked={isExistingMode}
-                    onChange={() => setState((prev) => ({ ...prev, manualMode: "existing", error: null }))}
-                  />
-                  <span>Use Existing Directory</span>
-                </label>
-                <label
-                  className={`setup-wizard-mode-option${isCloneMode ? " selected" : ""}`}
-                >
-                  <input
-                    type="radio"
-                    name="setup-mode"
-                    value="clone"
-                    checked={isCloneMode}
-                    onChange={() => setState((prev) => ({ ...prev, manualMode: "clone", error: null }))}
-                  />
-                  <span>Clone Git Repository</span>
-                </label>
-              </fieldset>
-
-              {isCloneMode && (
-                <div className="form-group">
-                  <label htmlFor="project-clone-url">Repository URL</label>
-                  <input
-                    id="project-clone-url"
-                    type="text"
-                    value={state.manualCloneUrl}
-                    onChange={(e) => setState((prev) => ({ ...prev, manualCloneUrl: e.target.value }))}
-                    placeholder="https://github.com/owner/repo.git"
-                  />
-                  <p className="form-hint">
-                    Fusion will run git clone into the destination directory, then register that cloned folder.
-                  </p>
-                </div>
-              )}
-
-              <div className="form-group">
-                <label htmlFor="project-path">{isCloneMode ? "Destination Directory" : "Project Directory"}</label>
-                <DirectoryPicker
-                  value={state.manualPath}
-                  onChange={handlePathChange}
-                  nodeId={state.manualNodeId || undefined}
-                  localNodeId={localNodeId}
-                  placeholder={isCloneMode ? "/path/for/new-clone" : "/path/to/your/project"}
-                />
-                <p className="form-hint">
-                  {isCloneMode
-                    ? "Select or type an absolute destination path. Fusion will clone into this directory."
-                    : "Select or type the absolute path to your project"}
-                </p>
-              </div>
-
               <div className="form-group">
                 <label htmlFor="project-name">Project Name</label>
                 <input
@@ -274,6 +207,22 @@ export function SetupWizardModal({
                 </p>
               </div>
 
+              <div className="form-group">
+                <label htmlFor="project-path">{isCloneMode ? "Destination Directory" : "Project Directory"}</label>
+                <DirectoryPicker
+                  value={state.manualPath}
+                  onChange={handlePathChange}
+                  nodeId={state.manualNodeId || undefined}
+                  localNodeId={localNodeId}
+                  placeholder={isCloneMode ? "/path/for/new-clone" : "/path/to/your/project"}
+                />
+                <p className="form-hint">
+                  {isCloneMode
+                    ? "Select or type an absolute destination path. Fusion will clone into this directory."
+                    : "Select or type the absolute path to your project"}
+                </p>
+              </div>
+
               <div className="setup-wizard-advanced">
                 <button
                   type="button"
@@ -286,6 +235,50 @@ export function SetupWizardModal({
                 </button>
                 {showAdvancedSettings && (
                   <div className="setup-wizard-advanced-panel">
+                    <fieldset className="setup-wizard-mode-switch" aria-label="Project setup mode">
+                      <legend>Setup Mode</legend>
+                      <label
+                        className={`setup-wizard-mode-option${isExistingMode ? " selected" : ""}`}
+                      >
+                        <input
+                          type="radio"
+                          name="setup-mode"
+                          value="existing"
+                          checked={isExistingMode}
+                          onChange={() => setState((prev) => ({ ...prev, manualMode: "existing", error: null }))}
+                        />
+                        <span>Use Existing Directory</span>
+                      </label>
+                      <label
+                        className={`setup-wizard-mode-option${isCloneMode ? " selected" : ""}`}
+                      >
+                        <input
+                          type="radio"
+                          name="setup-mode"
+                          value="clone"
+                          checked={isCloneMode}
+                          onChange={() => setState((prev) => ({ ...prev, manualMode: "clone", error: null }))}
+                        />
+                        <span>Clone Git Repository</span>
+                      </label>
+                    </fieldset>
+
+                    {isCloneMode && (
+                      <div className="form-group">
+                        <label htmlFor="project-clone-url">Repository URL</label>
+                        <input
+                          id="project-clone-url"
+                          type="text"
+                          value={state.manualCloneUrl}
+                          onChange={(e) => setState((prev) => ({ ...prev, manualCloneUrl: e.target.value }))}
+                          placeholder="https://github.com/owner/repo.git"
+                        />
+                        <p className="form-hint">
+                          Fusion will run git clone into the destination directory, then register that cloned folder.
+                        </p>
+                      </div>
+                    )}
+
                     <div className="form-group">
                       <div className="project-node-selector">
                         <span className="project-node-selector__label">Runtime Node</span>
