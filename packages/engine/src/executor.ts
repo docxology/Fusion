@@ -4291,9 +4291,47 @@ and show an appropriate message to the user.\`
       }
     }
 
+    // When the task declares a non-main base (a sibling task's branch), the
+    // legacy behavior was to fork the worktree from that branch's tip,
+    // inheriting all of its commits. That caused content leakage when the
+    // dep was later squash-merged to main: the dep's raw commits became
+    // orphans whose content already existed in main, blocking the
+    // dependent's own merge with phantom conflicts.
+    //
+    // Prevention: instead of forking from the dep's tip, fork from `main`
+    // (or the configured remote/main if rebase-from-remote is enabled) and
+    // then `git merge --squash` the dep's content into a single import
+    // commit. The dependent branch then carries main's history + 1 commit
+    // for the dep's content; if the dep is later squash-merged to main, the
+    // patch-id on that import commit will match main's squash and Layer 2
+    // recovery (or a clean rebase) handles it.
+    //
+    // Fall-soft: any failure in this path falls back to the legacy behavior
+    // so we don't break worktree creation for setups where the squash flow
+    // can't run (no main branch resolvable, network down, etc.).
+    const squashImport = resolvedStartPoint
+      ? await this.planSquashImportFromDep(taskId, resolvedStartPoint, startPoint)
+      : null;
+    const initialStartPoint = squashImport ? squashImport.mainBase : resolvedStartPoint;
+
     for (let attempt = 0; attempt < this.MAX_WORKTREE_RETRIES; attempt++) {
       try {
-        const result = await this.tryCreateWorktree(branch, currentPath, taskId, resolvedStartPoint, attempt);
+        const result = await this.tryCreateWorktree(branch, currentPath, taskId, initialStartPoint, attempt);
+        // Squash-import dep content into the freshly created worktree so the
+        // branch contains main's history + 1 import commit instead of the
+        // dep's raw commits.
+        if (squashImport) {
+          await this.squashImportDepIntoWorktree(
+            result.path,
+            taskId,
+            squashImport.depTip,
+            squashImport.label,
+          ).catch((importErr: unknown) => {
+            executorLog.warn(
+              `Squash-import of ${squashImport.label} into ${result.branch} failed for ${taskId} (continuing without): ${importErr instanceof Error ? importErr.message : String(importErr)}`,
+            );
+          });
+        }
         // Mirror the merge-time rebase behavior: when worktreeRebaseBeforeMerge
         // is enabled, fetch the remote and rebase the just-created task branch
         // onto the latest <remote>/<defaultBranch>. This makes the worktree
@@ -4334,6 +4372,185 @@ and show an appropriate message to the user.\`
 
   private quoteShellArg(value: string): string {
     return `'${value.replace(/'/g, "'\\''")}'`;
+  }
+
+  /**
+   * Decide whether a task's declared dep base should be squash-imported
+   * (instead of forked from). Returns the planned operation's data when the
+   * dep tip differs from the resolvable main base; returns null when no
+   * import is needed (dep is already at main) or when no main base is
+   * resolvable (caller falls back to legacy fork-from-dep).
+   *
+   * `originalStartPoint` is the user-facing label (typically the branch name
+   * like `fusion/fn-2729`) used purely for log messages. `depTip` is the
+   * resolved SHA of the dep's tip — that's what gets squash-merged.
+   */
+  private async planSquashImportFromDep(
+    taskId: string,
+    depTip: string,
+    originalStartPoint: string | undefined,
+  ): Promise<{ depTip: string; mainBase: string; label: string } | null> {
+    let settings;
+    try {
+      settings = await this.store.getSettings();
+    } catch {
+      return null;
+    }
+
+    // Resolve the main base. Preference order:
+    //   1. <remote>/<defaultBranch> when worktreeRebaseBeforeMerge is enabled
+    //      and a remote is resolvable (settings.worktreeRebaseRemote wins;
+    //      otherwise fall back to "origin" or the lone remote).
+    //   2. rootDir's HEAD (i.e., whatever local main is currently checked out
+    //      to). Used when remote rebase is disabled or no remote exists.
+    let mainBase = "";
+
+    if (settings.worktreeRebaseBeforeMerge !== false) {
+      let remote = settings.worktreeRebaseRemote?.trim() || "";
+      if (!remote) {
+        try {
+          const { stdout } = await execAsync("git remote", { cwd: this.rootDir });
+          const remotes = stdout.split("\n").map((s) => s.trim()).filter(Boolean);
+          if (remotes.includes("origin")) remote = "origin";
+          else if (remotes.length === 1) remote = remotes[0];
+        } catch {
+          // No remote resolvable.
+        }
+      }
+      if (remote) {
+        let defaultBranch = "";
+        try {
+          const { stdout } = await execAsync(
+            `git rev-parse --abbrev-ref ${this.quoteShellArg(remote)}/HEAD`,
+            { cwd: this.rootDir },
+          );
+          defaultBranch = stdout.trim().replace(new RegExp(`^${remote}/`), "");
+        } catch {
+          // origin/HEAD not set; will fall through to local HEAD below.
+        }
+        if (defaultBranch && defaultBranch !== "HEAD") {
+          // Fetch best-effort so the remote ref reflects upstream tip.
+          await execAsync(
+            `git fetch ${this.quoteShellArg(remote)} ${this.quoteShellArg(defaultBranch)}`,
+            { cwd: this.rootDir },
+          ).catch(() => undefined);
+          try {
+            const { stdout } = await execAsync(
+              `git rev-parse --verify "${remote}/${defaultBranch}^{commit}"`,
+              { cwd: this.rootDir, encoding: "utf-8" },
+            );
+            mainBase = stdout.trim();
+          } catch {
+            // Couldn't resolve remote ref — fall through.
+          }
+        }
+      }
+    }
+
+    if (!mainBase) {
+      try {
+        const { stdout } = await execAsync("git rev-parse HEAD", {
+          cwd: this.rootDir,
+          encoding: "utf-8",
+        });
+        mainBase = stdout.trim();
+      } catch {
+        return null;
+      }
+    }
+    if (!mainBase) return null;
+
+    // If the dep tip is already an ancestor of main, no squash import is
+    // needed — the dep's content is already represented in main.
+    try {
+      await execAsync(
+        `git merge-base --is-ancestor ${this.quoteShellArg(depTip)} ${this.quoteShellArg(mainBase)}`,
+        { cwd: this.rootDir },
+      );
+      // Exit code 0 → ancestor → no import needed; legacy fork-from-main is fine.
+      // Returning the plan with mainBase but signalling "no work" via dep===main.
+      if (depTip === mainBase) return null;
+      // Dep is ancestor of main but its tip SHA differs from main's tip; the
+      // worktree should still branch off main, no squash needed.
+      return { depTip: mainBase, mainBase, label: originalStartPoint || depTip.slice(0, 8) };
+    } catch {
+      // Not an ancestor — squash-import is the safer path.
+    }
+
+    return { depTip, mainBase, label: originalStartPoint || depTip.slice(0, 8) };
+  }
+
+  /**
+   * Squash-merge the dep's content into a worktree that's already branched
+   * off main. Produces one commit on the worktree branch carrying the dep's
+   * content, instead of inheriting the dep's individual commits. Best-effort:
+   * any failure (conflict, hooks, IO) leaves the worktree at main and the
+   * caller proceeds — the dependent task will then need to import the dep's
+   * content itself, but the worktree itself is still usable.
+   */
+  private async squashImportDepIntoWorktree(
+    worktreePath: string,
+    taskId: string,
+    depTip: string,
+    label: string,
+  ): Promise<void> {
+    // No-op when dep is already represented in the worktree's history.
+    try {
+      await execAsync(
+        `git merge-base --is-ancestor ${this.quoteShellArg(depTip)} HEAD`,
+        { cwd: worktreePath },
+      );
+      return;
+    } catch {
+      // Not an ancestor — proceed.
+    }
+
+    // Try a squash-merge. `--no-commit` is implied by `--squash`; the merge
+    // either stages the dep's diff or fails (conflicts / unrelated histories).
+    try {
+      await execAsync(
+        `git merge --squash --allow-unrelated-histories ${this.quoteShellArg(depTip)}`,
+        { cwd: worktreePath },
+      );
+    } catch (err) {
+      // Reset any partial state so the worktree stays usable, then rethrow
+      // so the caller can decide whether to log/fall-through.
+      await execAsync("git reset --hard HEAD", { cwd: worktreePath }).catch(
+        () => undefined,
+      );
+      throw err;
+    }
+
+    // If no diff was staged the dep is content-equivalent to main; nothing
+    // to commit.
+    try {
+      await execAsync("git diff --cached --quiet", { cwd: worktreePath });
+      return; // exit 0 → no staged changes, nothing to commit
+    } catch {
+      // exit non-zero → staged changes exist, proceed to commit.
+    }
+
+    const message = `chore(${taskId}): import dependency content from ${label}\n\n` +
+      `Squash-imported the working tree of ${label} as a single commit so this ` +
+      `branch carries the dep's content without inheriting its individual commits. ` +
+      `If the dep is later squash-merged to main, this commit's patch-id should ` +
+      `match the merge and rebase cleanly.`;
+    try {
+      await execAsync(
+        `git commit --allow-empty-message -m ${this.quoteShellArg(message)}`,
+        { cwd: worktreePath },
+      );
+    } catch (commitErr) {
+      await execAsync("git reset --hard HEAD", { cwd: worktreePath }).catch(
+        () => undefined,
+      );
+      throw commitErr;
+    }
+
+    await this.store.logEntry(
+      taskId,
+      `Squash-imported dependency content from ${label} into worktree (single import commit instead of inheriting raw commits)`,
+    );
   }
 
   /**

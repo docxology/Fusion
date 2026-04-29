@@ -753,7 +753,7 @@ describe("aiMergeTask — pre-merge rebase abort observability", () => {
     expect(localBaseRebaseRan).toBe(true);
   });
 
-  it("hard-fails when smart-prefer-main rebase aborts (no silent fall-through)", async () => {
+  it("does not silently fall through to -X ours when smart-prefer-main rebase aborts and recovery layers 1+2 fail", async () => {
     const store = createMockStore(
       { id: "FN-050", worktree: "/tmp/root/.worktrees/KB-050" },
       [{ id: "FN-050", worktree: "/tmp/root/.worktrees/KB-050", column: "in-review" } as Task],
@@ -778,12 +778,104 @@ describe("aiMergeTask — pre-merge rebase abort observability", () => {
       return Buffer.from("");
     });
 
-    await expect(aiMergeTask(store, "/tmp/root", "FN-050")).rejects.toThrow(
-      /smart-prefer-main.*rebase/i,
-    );
-    // Critical: the unsafe -X ours fallback must not have run.
+    // Layers 1+2 require successful exec calls we don't stub here, so they
+    // fail-soft. After fall-through, AI attempts 1+2 fail (no AI mock) and
+    // the merge cascade exhausts. The contract under test: -X ours must
+    // NEVER run, even after fall-through, because that would silently
+    // re-introduce content main has deleted.
+    await expect(aiMergeTask(store, "/tmp/root", "FN-050")).rejects.toThrow();
     expect(
       mockedExec.mock.calls.some(([command]) => String(command).includes("merge -X ours")),
+    ).toBe(false);
+    // The fall-through must be visible in the task log so the user can see
+    // the recovery attempt and why we declined to silently merge.
+    const logCalls = (store.logEntry as ReturnType<typeof vi.fn>).mock.calls.map(
+      (args: unknown[]) => String(args[1] ?? ""),
+    );
+    expect(
+      logCalls.some((msg: string) => msg.includes("Pre-merge recovery (Layer 3)")),
+    ).toBe(true);
+    expect(
+      logCalls.some((msg: string) => msg.includes("Attempt 3 (-X ours fallback) suppressed")),
+    ).toBe(true);
+  });
+
+  it("Layer 1 recovery: surgically drops dep commits via rebase --onto when baseBranch is set and primary rebase aborted", async () => {
+    // Scenario: FN-2849 declared baseBranch=fusion/fn-2729 (a dep). The
+    // worktree was forked off FN-2729's tip and inherited its raw commits.
+    // FN-2729 was later squash-merged to main. Now the primary rebase onto
+    // main aborts because FN-2729's raw commits conflict with their own
+    // squashed equivalent + later main commits. Layer 1 detects baseBranch
+    // and runs `git rebase --onto <main> <dep-tip> <branch>` to peel off
+    // the dep's commits cleanly so the merge can proceed.
+    const store = createMockStore(
+      {
+        id: "FN-2849",
+        baseBranch: "fusion/fn-2729",
+        branch: "fusion/fn-2849",
+        worktree: "/tmp/root/.worktrees/coral-stone",
+      },
+      [{ id: "FN-2849", worktree: "/tmp/root/.worktrees/coral-stone", column: "in-review" } as Task],
+    );
+    (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ...DEFAULT_SETTINGS,
+      mergeConflictStrategy: "smart-prefer-main",
+    });
+
+    // Layer happy-path mocks first, then override only what this test needs.
+    setupHappyPathExecSync();
+    const happyPath = mockedExecSync.getMockImplementation()!;
+    const DEP_TIP = "8f54a0e66b419a43703f996df5206d82bb4832e1";
+    let primaryRebaseAttempted = false;
+    let layer1OntoRebaseRan = false;
+
+    mockedExecSync.mockImplementation((cmd: any, opts?: any) => {
+      const cmdStr = String(cmd);
+      // Set up a resolvable origin remote so Stage 1 actually runs.
+      if (cmdStr === "git remote") return "origin\n" as any;
+      if (cmdStr.includes("git config --get branch.main.remote")) return "origin" as any;
+      if (cmdStr.includes("git rev-parse --abbrev-ref origin/HEAD")) return "origin/main" as any;
+      if (cmdStr === "git rev-parse --abbrev-ref HEAD") return "main" as any;
+      if (cmdStr.includes("git symbolic-ref --short HEAD")) return "main" as any;
+      if (cmdStr === 'git fetch "origin"') return Buffer.from("");
+      // Resolve dep tip when Layer 1 looks it up via baseBranch.
+      if (cmdStr.includes('rev-parse --verify "fusion/fn-2729^{commit}"')) {
+        return Buffer.from(DEP_TIP);
+      }
+      // Stage 1 rebase aborts — this is what triggers Layer 1 recovery.
+      if (cmdStr === 'git rebase "origin/main"') {
+        primaryRebaseAttempted = true;
+        const err: any = new Error(
+          'could not apply ca5674d43... feat(FN-2729): Step 2 — adopt NodeHealthDot in InlineCreateCard\nadvice.mergeConflict false\nrebase conflict manually',
+        );
+        throw err;
+      }
+      if (cmdStr === "git rebase --abort") return Buffer.from("");
+      // Layer 1's surgical rebase succeeds.
+      if (
+        cmdStr.startsWith("git rebase --onto") &&
+        cmdStr.includes(DEP_TIP) &&
+        cmdStr.includes("fusion/fn-2849")
+      ) {
+        layer1OntoRebaseRan = true;
+        return Buffer.from("");
+      }
+      return happyPath(cmd, opts);
+    });
+
+    await aiMergeTask(store, "/tmp/root", "FN-2849");
+
+    expect(primaryRebaseAttempted).toBe(true);
+    expect(layer1OntoRebaseRan).toBe(true);
+    const logCalls = (store.logEntry as ReturnType<typeof vi.fn>).mock.calls.map(
+      (args: unknown[]) => String(args[1] ?? ""),
+    );
+    expect(
+      logCalls.some((msg: string) => msg.includes("Pre-merge recovery (Layer 1)")),
+    ).toBe(true);
+    // Layer 3 fall-through must NOT have triggered — Layer 1 unblocked.
+    expect(
+      logCalls.some((msg: string) => msg.includes("Pre-merge recovery (Layer 3)")),
     ).toBe(false);
   });
 });

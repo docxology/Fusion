@@ -1284,9 +1284,16 @@ export class ProjectEngine {
             if (taskOnErr && isConflictError) {
               const currentRetries = taskOnErr.mergeRetries ?? 0;
 
+              // Use `currentRetries + 1 < MAX` (not `currentRetries < MAX`) so
+              // the LAST retry's failure goes straight to the bounce code in
+              // this same engine tick. The previous condition scheduled a
+              // separate Nth setTimeout attempt — if the engine restarted
+              // before that timer fired (common during dev), the task was
+              // stranded with mergeRetries=MAX and only the cooldown sweep
+              // could ever try again (silent loop).
               if (
                 (settingsOnErr as Settings).autoResolveConflicts !== false &&
-                currentRetries < ProjectEngine.MAX_AUTO_MERGE_RETRIES
+                currentRetries + 1 < ProjectEngine.MAX_AUTO_MERGE_RETRIES
               ) {
                 const newRetryCount = currentRetries + 1;
                 await store.updateTask(taskId, { mergeRetries: newRetryCount, status: null });

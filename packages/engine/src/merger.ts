@@ -1874,6 +1874,78 @@ function quoteArg(value: string): string {
   return `"${value.replace(/(["\\$`])/g, "\\$1")}"`;
 }
 
+/**
+ * Compute `git patch-id` for a single commit. Returns the patch-id string on
+ * success or undefined when the commit has no diff (root, empty merge) or the
+ * pipeline failed. Patch-ids are stable across squash/cherry-pick operations
+ * — two commits with the same logical change produce the same patch-id even
+ * if their tree/parent SHAs differ.
+ */
+async function commitPatchId(rootDir: string, sha: string): Promise<string | undefined> {
+  try {
+    const { stdout } = await execAsync(
+      `git diff-tree -p ${quoteArg(sha)} | git patch-id --stable`,
+      { cwd: rootDir, encoding: "utf-8" },
+    );
+    const line = stdout.trim();
+    if (!line) return undefined;
+    // Output format: "<patch-id> <commit-sha>"; we only need the first token.
+    const [pid] = line.split(/\s+/, 1);
+    return pid || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Collect patch-ids for the last `windowSize` commits reachable from `target`.
+ * Bounded so we don't pay for full-repo scans on large histories. The window
+ * is large enough to catch typical squash-merge orphans (which match recent
+ * main commits) without being expensive.
+ */
+async function collectPatchIds(
+  rootDir: string,
+  target: string,
+  windowSize: number,
+): Promise<Set<string>> {
+  const ids = new Set<string>();
+  try {
+    const { stdout } = await execAsync(
+      `git log -n ${Math.max(1, windowSize)} --format=%H ${quoteArg(target)}`,
+      { cwd: rootDir, encoding: "utf-8" },
+    );
+    const shas = stdout.trim().split("\n").filter(Boolean);
+    for (const sha of shas) {
+      const pid = await commitPatchId(rootDir, sha);
+      if (pid) ids.add(pid);
+    }
+  } catch {
+    // Fall through with whatever we collected; caller treats empty as
+    // "no duplicates found, proceed without stripping".
+  }
+  return ids;
+}
+
+/**
+ * List commits unique to `branch` relative to `target`, oldest-first so they
+ * can be cherry-picked in order.
+ */
+async function listBranchCommits(
+  rootDir: string,
+  target: string,
+  branch: string,
+): Promise<string[]> {
+  try {
+    const { stdout } = await execAsync(
+      `git log --reverse --format=%H ${quoteArg(target)}..${quoteArg(branch)}`,
+      { cwd: rootDir, encoding: "utf-8" },
+    );
+    return stdout.trim().split("\n").filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
 function getCommandErrorMessage(error: unknown): string {
   if (error instanceof Error) {
     const stderr = (error as Error & { stderr?: string | Buffer }).stderr;
@@ -2614,18 +2686,248 @@ export async function aiMergeTask(
     );
   }
 
-  // Hard-fail prefer-main when a rebase started and aborted: a stale branch
-  // base means the -X ours fallback can silently re-introduce branch-only
-  // content that main recently deleted.
+  // ── Recovery cascade for prefer-main rebase failures ──────────────────
+  //
+  // Previous behavior: throw immediately when prefer-main rebase aborted.
+  // This left tasks stuck in in-review forever when the conflict was a known
+  // recoverable shape (e.g., a dependency task was squash-merged to main, so
+  // the dependent's branch carries orphan raw commits whose content is
+  // already in main but in a different commit shape).
+  //
+  // New behavior: try increasingly broad recovery strategies in order. Each
+  // layer is fail-soft — if it can't help, we move on without changing
+  // worktree state. After all layers run, if rebase still hasn't succeeded,
+  // we log the situation and proceed to AI arbitration (the standard
+  // 3-attempt merge cascade), which is gated by post-merge `pnpm test` and
+  // `pnpm build` verification — so the safety constraint that prefer-main
+  // exists to enforce (no silent re-introduction of main's deletions) is
+  // preserved by the deterministic verification gate.
+  let preMergeRebaseFallthrough: string | undefined;
+  if (preferMainRebaseFailureMessage && worktreePath) {
+    // Resolve the rebase target the same way Stage 2 did: rootDir's HEAD.
+    // Stage 1 (remote) already ran if enabled; Stage 2 (local) is what
+    // would have unified branch+local. We use local HEAD as the target so
+    // Layers 1/2 land where Stage 2 wanted to.
+    let rebaseTarget = "";
+    try {
+      const { stdout } = await execAsync("git rev-parse HEAD", {
+        cwd: rootDir,
+        encoding: "utf-8",
+      });
+      rebaseTarget = stdout.trim();
+    } catch {
+      rebaseTarget = "";
+    }
+
+    // Layer 1: surgical drop of declared-dependency commits.
+    // When `task.baseBranch` is a non-main branch (a sibling task's branch),
+    // the dependent worktree was forked off it and inherited its commits.
+    // If the dep was later squash-merged to main, those raw commits are now
+    // orphans whose content already exists in main. Re-rebase the task
+    // branch onto main using `git rebase --onto <target> <dep-tip> <branch>`,
+    // which peels off the dep's commits cleanly.
+    if (rebaseTarget && task.baseBranch && task.baseBranch !== "main") {
+      // Resolve the dep's tip — prefer the live branch ref, fall back to
+      // the recorded baseCommitSha if the branch was already deleted.
+      let depTip: string | undefined;
+      try {
+        const { stdout } = await execAsync(
+          `git rev-parse --verify "${task.baseBranch}^{commit}"`,
+          { cwd: rootDir, encoding: "utf-8" },
+        );
+        depTip = stdout.trim() || undefined;
+      } catch {
+        depTip = undefined;
+      }
+      if (!depTip && task.baseCommitSha) {
+        try {
+          const { stdout } = await execAsync(
+            `git rev-parse --verify "${task.baseCommitSha}^{commit}"`,
+            { cwd: rootDir, encoding: "utf-8" },
+          );
+          depTip = stdout.trim() || undefined;
+        } catch {
+          depTip = undefined;
+        }
+      }
+
+      if (depTip && depTip !== rebaseTarget) {
+        try {
+          throwIfAborted(options.signal, taskId);
+          // Reset rebase state defensively in case a previous attempt left
+          // a half-applied rebase in place.
+          await execAsync("git rebase --abort", { cwd: worktreePath }).catch(
+            () => undefined,
+          );
+          await execAsync(
+            `git rebase --onto "${rebaseTarget}" "${depTip}" "${branch}"`,
+            { cwd: worktreePath },
+          );
+          preferMainRebaseFailureMessage = undefined;
+          rebaseHappened = true;
+          mergerLog.log(
+            `${taskId}: Layer 1 recovery — rebased ${branch} --onto ${rebaseTarget.slice(0, 8)} dropping commits up to dep tip ${depTip.slice(0, 8)} (baseBranch=${task.baseBranch})`,
+          );
+          await store.logEntry(
+            taskId,
+            `Pre-merge recovery (Layer 1): dropped dependency commits from ${task.baseBranch} via rebase --onto ${rebaseTarget.slice(0, 8)} ${depTip.slice(0, 8)} ${branch}; the merge will proceed against the cleaned branch`,
+          );
+        } catch (layer1Err) {
+          rethrowIfMergeAborted(layer1Err);
+          mergerLog.warn(
+            `${taskId}: Layer 1 (dep-drop) recovery failed: ${layer1Err instanceof Error ? layer1Err.message : String(layer1Err)}`,
+          );
+          await execAsync("git rebase --abort", { cwd: worktreePath }).catch(
+            () => undefined,
+          );
+        }
+      }
+    }
+
+    // Layer 2: generic patch-id duplicate stripping.
+    // Compute patch-ids of recent main commits (last 500). Walk the task
+    // branch's commits in target..branch and identify those whose patch-id
+    // already exists in main — they're duplicates whose content has landed
+    // (via squash, cherry-pick, manual replay, etc.). Cherry-pick the
+    // non-duplicate commits onto target to produce a clean branch.
+    if (preferMainRebaseFailureMessage && rebaseTarget && worktreePath) {
+      try {
+        throwIfAborted(options.signal, taskId);
+        const mainPatchIds = await collectPatchIds(rootDir, rebaseTarget, 500);
+        const branchCommits = await listBranchCommits(rootDir, rebaseTarget, branch);
+        if (branchCommits.length === 0) {
+          // Nothing to replay — branch is up-to-date with target.
+          rebaseHappened = true;
+          preferMainRebaseFailureMessage = undefined;
+        } else {
+          const surviving: string[] = [];
+          let dropped = 0;
+          for (const sha of branchCommits) {
+            const pid = await commitPatchId(rootDir, sha);
+            if (pid && mainPatchIds.has(pid)) {
+              dropped += 1;
+            } else {
+              surviving.push(sha);
+            }
+          }
+          if (dropped > 0 && surviving.length === branchCommits.length) {
+            // Should be impossible (dropped>0 means some were filtered), but
+            // guard against logic errors before mutating worktree state.
+            mergerLog.warn(`${taskId}: Layer 2 internal accounting mismatch — skipping`);
+          } else if (dropped > 0) {
+            // Capture the branch's pre-mutation SHA so we can restore on any
+            // partial-failure path. Without this, a failed cherry-pick midway
+            // through would leave the branch at a half-replayed state worse
+            // than the original conflict.
+            let originalBranchSha = "";
+            try {
+              const { stdout } = await execAsync(
+                `git rev-parse --verify "${branch}^{commit}"`,
+                { cwd: worktreePath, encoding: "utf-8" },
+              );
+              originalBranchSha = stdout.trim();
+            } catch {
+              originalBranchSha = "";
+            }
+            const restoreOriginalBranch = async () => {
+              if (!originalBranchSha) return;
+              await execAsync(`git checkout "${branch}"`, { cwd: worktreePath }).catch(
+                () => undefined,
+              );
+              await execAsync(`git reset --hard "${originalBranchSha}"`, {
+                cwd: worktreePath,
+              }).catch(() => undefined);
+            };
+
+            try {
+              await execAsync("git rebase --abort", { cwd: worktreePath }).catch(
+                () => undefined,
+              );
+              await execAsync(`git checkout "${branch}"`, { cwd: worktreePath });
+              await execAsync(`git reset --hard "${rebaseTarget}"`, {
+                cwd: worktreePath,
+              });
+              for (const sha of surviving) {
+                throwIfAborted(options.signal, taskId);
+                try {
+                  await execAsync(`git cherry-pick --allow-empty "${sha}"`, {
+                    cwd: worktreePath,
+                  });
+                } catch (pickErr) {
+                  rethrowIfMergeAborted(pickErr);
+                  // A surviving commit conflicts with target despite its
+                  // patch-id not matching — abort the cherry-pick, restore
+                  // the branch to its original tip, and let Layer 3 take over.
+                  await execAsync("git cherry-pick --abort", { cwd: worktreePath }).catch(
+                    () => undefined,
+                  );
+                  await restoreOriginalBranch();
+                  throw pickErr;
+                }
+              }
+              preferMainRebaseFailureMessage = undefined;
+              rebaseHappened = true;
+              mergerLog.log(
+                `${taskId}: Layer 2 recovery — patch-id stripped ${dropped} duplicate commit(s); replayed ${surviving.length} survivor(s) onto ${rebaseTarget.slice(0, 8)}`,
+              );
+              await store.logEntry(
+                taskId,
+                `Pre-merge recovery (Layer 2): patch-id matched ${dropped} branch commit(s) against the last 500 main commits and dropped them as duplicates; cherry-picked ${surviving.length} unique commit(s) onto ${rebaseTarget.slice(0, 8)}`,
+              );
+            } catch (replayErr) {
+              await restoreOriginalBranch();
+              throw replayErr;
+            }
+          } else {
+            mergerLog.log(
+              `${taskId}: Layer 2 found no duplicate-content commits to drop (window=500)`,
+            );
+          }
+        }
+      } catch (layer2Err) {
+        rethrowIfMergeAborted(layer2Err);
+        mergerLog.warn(
+          `${taskId}: Layer 2 (patch-id strip) recovery failed: ${layer2Err instanceof Error ? layer2Err.message : String(layer2Err)}`,
+        );
+      }
+    }
+
+    // Layer 3: if the rebase still couldn't be unblocked, fall through to
+    // the AI merge cascade with a safety preamble logged to the task. The
+    // existing post-merge deterministic verification (test + build) gates
+    // whatever the AI produces — if the AI silently re-introduces main's
+    // deletions and breaks tests/build, the task bounces back to in-progress
+    // via the engine's verification-failure path. The AI never gets to
+    // commit a regression that wasn't caught by tests.
+    if (preferMainRebaseFailureMessage) {
+      preMergeRebaseFallthrough = preferMainRebaseFailureMessage;
+      preferMainRebaseFailureMessage = undefined;
+      mergerLog.warn(
+        `${taskId}: Layers 1 & 2 could not unblock the prefer-main rebase — falling through to AI arbitration (Layer 3). Deterministic verification will gate the result.`,
+      );
+      await store.logEntry(
+        taskId,
+        `Pre-merge recovery (Layer 3): both surgical and patch-id recovery failed; AI arbiter takes over. SAFETY CONSTRAINT for the AI: do NOT re-introduce content that current main has deleted. If hunks are ambiguous, prefer main's version. Post-merge test/build verification will reject any resolution that breaks main's intent.`,
+        "PreMergeRebaseFallthrough",
+      );
+    }
+  }
+
   if (preferMainRebaseFailureMessage) {
+    // Reached only when there's no worktreePath — no recovery is possible
+    // without a worktree to operate on.
     throw new Error(
       `${preferMainRebaseFailureMessage} for ${taskId}. ` +
       `Strategy "smart-prefer-main" requires a successful rebase to preserve main's deletions; ` +
-      `falling through to a -X ours merge would silently re-introduce branch-only content. ` +
+      `recovery layers 1–3 require a worktree path which is missing for this task. ` +
       `Resolve the rebase conflict manually, or switch mergeConflictStrategy to ` +
       `"smart-prefer-branch" / "ai-only".`,
     );
   }
+  // Surface the fallthrough to anything downstream that wants to vary
+  // behavior under it. Currently informational only; the verification gate
+  // is what enforces safety.
+  void preMergeRebaseFallthrough;
   // Silent-skip observability: when prefer-main couldn't run a rebase at all
   // (no remote resolvable, no worktreePath), warn loudly so the gap is visible
   // in logs. Not a hard fail — environmental skips are common in tests and
@@ -3082,13 +3384,28 @@ export async function aiMergeTask(
 
   // Attempt 3: -X theirs (smart-prefer-branch) or -X ours (smart-prefer-main) fallback.
   // Skipped for "ai-only" (no silent side-pick) and "abort" (one shot only).
+  //
+  // Also skipped when `preMergeRebaseFallthrough` is set: under prefer-main
+  // the whole purpose of refusing -X ours after a failed rebase is to
+  // prevent silent re-introduction of main's deletions. Layers 1+2 couldn't
+  // unblock the rebase, so the worktree is still in a state where -X ours
+  // would re-introduce branch-only content. Trust only AI Attempts 1+2 here
+  // — their output is gated by deterministic verification (test + build),
+  // which is what enforces the prefer-main safety contract.
   if (
     !merged
     && smartConflictResolution
     && mergeConflictStrategy !== "ai-only"
     && mergeConflictStrategy !== "abort"
+    && !preMergeRebaseFallthrough
   ) {
     merged = await mergeAttempt(3);
+  } else if (!merged && preMergeRebaseFallthrough) {
+    await store.logEntry(
+      taskId,
+      `Attempt 3 (-X ours fallback) suppressed: pre-merge rebase recovery layers 1+2 failed under smart-prefer-main, so the unsafe ours-side fallback is skipped to honor the strategy's safety contract. Verification-gated AI Attempts 1+2 already exhausted; merge cannot complete safely without manual intervention.`,
+      "PreMergeRebaseFallthrough",
+    );
   }
 
   // Bubble the empty-merge flag up to the metadata block.
