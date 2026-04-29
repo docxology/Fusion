@@ -170,7 +170,9 @@ describe("RoutingTab", () => {
     render(<RoutingTab task={makeTask({ column: "todo", status: "pending" })} settings={makeSettings()} addToast={addToast} />);
 
     const selector = await screen.findByLabelText("Select execution node");
-    expect(selector).toBeEnabled();
+    await waitFor(() => {
+      expect(selector).toBeEnabled();
+    });
   });
 
   it("calls updateTask when node selected", async () => {
