@@ -3846,6 +3846,56 @@ describe("TaskDetailModal", () => {
       expect(screen.queryByText("Refine")).toBeNull();
     });
 
+    it("renders Actions dropdown for a paused triage task", () => {
+      render(
+        <TaskDetailModal
+          task={makeTask({ column: "triage", paused: true })}
+          onClose={noop}
+          onMoveTask={noopMove}
+          onDeleteTask={noopDelete}
+          onMergeTask={noopMerge}
+          onOpenDetail={noopOpenDetail}
+          addToast={noop}
+        />,
+      );
+
+      expect(screen.getByRole("button", { name: /actions/i })).toBeTruthy();
+    });
+
+    it("renders Unpause button for a paused triage task", () => {
+      render(
+        <TaskDetailModal
+          task={makeTask({ column: "triage", paused: true })}
+          onClose={noop}
+          onMoveTask={noopMove}
+          onDeleteTask={noopDelete}
+          onMergeTask={noopMerge}
+          onOpenDetail={noopOpenDetail}
+          addToast={noop}
+        />,
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: /actions/i }));
+
+      expect(screen.getByRole("menuitem", { name: "Unpause" })).toBeTruthy();
+    });
+
+    it("does NOT render Actions dropdown for a non-paused, non-awaiting-approval, non-retryable triage task", () => {
+      render(
+        <TaskDetailModal
+          task={makeTask({ column: "triage", paused: false, status: "todo" })}
+          onClose={noop}
+          onMoveTask={noopMove}
+          onDeleteTask={noopDelete}
+          onMergeTask={noopMerge}
+          onOpenDetail={noopOpenDetail}
+          addToast={noop}
+        />,
+      );
+
+      expect(screen.queryByRole("button", { name: /actions/i })).toBeNull();
+    });
+
     it("clicking Refine opens the refinement modal", () => {
       render(
         <TaskDetailModal

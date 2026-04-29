@@ -2147,7 +2147,7 @@ export function TaskDetailModal({
               )}
 
               {/* Actions dropdown — less common operations */}
-              {(task.column !== "triage" || task.status === "awaiting-approval" || canRetryTask) && (
+              {(task.column !== "triage" || task.status === "awaiting-approval" || canRetryTask || task.paused) && (
                 <div className="detail-actions-dropdown" ref={actionsMenuRef}>
                   <button
                     className="btn btn-sm"
