@@ -238,6 +238,79 @@ describe("streamViaCli", () => {
     expect(parsed.message.role).toBe("user");
   });
 
+  describe("stdin close behavior", () => {
+    it("stdin.end() is called after writeUserMessage", async () => {
+      const model = mockModels[0] as any;
+      const context = {
+        messages: [{ role: "user", content: "Hello" }],
+      };
+
+      streamViaCli(model, context);
+      await vi.advanceTimersByTimeAsync(0);
+
+      const proc = (spawn as any).mock.results[0].value;
+      expect(proc.stdin.end).toHaveBeenCalledTimes(1);
+      expect(proc.stdin.write.mock.invocationCallOrder[0]).toBeLessThan(
+        proc.stdin.end.mock.invocationCallOrder[0],
+      );
+    });
+
+    it("unexpected control_request on stdout is logged and ignored", async () => {
+      process.env.PI_CLAUDE_CLI_DEBUG = "1";
+      const model = mockModels[0] as any;
+      const context = {
+        messages: [{ role: "user", content: "Hello" }],
+      };
+      const errorSpy = vi.spyOn(console, "error");
+
+      streamViaCli(model, context);
+      await vi.advanceTimersByTimeAsync(0);
+
+      const proc = (spawn as any).mock.results[0].value;
+
+      const lines = [
+        JSON.stringify({
+          type: "control_request",
+          request_id: "req_123",
+          request: {
+            subtype: "can_use_tool",
+            tool_name: "Read",
+            input: { file_path: "/foo.ts" },
+          },
+        }),
+        JSON.stringify({
+          type: "stream_event",
+          event: {
+            type: "message_start",
+            message: { usage: { input_tokens: 10, output_tokens: 0 } },
+          },
+        }),
+        JSON.stringify({
+          type: "stream_event",
+          event: { type: "message_stop" },
+        }),
+        JSON.stringify({
+          type: "result",
+          subtype: "success",
+          result: "ok",
+        }),
+      ];
+
+      for (const line of lines) {
+        proc.stdout.write(line + "\n");
+      }
+      proc.stdout.end();
+      await vi.advanceTimersByTimeAsync(100);
+
+      const mockStream = MockAssistantMessageEventStream.mock.instances[0];
+      expect(mockStream._events.some((e: any) => e.type === "done")).toBe(true);
+      expect(proc.stdin.write).toHaveBeenCalledTimes(1);
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining("unexpected control_request received"),
+      );
+    });
+  });
+
   it("handles full text streaming sequence via NDJSON", async () => {
     const model = mockModels[0] as any;
     const context = {
@@ -406,74 +479,7 @@ describe("streamViaCli", () => {
     await vi.advanceTimersByTimeAsync(100);
   });
 
-  it("routes control_request through handleControlRequest and writes response to stdin", async () => {
-    const model = mockModels[0] as any;
-    const context = {
-      messages: [{ role: "user", content: "Hello" }],
-    };
 
-    streamViaCli(model, context);
-    await vi.advanceTimersByTimeAsync(0);
-
-    const proc = (spawn as any).mock.results[0].value;
-
-    // Clear initial stdin.write (user message)
-    proc.stdin.write.mockClear();
-
-    // Simulate a control_request NDJSON line arriving on stdout
-    const controlRequest = JSON.stringify({
-      type: "control_request",
-      request_id: "req_123",
-      request: {
-        subtype: "can_use_tool",
-        tool_name: "Read",
-        input: { file_path: "/foo.ts" },
-      },
-    });
-
-    // Then follow with stream events and result so stream completes
-    const lines = [
-      controlRequest,
-      JSON.stringify({
-        type: "stream_event",
-        event: {
-          type: "message_start",
-          message: { usage: { input_tokens: 10, output_tokens: 0 } },
-        },
-      }),
-      JSON.stringify({
-        type: "stream_event",
-        event: { type: "message_stop" },
-      }),
-      JSON.stringify({
-        type: "result",
-        subtype: "success",
-        result: "ok",
-      }),
-    ];
-
-    for (const line of lines) {
-      proc.stdout.write(line + "\n");
-    }
-    proc.stdout.end();
-    await vi.advanceTimersByTimeAsync(100);
-
-    // Verify control_response was written to stdin
-    expect(proc.stdin.write).toHaveBeenCalled();
-    const stdinCalls = proc.stdin.write.mock.calls;
-    const controlResponse = stdinCalls.find((call: any[]) => {
-      try {
-        const parsed = JSON.parse(call[0]);
-        return parsed.type === "control_response";
-      } catch {
-        return false;
-      }
-    });
-    expect(controlResponse).toBeDefined();
-    const parsed = JSON.parse(controlResponse[0]);
-    expect(parsed.request_id).toBe("req_123");
-    expect(parsed.response.response.behavior).toBe("allow");
-  });
 
   describe("thinking effort wiring", () => {
     it("passes effort to spawnClaude when options.reasoning is provided on non-Opus model", async () => {
@@ -550,88 +556,7 @@ describe("streamViaCli", () => {
     });
   });
 
-  it("stream events continue flowing after control_request handling", async () => {
-    const model = mockModels[0] as any;
-    const context = {
-      messages: [{ role: "user", content: "Hello" }],
-    };
 
-    streamViaCli(model, context);
-    await vi.advanceTimersByTimeAsync(0);
-
-    const proc = (spawn as any).mock.results[0].value;
-
-    // control_request followed by normal stream events
-    const lines = [
-      JSON.stringify({
-        type: "control_request",
-        request_id: "req_456",
-        request: {
-          subtype: "can_use_tool",
-          tool_name: "Bash",
-          input: { command: "ls" },
-        },
-      }),
-      JSON.stringify({
-        type: "stream_event",
-        event: {
-          type: "message_start",
-          message: { usage: { input_tokens: 10, output_tokens: 0 } },
-        },
-      }),
-      JSON.stringify({
-        type: "stream_event",
-        event: {
-          type: "content_block_start",
-          index: 0,
-          content_block: { type: "text", text: "" },
-        },
-      }),
-      JSON.stringify({
-        type: "stream_event",
-        event: {
-          type: "content_block_delta",
-          index: 0,
-          delta: { type: "text_delta", text: "After control" },
-        },
-      }),
-      JSON.stringify({
-        type: "stream_event",
-        event: { type: "content_block_stop", index: 0 },
-      }),
-      JSON.stringify({
-        type: "stream_event",
-        event: {
-          type: "message_delta",
-          delta: { stop_reason: "end_turn" },
-          usage: { output_tokens: 3 },
-        },
-      }),
-      JSON.stringify({
-        type: "stream_event",
-        event: { type: "message_stop" },
-      }),
-      JSON.stringify({
-        type: "result",
-        subtype: "success",
-        result: "ok",
-      }),
-    ];
-
-    for (const line of lines) {
-      proc.stdout.write(line + "\n");
-    }
-    proc.stdout.end();
-    await vi.advanceTimersByTimeAsync(100);
-
-    // Verify the stream still received text events after the control_request
-    const mockStream = MockAssistantMessageEventStream.mock.instances[0];
-    const events = mockStream._events;
-    const eventTypes = events.map((e: any) => e.type);
-    expect(eventTypes).toContain("text_start");
-    expect(eventTypes).toContain("text_delta");
-    expect(eventTypes).toContain("done");
-  });
 
   describe("mcpConfigPath passthrough", () => {
     it("passes mcpConfigPath to spawnClaude options", async () => {

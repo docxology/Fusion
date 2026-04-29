@@ -42,7 +42,6 @@ import {
 } from "./process-manager.js";
 import { parseLine } from "./stream-parser.js";
 import { createEventBridge } from "./event-bridge.js";
-import { handleControlRequest } from "./control-handler.js";
 import { mapThinkingEffort } from "./thinking-config.js";
 import { isPiKnownClaudeTool } from "./tool-mapping.js";
 /**
@@ -161,6 +160,7 @@ export function streamViaCli(
 
       // Write user message to subprocess stdin
       writeUserMessage(proc, prompt);
+      debugLog("user message written to stdin, stdin.end() called");
 
       // Create event bridge (before endStreamWithError so bridge is in scope)
       const bridge = createEventBridge(stream, model);
@@ -227,6 +227,7 @@ export function streamViaCli(
 
       // Track tool_use blocks for break-early decision at message_stop
       let sawBuiltInOrCustomTool = false;
+      let firstLineReceived = false;
       // Guard against buffered readline lines firing after rl.close()
       let broken = false;
 
@@ -247,6 +248,7 @@ export function streamViaCli(
       // Handle subprocess close -- surface crashes with stderr and exit code
       proc.on("close", (code: number | null, _signal: string | null) => {
         clearTimeout(inactivityTimer);
+        debugLog(`subprocess closed: code=${code} signal=${_signal}`);
         if (broken) return; // Break-early kill, expected
         const stderr = getStderr().trim();
         if (stderr) {
@@ -267,6 +269,10 @@ export function streamViaCli(
       // NOTE: Using 'line' event instead of `for await` because the async
       // iterator batches lines, breaking real-time streaming to pi.
       rl.on("line", (line: string) => {
+        if (!firstLineReceived) {
+          firstLineReceived = true;
+          debugLog("first stdout line received from Claude CLI");
+        }
         if (broken) return; // Guard: ignore buffered lines after break-early
 
         // Reset inactivity timer on each line of output
@@ -319,7 +325,9 @@ export function streamViaCli(
             return; // Don't process further -- done event already pushed by event bridge
           }
         } else if (msg.type === "control_request") {
-          handleControlRequest(msg, proc!.stdin!);
+          debugLog(
+            `unexpected control_request received (stdin already closed): ${msg.request_id}`,
+          );
         } else if (msg.type === "result") {
           if (msg.subtype === "error") {
             endStreamWithError(msg.error ?? "Unknown error from Claude CLI");

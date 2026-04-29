@@ -105,8 +105,8 @@ describe("spawnClaude", () => {
     expect(args).not.toContain("--no-session-persistence");
     expect(args).toContain("--model");
     expect(args).toContain("claude-sonnet-4-5-20250929");
-    expect(args).toContain("--permission-prompt-tool");
-    expect(args).toContain("stdio");
+    expect(args).not.toContain("--permission-prompt-tool");
+    expect(args).not.toContain("stdio");
   });
 
   it("passes stream-json for both input-format and output-format", () => {
@@ -255,13 +255,13 @@ describe("writeUserMessage", () => {
     expect(written.endsWith("\n")).toBe(true);
   });
 
-  it("does NOT call stdin.end()", () => {
+  it("calls stdin.end() after writing user message", () => {
     const mockStdin = { write: vi.fn(), end: vi.fn() };
     const proc = { stdin: mockStdin } as unknown as ChildProcess;
 
     writeUserMessage(proc, "test");
 
-    expect(mockStdin.end).not.toHaveBeenCalled();
+    expect(mockStdin.end).toHaveBeenCalledTimes(1);
   });
 
   it("sends string content in NDJSON when given string", () => {
@@ -420,13 +420,11 @@ describe("CLI flags", () => {
     expect(args).not.toContain("dontAsk");
   });
 
-  it("spawnClaude includes --permission-prompt-tool followed by stdio in args", () => {
+  it("spawnClaude does NOT include --permission-prompt-tool in args", () => {
     spawnClaude("claude-sonnet-4-5-20250929");
     const args = (spawn as any).mock.calls[0][1] as string[];
 
-    expect(args).toContain("--permission-prompt-tool");
-    const idx = args.indexOf("--permission-prompt-tool");
-    expect(args[idx + 1]).toBe("stdio");
+    expect(args).not.toContain("--permission-prompt-tool");
   });
 });
 
@@ -472,7 +470,7 @@ describe("mcp-config flag", () => {
     expect(args).toContain("--append-system-prompt");
     expect(args).toContain("--effort");
     expect(args).not.toContain("--mcp-config");
-    expect(args).toContain("--permission-prompt-tool");
+    expect(args).not.toContain("--permission-prompt-tool");
   });
 });
 

@@ -11,6 +11,11 @@ import { writeFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
+function debugLog(message: string): void {
+  if (process.env.PI_CLAUDE_CLI_DEBUG !== "1") return;
+  console.error(`[pi-claude-cli] ${message}`);
+}
+
 /**
  * Spawn a Claude CLI subprocess with all required flags for stream-json communication.
  *
@@ -39,8 +44,6 @@ export function buildClaudeSpawnArgs(
     "--include-partial-messages",
     "--model",
     modelId,
-    "--permission-prompt-tool",
-    "stdio",
   ];
 
   if (options?.resumeSessionId) {
@@ -97,6 +100,8 @@ export function spawnClaude(
     cwd: options?.cwd ?? process.cwd(),
   });
 
+  debugLog(`spawnClaude: pid=${proc.pid} model=${modelId}`);
+
   return proc as ChildProcess;
 }
 
@@ -114,7 +119,8 @@ export function cleanupSystemPromptFile(): void {
 
 /**
  * Write a user message to the subprocess stdin as NDJSON.
- * Does NOT call stdin.end() -- stdin stays open for control_response in Phase 2.
+ * Calls stdin.end() after writing the user message to signal EOF, allowing
+ * Claude CLI to process the input and start generating.
  *
  * Accepts both string (text-only prompt) and array (ContentBlock[] with images)
  * content. JSON.stringify handles both natively. The stream-json protocol
@@ -135,6 +141,7 @@ export function writeUserMessage(
     },
   };
   proc.stdin!.write(JSON.stringify(message) + "\n");
+  proc.stdin!.end();
 }
 
 /**

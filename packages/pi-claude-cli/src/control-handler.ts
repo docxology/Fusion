@@ -1,8 +1,8 @@
 /**
  * Control protocol handler for Claude CLI stream-json communication.
  *
- * Processes control_request messages from Claude CLI stdout and writes
- * control_response messages to stdin.
+ * Processes control_request messages from Claude CLI stdout and returns a
+ * control_response decision object.
  *
  * - Custom MCP tools (mcp__custom-tools__*): DENIED — pi executes these
  * - Everything else (user MCP tools, internal tools): ALLOWED — Claude handles
@@ -35,18 +35,33 @@ interface ControlResponse {
  * Denies custom MCP tools (mcp__custom-tools__*) so pi can execute them.
  * Allows everything else (user MCP tools, internal Claude tools).
  *
- * @returns true if the tool was allowed, false if denied
+ * Pure function: no side effects and no stdin writes.
+ *
+ * @returns Decision payload with allow/deny result and serialized response object
  */
 export function handleControlRequest(
   msg: ClaudeControlRequest,
-  stdin: NodeJS.WritableStream,
-): boolean {
+): { allowed: boolean; response: ControlResponse } {
   if (!msg.request_id || !msg.request) {
     console.error(
       "[pi-claude-cli] Malformed control_request: missing request_id or request object",
       msg,
     );
-    return false;
+
+    return {
+      allowed: false,
+      response: {
+        type: "control_response",
+        request_id: msg.request_id ?? "",
+        response: {
+          subtype: "success",
+          response: {
+            behavior: "deny",
+            message: TOOL_EXECUTION_DENIED_MESSAGE,
+          },
+        },
+      },
+    };
   }
 
   const toolName = msg.request?.tool_name ?? "";
@@ -63,6 +78,5 @@ export function handleControlRequest(
     },
   };
 
-  stdin.write(JSON.stringify(response) + "\n");
-  return !isCustomTool;
+  return { allowed: !isCustomTool, response };
 }
