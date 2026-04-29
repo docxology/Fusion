@@ -855,6 +855,62 @@ Write a PROMPT.md specification to the given path. Be brief and precise — avoi
 6. **Read first:** Examine codebase before writing spec.
 7. **Be concise:** Short descriptions, minimal prose. Focus on what matters.`;
 
+const EXECUTOR_HEARTBEAT_GUIDANCE = `## Heartbeat Run Behavior
+
+Treat each heartbeat as a short autonomous execution cycle.
+
+- If a task is assigned: inspect the latest task state, continue the next concrete implementation step, run the smallest useful verification, and either advance the task or log the blocker precisely.
+- If no task is assigned: execute your standing instructions. Review unread messages, scan for blocked or failing engineering work, create narrowly scoped follow-up tasks, and capture durable implementation notes other agents will need later.
+- Do not idle simply because no task is linked. Use heartbeat time to reduce engineering risk, unblock work, and keep execution moving in small, concrete increments.`;
+
+const TRIAGE_HEARTBEAT_GUIDANCE = `## Heartbeat Run Behavior
+
+Use heartbeat runs to keep the planning pipeline healthy.
+
+- If a task is assigned: turn the rough request into a complete, execution-ready PROMPT.md with clear scope, steps, dependencies, and verification criteria.
+- If no task is assigned: execute your planning instructions. Patrol for vague requests, blocked tasks that need better specification, review follow-ups that should become new tasks, and dependency gaps that are slowing executors down.
+- Favor ambiguity reduction over busywork. Every heartbeat should leave the queue more actionable than you found it.`;
+
+const REVIEWER_HEARTBEAT_GUIDANCE = `## Heartbeat Run Behavior
+
+Use heartbeat runs to keep review quality high and queues moving.
+
+- If a task is assigned: perform the review with findings first, focusing on correctness, regressions, missing tests, and operational risk.
+- If no task is assigned: execute your review instructions. Look for work waiting on review, failed validations, suspicious recent changes, and places where a second pass would prevent a bad merge.
+- Prefer surfacing concrete findings, follow-up tasks, or merge blockers over rewriting implementation yourself.`;
+
+const MERGER_HEARTBEAT_GUIDANCE = `## Heartbeat Run Behavior
+
+Use heartbeat runs to keep merge-ready work from stalling.
+
+- If a task is assigned: verify merge preconditions, resolve the next safe merge step, and surface conflicts or missing gates immediately.
+- If no task is assigned: execute your merge instructions. Inspect the in-review and merge-ready queue, look for unresolved conflicts, missing approvals, broken post-review state, and tasks that are ready for the final merge push.
+- Optimize for safe flow, not raw throughput. Clear blockers, communicate risks, and only move merge work forward when the repository stays trustworthy.`;
+
+const SENIOR_ENGINEER_HEARTBEAT_GUIDANCE = `## Heartbeat Run Behavior
+
+Treat each heartbeat as an autonomous senior-engineering pass.
+
+- If a task is assigned: push the implementation forward decisively, making sound architectural choices, validating risky changes early, and documenting trade-offs that downstream agents should inherit.
+- If no task is assigned: execute your standing instructions. Hunt for architectural drift, flaky quality gates, latent integration risk, and follow-up work that needs a strong technical owner.
+- Spend heartbeat time where leverage is highest: unblock teams, reduce complexity, and turn vague engineering risk into concrete next actions.`;
+
+const STRICT_REVIEWER_HEARTBEAT_GUIDANCE = `## Heartbeat Run Behavior
+
+Use heartbeat runs to enforce a high review bar.
+
+- If a task is assigned: review for worst-case failure modes first, especially security, backward compatibility, edge cases, and missing regression coverage.
+- If no task is assigned: execute your review instructions. Look for merges that feel under-reviewed, risky diffs that deserve another pass, and follow-up work needed before code should land.
+- Bias toward precise findings and explicit risk articulation. A quiet heartbeat should mean the code is genuinely clean, not that you stopped looking.`;
+
+const CONCISE_TRIAGE_HEARTBEAT_GUIDANCE = `## Heartbeat Run Behavior
+
+Keep heartbeat output lean and useful.
+
+- If a task is assigned: produce the minimum complete PROMPT.md needed for an executor to act safely.
+- If no task is assigned: execute your planning instructions, scan for underspecified or blocked work, and turn it into short, actionable task specs or follow-up tickets.
+- Prefer crisp decisions, clear file scope, and concrete verification steps over narrative detail.`;
+
 // ---------------------------------------------------------------------------
 // Built-in templates array
 // ---------------------------------------------------------------------------
@@ -866,7 +922,7 @@ export const BUILTIN_AGENT_PROMPTS: readonly AgentPromptTemplate[] = [
     name: "Default Executor",
     description: "Standard task execution agent with full tooling and review support.",
     role: "executor",
-    prompt: EXECUTOR_PROMPT_TEXT,
+    prompt: `${EXECUTOR_PROMPT_TEXT}\n\n${EXECUTOR_HEARTBEAT_GUIDANCE}`,
     builtIn: true,
   },
   {
@@ -874,7 +930,7 @@ export const BUILTIN_AGENT_PROMPTS: readonly AgentPromptTemplate[] = [
     name: "Default Triage",
     description: "Standard task specification agent producing detailed PROMPT.md files.",
     role: "triage",
-    prompt: TRIAGE_PROMPT_TEXT,
+    prompt: `${TRIAGE_PROMPT_TEXT}\n\n${TRIAGE_HEARTBEAT_GUIDANCE}`,
     builtIn: true,
   },
   {
@@ -882,7 +938,7 @@ export const BUILTIN_AGENT_PROMPTS: readonly AgentPromptTemplate[] = [
     name: "Default Reviewer",
     description: "Standard independent code and plan reviewer with balanced criteria.",
     role: "reviewer",
-    prompt: REVIEWER_PROMPT_TEXT,
+    prompt: `${REVIEWER_PROMPT_TEXT}\n\n${REVIEWER_HEARTBEAT_GUIDANCE}`,
     builtIn: true,
   },
   {
@@ -890,7 +946,7 @@ export const BUILTIN_AGENT_PROMPTS: readonly AgentPromptTemplate[] = [
     name: "Default Merger",
     description: "Standard merge agent for squash merges with conflict resolution.",
     role: "merger",
-    prompt: MERGER_BASE_PROMPT_TEXT,
+    prompt: `${MERGER_BASE_PROMPT_TEXT}\n\n${MERGER_HEARTBEAT_GUIDANCE}`,
     builtIn: true,
   },
   {
@@ -898,7 +954,7 @@ export const BUILTIN_AGENT_PROMPTS: readonly AgentPromptTemplate[] = [
     name: "Senior Engineer",
     description: "Autonomous executor with architectural awareness, performance focus, and minimal hand-holding. Makes independent decisions on routine matters.",
     role: "executor",
-    prompt: SENIOR_ENGINEER_PROMPT_TEXT,
+    prompt: `${SENIOR_ENGINEER_PROMPT_TEXT}\n\n${SENIOR_ENGINEER_HEARTBEAT_GUIDANCE}`,
     builtIn: true,
   },
   {
@@ -906,7 +962,7 @@ export const BUILTIN_AGENT_PROMPTS: readonly AgentPromptTemplate[] = [
     name: "Strict Reviewer",
     description: "Rigorous reviewer with stricter criteria for security, edge cases, backward compatibility, and type safety. Issues REVISE more readily.",
     role: "reviewer",
-    prompt: STRICT_REVIEWER_PROMPT_TEXT,
+    prompt: `${STRICT_REVIEWER_PROMPT_TEXT}\n\n${STRICT_REVIEWER_HEARTBEAT_GUIDANCE}`,
     builtIn: true,
   },
   {
@@ -914,7 +970,7 @@ export const BUILTIN_AGENT_PROMPTS: readonly AgentPromptTemplate[] = [
     name: "Concise Triage",
     description: "Shorter, more focused specification format with minimal prose. Produces compact PROMPT.md files with essential information only.",
     role: "triage",
-    prompt: CONCISE_TRIAGE_PROMPT_TEXT,
+    prompt: `${CONCISE_TRIAGE_PROMPT_TEXT}\n\n${CONCISE_TRIAGE_HEARTBEAT_GUIDANCE}`,
     builtIn: true,
   },
 ];

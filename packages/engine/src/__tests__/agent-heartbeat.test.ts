@@ -2,6 +2,9 @@
 // See FN-2142 for the rationale.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { EventEmitter } from "node:events";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import {
   HeartbeatMonitor,
   HeartbeatTriggerScheduler,
@@ -1407,6 +1410,83 @@ describe("HeartbeatMonitor", () => {
         expect(result.status).toBe("completed");
         expect(result.resultJson).toEqual({ reason: "task_not_found", taskId: "FN-MISSING" });
       });
+
+      it("clears archived task assignments and falls back to a no-task heartbeat for identity agents", async () => {
+        const appendAgentLog = vi.fn().mockResolvedValue(undefined);
+        mockTaskStore = createMockTaskStore({
+          appendAgentLog,
+          getTask: vi.fn().mockResolvedValue({
+            id: "FN-ARCHIVED",
+            title: "Archived Task",
+            description: "Archived task description",
+            prompt: "# Archived\n\nTask is archived",
+            steps: [],
+            column: "archived",
+            dependencies: [],
+            log: [],
+            attachments: [],
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          } as unknown as TaskDetail),
+        });
+        const store = createStoreWithAgentForExec({
+          taskId: "FN-ARCHIVED",
+          soul: "Monitor the project and handle ambient work.",
+        });
+        const mockSession = createMockAgentSession();
+        mockedCreateFnAgent.mockResolvedValue({ session: mockSession as any });
+
+        const monitor = new HeartbeatMonitor({ store, taskStore: mockTaskStore, rootDir: "/tmp" });
+        const result = await monitor.executeHeartbeat({ agentId: "agent-001", source: "on_demand" });
+
+        expect((store.assignTask as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith(
+          "agent-001",
+          undefined,
+          expect.objectContaining({ agentId: "agent-001", source: "on_demand" }),
+        );
+        expect(result.status).toBe("completed");
+        expect(result.resultJson).toEqual(expect.objectContaining({ reason: "no_assignment_identity_run" }));
+        expect(mockedCreateFnAgent).toHaveBeenCalledOnce();
+        const toolNames = mockedCreateFnAgent.mock.calls[0]![0]!.customTools!.map((tool: any) => tool.name);
+        expect(toolNames).not.toContain("fn_task_log");
+        expect(toolNames).not.toContain("fn_task_document_write");
+        expect(toolNames).not.toContain("fn_task_document_read");
+        expect(appendAgentLog).not.toHaveBeenCalled();
+      });
+
+      it("exits gracefully for explicit terminal task overrides that are not the agent's current assignment", async () => {
+        mockTaskStore = createMockTaskStore({
+          getTask: vi.fn().mockResolvedValue({
+            id: "FN-DONE",
+            title: "Done Task",
+            description: "Done task description",
+            prompt: "# Done\n\nTask is done",
+            steps: [],
+            column: "done",
+            dependencies: [],
+            log: [],
+            attachments: [],
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          } as unknown as TaskDetail),
+        });
+        const store = createStoreWithAgentForExec({
+          taskId: "FN-LIVE",
+          soul: "Stay helpful.",
+        });
+        const monitor = new HeartbeatMonitor({ store, taskStore: mockTaskStore, rootDir: "/tmp" });
+
+        const result = await monitor.executeHeartbeat({
+          agentId: "agent-001",
+          source: "on_demand",
+          taskId: "FN-DONE",
+        });
+
+        expect(result.status).toBe("completed");
+        expect(result.resultJson).toEqual({ reason: "terminal_task", taskId: "FN-DONE", column: "done" });
+        expect(store.assignTask).not.toHaveBeenCalledWith("agent-001", undefined, expect.anything());
+        expect(mockedCreateFnAgent).not.toHaveBeenCalled();
+      });
     });
 
     // ── Identity Agents Without Tasks ─────────────────────────────────────────────
@@ -2726,6 +2806,40 @@ describe("HeartbeatMonitor", () => {
         const callArgs = mockedCreateFnAgent.mock.calls[0]![0];
         expect(callArgs.systemPrompt).toContain(HEARTBEAT_SYSTEM_PROMPT);
         expect(callArgs.systemPrompt).toContain("## Project Memory");
+      });
+
+      it("includes markdown instructions files plus soul in heartbeat system prompts", async () => {
+        const rootDir = mkdtempSync(join(tmpdir(), "heartbeat-agent-instructions-"));
+        writeFileSync(
+          join(rootDir, "heartbeat-agent.md"),
+          "# Heartbeat Playbook\n\nCheck messages first, then create focused follow-up tasks.",
+        );
+
+        try {
+          const store = createStoreWithAgentForExec({
+            instructionsPath: "heartbeat-agent.md",
+            soul: "Operate like a calm, systems-minded operator.",
+          });
+          const taskStore = createMockTaskStore({
+            getSettings: vi.fn().mockResolvedValue({ memoryEnabled: false }),
+          } as Partial<TaskStore>);
+          const mockSession = createMockAgentSession();
+          mockedCreateFnAgent.mockResolvedValue({
+            session: mockSession as any,
+          });
+
+          const monitor = new HeartbeatMonitor({ store, taskStore, rootDir });
+          await monitor.executeHeartbeat({ agentId: "agent-001", source: "timer" });
+
+          const callArgs = mockedCreateFnAgent.mock.calls[0]![0];
+          expect(callArgs.systemPrompt).toContain(HEARTBEAT_SYSTEM_PROMPT);
+          expect(callArgs.systemPrompt).toContain("## Soul");
+          expect(callArgs.systemPrompt).toContain("Operate like a calm, systems-minded operator.");
+          expect(callArgs.systemPrompt).toContain("# Heartbeat Playbook");
+          expect(callArgs.systemPrompt).toContain("create focused follow-up tasks");
+        } finally {
+          rmSync(rootDir, { recursive: true, force: true });
+        }
       });
 
       it("omits memory tools and instructions when project memory is disabled", async () => {

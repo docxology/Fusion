@@ -2703,6 +2703,9 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       }
 
       await this.atomicWriteTaskJson(dir, task);
+      if (toColumn === "done") {
+        this.clearLinkedAgentTaskIds(id, task.updatedAt);
+      }
 
       // Update cache if watcher is active
       if (this.isWatching) this.taskCache.set(id, { ...task });
@@ -3547,11 +3550,39 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
         rewrittenDependents.push(updatedDependent);
       }
 
+      this.clearLinkedAgentTaskIds(taskId);
       this.db.prepare('DELETE FROM tasks WHERE id = ?').run(taskId);
       this.db.bumpLastModified();
     });
 
     return rewrittenDependents;
+  }
+
+  /**
+   * Clear `agent.taskId` links that point at a task which has transitioned out
+   * of active work. This keeps heartbeat scheduling aligned with live task
+   * storage and prevents stale task-scoped heartbeat runs.
+   */
+  private clearLinkedAgentTaskIds(taskId: string, updatedAt: string = new Date().toISOString()): void {
+    const linkedAgents = this.db
+      .prepare("SELECT id FROM agents WHERE taskId = ?")
+      .all(taskId) as Array<{ id: string }>;
+
+    if (linkedAgents.length === 0) {
+      return;
+    }
+
+    this.db.prepare(`
+      UPDATE agents
+      SET
+        taskId = NULL,
+        updatedAt = ?,
+        data = CASE
+          WHEN json_valid(data) THEN json_set(json_remove(data, '$.taskId'), '$.updatedAt', ?)
+          ELSE data
+        END
+      WHERE taskId = ?
+    `).run(updatedAt, updatedAt, taskId);
   }
 
   /**
@@ -3887,6 +3918,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
 
       if (!cleanup) {
         await this.atomicWriteTaskJson(dir, task);
+        this.clearLinkedAgentTaskIds(id, task.updatedAt);
         if (this.isWatching) this.taskCache.set(id, { ...task });
         this.emit("task:moved", { task, from: "done" as Column, to: "archived" as Column });
         return task;
@@ -3903,6 +3935,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       const entry = await this.taskToArchiveEntry(task, task.columnMovedAt);
       this.archiveDb.upsert(entry);
 
+      this.clearLinkedAgentTaskIds(id, task.updatedAt);
       this.db.prepare('DELETE FROM tasks WHERE id = ?').run(id);
       this.db.bumpLastModified();
 

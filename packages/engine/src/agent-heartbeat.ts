@@ -895,6 +895,7 @@ export class HeartbeatMonitor {
         // Check if agent has identity (used later for no-task run decisions)
         const agentHasIdentity = hasAgentIdentity(agent);
         const isAgentEphemeral = isEphemeralAgent(agent);
+        const canRunNoTaskHeartbeat = agentHasIdentity && !isAgentEphemeral;
 
         // Resolve task assignment (explicit override → existing assignment → inbox-lite selection)
         let taskId = explicitTaskId ?? agent.taskId;
@@ -951,7 +952,7 @@ export class HeartbeatMonitor {
           // session even without a task, so they can do ambient work like messaging,
           // memory management, task creation, and delegation.
           // Ephemeral agents and agents without identity still exit gracefully.
-          if (!agentHasIdentity || isAgentEphemeral) {
+          if (!canRunNoTaskHeartbeat) {
             heartbeatLog.log(`Agent ${agentId} has no task assignment — graceful exit`);
             await this.completeRun(agentId, run.id, {
               status: "completed",
@@ -961,7 +962,7 @@ export class HeartbeatMonitor {
           }
           heartbeatLog.log(`Agent ${agentId} has no task but has identity — running no-task heartbeat`);
         }
-        const isNoTaskRun = !taskId;
+        let isNoTaskRun = !taskId;
 
         // Validate agent state (only for task-scoped runs)
         if (!isNoTaskRun) {
@@ -993,66 +994,116 @@ export class HeartbeatMonitor {
             return (await this.store.getRunDetail(agentId, run.id))!;
           }
 
-          // Checkout enforcement: agent must hold the lease to work on this task.
-          // The heartbeat only validates existing checkout state — it does NOT attempt
-          // to acquire a checkout itself. The calling system (scheduler, API trigger)
-          // is responsible for checking out the task before the heartbeat starts.
-          if (taskDetail.checkedOutBy && taskDetail.checkedOutBy !== agentId) {
-            heartbeatLog.warn(
-              `Agent ${agentId} does not hold checkout for ${resolvedTaskId} (held by ${taskDetail.checkedOutBy}) — graceful exit`
-            );
-            await this.completeRun(agentId, run.id, {
-              status: "completed",
-              resultJson: {
-                reason: "checkout_conflict",
-                taskId: resolvedTaskId,
-                checkedOutBy: taskDetail.checkedOutBy,
-              },
-            });
-            return (await this.store.getRunDetail(agentId, run.id))!;
-          }
+          if (taskDetail.column === "done" || taskDetail.column === "archived") {
+            if (agent.taskId === resolvedTaskId) {
+              heartbeatLog.log(
+                `Agent ${agentId} linked task ${resolvedTaskId} is ${taskDetail.column} — clearing assignment and running heartbeat without task context`,
+              );
+              try {
+                await this.store.assignTask(agentId, undefined, runContext);
+              } catch (clearErr) {
+                heartbeatLog.warn(
+                  `Failed to clear terminal task assignment ${resolvedTaskId} for ${agentId}: ${clearErr instanceof Error ? clearErr.message : String(clearErr)}`,
+                );
+              }
 
-          const blockedBy = typeof taskDetail.blockedBy === "string" ? taskDetail.blockedBy.trim() : "";
-          const isBlockedTask = taskDetail.status === "queued" && blockedBy.length > 0;
+              taskId = undefined;
+              taskDetail = undefined;
+              isNoTaskRun = true;
 
-          if (isBlockedTask) {
-            const commentCount = (taskDetail.comments?.length ?? 0) + (taskDetail.steeringComments?.length ?? 0);
-            const lastCommentId = taskDetail.comments?.at(-1)?.id;
-            const lastSteeringCommentId = taskDetail.steeringComments?.at(-1)?.id;
-            const contextHash = Buffer.from(
-              JSON.stringify({ commentCount, lastCommentId, lastSteeringCommentId, blockedBy }),
-            )
-              .toString("base64")
-              .slice(0, 16);
-
-            const currentBlockedState: BlockedStateSnapshot = {
-              taskId: resolvedTaskId,
-              blockedBy,
-              recordedAt: new Date().toISOString(),
-              contextHash,
-            };
-
-            const previousBlockedState = await this.store.getLastBlockedState(agentId);
-            if (previousBlockedState && isBlockedStateDuplicate(currentBlockedState, previousBlockedState)) {
+              if (!canRunNoTaskHeartbeat) {
+                await this.completeRun(agentId, run.id, {
+                  status: "completed",
+                  resultJson: { reason: "no_assignment" },
+                });
+                return (await this.store.getRunDetail(agentId, run.id))!;
+              }
+            } else {
+              heartbeatLog.log(
+                `Heartbeat for ${agentId} targeted terminal task ${resolvedTaskId} (${taskDetail.column}) — graceful exit`,
+              );
               await this.completeRun(agentId, run.id, {
                 status: "completed",
-                resultJson: { reason: "blocked_duplicate", taskId: resolvedTaskId, blockedBy },
+                resultJson: { reason: "terminal_task", taskId: resolvedTaskId, column: taskDetail.column },
+              });
+              return (await this.store.getRunDetail(agentId, run.id))!;
+            }
+          }
+
+          if (isNoTaskRun) {
+            heartbeatLog.log(`Agent ${agentId} terminal task assignment resolved into no-task heartbeat`);
+          } else {
+            const liveTaskDetail = taskDetail;
+            if (!liveTaskDetail) {
+              heartbeatLog.warn(`Task ${resolvedTaskId} lost detail after terminal-assignment handling — graceful exit`);
+              await this.completeRun(agentId, run.id, {
+                status: "completed",
+                resultJson: { reason: "task_not_found", taskId: resolvedTaskId },
               });
               return (await this.store.getRunDetail(agentId, run.id))!;
             }
 
-            const blockedMessage = `Task is blocked by ${blockedBy}; waiting for dependency/context changes before retrying.`;
-            await taskStore.addComment(resolvedTaskId, blockedMessage, "agent", undefined, runContext);
-            // Audit trail: record comment mutation (FN-1404)
-            await audit.database({ type: "task:comment:add", target: resolvedTaskId, metadata: { blockedBy } });
-            await this.store.setLastBlockedState(agentId, currentBlockedState);
+            // Checkout enforcement: agent must hold the lease to work on this task.
+            // The heartbeat only validates existing checkout state — it does NOT attempt
+            // to acquire a checkout itself. The calling system (scheduler, API trigger)
+            // is responsible for checking out the task before the heartbeat starts.
+            if (liveTaskDetail.checkedOutBy && liveTaskDetail.checkedOutBy !== agentId) {
+              heartbeatLog.warn(
+                `Agent ${agentId} does not hold checkout for ${resolvedTaskId} (held by ${liveTaskDetail.checkedOutBy}) — graceful exit`
+              );
+              await this.completeRun(agentId, run.id, {
+                status: "completed",
+                resultJson: {
+                  reason: "checkout_conflict",
+                  taskId: resolvedTaskId,
+                  checkedOutBy: liveTaskDetail.checkedOutBy,
+                },
+              });
+              return (await this.store.getRunDetail(agentId, run.id))!;
+            }
 
-            heartbeatLog.log(`Task ${resolvedTaskId} is blocked by ${blockedBy} — recorded blocked state`);
-            await this.completeRun(agentId, run.id, {
-              status: "completed",
-              resultJson: { reason: "blocked", taskId: resolvedTaskId, blockedBy },
-            });
-            return (await this.store.getRunDetail(agentId, run.id))!;
+            const blockedBy = typeof liveTaskDetail.blockedBy === "string" ? liveTaskDetail.blockedBy.trim() : "";
+            const isBlockedTask = liveTaskDetail.status === "queued" && blockedBy.length > 0;
+
+            if (isBlockedTask) {
+              const commentCount = (liveTaskDetail.comments?.length ?? 0) + (liveTaskDetail.steeringComments?.length ?? 0);
+              const lastCommentId = liveTaskDetail.comments?.at(-1)?.id;
+              const lastSteeringCommentId = liveTaskDetail.steeringComments?.at(-1)?.id;
+              const contextHash = Buffer.from(
+                JSON.stringify({ commentCount, lastCommentId, lastSteeringCommentId, blockedBy }),
+              )
+                .toString("base64")
+                .slice(0, 16);
+
+              const currentBlockedState: BlockedStateSnapshot = {
+                taskId: resolvedTaskId,
+                blockedBy,
+                recordedAt: new Date().toISOString(),
+                contextHash,
+              };
+
+              const previousBlockedState = await this.store.getLastBlockedState(agentId);
+              if (previousBlockedState && isBlockedStateDuplicate(currentBlockedState, previousBlockedState)) {
+                await this.completeRun(agentId, run.id, {
+                  status: "completed",
+                  resultJson: { reason: "blocked_duplicate", taskId: resolvedTaskId, blockedBy },
+                });
+                return (await this.store.getRunDetail(agentId, run.id))!;
+              }
+
+              const blockedMessage = `Task is blocked by ${blockedBy}; waiting for dependency/context changes before retrying.`;
+              await taskStore.addComment(resolvedTaskId, blockedMessage, "agent", undefined, runContext);
+              // Audit trail: record comment mutation (FN-1404)
+              await audit.database({ type: "task:comment:add", target: resolvedTaskId, metadata: { blockedBy } });
+              await this.store.setLastBlockedState(agentId, currentBlockedState);
+
+              heartbeatLog.log(`Task ${resolvedTaskId} is blocked by ${blockedBy} — recorded blocked state`);
+              await this.completeRun(agentId, run.id, {
+                status: "completed",
+                resultJson: { reason: "blocked", taskId: resolvedTaskId, blockedBy },
+              });
+              return (await this.store.getRunDetail(agentId, run.id))!;
+            }
           }
         }
 

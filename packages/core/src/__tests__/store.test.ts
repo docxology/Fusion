@@ -24,6 +24,7 @@ import { runCommandAsync } from "../run-command.js";
 const mockedRunCommandAsync = vi.mocked(runCommandAsync);
 
 import { TaskStore, TaskHasDependentsError } from "../store.js";
+import { AgentStore } from "../agent-store.js";
 import { appendFile, readFile, writeFile, mkdir, rm, readdir, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { mkdtempSync, existsSync } from "node:fs";
@@ -4626,6 +4627,28 @@ Task with acceptance criteria
       expect(after.count).toBe(0);
     });
 
+    it("deleteTask clears linked agent task assignments", async () => {
+      store.close();
+      store = new TaskStore(rootDir, globalDir);
+      await store.init();
+
+      const agentStore = new AgentStore({ rootDir: store.getFusionDir() });
+      await agentStore.init();
+
+      try {
+        const task = await store.createTask({ description: "Delete me" });
+        const agent = await agentStore.createAgent({ name: "Delete watcher", role: "executor" });
+        await agentStore.assignTask(agent.id, task.id);
+
+        await store.deleteTask(task.id);
+
+        const updatedAgent = await agentStore.getAgent(agent.id);
+        expect(updatedAgent?.taskId).toBeUndefined();
+      } finally {
+        agentStore.close();
+      }
+    });
+
     it("importLegacyAgentLogs imports JSONL entries from existing agent.log files", async () => {
       const task = await createTestTask();
       const dir = join(rootDir, ".fusion", "tasks", task.id);
@@ -7726,6 +7749,33 @@ Task with acceptance criteria
       // Directory should be removed by default
       const dir = join(rootDir, ".fusion", "tasks", task.id);
       expect(existsSync(dir)).toBe(false);
+    });
+
+    it("archiveTask clears stale linked agent assignments", async () => {
+      store.close();
+      store = new TaskStore(rootDir, globalDir);
+      await store.init();
+
+      const agentStore = new AgentStore({ rootDir: store.getFusionDir() });
+      await agentStore.init();
+
+      try {
+        const task = await store.createTask({ description: "Archive clears links" });
+        await store.moveTask(task.id, "todo");
+        await store.moveTask(task.id, "in-progress");
+        await store.moveTask(task.id, "in-review");
+        await store.moveTask(task.id, "done");
+
+        const agent = await agentStore.createAgent({ name: "Archive watcher", role: "executor" });
+        await agentStore.assignTask(agent.id, task.id);
+
+        await store.archiveTask(task.id, false);
+
+        const updatedAgent = await agentStore.getAgent(agent.id);
+        expect(updatedAgent?.taskId).toBeUndefined();
+      } finally {
+        agentStore.close();
+      }
     });
   });
 

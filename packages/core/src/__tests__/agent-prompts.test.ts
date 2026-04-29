@@ -251,6 +251,62 @@ describe("resolveAgentPrompt", () => {
     const result = resolveAgentPrompt("triage", config);
     expect(result).toContain("task_document_write");
   });
+
+  it("default role prompts include explicit heartbeat run guidance", () => {
+    expect(resolveAgentPrompt("executor")).toContain("## Heartbeat Run Behavior");
+    expect(resolveAgentPrompt("triage")).toContain("## Heartbeat Run Behavior");
+    expect(resolveAgentPrompt("reviewer")).toContain("## Heartbeat Run Behavior");
+    expect(resolveAgentPrompt("merger")).toContain("## Heartbeat Run Behavior");
+  });
+
+  it("executor heartbeat guidance covers no-task engineering work", () => {
+    const result = resolveAgentPrompt("executor");
+    expect(result).toContain("execute your standing instructions");
+    expect(result).toContain("blocked or failing engineering work");
+  });
+
+  it("reviewer heartbeat guidance is findings-focused and customized per variant", () => {
+    const defaultReviewer = resolveAgentPrompt("reviewer");
+    expect(defaultReviewer).toContain("Look for work waiting on review");
+
+    const strictConfig: AgentPromptsConfig = {
+      roleAssignments: {
+        reviewer: "strict-reviewer",
+      },
+    };
+    const strictReviewer = resolveAgentPrompt("reviewer", strictConfig);
+    expect(strictReviewer).toContain("worst-case failure modes first");
+    expect(strictReviewer).toContain("under-reviewed");
+  });
+
+  it("triage heartbeat guidance is customized for standard and concise templates", () => {
+    const defaultTriage = resolveAgentPrompt("triage");
+    expect(defaultTriage).toContain("Patrol for vague requests");
+
+    const conciseConfig: AgentPromptsConfig = {
+      roleAssignments: {
+        triage: "concise-triage",
+      },
+    };
+    const conciseTriage = resolveAgentPrompt("triage", conciseConfig);
+    expect(conciseTriage).toContain("Keep heartbeat output lean and useful");
+    expect(conciseTriage).toContain("minimum complete PROMPT.md");
+  });
+
+  it("merger and senior-engineer heartbeat guidance is role-specific", () => {
+    const merger = resolveAgentPrompt("merger");
+    expect(merger).toContain("keep merge-ready work from stalling");
+    expect(merger).toContain("in-review and merge-ready queue");
+
+    const seniorConfig: AgentPromptsConfig = {
+      roleAssignments: {
+        executor: "senior-engineer",
+      },
+    };
+    const senior = resolveAgentPrompt("executor", seniorConfig);
+    expect(senior).toContain("autonomous senior-engineering pass");
+    expect(senior).toContain("architectural drift");
+  });
 });
 
 // ---------------------------------------------------------------------------
