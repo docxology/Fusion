@@ -1563,6 +1563,48 @@ export async function resolveConflicts(
   return remainingComplex;
 }
 
+/** Trailer key written into every Fusion-managed merge commit body. Used by
+ *  recovery (findLandedTaskCommit) to identify a task's commit even when the
+ *  configured commit subject doesn't include the task ID
+ *  (`includeTaskIdInCommit: false`). */
+export const FUSION_TASK_ID_TRAILER_KEY = "Fusion-Task-Id";
+
+/** Build the `-m "Fusion-Task-Id: <id>"` arg fragment used in fallback commit
+ *  invocations. Returns a leading space + quoted -m arg. */
+function buildTaskIdTrailerArg(taskId: string): string {
+  // Task IDs are constrained ([A-Z]+-[0-9]+) so embedding directly is safe.
+  return ` -m "${FUSION_TASK_ID_TRAILER_KEY}: ${taskId}"`;
+}
+
+/** Idempotently add the Fusion-Task-Id trailer to HEAD's commit. Used after
+ *  the AI agent commits to guarantee the trailer is present even when the
+ *  agent didn't include it (especially under includeTaskIdInCommit=false,
+ *  where the subject also lacks the task ID and recovery has nothing to
+ *  grep against). No-op if the trailer is already on HEAD. */
+async function ensureTaskIdTrailerOnHead(rootDir: string, taskId: string): Promise<void> {
+  try {
+    const { stdout: existingMessage } = await execAsync("git log -1 --pretty=%B", {
+      cwd: rootDir,
+      encoding: "utf-8",
+    });
+    const trailerLine = `${FUSION_TASK_ID_TRAILER_KEY}: ${taskId}`;
+    if (existingMessage.includes(trailerLine)) return;
+    // git interpret-trailers is the canonical way to add trailers without
+    // disturbing the rest of the body. --if-exists addIfDifferentNeighbor
+    // ensures we don't double-up if a slightly different trailer is present.
+    await execAsync(
+      `git -c trailer.ifExists=addIfDifferent commit --amend --no-edit --trailer "${trailerLine}"`,
+      { cwd: rootDir },
+    );
+  } catch (err) {
+    // Best-effort: if amending fails (detached HEAD, sign-off conflict, etc.)
+    // we still recorded mergeDetails further on. Recovery will fall back to
+    // subject grep. Don't surface this as a merge failure.
+    const msg = err instanceof Error ? err.message : String(err);
+    mergerLog.warn(`${taskId}: failed to add ${FUSION_TASK_ID_TRAILER_KEY} trailer to HEAD (${msg}) — relying on subject grep for recovery`);
+  }
+}
+
 /** Build the --author flag for git commits based on project settings. */
 function getCommitAuthorArg(settings: {
   commitAuthorEnabled?: boolean;
@@ -3401,8 +3443,9 @@ async function executeMergeAttempt(
             const escapedLog = commitLog.replace(/"/g, '\\"');
             const fallbackPrefix = includeTaskId ? `feat(${taskId})` : "feat";
             const authorArg = getCommitAuthorArg(settings);
+            const trailerArg = buildTaskIdTrailerArg(taskId);
             await execAsync(
-              `git commit -m "${fallbackPrefix}: merge ${branch}" -m "${escapedLog}"${authorArg}`,
+              `git commit -m "${fallbackPrefix}: merge ${branch}" -m "${escapedLog}"${trailerArg}${authorArg}`,
               { cwd: rootDir },
             );
             mergerLog.log(`${taskId}: committed after auto-resolving all conflicts`);
@@ -3667,8 +3710,9 @@ async function attemptWithSideStrategy(
     const escapedLog = commitLog.replace(/"/g, '\\"');
     const fallbackPrefix = includeTaskId ? `feat(${taskId})` : "feat";
     const authorArg = getCommitAuthorArg(settings);
+    const trailerArg = buildTaskIdTrailerArg(taskId);
     await execAsync(
-      `git commit -m "${fallbackPrefix}: merge ${branch} (auto-resolved)" -m "${escapedLog}"${authorArg}`,
+      `git commit -m "${fallbackPrefix}: merge ${branch} (auto-resolved)" -m "${escapedLog}"${trailerArg}${authorArg}`,
       { cwd: rootDir },
     );
     mergerLog.log(`${taskId}: committed with -X ${side} auto-resolution`);
@@ -3965,8 +4009,9 @@ async function runAiAgentForCommit(params: AiAgentParams): Promise<{ success: bo
         const escapedLog = commitLog.replace(/"/g, '\\"');
         const fallbackPrefix = includeTaskId ? `feat(${taskId})` : "feat";
         const authorArg = getCommitAuthorArg(settings);
+        const trailerArg = buildTaskIdTrailerArg(taskId);
         await execAsync(
-          `git commit -m "${fallbackPrefix}: merge ${branch}" -m "${escapedLog}"${authorArg}`,
+          `git commit -m "${fallbackPrefix}: merge ${branch}" -m "${escapedLog}"${trailerArg}${authorArg}`,
           { cwd: rootDir },
         );
       } else {
@@ -3974,6 +4019,12 @@ async function runAiAgentForCommit(params: AiAgentParams): Promise<{ success: bo
         // This is an error condition - agent didn't follow instructions
         throw new Error(`Agent did not commit and did not report build failure for ${taskId}`);
       }
+    } else {
+      // The agent committed. Idempotently ensure the Fusion-Task-Id trailer
+      // is present on HEAD — recovery (findLandedTaskCommit) relies on it
+      // when includeTaskIdInCommit=false, since the subject won't carry the
+      // task ID and subject grep would miss the commit.
+      await ensureTaskIdTrailerOnHead(rootDir, taskId);
     }
 
     return { success: true };

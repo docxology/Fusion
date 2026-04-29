@@ -427,13 +427,56 @@ export class SelfHealingManager {
   }
 
   private async findLandedTaskCommit(task: Task): Promise<LandedTaskCommit | null> {
-    const readLog = async (range: string) => {
+    // Search strategies, tried in order of reliability:
+    //   1. mergeDetails.commitSha — already stored by the merger; verify it's
+    //      reachable from HEAD before trusting it.
+    //   2. Fusion-Task-Id trailer — emitted into every Fusion-managed merge
+    //      commit body; survives `includeTaskIdInCommit: false`.
+    //   3. Subject grep — legacy/AI commits where the task ID lives in the
+    //      subject line (e.g. `feat(FN-123): …`).
+    //
+    // (1) gives us the right sha even if the commit subject is exotic; (2)
+    // covers includeTaskIdInCommit=false setups where (3) would silently
+    // miss; (3) catches commits authored before the trailer was introduced.
+
+    // ── (1) Stored sha ────────────────────────────────────────────────────
+    const storedSha = task.mergeDetails?.commitSha;
+    if (storedSha) {
+      try {
+        // Reachable from HEAD? Use --quiet --exit-code on rev-list.
+        await execAsync(
+          `git merge-base --is-ancestor ${shellQuote(storedSha)} HEAD`,
+          { cwd: this.options.rootDir },
+        );
+        // Yes — fetch its subject + stats.
+        const { stdout } = await execAsync(
+          `git log -1 --format=%H%x1f%s ${shellQuote(storedSha)}`,
+          { cwd: this.options.rootDir, maxBuffer: 1024 * 1024 },
+        );
+        const [sha, subject] = stdout.trim().split("\x1f");
+        if (sha) {
+          const commit: LandedTaskCommit = { sha, subject };
+          try {
+            const stats = await execAsync(`git show --shortstat --format= ${shellQuote(sha)}`, {
+              cwd: this.options.rootDir,
+              maxBuffer: 1024 * 1024,
+            });
+            Object.assign(commit, parseShortstat(stats.stdout));
+          } catch { /* stats are optional */ }
+          return commit;
+        }
+      } catch {
+        // Not reachable (rebased away, branch reset, etc.) — fall through.
+      }
+    }
+
+    const readLog = async (range: string, grepArg: string, fixedStrings: boolean) => {
       const command = [
         "git log",
         "--format=%H%x1f%s",
         "--max-count=20",
-        "--fixed-strings",
-        `--grep=${shellQuote(task.id)}`,
+        ...(fixedStrings ? ["--fixed-strings"] : ["-E"]),
+        `--grep=${grepArg}`,
         shellQuote(range),
       ].join(" ");
 
@@ -443,27 +486,42 @@ export class SelfHealingManager {
       });
     };
 
-    let stdout: string;
-    try {
-      const result = await readLog(task.baseCommitSha ? `${task.baseCommitSha}..HEAD` : "HEAD");
-      stdout = result.stdout;
-    } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      log.warn(
-        `Failed to read git log for landed commit lookup (${task.id}): ${errorMessage} — retrying with HEAD range`,
-      );
-      if (!task.baseCommitSha) return null;
-      const result = await readLog("HEAD");
-      stdout = result.stdout;
-    }
+    // Search (2) trailer first, then (3) subject as fallback. Both share the
+    // same range-resolution logic (bounded, then full HEAD if empty).
+    const search = async (grepArg: string, fixedStrings: boolean): Promise<string> => {
+      let out: string;
+      try {
+        const r = await readLog(
+          task.baseCommitSha ? `${task.baseCommitSha}..HEAD` : "HEAD",
+          grepArg,
+          fixedStrings,
+        );
+        out = r.stdout;
+      } catch (err: unknown) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        log.warn(
+          `Failed to read git log for landed commit lookup (${task.id}): ${errorMessage} — retrying with HEAD range`,
+        );
+        if (!task.baseCommitSha) return "";
+        const r = await readLog("HEAD", grepArg, fixedStrings);
+        out = r.stdout;
+      }
+      // Bounded range may exclude the landed commit when baseCommitSha was
+      // advanced past it; re-scan all of HEAD if empty.
+      if (!out.trim() && task.baseCommitSha) {
+        const r = await readLog("HEAD", grepArg, fixedStrings);
+        out = r.stdout;
+      }
+      return out;
+    };
 
-    // The bounded `baseCommitSha..HEAD` range excludes the landed commit when
-    // baseCommitSha was advanced past it (e.g. the merger fast-forward-rebased
-    // the task branch onto a newer main, or later commits moved HEAD up).
-    // Re-scan all of HEAD so recovery still finds the merge.
-    if (!stdout.trim() && task.baseCommitSha) {
-      const result = await readLog("HEAD");
-      stdout = result.stdout;
+    // (2) Trailer — anchored regex so we don't false-match ID substrings.
+    const trailerPattern = `^Fusion-Task-Id: ${task.id}$`;
+    let stdout = await search(shellQuote(trailerPattern), false);
+
+    // (3) Subject grep fallback (legacy commits).
+    if (!stdout.trim()) {
+      stdout = await search(shellQuote(task.id), true);
     }
 
     const firstLine = stdout.trim().split("\n").find(Boolean);

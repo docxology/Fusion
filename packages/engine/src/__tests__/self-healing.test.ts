@@ -1254,6 +1254,68 @@ describe("SelfHealingManager", () => {
       managerWithRecovery.stop();
     });
 
+    it("finds landed commit via Fusion-Task-Id trailer when subject lacks the task ID", async () => {
+      // includeTaskIdInCommit=false: commit subject is `feat: ...` with no
+      // task ID. Recovery must locate the commit via the trailer in the body.
+      const managerWithRecovery = new SelfHealingManager(store, {
+        rootDir: "/tmp/test-project",
+      });
+      (store.getSettings as ReturnType<typeof vi.fn>).mockResolvedValue({
+        taskStuckTimeoutMs: 60_000,
+      });
+      const staleUpdatedAt = new Date(Date.now() - 61_000).toISOString();
+
+      (store.listTasks as ReturnType<typeof vi.fn>).mockResolvedValue([
+        {
+          id: "FN-2900",
+          column: "in-review",
+          status: "merging",
+          error: null,
+          paused: false,
+          worktree: "/tmp/test-project/.worktrees/fn-2900",
+          branch: "fusion/fn-2900",
+          baseCommitSha: "base999",
+          updatedAt: staleUpdatedAt,
+          steps: [{ name: "Ship it", status: "done" }],
+          workflowStepResults: [],
+          mergeDetails: undefined,
+          log: [],
+        },
+      ]);
+      mockedExistsSync.mockReturnValue(true);
+      mockedExecSync.mockImplementation((command) => {
+        const cmd = String(command);
+        if (cmd.includes("git log")) {
+          // Recovery searches by trailer first; only the trailer-grep result
+          // returns a match. Subject grep would be empty (no task ID in subj).
+          if (cmd.includes("Fusion-Task-Id: FN-2900")) {
+            return "trailerSha123feat: ship something opaque\n" as any;
+          }
+          if (cmd.includes("--fixed-strings")) return "" as any;
+        }
+        if (cmd.includes("git show --shortstat")) {
+          return " 2 files changed, 5 insertions(+), 1 deletion(-)\n" as any;
+        }
+        return "" as any;
+      });
+
+      const result = await managerWithRecovery.recoverInterruptedMergingTasks();
+
+      expect(result).toBe(1);
+      expect(store.updateTask).toHaveBeenCalledWith("FN-2900", {
+        status: null,
+        error: null,
+        mergeRetries: 0,
+        mergeDetails: expect.objectContaining({
+          commitSha: "trailerSha123",
+          mergeConfirmed: true,
+        }),
+      });
+      expect(store.moveTask).toHaveBeenCalledWith("FN-2900", "done");
+
+      managerWithRecovery.stop();
+    });
+
     it("finalizes stale merging tasks when baseCommitSha was advanced past the landed commit", async () => {
       // Reproduces the case where the merger fast-forward-rebased the task branch
       // and updated baseCommitSha to the new HEAD; the bounded `base..HEAD` range
