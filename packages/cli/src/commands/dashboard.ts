@@ -21,6 +21,7 @@ import {
   createServer,
   GitHubClient,
   createSkillsAdapter,
+  getCliPackageVersion,
   getProjectSettingsPath,
   loadTlsCredentialsFromEnv,
   stopAllDevServers,
@@ -90,6 +91,49 @@ function createDashboardRuntimeLogger(logSink: DashboardLogSink, scope: string):
       return createDashboardRuntimeLogger(logSink, `${scope}:${childScope}`);
     },
   };
+}
+
+type StartupUpdateStatus = {
+  updateAvailable: true;
+  latestVersion: string;
+  currentVersion: string;
+};
+
+async function resolveCachedStartupUpdateStatus(importMetaUrl: string): Promise<StartupUpdateStatus | null> {
+  try {
+    const updateCheckEnabled = await Promise.race<boolean>([
+      isUpdateCheckEnabled(),
+      new Promise<boolean>((resolve) => {
+        setTimeout(() => resolve(false), 3_000);
+      }),
+    ]);
+
+    if (!updateCheckEnabled) {
+      return null;
+    }
+
+    const currentVersion = getCliPackageVersion(importMetaUrl);
+    const cachedUpdate = getCachedUpdateStatus(currentVersion);
+    if (!cachedUpdate?.updateAvailable) {
+      return null;
+    }
+
+    return {
+      updateAvailable: true,
+      currentVersion: cachedUpdate.currentVersion,
+      latestVersion: cachedUpdate.latestVersion,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function formatUpdateMessage(updateStatus: StartupUpdateStatus | null): string | null {
+  if (!updateStatus) {
+    return null;
+  }
+
+  return `⬆ Update available: v${updateStatus.latestVersion} (current: v${updateStatus.currentVersion})`;
 }
 
 export class StreamedLogBuffer {
@@ -666,6 +710,7 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
   const isTTY = isTTYAvailable();
   let tui: DashboardTUI | undefined;
   const dashboardStartedAt = Date.now();
+  const startupUpdateStatusPromise = resolveCachedStartupUpdateStatus(import.meta.url);
 
   // Declare store and agentStore early so callbacks can safely reference them
   // (they're assigned after initialization, but the variables exist from the start).
@@ -678,6 +723,9 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
 
   if (isTTY) {
     tui = new DashboardTUI();
+    void startupUpdateStatusPromise.then((updateStatus) => {
+      tui?.setUpdateStatus(updateStatus);
+    });
     // Set up callbacks for utility actions
     tui.setCallbacks({
       onRefreshStats: async () => {
@@ -1825,29 +1873,7 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
       ? `${baseUrl}/?token=${encodeURIComponent(dashboardAuthToken)}`
       : baseUrl;
 
-    const updateMessage = await (async (): Promise<string | null> => {
-      try {
-        const updateCheckEnabled = await Promise.race<boolean>([
-          isUpdateCheckEnabled(),
-          new Promise<boolean>((resolve) => {
-            setTimeout(() => resolve(false), 3_000);
-          }),
-        ]);
-
-        if (!updateCheckEnabled) {
-          return null;
-        }
-
-        const cachedUpdate = getCachedUpdateStatus();
-        if (!cachedUpdate?.updateAvailable) {
-          return null;
-        }
-
-        return `⬆ Update available: v${cachedUpdate.latestVersion} (current: v${cachedUpdate.currentVersion})`;
-      } catch {
-        return null;
-      }
-    })();
+    const updateMessage = formatUpdateMessage(await startupUpdateStatusPromise);
 
     // ── TTY Mode: Set system info on TUI ───────────────────────────────
     //

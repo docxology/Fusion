@@ -2,7 +2,6 @@ import os from "node:os";
 import v8 from "node:v8";
 import { execSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
-import { getCachedUpdateStatus } from "../../update-cache.js";
 
 // `os.freemem()` on macOS only counts truly-free pages and excludes the large
 // "inactive"/cached pool that the OS will reclaim on demand — so total-free
@@ -130,17 +129,6 @@ export class DashboardTUI {
 
   constructor() {
     this.logBuffer = new LogRingBuffer();
-    // Read the update-check cache synchronously at construction time so the
-    // splash screen and status bar can render the notice immediately, without
-    // any network access.
-    const cached = getCachedUpdateStatus();
-    if (cached) {
-      this.updateStatus = {
-        updateAvailable: cached.updateAvailable,
-        currentVersion: cached.currentVersion,
-        latestVersion: cached.latestVersion,
-      };
-    }
   }
 
   // ── Subscription API (for Ink App) ────────────────────────────────────────

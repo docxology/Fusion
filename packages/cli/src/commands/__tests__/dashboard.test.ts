@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { EventEmitter } from "node:events";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+
+const CLI_PACKAGE_VERSION = (
+  JSON.parse(readFileSync(new URL("../../../package.json", import.meta.url), "utf-8")) as { version: string }
+).version;
 
 // ── Capture instances & arguments ───────────────────────────────────
 
@@ -19,6 +24,7 @@ const {
   mockGlobalSettingsGetSettings,
   mockGlobalSettingsUpdateSettings,
   mockDaemonTokenGetOrCreate,
+  mockGetCliPackageVersion,
 } = vi.hoisted(() => {
   delete process.env.FUSION_DASHBOARD_TOKEN;
   delete process.env.FUSION_DAEMON_TOKEN;
@@ -43,6 +49,7 @@ const {
     mockGlobalSettingsGetSettings: vi.fn().mockResolvedValue({}),
     mockGlobalSettingsUpdateSettings: vi.fn().mockResolvedValue({}),
     mockDaemonTokenGetOrCreate: vi.fn().mockResolvedValue("fn_test_dashboard_token"),
+    mockGetCliPackageVersion: vi.fn(),
   };
 });
 
@@ -173,6 +180,7 @@ vi.mock("@fusion/core", () => ({
   getEnabledPiExtensionPaths: vi.fn(() => []),
   resolveGlobalDir: mockResolveGlobalDir,
   GlobalSettingsStore: vi.fn().mockImplementation(() => ({
+    init: vi.fn().mockResolvedValue(undefined),
     getSettings: mockGlobalSettingsGetSettings,
     updateSettings: mockGlobalSettingsUpdateSettings,
   })),
@@ -275,6 +283,7 @@ vi.mock("@fusion/dashboard", () => ({
     mergePr: mockMergePr,
   })),
   createSkillsAdapter: vi.fn().mockReturnValue(undefined),
+  getCliPackageVersion: mockGetCliPackageVersion,
   getProjectSettingsPath: vi.fn().mockReturnValue("/tmp/project/.fusion/settings.json"),
   loadTlsCredentialsFromEnv: vi.fn().mockReturnValue(undefined),
 }));
@@ -755,6 +764,14 @@ function resetGitHubMocks() {
   });
 }
 
+const updateCacheDir = "/tmp/test-global";
+const updateCachePath = `${updateCacheDir}/update-check.json`;
+
+function writeUpdateCache(payload: { updateAvailable: boolean; latestVersion: string; currentVersion: string }): void {
+  mkdirSync(updateCacheDir, { recursive: true });
+  writeFileSync(updateCachePath, JSON.stringify(payload), "utf-8");
+}
+
 beforeEach(() => {
   delete process.env.FUSION_DASHBOARD_TOKEN;
   delete process.env.FUSION_DAEMON_TOKEN;
@@ -774,10 +791,14 @@ beforeEach(() => {
   mockGlobalSettingsUpdateSettings.mockResolvedValue({});
   mockDaemonTokenGetOrCreate.mockReset();
   mockDaemonTokenGetOrCreate.mockResolvedValue("fn_test_dashboard_token");
+  mockGetCliPackageVersion.mockReset();
+  mockGetCliPackageVersion.mockReturnValue(CLI_PACKAGE_VERSION);
+  rmSync(updateCacheDir, { recursive: true, force: true });
 });
 
 afterEach(() => {
   disposeTrackedDashboards();
+  rmSync(updateCacheDir, { recursive: true, force: true });
 });
 
 describe("PR merge helpers", () => {
@@ -2899,6 +2920,41 @@ describe("runDashboard runtime logger wiring", () => {
       tuiStopSpy.mockRestore();
       tuiLogSpy.mockRestore();
       captureConsoleSpy.mockRestore();
+      delete process.env.FUSION_DASHBOARD_TOKEN;
+    }
+  });
+});
+
+describe("runDashboard update check wiring", () => {
+  it("suppresses stale cached update status in the TUI after the installed CLI version changes", async () => {
+    process.env.FUSION_DASHBOARD_TOKEN = "fn_test_dashboard_token";
+    writeUpdateCache({
+      updateAvailable: true,
+      currentVersion: "0.0.1",
+      latestVersion: "9.9.9",
+    });
+
+    const { DashboardTUI } = await import("../dashboard-tui/index.js");
+    const originalStdoutIsTTY = process.stdout.isTTY;
+    const originalStdinIsTTY = process.stdin.isTTY;
+
+    Object.defineProperty(process.stdout, "isTTY", { value: true, configurable: true });
+    Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
+
+    const tuiStartSpy = vi.spyOn(DashboardTUI.prototype, "start").mockResolvedValue(undefined);
+    const tuiStopSpy = vi.spyOn(DashboardTUI.prototype, "stop").mockResolvedValue(undefined);
+    const setUpdateStatusSpy = vi.spyOn(DashboardTUI.prototype, "setUpdateStatus");
+
+    try {
+      await runDashboard(0, { open: false, dev: true });
+
+      expect(setUpdateStatusSpy).toHaveBeenCalledWith(null);
+    } finally {
+      Object.defineProperty(process.stdout, "isTTY", { value: originalStdoutIsTTY, configurable: true });
+      Object.defineProperty(process.stdin, "isTTY", { value: originalStdinIsTTY, configurable: true });
+      tuiStartSpy.mockRestore();
+      tuiStopSpy.mockRestore();
+      setUpdateStatusSpy.mockRestore();
       delete process.env.FUSION_DASHBOARD_TOKEN;
     }
   });

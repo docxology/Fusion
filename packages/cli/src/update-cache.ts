@@ -14,7 +14,7 @@ type UpdateCachePayload = {
   currentVersion?: unknown;
 };
 
-export function getCachedUpdateStatus(): CachedUpdateStatus | null {
+export function getCachedUpdateStatus(currentVersion?: string): CachedUpdateStatus | null {
   try {
     const cachePath = join(resolveGlobalDir(), "update-check.json");
     const raw = readFileSync(cachePath, "utf-8");
@@ -27,6 +27,14 @@ export function getCachedUpdateStatus(): CachedUpdateStatus | null {
       typeof parsed.currentVersion === "string" &&
       parsed.currentVersion.length > 0
     ) {
+      if (
+        typeof currentVersion === "string" &&
+        currentVersion.length > 0 &&
+        parsed.currentVersion !== currentVersion
+      ) {
+        return null;
+      }
+
       return {
         updateAvailable: true,
         latestVersion: parsed.latestVersion,
