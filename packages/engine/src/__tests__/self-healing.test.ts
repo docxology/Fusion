@@ -1024,6 +1024,31 @@ describe("SelfHealingManager", () => {
 
       managerWithRecovery.stop();
     });
+
+    it("does not clear errors on paused tasks (respects user investigate intent)", async () => {
+      const managerWithRecovery = new SelfHealingManager(store, {
+        rootDir: "/tmp/test-project",
+      });
+
+      (store.listTasks as ReturnType<typeof vi.fn>).mockResolvedValue([
+        {
+          id: "FN-303",
+          column: "in-review",
+          status: "failed",
+          paused: true,
+          error: "Agent finished without calling task_done",
+          steps: [{ status: "done" }, { status: "done" }],
+          log: [],
+        },
+      ]);
+
+      const result = await managerWithRecovery.recoverMisclassifiedFailures();
+
+      expect(result).toBe(0);
+      expect(store.updateTask).not.toHaveBeenCalled();
+
+      managerWithRecovery.stop();
+    });
   });
 
   describe("recoverPartialProgressNoTaskDoneFailures", () => {
@@ -1629,6 +1654,33 @@ describe("SelfHealingManager", () => {
           column: "in-review",
           mergeDetails: {
             mergeConfirmed: false,
+          },
+          log: [],
+        },
+      ]);
+
+      const result = await managerWithRecovery.recoverMergedReviewTasks();
+
+      expect(result).toBe(0);
+      expect(store.updateTask).not.toHaveBeenCalled();
+      expect(store.moveTask).not.toHaveBeenCalled();
+
+      managerWithRecovery.stop();
+    });
+
+    it("does not move paused merged tasks to done (respects user pause intent)", async () => {
+      const managerWithRecovery = new SelfHealingManager(store, {
+        rootDir: "/tmp/test-project",
+      });
+
+      (store.listTasks as ReturnType<typeof vi.fn>).mockResolvedValue([
+        {
+          id: "FN-352",
+          column: "in-review",
+          paused: true,
+          mergeDetails: {
+            mergeConfirmed: true,
+            mergedAt: "2026-01-01T00:00:00.000Z",
           },
           log: [],
         },

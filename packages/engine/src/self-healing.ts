@@ -1016,6 +1016,7 @@ export class SelfHealingManager {
 
       const mergedButNotDone = tasks.filter((t) =>
         t.column === "in-review" &&
+        !t.paused &&
         t.mergeDetails?.mergeConfirmed === true,
       );
 
@@ -1069,6 +1070,7 @@ export class SelfHealingManager {
 
       const misclassified = tasks.filter((t) =>
         t.column === "in-review" &&
+        !t.paused &&
         t.status === "failed" &&
         t.error?.includes("without calling task_done") &&
         t.steps.length > 0 &&
