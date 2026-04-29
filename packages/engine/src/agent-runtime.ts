@@ -54,6 +54,21 @@ export interface AgentRuntimeOptions {
   skillSelection?: SkillSelectionContext;
   /** Convenience: skill names to include in the session */
   skills?: string[];
+  /**
+   * Last-chance abort hook fired by the runtime *immediately before* the
+   * underlying LLM session is instantiated — i.e., after all of the runtime's
+   * own awaited setup work (provider registration, resource loading, etc.).
+   * Throw from this callback to cancel session creation.
+   *
+   * Runtimes SHOULD invoke this hook at their latest synchronous decision
+   * point so callers can enforce time-sensitive predicates (notably the
+   * engine pause flag) without a TOCTOU window between an outer check and
+   * the actual session spawn. Runtimes that ignore this hook degrade
+   * gracefully — the caller's outer check still fires before
+   * `runtime.createSession()` is invoked, so the abort window is bounded by
+   * the runtime's internal setup latency rather than unbounded.
+   */
+  beforeSpawnSession?: () => Promise<void> | void;
 }
 
 /**

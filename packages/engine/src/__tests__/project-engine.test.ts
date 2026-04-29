@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ProjectEngine } from "../project-engine.js";
 import { runtimeLog } from "../logger.js";
-import { aiMergeTask } from "../merger.js";
 import { TunnelProcessManager } from "../remote-access/tunnel-process-manager.js";
 
 const mocks = vi.hoisted(() => ({
@@ -1224,10 +1223,17 @@ describe("ProjectEngine swallowed error hardening", () => {
     expect(handler).toBeTypeOf("function");
     if (!handler) throw new Error("task:moved handler was not registered");
 
+    // Auto-merge enqueue runs inside a setTimeout grace period (~300ms) to
+    // let the executor's finally block complete before the merger starts.
+    // Use fake timers so the test doesn't actually sleep 300ms.
+    vi.useFakeTimers();
+
     await handler({
       task: { id: "FN-001", column: "in-review" },
       to: "in-review",
     });
+
+    await vi.advanceTimersByTimeAsync(500);
 
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining("Auto-merge: failed to read settings for task:moved on FN-001"),

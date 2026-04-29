@@ -27,6 +27,15 @@ export interface ResolvedSessionOptions extends AgentRuntimeOptions {
   pluginRunner?: PluginRunner;
   /** Optional runtime hint from task/agent configuration */
   runtimeHint?: string;
+  /**
+   * `beforeSpawnSession` is inherited from {@link AgentRuntimeOptions} — see
+   * its definition there for the contract. Callers (e.g. the reviewer's
+   * pause gate) throw from this callback to cancel session creation when
+   * external state changed during the async setup window. Forwarded
+   * verbatim to `runtime.createSession()`; the runtime is responsible for
+   * invoking it at its latest synchronous point before the underlying LLM
+   * session is instantiated.
+   */
 }
 
 /**
@@ -87,7 +96,10 @@ export async function createResolvedAgentSession(
     `[${sessionPurpose}] Using runtime "${resolved.runtimeId}" (configured=${resolved.wasConfigured})`,
   );
 
-  // Create the session using the resolved runtime
+  // Forward `beforeSpawnSession` to the runtime so it fires at the true
+  // latest sync point (just before LLM session instantiation) rather than
+  // here, before the runtime's own awaited setup work runs. See
+  // AgentRuntimeOptions.beforeSpawnSession for the contract.
   const result = await resolved.runtime.createSession(runtimeOptions);
 
   // Attach the resolved runtime's promptWithFallback as a bound method on the

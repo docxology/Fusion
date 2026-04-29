@@ -1702,7 +1702,12 @@ export class TriageProcessor {
           // model changes made after the session started.
           const currentSettings = await store.getSettings();
 
-          const result = await reviewStep(
+          // Spec reviewer runs via semaphore.runNested so it transiently
+          // bumps activeCount for honest observability while bypassing the
+          // wait queue (no fairness regression at low maxConcurrent). See
+          // concurrency.ts:runNested for the contract.
+          const sem = options.semaphore;
+          const invokeReviewer = () => reviewStep(
             rootDir,
             taskId,
             0,
@@ -1736,6 +1741,9 @@ export class TriageProcessor {
               rootDir,
             },
           );
+          const result = sem
+            ? await sem.runNested(invokeReviewer)
+            : await invokeReviewer();
 
           // Track verdict for post-session enforcement
           specReviewVerdictRef.current = result.verdict;

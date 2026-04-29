@@ -483,6 +483,10 @@ export class TaskExecutor {
   private resumingUnpaused = new Set<string>();
   /** Completed orphan recovery tasks currently running during startup. */
   private recoveringCompleted = new Set<string>();
+  /** Tracks tasks whose workflow-rerun bounce is in flight (todo→in-progress).
+   *  Prevents the task:moved handler from dispatching execute() before the
+   *  bounce finishes its own dispatch. */
+  private workflowRerunPending = new Set<string>();
   /** Active agent sessions per task, used to terminate on pause and inject steering. */
   private activeSessions = new Map<string, {
     session: AgentSession;
@@ -553,7 +557,7 @@ export class TaskExecutor {
 
   /** Returns the set of task IDs currently being executed. */
   getExecutingTaskIds(): Set<string> {
-    return new Set([...this.executing, ...this.recoveringCompleted]);
+    return new Set([...this.executing, ...this.recoveringCompleted, ...this.resumingUnpaused]);
   }
 
   /**
@@ -700,7 +704,11 @@ export class TaskExecutor {
           && !this.activeSessions.has(task.id)
           && !this.activeStepExecutors.has(task.id)
         ) {
-          if (!this.executing.has(task.id) && !this.resumingUnpaused.has(task.id)) {
+          if (
+            !this.executing.has(task.id)
+            && !this.resumingUnpaused.has(task.id)
+            && !this.recoveringCompleted.has(task.id)
+          ) {
             this.resumingUnpaused.add(task.id);
             executorLog.log(`Unpaused ${task.id} in-progress with no session — resuming execution`);
             try {
@@ -979,36 +987,46 @@ export class TaskExecutor {
     const handle = setTimeout(async () => {
       this.completedTaskWatchdogs.delete(taskId);
 
-      let currentTask: Task | null = null;
-      try {
-        currentTask = await this.store.getTask(taskId);
-      } catch (err: unknown) {
-        const errorMessage = err instanceof Error ? err.message : String(err);
-        executorLog.warn(`${taskId}: completed-task watchdog could not read latest task state: ${errorMessage}`);
+      // Claim recovery slot atomically (synchronously) before any async work.
+      // Without this, two paths can pass the in-flight guards on the same
+      // event-loop turn and both call recoverCompletedTask() concurrently.
+      if (
+        this.recoveringCompleted.has(taskId)
+        || this.executing.has(taskId)
+        || this.activeSessions.has(taskId)
+        || this.activeStepExecutors.has(taskId)
+        || this.resumingUnpaused.has(taskId)
+      ) {
         return;
       }
-
-      if (!currentTask || currentTask.column !== "in-progress" || currentTask.paused) {
-        return;
-      }
-      if (this.activeSessions.has(taskId) || this.activeStepExecutors.has(taskId) || this.recoveringCompleted.has(taskId)) {
-        return;
-      }
-      if (!this.isTaskWorkComplete(currentTask)) {
-        return;
-      }
-
-      executorLog.warn(
-        `${taskId}: completed-task watchdog fired after ${COMPLETED_TASK_WATCHDOG_MS / 1000}s ` +
-        `(${trigger}) — attempting direct recovery to in-review`,
-      );
-      await this.store.logEntry(
-        taskId,
-        `Watchdog: task remained in-progress ${COMPLETED_TASK_WATCHDOG_MS / 1000}s after ${trigger} — attempting direct recovery to in-review`,
-      ).catch(() => undefined);
-
       this.recoveringCompleted.add(taskId);
+
       try {
+        let currentTask: Task | null = null;
+        try {
+          currentTask = await this.store.getTask(taskId);
+        } catch (err: unknown) {
+          const errorMessage = err instanceof Error ? err.message : String(err);
+          executorLog.warn(`${taskId}: completed-task watchdog could not read latest task state: ${errorMessage}`);
+          return;
+        }
+
+        if (!currentTask || currentTask.column !== "in-progress" || currentTask.paused) {
+          return;
+        }
+        if (!this.isTaskWorkComplete(currentTask)) {
+          return;
+        }
+
+        executorLog.warn(
+          `${taskId}: completed-task watchdog fired after ${COMPLETED_TASK_WATCHDOG_MS / 1000}s ` +
+          `(${trigger}) — attempting direct recovery to in-review`,
+        );
+        await this.store.logEntry(
+          taskId,
+          `Watchdog: task remained in-progress ${COMPLETED_TASK_WATCHDOG_MS / 1000}s after ${trigger} — attempting direct recovery to in-review`,
+        ).catch(() => undefined);
+
         const recovered = await this.recoverCompletedTask(currentTask);
         if (!recovered) {
           await this.store.logEntry(
@@ -1024,29 +1042,54 @@ export class TaskExecutor {
     this.completedTaskWatchdogs.set(taskId, handle);
   }
 
-  private async performWorkflowRerunBounce(taskId: string, worktreePath: string): Promise<void> {
-    // moveTask(in-progress → todo) clears `task.worktree`; restore it before
-    // the return trip so the dashboard never renders the task under
-    // "Unassigned" and self-healing can't reclaim the worktree as idle.
-    const latestTask = await this.store.getTask(taskId);
-    if (!latestTask) {
-      throw new Error("task missing during workflow rerun bounce");
+  /**
+   * Result of a workflow-rerun bounce attempt.
+   *
+   * - `bounced` — the move sequence completed successfully and the task is
+   *   back in `in-progress` ready for re-execution.
+   * - `skipped-pending` — another bounce for the same task is mid-flight;
+   *   this attempt is a no-op. Callers (notably the watchdog) must NOT log
+   *   this as a successful retry, since the original bounce may itself be
+   *   stuck.
+   */
+  private async performWorkflowRerunBounce(
+    taskId: string,
+    worktreePath: string,
+  ): Promise<"bounced" | "skipped-pending"> {
+    // Re-entry guard: if a previous bounce for the same task is still
+    // mid-flight (e.g., the watchdog fired before the original sequence
+    // completed), skip rather than racing two concurrent moveTask sequences.
+    if (this.workflowRerunPending.has(taskId)) {
+      executorLog.warn(`${taskId}: workflow rerun bounce already in flight — skipping re-entry`);
+      return "skipped-pending";
     }
+    this.workflowRerunPending.add(taskId);
+    try {
+      // moveTask(in-progress → todo) clears `task.worktree`; restore it before
+      // the return trip so the dashboard never renders the task under
+      // "Unassigned" and self-healing can't reclaim the worktree as idle.
+      const latestTask = await this.store.getTask(taskId);
+      if (!latestTask) {
+        throw new Error("task missing during workflow rerun bounce");
+      }
 
-    if (latestTask.column === "in-progress") {
-      await this.store.moveTask(taskId, "todo");
-      await this.store.updateTask(taskId, { worktree: worktreePath });
-      await this.store.moveTask(taskId, "in-progress");
-      return;
+      if (latestTask.column === "in-progress") {
+        await this.store.moveTask(taskId, "todo");
+        await this.store.updateTask(taskId, { worktree: worktreePath });
+        await this.store.moveTask(taskId, "in-progress");
+        return "bounced";
+      }
+
+      if (latestTask.column === "todo") {
+        await this.store.updateTask(taskId, { worktree: worktreePath });
+        await this.store.moveTask(taskId, "in-progress");
+        return "bounced";
+      }
+
+      throw new Error(`task is in '${latestTask.column}', cannot bounce to in-progress`);
+    } finally {
+      this.workflowRerunPending.delete(taskId);
     }
-
-    if (latestTask.column === "todo") {
-      await this.store.updateTask(taskId, { worktree: worktreePath });
-      await this.store.moveTask(taskId, "in-progress");
-      return;
-    }
-
-    throw new Error(`task is in '${latestTask.column}', cannot bounce to in-progress`);
   }
 
   private scheduleWorkflowRerun(taskId: string, worktreePath: string, successMessage: string): void {
@@ -1054,8 +1097,12 @@ export class TaskExecutor {
 
     setTimeout(async () => {
       try {
-        await this.performWorkflowRerunBounce(taskId, worktreePath);
-        executorLog.log(successMessage);
+        const outcome = await this.performWorkflowRerunBounce(taskId, worktreePath);
+        if (outcome === "bounced") {
+          executorLog.log(successMessage);
+        } else {
+          executorLog.warn(`${taskId}: rerun bounce skipped — another bounce already in flight`);
+        }
       } catch (err: unknown) {
         const errorMessage = err instanceof Error ? err.message : String(err);
         executorLog.error(`${taskId}: failed to schedule rerun bounce: ${errorMessage}`);
@@ -1089,8 +1136,21 @@ export class TaskExecutor {
       ).catch(() => undefined);
 
       try {
-        await this.performWorkflowRerunBounce(taskId, worktreePath);
-        executorLog.warn(`${taskId}: workflow rerun watchdog retry succeeded`);
+        const outcome = await this.performWorkflowRerunBounce(taskId, worktreePath);
+        if (outcome === "bounced") {
+          executorLog.warn(`${taskId}: workflow rerun watchdog retry succeeded`);
+        } else {
+          // The original bounce is still mid-flight, which means *it* is the
+          // one that's hung — not us. Log honestly so operators don't see a
+          // false "succeeded" message while the task is actually stranded.
+          executorLog.error(
+            `${taskId}: workflow rerun watchdog retry skipped — original bounce still in flight after ${WORKFLOW_RERUN_WATCHDOG_MS / 1000}s; task may be stuck`,
+          );
+          await this.store.logEntry(
+            taskId,
+            `Workflow rerun watchdog retry skipped — original bounce still in flight after ${WORKFLOW_RERUN_WATCHDOG_MS / 1000}s; task may be stuck`,
+          ).catch(() => undefined);
+        }
       } catch (err: unknown) {
         const errorMessage = err instanceof Error ? err.message : String(err);
         executorLog.error(`${taskId}: workflow rerun watchdog retry failed: ${errorMessage}`);
@@ -1281,6 +1341,15 @@ export class TaskExecutor {
    */
   async recoverCompletedTask(task: Task): Promise<boolean> {
     try {
+      if (
+        this.executing.has(task.id)
+        || this.activeSessions.has(task.id)
+        || this.activeStepExecutors.has(task.id)
+        || this.resumingUnpaused.has(task.id)
+      ) {
+        executorLog.log(`${task.id}: skipping recoverCompletedTask — task has active execution in flight`);
+        return false;
+      }
       const settings = await this.store.getSettings();
 
       // Capture modified files if the worktree still exists
@@ -3210,7 +3279,16 @@ export class TaskExecutor {
 
         try {
           const settings = await store.getSettings();
-          const result = await reviewStep(
+          // Run the reviewer via semaphore.runNested so its slot accounting
+          // is honest: activeCount transiently bumps to reflect the second
+          // agent session, but the reviewer doesn't enter the wait queue
+          // (avoiding a fairness regression where unrelated work could
+          // overtake this task at low maxConcurrent). The parent (this
+          // executor) makes no LLM calls while suspended awaiting the tool
+          // result, so the soft breach of `limit` does not push real
+          // LLM-active concurrency above the configured cap.
+          const sem = options.semaphore;
+          const invokeReviewer = () => reviewStep(
             worktreePath, taskId, step, step_name,
             reviewType, promptContent, baseline,
             {
@@ -3245,6 +3323,9 @@ export class TaskExecutor {
               settings,
             },
           );
+          const result = sem
+            ? await sem.runNested(invokeReviewer)
+            : await invokeReviewer();
 
           await store.logEntry(
             taskId,

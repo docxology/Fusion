@@ -45,6 +45,15 @@ export type ProcessPullRequestMergeFn = (
 
 const execFileAsync = promisify(execFile);
 
+/**
+ * Delay between a task moving to in-review and auto-merge being enqueued.
+ * Gives the executor's finally block time to complete session disposal,
+ * child-agent termination, and any in-flight reviewer teardown so the merger
+ * doesn't start emitting logs while the executor is still cleaning up. See
+ * FN-2910 for the observed overlap symptom.
+ */
+const MERGE_HANDOFF_GRACE_MS = 300;
+
 interface RemoteLifecycleEvaluation {
   provider: TunnelProvider;
   config?: TunnelProviderConfig;
@@ -1476,16 +1485,34 @@ export class ProjectEngine {
       if (to !== "in-review") return;
       if (task.paused) return;
       if (this.options.getTaskMergeBlocker?.(task)) return;
-      try {
-        const settings = await store.getSettings();
-        if (settings.globalPause || settings.enginePaused) return;
-        if (!settings.autoMerge) return;
-        this.internalEnqueueMerge(task.id);
-      } catch (err: unknown) {
-        runtimeLog.warn(
-          `Auto-merge: failed to read settings for task:moved on ${task.id}: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      }
+
+      // Grace period before handing off to the merger. The executor's finally
+      // block (session disposal, child-agent termination, in-flight reviewer
+      // teardown) runs *after* the moveTask("in-review") that fires this
+      // event. Without a delay, the merger's session can start emitting logs
+      // while the executor is still cleaning up — observed in FN-2910 as
+      // overlapping [reviewer]/[merger] log streams. The delay is also a
+      // belt-and-braces guard against any in-flight reviewer that the
+      // executor spawned just before transitioning.
+      setTimeout(async () => {
+        try {
+          // Re-validate eligibility after the grace period — the task may
+          // have been paused, moved, or had its merge blocked.
+          const latestTask = await store.getTask(task.id).catch(() => null);
+          if (!latestTask) return;
+          if (latestTask.column !== "in-review") return;
+          if (latestTask.paused) return;
+          if (this.options.getTaskMergeBlocker?.(latestTask)) return;
+          const settings = await store.getSettings();
+          if (settings.globalPause || settings.enginePaused) return;
+          if (!settings.autoMerge) return;
+          this.internalEnqueueMerge(task.id);
+        } catch (err: unknown) {
+          runtimeLog.warn(
+            `Auto-merge: failed to read settings for task:moved on ${task.id}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }, MERGE_HANDOFF_GRACE_MS);
     };
     store.on("task:moved", this.taskMovedHandler);
   }

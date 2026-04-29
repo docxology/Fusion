@@ -15,8 +15,14 @@ interface PriorityWaiter {
  * A concurrency semaphore that gates all agentic activities (triage specification,
  * task execution, and merge operations) behind a shared slot limit.
  *
- * The semaphore ensures that the total number of concurrently running AI agents
- * never exceeds `maxConcurrent`, regardless of which subsystem spawned them.
+ * The semaphore ensures that the total number of concurrently running
+ * **top-level** AI agents never exceeds `maxConcurrent`, regardless of which
+ * subsystem spawned them. Nested helper agents (reviewers spawned from
+ * inside a parent's tool call) are admitted via {@link runNested} without
+ * entering the wait queue: they bump `activeCount` for honest observability
+ * and respect the parent's slot, but can transiently push the count above
+ * the configured limit. This is intentional — see {@link runNested} for the
+ * fairness/deadlock rationale.
  *
  * **Priority-based draining:** When a slot becomes available and multiple agents
  * are waiting, the waiter with the highest `priority` value is served first.
@@ -128,6 +134,33 @@ export class AgentSemaphore {
       return await fn();
     } finally {
       this.release();
+    }
+  }
+
+  /**
+   * Run a nested helper agent within the current caller's slot context.
+   *
+   * Unlike {@link run}, `runNested` does NOT enter the wait queue — it bumps
+   * `_active` directly so the helper begins immediately. The bump keeps
+   * {@link activeCount} an honest report of how many agent sessions exist
+   * right now, even though the helper bypasses the usual fairness queue.
+   *
+   * Intended use: a parent agent (executor, triage) is suspended awaiting a
+   * synchronous sub-agent's tool result (typically a reviewer). The parent
+   * makes no LLM calls while suspended, so the total number of LLM-active
+   * agents at any moment is still bounded by `maxConcurrent` — but two agent
+   * sessions exist, which `runNested` reflects in `activeCount`. This is
+   * intentionally a soft breach of the limit: it preserves forward-progress
+   * fairness for the in-flight task (no queue stealing) and avoids the
+   * deadlock that would occur if both parent and child needed a queued slot.
+   */
+  async runNested<T>(fn: () => Promise<T>): Promise<T> {
+    this._active++;
+    try {
+      return await fn();
+    } finally {
+      this._active--;
+      this._drain();
     }
   }
 

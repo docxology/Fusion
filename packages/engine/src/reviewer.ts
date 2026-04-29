@@ -404,26 +404,79 @@ export async function reviewStep(
         } : undefined),
       ]
     : undefined;
-  const { session } = await createResolvedAgentSession({
-    sessionPurpose: "reviewer",
-    runtimeHint: extractRuntimeHint(memoryAgent?.runtimeConfig),
-    pluginRunner: options.pluginRunner,
-    cwd,
-    systemPrompt: reviewerSystemPrompt,
-    tools: "readonly",
-    customTools: memoryTools,
-    onText: agentLogger ? agentLogger.onText : (delta) => options.onText?.(delta),
-    onThinking: agentLogger?.onThinking,
-    onToolStart: agentLogger?.onToolStart,
-    onToolEnd: agentLogger?.onToolEnd,
-    defaultProvider: validatorProvider,
-    defaultModelId: validatorModelId,
-    fallbackProvider: validatorFallbackProvider,
-    fallbackModelId: validatorFallbackModelId,
-    defaultThinkingLevel: options.defaultThinkingLevel,
-    // Skill selection: use assigned agent skills if available, otherwise role fallback
-    ...(skillContext?.skillSelectionContext ? { skillSelection: skillContext.skillSelectionContext } : {}),
-  });
+  // Sentinel error used by the beforeCreateSession hook to cancel session
+  // creation when a pause is detected after runtime resolution but before
+  // the LLM session is actually spawned. Caught locally and converted to an
+  // UNAVAILABLE verdict.
+  class ReviewerPauseAbortError extends Error {
+    constructor(public readonly reason: string) {
+      super(`reviewer aborted: ${reason}`);
+    }
+  }
+
+  // Reviewers run within the parent agent's slot accounting via
+  // semaphore.runNested at the call site. The session spawn itself includes
+  // a last-chance pause check (beforeSpawnSession) that the runtime fires
+  // immediately before the underlying LLM session is instantiated — past
+  // every awaited setup step inside the runtime (provider registration,
+  // resource loading, etc.). This closes the TOCTOU window where a pause
+  // flipped during the setup chain.
+  let session: import("@mariozechner/pi-coding-agent").AgentSession;
+  try {
+    ({ session } = await createResolvedAgentSession({
+      sessionPurpose: "reviewer",
+      runtimeHint: extractRuntimeHint(memoryAgent?.runtimeConfig),
+      pluginRunner: options.pluginRunner,
+      cwd,
+      systemPrompt: reviewerSystemPrompt,
+      tools: "readonly",
+      customTools: memoryTools,
+      onText: agentLogger ? agentLogger.onText : (delta) => options.onText?.(delta),
+      onThinking: agentLogger?.onThinking,
+      onToolStart: agentLogger?.onToolStart,
+      onToolEnd: agentLogger?.onToolEnd,
+      defaultProvider: validatorProvider,
+      defaultModelId: validatorModelId,
+      fallbackProvider: validatorFallbackProvider,
+      fallbackModelId: validatorFallbackModelId,
+      defaultThinkingLevel: options.defaultThinkingLevel,
+      // Skill selection: use assigned agent skills if available, otherwise role fallback
+      ...(skillContext?.skillSelectionContext ? { skillSelection: skillContext.skillSelectionContext } : {}),
+      beforeSpawnSession: async () => {
+        if (!options.store) return;
+        let finalSettings: Settings | undefined;
+        try {
+          finalSettings = await options.store.getSettings();
+        } catch {
+          // Treat a transient store failure as "not paused" — better to
+          // proceed than to block reviews on a flaky read.
+          return;
+        }
+        if (finalSettings?.globalPause || finalSettings?.enginePaused) {
+          const reason = finalSettings.globalPause ? "Global pause" : "Engine paused";
+          throw new ReviewerPauseAbortError(reason);
+        }
+      },
+    }));
+  } catch (err) {
+    if (err instanceof ReviewerPauseAbortError) {
+      reviewerLog.log(
+        `${taskId}: ${reviewType} review for Step ${stepNumber} aborted before spawn — ${err.reason} active`,
+      );
+      if (options.store && options.taskId) {
+        await options.store.logEntry(
+          options.taskId,
+          `${reviewType} review aborted before spawn — ${err.reason} active`,
+        ).catch(() => undefined);
+      }
+      return {
+        verdict: "UNAVAILABLE",
+        review: `${err.reason} active — reviewer not spawned. Stop calling fn_review_* and exit cleanly; the parent task will resume after unpause.`,
+        summary: `Skipped: ${err.reason}`,
+      };
+    }
+    throw err;
+  }
 
   reviewerLog.log(`${taskId}: reviewer using model ${describeModel(session)}`);
   if (options.store && options.taskId) {
@@ -451,10 +504,8 @@ export async function reviewStep(
     session.dispose();
   }
 
-  // Extract verdict from the review text
   const verdict = extractVerdict(reviewText);
   const summary = extractSummary(reviewText);
-
   return { verdict, review: reviewText, summary };
 }
 

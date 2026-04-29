@@ -425,6 +425,9 @@ export interface AgentOptions {
    *  (and `skillSelection` is not), auto-constructs a SkillSelectionContext
    *  from the cwd and these names. Ignored when `skillSelection` is set. */
   skills?: string[];
+  /** Last-chance abort hook fired immediately before `createAgentSession`.
+   *  See `AgentRuntimeOptions.beforeSpawnSession`. */
+  beforeSpawnSession?: () => Promise<void> | void;
 }
 
 function resolveConfiguredModel(
@@ -1108,6 +1111,14 @@ export async function createFnAgent(options: AgentOptions): Promise<AgentResult>
       ...(wrappedTools as ToolDefinition[]),
       ...(options.customTools ?? []),
     ];
+    // Last-chance abort hook. Fires *here* — after every awaited setup step
+    // in createFnAgent (provider registration, worktree validation, resource
+    // loader reload) and immediately before the actual LLM session spawn.
+    // This is the latest synchronous decision point where the engine can
+    // honor a pause that flipped during this function's setup window.
+    if (options.beforeSpawnSession) {
+      await options.beforeSpawnSession();
+    }
     return createAgentSession({
       cwd: options.cwd,
       authStorage,
