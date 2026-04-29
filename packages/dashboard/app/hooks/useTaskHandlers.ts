@@ -4,6 +4,7 @@ import type { ToastType } from "./useToast";
 
 interface UseTaskHandlersOptions {
   createTask: (input: TaskCreateInput) => Promise<Task>;
+  ingestCreatedTasks: (tasks: Task[]) => void;
   onPlanningTaskCreated: (task: Task, addToast: (msg: string, type?: ToastType) => void) => void;
   onPlanningTasksCreated: (tasks: Task[], addToast: (msg: string, type?: ToastType) => void) => void;
   onSubtaskTasksCreated: (tasks: Task[], addToast: (msg: string, type?: ToastType) => void) => void;
@@ -22,6 +23,7 @@ export interface UseTaskHandlersResult {
 export function useTaskHandlers(options: UseTaskHandlersOptions): UseTaskHandlersResult {
   const {
     createTask,
+    ingestCreatedTasks,
     onPlanningTaskCreated,
     onPlanningTasksCreated,
     onSubtaskTasksCreated,
@@ -44,16 +46,19 @@ export function useTaskHandlers(options: UseTaskHandlersOptions): UseTaskHandler
   );
 
   const handlePlanningTaskCreated = useCallback((task: Task) => {
+    ingestCreatedTasks([task]);
     onPlanningTaskCreated(task, addToast);
-  }, [onPlanningTaskCreated, addToast]);
+  }, [addToast, ingestCreatedTasks, onPlanningTaskCreated]);
 
   const handlePlanningTasksCreated = useCallback((tasks: Task[]) => {
+    ingestCreatedTasks(tasks);
     onPlanningTasksCreated(tasks, addToast);
-  }, [onPlanningTasksCreated, addToast]);
+  }, [addToast, ingestCreatedTasks, onPlanningTasksCreated]);
 
   const handleSubtaskTasksCreated = useCallback((tasks: Task[]) => {
+    ingestCreatedTasks(tasks);
     onSubtaskTasksCreated(tasks, addToast);
-  }, [onSubtaskTasksCreated, addToast]);
+  }, [addToast, ingestCreatedTasks, onSubtaskTasksCreated]);
 
   const handleGitHubImport = useCallback((task: Task) => {
     addToast(`Imported ${task.id} from GitHub`, "success");

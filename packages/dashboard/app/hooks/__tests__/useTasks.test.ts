@@ -996,6 +996,60 @@ describe("useTasks", () => {
     });
   });
 
+  describe("ingestCreatedTasks", () => {
+    it("adds planning-created tasks to local state immediately", async () => {
+      mockFetchTasks.mockResolvedValueOnce([]);
+      const createdTask = createMockTask({ id: "FN-020", column: "triage" });
+
+      const { result } = renderHook(() => useTasks());
+
+      await waitFor(() => {
+        expect(MockEventSource.instances).toHaveLength(1);
+      });
+
+      act(() => {
+        result.current.ingestCreatedTasks([createdTask]);
+      });
+
+      expect(result.current.tasks).toHaveLength(1);
+      expect(result.current.tasks[0]?.id).toBe("FN-020");
+    });
+
+    it("does not overwrite fresher task data when SSE already updated the task", async () => {
+      mockFetchTasks.mockResolvedValueOnce([]);
+      const createdTask = createMockTask({
+        id: "FN-021",
+        updatedAt: "2026-01-01T00:00:00Z",
+      });
+      const refreshedTask = createMockTask({
+        id: "FN-021",
+        updatedAt: "2026-01-02T00:00:00Z",
+        size: "L",
+      });
+
+      const { result } = renderHook(() => useTasks());
+
+      await waitFor(() => {
+        expect(MockEventSource.instances).toHaveLength(1);
+      });
+
+      act(() => {
+        MockEventSource.instances[0]._emit("task:created", refreshedTask);
+      });
+
+      act(() => {
+        result.current.ingestCreatedTasks([createdTask]);
+      });
+
+      expect(result.current.tasks).toHaveLength(1);
+      expect(result.current.tasks[0]).toMatchObject({
+        id: "FN-021",
+        updatedAt: "2026-01-02T00:00:00Z",
+        size: "L",
+      });
+    });
+  });
+
   describe("duplicateTask optimistic insertion", () => {
     it("adds task to state immediately", async () => {
       const original = createMockTask({ id: "FN-001", column: "todo" as Column });

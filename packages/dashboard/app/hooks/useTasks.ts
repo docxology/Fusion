@@ -25,6 +25,28 @@ function compareTimestamps(a: string | undefined, b: string | undefined): number
   return a.localeCompare(b);
 }
 
+function mergeIncomingTask(current: Task, incoming: Task): Task {
+  const updatedAtCompare = compareTimestamps(incoming.updatedAt, current.updatedAt);
+  if (updatedAtCompare < 0) {
+    return current;
+  }
+
+  if (current.column === incoming.column) {
+    return incoming;
+  }
+
+  const columnTimestampCompare = compareTimestamps(current.columnMovedAt, incoming.columnMovedAt);
+  if (current.columnMovedAt && !incoming.columnMovedAt) {
+    return { ...incoming, column: current.column, columnMovedAt: current.columnMovedAt };
+  }
+
+  if (columnTimestampCompare > 0) {
+    return { ...incoming, column: current.column, columnMovedAt: current.columnMovedAt };
+  }
+
+  return incoming;
+}
+
 export interface UseTasksOptions {
   /** 
    * When provided, fetches tasks only for this project.
@@ -183,9 +205,22 @@ export function useTasks(options?: UseTasksOptions) {
         return;
       }
       setTasks((prev) => {
-        if (prev.some((t) => t.id === task.id)) return prev;
-        return [...prev, task];
+        const existingIndex = prev.findIndex((candidate) => candidate.id === task.id);
+        if (existingIndex === -1) {
+          return [...prev, task];
+        }
+
+        const current = prev[existingIndex]!;
+        const merged = mergeIncomingTask(current, task);
+        if (merged === current) {
+          return prev;
+        }
+
+        const next = [...prev];
+        next[existingIndex] = merged;
+        return next;
       });
+      lastFetchTimeMs.current = Date.now();
     };
 
     const handleMoved = (e: MessageEvent) => {
@@ -214,26 +249,7 @@ export function useTasks(options?: UseTasksOptions) {
       setTasks((prev) =>
         prev.map((t) => {
           if (t.id !== incoming.id) return t;
-
-          const updatedAtCompare = compareTimestamps(incoming.updatedAt, t.updatedAt);
-          if (updatedAtCompare < 0) {
-            return t;
-          }
-
-          if (t.column === incoming.column) {
-            return incoming;
-          }
-
-          const columnTimestampCompare = compareTimestamps(t.columnMovedAt, incoming.columnMovedAt);
-          if (t.columnMovedAt && !incoming.columnMovedAt) {
-            return { ...incoming, column: t.column, columnMovedAt: t.columnMovedAt };
-          }
-
-          if (columnTimestampCompare > 0) {
-            return { ...incoming, column: t.column, columnMovedAt: t.columnMovedAt };
-          }
-
-          return incoming;
+          return mergeIncomingTask(t, incoming);
         })
       );
       lastFetchTimeMs.current = Date.now();
@@ -383,5 +399,46 @@ export function useTasks(options?: UseTasksOptions) {
     return normalized;
   }, [projectId]);
 
-  return { tasks, createTask, moveTask, pauseTask, deleteTask, mergeTask, retryTask, duplicateTask, updateTask, archiveTask, unarchiveTask, archiveAllDone, loadArchivedTasks, includeArchived, lastFetchTimeMs: lastFetchTimeMs.current };
+  const ingestCreatedTasks = useCallback((incomingTasks: Task[]): void => {
+    if (incomingTasks.length === 0) {
+      return;
+    }
+
+    if (searchQueryRef.current) {
+      void refreshTasksRef.current({ searchQueryOverride: searchQueryRef.current });
+      return;
+    }
+
+    const normalizedTasks = incomingTasks.map(normalizeTask);
+    setTasks((prev) => {
+      let next = prev;
+
+      for (const task of normalizedTasks) {
+        const existingIndex = next.findIndex((candidate) => candidate.id === task.id);
+        if (existingIndex === -1) {
+          if (next === prev) {
+            next = [...prev];
+          }
+          next.push(task);
+          continue;
+        }
+
+        const current = next[existingIndex]!;
+        const merged = mergeIncomingTask(current, task);
+        if (merged === current) {
+          continue;
+        }
+
+        if (next === prev) {
+          next = [...prev];
+        }
+        next[existingIndex] = merged;
+      }
+
+      return next;
+    });
+    lastFetchTimeMs.current = Date.now();
+  }, []);
+
+  return { tasks, createTask, moveTask, pauseTask, deleteTask, mergeTask, retryTask, duplicateTask, updateTask, archiveTask, unarchiveTask, archiveAllDone, loadArchivedTasks, includeArchived, ingestCreatedTasks, lastFetchTimeMs: lastFetchTimeMs.current };
 }

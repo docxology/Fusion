@@ -23,6 +23,7 @@ const CREATED_TASK: Task = {
 function createOptions(overrides: Partial<Parameters<typeof useTaskHandlers>[0]> = {}): Parameters<typeof useTaskHandlers>[0] {
   return {
     createTask: vi.fn().mockResolvedValue(CREATED_TASK),
+    ingestCreatedTasks: vi.fn(),
     onPlanningTaskCreated: vi.fn(),
     onPlanningTasksCreated: vi.fn(),
     onSubtaskTasksCreated: vi.fn(),
@@ -71,6 +72,7 @@ describe("useTaskHandlers", () => {
       result.current.handlePlanningTaskCreated(CREATED_TASK);
     });
 
+    expect(options.ingestCreatedTasks).toHaveBeenCalledWith([CREATED_TASK]);
     expect(options.onPlanningTaskCreated).toHaveBeenCalledWith(CREATED_TASK, options.addToast);
   });
 
@@ -82,6 +84,7 @@ describe("useTaskHandlers", () => {
       result.current.handlePlanningTasksCreated([CREATED_TASK]);
     });
 
+    expect(options.ingestCreatedTasks).toHaveBeenCalledWith([CREATED_TASK]);
     expect(options.onPlanningTasksCreated).toHaveBeenCalledWith([CREATED_TASK], options.addToast);
   });
 
@@ -93,6 +96,7 @@ describe("useTaskHandlers", () => {
       result.current.handleSubtaskTasksCreated([CREATED_TASK]);
     });
 
+    expect(options.ingestCreatedTasks).toHaveBeenCalledWith([CREATED_TASK]);
     expect(options.onSubtaskTasksCreated).toHaveBeenCalledWith([CREATED_TASK], options.addToast);
   });
 
