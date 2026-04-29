@@ -277,19 +277,23 @@ export function useQuickChat(
       const targetSessionKey = buildSessionKey(target.agentId, target.modelProvider, target.modelId);
       currentSessionTargetRef.current = target;
 
-      // Close any existing stream
-      if (streamRef.current) {
-        streamRef.current.close();
-        streamRef.current = null;
+      const isSameSession = targetSessionKey === currentSessionKeyRef.current && activeSession;
+
+      if (!isSameSession) {
+        // Close any existing stream
+        if (streamRef.current) {
+          streamRef.current.close();
+          streamRef.current = null;
+        }
+
+        // Reset streaming state
+        setStreamingText("");
+        setStreamingThinking("");
+        setStreamingToolCalls([]);
+        setIsStreaming(false);
       }
 
-      // Reset streaming state
-      setStreamingText("");
-      setStreamingThinking("");
-      setStreamingToolCalls([]);
-      setIsStreaming(false);
-
-      if (targetSessionKey === currentSessionKeyRef.current && activeSession) {
+      if (isSameSession) {
         // Same chat target — just reload messages from server
         await reloadMessages();
         return;

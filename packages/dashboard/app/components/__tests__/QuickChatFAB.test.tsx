@@ -820,6 +820,30 @@ describe("QuickChatFAB", () => {
     expect(screen.getByTestId("quick-chat-input")).not.toBeDisabled();
   });
 
+  it("shows Thinking waiting indicator while streaming before first text chunk", async () => {
+    mockStreamChatResponse.mockImplementation((_sessionId, _content, _handlers) => ({
+      close: vi.fn(),
+      isConnected: vi.fn(() => true),
+    }));
+
+    render(<QuickChatFAB addToast={addToast} projectId="proj-123" />);
+
+    fireEvent.click(screen.getByTestId("quick-chat-fab"));
+
+    await waitFor(() => {
+      expect(mockFetchResumeChatSession).toHaveBeenCalled();
+    });
+
+    const input = await screen.findByTestId("quick-chat-input");
+    fireEvent.change(input, { target: { value: "Hello" } });
+    fireEvent.click(screen.getByTestId("quick-chat-send"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("quick-chat-waiting")).toHaveTextContent("Thinking…");
+    });
+    expect(screen.getByTestId("quick-chat-waiting")).not.toHaveTextContent("Connecting…");
+  });
+
   it("clicking stop button cancels streaming", async () => {
     const closeFn = vi.fn();
     mockStreamChatResponse.mockImplementation((_sessionId, _content, handlers) => {

@@ -206,6 +206,75 @@ describe("useQuickChat", () => {
     });
   });
 
+  it("switchSession preserves isStreaming when same session is resumed", async () => {
+    const existingSession = makeSession({ id: "session-existing", agentId: "agent-001" });
+
+    mockFetchResumeChatSession.mockResolvedValueOnce({ session: existingSession });
+    mockFetchChatMessages.mockResolvedValue({ messages: [] });
+    mockStreamChatResponse.mockReturnValue({ close: vi.fn(), isConnected: () => true });
+
+    const { result } = renderHook(() => useQuickChat("proj-123"));
+
+    await act(async () => {
+      await result.current.switchSession("agent-001");
+    });
+
+    act(() => {
+      result.current.sendMessage("Hello");
+    });
+
+    await waitFor(() => {
+      expect(result.current.isStreaming).toBe(true);
+    });
+
+    await act(async () => {
+      await result.current.switchSession("agent-001");
+    });
+
+    await waitFor(() => {
+      expect(result.current.isStreaming).toBe(true);
+      expect(mockFetchChatMessages).toHaveBeenCalledWith("session-existing", { limit: 50 }, "proj-123");
+    });
+  });
+
+  it("switchSession resets streaming state when switching to a different session", async () => {
+    const sessionA = makeSession({ id: "session-a", agentId: "agent-001" });
+    const sessionB = makeSession({ id: "session-b", agentId: "agent-002" });
+    const closeFn = vi.fn();
+
+    mockFetchResumeChatSession
+      .mockResolvedValueOnce({ session: sessionA })
+      .mockResolvedValueOnce({ session: sessionB });
+    mockFetchChatMessages.mockResolvedValue({ messages: [] });
+    mockStreamChatResponse.mockReturnValue({ close: closeFn, isConnected: () => true });
+
+    const { result } = renderHook(() => useQuickChat("proj-123"));
+
+    await act(async () => {
+      await result.current.switchSession("agent-001");
+    });
+
+    act(() => {
+      result.current.sendMessage("Hello");
+    });
+
+    await waitFor(() => {
+      expect(result.current.isStreaming).toBe(true);
+    });
+
+    await act(async () => {
+      await result.current.switchSession("agent-002");
+    });
+
+    await waitFor(() => {
+      expect(closeFn).toHaveBeenCalledTimes(1);
+      expect(result.current.isStreaming).toBe(false);
+      expect(result.current.streamingText).toBe("");
+      expect(result.current.streamingThinking).toBe("");
+      expect(result.current.streamingToolCalls).toEqual([]);
+    });
+  });
+
   it("resumes via targeted lookup without loading the full active-session list", async () => {
     const existingSession = makeSession({
       id: "session-targeted",
