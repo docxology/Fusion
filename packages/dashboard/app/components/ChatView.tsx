@@ -16,6 +16,8 @@ import {
   Square,
   Eye,
   EyeOff,
+  Paperclip,
+  File,
 } from "lucide-react";
 import { useChat, type ToolCallInfo } from "../hooks/useChat";
 import { useViewportMode } from "./Header";
@@ -140,6 +142,25 @@ const chatMarkdownComponents: Components = {
  * of the agentId stored on the session. This ID serves as metadata only.
  */
 const FN_AGENT_ID = "__fn_agent__";
+
+interface PendingAttachment {
+  file: File;
+  previewUrl: string;
+}
+
+const ALLOWED_ATTACHMENT_TYPES = [
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
+  "text/plain",
+  "application/json",
+  "text/yaml",
+  "text/markdown",
+  "text/csv",
+  "application/xml",
+  "text/x-log",
+];
 
 function getSkillTriggerMatch(value: string): { filter: string; start: number; end: number } | null {
   const triggerMatch = /(^|[\s])\/([^\s]*)$/.exec(value);
@@ -383,6 +404,9 @@ export function ChatView({ projectId, addToast }: ChatViewProps) {
   const [mentionHighlightIndex, setMentionHighlightIndex] = useState(0);
   const [mentionStartPos, setMentionStartPos] = useState(-1);
   const [plainTextMessageIds, setPlainTextMessageIds] = useState<Set<string>>(() => new Set());
+  // Attachment state mirrors QuickEntryBox: pending files selected before send.
+  const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
+  const [isDragOver, setIsDragOver] = useState(false);
 
   // File mention state and hook
   const [, setFileMentionPopupVisible] = useState(false);
@@ -409,6 +433,8 @@ export function ChatView({ projectId, addToast }: ChatViewProps) {
   const hideSkillMenuTimeoutRef = useRef<number | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const pendingAttachmentsRef = useRef<PendingAttachment[]>([]);
   const mentionCursorPosRef = useRef(0);
   const mode = useViewportMode();
   const isMobile = mode === "mobile";
@@ -542,6 +568,58 @@ export function ChatView({ projectId, addToast }: ChatViewProps) {
     };
   }, [projectId]);
 
+  useEffect(() => {
+    pendingAttachmentsRef.current = pendingAttachments;
+  }, [pendingAttachments]);
+
+  useEffect(() => {
+    return () => {
+      for (const attachment of pendingAttachmentsRef.current) {
+        if (attachment.previewUrl) {
+          URL.revokeObjectURL(attachment.previewUrl);
+        }
+      }
+    };
+  }, []);
+
+  const handleAttachmentFiles = useCallback((files: FileList | File[] | null | undefined) => {
+    if (!files || files.length === 0) return;
+
+    const nextAttachments: PendingAttachment[] = [];
+    for (const file of Array.from(files)) {
+      if (!ALLOWED_ATTACHMENT_TYPES.includes(file.type)) {
+        continue;
+      }
+      const isImage = file.type.startsWith("image/");
+      nextAttachments.push({
+        file,
+        previewUrl: isImage ? URL.createObjectURL(file) : "",
+      });
+    }
+
+    if (nextAttachments.length > 0) {
+      setPendingAttachments((prev) => [...prev, ...nextAttachments]);
+    }
+  }, []);
+
+  const removeAttachment = useCallback((index: number) => {
+    setPendingAttachments((prev) => {
+      const attachment = prev[index];
+      if (attachment?.previewUrl) {
+        URL.revokeObjectURL(attachment.previewUrl);
+      }
+      return prev.filter((_, attachmentIndex) => attachmentIndex !== index);
+    });
+  }, []);
+
+  const handlePaste = useCallback((event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const clipboardFiles = event.clipboardData?.files;
+    if (!clipboardFiles || clipboardFiles.length === 0) return;
+    const imageFiles = Array.from(clipboardFiles).filter((file) => file.type.startsWith("image/"));
+    if (imageFiles.length === 0) return;
+    handleAttachmentFiles(imageFiles);
+  }, [handleAttachmentFiles]);
+
   // Handle create session
   const handleCreateSession = useCallback(
     async (input: { agentId: string; modelProvider?: string; modelId?: string }) => {
@@ -557,18 +635,27 @@ export function ChatView({ projectId, addToast }: ChatViewProps) {
     [createSession, addToast, isMobile],
   );
 
-  // Handle send message
+  // Handle send message including pending attachment uploads.
   const handleSend = useCallback(() => {
     const trimmed = messageInput.trim();
-    if (!trimmed || !activeSession) return;
+    const files = pendingAttachments.map((attachment) => attachment.file);
+    if ((!trimmed && files.length === 0) || !activeSession) return;
     setMessageInput("");
     setShowSkillMenu(false);
     setSkillFilter("");
     setMentionPopupVisible(false);
     setMentionFilter("");
     setMentionStartPos(-1);
-    sendMessage(trimmed);
-  }, [messageInput, activeSession, sendMessage]);
+    sendMessage(trimmed, files);
+    setPendingAttachments((prev) => {
+      for (const attachment of prev) {
+        if (attachment.previewUrl) {
+          URL.revokeObjectURL(attachment.previewUrl);
+        }
+      }
+      return [];
+    });
+  }, [messageInput, pendingAttachments, activeSession, sendMessage]);
 
   const handleSkillSelect = useCallback(
     (skill: DiscoveredSkill) => {
@@ -673,6 +760,67 @@ export function ChatView({ projectId, addToast }: ChatViewProps) {
       return parts;
     },
     [mentionAgentsByName],
+  );
+
+  const getAttachmentUrl = useCallback(
+    (filename: string) =>
+      activeSession ? `/api/chat/sessions/${encodeURIComponent(activeSession.id)}/attachments/${encodeURIComponent(filename)}` : "",
+    [activeSession],
+  );
+
+  const renderMessageAttachments = useCallback(
+    (
+      attachments: Array<{
+        id: string;
+        filename: string;
+        originalName: string;
+        mimeType: string;
+      }> | undefined,
+    ) => {
+      if (!attachments || attachments.length === 0) return null;
+
+      return (
+        <div className="chat-message-attachments">
+          {attachments.map((attachment) => {
+            const isImage = attachment.mimeType.startsWith("image/");
+            const key = attachment.id || attachment.filename;
+            const href = getAttachmentUrl(attachment.filename);
+            if (isImage) {
+              return (
+                <a
+                  key={key}
+                  className="chat-message-attachment-link"
+                  data-testid="chat-message-attachment"
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <img
+                    className="chat-message-attachment"
+                    src={href}
+                    alt={attachment.originalName}
+                  />
+                </a>
+              );
+            }
+            return (
+              <a
+                key={key}
+                className="chat-message-attachment-file"
+                data-testid="chat-message-attachment"
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <File size={14} />
+                <span>{attachment.originalName}</span>
+              </a>
+            );
+          })}
+        </div>
+      );
+    },
+    [getAttachmentUrl],
   );
 
   // Handle input key down
@@ -1194,6 +1342,7 @@ export function ChatView({ projectId, addToast }: ChatViewProps) {
                         <pre className="chat-message-thinking-content">{message.thinkingOutput}</pre>
                       </details>
                     )}
+                    {renderMessageAttachments(message.attachments)}
                     <div className="chat-message-time">{formatRelativeTime(message.createdAt)}</div>
                   </div>
                 );
@@ -1243,6 +1392,17 @@ export function ChatView({ projectId, addToast }: ChatViewProps) {
         {/* Input */}
         {activeSession && (
           <div className="chat-input-area">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*,.txt,.json,.yaml,.yml,.log,.csv,.xml,.md"
+              multiple
+              style={{ display: "none" }}
+              onChange={(event) => {
+                handleAttachmentFiles(event.target.files);
+                event.target.value = "";
+              }}
+            />
             {showSkillMenu && (
               <div className="chat-skill-menu" data-testid="chat-skill-menu" role="listbox" aria-label="Skill suggestions">
                 {skillsLoading ? (
@@ -1272,77 +1432,127 @@ export function ChatView({ projectId, addToast }: ChatViewProps) {
                 )}
               </div>
             )}
-            <div className="chat-input-wrapper">
-              <textarea
-                ref={inputRef}
-                className="chat-input-textarea"
-                placeholder="Type a message..."
-                value={messageInput}
-                onChange={handleInputChange}
-                onKeyDown={handleInputKeyDown}
-                onKeyUp={handleInputKeyUp}
-                onClick={handleInputSelectionChange}
-                onBlur={handleInputBlur}
-                onFocus={handleInputFocus}
-                rows={1}
-                data-testid="chat-input"
-              />
-              <AgentMentionPopup
-                agents={mentionAgents}
-                filter={mentionFilter}
-                highlightedIndex={mentionHighlightIndex}
-                visible={mentionPopupVisible}
-                onSelect={handleMentionSelect}
-                position="below"
-              />
-              <FileMentionPopup
-                visible={fileMention.mentionActive && !mentionPopupVisible}
-                position={fileMentionPosition}
-                files={fileMention.files}
-                selectedIndex={fileMention.selectedIndex}
-                onSelect={(file) => {
-                  const newText = fileMention.selectFile(file, messageInput);
-                  setMessageInput(newText);
-                  fileMention.dismissMention();
-                  setFileMentionPopupVisible(false);
-                  inputRef.current?.focus();
-                }}
-                loading={fileMention.loading}
-              />
-              {pendingMessage && (
-                <div className="chat-pending-message" data-testid="chat-pending-indicator">
-                  <span>{`Queued: ${pendingPreview}`}</span>
-                  <button
-                    type="button"
-                    className="chat-pending-message-dismiss"
-                    aria-label="Dismiss queued message"
-                    data-testid="chat-pending-dismiss"
-                    onClick={clearPendingMessage}
+            {pendingAttachments.length > 0 && (
+              <div className="chat-attachment-previews" data-testid="chat-attachment-previews">
+                {pendingAttachments.map((attachment, index) => (
+                  <div
+                    key={attachment.previewUrl || `${attachment.file.name}-${index}`}
+                    className="chat-attachment-preview"
+                    data-testid={`chat-attachment-preview-${index}`}
                   >
-                    ×
-                  </button>
-                </div>
+                    {attachment.previewUrl ? (
+                      <img src={attachment.previewUrl} alt={attachment.file.name} />
+                    ) : (
+                      <span className="chat-attachment-preview-name">{attachment.file.name}</span>
+                    )}
+                    <button
+                      type="button"
+                      className="chat-attachment-remove"
+                      onClick={() => removeAttachment(index)}
+                      data-testid={`chat-attachment-remove-${index}`}
+                      aria-label={`Remove ${attachment.file.name}`}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="chat-input-row">
+              <button
+                type="button"
+                className="btn-icon chat-attach-btn"
+                data-testid="chat-attach-btn"
+                aria-label="Attach files"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <Paperclip size={16} />
+              </button>
+              <div
+                className={`chat-input-wrapper${isDragOver ? " chat-input-wrapper--dragover" : ""}`}
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  setIsDragOver(true);
+                }}
+                onDragLeave={() => setIsDragOver(false)}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  setIsDragOver(false);
+                  handleAttachmentFiles(event.dataTransfer.files);
+                }}
+              >
+                <textarea
+                  ref={inputRef}
+                  className="chat-input-textarea"
+                  placeholder="Type a message..."
+                  value={messageInput}
+                  onChange={handleInputChange}
+                  onKeyDown={handleInputKeyDown}
+                  onKeyUp={handleInputKeyUp}
+                  onClick={handleInputSelectionChange}
+                  onBlur={handleInputBlur}
+                  onFocus={handleInputFocus}
+                  onPaste={handlePaste}
+                  rows={1}
+                  data-testid="chat-input"
+                />
+                <AgentMentionPopup
+                  agents={mentionAgents}
+                  filter={mentionFilter}
+                  highlightedIndex={mentionHighlightIndex}
+                  visible={mentionPopupVisible}
+                  onSelect={handleMentionSelect}
+                  position="below"
+                />
+                <FileMentionPopup
+                  visible={fileMention.mentionActive && !mentionPopupVisible}
+                  position={fileMentionPosition}
+                  files={fileMention.files}
+                  selectedIndex={fileMention.selectedIndex}
+                  onSelect={(file) => {
+                    const newText = fileMention.selectFile(file, messageInput);
+                    setMessageInput(newText);
+                    fileMention.dismissMention();
+                    setFileMentionPopupVisible(false);
+                    inputRef.current?.focus();
+                  }}
+                  loading={fileMention.loading}
+                />
+                {pendingMessage && (
+                  <div className="chat-pending-message" data-testid="chat-pending-indicator">
+                    <span>{`Queued: ${pendingPreview}`}</span>
+                    <button
+                      type="button"
+                      className="chat-pending-message-dismiss"
+                      aria-label="Dismiss queued message"
+                      data-testid="chat-pending-dismiss"
+                      onClick={clearPendingMessage}
+                    >
+                      ×
+                    </button>
+                  </div>
+                )}
+              </div>
+              {isStreaming ? (
+                <button
+                  className="chat-input-stop"
+                  onClick={stopStreaming}
+                  aria-label="Stop generation"
+                  data-testid="chat-stop-btn"
+                >
+                  <Square size={14} />
+                </button>
+              ) : (
+                <button
+                  className="chat-input-send"
+                  onClick={() => void handleSend()}
+                  disabled={!messageInput.trim() && pendingAttachments.length === 0}
+                  data-testid="chat-send-btn"
+                >
+                  <Send size={16} />
+                </button>
               )}
             </div>
-            {isStreaming ? (
-              <button
-                className="chat-input-stop"
-                onClick={stopStreaming}
-                aria-label="Stop generation"
-                data-testid="chat-stop-btn"
-              >
-                <Square size={14} />
-              </button>
-            ) : (
-              <button
-                className="chat-input-send"
-                onClick={() => void handleSend()}
-                disabled={!messageInput.trim()}
-                data-testid="chat-send-btn"
-              >
-                <Send size={16} />
-              </button>
-            )}
           </div>
         )}
       </div>

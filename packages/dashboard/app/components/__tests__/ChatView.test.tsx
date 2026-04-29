@@ -21,6 +21,8 @@ vi.mock("../../hooks/useChat");
 
 const mockUseChat = vi.mocked(useChatModule.useChat);
 const mockFetchDiscoveredSkills = vi.mocked(apiModule.fetchDiscoveredSkills);
+const mockCreateObjectURL = vi.fn();
+const mockRevokeObjectURL = vi.fn();
 
 // Mock lucide-react icons - spread actual module and override specific icons
 vi.mock("lucide-react", async (importOriginal) => {
@@ -40,6 +42,8 @@ vi.mock("lucide-react", async (importOriginal) => {
     Square: ({ "data-testid": testId, ...props }: any) => <svg data-testid={testId || "icon-square"} {...props} />,
     Eye: ({ "data-testid": testId, ...props }: any) => <svg data-testid={testId || "icon-eye"} {...props} />,
     EyeOff: ({ "data-testid": testId, ...props }: any) => <svg data-testid={testId || "icon-eye-off"} {...props} />,
+    Paperclip: ({ "data-testid": testId, ...props }: any) => <svg data-testid={testId || "icon-paperclip"} {...props} />,
+    File: ({ "data-testid": testId, ...props }: any) => <svg data-testid={testId || "icon-file"} {...props} />,
   };
 });
 
@@ -170,6 +174,9 @@ function mockViewportMode(mode: "mobile" | "desktop") {
 beforeEach(() => {
   vi.clearAllMocks();
   mockFetchDiscoveredSkills.mockResolvedValue([]);
+  mockCreateObjectURL.mockImplementation((file: File) => `blob:${file.name}`);
+  Object.defineProperty(URL, "createObjectURL", { value: mockCreateObjectURL, writable: true });
+  Object.defineProperty(URL, "revokeObjectURL", { value: mockRevokeObjectURL, writable: true });
 });
 
 afterEach(() => {
@@ -878,7 +885,7 @@ describe("ChatView", () => {
     const textarea = screen.getByTestId("chat-input");
     await userEvent.type(textarea, "Hello world{enter}");
 
-    expect(sendMessage).toHaveBeenCalledWith("Hello world");
+    expect(sendMessage).toHaveBeenCalledWith("Hello world", []);
   });
 
   it("does not send on Shift+Enter", async () => {
@@ -895,6 +902,131 @@ describe("ChatView", () => {
     await userEvent.type(textarea, "Hello world{Shift>}{Enter}{/Shift}");
 
     expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  describe("attachments", () => {
+    it("clicking paperclip triggers hidden file input", async () => {
+      setupMockChat({ activeSession: activeSessionFixture, messages: [] });
+      render(<ChatView projectId="proj-123" addToast={vi.fn()} />);
+
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+      const clickSpy = vi.spyOn(fileInput, "click");
+
+      await userEvent.click(screen.getByTestId("chat-attach-btn"));
+      expect(clickSpy).toHaveBeenCalled();
+    });
+
+    it("allows attaching an image and sends with attachments only", async () => {
+      const sendMessage = vi.fn();
+      setupMockChat({ activeSession: activeSessionFixture, messages: [], sendMessage });
+      render(<ChatView projectId="proj-123" addToast={vi.fn()} />);
+
+      const attachButton = screen.getByTestId("chat-attach-btn");
+      expect(attachButton).toBeInTheDocument();
+
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+      const imageFile = new File(["image"], "shot.png", { type: "image/png" });
+      fireEvent.change(fileInput, { target: { files: [imageFile] } });
+
+      expect(await screen.findByTestId("chat-attachment-previews")).toBeInTheDocument();
+      const sendButton = screen.getByTestId("chat-send-btn");
+      expect(sendButton).not.toBeDisabled();
+
+      await userEvent.click(sendButton);
+      expect(sendMessage).toHaveBeenCalledWith("", [imageFile]);
+      expect(screen.queryByTestId("chat-attachment-previews")).not.toBeInTheDocument();
+    });
+
+    it("accepts non-image files and renders filename preview", async () => {
+      setupMockChat({ activeSession: activeSessionFixture, messages: [] });
+      render(<ChatView projectId="proj-123" addToast={vi.fn()} />);
+
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+      const textFile = new File(["hello"], "note.txt", { type: "text/plain" });
+      fireEvent.change(fileInput, { target: { files: [textFile] } });
+
+      expect(await screen.findByText("note.txt")).toBeInTheDocument();
+      expect(mockCreateObjectURL).not.toHaveBeenCalled();
+    });
+
+    it("adds image attachments from paste events", async () => {
+      setupMockChat({ activeSession: activeSessionFixture, messages: [] });
+      render(<ChatView projectId="proj-123" addToast={vi.fn()} />);
+
+      const textarea = screen.getByTestId("chat-input");
+      const imageFile = new File(["image"], "paste.png", { type: "image/png" });
+      fireEvent.paste(textarea, { clipboardData: { files: [imageFile] } });
+
+      expect(await screen.findByTestId("chat-attachment-previews")).toBeInTheDocument();
+    });
+
+    it("adds attachments from drag-and-drop", async () => {
+      setupMockChat({ activeSession: activeSessionFixture, messages: [] });
+      render(<ChatView projectId="proj-123" addToast={vi.fn()} />);
+
+      const wrapper = document.querySelector(".chat-input-wrapper") as HTMLElement;
+      const textFile = new File(["log"], "drop.log", { type: "text/x-log" });
+      fireEvent.drop(wrapper, { dataTransfer: { files: [textFile] } });
+
+      expect(await screen.findByText("drop.log")).toBeInTheDocument();
+    });
+
+    it("removes pending attachments and revokes preview urls", async () => {
+      setupMockChat({ activeSession: activeSessionFixture, messages: [] });
+      render(<ChatView projectId="proj-123" addToast={vi.fn()} />);
+
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+      const imageFile = new File(["image"], "shot.png", { type: "image/png" });
+      fireEvent.change(fileInput, { target: { files: [imageFile] } });
+
+      const removeButton = await screen.findByTestId("chat-attachment-remove-0");
+      await userEvent.click(removeButton);
+
+      expect(mockRevokeObjectURL).toHaveBeenCalledWith("blob:shot.png");
+      expect(screen.queryByTestId("chat-attachment-previews")).not.toBeInTheDocument();
+    });
+
+    it("renders message attachments inline as actionable links", () => {
+      setupMockChat({
+        activeSession: activeSessionFixture,
+        messages: [
+          {
+            id: "msg-attach",
+            sessionId: "session-001",
+            role: "assistant",
+            content: "Attached files",
+            createdAt: "2026-04-08T00:00:00.000Z",
+            attachments: [
+              {
+                id: "att-1",
+                filename: "img-1.png",
+                originalName: "capture.png",
+                mimeType: "image/png",
+                size: 10,
+                createdAt: "2026-04-08T00:00:00.000Z",
+              },
+              {
+                id: "att-2",
+                filename: "note.txt",
+                originalName: "note.txt",
+                mimeType: "text/plain",
+                size: 20,
+                createdAt: "2026-04-08T00:00:00.000Z",
+              },
+            ],
+          },
+        ],
+      });
+
+      render(<ChatView projectId="proj-123" addToast={vi.fn()} />);
+
+      const links = screen.getAllByTestId("chat-message-attachment");
+      expect(links).toHaveLength(2);
+      expect(links[0]).toHaveAttribute("href", "/api/chat/sessions/session-001/attachments/img-1.png");
+      expect(links[0]).toHaveAttribute("target", "_blank");
+      expect(links[1]).toHaveAttribute("href", "/api/chat/sessions/session-001/attachments/note.txt");
+      expect(screen.getByText("note.txt")).toBeInTheDocument();
+    });
   });
 
   describe("agent mentions", () => {

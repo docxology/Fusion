@@ -512,7 +512,7 @@ export function useQuickChat(
         },
       };
 
-      streamRef.current = streamChatResponse(activeSession.id, content, textHandlers, projectId);
+      streamRef.current = streamChatResponse(activeSession.id, content, textHandlers, undefined, projectId);
     },
     [activeSession, isStreaming, projectId, addToast, reloadMessages],
   );

@@ -590,6 +590,7 @@ describe("QuickChatFAB", () => {
         "session-001",
         "Hello model",
         expect.any(Object),
+        undefined,
         "proj-123",
       );
     });
@@ -680,6 +681,7 @@ describe("QuickChatFAB", () => {
         "session-model-002",
         "fresh thread message",
         expect.any(Object),
+        undefined,
         "proj-123",
       );
     });
@@ -782,6 +784,7 @@ describe("QuickChatFAB", () => {
           onDone: expect.any(Function),
           onError: expect.any(Function),
         }),
+        undefined,
         "proj-123",
       );
     });

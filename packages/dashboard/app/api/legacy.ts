@@ -7305,6 +7305,7 @@ export function cancelChatResponse(
  *
  *  Since `EventSource` only supports GET requests, this function uses `fetch()`
  *  with a ReadableStream to parse SSE events from the POST response body.
+ *  When attachments are provided, the request body is sent as multipart form data.
  */
 export function streamChatResponse(
   sessionId: string,
@@ -7318,6 +7319,7 @@ export function streamChatResponse(
     onError?: (data: string) => void;
     onConnectionStateChange?: (state: StreamConnectionState) => void;
   },
+  attachments?: File[],
   projectId?: string,
   options?: { maxReconnectAttempts?: number },
 ): { close: () => void; isConnected: () => boolean } {
@@ -7383,10 +7385,20 @@ export function streamChatResponse(
   // Start streaming via POST
   (async () => {
     try {
+      const hasAttachments = Array.isArray(attachments) && attachments.length > 0;
+      const body = hasAttachments
+        ? (() => {
+            const formData = new FormData();
+            formData.append("content", content);
+            attachments.forEach((file) => formData.append("attachments", file));
+            return formData;
+          })()
+        : JSON.stringify({ content });
+
       const res = await fetch(url, {
         method: "POST",
-        headers: withTokenHeader({ "Content-Type": "application/json" }),
-        body: JSON.stringify({ content }),
+        headers: hasAttachments ? withTokenHeader() : withTokenHeader({ "Content-Type": "application/json" }),
+        body,
         signal: abortController.signal,
       });
 

@@ -44,6 +44,14 @@ export interface ChatMessageInfo {
   content: string;
   thinkingOutput?: string | null;
   toolCalls?: ToolCallInfo[];
+  attachments?: Array<{
+    id: string;
+    filename: string;
+    originalName: string;
+    mimeType: string;
+    size: number;
+    createdAt: string;
+  }>;
   createdAt: string;
 }
 
@@ -71,7 +79,8 @@ export interface UseChatReturn {
   deleteSession: (id: string) => Promise<void>;
 
   // Message operations
-  sendMessage: (content: string) => void;
+  /** Send a message, optionally with file attachments to upload with the prompt. */
+  sendMessage: (content: string, attachments?: File[]) => void;
   stopStreaming: () => void;
   clearPendingMessage: () => void;
   loadMoreMessages: () => Promise<void>;
@@ -130,6 +139,7 @@ function mapChatMessageToInfo(message: ChatMessage): ChatMessageInfo {
     content: message.content,
     thinkingOutput: message.thinkingOutput,
     toolCalls: extractCompletedToolCalls(message.metadata),
+    attachments: message.attachments,
     createdAt: message.createdAt,
   };
 }
@@ -411,7 +421,7 @@ export function useChat(projectId?: string): UseChatReturn {
 
   // Send a message
   const sendMessage = useCallback(
-    (content: string) => {
+    (content: string, attachments?: File[]) => {
       if (!activeSession) return;
 
       if (isStreaming) {
@@ -556,7 +566,7 @@ export function useChat(projectId?: string): UseChatReturn {
         },
       };
 
-      streamRef.current = streamChatResponse(activeSession.id, content, textHandlers, projectId);
+      streamRef.current = streamChatResponse(activeSession.id, content, textHandlers, attachments, projectId);
     },
     [activeSession, isStreaming, projectId, refreshSessions],
   );
