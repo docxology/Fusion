@@ -1590,10 +1590,30 @@ export function SettingsModal({
     if (typeof navigator !== "undefined" && navigator.userAgent.includes("Windows")) {
       return "winget install Cloudflare.cloudflared";
     }
-    if (typeof navigator !== "undefined" && /(Mac|iPhone|iPad|iPod)/i.test(navigator.platform)) {
+
+    const platform = typeof navigator !== "undefined" ? navigator.platform : "";
+    const userAgent = typeof navigator !== "undefined" ? navigator.userAgent : "";
+    const isMac = /(Mac|iPhone|iPad|iPod)/i.test(platform);
+    const isArm = /(arm64|aarch64)/i.test(`${platform} ${userAgent}`);
+
+    if (isMac) {
       return "brew install cloudflared";
     }
-    return "curl -L --output /usr/local/bin/cloudflared https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 && chmod +x /usr/local/bin/cloudflared";
+
+    const linuxArch = isArm ? "arm64" : "amd64";
+    return `curl -L --output /tmp/cloudflared https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${linuxArch} && chmod +x /tmp/cloudflared && sudo mv /tmp/cloudflared /usr/local/bin/cloudflared # If sudo is unavailable, use: mkdir -p ~/.local/bin && mv /tmp/cloudflared ~/.local/bin/cloudflared`;
+  }, []);
+
+  const cloudflaredMacFallbackCommand = useCallback(() => {
+    if (typeof navigator === "undefined") {
+      return null;
+    }
+    if (!/(Mac|iPhone|iPad|iPod)/i.test(navigator.platform)) {
+      return null;
+    }
+
+    const arch = /(arm64|aarch64)/i.test(`${navigator.platform} ${navigator.userAgent}`) ? "arm64" : "amd64";
+    return `curl -L --output /tmp/cloudflared https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-darwin-${arch} && chmod +x /tmp/cloudflared && sudo mv /tmp/cloudflared /usr/local/bin/cloudflared`;
   }, []);
 
   const handleInstallCloudflared = useCallback(async () => {
@@ -4172,6 +4192,9 @@ export function SettingsModal({
                   </button>
                   {cloudflaredInstallError && <small className="remote-cli-install-error">{cloudflaredInstallError}</small>}
                   <small className="remote-cli-manual">Manual install: <code>{cloudflaredManualInstallCommand()}</code></small>
+                  {cloudflaredMacFallbackCommand()
+                    ? <small className="remote-cli-manual">If Homebrew is unavailable: <code>{cloudflaredMacFallbackCommand()}</code></small>
+                    : null}
                 </div>
               </div>
             )}

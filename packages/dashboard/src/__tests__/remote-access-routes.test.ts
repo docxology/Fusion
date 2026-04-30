@@ -1,6 +1,6 @@
 // @vitest-environment node
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import express from "express";
 import type { TaskStore } from "@fusion/core";
 
@@ -95,6 +95,23 @@ async function REQUEST(app: express.Express, method: string, path: string, body?
     body === undefined ? {} : { "Content-Type": "application/json" },
   );
 }
+
+const originalPlatformDescriptor = Object.getOwnPropertyDescriptor(process, "platform");
+const originalArchDescriptor = Object.getOwnPropertyDescriptor(process, "arch");
+
+function setProcessRuntime(platform: NodeJS.Platform, arch: string): void {
+  Object.defineProperty(process, "platform", { value: platform, configurable: true });
+  Object.defineProperty(process, "arch", { value: arch, configurable: true });
+}
+
+afterEach(() => {
+  if (originalPlatformDescriptor) {
+    Object.defineProperty(process, "platform", originalPlatformDescriptor);
+  }
+  if (originalArchDescriptor) {
+    Object.defineProperty(process, "arch", originalArchDescriptor);
+  }
+});
 
 beforeEach(() => {
   mockExecFile.mockReset();
@@ -295,6 +312,7 @@ describe("remote access provider/lifecycle contracts", () => {
   });
 
   it("installs cloudflared via endpoint and returns install command metadata", async () => {
+    setProcessRuntime("linux", "x64");
     const { app } = createApp();
 
     const result = await REQUEST(app, "POST", "/api/remote/install-cloudflared", {});
@@ -302,20 +320,83 @@ describe("remote access provider/lifecycle contracts", () => {
     expect(result.status).toBe(200);
     expect(result.body).toEqual(expect.objectContaining({
       success: true,
-      command: expect.any(String),
+      command: expect.stringContaining("cloudflared-linux-amd64"),
     }));
+    expect(mockExecFile.mock.calls.some(([command, args]) => command === "curl" && Array.isArray(args) && String(args[3]).includes("cloudflared-linux-amd64"))).toBe(true);
   });
 
-  it("returns install failure details when cloudflared installation command fails", async () => {
+  it("uses arm64 cloudflared binary on Linux arm64", async () => {
+    setProcessRuntime("linux", "arm64");
+    const { app } = createApp();
+
+    const result = await REQUEST(app, "POST", "/api/remote/install-cloudflared", {});
+
+    expect(result.status).toBe(200);
+    expect(result.body).toEqual(expect.objectContaining({
+      success: true,
+      command: expect.stringContaining("cloudflared-linux-arm64"),
+    }));
+    expect(mockExecFile.mock.calls.some(([command, args]) => command === "curl" && Array.isArray(args) && String(args[3]).includes("cloudflared-linux-arm64"))).toBe(true);
+  });
+
+  it("falls back to ~/.local/bin when /usr/local/bin move fails with permission error", async () => {
+    setProcessRuntime("linux", "x64");
+    mockExecFile.mockImplementation((command: string, args: string[], optionsOrCallback: unknown, maybeCallback?: (error: Error | null, stdout?: string, stderr?: string) => void) => {
+      const callback = typeof optionsOrCallback === "function"
+        ? optionsOrCallback as (error: Error | null, stdout?: string, stderr?: string) => void
+        : maybeCallback;
+      if (command === "mv" && args[1] === "/usr/local/bin/cloudflared") {
+        callback?.(new Error("EPERM"), "", "EPERM");
+        return;
+      }
+      callback?.(null, "", "");
+    });
+
+    const { app } = createApp();
+    const result = await REQUEST(app, "POST", "/api/remote/install-cloudflared", {});
+
+    expect(result.status).toBe(200);
+    expect(result.body).toEqual(expect.objectContaining({ success: true }));
+    expect(mockExecFile.mock.calls.some(([command, args]) => command === "mkdir" && Array.isArray(args) && args[0] === "-p")).toBe(true);
+    expect(mockExecFile.mock.calls.some(([command, args]) => command === "mv" && Array.isArray(args) && String(args[1]).includes("/.local/bin/cloudflared"))).toBe(true);
+  });
+
+  it("falls back to direct download on macOS when brew is unavailable", async () => {
+    setProcessRuntime("darwin", "arm64");
     mockExecFile.mockImplementation((command: string, _args: string[], optionsOrCallback: unknown, maybeCallback?: (error: Error | null, stdout?: string, stderr?: string) => void) => {
       const callback = typeof optionsOrCallback === "function"
         ? optionsOrCallback as (error: Error | null, stdout?: string, stderr?: string) => void
         : maybeCallback;
-      if (command === "sh" || command === "cmd") {
+      if (command === "which") {
+        callback?.(new Error("brew not found"), "", "brew not found");
+        return;
+      }
+      callback?.(null, "", "");
+    });
+
+    const { app } = createApp();
+    const result = await REQUEST(app, "POST", "/api/remote/install-cloudflared", {});
+
+    expect(result.status).toBe(200);
+    expect(result.body).toEqual(expect.objectContaining({
+      success: true,
+      command: expect.stringContaining("cloudflared-darwin-arm64"),
+    }));
+    expect(mockExecFile.mock.calls.some(([command]) => command === "brew")).toBe(false);
+    expect(mockExecFile.mock.calls.some(([command, args]) => command === "curl" && Array.isArray(args) && String(args[3]).includes("cloudflared-darwin-arm64"))).toBe(true);
+  });
+
+  it("returns install failure details when cloudflared installation command fails", async () => {
+    setProcessRuntime("linux", "x64");
+    mockExecFile.mockImplementation((command: string, _args: string[], optionsOrCallback: unknown, maybeCallback?: (error: Error | null, stdout?: string, stderr?: string) => void) => {
+      const callback = typeof optionsOrCallback === "function"
+        ? optionsOrCallback as (error: Error | null, stdout?: string, stderr?: string) => void
+        : maybeCallback;
+      if (command === "curl") {
         callback?.(new Error("Command failed"), "", "Command failed");
         return;
       }
-      callback?.(null, "/usr/local/bin/cloudflared", "");
+      callback?.(null, "", "");
     });
 
     const { app } = createApp();

@@ -44,6 +44,7 @@ import {
 import { createFnAgent as engineCreateFnAgent } from "@fusion/engine";
 import QRCode from "qrcode";
 import { execFile } from "node:child_process";
+import { homedir } from "node:os";
 import { promisify } from "node:util";
 import { ApiError, badRequest } from "../api-error.js";
 import { generateRemoteToken, issueRemoteAuthToken, maskRemoteToken } from "../remote-auth.js";
@@ -95,6 +96,35 @@ export function registerSettingsMemoryRoutes(ctx: ApiRoutesContext, deps: Settin
     }
   }
 
+  function resolveCloudflaredBinaryName(): string {
+    if (process.platform === "linux") {
+      if (process.arch === "arm") {
+        return "cloudflared-linux-armhf";
+      }
+      if (process.arch === "arm64") {
+        return "cloudflared-linux-arm64";
+      }
+      if (process.arch === "x64") {
+        return "cloudflared-linux-amd64";
+      }
+      console.warn(`[remote-access] Unsupported Linux architecture '${process.arch}' for cloudflared; falling back to amd64`);
+      return "cloudflared-linux-amd64";
+    }
+
+    if (process.platform === "darwin") {
+      if (process.arch === "arm64") {
+        return "cloudflared-darwin-arm64";
+      }
+      if (process.arch === "x64") {
+        return "cloudflared-darwin-amd64";
+      }
+      console.warn(`[remote-access] Unsupported macOS architecture '${process.arch}' for cloudflared; falling back to amd64`);
+      return "cloudflared-darwin-amd64";
+    }
+
+    return "cloudflared-linux-amd64";
+  }
+
   function resolveCloudflaredInstallCommand(): string {
     if (process.platform === "darwin") {
       return "brew install cloudflared";
@@ -102,23 +132,89 @@ export function registerSettingsMemoryRoutes(ctx: ApiRoutesContext, deps: Settin
     if (process.platform === "win32") {
       return "winget install Cloudflare.cloudflared";
     }
-    return "curl -L --output /usr/local/bin/cloudflared https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 && chmod +x /usr/local/bin/cloudflared";
+
+    const binaryName = resolveCloudflaredBinaryName();
+    const downloadUrl = `https://github.com/cloudflare/cloudflared/releases/latest/download/${binaryName}`;
+    return `curl -L --output /tmp/cloudflared ${downloadUrl} && chmod +x /tmp/cloudflared && mv /tmp/cloudflared /usr/local/bin/cloudflared`;
+  }
+
+  function formatExecError(error: unknown): string {
+    if (!(error instanceof Error)) {
+      return String(error);
+    }
+
+    const stdout = (error as Error & { stdout?: string }).stdout?.trim();
+    const stderr = (error as Error & { stderr?: string }).stderr?.trim();
+    return [error.message, stderr, stdout].filter(Boolean).join(" | ");
   }
 
   async function installCloudflared(): Promise<{ success: boolean; command: string; error?: string }> {
-    const command = resolveCloudflaredInstallCommand();
-    const shell = process.platform === "win32" ? "cmd" : "sh";
-    const shellArgs = process.platform === "win32" ? ["/c", command] : ["-c", command];
+    if (process.platform === "win32") {
+      const command = resolveCloudflaredInstallCommand();
+      try {
+        await execFileAsync("winget", ["install", "Cloudflare.cloudflared"], { timeout: 120_000 });
+        return { success: true, command };
+      } catch (error) {
+        return { success: false, command, error: formatExecError(error) };
+      }
+    }
+
+    const attemptedCommands: string[] = [];
+    const downloadBinaryName = process.platform === "darwin" || process.platform === "linux"
+      ? resolveCloudflaredBinaryName()
+      : "cloudflared-linux-amd64";
+    const downloadUrl = `https://github.com/cloudflare/cloudflared/releases/latest/download/${downloadBinaryName}`;
+    const tempPath = "/tmp/cloudflared";
+
+    const installFromDirectDownload = async (): Promise<void> => {
+      attemptedCommands.push(`curl -L --output ${tempPath} ${downloadUrl}`);
+      await execFileAsync("curl", ["-L", "--output", tempPath, downloadUrl], { timeout: 120_000 });
+
+      attemptedCommands.push(`chmod +x ${tempPath}`);
+      await execFileAsync("chmod", ["+x", tempPath], { timeout: 30_000 });
+
+      const globalInstallPath = "/usr/local/bin/cloudflared";
+      attemptedCommands.push(`mv ${tempPath} ${globalInstallPath}`);
+      try {
+        await execFileAsync("mv", [tempPath, globalInstallPath], { timeout: 30_000 });
+      } catch (error) {
+        const localBinDir = `${homedir()}/.local/bin`;
+        const localInstallPath = `${localBinDir}/cloudflared`;
+        attemptedCommands.push(`mkdir -p ${localBinDir}`);
+        attemptedCommands.push(`mv ${tempPath} ${localInstallPath}`);
+        await execFileAsync("mkdir", ["-p", localBinDir], { timeout: 30_000 });
+        try {
+          await execFileAsync("mv", [tempPath, localInstallPath], { timeout: 30_000 });
+        } catch (fallbackError) {
+          throw new Error(
+            `Failed to install cloudflared to /usr/local/bin and ~/.local/bin (${formatExecError(error)}; fallback: ${formatExecError(fallbackError)})`,
+          );
+        }
+      }
+    };
+
+    if (process.platform === "darwin") {
+      attemptedCommands.push("which brew");
+      try {
+        await execFileAsync("which", ["brew"], { timeout: 15_000 });
+        attemptedCommands.push("brew install cloudflared");
+        await execFileAsync("brew", ["install", "cloudflared"], { timeout: 120_000 });
+        return { success: true, command: attemptedCommands.join(" && ") };
+      } catch {
+        try {
+          await installFromDirectDownload();
+          return { success: true, command: attemptedCommands.join(" && ") };
+        } catch (error) {
+          return { success: false, command: attemptedCommands.join(" && "), error: formatExecError(error) };
+        }
+      }
+    }
 
     try {
-      await execFileAsync(shell, shellArgs, { timeout: 120_000 });
-      return { success: true, command };
+      await installFromDirectDownload();
+      return { success: true, command: attemptedCommands.join(" && ") };
     } catch (error) {
-      return {
-        success: false,
-        command,
-        error: error instanceof Error ? error.message : String(error),
-      };
+      return { success: false, command: attemptedCommands.join(" && "), error: formatExecError(error) };
     }
   }
 
