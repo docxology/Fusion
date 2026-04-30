@@ -8546,6 +8546,40 @@ describe("Git Management endpoints", () => {
     });
   });
 
+  describe("GET /git/changes", () => {
+    const resetGitRepo = () => {
+      const { headSha } = getSharedGitTestRepo();
+      execFileSync("git", ["-C", gitRepoDir, "reset", "--hard", headSha], { stdio: "pipe" });
+      execFileSync("git", ["-C", gitRepoDir, "clean", "-fd"], { stdio: "pipe" });
+    };
+
+    beforeEach(() => {
+      resetGitRepo();
+    });
+
+    afterEach(() => {
+      resetGitRepo();
+    });
+
+    it("preserves the first unstaged entry instead of misclassifying it as staged", async () => {
+      const readmePath = join(gitRepoDir, "README.md");
+      const original = readFileSync(readmePath, "utf-8");
+      const marker = `\nchanges-first-line-${Date.now()}\n`;
+      writeFileSync(readmePath, `${original}${marker}`);
+
+      const res = await GET(buildApp(), "/api/git/changes");
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual([
+        {
+          file: "README.md",
+          status: "modified",
+          staged: false,
+        },
+      ]);
+    });
+  });
+
   describe("GET /git/diff/file", () => {
     const resetGitRepo = () => {
       const { headSha } = getSharedGitTestRepo();

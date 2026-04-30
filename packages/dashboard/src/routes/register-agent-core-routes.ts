@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import type { Agent, AgentCapability, AgentUpdateInput, TaskStore } from "@fusion/core";
+import { DEFAULT_HEARTBEAT_PROCEDURE_PATH } from "@fusion/core";
 import { ApiError, badRequest, notFound } from "../api-error.js";
 import type { ApiRoutesContext } from "./types.js";
 
@@ -66,6 +67,7 @@ export function registerAgentCoreListCreateRoutes(ctx: ApiRoutesContext, deps: A
         soul,
         memory,
         bundleConfig,
+        heartbeatProcedurePath,
       } = req.body ?? {};
 
       if (!name || typeof name !== "string") {
@@ -107,6 +109,12 @@ export function registerAgentCoreListCreateRoutes(ctx: ApiRoutesContext, deps: A
       if (typeof memory === "string" && memory.length > 50000) {
         throw badRequest("memory must be at most 50,000 characters");
       }
+      if (heartbeatProcedurePath !== undefined && heartbeatProcedurePath !== null && typeof heartbeatProcedurePath !== "string") {
+        throw badRequest("heartbeatProcedurePath must be a string");
+      }
+      if (typeof heartbeatProcedurePath === "string" && heartbeatProcedurePath.length > 500) {
+        throw badRequest("heartbeatProcedurePath must be at most 500 characters");
+      }
       if (bundleConfig !== undefined && bundleConfig !== null) {
         if (typeof bundleConfig !== "object" || Array.isArray(bundleConfig)) {
           throw badRequest("bundleConfig must be an object");
@@ -144,7 +152,21 @@ export function registerAgentCoreListCreateRoutes(ctx: ApiRoutesContext, deps: A
         soul: soul ?? undefined,
         memory: memory ?? undefined,
         bundleConfig: bundleConfig ?? undefined,
+        heartbeatProcedurePath: heartbeatProcedurePath ?? undefined,
       });
+
+      // Seed the default heartbeat procedure file if the new agent landed on
+      // the default path (which createAgent fills in for non-ephemeral agents
+      // when no override is provided). Idempotent — operator edits are kept.
+      if (agent.heartbeatProcedurePath === DEFAULT_HEARTBEAT_PROCEDURE_PATH) {
+        try {
+          const { ensureDefaultHeartbeatProcedureFile, HEARTBEAT_PROCEDURE } = await import("@fusion/engine");
+          await ensureDefaultHeartbeatProcedureFile(scopedStore.getRootDir(), DEFAULT_HEARTBEAT_PROCEDURE_PATH, HEARTBEAT_PROCEDURE);
+        } catch {
+          // Non-fatal — the heartbeat resolver falls back to the in-memory constant.
+        }
+      }
+
       res.status(201).json(agent);
     } catch (err: unknown) {
       if (err instanceof ApiError) {
@@ -394,6 +416,16 @@ export function registerAgentCoreRoutes(ctx: ApiRoutesContext, deps: AgentCoreRo
         updates.memory = body.memory ?? undefined;
       }
 
+      if ("heartbeatProcedurePath" in body) {
+        if (body.heartbeatProcedurePath !== null && typeof body.heartbeatProcedurePath !== "string") {
+          throw badRequest("heartbeatProcedurePath must be a string");
+        }
+        if (typeof body.heartbeatProcedurePath === "string" && body.heartbeatProcedurePath.length > 500) {
+          throw badRequest("heartbeatProcedurePath must be at most 500 characters");
+        }
+        updates.heartbeatProcedurePath = body.heartbeatProcedurePath ?? undefined;
+      }
+
       if ("bundleConfig" in body) {
         if (body.bundleConfig !== null) {
           if (typeof body.bundleConfig !== "object" || Array.isArray(body.bundleConfig)) {
@@ -433,6 +465,52 @@ export function registerAgentCoreRoutes(ctx: ApiRoutesContext, deps: AgentCoreRo
       } else {
         rethrowAsApiError(err);
       }
+    }
+  });
+
+  /**
+   * POST /api/agents/:id/upgrade-heartbeat-procedure
+   * Backfill an existing agent onto the default heartbeat procedure file.
+   * Sets `heartbeatProcedurePath` to DEFAULT_HEARTBEAT_PROCEDURE_PATH and
+   * seeds the file with the built-in HEARTBEAT_PROCEDURE if it doesn't exist.
+   * Idempotent: existing operator edits to the file are preserved.
+   */
+  router.post("/agents/:id/upgrade-heartbeat-procedure", async (req, res) => {
+    try {
+      const { store: scopedStore } = await getProjectContext(req);
+      const { AgentStore } = await import("@fusion/core");
+      const agentStore = new AgentStore({ rootDir: scopedStore.getFusionDir() });
+      await agentStore.init();
+
+      const existing = await agentStore.getAgent(req.params.id);
+      if (!existing) {
+        throw notFound(`agent ${req.params.id} not found`);
+      }
+
+      const { ensureDefaultHeartbeatProcedureFile, HEARTBEAT_PROCEDURE } = await import("@fusion/engine");
+      const filePath = await ensureDefaultHeartbeatProcedureFile(
+        scopedStore.getRootDir(),
+        DEFAULT_HEARTBEAT_PROCEDURE_PATH,
+        HEARTBEAT_PROCEDURE,
+      );
+
+      const updated = await agentStore.updateAgent(req.params.id, {
+        heartbeatProcedurePath: DEFAULT_HEARTBEAT_PROCEDURE_PATH,
+      });
+
+      res.json({
+        agent: updated,
+        heartbeatProcedurePath: DEFAULT_HEARTBEAT_PROCEDURE_PATH,
+        procedureFileSeeded: filePath !== null,
+      });
+    } catch (err: unknown) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      if ((err instanceof Error ? err.message : String(err)).includes("not found")) {
+        throw notFound(err instanceof Error ? err.message : String(err));
+      }
+      rethrowAsApiError(err);
     }
   });
 

@@ -9,7 +9,7 @@ import {
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { AgentDetail, AgentState, AgentHeartbeatRun, AgentBudgetStatus, ModelInfo, MemoryFileInfo, AgentCapability, PluginRuntimeInfo } from "../api";
-import { fetchAgent, updateAgent, updateAgentState, deleteAgent, fetchAgentLogsWithMeta, fetchAgentRunLogs, fetchAgentChildren, fetchAgentRuns, fetchAgentRunDetail, startAgentRun, stopAgentRun, updateAgentInstructions, updateAgentSoul, updateAgentMemory, fetchAgentMemoryFiles, fetchAgentMemoryFile, saveAgentMemoryFile, fetchAgentTasks, fetchChainOfCommand, fetchAgentBudgetStatus, resetAgentBudget, fetchWorkspaceFileContent, saveWorkspaceFileContent, fetchModels, fetchPluginRuntimes, fetchAgents } from "../api";
+import { fetchAgent, updateAgent, updateAgentState, deleteAgent, fetchAgentLogsWithMeta, fetchAgentRunLogs, fetchAgentChildren, fetchAgentRuns, fetchAgentRunDetail, startAgentRun, stopAgentRun, updateAgentInstructions, updateAgentSoul, updateAgentMemory, fetchAgentMemoryFiles, fetchAgentMemoryFile, saveAgentMemoryFile, fetchAgentTasks, fetchChainOfCommand, fetchAgentBudgetStatus, resetAgentBudget, fetchWorkspaceFileContent, saveWorkspaceFileContent, fetchModels, fetchPluginRuntimes, fetchAgents, upgradeAgentHeartbeatProcedure } from "../api";
 import type { Agent } from "../api";
 import type { AgentLogEntry, Task } from "@fusion/core";
 import { getErrorMessage } from "@fusion/core";
@@ -2509,14 +2509,93 @@ function deriveBudgetValues(runtimeConfig: AgentDetail["runtimeConfig"] | undefi
   return nextValues;
 }
 
-function ConfigTab({ 
+function HeartbeatProcedureSection({
+  agent,
+  projectId,
+  addToast,
+  onSaved,
+}: {
+  agent: AgentDetail;
+  projectId?: string;
+  addToast: (message: string, type?: "success" | "error") => void;
+  onSaved: () => Promise<void>;
+}) {
+  const [isUpgrading, setIsUpgrading] = useState(false);
+  const currentPath = agent.heartbeatProcedurePath?.trim();
+  const onDefault = currentPath === ".fusion/HEARTBEAT.md";
+
+  const handleUpgrade = async () => {
+    setIsUpgrading(true);
+    try {
+      const result = await upgradeAgentHeartbeatProcedure(agent.id, projectId);
+      addToast(
+        result.procedureFileSeeded
+          ? `Heartbeat procedure file ready at ${result.heartbeatProcedurePath}`
+          : `Heartbeat procedure path set to ${result.heartbeatProcedurePath}`,
+        "success",
+      );
+      await onSaved();
+    } catch (err) {
+      addToast(`Failed to upgrade heartbeat procedure: ${getErrorMessage(err)}`, "error");
+    } finally {
+      setIsUpgrading(false);
+    }
+  };
+
+  return (
+    <div className="config-section">
+      <h3>Heartbeat Procedure</h3>
+      <p className="config-description">
+        The per-tick procedure this agent runs every wake. Defaults to a project-level
+        markdown file you can edit. Resets on every tick — no need to restart the agent
+        after editing.
+      </p>
+      <div className="config-fields">
+        <div className="config-field">
+          <span className="config-hint">
+            Current path: <code>{currentPath || "(none — using built-in default)"}</code>
+          </span>
+        </div>
+        <div className="config-field">
+          <button
+            className="btn"
+            disabled={isUpgrading || onDefault}
+            onClick={() => void handleUpgrade()}
+            aria-label="Upgrade agent to default heartbeat procedure file"
+          >
+            {isUpgrading ? (
+              <>
+                <Loader2 size={16} className="animate-spin" />
+                Upgrading…
+              </>
+            ) : onDefault ? (
+              <>
+                <CheckCircle size={16} />
+                Already on default
+              </>
+            ) : (
+              "Upgrade to Default Heartbeat Procedure"
+            )}
+          </button>
+          <span className="config-hint">
+            Sets <code>heartbeatProcedurePath</code> to <code>.fusion/HEARTBEAT.md</code>
+            {" "}and seeds the file from the built-in template if it doesn't exist.
+            Operator edits to the file are preserved.
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ConfigTab({
   agent,
   projectId,
   addToast,
   onSaved,
   onHasChangesChange,
   onDelete,
-}: { 
+}: {
   agent: AgentDetail;
   projectId?: string;
   addToast: (message: string, type?: "success" | "error") => void;
@@ -3602,6 +3681,13 @@ function ConfigTab({
           )}
         </div>
       </div>
+
+      <HeartbeatProcedureSection
+        agent={agent}
+        projectId={projectId}
+        addToast={addToast}
+        onSaved={onSaved}
+      />
 
       <div className="config-section config-section--danger">
         <h3>Danger Zone</h3>

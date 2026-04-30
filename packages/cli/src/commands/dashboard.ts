@@ -49,6 +49,7 @@ import {
 } from "./claude-cli-extension.js";
 import { getCachedUpdateStatus, isUpdateCheckEnabled } from "../update-cache.js";
 import { resolveSelfExtension } from "./self-extension.js";
+import { registerCustomProviders, reregisterCustomProviders } from "./custom-provider-registry.js";
 import { DashboardTUI, DashboardLogSink, isTTYAvailable, type SystemInfo, type GitStatus, type GitCommit, type GitCommitDetail, type GitBranch, type GitWorktree, type FileEntry, type FileReadResult, type TaskStep as TUITaskStep, type TaskLogEntry as TUITaskLogEntry, type TaskDetailData, type TaskEvent } from "./dashboard-tui/index.js";
 
 // Re-export for backward compatibility with tests
@@ -1244,6 +1245,18 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
     extensionsResult.runtime.pendingProviderRegistrations = [];
     modelRegistry.refresh();
 
+    try {
+      const globalSettings = await store.getGlobalSettingsStore().getSettings();
+      registerCustomProviders(
+        modelRegistry,
+        globalSettings.customProviders,
+        (message) => logSink.log(message, "custom-providers"),
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logSink.warn(`Failed to load custom providers from global settings: ${message}`, "custom-providers");
+    }
+
     // Eagerly sync OpenRouter models — the pi-openrouter-realtime extension
     // only registers providers on session_start (TUI-only event), so kick off
     // a fetch here so the dashboard model list is populated. Respects the
@@ -1292,6 +1305,21 @@ export async function runDashboard(port: number, opts: { paused?: boolean; dev?:
     createExtensionRuntime();
     modelRegistry.refresh();
   }
+
+  registerHandler(store, "settings:updated", ({ settings, previous }) => {
+    const currentProviders = settings.customProviders;
+    const previousProviders = previous.customProviders;
+    if (JSON.stringify(currentProviders ?? []) === JSON.stringify(previousProviders ?? [])) {
+      return;
+    }
+
+    reregisterCustomProviders(
+      modelRegistry,
+      previousProviders,
+      currentProviders,
+      (message) => logSink.log(message, "custom-providers"),
+    );
+  });
 
   // ── Skills adapter for skills discovery and execution toggling ─────────────
   //

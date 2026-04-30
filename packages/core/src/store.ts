@@ -69,6 +69,8 @@ interface TaskRow {
   createdAt: string;
   updatedAt: string;
   columnMovedAt: string | null;
+  executionStartedAt: string | null;
+  executionCompletedAt: string | null;
   dependencies: string | null;
   steps: string | null;
   log: string | null;
@@ -554,6 +556,8 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
       columnMovedAt: row.columnMovedAt || undefined,
+      executionStartedAt: row.executionStartedAt || undefined,
+      executionCompletedAt: row.executionCompletedAt || undefined,
       dependencies: fromJson<string[]>(row.dependencies) || [],
       steps: fromJson<import("./types.js").TaskStep[]>(row.steps) || [],
       log: fromJson<import("./types.js").TaskLogEntry[]>(row.log) || [],
@@ -662,6 +666,8 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       createdAt: entry.createdAt,
       updatedAt: entry.updatedAt,
       columnMovedAt: entry.columnMovedAt,
+      executionStartedAt: entry.executionStartedAt,
+      executionCompletedAt: entry.executionCompletedAt,
       modelPresetId: entry.modelPresetId,
       modelProvider: entry.modelProvider,
       modelId: entry.modelId,
@@ -784,6 +790,8 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       createdAt: task.createdAt,
       updatedAt: task.updatedAt,
       columnMovedAt: task.columnMovedAt,
+      executionStartedAt: task.executionStartedAt,
+      executionCompletedAt: task.executionCompletedAt,
       archivedAt,
       modelPresetId: task.modelPresetId,
       modelProvider: task.modelProvider,
@@ -853,7 +861,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       "mergeRetries", "workflowStepRetries", "stuckKillCount", "postReviewFixCount", "recoveryRetryCount", "taskDoneRetryCount", "verificationFailureCount", "mergeConflictBounceCount", "nextRecoveryAt",
       "error", "summary", "thinkingLevel", "executionMode",
       "tokenUsageInputTokens", "tokenUsageOutputTokens", "tokenUsageCachedTokens", "tokenUsageTotalTokens", "tokenUsageFirstUsedAt", "tokenUsageLastUsedAt",
-      "createdAt", "updatedAt", "columnMovedAt",
+      "createdAt", "updatedAt", "columnMovedAt", "executionStartedAt", "executionCompletedAt",
       "dependencies", "steps", "comments", "workflowStepResults", "steeringComments",
       "attachments", "prInfo", "issueInfo", "sourceIssueProvider", "sourceIssueRepository", "sourceIssueExternalIssueId", "sourceIssueNumber", "sourceIssueUrl", "mergeDetails",
       "breakIntoSubtasks", "enabledWorkflowSteps", "modifiedFiles",
@@ -902,7 +910,7 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       "mergeRetries", "workflowStepRetries", "stuckKillCount", "postReviewFixCount", "recoveryRetryCount", "taskDoneRetryCount", "verificationFailureCount", "mergeConflictBounceCount", "nextRecoveryAt",
       "error", "summary", "thinkingLevel", "executionMode",
       "tokenUsageInputTokens", "tokenUsageOutputTokens", "tokenUsageCachedTokens", "tokenUsageTotalTokens", "tokenUsageFirstUsedAt", "tokenUsageLastUsedAt",
-      "createdAt", "updatedAt", "columnMovedAt",
+      "createdAt", "updatedAt", "columnMovedAt", "executionStartedAt", "executionCompletedAt",
       "dependencies", "steps", "attachments", "steeringComments",
       "comments", "workflowStepResults", "prInfo", "issueInfo", "sourceIssueProvider", "sourceIssueRepository", "sourceIssueExternalIssueId", "sourceIssueNumber", "sourceIssueUrl", "mergeDetails",
       "breakIntoSubtasks", "enabledWorkflowSteps", "modifiedFiles",
@@ -945,12 +953,13 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
         workflowStepRetries, stuckKillCount, postReviewFixCount, recoveryRetryCount, taskDoneRetryCount, verificationFailureCount, mergeConflictBounceCount, nextRecoveryAt, error,
         summary, thinkingLevel, executionMode, tokenUsageInputTokens, tokenUsageOutputTokens, tokenUsageCachedTokens,
         tokenUsageTotalTokens, tokenUsageFirstUsedAt, tokenUsageLastUsedAt, createdAt, updatedAt, columnMovedAt,
+        executionStartedAt, executionCompletedAt,
         dependencies, steps, log, attachments, steeringComments,
         comments, workflowStepResults, prInfo, issueInfo,
         sourceIssueProvider, sourceIssueRepository, sourceIssueExternalIssueId, sourceIssueNumber, sourceIssueUrl,
         mergeDetails, breakIntoSubtasks, enabledWorkflowSteps, modifiedFiles, missionId, sliceId, assignedAgentId, assigneeUserId, nodeId, effectiveNodeId, effectiveNodeSource, sourceType, sourceAgentId, sourceRunId, sourceSessionId, sourceMessageId, sourceParentTaskId, sourceMetadata, checkedOutBy, checkedOutAt
       ) VALUES (
-        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
       )
       ON CONFLICT(id) DO UPDATE SET
         title = excluded.title,
@@ -996,6 +1005,8 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
         createdAt = excluded.createdAt,
         updatedAt = excluded.updatedAt,
         columnMovedAt = excluded.columnMovedAt,
+        executionStartedAt = excluded.executionStartedAt,
+        executionCompletedAt = excluded.executionCompletedAt,
         dependencies = excluded.dependencies,
         steps = excluded.steps,
         log = excluded.log,
@@ -1075,6 +1086,8 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       task.createdAt,
       task.updatedAt,
       task.columnMovedAt ?? null,
+      task.executionStartedAt ?? null,
+      task.executionCompletedAt ?? null,
       toJson(task.dependencies || []),
       toJson(task.steps || []),
       toJson(task.log || []),
@@ -2661,6 +2674,16 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
       task.columnMovedAt = new Date().toISOString();
       task.updatedAt = task.columnMovedAt;
 
+      // Wall-clock end-to-end runtime: set on first transition into in-progress
+      // and first transition into done. Never overwritten — see retry-clear
+      // logic below for the path that resets these for a fresh run.
+      if (toColumn === "in-progress" && !task.executionStartedAt) {
+        task.executionStartedAt = task.columnMovedAt;
+      }
+      if (toColumn === "done" && !task.executionCompletedAt) {
+        task.executionCompletedAt = task.columnMovedAt;
+      }
+
       // Clear transient fields when moving to done (matches moveToDone behavior)
       if (toColumn === "done") {
         this.clearDoneTransientFields(task);
@@ -2680,6 +2703,9 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
         task.error = undefined;
         task.worktree = undefined;
         task.blockedBy = undefined;
+        // Reset wall-clock runtime so the next run gets a fresh timer.
+        task.executionStartedAt = undefined;
+        task.executionCompletedAt = undefined;
         this.resetAllStepsToPending(task);
         await this.resetPromptCheckboxes(dir);
       }
@@ -4068,6 +4094,9 @@ export class TaskStore extends EventEmitter<TaskStoreEvents> {
     this.clearDoneTransientFields(task);
     task.columnMovedAt = new Date().toISOString();
     task.updatedAt = task.columnMovedAt;
+    if (!task.executionCompletedAt) {
+      task.executionCompletedAt = task.columnMovedAt;
+    }
 
     await this.atomicWriteTaskJson(dir, task);
 

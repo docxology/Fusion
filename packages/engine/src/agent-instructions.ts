@@ -1,5 +1,6 @@
-import { readFile } from "node:fs/promises";
-import { isAbsolute, resolve, relative, normalize, sep } from "node:path";
+import { readFile, writeFile, mkdir, access } from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
+import { isAbsolute, resolve, relative, normalize, sep, dirname } from "node:path";
 import {
   readProjectMemory,
   type Agent,
@@ -32,7 +33,12 @@ function isPathTraversal(path: string): boolean {
   return path.split(/[\\/]+/).includes("..");
 }
 
-function resolveValidatedInstructionsPath(rawPath: string, rootDir: string, agentId: string): string | null {
+function resolveValidatedMarkdownPath(
+  rawPath: string,
+  rootDir: string,
+  agentId: string,
+  fieldLabel: string,
+): string | null {
   const trimmed = rawPath.trim();
   if (!trimmed) {
     return null;
@@ -40,35 +46,116 @@ function resolveValidatedInstructionsPath(rawPath: string, rootDir: string, agen
 
   if (trimmed.length > MAX_INSTRUCTIONS_PATH_LENGTH) {
     log.warn(
-      `instructionsPath too long for agent ${agentId} (${trimmed.length} > ${MAX_INSTRUCTIONS_PATH_LENGTH})`,
+      `${fieldLabel} too long for agent ${agentId} (${trimmed.length} > ${MAX_INSTRUCTIONS_PATH_LENGTH})`,
     );
     return null;
   }
 
   if (!trimmed.toLowerCase().endsWith(".md")) {
-    log.warn(`instructionsPath must end in .md for agent ${agentId}: ${trimmed}`);
+    log.warn(`${fieldLabel} must end in .md for agent ${agentId}: ${trimmed}`);
     return null;
   }
 
   if (isAbsolute(trimmed)) {
-    log.warn(`instructionsPath must be project-relative for agent ${agentId}: ${trimmed}`);
+    log.warn(`${fieldLabel} must be project-relative for agent ${agentId}: ${trimmed}`);
     return null;
   }
 
   const normalized = normalize(trimmed);
   if (isPathTraversal(normalized)) {
-    log.warn(`instructionsPath traversal is not allowed for agent ${agentId}: ${trimmed}`);
+    log.warn(`${fieldLabel} traversal is not allowed for agent ${agentId}: ${trimmed}`);
     return null;
   }
 
   const resolvedPath = resolve(rootDir, normalized);
   const rel = relative(rootDir, resolvedPath);
   if (!rel || rel.startsWith(`..${sep}`) || rel === ".." || isAbsolute(rel)) {
-    log.warn(`instructionsPath escapes project root for agent ${agentId}: ${trimmed}`);
+    log.warn(`${fieldLabel} escapes project root for agent ${agentId}: ${trimmed}`);
     return null;
   }
 
   return resolvedPath;
+}
+
+function resolveValidatedInstructionsPath(rawPath: string, rootDir: string, agentId: string): string | null {
+  return resolveValidatedMarkdownPath(rawPath, rootDir, agentId, "instructionsPath");
+}
+
+/**
+ * Load a per-agent heartbeat procedure markdown file. Returns the file
+ * contents (trimmed/clamped to MAX_INSTRUCTIONS_TEXT_LENGTH), or null if no
+ * path is configured, the path is invalid, or the file is unreadable. Caller
+ * substitutes a default constant on null.
+ */
+export async function resolveAgentHeartbeatProcedure(
+  agent: Agent | null | undefined,
+  rootDir: string,
+): Promise<string | null> {
+  const rawPath = agent?.heartbeatProcedurePath?.trim();
+  if (!agent || !rawPath) {
+    return null;
+  }
+  const filePath = resolveValidatedMarkdownPath(rawPath, rootDir, agent.id, "heartbeatProcedurePath");
+  if (!filePath) {
+    return null;
+  }
+  try {
+    const content = await readFile(filePath, "utf-8");
+    const normalized = trimAndClamp(
+      content,
+      MAX_INSTRUCTIONS_TEXT_LENGTH,
+      "heartbeat procedure file content",
+      agent.id,
+    );
+    return normalized || null;
+  } catch (err: unknown) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") {
+      log.warn(`Heartbeat procedure file not found for agent ${agent.id}: ${filePath}`);
+    } else {
+      log.warn(`Failed to read heartbeat procedure file for agent ${agent.id}: ${filePath} (${code})`);
+    }
+    return null;
+  }
+}
+
+/**
+ * Write the default heartbeat procedure file at `pathRel` (project-relative)
+ * if it doesn't already exist. Idempotent: leaves an existing file untouched
+ * so operators can edit the procedure without losing their changes on the
+ * next upgrade run. Returns the absolute path that was ensured (or null if
+ * the path is invalid).
+ *
+ * The default content is supplied by the caller — kept as a parameter rather
+ * than imported from agent-heartbeat.ts to avoid a circular dependency
+ * (agent-heartbeat.ts already imports from this module).
+ */
+export async function ensureDefaultHeartbeatProcedureFile(
+  rootDir: string,
+  procedurePathRel: string,
+  defaultContent: string,
+): Promise<string | null> {
+  // Reuse the same path validation as the per-agent loader so we never write
+  // outside the project root.
+  const filePath = resolveValidatedMarkdownPath(procedurePathRel, rootDir, "system", "heartbeatProcedurePath");
+  if (!filePath) {
+    return null;
+  }
+  try {
+    await access(filePath, fsConstants.F_OK);
+    return filePath; // Already exists — preserve operator edits.
+  } catch {
+    // Falls through to write below.
+  }
+  try {
+    await mkdir(dirname(filePath), { recursive: true });
+    await writeFile(filePath, defaultContent, "utf-8");
+    log.log(`Seeded default heartbeat procedure file at ${filePath}`);
+    return filePath;
+  } catch (err: unknown) {
+    log.warn(`Failed to seed default heartbeat procedure file at ${filePath}: ${err instanceof Error ? err.message : String(err)}`);
+    return null;
+  }
 }
 
 function getTrendLabel(trend: AgentRatingSummary["trend"]): string {

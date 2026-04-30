@@ -43,6 +43,7 @@ import {
 import { isContextLimitError } from "./context-limit-detector.js";
 import { createFusionAuthStorage, getModelRegistryModelsPath } from "./auth-storage.js";
 import { piLog, extensionsLog } from "./logger.js";
+import { readCustomProviders } from "./custom-providers.js";
 
 export interface AgentResult {
   session: AgentSession;
@@ -997,6 +998,35 @@ export async function createFnAgent(options: AgentOptions): Promise<AgentResult>
   const authStorage = createFusionAuthStorage();
   const modelRegistry = ModelRegistry.create(authStorage, getModelRegistryModelsPath());
   await registerExtensionProviders(options.cwd, modelRegistry);
+
+  for (const provider of readCustomProviders()) {
+    try {
+      modelRegistry.registerProvider(provider.id, {
+        baseUrl: provider.baseUrl,
+        api: provider.apiType === "anthropic-compatible" ? "anthropic" : "openai-completions",
+        apiKey: provider.apiKey,
+        models: (provider.models ?? []).map((model) => ({
+          id: model.id,
+          name: model.name,
+          reasoning: false,
+          input: ["text" as const],
+          cost: {
+            input: 0,
+            output: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+          },
+          contextWindow: 128000,
+          maxTokens: 16384,
+        })),
+      });
+      piLog.log(`Registered custom provider ${provider.id}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      piLog.warn(`Failed to register custom provider ${provider.id}: ${message}`);
+    }
+  }
+  modelRegistry.refresh();
 
   // Build the pi built-in tool set. We deliberately do NOT use the bundled
   // `createCodingTools` / `createReadOnlyTools` presets — they're missing

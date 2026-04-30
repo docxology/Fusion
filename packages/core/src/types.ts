@@ -1005,6 +1005,17 @@ export interface Task {
   /** ISO-8601 timestamp of when the task last entered its current column.
    *  Used to sort cards within a column so that recently-moved cards appear at the top. */
   columnMovedAt?: string;
+  /** ISO-8601 wall-clock timestamp when the task first entered `in-progress`.
+   *  Set on first transition into in-progress and never overwritten on retry,
+   *  so cards in in-progress / in-review / done can show end-to-end runtime
+   *  rather than just instrumented (`[timing]`) execution slices. Cleared
+   *  alongside `executionCompletedAt` when a task is reopened from
+   *  done/in-review back to todo/triage so a fresh run gets a fresh timer. */
+  executionStartedAt?: string;
+  /** ISO-8601 wall-clock timestamp when the task first entered `done`.
+   *  Set on first transition into done and never overwritten. Cleared
+   *  alongside `executionStartedAt` on reopen-for-retry. */
+  executionCompletedAt?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -2005,6 +2016,10 @@ export interface ArchivedTaskEntry {
   createdAt: string;
   updatedAt: string;
   columnMovedAt?: string;
+  /** Wall-clock timestamps for end-to-end runtime — preserved through archive
+   *  so unarchived tasks still show their original execution duration. */
+  executionStartedAt?: string;
+  executionCompletedAt?: string;
   /** Timestamp when the task was archived to the log */
   archivedAt: string;
   /** Optional: model preset and override fields for executor and validator */
@@ -2871,6 +2886,10 @@ export interface Agent {
   memory?: string;
   /** Structured instruction bundle configuration for managed/external markdown files. */
   bundleConfig?: InstructionsBundleConfig;
+  /** Optional path to a markdown file containing this agent's per-tick heartbeat procedure
+   *  (overrides the default HEARTBEAT_PROCEDURE constant). Resolved relative to project root.
+   *  Must end in `.md`, no `..` traversal. Max 500 chars. */
+  heartbeatProcedurePath?: string;
 }
 
 /** Recursive node in the agent org tree. */
@@ -2973,6 +2992,7 @@ export interface AgentCreateInput {
   soul?: string;
   memory?: string;
   bundleConfig?: InstructionsBundleConfig;
+  heartbeatProcedurePath?: string;
 }
 
 /** Input for updating an existing agent */
@@ -2994,6 +3014,7 @@ export interface AgentUpdateInput {
   soul?: string;
   memory?: string;
   bundleConfig?: InstructionsBundleConfig;
+  heartbeatProcedurePath?: string;
 }
 
 /** An API key associated with an agent for bearer token authentication. */
@@ -3086,6 +3107,7 @@ export interface AgentConfigSnapshot {
   soul?: string;
   memory?: string;
   bundleConfig?: InstructionsBundleConfig;
+  heartbeatProcedurePath?: string;
   metadata: Record<string, unknown>;
 }
 
@@ -3118,6 +3140,15 @@ export interface AgentConfigRevision {
   rollbackToRevisionId?: string;
 }
 
+/**
+ * Project-relative default path for the per-tick heartbeat procedure markdown
+ * file. New non-ephemeral agents get this as their `heartbeatProcedurePath`,
+ * and the engine seeds the file with the built-in HEARTBEAT_PROCEDURE constant
+ * on first use so operators can edit it freely. Existing agents can be
+ * upgraded onto this path via the dashboard's "Upgrade Heartbeat" action.
+ */
+export const DEFAULT_HEARTBEAT_PROCEDURE_PATH = ".fusion/HEARTBEAT.md";
+
 /** Extract trackable config fields from an Agent into a snapshot */
 export function agentToConfigSnapshot(agent: Agent): AgentConfigSnapshot {
   return {
@@ -3138,6 +3169,7 @@ export function agentToConfigSnapshot(agent: Agent): AgentConfigSnapshot {
           files: [...agent.bundleConfig.files],
         }
       : undefined,
+    heartbeatProcedurePath: agent.heartbeatProcedurePath,
     metadata: { ...agent.metadata },
   };
 }
@@ -3160,6 +3192,7 @@ export function diffConfigSnapshots(
     "soul",
     "memory",
     "bundleConfig",
+    "heartbeatProcedurePath",
     "metadata",
   ];
 

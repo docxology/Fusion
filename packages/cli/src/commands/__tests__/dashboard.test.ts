@@ -86,6 +86,10 @@ function makeMockStore() {
     logEntry: vi.fn().mockResolvedValue(undefined),
     updateTask: vi.fn().mockResolvedValue({}),
     getFusionDir: vi.fn().mockReturnValue("/tmp/test/.fusion"),
+    getGlobalSettingsStore: vi.fn(() => ({
+      getSettings: mockGlobalSettingsGetSettings,
+      updateSettings: mockGlobalSettingsUpdateSettings,
+    })),
     getActiveMergingTask: vi.fn().mockReturnValue(undefined),
     getMissionStore: vi.fn().mockReturnValue(mockMissionStore),
     close: vi.fn(),

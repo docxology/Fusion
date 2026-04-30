@@ -13,6 +13,7 @@ import {
   type HeartbeatExecutionOptions,
   HEARTBEAT_SYSTEM_PROMPT,
   HEARTBEAT_NO_TASK_SYSTEM_PROMPT,
+  HEARTBEAT_PROCEDURE,
 } from "../agent-heartbeat.js";
 import { AgentLogger } from "../agent-logger.js";
 import * as agentTools from "../agent-tools.js";
@@ -1655,6 +1656,10 @@ describe("HeartbeatMonitor", () => {
         // Should NOT include task-specific content
         expect(executionPrompt).not.toContain("Assigned task:");
         expect(executionPrompt).not.toContain("Task description:");
+        // Should include Wake Delta + Heartbeat Procedure (paperclip-style per-tick anchoring)
+        expect(executionPrompt).toContain("## Wake Delta");
+        expect(executionPrompt).toContain("wake reason:");
+        expect(executionPrompt).toContain(HEARTBEAT_PROCEDURE);
       });
 
       it("task-scoped run receives HEARTBEAT_SYSTEM_PROMPT as system prompt", async () => {
@@ -2123,6 +2128,60 @@ describe("HeartbeatMonitor", () => {
         expect(executionPrompt).toContain("Pending Messages:");
         expect(executionPrompt).toContain("[id: msg-1] [from: agent:agent-2] Hello from agent-2");
         expect(executionPrompt).toContain("[id: msg-2] [from: user:user-1] Hello from user");
+        // Task-scoped prompts must include Wake Delta + Heartbeat Procedure so
+        // the agent re-runs its procedure each tick instead of grinding on the
+        // assigned task (paperclip-parity).
+        expect(executionPrompt).toContain("## Wake Delta");
+        expect(executionPrompt).toContain("wake reason: message_received");
+        expect(executionPrompt).toContain(HEARTBEAT_PROCEDURE);
+      });
+
+      it("substitutes per-agent heartbeatProcedurePath content for the default procedure", async () => {
+        const tmpRoot = mkdtempSync(join(tmpdir(), "fn-hb-procedure-"));
+        try {
+          const customProcedure = "## Custom CEO Procedure\n\n1. Review reports\n2. Update strategy\n3. Exit";
+          writeFileSync(join(tmpRoot, "MY-PROCEDURE.md"), customProcedure, "utf-8");
+
+          const store = createStoreWithAgentForExec({
+            heartbeatProcedurePath: "MY-PROCEDURE.md",
+          });
+          const mockSession = createMockAgentSession();
+          mockedCreateFnAgent.mockResolvedValue({ session: mockSession as any });
+
+          const monitor = new HeartbeatMonitor({ store, taskStore: mockTaskStore, rootDir: tmpRoot });
+          const result = await monitor.executeHeartbeat({ agentId: "agent-001", source: "timer" });
+
+          expect(result.status).toBe("completed");
+          const promptCalls = mockSession.prompt.mock.calls;
+          expect(promptCalls.length).toBeGreaterThan(0);
+          const executionPrompt = promptCalls[promptCalls.length - 1][0];
+
+          // Custom procedure should appear; default constant should not.
+          expect(executionPrompt).toContain("## Custom CEO Procedure");
+          expect(executionPrompt).toContain("1. Review reports");
+          expect(executionPrompt).not.toContain(HEARTBEAT_PROCEDURE);
+          // Wake Delta still rendered.
+          expect(executionPrompt).toContain("## Wake Delta");
+        } finally {
+          rmSync(tmpRoot, { recursive: true, force: true });
+        }
+      });
+
+      it("falls back to default procedure when heartbeatProcedurePath is invalid (traversal)", async () => {
+        const store = createStoreWithAgentForExec({
+          heartbeatProcedurePath: "../escape.md",
+        });
+        const mockSession = createMockAgentSession();
+        mockedCreateFnAgent.mockResolvedValue({ session: mockSession as any });
+
+        const monitor = new HeartbeatMonitor({ store, taskStore: mockTaskStore, rootDir: "/tmp" });
+        const result = await monitor.executeHeartbeat({ agentId: "agent-001", source: "timer" });
+
+        expect(result.status).toBe("completed");
+        const promptCalls = mockSession.prompt.mock.calls;
+        const executionPrompt = promptCalls[promptCalls.length - 1][0];
+        // Invalid path → fall back to the default constant.
+        expect(executionPrompt).toContain(HEARTBEAT_PROCEDURE);
       });
 
       it("does not include message section when no unread messages", async () => {

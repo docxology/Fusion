@@ -53,6 +53,7 @@ import {
   setCachedClaudeCliResolution,
 } from "./claude-cli-extension.js";
 import { resolveSelfExtension } from "./self-extension.js";
+import { registerCustomProviders, reregisterCustomProviders } from "./custom-provider-registry.js";
 
 const DIAGNOSTIC_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 let diagnosticIntervalHandle: ReturnType<typeof setInterval> | null = null;
@@ -522,6 +523,18 @@ export async function runServe(
     extensionsResult.runtime.pendingProviderRegistrations = [];
     modelRegistry.refresh();
 
+    try {
+      const globalSettings = await store.getGlobalSettingsStore().getSettings();
+      registerCustomProviders(
+        modelRegistry,
+        globalSettings.customProviders,
+        (message) => console.log(`[custom-providers] ${message}`),
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`[custom-providers] Failed to load custom providers from global settings: ${message}`);
+    }
+
     (async () => {
       try {
         const settings = await store.getSettings();
@@ -605,6 +618,21 @@ export async function runServe(
     createExtensionRuntime();
     modelRegistry.refresh();
   }
+
+  store.on("settings:updated", ({ settings, previous }) => {
+    const currentProviders = settings.customProviders;
+    const previousProviders = previous.customProviders;
+    if (JSON.stringify(currentProviders ?? []) === JSON.stringify(previousProviders ?? [])) {
+      return;
+    }
+
+    reregisterCustomProviders(
+      modelRegistry,
+      previousProviders,
+      currentProviders,
+      (message) => console.log(`[custom-providers] ${message}`),
+    );
+  });
 
   // ── Daemon token resolution ─────────────────────────────────────────────
   //

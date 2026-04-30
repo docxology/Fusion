@@ -4229,6 +4229,17 @@ export function updateAgent(agentId: string, updates: AgentUpdateInput, projectI
   });
 }
 
+/** Backfill an existing agent onto the default heartbeat procedure file. */
+export function upgradeAgentHeartbeatProcedure(
+  agentId: string,
+  projectId?: string,
+): Promise<{ agent: Agent; heartbeatProcedurePath: string; procedureFileSeeded: boolean }> {
+  return api(
+    withProjectId(`/agents/${encodeURIComponent(agentId)}/upgrade-heartbeat-procedure`, projectId),
+    { method: "POST" },
+  );
+}
+
 /** Update agent custom instructions */
 export function updateAgentInstructions(
   agentId: string,

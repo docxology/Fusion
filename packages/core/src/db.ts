@@ -86,7 +86,7 @@ export function probeFts5(db: DatabaseSync): boolean {
 
 // ── Schema Definition ────────────────────────────────────────────────
 
-const SCHEMA_VERSION = 53;
+const SCHEMA_VERSION = 54;
 
 function normalizeTaskComments(
   steeringComments: SteeringComment[] | undefined,
@@ -189,6 +189,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   createdAt TEXT NOT NULL,
   updatedAt TEXT NOT NULL,
   columnMovedAt TEXT,
+  executionStartedAt TEXT,
+  executionCompletedAt TEXT,
   -- JSON columns for nested arrays/objects
   dependencies TEXT DEFAULT '[]',
   steps TEXT DEFAULT '[]',
@@ -1985,6 +1987,15 @@ export class Database {
         this.db.prepare(
           `UPDATE tasks SET sourceType = 'unknown' WHERE sourceType IS NULL`
         ).run();
+      });
+    }
+
+    // Wall-clock end-to-end execution timestamps for card runtime display.
+    // Set on first in-progress / done transitions, cleared only on retry.
+    if (version < 54) {
+      this.applyMigration(54, () => {
+        this.addColumnIfMissing("tasks", "executionStartedAt", "TEXT");
+        this.addColumnIfMissing("tasks", "executionCompletedAt", "TEXT");
       });
     }
 

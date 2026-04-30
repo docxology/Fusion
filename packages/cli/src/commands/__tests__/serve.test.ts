@@ -73,6 +73,9 @@ const mocks = vi.hoisted(() => {
       watch: vi.fn().mockResolvedValue(undefined),
       close: vi.fn(),
       getFusionDir: vi.fn().mockReturnValue(`/repo${projectId ? `/${projectId}` : ""}/.fusion`),
+      getGlobalSettingsStore: vi.fn(() => ({
+        getSettings: vi.fn().mockResolvedValue({}),
+      })),
       getMissionStore: vi.fn().mockReturnValue(missionStore),
       getSettings: vi.fn().mockResolvedValue({
         maxConcurrent: 2,

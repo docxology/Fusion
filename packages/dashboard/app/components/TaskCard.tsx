@@ -125,6 +125,21 @@ function getInProgressElapsedMs(task: Task, nowMs: number): number | null {
   return Math.max(0, nowMs - startedMs);
 }
 
+// Wall-clock end-to-end runtime: from when the task first entered in-progress
+// to when it first entered done (or `now` if not yet done). Preferred over the
+// instrumented `[timing]` sum on cards in in-progress / in-review / done so the
+// timer reflects how long the task actually took, not just the time spent
+// inside instrumented code paths. Returns null on legacy tasks that completed
+// before `executionStartedAt` was tracked, so callers can fall back.
+function getEndToEndDurationMs(task: Task, nowMs: number): number | null {
+  const startedMs = parseTimestampToMs(task.executionStartedAt);
+  if (startedMs == null) return null;
+
+  const completedMs = parseTimestampToMs(task.executionCompletedAt);
+  const endMs = completedMs != null && completedMs >= startedMs ? completedMs : nowMs;
+  return Math.max(0, endMs - startedMs);
+}
+
 // Mirrors summarizeWorkflowTiming in TaskTokenStatsPanel: completed steps use
 // completedAt-startedAt; in-progress steps contribute live elapsed (now-startedAt).
 function getWorkflowRuntimeMs(task: Task, nowMs: number): number | null {
@@ -697,16 +712,18 @@ function TaskCardComponent({
     const merging = task.status != null && ACTIVE_MERGE_STATUSES.has(task.status);
 
     if (!merging && task.column === "in-progress") {
+      const endToEndMs = getEndToEndDurationMs(task, Date.now());
       const elapsedMs = getInProgressElapsedMs(task, Date.now());
       const instrumentedMs = getInstrumentedDurationMs(task, Date.now());
-      if (elapsedMs == null && instrumentedMs == null) {
+      if (endToEndMs == null && elapsedMs == null && instrumentedMs == null) {
         return;
       }
     }
 
     if (!merging && task.column === "in-review") {
+      const endToEndMs = getEndToEndDurationMs(task, Date.now());
       const instrumentedMs = getInstrumentedDurationMs(task, Date.now());
-      if (instrumentedMs == null) {
+      if (endToEndMs == null && instrumentedMs == null) {
         return;
       }
     }
@@ -717,7 +734,7 @@ function TaskCardComponent({
     }, LIVE_TIME_INDICATOR_POLL_MS);
 
     return () => window.clearInterval(interval);
-  }, [task.column, task.status, task.columnMovedAt, task.updatedAt, task.workflowStepResults, task.timedExecutionMs]);
+  }, [task.column, task.status, task.columnMovedAt, task.updatedAt, task.workflowStepResults, task.timedExecutionMs, task.executionStartedAt, task.executionCompletedAt]);
 
   const timeIndicator = useMemo(() => {
     if (!TIME_INDICATOR_COLUMNS.has(task.column)) {
@@ -744,8 +761,12 @@ function TaskCardComponent({
     }
 
     if (task.column === "in-progress") {
+      // Prefer the persistent execution start (set on first transition to
+      // in-progress, never reset on retry-loop bounces). Fall back to the
+      // columnMovedAt heuristic for legacy tasks predating the new field.
       const elapsedMs =
-        getInProgressElapsedMs(task, timeIndicatorNowMs)
+        getEndToEndDurationMs(task, timeIndicatorNowMs)
+        ?? getInProgressElapsedMs(task, timeIndicatorNowMs)
         ?? getInstrumentedDurationMs(task, timeIndicatorNowMs);
       if (elapsedMs == null) {
         return null;
@@ -756,20 +777,23 @@ function TaskCardComponent({
         return null;
       }
 
-      const hasColumnElapsed = getInProgressElapsedMs(task, timeIndicatorNowMs) != null;
       return {
         label: elapsedLabel,
-        title: hasColumnElapsed ? `In progress ${elapsedLabel}` : `Execution time ${elapsedLabel}`,
-        ariaLabel: hasColumnElapsed ? `In progress ${elapsedLabel}` : `Execution time ${elapsedLabel}`,
+        title: `In progress ${elapsedLabel}`,
+        ariaLabel: `In progress ${elapsedLabel}`,
       };
     }
 
-    const instrumentedMs = getInstrumentedDurationMs(task, timeIndicatorNowMs);
-    if (instrumentedMs == null) {
+    // in-review and done: show wall-clock end-to-end runtime. Falls back to
+    // the instrumented `[timing]` aggregate for tasks completed before
+    // `executionStartedAt`/`executionCompletedAt` were tracked.
+    const endToEndMs = getEndToEndDurationMs(task, timeIndicatorNowMs);
+    const totalMs = endToEndMs ?? getInstrumentedDurationMs(task, timeIndicatorNowMs);
+    if (totalMs == null) {
       return null;
     }
 
-    const elapsedLabel = formatElapsedDurationDone(instrumentedMs);
+    const elapsedLabel = formatElapsedDurationDone(totalMs);
     if (!elapsedLabel) {
       return null;
     }
@@ -789,7 +813,7 @@ function TaskCardComponent({
       title: `Execution time ${elapsedLabel}. Completed ${completedAt}`,
       ariaLabel: `Execution time ${elapsedLabel}. Completed ${completedAt}`,
     };
-  }, [task.column, task.status, task.columnMovedAt, task.timedExecutionMs, task.updatedAt, task.workflowStepResults, task.log, timeIndicatorNowMs]);
+  }, [task.column, task.status, task.columnMovedAt, task.timedExecutionMs, task.updatedAt, task.workflowStepResults, task.log, task.executionStartedAt, task.executionCompletedAt, timeIndicatorNowMs]);
 
   useEffect(() => {
     if (!hasGitHubBadge || !isInViewport) {

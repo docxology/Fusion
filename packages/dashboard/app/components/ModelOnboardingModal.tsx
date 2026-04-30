@@ -746,7 +746,14 @@ export function ModelOnboardingModal({
   const loadCustomProviders = useCallback(async () => {
     try {
       const data = await fetchCustomProviders();
-      setCustomProviders(data.providers ?? []);
+      setCustomProviders((data.providers ?? []).map((provider) => ({
+        id: provider.id,
+        name: provider.name,
+        baseUrl: provider.baseUrl,
+        api: provider.apiType === "anthropic-compatible" ? "anthropic-messages" : "openai-completions",
+        apiKey: provider.apiKey,
+        models: (provider.models ?? []).map((model) => ({ id: model.id, name: model.name })),
+      })));
     } catch {
       // best effort
     }

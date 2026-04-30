@@ -717,15 +717,19 @@ export async function dropGitStash(index: number, cwd?: string): Promise<string>
 
 export async function getGitFileChanges(cwd?: string): Promise<GitFileChange[]> {
   try {
-    const output = (await runGitCommand(["status", "--porcelain=v1"], cwd, 5000)).trim();
-    if (!output) return [];
+    const output = await runGitCommand(["status", "--porcelain=v1"], cwd, 5000);
+    if (!output.trim()) return [];
 
     const changes: GitFileChange[] = [];
     for (const line of output.split("\n")) {
-      if (line.length < 3) continue;
-      const indexStatus = line[0];
-      const workTreeStatus = line[1];
-      const filePath = line.slice(3).trim();
+      // Preserve leading status spaces from porcelain output. Trimming the
+      // whole command output corrupts the first unstaged entry (`" M foo"` →
+      // `"M foo"`), which misclassifies it as staged and truncates the path.
+      const normalizedLine = line.replace(/\r$/, "");
+      if (normalizedLine.length < 3) continue;
+      const indexStatus = normalizedLine[0];
+      const workTreeStatus = normalizedLine[1];
+      const filePath = normalizedLine.slice(3).trim();
 
       const mapStatus = (code: string): GitFileChange["status"] => {
         switch (code) {

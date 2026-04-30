@@ -786,7 +786,14 @@ export function SettingsModal({
     if (activeSection === "authentication") {
       setAuthLoading(true);
       loadAuthStatus().finally(() => setAuthLoading(false));
-      void fetchCustomProviders().then((data) => setCustomProviders(data.providers ?? [])).catch(() => undefined);
+      void fetchCustomProviders().then((data) => setCustomProviders((data.providers ?? []).map((provider) => ({
+        id: provider.id,
+        name: provider.name,
+        baseUrl: provider.baseUrl,
+        api: provider.apiType === "anthropic-compatible" ? "anthropic-messages" : "openai-completions",
+        apiKey: provider.apiKey,
+        models: (provider.models ?? []).map((model) => ({ id: model.id, name: model.name })),
+      })))).catch(() => undefined);
     }
     // Clean up polling when leaving auth section
     return () => {
@@ -799,7 +806,14 @@ export function SettingsModal({
 
   const loadCustomProviders = useCallback(async () => {
     const data = await fetchCustomProviders();
-    setCustomProviders(data.providers ?? []);
+    setCustomProviders((data.providers ?? []).map((provider) => ({
+      id: provider.id,
+      name: provider.name,
+      baseUrl: provider.baseUrl,
+      api: provider.apiType === "anthropic-compatible" ? "anthropic-messages" : "openai-completions",
+      apiKey: provider.apiKey,
+      models: (provider.models ?? []).map((model) => ({ id: model.id, name: model.name })),
+    })));
   }, []);
 
   const handleSaveCustomProvider = useCallback(async (config: CustomProviderConfig) => {

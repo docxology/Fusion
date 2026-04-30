@@ -21,6 +21,7 @@ const reloadMock = vi.fn(async () => {});
 const execSyncMock = vi.fn((_cmd?: any, _opts?: any) => "");
 const existsSyncMock = vi.fn((_path: PathLike) => false);
 const readFileSyncMock = vi.fn((_path?: any) => "{}");
+const readCustomProvidersMock = vi.fn(() => []);
 
 // Route async `exec` through the `execSync` mock so the promisify bridge works.
 // Use Symbol.for("nodejs.util.promisify.custom") directly to avoid async imports
@@ -67,6 +68,10 @@ vi.mock("node:fs", async () => {
     readFileSync: readFileSyncMock,
   };
 });
+
+vi.mock("../custom-providers.js", () => ({
+  readCustomProviders: readCustomProvidersMock,
+}));
 
 vi.mock("@mariozechner/pi-coding-agent", () => ({
   AuthStorage: {
@@ -382,6 +387,7 @@ describe("createFnAgent", () => {
     execSyncMock.mockReturnValue("");
     existsSyncMock.mockReturnValue(false);
     readFileSyncMock.mockReturnValue("{}");
+    readCustomProvidersMock.mockReturnValue([]);
     findMock.mockImplementation((provider: string, modelId: string) => ({ provider, id: modelId }));
     createAgentSessionMock.mockResolvedValue({
       session: {
@@ -482,6 +488,36 @@ describe("createFnAgent", () => {
       models: [{ id: "glm-5.1" }],
     }));
     expect(refreshMock).toHaveBeenCalled();
+  });
+
+  it("registers custom providers from global settings", async () => {
+    readCustomProvidersMock.mockReturnValue([
+      {
+        id: "custom-openai",
+        name: "Custom OpenAI",
+        apiType: "openai-compatible",
+        baseUrl: "https://custom.example/v1",
+        apiKey: "CUSTOM_API_KEY",
+        models: [{ id: "custom-model", name: "Custom Model" }],
+      },
+    ] as any);
+
+    const { createFnAgent } = await import("../pi.js");
+
+    await createFnAgent({
+      cwd: "/tmp",
+      systemPrompt: "test",
+      tools: "readonly",
+      defaultProvider: "openai-codex",
+      defaultModelId: "gpt-5.4",
+    });
+
+    expect(registerProviderMock).toHaveBeenCalledWith("custom-openai", expect.objectContaining({
+      baseUrl: "https://custom.example/v1",
+      api: "openai-completions",
+      apiKey: "CUSTOM_API_KEY",
+      models: [expect.objectContaining({ id: "custom-model", name: "Custom Model" })],
+    }));
   });
 
   it("avoids lock-based SettingsManager.create when loading extension providers", async () => {

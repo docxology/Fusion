@@ -36,7 +36,7 @@ import type {
   AgentRatingInput,
   Task,
 } from "./types.js";
-import { AGENT_VALID_TRANSITIONS, agentToConfigSnapshot, diffConfigSnapshots, isEphemeralAgent, CheckoutConflictError } from "./types.js";
+import { AGENT_VALID_TRANSITIONS, agentToConfigSnapshot, diffConfigSnapshots, isEphemeralAgent, CheckoutConflictError, DEFAULT_HEARTBEAT_PROCEDURE_PATH } from "./types.js";
 import type { RunMutationContext } from "./types.js";
 import type { TaskStore } from "./store.js";
 import { computeAccessState } from "./agent-permissions.js";
@@ -115,6 +115,7 @@ interface AgentData {
   soul?: string;
   memory?: string;
   bundleConfig?: InstructionsBundleConfig;
+  heartbeatProcedurePath?: string;
 }
 interface AgentRow {
   id: string;
@@ -374,6 +375,13 @@ export class AgentStore extends EventEmitter {
     const metadata = input.metadata ?? {};
     const runtimeConfig = resolveCreationRuntimeConfig(input.runtimeConfig, metadata);
 
+    // Default heartbeatProcedurePath for new non-ephemeral agents so operators
+    // get an editable HEARTBEAT.md file from day one. Ephemeral task workers
+    // skip this — they're short-lived and don't need persistent procedure files.
+    const ephemeral = isEphemeralAgent({ metadata, name: input.name, role: input.role, reportsTo: input.reportsTo });
+    const resolvedHeartbeatProcedurePath = input.heartbeatProcedurePath
+      ?? (ephemeral ? undefined : DEFAULT_HEARTBEAT_PROCEDURE_PATH);
+
     const agent: Agent = {
       id: agentId,
       name: input.name.trim(),
@@ -392,6 +400,7 @@ export class AgentStore extends EventEmitter {
       ...(input.soul && { soul: input.soul }),
       ...(input.memory && { memory: input.memory }),
       ...(input.bundleConfig && { bundleConfig: input.bundleConfig }),
+      ...(resolvedHeartbeatProcedurePath && { heartbeatProcedurePath: resolvedHeartbeatProcedurePath }),
     };
 
     await this.writeAgent(agent);
@@ -841,6 +850,7 @@ export class AgentStore extends EventEmitter {
         ...(updates.soul !== undefined && { soul: updates.soul }),
         ...(updates.memory !== undefined && { memory: updates.memory }),
         ...("bundleConfig" in updates && { bundleConfig: updates.bundleConfig }),
+        ...("heartbeatProcedurePath" in updates && { heartbeatProcedurePath: updates.heartbeatProcedurePath }),
       };
 
       await this.writeAgent(updated);
@@ -1807,6 +1817,7 @@ export class AgentStore extends EventEmitter {
     | "soul"
     | "memory"
     | "bundleConfig"
+    | "heartbeatProcedurePath"
     | "metadata"
   > {
     return {
@@ -1827,6 +1838,7 @@ export class AgentStore extends EventEmitter {
             files: [...snapshot.bundleConfig.files],
           }
         : undefined,
+      heartbeatProcedurePath: snapshot.heartbeatProcedurePath,
       metadata: { ...snapshot.metadata },
     };
   }
@@ -2007,6 +2019,7 @@ export class AgentStore extends EventEmitter {
       soul: data.soul,
       memory: data.memory,
       bundleConfig: data.bundleConfig,
+      heartbeatProcedurePath: data.heartbeatProcedurePath,
     };
   }
 
@@ -2035,6 +2048,7 @@ export class AgentStore extends EventEmitter {
       soul: agent.soul,
       memory: agent.memory,
       bundleConfig: agent.bundleConfig,
+      heartbeatProcedurePath: agent.heartbeatProcedurePath,
     };
 
     this.db.prepare(`

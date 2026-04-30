@@ -23,7 +23,7 @@ import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import { Type, type Static } from "@mariozechner/pi-ai";
 import { createTaskCreateTool, createTaskLogToolWithContext, createTaskDocumentWriteTool, createTaskDocumentReadTool, createListAgentsTool, createDelegateTaskTool, createSendMessageTool, createReadMessagesTool, createMemoryTools, taskCreateParams } from "./agent-tools.js";
 import { AgentLogger } from "./agent-logger.js";
-import { resolveAgentInstructionsWithRatings, buildSystemPromptWithInstructions } from "./agent-instructions.js";
+import { resolveAgentInstructionsWithRatings, buildSystemPromptWithInstructions, resolveAgentHeartbeatProcedure } from "./agent-instructions.js";
 import { heartbeatLog, formatError } from "./logger.js";
 import { createRunAuditor, type EngineRunContext } from "./run-audit.js";
 import { promptWithFallback } from "./pi.js";
@@ -284,6 +284,37 @@ When sending messages:
 
 // Backward-compatible alias; prefer HEARTBEAT_NO_TASK_SYSTEM_PROMPT.
 export const HEARTBEAT_SYSTEM_PROMPT_NO_TASK = HEARTBEAT_NO_TASK_SYSTEM_PROMPT;
+
+/**
+ * Per-tick heartbeat procedure appended to every execution prompt. Forces the
+ * agent to re-anchor on its own operating procedure each wake instead of
+ * silently grinding on a previously assigned task.
+ */
+export const HEARTBEAT_PROCEDURE = `## Heartbeat Procedure (run every tick, in order)
+
+1. **Identity & context** — review your soul, instructions, and memory (already
+   loaded in the system prompt). Confirm who you are and what you're responsible
+   for before continuing prior work.
+2. **Inbox** — when fn_read_messages is available, call it. Process any pending
+   messages first; reply with reply_to_message_id when answering.
+3. **Wake delta** — read the Wake Delta block above. The wake reason is the
+   highest-priority change for this heartbeat. If you were woken by a comment
+   or a message, acknowledge it before doing anything else.
+4. **Assignment review** — if you have an assigned task, re-read its current
+   description, latest comments, and any task documents. Decide whether the
+   prior plan is still valid given the wake delta. Do not assume yesterday's
+   plan is still correct.
+5. **Pick the next concrete action** — exactly ONE useful action this heartbeat:
+   advance the task, create a follow-up, log findings, delegate, or update
+   memory. Don't stop at planning unless the task is a planning task.
+6. **Persist progress** — fn_task_log for observations, fn_task_document_write
+   for durable findings, status updates only when the work warrants it.
+7. **Exit** — call fn_heartbeat_done with a one-line summary of what changed
+   this tick. If you took no action, say so and explain why.
+
+Critical: a heartbeat without observable progress (a log, a document write, a
+status change, a comment, a delegation, or an explicit "no-op with reason") is
+a bug. Do not loop on the same plan across heartbeats without recording why.`;
 
 /** Parameter schema for the fn_heartbeat_done tool */
 const heartbeatDoneParams = Type.Object({
@@ -1337,6 +1368,30 @@ export class HeartbeatMonitor {
           let pendingMessages: Message[] = [];
           let executionPrompt: string;
 
+          // Derive a stable wake reason from source, triggerDetail, and trigger
+          // type so the agent can change its strategy based on *why* it woke up.
+          // Mirrors paperclip's PAPERCLIP_WAKE_REASON (see plan: wake delta).
+          const deriveWakeReason = (): string => {
+            if (effectiveTriggeringCommentType) return `comment_${effectiveTriggeringCommentType}`;
+            if (triggerDetail === "wake-on-message") return "message_received";
+            if (triggerDetail === "wake-on-comment") return "comment_mention";
+            if (triggerDetail === "task-assigned") return "task_assigned";
+            if (source === "timer") return "timer";
+            if (source === "assignment") return "task_assigned";
+            if (source === "automation") return "automation";
+            if (source === "routine") return "routine";
+            return triggerDetail || source;
+          };
+          const wakeReason = deriveWakeReason();
+
+          // Per-agent override of the default HEARTBEAT_PROCEDURE: if the agent
+          // configured a heartbeatProcedurePath pointing to a markdown file in
+          // the project, use that instead. Reloaded fresh each tick (matches the
+          // existing instructionsPath/instructionsText reload contract) so an
+          // operator can iterate on procedure text without restarting agents.
+          const customProcedure = await resolveAgentHeartbeatProcedure(agent, rootDir);
+          const heartbeatProcedureText = customProcedure ?? HEARTBEAT_PROCEDURE;
+
           if (isNoTaskRun) {
             // No-task heartbeat: agent has identity but no assigned task
             // Fetch unread messages when messageStore is available (for all trigger types)
@@ -1365,6 +1420,16 @@ export class HeartbeatMonitor {
               `Heartbeat execution for agent "${agent.name}" (ID: ${agent.id})`,
               `Source: ${source}${triggerDetail ? ` (${triggerDetail})` : ""}`,
               "",
+              "## Wake Delta",
+              `- source: ${source}${triggerDetail ? ` (${triggerDetail})` : ""}`,
+              `- wake reason: ${wakeReason}`,
+              `- assigned task: none`,
+              `- pending messages: ${pendingMessages.length}`,
+              "",
+              "Treat this wake delta as the highest-priority change for this heartbeat.",
+              "Run the Heartbeat Procedure (below) before doing anything else — even a",
+              "timer-only wake should re-check messages, memory, and project state.",
+              "",
               "**No assigned task** — This heartbeat run has no task assignment.",
               "",
               "You have identity (soul, instructions, and/or memory) loaded, which means you can perform",
@@ -1388,6 +1453,9 @@ export class HeartbeatMonitor {
               "",
               "Your soul, instructions, and memory are already loaded in the system prompt.",
               "Focus on work that benefits the project without requiring a specific task context.",
+              "",
+              heartbeatProcedureText,
+              "",
               "Call fn_heartbeat_done when finished.",
             ].join("\n");
           } else {
@@ -1450,6 +1518,18 @@ export class HeartbeatMonitor {
               `Source: ${source}${triggerDetail ? ` (${triggerDetail})` : ""}`,
               `Assigned task: ${taskId} — ${taskTitle}`,
               "",
+              "## Wake Delta",
+              `- source: ${source}${triggerDetail ? ` (${triggerDetail})` : ""}`,
+              `- wake reason: ${wakeReason}`,
+              `- assigned task: ${taskId}`,
+              `- pending messages: ${pendingMessages.length}`,
+              `- triggering comments: ${effectiveTriggeringCommentIds?.length ?? 0}`,
+              "",
+              "Treat this wake delta as the highest-priority change for this heartbeat.",
+              "Before resuming prior task work, run the Heartbeat Procedure (below) and",
+              "decide what action this delta requires. Your assigned task is one input",
+              "to the procedure — not the only thing to consider.",
+              "",
               "Task description:",
               taskDetail!.description,
               "",
@@ -1457,7 +1537,9 @@ export class HeartbeatMonitor {
               ...triggeringCommentLines,
               ...pendingMessagesLines,
               "",
-              "Review the task status and take appropriate action. Call fn_heartbeat_done when finished.",
+              heartbeatProcedureText,
+              "",
+              "Run the Heartbeat Procedure above. Call fn_heartbeat_done when finished.",
             ].join("\n");
           }
 
