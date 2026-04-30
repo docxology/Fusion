@@ -12,7 +12,7 @@ import {
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Components } from "react-markdown";
-import { Eye, EyeOff, MessageSquare, Paperclip, Send, Square, Wrench, X } from "lucide-react";
+import { Eye, EyeOff, MessageSquare, Paperclip, Plus, Send, Square, Wrench, X } from "lucide-react";
 import { fetchModels, type Agent, type ModelInfo } from "../api";
 import { CustomModelDropdown } from "./CustomModelDropdown";
 import { AgentMentionPopup } from "./AgentMentionPopup";
@@ -1546,15 +1546,45 @@ export function QuickChatFAB({
               )}
             </div>
             <div className="quick-chat-panel-header-actions">
-
+              {agents.length > 0 && (
+                <div className="quick-chat-header-mode-toggle" data-testid="quick-chat-mode-toggle">
+                  <button
+                    type="button"
+                    className={`quick-chat-mode-btn${chatMode === "agent" ? " quick-chat-mode-btn--active" : ""}`}
+                    data-testid="quick-chat-mode-agent"
+                    onClick={() => {
+                      setChatMode("agent");
+                      setSelectedModel("");
+                    }}
+                    aria-label="Switch to agent mode"
+                    title="Agent mode"
+                  >
+                    A
+                  </button>
+                  <button
+                    type="button"
+                    className={`quick-chat-mode-btn${chatMode === "model" ? " quick-chat-mode-btn--active" : ""}`}
+                    data-testid="quick-chat-mode-model"
+                    onClick={() => {
+                      setChatMode("model");
+                      setSelectedAgentId("");
+                    }}
+                    aria-label="Switch to model mode"
+                    title="Model mode"
+                  >
+                    M
+                  </button>
+                </div>
+              )}
               <button
                 type="button"
-                className="btn btn-sm"
+                className="btn-icon quick-chat-new-chat-btn"
                 data-testid="quick-chat-new-thread"
+                aria-label="Start a new chat"
                 onClick={handleStartFreshChat}
                 disabled={!hasChatTarget || sessionsLoading}
               >
-                New chat
+                <Plus size={16} />
               </button>
               <button
                 type="button"
@@ -1567,33 +1597,6 @@ export function QuickChatFAB({
               </button>
             </div>
           </div>
-
-          {agents.length > 0 && (
-            <div className="quick-chat-mode-toggle" data-testid="quick-chat-mode-toggle">
-              <button
-                type="button"
-                className={`quick-chat-mode-btn${chatMode === "agent" ? " quick-chat-mode-btn--active" : ""}`}
-                data-testid="quick-chat-mode-agent"
-                onClick={() => {
-                  setChatMode("agent");
-                  setSelectedModel("");
-                }}
-              >
-                Agent
-              </button>
-              <button
-                type="button"
-                className={`quick-chat-mode-btn${chatMode === "model" ? " quick-chat-mode-btn--active" : ""}`}
-                data-testid="quick-chat-mode-model"
-                onClick={() => {
-                  setChatMode("model");
-                  setSelectedAgentId("");
-                }}
-              >
-                Model
-              </button>
-            </div>
-          )}
 
           {chatMode === "agent" && agents.length > 0 && (
             <div className="quick-chat-panel-agent-select">

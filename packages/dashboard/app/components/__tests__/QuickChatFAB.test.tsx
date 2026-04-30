@@ -190,6 +190,14 @@ describe("QuickChatFAB", () => {
     });
     expect(screen.queryByTestId("quick-chat-mode-toggle")).toBeNull();
     expect(screen.queryByTestId("quick-chat-agent-select")).toBeNull();
+
+    const headerActions = document.querySelector(".quick-chat-panel-header-actions");
+    expect(headerActions).toBeTruthy();
+    if (!headerActions) return;
+    expect(within(headerActions).queryByTestId("quick-chat-mode-toggle")).toBeNull();
+    expect(within(headerActions).getByTestId("quick-chat-new-thread")).toBeDefined();
+    expect(within(headerActions).getByTestId("quick-chat-close")).toBeDefined();
+    expect(within(headerActions).getAllByRole("button")).toHaveLength(2);
   });
 
   it("auto-selects configured default model when no agents exist and enables input", async () => {
@@ -624,6 +632,30 @@ describe("QuickChatFAB", () => {
         "proj-123",
       );
     });
+  });
+
+  it("renders header toggle controls inside header actions with icon-only new chat button", async () => {
+    render(<QuickChatFAB addToast={addToast} projectId="proj-123" />);
+
+    fireEvent.click(screen.getByTestId("quick-chat-fab"));
+
+    const headerActions = await waitFor(() => document.querySelector(".quick-chat-panel-header-actions"));
+    expect(headerActions).toBeTruthy();
+    if (!headerActions) return;
+
+    const scoped = within(headerActions);
+    expect(scoped.getByTestId("quick-chat-mode-toggle")).toBeDefined();
+    const agentModeBtn = scoped.getByTestId("quick-chat-mode-agent");
+    const modelModeBtn = scoped.getByTestId("quick-chat-mode-model");
+    expect(agentModeBtn).toHaveTextContent("A");
+    expect(modelModeBtn).toHaveTextContent("M");
+    expect(agentModeBtn).toHaveAttribute("aria-label", "Switch to agent mode");
+    expect(modelModeBtn).toHaveAttribute("aria-label", "Switch to model mode");
+
+    const newThreadBtn = scoped.getByTestId("quick-chat-new-thread");
+    expect(within(newThreadBtn).queryByText("New chat")).toBeNull();
+    expect(newThreadBtn.querySelector("svg")).toBeTruthy();
+    expect(scoped.getByTestId("quick-chat-close")).toBeDefined();
   });
 
   it("new chat action creates a fresh model thread without changing the selected model", async () => {

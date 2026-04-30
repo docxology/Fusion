@@ -211,32 +211,68 @@
 }
 
 .quick-chat-panel-header-actions {
+  --quick-chat-header-control-size: calc(var(--space-lg) + var(--space-sm) + var(--space-xs));
+
   display: inline-flex;
   align-items: center;
-  gap: var(--space-sm);
-}
-
-.quick-chat-panel-header-actions .btn {
-  white-space: nowrap;
-}
-
-.quick-chat-mode-toggle {
-  display: flex;
   gap: var(--space-xs);
-  padding: var(--space-sm) var(--space-md);
-  border-bottom: 1px solid var(--border);
+}
+
+.quick-chat-panel-header-actions .btn-icon {
+  width: var(--quick-chat-header-control-size);
+  min-width: var(--quick-chat-header-control-size);
+  height: var(--quick-chat-header-control-size);
+  min-height: var(--quick-chat-header-control-size);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  color: var(--text);
+}
+
+.quick-chat-header-mode-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--space-xs) / 2);
 }
 
 .quick-chat-mode-btn {
-  flex: 1;
-  padding: var(--space-xs) var(--space-sm);
+  width: var(--quick-chat-header-control-size);
+  min-width: var(--quick-chat-header-control-size);
+  height: var(--quick-chat-header-control-size);
+  min-height: var(--quick-chat-header-control-size);
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-pill);
   background: transparent;
   color: var(--text-muted);
   font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
   cursor: pointer;
   transition: var(--transition-fast);
+}
+
+.quick-chat-new-chat-btn {
+  background: var(--cta-bg);
+  border: 1px solid var(--cta-border);
+  color: var(--cta-text);
+}
+
+.quick-chat-new-chat-btn:hover {
+  background: var(--cta-bg-hover);
+}
+
+.quick-chat-new-chat-btn:disabled,
+.quick-chat-new-chat-btn:disabled:hover {
+  background: var(--cta-bg);
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .quick-chat-mode-btn:hover {
@@ -648,6 +684,8 @@
   }
 
   .quick-chat-panel-header-actions {
+    --quick-chat-header-control-size: calc(var(--space-xl) + var(--space-md));
+
     width: auto;
     flex-shrink: 0;
     justify-content: flex-end;
