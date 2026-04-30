@@ -647,8 +647,8 @@ describe("QuickChatFAB", () => {
     expect(scoped.getByTestId("quick-chat-mode-toggle")).toBeDefined();
     const agentModeBtn = scoped.getByTestId("quick-chat-mode-agent");
     const modelModeBtn = scoped.getByTestId("quick-chat-mode-model");
-    expect(agentModeBtn).toHaveTextContent("A");
-    expect(modelModeBtn).toHaveTextContent("M");
+    expect(agentModeBtn).toHaveTextContent("Agent");
+    expect(modelModeBtn).toHaveTextContent("Model");
     expect(agentModeBtn).toHaveAttribute("aria-label", "Switch to agent mode");
     expect(modelModeBtn).toHaveAttribute("aria-label", "Switch to model mode");
 

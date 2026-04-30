@@ -1559,7 +1559,7 @@ export function QuickChatFAB({
                     aria-label="Switch to agent mode"
                     title="Agent mode"
                   >
-                    A
+                    Agent
                   </button>
                   <button
                     type="button"
@@ -1572,7 +1572,7 @@ export function QuickChatFAB({
                     aria-label="Switch to model mode"
                     title="Model mode"
                   >
-                    M
+                    Model
                   </button>
                 </div>
               )}

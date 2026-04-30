@@ -239,11 +239,10 @@
 }
 
 .quick-chat-mode-btn {
-  width: var(--quick-chat-header-control-size);
   min-width: var(--quick-chat-header-control-size);
   height: var(--quick-chat-header-control-size);
   min-height: var(--quick-chat-header-control-size);
-  padding: 0;
+  padding: 0 var(--space-sm);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -256,6 +255,7 @@
   line-height: 1;
   cursor: pointer;
   transition: var(--transition-fast);
+  white-space: nowrap;
 }
 
 .quick-chat-new-chat-btn {

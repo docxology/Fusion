@@ -415,7 +415,7 @@ export function SettingsModal({
   const [loginInstructions, setLoginInstructions] = useState<Record<string, string>>({});
   const [apiKeyInputs, setApiKeyInputs] = useState<Record<string, string>>({});
   const [apiKeyErrors, setApiKeyErrors] = useState<Record<string, string>>({});
-  const [customProviders, setCustomProviders] = useState<CustomProvider[]>([]);
+  const [customProviders, setCustomProviders] = useState<CustomProviderConfig[]>([]);
   const [customProviderEditing, setCustomProviderEditing] = useState<CustomProviderConfig | null>(null);
   const [showCustomProviderForm, setShowCustomProviderForm] = useState(false);
   const [customProviderSaving, setCustomProviderSaving] = useState(false);
@@ -833,7 +833,7 @@ export function SettingsModal({
     }
   }, [customProviderEditing, loadCustomProviders]);
 
-  const handleDeleteCustomProvider = useCallback(async (provider: CustomProvider) => {
+  const handleDeleteCustomProvider = useCallback(async (provider: CustomProviderConfig) => {
     const ok = await confirm({
       title: "Delete custom provider",
       message: `Delete custom provider '${provider.id}'?`,
@@ -4719,7 +4719,7 @@ export function SettingsModal({
                               id: provider.id,
                               name: provider.name,
                               baseUrl: provider.baseUrl,
-                              api: provider.apiType === "anthropic-compatible" ? "anthropic-messages" : "openai-completions",
+                              api: provider.api,
                               apiKey: provider.apiKey,
                               models: provider.models?.map((model) => ({ id: model.id, name: model.name })) ?? [],
                             });
