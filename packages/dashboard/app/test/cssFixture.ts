@@ -5,6 +5,13 @@ const APP_DIR = resolve(__dirname, "..");
 const COMPONENTS_DIR = join(APP_DIR, "components");
 
 let cached: string | null = null;
+let stylesCached: string | null = null;
+
+export function loadStylesCss(): string {
+  if (stylesCached !== null) return stylesCached;
+  stylesCached = readFileSync(join(APP_DIR, "styles.css"), "utf-8");
+  return stylesCached;
+}
 
 export function loadAllAppCss(): string {
   if (cached !== null) return cached;
@@ -12,7 +19,9 @@ export function loadAllAppCss(): string {
   // tests), then component CSS files in alphabetical order. This keeps both
   // styles.css's intra-file order intact AND lets co-located component base
   // rules be matched before any cross-file @media override referencing them.
-  const parts: string[] = [readFileSync(join(APP_DIR, "styles.css"), "utf-8")];
+  // NOTE: public/theme-data.css is intentionally excluded here; tests that
+  // validate per-color-theme contracts should load it explicitly.
+  const parts: string[] = [loadStylesCss()];
   const entries = readdirSync(COMPONENTS_DIR, { withFileTypes: true })
     .filter((e) => e.isFile() && e.name.endsWith(".css"))
     .map((e) => e.name)

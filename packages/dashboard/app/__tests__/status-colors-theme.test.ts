@@ -1,7 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { loadAllAppCss } from "../test/cssFixture";
+import { loadAllAppCss, loadStylesCss } from "../test/cssFixture";
 import fs from "fs";
 import path from "path";
+
+const themeDataPath = path.resolve(__dirname, "../public/theme-data.css");
 
 /**
  * Theme-safety regression tests for status color tokens across
@@ -14,55 +16,57 @@ import path from "path";
 
 describe("Status color CSS custom properties", () => {
   let css: string;
+  let stylesCss: string;
 
   beforeAll(() => {
     css = loadAllAppCss();
+    stylesCss = loadStylesCss();
   });
 
   it("defines --status-triage-bg custom property in :root using color-mix()", () => {
-    const rootBlock = extractRootBlock(css);
+    const rootBlock = extractRootBlock(stylesCss);
     expect(rootBlock).toContain("--status-triage-bg");
     expect(rootBlock).toContain("color-mix(in srgb, var(--triage) 15%, transparent)");
   });
 
   it("defines --status-todo-bg custom property in :root using color-mix()", () => {
-    const rootBlock = extractRootBlock(css);
+    const rootBlock = extractRootBlock(stylesCss);
     expect(rootBlock).toContain("--status-todo-bg");
     expect(rootBlock).toContain("color-mix(in srgb, var(--todo) 15%, transparent)");
   });
 
   it("defines --status-in-progress-bg custom property in :root using color-mix()", () => {
-    const rootBlock = extractRootBlock(css);
+    const rootBlock = extractRootBlock(stylesCss);
     expect(rootBlock).toContain("--status-in-progress-bg");
     expect(rootBlock).toContain("color-mix(in srgb, var(--in-progress) 15%, transparent)");
   });
 
   it("defines --status-in-review-bg custom property in :root using color-mix()", () => {
-    const rootBlock = extractRootBlock(css);
+    const rootBlock = extractRootBlock(stylesCss);
     expect(rootBlock).toContain("--status-in-review-bg");
     expect(rootBlock).toContain("color-mix(in srgb, var(--in-review) 15%, transparent)");
   });
 
   it("defines --status-done-bg custom property in :root using color-mix()", () => {
-    const rootBlock = extractRootBlock(css);
+    const rootBlock = extractRootBlock(stylesCss);
     expect(rootBlock).toContain("--status-done-bg");
     expect(rootBlock).toContain("color-mix(in srgb, var(--done) 15%, transparent)");
   });
 
   it("defines --status-error-bg custom property in :root using color-mix()", () => {
-    const rootBlock = extractRootBlock(css);
+    const rootBlock = extractRootBlock(stylesCss);
     expect(rootBlock).toContain("--status-error-bg");
     expect(rootBlock).toContain("color-mix(in srgb, var(--color-error-dark");
   });
 
   it("defines --status-archived-bg custom property in :root using color-mix()", () => {
-    const rootBlock = extractRootBlock(css);
+    const rootBlock = extractRootBlock(stylesCss);
     expect(rootBlock).toContain("--status-archived-bg");
     expect(rootBlock).toContain("color-mix(in srgb, var(--text-muted");
   });
 
   it("defines --surface-hover in :root using semantic color-mix()", () => {
-    const rootBlock = extractRootBlock(css);
+    const rootBlock = extractRootBlock(stylesCss);
     expect(rootBlock).toContain("--surface-hover");
     expect(rootBlock).toContain(
       "--surface-hover: color-mix(in srgb, var(--surface) 90%, var(--text) 10%)"
@@ -70,7 +74,7 @@ describe("Status color CSS custom properties", () => {
   });
 
   it("defines light theme override for --surface-hover", () => {
-    const lightBlock = extractLightThemeBlock(css);
+    const lightBlock = extractLightThemeBlock(stylesCss);
     expect(lightBlock).toContain("--surface-hover");
     expect(lightBlock).toContain(
       "--surface-hover: color-mix(in srgb, var(--surface) 92%, var(--text) 8%)"
@@ -78,7 +82,7 @@ describe("Status color CSS custom properties", () => {
   });
 
   it("defines semantic neutral surface tiers in :root", () => {
-    const rootBlock = extractRootBlock(css);
+    const rootBlock = extractRootBlock(stylesCss);
     expect(rootBlock).toContain("--surface-subtle");
     expect(rootBlock).toContain("--surface-muted");
     expect(rootBlock).toContain("--surface-emphasis");
@@ -86,7 +90,7 @@ describe("Status color CSS custom properties", () => {
   });
 
   it("defines semantic neutral surface tier overrides in light theme", () => {
-    const lightBlock = extractLightThemeBlock(css);
+    const lightBlock = extractLightThemeBlock(stylesCss);
     expect(lightBlock).toContain("--surface-subtle");
     expect(lightBlock).toContain("--surface-muted");
     expect(lightBlock).toContain("--surface-emphasis");
@@ -94,11 +98,11 @@ describe("Status color CSS custom properties", () => {
   });
 
   it("defines semantic neutral tiers with tokenized color-mix expressions", () => {
-    expect(css).toMatch(/--surface-subtle:\s*color-mix\(in\s+srgb,\s*var\(--surface\)\s+96%,\s*var\(--text\)\s+4%\)/);
-    expect(css).toMatch(/--surface-muted:\s*color-mix\(in\s+srgb,\s*var\(--surface\)\s+94%,\s*var\(--text\)\s+6%\)/);
-    expect(css).toMatch(/--surface-emphasis:\s*color-mix\(in\s+srgb,\s*var\(--surface\)\s+92%,\s*var\(--text\)\s+8%\)/);
-    expect(css).toMatch(/--surface-hover-strong:\s*color-mix\(in\s+srgb,\s*var\(--surface\)\s+88%,\s*var\(--text\)\s+12%\)/);
-    expect(css).not.toMatch(/--surface-(subtle|muted|emphasis|hover-strong):\s*rgba\(/);
+    expect(stylesCss).toMatch(/--surface-subtle:\s*color-mix\(in\s+srgb,\s*var\(--surface\)\s+96%,\s*var\(--text\)\s+4%\)/);
+    expect(stylesCss).toMatch(/--surface-muted:\s*color-mix\(in\s+srgb,\s*var\(--surface\)\s+94%,\s*var\(--text\)\s+6%\)/);
+    expect(stylesCss).toMatch(/--surface-emphasis:\s*color-mix\(in\s+srgb,\s*var\(--surface\)\s+92%,\s*var\(--text\)\s+8%\)/);
+    expect(stylesCss).toMatch(/--surface-hover-strong:\s*color-mix\(in\s+srgb,\s*var\(--surface\)\s+88%,\s*var\(--text\)\s+12%\)/);
+    expect(stylesCss).not.toMatch(/--surface-(subtle|muted|emphasis|hover-strong):\s*rgba\(/);
   });
 
   it("uses --surface-hover token references with tokenized fallback (no raw rgba)", () => {
@@ -108,16 +112,33 @@ describe("Status color CSS custom properties", () => {
   });
 
   it("defines --surface-hover with tokenized color-mix (no raw rgba/hex)", () => {
-    expect(css).toMatch(/--surface-hover:\s*color-mix\(in\s+srgb,\s*var\(--surface\)\s+90%,\s*var\(--text\)\s+10%\)/);
-    expect(css).toMatch(/\[data-theme="light"\]\s*\{[^}]*--surface-hover:\s*color-mix\(in\s+srgb,\s*var\(--surface\)\s+92%,\s*var\(--text\)\s+8%\)/s);
-    expect(css).not.toMatch(/--surface-hover:\s*rgba\(/);
-    expect(css).not.toMatch(/--surface-hover:\s*#[0-9a-fA-F]{3,8}/);
+    expect(stylesCss).toMatch(/--surface-hover:\s*color-mix\(in\s+srgb,\s*var\(--surface\)\s+90%,\s*var\(--text\)\s+10%\)/);
+    expect(stylesCss).toMatch(/:root\[data-theme="light"\]\s*\{[^}]*--surface-hover:\s*color-mix\(in\s+srgb,\s*var\(--surface\)\s+92%,\s*var\(--text\)\s+8%\)/s);
+    expect(stylesCss).not.toMatch(/--surface-hover:\s*rgba\(/);
+    expect(stylesCss).not.toMatch(/--surface-hover:\s*#[0-9a-fA-F]{3,8}/);
   });
 
   it("defines light theme override for --status-error-bg", () => {
-    const lightBlock = extractLightThemeBlock(css);
+    const lightBlock = extractLightThemeBlock(stylesCss);
     expect(lightBlock).toContain("--status-error-bg");
     expect(lightBlock).toContain("--status-error-bg-deep");
+  });
+
+  it("keeps :root[data-theme=\"light\"] owned by styles.css", () => {
+    const stylesLightMatches = stylesCss.match(/:root\[data-theme="light"\]\s*\{/g) ?? [];
+    const allCssLightMatches = css.match(/:root\[data-theme="light"\]\s*\{/g) ?? [];
+
+    expect(stylesLightMatches).toHaveLength(1);
+    expect(allCssLightMatches).toHaveLength(stylesLightMatches.length);
+  });
+
+  it("does not scope global design tokens under runtime-card cobrand selector", () => {
+    const cobrandMarkBlock = extractSelectorBlock(stylesCss, ".runtime-card__cobrand-mark");
+
+    expect(cobrandMarkBlock).not.toContain("--cta-bg");
+    expect(cobrandMarkBlock).not.toContain("--state-idle-bg");
+    expect(cobrandMarkBlock).not.toContain("--event-error-text");
+    expect(cobrandMarkBlock).not.toContain("--star-idle");
   });
 });
 
@@ -316,8 +337,7 @@ describe("CSS modifier classes for status colors", () => {
 });
 
 describe("Accent color per color theme", () => {
-  // Theme blocks are now in a separate theme-data.css file
-  const themeDataPath = path.resolve(__dirname, "../public/theme-data.css");
+  // Theme blocks are in theme-data.css and intentionally outside loadAllAppCss().
   let css: string;
   let themeData: string;
 
@@ -513,13 +533,41 @@ function extractRootBlock(css: string): string {
 }
 
 function extractLightThemeBlock(css: string): string {
-  const startMatch = css.match(/\[data-theme="light"\]\s*\{/);
+  // Intentionally parses the default light token block from styles.css
+  // (`:root[data-theme="light"]`). Color-theme light variants are validated
+  // from theme-data.css.
+  const startMatch = css.match(/:root\[data-theme="light"\]\s*\{/);
   if (!startMatch) {
-    throw new Error("Could not find [data-theme=\"light\"] block");
+    throw new Error("Could not find :root[data-theme=\"light\"] block");
   }
 
   const startIdx = startMatch.index!;
   const openBraceIdx = startIdx + css.slice(startIdx).indexOf("{");
+
+  let depth = 1;
+  let end = openBraceIdx;
+  for (let i = openBraceIdx + 1; i < css.length; i++) {
+    if (css[i] === "{") depth++;
+    if (css[i] === "}") depth--;
+    if (depth === 0) {
+      end = i;
+      break;
+    }
+  }
+
+  return css.slice(startIdx, end + 1);
+}
+
+function extractSelectorBlock(css: string, selector: string): string {
+  const startIdx = css.indexOf(selector);
+  if (startIdx === -1) {
+    throw new Error(`Could not find selector block: ${selector}`);
+  }
+
+  const openBraceIdx = css.indexOf("{", startIdx);
+  if (openBraceIdx === -1) {
+    throw new Error(`Could not find opening brace for selector: ${selector}`);
+  }
 
   let depth = 1;
   let end = openBraceIdx;

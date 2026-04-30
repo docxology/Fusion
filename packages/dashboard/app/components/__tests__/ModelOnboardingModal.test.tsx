@@ -2399,8 +2399,8 @@ describe("ModelOnboardingModal", () => {
       expect(mockFetchAuthStatus).toHaveBeenCalled();
 
       // GitHub should show as connected
-      expect(screen.getByTestId("onboarding-auth-status-github")).toBeTruthy();
-      expect(screen.getByText("✓ Connected")).toBeTruthy();
+      expect(await screen.findByTestId("onboarding-auth-status-github")).toBeTruthy();
+      expect(await screen.findByText("✓ Connected")).toBeTruthy();
 
       // Should show Disconnect instead of Connect
       expect(screen.getByText("Disconnect")).toBeTruthy();

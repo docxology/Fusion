@@ -256,6 +256,162 @@ html {
   --provider-openclaw: #ff4f40;
   --provider-paperclip: var(--text);
   --provider-icon-contrast: var(--bg);
+
+  /* Task-creation CTA tokens */
+  --cta-bg: #238636;
+  --cta-border: #2ea043;
+  --cta-text: #fff;
+  --cta-bg-hover: #2ea043;
+  --cta-border-hover: #3fb950;
+  --cta-glow: 0 0 8px rgba(46, 160, 67, 0.3);
+
+  /* === Agent State Colors === */
+  --state-idle-bg: rgba(139, 148, 158, 0.15);
+  --state-idle-text: #8b949e;
+  --state-idle-border: #8b949e;
+  --state-active-bg: rgba(46, 160, 67, 0.15);
+  --state-active-text: #3fb950;
+  --state-active-border: #3fb950;
+  --state-paused-bg: rgba(227, 179, 65, 0.15);
+  --state-paused-text: #e3b541;
+  --state-paused-border: #e3b541;
+  --state-error-bg: rgba(248, 81, 73, 0.15);
+  --state-error-text: #f85149;
+  --state-error-border: #f85149;
+
+  /* === Mission & Milestone Status Colors === */
+  --mission-planning-bg: color-mix(in srgb, var(--triage) 15%, transparent);
+  --mission-planning-text: var(--triage);
+  --mission-active-bg: color-mix(in srgb, var(--in-review) 15%, transparent);
+  --mission-active-text: var(--in-review);
+  --mission-blocked-bg: color-mix(in srgb, var(--color-error) 15%, transparent);
+  --mission-blocked-text: var(--color-error);
+  --mission-complete-bg: color-mix(in srgb, #3b82f6 15%, transparent);
+  --mission-complete-text: #3b82f6;
+  --mission-archived-bg: var(--bg-tertiary);
+  --mission-archived-text: var(--text-secondary);
+
+  /* === Slice Status Colors === */
+  --slice-pending-bg: color-mix(in srgb, var(--triage) 15%, transparent);
+  --slice-pending-text: var(--triage);
+  --slice-active-bg: color-mix(in srgb, var(--in-review) 15%, transparent);
+  --slice-active-text: var(--in-review);
+  --slice-complete-bg: color-mix(in srgb, #3b82f6 15%, transparent);
+  --slice-complete-text: #3b82f6;
+
+  /* === Feature (Task) Status Colors === */
+  --feature-defined-bg: color-mix(in srgb, var(--triage) 15%, transparent);
+  --feature-defined-text: var(--triage);
+  --feature-triaged-bg: color-mix(in srgb, #a855f7 15%, transparent);
+  --feature-triaged-text: #a855f7;
+  --feature-in-progress-bg: color-mix(in srgb, var(--in-review) 15%, transparent);
+  --feature-in-progress-text: var(--in-review);
+  --feature-done-bg: color-mix(in srgb, #3b82f6 15%, transparent);
+  --feature-done-text: #3b82f6;
+
+  /* === Autopilot State Colors === */
+  --autopilot-inactive-bg: color-mix(in srgb, #94a3b8 15%, transparent);
+  --autopilot-inactive-text: #94a3b8;
+  --autopilot-watching-bg: color-mix(in srgb, var(--in-review) 15%, transparent);
+  --autopilot-watching-text: var(--in-review);
+  --autopilot-activating-bg: color-mix(in srgb, #3b82f6 15%, transparent);
+  --autopilot-activating-text: #3b82f6;
+  --autopilot-completing-bg: color-mix(in srgb, #a855f7 15%, transparent);
+  --autopilot-completing-text: #a855f7;
+
+  /* === Loop State Colors === */
+  --loop-idle-bg: var(--bg-tertiary);
+  --loop-idle-text: var(--text-secondary);
+  --loop-idle-indicator: var(--text-dim);
+  --loop-implementing-bg: color-mix(in srgb, var(--in-review) 15%, transparent);
+  --loop-implementing-text: var(--in-review);
+  --loop-implementing-indicator: var(--in-review);
+  --loop-validating-bg: color-mix(in srgb, var(--color-warning) 15%, transparent);
+  --loop-validating-text: var(--color-warning);
+  --loop-validating-indicator: var(--color-warning);
+  --loop-needs-fix-bg: color-mix(in srgb, #f97316 15%, transparent);
+  --loop-needs-fix-text: #f97316;
+  --loop-needs-fix-indicator: #f97316;
+  --loop-passed-bg: color-mix(in srgb, var(--color-success) 15%, transparent);
+  --loop-passed-text: var(--color-success);
+  --loop-passed-indicator: var(--color-success);
+  --loop-blocked-bg: color-mix(in srgb, var(--color-error) 15%, transparent);
+  --loop-blocked-text: var(--color-error);
+  --loop-blocked-indicator: var(--color-error);
+
+  /* === Assertion Status Colors === */
+  --assertion-pending-bg: color-mix(in srgb, var(--triage) 15%, transparent);
+  --assertion-pending-text: var(--triage);
+  --assertion-passed-bg: color-mix(in srgb, var(--color-success) 15%, transparent);
+  --assertion-passed-text: var(--color-success);
+  --assertion-failed-bg: color-mix(in srgb, var(--color-error) 15%, transparent);
+  --assertion-failed-text: var(--color-error);
+  --assertion-blocked-bg: color-mix(in srgb, var(--color-warning) 15%, transparent);
+  --assertion-blocked-text: var(--color-warning);
+
+  /* === Interview Modal Icon Colors === */
+  --icon-milestone: var(--triage);
+  --icon-slice: var(--in-review);
+  --icon-feature: #3b82f6;
+
+  /* === Accent Color === */
+  --accent: #7c5cbf;
+
+  /* === Log Entry Background Tokens === */
+  --log-tool-bg: color-mix(in srgb, var(--accent) 8%, transparent);
+  --log-success-bg: color-mix(in srgb, var(--color-success) 6%, transparent);
+  --log-error-bg: color-mix(in srgb, var(--color-error) 6%, transparent);
+
+  /* === Mailbox compose FAB & badges === */
+  --fab-bg: var(--todo);
+  --fab-text: #fff;
+
+  /* === Mission autopilot indicators === */
+  --autopilot-pulse: var(--color-success);
+  --autopilot-icon: #eab308;
+  --autopilot-shadow: rgba(34, 197, 94, 0.4);
+
+  /* === Mission toggle & badge backgrounds === */
+  --toggle-checked-bg: rgba(34, 197, 94, 0.2);
+  --meta-badge-bg: rgba(63, 185, 80, 0.1);
+
+  /* === Mission event type colors (semantic — adapted for light in [data-theme="light"]) === */
+  --event-error-text: #fca5a5;
+  --event-state-text: #93c5fd;
+  --event-task-text: #6ee7b7;
+  --event-slice-text: #fcd34d;
+  --event-autopilot-text: #d8b4fe;
+  --event-error-bg: rgba(239, 68, 68, 0.15);
+  --event-state-bg: rgba(59, 130, 246, 0.15);
+  --event-task-bg: rgba(16, 185, 129, 0.15);
+  --event-slice-bg: rgba(245, 158, 11, 0.15);
+  --event-autopilot-bg: rgba(168, 85, 247, 0.15);
+
+  /* === Card mission badge === */
+  --badge-mission-text: #a78bfa;
+  --badge-mission-text-hover: #c4b5fd;
+  --badge-mission-bg: rgba(167, 139, 250, 0.12);
+  --badge-mission-bg-hover: rgba(167, 139, 250, 0.22);
+
+  /* === Terminal background === */
+  --terminal-bg: #1e1e1e;
+
+  /* === Model combobox favorite star === */
+  --star-idle: #6b7280;
+  --star-active: #f59e0b;
+}
+
+/* Default light-mode token contract.
+   NOTE: color-theme-specific light overrides live in public/theme-data.css.
+   This block is the source of truth for non-color-theme light mode. */
+:root[data-theme="light"] {
+  --surface-hover: color-mix(in srgb, var(--surface) 92%, var(--text) 8%);
+  --surface-subtle: color-mix(in srgb, var(--surface) 98%, var(--text) 2%);
+  --surface-muted: color-mix(in srgb, var(--surface) 97%, var(--text) 3%);
+  --surface-emphasis: color-mix(in srgb, var(--surface) 95%, var(--text) 5%);
+  --surface-hover-strong: color-mix(in srgb, var(--surface) 94%, var(--text) 6%);
+  --status-error-bg: color-mix(in srgb, var(--color-error-dark) 15%, transparent);
+  --status-error-bg-deep: color-mix(in srgb, var(--color-error-dark) 20%, transparent);
 }
 
 /* -------------------------------------------------------------------------
@@ -421,149 +577,6 @@ html {
   color: var(--text-muted);
   border-radius: 2px;
   flex: 0 0 auto;
-
-  /* Task-creation CTA tokens */
-  --cta-bg: #238636;
-  --cta-border: #2ea043;
-  --cta-text: #fff;
-  --cta-bg-hover: #2ea043;
-  --cta-border-hover: #3fb950;
-  --cta-glow: 0 0 8px rgba(46, 160, 67, 0.3);
-
-  /* === Agent State Colors === */
-  --state-idle-bg: rgba(139, 148, 158, 0.15);
-  --state-idle-text: #8b949e;
-  --state-idle-border: #8b949e;
-  --state-active-bg: rgba(46, 160, 67, 0.15);
-  --state-active-text: #3fb950;
-  --state-active-border: #3fb950;
-  --state-paused-bg: rgba(227, 179, 65, 0.15);
-  --state-paused-text: #e3b541;
-  --state-paused-border: #e3b541;
-  --state-error-bg: rgba(248, 81, 73, 0.15);
-  --state-error-text: #f85149;
-  --state-error-border: #f85149;
-
-  /* === Mission & Milestone Status Colors === */
-  --mission-planning-bg: color-mix(in srgb, var(--triage) 15%, transparent);
-  --mission-planning-text: var(--triage);
-  --mission-active-bg: color-mix(in srgb, var(--in-review) 15%, transparent);
-  --mission-active-text: var(--in-review);
-  --mission-blocked-bg: color-mix(in srgb, var(--color-error) 15%, transparent);
-  --mission-blocked-text: var(--color-error);
-  --mission-complete-bg: color-mix(in srgb, #3b82f6 15%, transparent);
-  --mission-complete-text: #3b82f6;
-  --mission-archived-bg: var(--bg-tertiary);
-  --mission-archived-text: var(--text-secondary);
-
-  /* === Slice Status Colors === */
-  --slice-pending-bg: color-mix(in srgb, var(--triage) 15%, transparent);
-  --slice-pending-text: var(--triage);
-  --slice-active-bg: color-mix(in srgb, var(--in-review) 15%, transparent);
-  --slice-active-text: var(--in-review);
-  --slice-complete-bg: color-mix(in srgb, #3b82f6 15%, transparent);
-  --slice-complete-text: #3b82f6;
-
-  /* === Feature (Task) Status Colors === */
-  --feature-defined-bg: color-mix(in srgb, var(--triage) 15%, transparent);
-  --feature-defined-text: var(--triage);
-  --feature-triaged-bg: color-mix(in srgb, #a855f7 15%, transparent);
-  --feature-triaged-text: #a855f7;
-  --feature-in-progress-bg: color-mix(in srgb, var(--in-review) 15%, transparent);
-  --feature-in-progress-text: var(--in-review);
-  --feature-done-bg: color-mix(in srgb, #3b82f6 15%, transparent);
-  --feature-done-text: #3b82f6;
-
-  /* === Autopilot State Colors === */
-  --autopilot-inactive-bg: color-mix(in srgb, #94a3b8 15%, transparent);
-  --autopilot-inactive-text: #94a3b8;
-  --autopilot-watching-bg: color-mix(in srgb, var(--in-review) 15%, transparent);
-  --autopilot-watching-text: var(--in-review);
-  --autopilot-activating-bg: color-mix(in srgb, #3b82f6 15%, transparent);
-  --autopilot-activating-text: #3b82f6;
-  --autopilot-completing-bg: color-mix(in srgb, #a855f7 15%, transparent);
-  --autopilot-completing-text: #a855f7;
-
-  /* === Loop State Colors === */
-  --loop-idle-bg: var(--bg-tertiary);
-  --loop-idle-text: var(--text-secondary);
-  --loop-idle-indicator: var(--text-dim);
-  --loop-implementing-bg: color-mix(in srgb, var(--in-review) 15%, transparent);
-  --loop-implementing-text: var(--in-review);
-  --loop-implementing-indicator: var(--in-review);
-  --loop-validating-bg: color-mix(in srgb, var(--color-warning) 15%, transparent);
-  --loop-validating-text: var(--color-warning);
-  --loop-validating-indicator: var(--color-warning);
-  --loop-needs-fix-bg: color-mix(in srgb, #f97316 15%, transparent);
-  --loop-needs-fix-text: #f97316;
-  --loop-needs-fix-indicator: #f97316;
-  --loop-passed-bg: color-mix(in srgb, var(--color-success) 15%, transparent);
-  --loop-passed-text: var(--color-success);
-  --loop-passed-indicator: var(--color-success);
-  --loop-blocked-bg: color-mix(in srgb, var(--color-error) 15%, transparent);
-  --loop-blocked-text: var(--color-error);
-  --loop-blocked-indicator: var(--color-error);
-
-  /* === Assertion Status Colors === */
-  --assertion-pending-bg: color-mix(in srgb, var(--triage) 15%, transparent);
-  --assertion-pending-text: var(--triage);
-  --assertion-passed-bg: color-mix(in srgb, var(--color-success) 15%, transparent);
-  --assertion-passed-text: var(--color-success);
-  --assertion-failed-bg: color-mix(in srgb, var(--color-error) 15%, transparent);
-  --assertion-failed-text: var(--color-error);
-  --assertion-blocked-bg: color-mix(in srgb, var(--color-warning) 15%, transparent);
-  --assertion-blocked-text: var(--color-warning);
-
-  /* === Interview Modal Icon Colors === */
-  --icon-milestone: var(--triage);
-  --icon-slice: var(--in-review);
-  --icon-feature: #3b82f6;
-
-  /* === Accent Color === */
-  --accent: #7c5cbf;
-
-  /* === Log Entry Background Tokens === */
-  --log-tool-bg: color-mix(in srgb, var(--accent) 8%, transparent);
-  --log-success-bg: color-mix(in srgb, var(--color-success) 6%, transparent);
-  --log-error-bg: color-mix(in srgb, var(--color-error) 6%, transparent);
-
-  /* === Mailbox compose FAB & badges === */
-  --fab-bg: var(--todo);
-  --fab-text: #fff;
-
-  /* === Mission autopilot indicators === */
-  --autopilot-pulse: var(--color-success);
-  --autopilot-icon: #eab308;
-  --autopilot-shadow: rgba(34, 197, 94, 0.4);
-
-  /* === Mission toggle & badge backgrounds === */
-  --toggle-checked-bg: rgba(34, 197, 94, 0.2);
-  --meta-badge-bg: rgba(63, 185, 80, 0.1);
-
-  /* === Mission event type colors (semantic — adapted for light in [data-theme="light"]) === */
-  --event-error-text: #fca5a5;
-  --event-state-text: #93c5fd;
-  --event-task-text: #6ee7b7;
-  --event-slice-text: #fcd34d;
-  --event-autopilot-text: #d8b4fe;
-  --event-error-bg: rgba(239, 68, 68, 0.15);
-  --event-state-bg: rgba(59, 130, 246, 0.15);
-  --event-task-bg: rgba(16, 185, 129, 0.15);
-  --event-slice-bg: rgba(245, 158, 11, 0.15);
-  --event-autopilot-bg: rgba(168, 85, 247, 0.15);
-
-  /* === Card mission badge === */
-  --badge-mission-text: #a78bfa;
-  --badge-mission-text-hover: #c4b5fd;
-  --badge-mission-bg: rgba(167, 139, 250, 0.12);
-  --badge-mission-bg-hover: rgba(167, 139, 250, 0.22);
-
-  /* === Terminal background === */
-  --terminal-bg: #1e1e1e;
-
-  /* === Model combobox favorite star === */
-  --star-idle: #6b7280;
-  --star-active: #f59e0b;
 }
 
 html,
