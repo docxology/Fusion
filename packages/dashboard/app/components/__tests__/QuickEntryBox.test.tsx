@@ -2414,7 +2414,7 @@ describe("QuickEntryBox", () => {
       expect(menuLeft + menuWidth).toBeLessThanOrEqual(viewportWidth - 16);
     });
 
-    it("uses desktop width (trigger-based) on non-mobile viewports", () => {
+    it("uses wider desktop width on non-mobile viewports", () => {
       // Default test environment has a wider viewport
       vi.spyOn(window, "innerWidth", "get").mockReturnValue(1024);
 
@@ -2425,9 +2425,9 @@ describe("QuickEntryBox", () => {
       const menu = screen.getByTestId("model-nested-menu");
 
       const menuWidth = parseFloat(menu.style.width);
-      // On desktop, width should be at least 240 (minimum) and at most 360 (max-width)
-      expect(menuWidth).toBeGreaterThanOrEqual(240);
-      expect(menuWidth).toBeLessThanOrEqual(360);
+      // Desktop menu now has a wider baseline for model readability.
+      expect(menuWidth).toBeGreaterThanOrEqual(320);
+      expect(menuWidth).toBeLessThanOrEqual(480);
     });
 
     it("repositions with mobile width on resize from desktop to mobile", () => {
@@ -2441,7 +2441,7 @@ describe("QuickEntryBox", () => {
 
       // Desktop width
       const desktopWidth = parseFloat(menu.style.width);
-      expect(desktopWidth).toBeGreaterThanOrEqual(240);
+      expect(desktopWidth).toBeGreaterThanOrEqual(320);
 
       // Simulate resize to mobile
       innerWidthSpy.mockReturnValue(375);

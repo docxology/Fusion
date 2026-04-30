@@ -187,14 +187,14 @@
   position: absolute;
   top: 100%;
   left: 0;
-  margin-top: 4px;
+  margin-top: var(--space-xs);
   background: var(--bg-secondary);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
   z-index: 100;
-  min-width: 240px;
-  max-width: 320px;
+  min-width: calc(var(--space-xl) * 12);
+  max-width: calc(var(--space-xl) * 20);
   overflow: hidden;
 }
 
@@ -203,7 +203,7 @@
   position: fixed;
   margin-top: 0;
   z-index: 1000;
-  max-width: 360px;
+  max-width: calc(var(--space-xl) * 20);
 }
 
 /* Mobile: portaled model menu uses wider viewport-clamped width set via inline styles */
@@ -253,7 +253,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 120px;
+  max-width: min(28ch, 100%);
 }
 
 .model-submenu {

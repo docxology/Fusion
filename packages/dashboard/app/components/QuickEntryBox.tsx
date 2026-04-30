@@ -664,13 +664,14 @@ export function QuickEntryBox({ onCreate, addToast, tasks = [], availableModels,
       ? Math.min(viewportHeight * 0.6, 360)
       : Math.min(viewportHeight * 0.5, 360);
 
+    const preferredDesktopWidth = Math.max(rect.width * 1.35, 320);
     const preferredWidth = isMobile
       ? Math.min(viewportWidth - horizontalPadding * 2, 360)
-      : Math.max(rect.width, 240);
+      : preferredDesktopWidth;
 
     const width = Math.min(
       preferredWidth,
-      Math.max(viewportWidth - horizontalPadding * 2, 200),
+      Math.max(viewportWidth - horizontalPadding * 2, 240),
     );
 
     const triggerTop = rect.top - offsetTop;
