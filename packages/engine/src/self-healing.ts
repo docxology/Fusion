@@ -81,6 +81,14 @@ const APPROVED_TRIAGE_RECOVERY_GRACE_MS = 60_000;
 const ORPHANED_EXECUTION_RECOVERY_GRACE_MS = 60_000;
 const ACTIVE_MERGE_STATUSES = new Set(["merging", "merging-pr"]);
 const NON_TERMINAL_STEP_STATUSES = new Set(["pending", "in-progress"]);
+/** Statuses that represent an explicit human-handoff or active merge —
+ *  the ghost-review fallback must not disturb tasks parked in these states. */
+const GHOST_REVIEW_PRESERVED_STATUSES = new Set([
+  "awaiting-user-review",
+  "awaiting-approval",
+  "merging",
+  "merging-pr",
+]);
 /**
  * Longer grace period for tasks that still have a worktree on disk.
  * This avoids racing with `executor.resumeOrphaned()` which runs on
@@ -620,6 +628,7 @@ export class SelfHealingManager {
         { name: "recover-orphaned-executions", fn: () => this.recoverOrphanedExecutions() },
         { name: "recover-approved-triage", fn: () => this.recoverApprovedTriageTasks() },
         { name: "recover-orphaned-planning", fn: () => this.recoverOrphanedPlanningTasks() },
+        { name: "recover-ghost-review", fn: () => this.recoverGhostReviewTasks() },
       ];
       for (const fn of batch2Fns) {
         try {
@@ -984,6 +993,82 @@ export class SelfHealingManager {
       return recovered;
     } catch (err: unknown) { const errorMessage = err instanceof Error ? err.message : String(err);
       log.error(`Stale incomplete review recovery failed: ${errorMessage}`);
+      return 0;
+    }
+  }
+
+  /**
+   * Final-fallback recovery for `in-review` tasks that fell through every other
+   * scan and have sat untouched longer than `taskStuckTimeoutMs`.
+   *
+   * The other review-recovery scans each require a specific shape (failed
+   * pre-merge step, incomplete steps, mergeable + worktree present, confirmed
+   * merge, transient merge status). A task whose state doesn't match any of
+   * those shapes — e.g. `status: "failed"` with no failed pre-merge step, or
+   * any other unanticipated combination — has no recovery path and stays
+   * silent in review forever.
+   *
+   * This catch-all kicks any such task back to `todo`, clearing transient
+   * `status` so the scheduler can pick it up. Worktree state is intentionally
+   * not considered: the executor will recreate one if needed.
+   *
+   * Preserved statuses (skipped):
+   * - `awaiting-user-review`, `awaiting-approval`: explicit human handoff
+   * - `merging`, `merging-pr`: handled by `recoverInterruptedMergingTasks`
+   *
+   * Rate-limiting comes from the `updatedAt >= taskStuckTimeoutMs` gate —
+   * each kick refreshes `updatedAt`, so a task that re-enters review and gets
+   * stuck again can only be kicked once per `taskStuckTimeoutMs` window.
+   *
+   * @returns Number of tasks kicked back to todo
+   */
+  async recoverGhostReviewTasks(): Promise<number> {
+    try {
+      const settings = await this.store.getSettings();
+      const timeoutMs = settings.taskStuckTimeoutMs;
+      if (!timeoutMs || timeoutMs <= 0) return 0;
+      if (settings.globalPause || settings.enginePaused) return 0;
+
+      const now = Date.now();
+      const executingIds = this.options.getExecutingTaskIds?.() ?? new Set<string>();
+      const tasks = await this.store.listTasks({ column: "in-review", slim: true });
+      const ghosts = tasks.filter((task) =>
+        task.column === "in-review" &&
+        !task.paused &&
+        !executingIds.has(task.id) &&
+        !(task.status && GHOST_REVIEW_PRESERVED_STATUSES.has(task.status)) &&
+        // Confirmed merges belong in `done` (handled by `recoverMergedReviewTasks`).
+        task.mergeDetails?.mergeConfirmed !== true &&
+        now - new Date(task.updatedAt).getTime() >= timeoutMs
+      );
+
+      if (ghosts.length === 0) return 0;
+
+      log.warn(`Found ${ghosts.length} ghost in-review task(s) — kicking back to todo`);
+
+      let recovered = 0;
+      for (const task of ghosts) {
+        try {
+          if (task.status) {
+            await this.store.updateTask(task.id, { status: null, error: null });
+          }
+          await this.store.logEntry(
+            task.id,
+            "Auto-recovered: in-review task idle past stuck-task timeout — kicked back to todo",
+          );
+          await this.store.moveTask(task.id, "todo");
+          log.log(`Kicked ghost review task ${task.id} back to todo`);
+          recovered++;
+        } catch (err: unknown) {
+          const errorMessage = err instanceof Error ? err.message : String(err);
+          log.error(`Failed to kick ghost review task ${task.id}: ${errorMessage}`);
+        }
+      }
+
+      return recovered;
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      log.error(`Ghost review recovery failed: ${errorMessage}`);
       return 0;
     }
   }
