@@ -14,8 +14,7 @@
 /* Keep the GitHub Star and Help buttons at matching heights regardless of
    their differing icon sizes (provider icon 16px vs. HelpCircle 13px). */
 .settings-header-actions > .settings-github-star-btn,
-.settings-header-actions > .btn,
-.settings-header-actions > .settings-update-btn {
+.settings-header-actions > .btn {
   height: 26px;
   box-sizing: border-box;
 }
@@ -23,8 +22,7 @@
 @media (max-width: 768px) {
   /* Keep settings header actions compact; override global mobile
      `.btn-icon { min-height/min-width: 36px; }` inflation. */
-  .settings-header-actions > .btn-icon,
-  .settings-header-actions > .settings-update-btn {
+  .settings-header-actions > .btn-icon {
     min-height: 26px;
     min-width: 26px;
   }
@@ -137,11 +135,42 @@
   gap: var(--space-sm);
 }
 
-.settings-update-btn {
+.settings-version-check-btn {
+  --settings-inline-touch-target: calc(var(--space-lg) + var(--space-lg) + var(--space-xs));
+
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin: 0;
+  min-height: var(--settings-inline-touch-target);
+  padding: var(--space-xs) var(--space-sm);
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: opacity var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.settings-version-check-btn:hover:not(:disabled) {
+  opacity: 0.85;
+}
+
+.settings-version-check-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring-strong);
   border-radius: var(--radius-sm);
 }
 
-.settings-update-btn svg.spinning {
+.settings-version-check-btn:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.settings-version-check-btn svg {
+  color: var(--text-muted);
+}
+
+.settings-version-check-btn svg.spinning {
   animation: settings-update-spin 1s linear infinite;
 }
 

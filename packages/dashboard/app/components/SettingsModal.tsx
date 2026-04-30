@@ -1897,41 +1897,10 @@ export function SettingsModal({
                 <option value="weekly">Weekly</option>
               </select>
               <small>
-                Controls how often the dashboard re-fetches the npm registry. The
-                &quot;Check Now&quot; button below always triggers an immediate fetch
-                regardless of this setting.
+                Controls how often the dashboard re-fetches the npm registry.
+                Use the version + refresh control in the header to trigger an
+                immediate check at any time.
               </small>
-            </div>
-            <div className="form-group">
-              <label>Check Now</label>
-              <div className="settings-update-check">
-                <button
-                  type="button"
-                  className="btn btn-sm settings-update-btn"
-                  onClick={() => {
-                    void handleCheckForUpdates();
-                  }}
-                  disabled={updateCheckLoading}
-                >
-                  <RefreshCw className={updateCheckLoading ? "spinning" : undefined} size={14} />
-                  {updateCheckLoading ? "Checking…" : "Check for updates"}
-                </button>
-                {updateCheckResult && (
-                  <span
-                    aria-live="polite"
-                    className={`settings-update-result ${
-                      updateCheckResult.error
-                        ? "settings-update-result--error"
-                        : updateCheckResult.updateAvailable
-                          ? "settings-update-result--available"
-                          : "settings-update-result--up-to-date"
-                    }`}
-                  >
-                    {renderUpdateCheckResultContent()}
-                  </span>
-                )}
-              </div>
-              <small>Manually check for the latest version right now.</small>
             </div>
           </>
         );
@@ -4675,7 +4644,21 @@ export function SettingsModal({
           <div className="settings-modal-heading">
             <h3>Settings</h3>
             <div className="settings-update-check">
-              {appVersion && <p className="settings-modal-version">Version {appVersion}</p>}
+              {appVersion && (
+                <button
+                  type="button"
+                  className="settings-version-check-btn"
+                  onClick={() => {
+                    void handleCheckForUpdates();
+                  }}
+                  disabled={updateCheckLoading}
+                  aria-label="Check for updates"
+                  title="Check for updates"
+                >
+                  <span className="settings-modal-version">Version {appVersion}</span>
+                  <RefreshCw size={12} className={updateCheckLoading ? "spinning" : undefined} />
+                </button>
+              )}
               {updateCheckResult && (
                 <span
                   aria-live="polite"
@@ -4693,18 +4676,6 @@ export function SettingsModal({
             </div>
           </div>
           <div className="settings-header-actions">
-            <button
-              type="button"
-              className="btn btn-icon btn-sm settings-update-btn"
-              onClick={() => {
-                void handleCheckForUpdates();
-              }}
-              disabled={updateCheckLoading}
-              aria-label="Check for updates"
-              title="Check for updates"
-            >
-              <RefreshCw size={14} className={updateCheckLoading ? "spinning" : undefined} />
-            </button>
             {form.showGitHubStarButton !== false && (
               <a
                 href="https://github.com/Runfusion/Fusion"

@@ -515,6 +515,8 @@ describe("SettingsModal", () => {
       await waitForSettingsModalReady();
 
       expect(screen.getByRole("button", { name: "Check for updates" })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Check Now" })).not.toBeInTheDocument();
+      expect(screen.queryByText("Manually check for the latest version right now.")).not.toBeInTheDocument();
     });
 
     it("clicking check for updates shows up-to-date message", async () => {
@@ -574,6 +576,55 @@ describe("SettingsModal", () => {
 
       await waitFor(() => {
         expect(button).not.toBeDisabled();
+      });
+    });
+
+    it("clicking version text area triggers update check", async () => {
+      mockCheckForUpdates.mockResolvedValueOnce({
+        currentVersion: "1.2.3",
+        latestVersion: "1.2.3",
+        updateAvailable: false,
+      });
+
+      renderModal();
+      await waitForSettingsModalReady();
+
+      const inlineButton = screen.getByRole("button", { name: "Check for updates" });
+      expect(within(inlineButton).getByText("Version 1.2.3")).toBeInTheDocument();
+
+      await userEvent.click(within(inlineButton).getByText("Version 1.2.3"));
+
+      await waitFor(() => {
+        expect(mockCheckForUpdates).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    it("refresh icon has spinning class while loading", async () => {
+      let resolveCheck: ((result: UpdateCheckResponse) => void) | undefined;
+      const pendingCheck = new Promise<UpdateCheckResponse>((resolve) => {
+        resolveCheck = resolve;
+      });
+      mockCheckForUpdates.mockReturnValueOnce(pendingCheck);
+
+      renderModal();
+      await waitForSettingsModalReady();
+
+      const button = screen.getByRole("button", { name: "Check for updates" });
+      fireEvent.click(button);
+
+      await waitFor(() => {
+        const spinningIcon = button.querySelector(".spinning");
+        expect(spinningIcon).not.toBeNull();
+      });
+
+      resolveCheck?.({
+        currentVersion: "1.2.3",
+        latestVersion: "1.2.3",
+        updateAvailable: false,
+      });
+
+      await waitFor(() => {
+        expect(button.querySelector(".spinning")).toBeNull();
       });
     });
   });
