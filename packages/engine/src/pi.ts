@@ -994,7 +994,7 @@ export function wrapToolsWithBoundary(
  * Reuses the user's existing pi auth and model configuration.
  */
 export async function createFnAgent(options: AgentOptions): Promise<AgentResult> {
-  piLog.log(`createFnAgent called (cwd=${options.cwd}, tools=${options.tools}, provider=${options.defaultProvider}, model=${options.defaultModelId})`);
+  piLog.log(`createFnAgent called (tools=${options.tools}, provider=${options.defaultProvider}, model=${options.defaultModelId})`);
   const authStorage = createFusionAuthStorage();
   const modelRegistry = ModelRegistry.create(authStorage, getModelRegistryModelsPath());
   await registerExtensionProviders(options.cwd, modelRegistry);

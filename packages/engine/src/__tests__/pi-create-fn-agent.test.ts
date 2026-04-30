@@ -594,6 +594,34 @@ describe("createFnAgent", () => {
     });
   });
 
+  it("logs createFnAgent startup diagnostics without leaking cwd", async () => {
+    const { piLog } = await import("../logger.js");
+    const logSpy = vi.spyOn(piLog, "log").mockImplementation(() => {});
+    const { createFnAgent } = await import("../pi.js");
+
+    await createFnAgent({
+      cwd: "/tmp/private-worktree",
+      systemPrompt: "test",
+      tools: "readonly",
+      defaultProvider: "openai-codex",
+      defaultModelId: "gpt-5.4",
+    });
+
+    const startupLog = logSpy.mock.calls
+      .map(([message]) => String(message))
+      .find((message) => message.includes("createFnAgent called"));
+
+    expect(startupLog).toBeDefined();
+    expect(startupLog).toContain("createFnAgent called");
+    expect(startupLog).toContain("tools=readonly");
+    expect(startupLog).toContain("provider=openai-codex");
+    expect(startupLog).toContain("model=gpt-5.4");
+    expect(startupLog).not.toContain("cwd=");
+    expect(startupLog).not.toContain("/tmp/private-worktree");
+
+    logSpy.mockRestore();
+  });
+
   it("falls back during prompt when the primary model has an auth failure", async () => {
     const primaryPrompt = vi.fn().mockRejectedValue(new Error("401 unauthorized: invalid api key"));
     const fallbackPrompt = vi.fn().mockResolvedValue(undefined);
