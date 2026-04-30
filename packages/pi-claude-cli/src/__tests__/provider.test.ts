@@ -168,10 +168,10 @@ describe("provider registration (default export)", () => {
   });
 });
 
-describe("streamViaCli", () => {
+describe("streamViaCli", { timeout: 90_000 }, () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.useFakeTimers();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.spyOn(console, "error").mockImplementation(() => {});
     delete process.env.PI_CLAUDE_CLI_DEBUG;
@@ -183,7 +183,7 @@ describe("streamViaCli", () => {
     delete process.env.PI_CLAUDE_CLI_DEBUG;
   });
 
-  it("returns an AssistantMessageEventStream", () => {
+  it("returns an AssistantMessageEventStream", async () => {
     const model = mockModels[0] as any;
     const context = {
       messages: [{ role: "user", content: "Hello" }],
@@ -194,6 +194,16 @@ describe("streamViaCli", () => {
     expect(result).toBeDefined();
     expect(result.push).toBeDefined();
     expect(result.end).toBeDefined();
+
+    // Ensure the spawned process/readline lifecycle completes so fake timers
+    // don't leave the test hanging on the inactivity timeout.
+    await vi.advanceTimersByTimeAsync(0);
+    const proc = (spawn as any).mock.results[0].value;
+    proc.stdout.write(
+      `${JSON.stringify({ type: "result", subtype: "success", result: "ok" })}\n`,
+    );
+    proc.stdout.end();
+    await vi.advanceTimersByTimeAsync(0);
   });
 
   it("logs PID and spawn args when debug mode is enabled", async () => {

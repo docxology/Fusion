@@ -1,6 +1,6 @@
 // ChatView.css is imported eagerly from App.tsx to avoid a flash of
 // unstyled content when the lazy chunk loads. Do not re-import here.
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Components } from "react-markdown";
@@ -20,7 +20,7 @@ import {
   File,
   Wrench,
 } from "lucide-react";
-import { useChat, type ToolCallInfo } from "../hooks/useChat";
+import { useChat, type ChatMessageInfo, type ToolCallInfo } from "../hooks/useChat";
 import { useViewportMode } from "./Header";
 import { fetchAgents, fetchDiscoveredSkills, fetchModels, updateGlobalSettings } from "../api";
 import type { Agent } from "@fusion/core";
@@ -534,6 +534,158 @@ function NewChatDialog({ projectId, onClose, onCreate }: NewChatDialogProps) {
 
 
 
+interface ChatMessageItemProps {
+  message: ChatMessageInfo;
+  forcePlain: boolean;
+  agentName: string;
+  showAssistantModelTag: boolean;
+  activeModelTag: string | null;
+  activeSessionId: string | null;
+  mentionAgentsByName: Map<string, Agent>;
+  onToggleRender: (id: string) => void;
+}
+
+// Renders a single chat message bubble. Memoized so the streaming bubble's
+// per-frame state churn does not re-render every prior message (each one
+// would re-run ReactMarkdown over its full content otherwise).
+const ChatMessageItem = memo(function ChatMessageItem({
+  message,
+  forcePlain,
+  agentName,
+  showAssistantModelTag,
+  activeModelTag,
+  activeSessionId,
+  mentionAgentsByName,
+  onToggleRender,
+}: ChatMessageItemProps) {
+  const isAssistantMessage = message.role === "assistant";
+
+  const renderedUserContent = useMemo<ReactNode>(() => {
+    if (isAssistantMessage) return null;
+    const content = message.content;
+    const mentionRegex = /@([\w-]+)/g;
+    const parts: ReactNode[] = [];
+    let lastIndex = 0;
+    let match = mentionRegex.exec(content);
+    while (match) {
+      const [fullMatch, rawName = ""] = match;
+      const start = match.index;
+      if (start > lastIndex) parts.push(content.slice(lastIndex, start));
+      const normalizedName = rawName.replace(/_/g, " ").toLowerCase();
+      const mentionedAgent = mentionAgentsByName.get(normalizedName);
+      if (mentionedAgent) {
+        parts.push(
+          <span key={`${mentionedAgent.id}-${start}`} className="chat-mention-chip">
+            @{mentionedAgent.name.replace(/\s+/g, "_")}
+          </span>,
+        );
+      } else {
+        parts.push(fullMatch);
+      }
+      lastIndex = start + fullMatch.length;
+      match = mentionRegex.exec(content);
+    }
+    if (lastIndex < content.length) parts.push(content.slice(lastIndex));
+    return parts.length === 0 ? content : parts;
+  }, [isAssistantMessage, message.content, mentionAgentsByName]);
+
+  const renderedAttachments = useMemo<ReactNode>(() => {
+    const attachments = message.attachments;
+    if (!attachments || attachments.length === 0 || !activeSessionId) return null;
+    const attachmentUrlBase = `/api/chat/sessions/${encodeURIComponent(activeSessionId)}/attachments/`;
+    return (
+      <div className="chat-message-attachments">
+        {attachments.map((attachment) => {
+          const isImage = attachment.mimeType.startsWith("image/");
+          const key = attachment.id || attachment.filename;
+          const href = `${attachmentUrlBase}${encodeURIComponent(attachment.filename)}`;
+          if (isImage) {
+            return (
+              <a
+                key={key}
+                className="chat-message-attachment-link"
+                data-testid="chat-message-attachment"
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <img
+                  className="chat-message-attachment"
+                  src={href}
+                  alt={attachment.originalName}
+                />
+              </a>
+            );
+          }
+          return (
+            <a
+              key={key}
+              className="chat-message-attachment-file"
+              data-testid="chat-message-attachment"
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <File size={14} />
+              <span>{attachment.originalName}</span>
+            </a>
+          );
+        })}
+      </div>
+    );
+  }, [message.attachments, activeSessionId]);
+
+  const assistantBody = useMemo<ReactNode>(() => {
+    if (!isAssistantMessage) return null;
+    if (forcePlain) {
+      return <div className="chat-message-content chat-message-content--plain">{message.content}</div>;
+    }
+    return (
+      <div className="chat-message-content chat-message-content--markdown">
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={chatMarkdownComponents}>
+          {message.content}
+        </ReactMarkdown>
+      </div>
+    );
+  }, [isAssistantMessage, forcePlain, message.content]);
+
+  return (
+    <div
+      className={`chat-message chat-message--${message.role}`}
+      data-testid={`chat-message-${message.id}`}
+    >
+      {isAssistantMessage && (
+        <div className="chat-message-avatar">
+          <Bot size={14} />
+          <span>{agentName}</span>
+          {showAssistantModelTag && activeModelTag && <span className="chat-model-tag">{activeModelTag}</span>}
+          <button
+            type="button"
+            className={`chat-message-render-toggle${forcePlain ? " chat-message-render-toggle--plain" : ""}`}
+            data-testid="chat-message-render-toggle"
+            aria-label={forcePlain ? "Show rendered markdown" : "Show plain text"}
+            onClick={() => onToggleRender(message.id)}
+          >
+            {forcePlain ? <EyeOff size={14} /> : <Eye size={14} />}
+          </button>
+        </div>
+      )}
+      {isAssistantMessage
+        ? assistantBody
+        : <div className="chat-message-content">{renderedUserContent}</div>}
+      {renderToolCalls(message.toolCalls)}
+      {message.thinkingOutput && (
+        <details className="chat-message-thinking">
+          <summary>Thinking</summary>
+          <pre className="chat-message-thinking-content">{message.thinkingOutput}</pre>
+        </details>
+      )}
+      {renderedAttachments}
+      <div className="chat-message-time">{formatRelativeTime(message.createdAt)}</div>
+    </div>
+  );
+});
+
 export function ChatView({ projectId, addToast }: ChatViewProps) {
   const {
     activeSession,
@@ -888,109 +1040,6 @@ export function ChatView({ projectId, addToast }: ChatViewProps) {
     [mentionStartPos, messageInput],
   );
 
-  const renderMessageContent = useCallback(
-    (content: string) => {
-      const mentionRegex = /@([\w-]+)/g;
-      const parts: ReactNode[] = [];
-      let lastIndex = 0;
-      let match = mentionRegex.exec(content);
-
-      while (match) {
-        const [fullMatch, rawName = ""] = match;
-        const start = match.index;
-        if (start > lastIndex) {
-          parts.push(content.slice(lastIndex, start));
-        }
-
-        const normalizedName = rawName.replace(/_/g, " ").toLowerCase();
-        const mentionedAgent = mentionAgentsByName.get(normalizedName);
-        if (mentionedAgent) {
-          parts.push(
-            <span key={`${mentionedAgent.id}-${start}`} className="chat-mention-chip">
-              @{mentionedAgent.name.replace(/\s+/g, "_")}
-            </span>,
-          );
-        } else {
-          parts.push(fullMatch);
-        }
-
-        lastIndex = start + fullMatch.length;
-        match = mentionRegex.exec(content);
-      }
-
-      if (lastIndex < content.length) {
-        parts.push(content.slice(lastIndex));
-      }
-
-      if (parts.length === 0) {
-        return content;
-      }
-
-      return parts;
-    },
-    [mentionAgentsByName],
-  );
-
-  const getAttachmentUrl = useCallback(
-    (filename: string) =>
-      activeSession ? `/api/chat/sessions/${encodeURIComponent(activeSession.id)}/attachments/${encodeURIComponent(filename)}` : "",
-    [activeSession],
-  );
-
-  const renderMessageAttachments = useCallback(
-    (
-      attachments: Array<{
-        id: string;
-        filename: string;
-        originalName: string;
-        mimeType: string;
-      }> | undefined,
-    ) => {
-      if (!attachments || attachments.length === 0) return null;
-
-      return (
-        <div className="chat-message-attachments">
-          {attachments.map((attachment) => {
-            const isImage = attachment.mimeType.startsWith("image/");
-            const key = attachment.id || attachment.filename;
-            const href = getAttachmentUrl(attachment.filename);
-            if (isImage) {
-              return (
-                <a
-                  key={key}
-                  className="chat-message-attachment-link"
-                  data-testid="chat-message-attachment"
-                  href={href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <img
-                    className="chat-message-attachment"
-                    src={href}
-                    alt={attachment.originalName}
-                  />
-                </a>
-              );
-            }
-            return (
-              <a
-                key={key}
-                className="chat-message-attachment-file"
-                data-testid="chat-message-attachment"
-                href={href}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                <File size={14} />
-                <span>{attachment.originalName}</span>
-              </a>
-            );
-          })}
-        </div>
-      );
-    },
-    [getAttachmentUrl],
-  );
 
   // Handle input key down
   const handleInputKeyDown = useCallback(
@@ -1464,47 +1513,19 @@ export function ChatView({ projectId, addToast }: ChatViewProps) {
             </div>
           ) : (
             <>
-              {messages.map((message) => {
-                const isAssistantMessage = message.role === "assistant";
-                const forcePlain = plainTextMessageIds.has(message.id);
-
-                return (
-                  <div
-                    key={message.id}
-                    className={`chat-message chat-message--${message.role}`}
-                    data-testid={`chat-message-${message.id}`}
-                  >
-                    {isAssistantMessage && (
-                      <div className="chat-message-avatar">
-                        <Bot size={14} />
-                        <span>{agentName}</span>
-                        {showAssistantModelTag && <span className="chat-model-tag">{activeModelTag}</span>}
-                        <button
-                          type="button"
-                          className={`chat-message-render-toggle${forcePlain ? " chat-message-render-toggle--plain" : ""}`}
-                          data-testid="chat-message-render-toggle"
-                          aria-label={forcePlain ? "Show rendered markdown" : "Show plain text"}
-                          onClick={() => toggleMessageRenderMode(message.id)}
-                        >
-                          {forcePlain ? <EyeOff size={14} /> : <Eye size={14} />}
-                        </button>
-                      </div>
-                    )}
-                    {isAssistantMessage
-                      ? renderAssistantContent(message.content, forcePlain)
-                      : <div className="chat-message-content">{renderMessageContent(message.content)}</div>}
-                    {renderToolCalls(message.toolCalls)}
-                    {message.thinkingOutput && (
-                      <details className="chat-message-thinking">
-                        <summary>Thinking</summary>
-                        <pre className="chat-message-thinking-content">{message.thinkingOutput}</pre>
-                      </details>
-                    )}
-                    {renderMessageAttachments(message.attachments)}
-                    <div className="chat-message-time">{formatRelativeTime(message.createdAt)}</div>
-                  </div>
-                );
-              })}
+              {messages.map((message) => (
+                <ChatMessageItem
+                  key={message.id}
+                  message={message}
+                  forcePlain={plainTextMessageIds.has(message.id)}
+                  agentName={agentName}
+                  showAssistantModelTag={showAssistantModelTag}
+                  activeModelTag={activeModelTag}
+                  activeSessionId={activeSession?.id ?? null}
+                  mentionAgentsByName={mentionAgentsByName}
+                  onToggleRender={toggleMessageRenderMode}
+                />
+              ))}
               {isStreaming && (
                 <div className="chat-message chat-message--assistant chat-message--streaming">
                   <div className="chat-message-avatar">

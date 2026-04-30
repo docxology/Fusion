@@ -172,6 +172,10 @@ export function useChat(projectId?: string): UseChatReturn {
   const streamRef = useRef<{ close: () => void } | null>(null);
   const cancelledByUserRef = useRef(false);
   const pendingMessageRef = useRef("");
+  // Cancel any pending requestAnimationFrame flushes from the active stream.
+  // Set when sendMessage starts, cleared on done/error. Called from stopStreaming
+  // so a clear-then-rAF-fires sequence doesn't flash stale text back in.
+  const cancelStreamingFlushesRef = useRef<(() => void) | null>(null);
 
   // Refs for SSE event handlers to access current state
   const sessionsRef = useRef(sessions);
@@ -343,8 +347,10 @@ export function useChat(projectId?: string): UseChatReturn {
         updatedAt: data.session.updatedAt,
       };
 
-      // Add to sessions list at the top
-      setSessions((prev) => [newSession, ...prev]);
+      setSessions((prev) => {
+        if (prev.some((s) => s.id === newSession.id)) return prev;
+        return [newSession, ...prev];
+      });
 
       selectSession(newSession.id, newSession);
       setMessages([]);
@@ -400,6 +406,8 @@ export function useChat(projectId?: string): UseChatReturn {
     if (!activeSession) return;
 
     cancelledByUserRef.current = true;
+    cancelStreamingFlushesRef.current?.();
+    cancelStreamingFlushesRef.current = null;
     streamRef.current?.close();
     streamRef.current = null;
 
@@ -463,14 +471,44 @@ export function useChat(projectId?: string): UseChatReturn {
       let capturedThinking = "";
       let capturedToolCalls: ToolCallInfo[] = [];
 
+      // Coalesce per-token state updates to one render per animation frame.
+      // ReactMarkdown re-parses the entire growing string on every render and
+      // every prior message also re-renders, so unthrottled updates pin the
+      // main thread for long replies.
+      let textRaf: number | null = null;
+      let thinkingRaf: number | null = null;
+      const flushText = () => {
+        textRaf = null;
+        setStreamingText(capturedText);
+      };
+      const flushThinking = () => {
+        thinkingRaf = null;
+        setStreamingThinking(capturedThinking);
+      };
+      const cancelStreamingFlushes = () => {
+        if (textRaf !== null) {
+          cancelAnimationFrame(textRaf);
+          textRaf = null;
+        }
+        if (thinkingRaf !== null) {
+          cancelAnimationFrame(thinkingRaf);
+          thinkingRaf = null;
+        }
+      };
+      cancelStreamingFlushesRef.current = cancelStreamingFlushes;
+
       const textHandlers = {
         onThinking: (data: string) => {
           capturedThinking += data;
-          setStreamingThinking(capturedThinking);
+          if (thinkingRaf === null) {
+            thinkingRaf = requestAnimationFrame(flushThinking);
+          }
         },
         onText: (data: string) => {
           capturedText += data;
-          setStreamingText(capturedText);
+          if (textRaf === null) {
+            textRaf = requestAnimationFrame(flushText);
+          }
         },
         onToolStart: (data: { toolName: string; args?: Record<string, unknown> }) => {
           capturedToolCalls = [
@@ -513,6 +551,7 @@ export function useChat(projectId?: string): UseChatReturn {
           setStreamingToolCalls(capturedToolCalls);
         },
         onDone: (data: { messageId: string }) => {
+          cancelStreamingFlushes();
           const assistantMessage: ChatMessageInfo = {
             id: data.messageId || `msg-${Date.now()}`,
             sessionId: activeSession.id,
@@ -550,6 +589,7 @@ export function useChat(projectId?: string): UseChatReturn {
           }
         },
         onError: (data: string) => {
+          cancelStreamingFlushes();
           setMessages((prev) => prev.filter((m) => m.id !== tempId));
           setStreamingText("");
           setStreamingThinking("");

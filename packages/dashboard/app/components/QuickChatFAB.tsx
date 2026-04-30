@@ -1,5 +1,6 @@
 import "./QuickChatFAB.css";
 import {
+  memo,
   useCallback,
   useEffect,
   useMemo,
@@ -687,6 +688,92 @@ function usePanelResize(projectId: string | undefined, fabRight: number, fabBott
   };
 }
 
+interface QuickChatMessageItemProps {
+  message: ChatMessageInfo;
+  forcePlain: boolean;
+  mentionAgentsByName: Map<string, Agent>;
+  onToggleRender: (id: string) => void;
+}
+
+// Memoized so streaming state churn doesn't re-render every prior message
+// (each one would re-run ReactMarkdown over its full content otherwise).
+const QuickChatMessageItem = memo(function QuickChatMessageItem({
+  message,
+  forcePlain,
+  mentionAgentsByName,
+  onToggleRender,
+}: QuickChatMessageItemProps) {
+  const isSent = message.role === "user";
+
+  const renderedUserContent = useMemo<ReactNode>(() => {
+    if (!isSent) return null;
+    const content = message.content;
+    const mentionRegex = /@([\w-]+)/g;
+    const parts: ReactNode[] = [];
+    let lastIndex = 0;
+    let match = mentionRegex.exec(content);
+    while (match) {
+      const [fullMatch, rawName = ""] = match;
+      const start = match.index;
+      if (start > lastIndex) parts.push(content.slice(lastIndex, start));
+      const normalizedName = rawName.replace(/_/g, " ").toLowerCase();
+      const mentionedAgent = mentionAgentsByName.get(normalizedName);
+      if (mentionedAgent) {
+        parts.push(
+          <span key={`${mentionedAgent.id}-${start}`} className="chat-mention-chip">
+            @{mentionedAgent.name.replace(/\s+/g, "_")}
+          </span>,
+        );
+      } else {
+        parts.push(fullMatch);
+      }
+      lastIndex = start + fullMatch.length;
+      match = mentionRegex.exec(content);
+    }
+    if (lastIndex < content.length) parts.push(content.slice(lastIndex));
+    return parts.length === 0 ? content : parts;
+  }, [isSent, message.content, mentionAgentsByName]);
+
+  const assistantBody = useMemo<ReactNode>(() => {
+    if (isSent) return null;
+    if (forcePlain) {
+      return <div className="quick-chat-message-content quick-chat-message-content--plain">{message.content}</div>;
+    }
+    return (
+      <div className="quick-chat-message-content quick-chat-message-content--markdown">
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={quickChatMarkdownComponents}>
+          {message.content}
+        </ReactMarkdown>
+      </div>
+    );
+  }, [isSent, forcePlain, message.content]);
+
+  return (
+    <div
+      className={`quick-chat-panel-message ${isSent ? "quick-chat-panel-message--sent" : "quick-chat-panel-message--received"}`}
+      data-testid={`quick-chat-message-${message.id}`}
+    >
+      {isSent
+        ? <p>{renderedUserContent}</p>
+        : (
+          <>
+            {assistantBody}
+            <button
+              type="button"
+              className={`quick-chat-message-render-toggle${forcePlain ? " quick-chat-message-render-toggle--plain" : ""}`}
+              data-testid="quick-chat-message-render-toggle"
+              aria-label={forcePlain ? "Show rendered markdown" : "Show plain text"}
+              onClick={() => onToggleRender(message.id)}
+            >
+              {forcePlain ? <EyeOff size={14} /> : <Eye size={14} />}
+            </button>
+          </>
+        )}
+      {renderToolCalls(message.toolCalls, true)}
+    </div>
+  );
+});
+
 export function QuickChatFAB({
   projectId,
   addToast,
@@ -1327,49 +1414,6 @@ export function QuickChatFAB({
     [handleInputSelectionChange],
   );
 
-  const renderMessageContent = useCallback(
-    (content: string) => {
-      const mentionRegex = /@([\w-]+)/g;
-      const parts: ReactNode[] = [];
-      let lastIndex = 0;
-      let match = mentionRegex.exec(content);
-
-      while (match) {
-        const [fullMatch, rawName = ""] = match;
-        const start = match.index;
-        if (start > lastIndex) {
-          parts.push(content.slice(lastIndex, start));
-        }
-
-        const normalizedName = rawName.replace(/_/g, " ").toLowerCase();
-        const mentionedAgent = mentionAgentsByName.get(normalizedName);
-        if (mentionedAgent) {
-          parts.push(
-            <span key={`${mentionedAgent.id}-${start}`} className="chat-mention-chip">
-              @{mentionedAgent.name.replace(/\s+/g, "_")}
-            </span>,
-          );
-        } else {
-          parts.push(fullMatch);
-        }
-
-        lastIndex = start + fullMatch.length;
-        match = mentionRegex.exec(content);
-      }
-
-      if (lastIndex < content.length) {
-        parts.push(content.slice(lastIndex));
-      }
-
-      if (parts.length === 0) {
-        return content;
-      }
-
-      return parts;
-    },
-    [mentionAgentsByName],
-  );
-
   const toggleMessageRenderMode = useCallback((messageId: string) => {
     setPlainTextMessageIds((current) => {
       const next = new Set(current);
@@ -1694,35 +1738,15 @@ export function QuickChatFAB({
               <div className="quick-chat-panel-empty">No messages yet. Start the conversation!</div>
             ) : (
               <>
-                {messages.map((message: ChatMessageInfo) => {
-                  const isSent = message.role === "user";
-                  const forcePlain = !isSent && plainTextMessageIds.has(message.id);
-                  return (
-                    <div
-                      key={message.id}
-                      className={`quick-chat-panel-message ${isSent ? "quick-chat-panel-message--sent" : "quick-chat-panel-message--received"}`}
-                      data-testid={`quick-chat-message-${message.id}`}
-                    >
-                      {isSent
-                        ? <p>{renderMessageContent(message.content)}</p>
-                        : (
-                          <>
-                            {renderAssistantMessageContent(message.content, forcePlain)}
-                            <button
-                              type="button"
-                              className={`quick-chat-message-render-toggle${forcePlain ? " quick-chat-message-render-toggle--plain" : ""}`}
-                              data-testid="quick-chat-message-render-toggle"
-                              aria-label={forcePlain ? "Show rendered markdown" : "Show plain text"}
-                              onClick={() => toggleMessageRenderMode(message.id)}
-                            >
-                              {forcePlain ? <EyeOff size={14} /> : <Eye size={14} />}
-                            </button>
-                          </>
-                        )}
-                      {renderToolCalls(message.toolCalls, true)}
-                    </div>
-                  );
-                })}
+                {messages.map((message: ChatMessageInfo) => (
+                  <QuickChatMessageItem
+                    key={message.id}
+                    message={message}
+                    forcePlain={message.role !== "user" && plainTextMessageIds.has(message.id)}
+                    mentionAgentsByName={mentionAgentsByName}
+                    onToggleRender={toggleMessageRenderMode}
+                  />
+                ))}
                 {/* Streaming message bubble */}
                 {isStreaming && (
                   <div

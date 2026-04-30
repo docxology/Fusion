@@ -308,5 +308,22 @@
     bottom: calc(60px + var(--executor-footer-height-mobile, var(--executor-footer-height, 0px)) + var(--mobile-nav-height, 44px) + env(safe-area-inset-bottom, 0px));
     height: min(520px, calc(100dvh - 120px));
   }
+
+  /* Keep regular chat New Chat + Delete confirmation dialogs compact on mobile.
+     styles.css sets .chat-new-dialog-backdrop align-items: stretch globally on
+     mobile; override here so this modal does not become full-height. */
+  .chat-new-dialog-backdrop {
+    align-items: center;
+    padding: var(--space-md);
+    padding-top: max(var(--space-md), env(safe-area-inset-top, 0px));
+    padding-bottom: max(var(--space-md), env(safe-area-inset-bottom, 0px));
+  }
+
+  .chat-new-dialog {
+    width: 100%;
+    max-width: min(100%, calc(var(--space-xl) * 16));
+    max-height: calc(100dvh - (var(--space-md) * 2) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+    overflow-y: auto;
+  }
 }
 

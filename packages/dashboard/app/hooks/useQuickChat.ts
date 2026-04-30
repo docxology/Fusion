@@ -166,6 +166,7 @@ export function useQuickChat(
   // Stream connection ref for cleanup
   const streamRef = useRef<{ close: () => void } | null>(null);
   const cancelledByUserRef = useRef(false);
+  const cancelStreamingFlushesRef = useRef<(() => void) | null>(null);
   const pendingMessageRef = useRef("");
   const sendCompletionRef = useRef<{ resolve: () => void; reject: (error?: unknown) => void } | null>(null);
 
@@ -356,6 +357,8 @@ export function useQuickChat(
     if (!activeSession) return;
 
     cancelledByUserRef.current = true;
+    cancelStreamingFlushesRef.current?.();
+    cancelStreamingFlushesRef.current = null;
     streamRef.current?.close();
     streamRef.current = null;
 
@@ -429,14 +432,42 @@ export function useQuickChat(
         let capturedThinking = "";
         let capturedToolCalls: ToolCallInfo[] = [];
 
+        // Coalesce per-token state updates to one render per animation frame —
+        // unthrottled setStreamingText pegs the main thread on long replies.
+        let textRaf: number | null = null;
+        let thinkingRaf: number | null = null;
+        const flushText = () => {
+          textRaf = null;
+          setStreamingText(capturedText);
+        };
+        const flushThinking = () => {
+          thinkingRaf = null;
+          setStreamingThinking(capturedThinking);
+        };
+        const cancelStreamingFlushes = () => {
+          if (textRaf !== null) {
+            cancelAnimationFrame(textRaf);
+            textRaf = null;
+          }
+          if (thinkingRaf !== null) {
+            cancelAnimationFrame(thinkingRaf);
+            thinkingRaf = null;
+          }
+        };
+        cancelStreamingFlushesRef.current = cancelStreamingFlushes;
+
         const textHandlers = {
         onThinking: (data: string) => {
           capturedThinking += data;
-          setStreamingThinking(capturedThinking);
+          if (thinkingRaf === null) {
+            thinkingRaf = requestAnimationFrame(flushThinking);
+          }
         },
         onText: (data: string) => {
           capturedText += data;
-          setStreamingText(capturedText);
+          if (textRaf === null) {
+            textRaf = requestAnimationFrame(flushText);
+          }
         },
         onToolStart: (data: { toolName: string; args?: Record<string, unknown> }) => {
           capturedToolCalls = [
@@ -479,6 +510,7 @@ export function useQuickChat(
           setStreamingToolCalls(capturedToolCalls);
         },
           onDone: (data: { messageId: string }) => {
+          cancelStreamingFlushes();
           const assistantMessage: ChatMessageInfo = {
             id: data.messageId || `msg-${Date.now()}`,
             sessionId: activeSession.id,
@@ -508,6 +540,7 @@ export function useQuickChat(
             }
           },
           onError: (data: string) => {
+            cancelStreamingFlushes();
             setStreamingText("");
             setStreamingThinking("");
             setStreamingToolCalls([]);

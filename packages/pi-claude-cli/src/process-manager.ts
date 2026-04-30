@@ -241,3 +241,68 @@ export function validateCliAuth(): boolean {
     return false;
   }
 }
+
+/**
+ * Run a one-shot `claude <args>` and resolve to the exit code.
+ *
+ * Why: the sync execSync variants block the Node event loop for the duration
+ * of a Claude CLI cold start (1–3s, occasionally longer). When pi-claude-cli's
+ * factory is invoked from a per-request createFnAgent path (Fusion dashboard
+ * does this on every chat send), those sync probes freeze every other request.
+ * This async variant uses spawn so the loop keeps turning while the subprocess
+ * starts up.
+ */
+function runClaudeProbe(args: string[], timeoutMs = 5000): Promise<number> {
+  return new Promise((resolve) => {
+    const proc = spawn("claude", args, { stdio: "ignore" });
+    const timer = setTimeout(() => {
+      try {
+        proc.kill("SIGKILL");
+      } catch {
+        // already dead
+      }
+      resolve(124);
+    }, timeoutMs);
+    proc.once("error", () => {
+      clearTimeout(timer);
+      resolve(127);
+    });
+    proc.once("exit", (code) => {
+      clearTimeout(timer);
+      resolve(code ?? 1);
+    });
+  });
+}
+
+/**
+ * Async, non-blocking variant of validateCliPresence.
+ * Resolves with `{ok: true}` on success, `{ok: false, error}` on failure —
+ * never rejects, so callers can fire-and-forget without unhandled rejections.
+ */
+export async function validateCliPresenceAsync(): Promise<
+  { ok: true } | { ok: false; error: Error }
+> {
+  const code = await runClaudeProbe(["--version"]);
+  if (code === 0) return { ok: true };
+  return {
+    ok: false,
+    error: new Error(
+      "Claude Code CLI not found. Install it: npm install -g @anthropic-ai/claude-code\n" +
+        "Then authenticate: claude auth login",
+    ),
+  };
+}
+
+/**
+ * Async, non-blocking variant of validateCliAuth.
+ * Returns true if authenticated. Logs a warning (does not throw) otherwise.
+ */
+export async function validateCliAuthAsync(): Promise<boolean> {
+  const code = await runClaudeProbe(["auth", "status"]);
+  if (code === 0) return true;
+  console.warn(
+    "[pi-claude-cli] Claude CLI is not authenticated. " +
+      "Run 'claude auth login' to authenticate.",
+  );
+  return false;
+}

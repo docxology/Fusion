@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
 
+const IOS_FALLBACK_MIN_GAP_PX = 30;
+const IOS_FALLBACK_MIN_FOCUSED_GAP_PX = 16;
+
 /** Whether the current device is likely mobile (touch-primary, small viewport). */
 function isMobileDevice(): boolean {
   if (typeof window === "undefined") return false;
@@ -31,6 +34,16 @@ function getInitialViewportHeight(): number {
  * - Fallback: initial viewport height - vv.height - vv.offsetTop
  *   Works on iOS Safari where window.innerHeight shrinks with the keyboard.
  */
+function isKeyboardFocusableElement(el: Element | null): boolean {
+  if (!el) return false;
+  if (el instanceof HTMLTextAreaElement) return true;
+  if (el instanceof HTMLInputElement) {
+    const nonTextTypes = new Set(["checkbox", "radio", "button", "submit", "reset", "file", "range", "color", "hidden"]);
+    return !nonTextTypes.has(el.type);
+  }
+  return el instanceof HTMLElement && el.isContentEditable;
+}
+
 function getKeyboardOverlap(): number {
   if (typeof window === "undefined" || !window.visualViewport) return 0;
   const vv = window.visualViewport;
@@ -38,8 +51,17 @@ function getKeyboardOverlap(): number {
   if (chromeOverlap > 0) return chromeOverlap;
 
   const initialHeight = getInitialViewportHeight();
-  const gap = initialHeight - vv.offsetTop - vv.height;
-  return gap >= 30 && gap > 80 ? gap : 0;
+  const gap = Math.max(0, initialHeight - vv.offsetTop - vv.height);
+
+  if (gap >= IOS_FALLBACK_MIN_GAP_PX) {
+    return gap;
+  }
+
+  if (gap >= IOS_FALLBACK_MIN_FOCUSED_GAP_PX && isKeyboardFocusableElement(document.activeElement)) {
+    return gap;
+  }
+
+  return 0;
 }
 
 /** Reset cached initial viewport height. Exported for tests only. */

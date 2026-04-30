@@ -9,8 +9,8 @@ import { getModels } from "@mariozechner/pi-ai";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { streamViaCli } from "./src/provider.js";
 import {
-  validateCliPresence,
-  validateCliAuth,
+  validateCliPresenceAsync,
+  validateCliAuthAsync,
   killAllProcesses,
 } from "./src/process-manager.js";
 import { createHash } from "node:crypto";
@@ -25,6 +25,31 @@ import {
 process.on("exit", killAllProcesses);
 
 const PROVIDER_ID = "pi-claude-cli";
+
+/**
+ * Run CLI presence + auth probes at most once per process, asynchronously.
+ *
+ * The factory below is invoked on every `createFnAgent` call (the dashboard
+ * does this per chat message). Doing the probes synchronously with execSync
+ * froze the entire Node event loop for a few seconds while `claude` cold-
+ * started. Memoizing as a Promise + spawning the probes async means the
+ * factory returns immediately and other requests keep flowing; the result
+ * is logged once on first run and reused thereafter.
+ */
+let cliValidationPromise: Promise<void> | undefined;
+
+function runCliValidationOnce(): Promise<void> {
+  if (cliValidationPromise) return cliValidationPromise;
+  cliValidationPromise = (async () => {
+    const presence = await validateCliPresenceAsync();
+    if (!presence.ok) {
+      console.warn(`[pi-claude-cli] ${presence.error.message}`);
+      return;
+    }
+    await validateCliAuthAsync();
+  })();
+  return cliValidationPromise;
+}
 
 let cachedMcpConfig: { hash: string; configPath: string } | undefined;
 const DEBUG_MCP = process.env.PI_CLAUDE_CLI_DEBUG === "1";
@@ -116,9 +141,10 @@ function ensureMcpConfig(
 
 export default function (pi: ExtensionAPI) {
   try {
-    // Startup validation
-    validateCliPresence(); // throws if CLI not on PATH
-    validateCliAuth(); // warns if not authenticated
+    // Startup validation: kick off async, memoized presence + auth probes
+    // without blocking the factory. Failures surface via warnings; the actual
+    // `claude` subprocess in streamViaCli still reports hard errors on send.
+    void runCliValidationOnce();
 
     const catalogModels = getModels("anthropic").map((model) => ({
       id: model.id,

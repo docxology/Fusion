@@ -213,4 +213,76 @@ describe("useMobileKeyboard", () => {
       expect(result.current.viewportHeight).toBe(520);
     });
   });
+
+  it("reports moderate iOS fallback overlap below 80px", async () => {
+    const { listeners, mockVV } = setupMobileVisualViewport({
+      innerHeight: 844,
+      vvHeight: 844,
+    });
+
+    const { result } = renderHook(() => useMobileKeyboard());
+
+    await waitFor(() => {
+      expect(result.current.keyboardOverlap).toBe(0);
+    });
+
+    Object.defineProperty(window, "innerHeight", {
+      value: 804,
+      writable: true,
+      configurable: true,
+    });
+    Object.defineProperty(mockVV, "height", {
+      value: 804,
+      writable: true,
+      configurable: true,
+    });
+
+    act(() => {
+      for (const cb of listeners.resize) cb();
+    });
+
+    await waitFor(() => {
+      expect(result.current.keyboardOverlap).toBe(40);
+      expect(result.current.viewportHeight).toBe(804);
+    });
+  });
+
+  it("uses focused-input fallback for small viewport gaps", async () => {
+    const { listeners, mockVV } = setupMobileVisualViewport({
+      innerHeight: 844,
+      vvHeight: 844,
+    });
+
+    const input = document.createElement("textarea");
+    document.body.appendChild(input);
+    input.focus();
+
+    const { result } = renderHook(() => useMobileKeyboard());
+
+    await waitFor(() => {
+      expect(result.current.keyboardOverlap).toBe(0);
+    });
+
+    Object.defineProperty(window, "innerHeight", {
+      value: 820,
+      writable: true,
+      configurable: true,
+    });
+    Object.defineProperty(mockVV, "height", {
+      value: 820,
+      writable: true,
+      configurable: true,
+    });
+
+    act(() => {
+      for (const cb of listeners.resize) cb();
+    });
+
+    await waitFor(() => {
+      expect(result.current.keyboardOverlap).toBe(24);
+      expect(result.current.viewportHeight).toBe(820);
+    });
+
+    input.remove();
+  });
 });

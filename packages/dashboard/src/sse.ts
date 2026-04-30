@@ -156,7 +156,7 @@ function stripTaskListHeavyFields<T>(task: T): T {
       ? existingTimed
       : sumTimedLogEntries(candidate.log);
 
-  return { ...task, log: [], timedExecutionMs } as T;
+  return { ...task, log: [], timedExecutionMs, tokenUsage: candidate.tokenUsage, workflowStepResults: candidate.workflowStepResults } as T;
 }
 
 function sumTimedLogEntries(log: unknown): number {
