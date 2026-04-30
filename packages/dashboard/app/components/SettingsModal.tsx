@@ -823,10 +823,11 @@ export function SettingsModal({
   }, [customProviderEditing, loadCustomProviders]);
 
   const handleDeleteCustomProvider = useCallback(async (provider: CustomProviderConfig) => {
-    const ok = await confirm(`Delete custom provider '${provider.id}'?`, {
+    const ok = await confirm({
       title: "Delete custom provider",
-      confirmText: "Delete",
-      cancelText: "Cancel",
+      message: `Delete custom provider '${provider.id}'?`,
+      confirmLabel: "Delete",
+      cancelLabel: "Cancel",
       danger: true,
     });
     if (!ok) return;
