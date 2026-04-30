@@ -211,7 +211,7 @@ function AppInner() {
   // Tasks hook with project context and search query
   // SSE is only enabled for board/list views to free connection slots for mission detail fetches
   const taskSseEnabled = taskView === "board" || taskView === "list";
-  const { tasks, createTask, moveTask, pauseTask, deleteTask, mergeTask, retryTask, updateTask, duplicateTask, archiveTask, unarchiveTask, archiveAllDone, loadArchivedTasks, ingestCreatedTasks, lastFetchTimeMs } = useTasks(
+  const { tasks, createTask, moveTask, pauseTask, deleteTask, mergeTask, retryTask, resetTask, updateTask, duplicateTask, archiveTask, unarchiveTask, archiveAllDone, loadArchivedTasks, ingestCreatedTasks, lastFetchTimeMs } = useTasks(
     {
       ...(currentProject ? { projectId: currentProject.id } : {}),
       searchQuery: searchQuery || undefined,
@@ -275,10 +275,10 @@ function AppInner() {
 
   const viewportMode = useViewportMode();
   const isMobile = viewportMode === "mobile";
-  const { keyboardOverlap } = useMobileKeyboard({ enabled: isMobile });
+  const { keyboardOpen } = useMobileKeyboard({ enabled: isMobile });
   // Keyboard visibility controls both MobileNavBar rendering and whether
   // the project content reserves bottom padding for the mobile nav bar.
-  const mobileKeyboardOpen = isMobile && keyboardOverlap > 0;
+  const mobileKeyboardOpen = isMobile && keyboardOpen;
 
   // App-level mailbox unread count state (used for header/mobile nav badges)
   const [mailboxUnreadCount, setMailboxUnreadCount] = useState(0);
@@ -1038,7 +1038,7 @@ function AppInner() {
           handleSubtaskTasksCreated,
           handleGitHubImport,
         }}
-        taskOperations={{ moveTask, deleteTask, mergeTask, retryTask, duplicateTask }}
+        taskOperations={{ moveTask, deleteTask, mergeTask, retryTask, resetTask, duplicateTask }}
         deepLink={{ handleDetailClose }}
         settings={{ prAuthAvailable, themeMode, colorTheme, setThemeMode, setColorTheme }}
         onSettingsClose={() => {

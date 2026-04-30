@@ -160,6 +160,7 @@ interface TaskDetailModalProps {
   onDeleteTask: (id: string, options?: { removeDependencyReferences?: boolean }) => Promise<Task>;
   onMergeTask: (id: string) => Promise<MergeResult>;
   onRetryTask?: (id: string) => Promise<Task>;
+  onResetTask?: (id: string) => Promise<Task>;
   onDuplicateTask?: (id: string) => Promise<Task>;
   onTaskUpdated?: (task: Task) => void;
   addToast: (message: string, type?: ToastType) => void;
@@ -294,6 +295,7 @@ export function TaskDetailModal({
   onDeleteTask,
   onMergeTask,
   onRetryTask,
+  onResetTask,
   onDuplicateTask,
   onTaskUpdated,
   addToast,
@@ -938,6 +940,19 @@ export function TaskDetailModal({
         addToast(getErrorMessage(err), "error");
       });
   }, [task.id, onRetryTask, onClose, addToast]);
+
+  const handleReset = useCallback(() => {
+    if (!onResetTask) return;
+    if (!window.confirm(`This will erase all progress for ${task.id} and start the task from scratch. Continue?`)) return;
+    onClose();
+    onResetTask(task.id)
+      .then(() => {
+        addToast(`Reset ${task.id} — fresh run will be allocated`, "success");
+      })
+      .catch((err) => {
+        addToast(getErrorMessage(err), "error");
+      });
+  }, [task.id, onResetTask, onClose, addToast]);
 
   const handleDuplicate = useCallback(async () => {
     if (!onDuplicateTask) return;
@@ -2291,6 +2306,17 @@ export function TaskDetailModal({
                           onClick={() => handleActionsMenuItemClick(handleRetry)}
                         >
                           Retry
+                        </button>
+                      )}
+
+                      {/* Reset (nuclear) — wipes all progress and reallocates worktree */}
+                      {onResetTask && task.column !== "done" && task.column !== "archived" && (
+                        <button
+                          className="detail-actions-menu-item detail-actions-menu-item-danger"
+                          role="menuitem"
+                          onClick={() => handleActionsMenuItemClick(handleReset)}
+                        >
+                          Reset
                         </button>
                       )}
 

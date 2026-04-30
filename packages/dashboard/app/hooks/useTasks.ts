@@ -348,6 +348,10 @@ export function useTasks(options?: UseTasksOptions) {
     return normalizeTask(await api.retryTask(id, projectId));
   }, [projectId]);
 
+  const resetTask = useCallback(async (id: string): Promise<Task> => {
+    return normalizeTask(await api.resetTask(id, projectId));
+  }, [projectId]);
+
   const duplicateTask = useCallback(async (id: string): Promise<Task> => {
     const task = normalizeTask(await api.duplicateTask(id, projectId));
     setTasks((prev) => {
@@ -457,5 +461,5 @@ export function useTasks(options?: UseTasksOptions) {
     lastFetchTimeMs.current = Date.now();
   }, []);
 
-  return { tasks, createTask, moveTask, pauseTask, deleteTask, mergeTask, retryTask, duplicateTask, updateTask, archiveTask, unarchiveTask, archiveAllDone, loadArchivedTasks, includeArchived, ingestCreatedTasks, lastFetchTimeMs: lastFetchTimeMs.current };
+  return { tasks, createTask, moveTask, pauseTask, deleteTask, mergeTask, retryTask, resetTask, duplicateTask, updateTask, archiveTask, unarchiveTask, archiveAllDone, loadArchivedTasks, includeArchived, ingestCreatedTasks, lastFetchTimeMs: lastFetchTimeMs.current };
 }

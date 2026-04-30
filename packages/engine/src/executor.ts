@@ -53,6 +53,7 @@ import {
 } from "./agent-tools.js";
 import { getTaskCompletionBlockerForStore } from "./task-completion.js";
 import { createFusionAuthStorage, getModelRegistryModelsPath } from "./auth-storage.js";
+import { createRunVerificationTool } from "./run-verification-tool.js";
 
 // Re-export for backward compatibility (tests import from executor.ts)
 export { summarizeToolArgs } from "./agent-logger.js";
@@ -451,6 +452,16 @@ Lint, tests, and typecheck are also hard quality gates:
 - When tests fail, first identify whether the failure is caused by your change, a pre-existing defect, or an outdated test expectation; then fix code or tests accordingly so behavior and assertions match
 - Update tests when intended behavior changed; fix implementation when behavior regressed unintentionally
 - **CRITICAL: Resolve ALL lint failures and test failures before completing the task, even if they appear unrelated or pre-existing.** Unrelated failures left unfixed accumulate technical debt and block future integrations. Investigate and fix or suppress them — do not defer them to a separate task.
+
+## Verification commands — use fn_run_verification
+
+For ALL test/lint/build/typecheck verification, use the \`fn_run_verification\` tool, NOT raw bash.
+The tool prevents your session from being killed by the inactivity watchdog during long compiles.
+
+- Prefer **package-scoped** verification first: e.g. \`pnpm --filter @fusion/<pkg> test\` with \`scope: "package"\`. This is faster and isolated.
+- Only run **workspace-scoped** verification (\`pnpm test\`, \`pnpm lint\`, \`pnpm build\` from root) at the FINAL integration step, when you are about to call \`fn_task_done\`.
+- If you need to run \`pnpm install\` (e.g. you added a new package), use \`fn_run_verification\` with \`scope: "workspace"\` and \`timeoutSec: 600\`.
+- If a verification command times out, do NOT blindly retry — investigate. Check for hung subprocesses, infinite test loops, or tests waiting on missing dependencies. Use \`node_modules/.modules.yaml\` presence to confirm bootstrap.
 
 ## Common Pitfalls
 - Editing files outside the assigned worktree (except allowed memory/attachment paths)
@@ -1766,7 +1777,9 @@ export class TaskExecutor {
       }
 
       // Create or reuse worktree — try pool first when recycling is enabled
-      const branchName = `fusion/${task.id.toLowerCase()}`;
+      // Prefer the persisted branch from a prior run so the agent resumes on the
+      // same branch instead of creating a fresh fusion/fn-XXXX-2, -3, etc.
+      const branchName = task.branch || `fusion/${task.id.toLowerCase()}`;
       // Use generateWorktreeName for human-friendly directory names (adjective-noun pattern)
       // instead of task.id, so worktrees are named like ".worktrees/swift-falcon"
       let isResume = existsSync(worktreePath);
@@ -1948,6 +1961,12 @@ export class TaskExecutor {
         if (steps.length > 0) {
           await this.store.updateStep(task.id, 0, "pending");
         }
+      }
+
+      // On resume (task.branch already set from a prior run), reconcile step
+      // statuses from git history so the agent doesn't redo already-committed work.
+      if (isResume && task.branch && detail.steps.length > 0) {
+        await this.reconcileStepsFromGitHistory(task.id, detail, worktreePath);
       }
 
       // ── Step-Session vs Single-Session execution path ──
@@ -2282,6 +2301,17 @@ export class TaskExecutor {
         this.createTaskCreateTool(),
         this.createTaskAddDepTool(task.id),
         this.createTaskDoneTool(task.id, () => { taskDone = true; }),
+        createRunVerificationTool({
+          worktreePath,
+          rootDir: this.rootDir,
+          taskId: task.id,
+          recordActivity: () => stuckDetector?.recordActivity(task.id),
+          log: {
+            info: (s) => executorLog.log(s),
+            warn: (s) => executorLog.warn(s),
+            error: (s) => executorLog.warn(s),
+          },
+        }),
         // Skip fn_review_step tool in fast mode — fast mode bypasses automated review gates
         ...(executionMode !== "fast" ? [
           this.createReviewStepTool(task.id, worktreePath, detail.prompt, codeReviewVerdicts, sessionRef, stepCheckpoints, detail, stuckDetector),
@@ -5426,6 +5456,80 @@ and show an appropriate message to the user.\`
 
     if (recovered > 0) {
       executorLog.log(`${taskId}: recovered ${recovered} approved step(s) on resume`);
+    }
+  }
+
+  /**
+   * On resume (task already has a branch from a prior run), walk git history
+   * and mark steps as done when a commit matching the step-completion convention
+   * is found. This prevents the agent from redoing already-committed work after
+   * an auto-requeue.
+   *
+   * Commit message convention (case-insensitive):
+   *   feat|chore|fix(FN-XXXX): complete Step N
+   *
+   * Called after the worktree is acquired and before the agent session starts.
+   */
+  private async reconcileStepsFromGitHistory(taskId: string, detail: TaskDetail, worktreePath: string): Promise<void> {
+    const baseCommitSha = detail.baseCommitSha;
+    if (!baseCommitSha) return;
+
+    const pendingOrInProgressSteps = detail.steps.filter(
+      (s, i) => (s.status === "pending" || s.status === "in-progress") && i > 0,
+    );
+    if (pendingOrInProgressSteps.length === 0) return;
+
+    let logOutput: string;
+    try {
+      const { stdout } = await execAsync(
+        `git log "${baseCommitSha}..HEAD" --oneline`,
+        { cwd: worktreePath },
+      );
+      logOutput = stdout;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      executorLog.warn(`${taskId}: reconcileStepsFromGitHistory — git log failed: ${msg}`);
+      return;
+    }
+
+    if (!logOutput.trim()) return;
+
+    // Match: feat(FN-2978): complete Step 3  /  chore(fn-2978)!: Complete step 3
+    const stepCommitRegex = /^(?:feat|chore|fix)\([Ff][Nn]-\d+\)(?:!)?:\s*complete\s+step\s+(\d+)/i;
+    const reconciledStepIndices = new Set<number>();
+
+    for (const line of logOutput.split("\n")) {
+      // git log --oneline format: "<sha> <message>"
+      const message = line.replace(/^[0-9a-f]+ /, "").trim();
+      const match = message.match(stepCommitRegex);
+      if (!match) continue;
+      const stepIndex = parseInt(match[1], 10);
+      if (Number.isNaN(stepIndex) || stepIndex < 0 || stepIndex >= detail.steps.length) continue;
+      const step = detail.steps[stepIndex];
+      if (step.status === "pending" || step.status === "in-progress") {
+        reconciledStepIndices.add(stepIndex);
+      }
+    }
+
+    for (const stepIndex of reconciledStepIndices) {
+      await this.store.updateStep(taskId, stepIndex, "done");
+      await this.store.logEntry(
+        taskId,
+        `Reconciled Step ${stepIndex} as done from git history (resume)`,
+        undefined,
+        this.currentRunContext,
+      );
+      executorLog.log(`${taskId}: reconciled Step ${stepIndex} as done from git history`);
+    }
+
+    if (reconciledStepIndices.size > 0) {
+      // Refresh task and update currentStep to the lowest pending index
+      const updated = await this.store.getTask(taskId);
+      const lowestPending = updated.steps.findIndex((s) => s.status === "pending" || s.status === "in-progress");
+      if (lowestPending >= 0 && lowestPending !== updated.currentStep) {
+        await this.store.updateTask(taskId, { currentStep: lowestPending });
+        executorLog.log(`${taskId}: set currentStep to ${lowestPending} after step reconciliation`);
+      }
     }
   }
 

@@ -56,6 +56,7 @@ interface AppModalsProps {
     deleteTask: (taskId: string) => Promise<Task>;
     mergeTask: (taskId: string) => Promise<MergeResult>;
     retryTask: (taskId: string) => Promise<Task>;
+    resetTask: (taskId: string) => Promise<Task>;
     duplicateTask: (taskId: string) => Promise<Task>;
   };
   deepLink: {
@@ -164,6 +165,7 @@ export function AppModals({
             onDeleteTask={taskOperations.deleteTask}
             onMergeTask={taskOperations.mergeTask}
             onRetryTask={taskOperations.retryTask}
+            onResetTask={taskOperations.resetTask}
             onDuplicateTask={taskOperations.duplicateTask}
             onTaskUpdated={modalManager.updateDetailTask}
             addToast={addToast}

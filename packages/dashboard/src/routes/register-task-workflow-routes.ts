@@ -323,6 +323,58 @@ export function registerTaskWorkflowRoutes(ctx: ApiRoutesContext, deps: TaskWork
     }
   });
 
+  // Nuclear reset — erase all progress and allocate a fresh worktree+branch on next run
+  router.post("/tasks/:id/reset", async (req, res) => {
+    try {
+      const { store: scopedStore } = await getProjectContext(req);
+
+      const { confirm: confirmed } = (req.body ?? {}) as { confirm?: boolean };
+      if (!confirmed) {
+        throw badRequest(
+          "This operation is destructive and will erase all task progress. Pass { \"confirm\": true } in the request body to proceed.",
+        );
+      }
+
+      const task = await scopedStore.getTask(req.params.id);
+
+      // Reset all steps to pending
+      for (let i = 0; i < task.steps.length; i++) {
+        if (task.steps[i].status !== "pending") {
+          await scopedStore.updateStep(req.params.id, i, "pending");
+        }
+      }
+
+      await scopedStore.updateTask(req.params.id, {
+        worktree: null,
+        branch: null,
+        currentStep: 0,
+        status: null,
+        error: null,
+        stuckKillCount: 0,
+        taskDoneRetryCount: null,
+        workflowStepRetries: undefined,
+        recoveryRetryCount: null,
+        nextRecoveryAt: null,
+        postReviewFixCount: 0,
+        verificationFailureCount: 0,
+        mergeConflictBounceCount: 0,
+      });
+
+      await scopedStore.logEntry(
+        req.params.id,
+        "Task reset by user — all progress cleared, fresh worktree and branch will be allocated",
+      );
+
+      const updated = await scopedStore.moveTask(req.params.id, "todo");
+      res.json(updated);
+    } catch (err: unknown) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      rethrowAsApiError(err);
+    }
+  });
+
   // Duplicate task
   router.post("/tasks/:id/duplicate", async (req, res) => {
     try {

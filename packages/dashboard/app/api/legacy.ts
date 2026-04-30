@@ -378,6 +378,14 @@ export function retryTask(id: string, projectId?: string): Promise<Task> {
   return api<Task>(withProjectId(`/tasks/${id}/retry`, projectId), { method: "POST" });
 }
 
+export function resetTask(id: string, projectId?: string): Promise<Task> {
+  return api<Task>(withProjectId(`/tasks/${id}/reset`, projectId), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ confirm: true }),
+  });
+}
+
 export function duplicateTask(id: string, projectId?: string): Promise<Task> {
   return api<Task>(withProjectId(`/tasks/${id}/duplicate`, projectId), { method: "POST" });
 }

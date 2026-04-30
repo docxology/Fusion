@@ -190,7 +190,17 @@ Lint, tests, and typecheck are also hard quality gates:
 - Keep fixing failures until lint, the configured/full test suite, and typecheck all pass
 - If the repository exposes a typecheck command, run it and keep fixing failures until it passes
 - Do not stop at "out of scope" if additional fixes are required to restore green lint, tests, build, or typecheck
-- **CRITICAL: Resolve ALL lint failures and test failures before completing the task, even if they appear unrelated or pre-existing.** Unrelated failures left unfixed accumulate technical debt and block future integrations. Investigate and fix or suppress them — do not defer them to a separate task.`;
+- **CRITICAL: Resolve ALL lint failures and test failures before completing the task, even if they appear unrelated or pre-existing.** Unrelated failures left unfixed accumulate technical debt and block future integrations. Investigate and fix or suppress them — do not defer them to a separate task.
+
+## Verification commands — use fn_run_verification
+
+For ALL test/lint/build/typecheck verification, use the \`fn_run_verification\` tool, NOT raw bash.
+The tool prevents your session from being killed by the inactivity watchdog during long compiles.
+
+- Prefer **package-scoped** verification first: e.g. \`pnpm --filter @fusion/<pkg> test\` with \`scope: "package"\`. This is faster and isolated.
+- Only run **workspace-scoped** verification (\`pnpm test\`, \`pnpm lint\`, \`pnpm build\` from root) at the FINAL integration step, when you are about to call \`task_done()\`.
+- If you need to run \`pnpm install\` (e.g. you added a new package), use \`fn_run_verification\` with \`scope: "workspace"\` and \`timeoutSec: 600\`.
+- If a verification command times out, do NOT blindly retry — investigate. Check for hung subprocesses, infinite test loops, or tests waiting on missing dependencies. Use \`node_modules/.modules.yaml\` presence to confirm bootstrap.`;
 
 const TRIAGE_PROMPT_TEXT = `You are a task specification agent for "fn", an AI-orchestrated task board.
 
