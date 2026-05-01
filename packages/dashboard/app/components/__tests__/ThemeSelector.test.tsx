@@ -625,7 +625,7 @@ describe("ThemeSelector", () => {
     expect(onColorThemeChange).toHaveBeenCalledWith("default");
   });
 
-  it("each color theme has a swatch", () => {
+  it("each color theme has a swatch with four explicit sample colors", () => {
     render(
       <ThemeSelector
         themeMode="dark"
@@ -635,7 +635,6 @@ describe("ThemeSelector", () => {
       />
     );
 
-    // Query all buttons in theme-grid that have aria-pressed (these are the color theme buttons)
     const themeOptions = screen.getAllByRole("button").filter(
       (btn) => btn.className.includes("theme-option")
     );
@@ -644,6 +643,9 @@ describe("ThemeSelector", () => {
     themeOptions.forEach((btn) => {
       const swatch = btn.querySelector(".theme-option-swatch");
       expect(swatch).toBeDefined();
+
+      const samples = swatch?.querySelectorAll(".theme-option-swatch-sample");
+      expect(samples?.length).toBe(4);
     });
   });
 });

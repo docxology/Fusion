@@ -650,23 +650,43 @@ html .column.drag-over * {
 
 .theme-option.active {
   border-color: var(--todo);
-  background: rgba(88, 166, 255, 0.1);
+  background: color-mix(in srgb, var(--todo) 14%, transparent);
 }
 
 .theme-option-swatch {
-  width: 48px;
-  height: 48px;
+  width: calc(var(--space-2xl) + var(--space-lg));
+  height: calc(var(--space-2xl) + var(--space-lg));
   border-radius: var(--radius);
   border: 2px solid var(--border);
-  position: relative;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
   overflow: hidden;
+  --swatch-sample-1: var(--bg);
+  --swatch-sample-2: var(--surface);
+  --swatch-sample-3: color-mix(in srgb, var(--swatch-sample-1) 65%, var(--swatch-sample-2) 35%);
+  --swatch-sample-4: color-mix(in srgb, var(--swatch-sample-2) 65%, var(--swatch-sample-1) 35%);
 }
 
-.theme-option-swatch::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(135deg, var(--bg) 50%, var(--surface) 50%);
+.theme-option-swatch-sample {
+  display: block;
+  min-height: 0;
+}
+
+.theme-option-swatch-sample-1 {
+  background: var(--swatch-sample-1);
+}
+
+.theme-option-swatch-sample-2 {
+  background: var(--swatch-sample-2);
+}
+
+.theme-option-swatch-sample-3 {
+  background: var(--swatch-sample-3);
+}
+
+.theme-option-swatch-sample-4 {
+  background: var(--swatch-sample-4);
 }
 
 .theme-option-label {

@@ -138,7 +138,12 @@ export function ThemeSelector({
             aria-label={`${label} theme`}
             title={label}
           >
-            <div className={`theme-option-swatch ${className}`} />
+            <div className={`theme-option-swatch ${className}`} aria-hidden="true">
+              <span className="theme-option-swatch-sample theme-option-swatch-sample-1" />
+              <span className="theme-option-swatch-sample theme-option-swatch-sample-2" />
+              <span className="theme-option-swatch-sample theme-option-swatch-sample-3" />
+              <span className="theme-option-swatch-sample theme-option-swatch-sample-4" />
+            </div>
             <span className="theme-option-label">{label}</span>
           </button>
         ))}
