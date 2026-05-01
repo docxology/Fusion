@@ -66,8 +66,10 @@ interface AppModalsProps {
     prAuthAvailable: boolean;
     themeMode: ThemeMode;
     colorTheme: ColorTheme;
+    dashboardFontScalePct: number;
     setThemeMode: (mode: ThemeMode) => void;
     setColorTheme: (theme: ColorTheme) => void;
+    setDashboardFontScalePct: (scalePct: number) => void;
   };
   /** Optional override for the settings modal close handler. When provided, this is called instead of modalManager.closeSettings. */
   onSettingsClose?: () => void;
@@ -187,6 +189,8 @@ export function AppModals({
               colorTheme={settings.colorTheme}
               onThemeModeChange={settings.setThemeMode}
               onColorThemeChange={settings.setColorTheme}
+              dashboardFontScalePct={settings.dashboardFontScalePct}
+              onDashboardFontScaleChange={settings.setDashboardFontScalePct}
               onReopenOnboarding={onReopenOnboarding}
             />
           </Suspense>

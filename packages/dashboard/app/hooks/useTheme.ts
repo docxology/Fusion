@@ -4,6 +4,10 @@ import { fetchGlobalSettings, updateGlobalSettings } from "../api";
 
 const THEME_MODE_STORAGE_KEY = "kb-dashboard-theme-mode";
 const COLOR_THEME_STORAGE_KEY = "kb-dashboard-color-theme";
+const FONT_SCALE_STORAGE_KEY = "kb-dashboard-font-scale-pct";
+const DEFAULT_FONT_SCALE_PCT = 100;
+const MIN_FONT_SCALE_PCT = 85;
+const MAX_FONT_SCALE_PCT = 125;
 const VALID_COLOR_THEMES = [...COLOR_THEMES] satisfies ColorTheme[];
 const THEME_DATA_ID = "theme-data";
 const THEME_DATA_FILENAME = "theme-data.css";
@@ -51,8 +55,10 @@ const useIsomorphicLayoutEffect = isBrowser ? useLayoutEffect : useEffect;
 interface UseThemeReturn {
   themeMode: ThemeMode;
   colorTheme: ColorTheme;
+  dashboardFontScalePct: number;
   setThemeMode: (mode: ThemeMode) => void;
   setColorTheme: (theme: ColorTheme) => void;
+  setDashboardFontScalePct: (scalePct: number) => void;
   isSystemDark: boolean;
 }
 
@@ -104,6 +110,32 @@ function writeCachedColorTheme(theme: ColorTheme): void {
   }
 }
 
+function normalizeFontScalePct(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return DEFAULT_FONT_SCALE_PCT;
+  }
+  return Math.min(MAX_FONT_SCALE_PCT, Math.max(MIN_FONT_SCALE_PCT, Math.round(value)));
+}
+
+function readCachedDashboardFontScalePct(): number {
+  if (!isBrowser) return DEFAULT_FONT_SCALE_PCT;
+  try {
+    const saved = Number(localStorage.getItem(FONT_SCALE_STORAGE_KEY));
+    return normalizeFontScalePct(saved);
+  } catch {
+    return DEFAULT_FONT_SCALE_PCT;
+  }
+}
+
+function writeCachedDashboardFontScalePct(scalePct: number): void {
+  if (!isBrowser) return;
+  try {
+    localStorage.setItem(FONT_SCALE_STORAGE_KEY, String(normalizeFontScalePct(scalePct)));
+  } catch {
+    // localStorage not available, skip cache write
+  }
+}
+
 /**
  * Get the effective theme mode (resolves "system" to actual dark/light value)
  */
@@ -118,12 +150,18 @@ function getEffectiveThemeMode(mode: ThemeMode, systemIsDark: boolean): "dark" |
  * Apply theme attributes to document.documentElement
  * Call this immediately to prevent flash of wrong theme
  */
-function applyThemeAttributes(themeMode: ThemeMode, colorTheme: ColorTheme, systemIsDark: boolean): void {
+function applyThemeAttributes(
+  themeMode: ThemeMode,
+  colorTheme: ColorTheme,
+  dashboardFontScalePct: number,
+  systemIsDark: boolean,
+): void {
   if (!isBrowser) return;
 
   const effectiveMode = getEffectiveThemeMode(themeMode, systemIsDark);
   document.documentElement.setAttribute("data-theme", effectiveMode);
   document.documentElement.setAttribute("data-color-theme", colorTheme);
+  document.documentElement.style.fontSize = `${normalizeFontScalePct(dashboardFontScalePct)}%`;
 }
 
 /**
@@ -193,6 +231,7 @@ export function useTheme(): UseThemeReturn {
   // Initialize from localStorage cache or defaults to avoid flash before hydration.
   const [themeMode, setThemeModeState] = useState<ThemeMode>(() => readCachedThemeMode());
   const [colorTheme, setColorThemeState] = useState<ColorTheme>(() => readCachedColorTheme());
+  const [dashboardFontScalePct, setDashboardFontScalePctState] = useState<number>(() => readCachedDashboardFontScalePct());
   const [isHydrating, setIsHydrating] = useState(true);
 
   // Track system color scheme preference
@@ -203,8 +242,10 @@ export function useTheme(): UseThemeReturn {
 
   const themeModeRef = useRef(themeMode);
   const colorThemeRef = useRef(colorTheme);
+  const dashboardFontScalePctRef = useRef(dashboardFontScalePct);
   const userSetThemeModeRef = useRef(false);
   const userSetColorThemeRef = useRef(false);
+  const userSetDashboardFontScalePctRef = useRef(false);
 
   useEffect(() => {
     themeModeRef.current = themeMode;
@@ -213,6 +254,10 @@ export function useTheme(): UseThemeReturn {
   useEffect(() => {
     colorThemeRef.current = colorTheme;
   }, [colorTheme]);
+
+  useEffect(() => {
+    dashboardFontScalePctRef.current = dashboardFontScalePct;
+  }, [dashboardFontScalePct]);
 
   // Hydrate canonical theme values from backend global settings.
   useEffect(() => {
@@ -249,6 +294,17 @@ export function useTheme(): UseThemeReturn {
             writeCachedColorTheme(globalSettings.colorTheme);
           }
         }
+
+        if (!userSetDashboardFontScalePctRef.current) {
+          const hydratedScalePct = normalizeFontScalePct(globalSettings.dashboardFontScalePct);
+          if (dashboardFontScalePctRef.current !== hydratedScalePct) {
+            dashboardFontScalePctRef.current = hydratedScalePct;
+            setDashboardFontScalePctState(hydratedScalePct);
+          }
+          if (readCachedDashboardFontScalePct() !== hydratedScalePct) {
+            writeCachedDashboardFontScalePct(hydratedScalePct);
+          }
+        }
       })
       .catch((error) => {
         console.warn("[useTheme] Failed to hydrate theme from global settings", error);
@@ -279,8 +335,8 @@ export function useTheme(): UseThemeReturn {
 
   // Apply theme immediately on mount and when theme changes
   useIsomorphicLayoutEffect(() => {
-    applyThemeAttributes(themeMode, colorTheme, isSystemDark);
-  }, [themeMode, colorTheme, isSystemDark]);
+    applyThemeAttributes(themeMode, colorTheme, dashboardFontScalePct, isSystemDark);
+  }, [themeMode, colorTheme, dashboardFontScalePct, isSystemDark]);
 
   // Ensure theme-data.css is loaded/unloaded based on colorTheme.
   // This handles both initial hydration from backend and runtime theme changes.
@@ -325,11 +381,25 @@ export function useTheme(): UseThemeReturn {
     });
   }, []);
 
+  const setDashboardFontScalePct = useCallback((scalePct: number) => {
+    const normalizedScalePct = normalizeFontScalePct(scalePct);
+    userSetDashboardFontScalePctRef.current = true;
+    dashboardFontScalePctRef.current = normalizedScalePct;
+    setDashboardFontScalePctState(normalizedScalePct);
+    writeCachedDashboardFontScalePct(normalizedScalePct);
+
+    void updateGlobalSettings({ dashboardFontScalePct: normalizedScalePct }).catch((error) => {
+      console.warn("[useTheme] Failed to persist dashboardFontScalePct to global settings", error);
+    });
+  }, []);
+
   return {
     themeMode,
     colorTheme,
+    dashboardFontScalePct,
     setThemeMode,
     setColorTheme,
+    setDashboardFontScalePct,
     isSystemDark,
   };
 }
@@ -350,13 +420,20 @@ export function getThemeInitScript(): string {
         if (!validThemes.includes(colorTheme)) {
           colorTheme = 'default';
         }
+        var fontScale = Number(localStorage.getItem('${FONT_SCALE_STORAGE_KEY}') || '${DEFAULT_FONT_SCALE_PCT}');
+        if (!Number.isFinite(fontScale)) {
+          fontScale = ${DEFAULT_FONT_SCALE_PCT};
+        }
+        fontScale = Math.min(${MAX_FONT_SCALE_PCT}, Math.max(${MIN_FONT_SCALE_PCT}, Math.round(fontScale)));
         var systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
         var effectiveMode = mode === 'system' ? (systemDark ? 'dark' : 'light') : mode;
         document.documentElement.setAttribute('data-theme', effectiveMode);
         document.documentElement.setAttribute('data-color-theme', colorTheme);
+        document.documentElement.style.fontSize = fontScale + '%';
       } catch (e) {
         document.documentElement.setAttribute('data-theme', 'dark');
         document.documentElement.setAttribute('data-color-theme', 'default');
+        document.documentElement.style.fontSize = '${DEFAULT_FONT_SCALE_PCT}%';
       }
     })();
   `;

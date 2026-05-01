@@ -140,6 +140,34 @@ function getEndToEndDurationMs(task: Task, nowMs: number): number | null {
   return Math.max(0, endMs - startedMs);
 }
 
+function getInReviewCompletionMs(task: Task): number | null {
+  return task.column === "done" ? getDoneCompletionMs(task) : null;
+}
+
+function getMergeElapsedMs(task: Task, nowMs: number): number | null {
+  const mergeStartedMs = parseTimestampToMs(task.updatedAt);
+  if (mergeStartedMs == null) {
+    return null;
+  }
+
+  return Math.max(0, nowMs - mergeStartedMs);
+}
+
+function getActiveMergeTotalMs(task: Task, nowMs: number): number | null {
+  const endToEndMs = getEndToEndDurationMs(task, nowMs);
+  if (endToEndMs != null) {
+    return endToEndMs;
+  }
+
+  const mergeElapsedMs = getMergeElapsedMs(task, nowMs);
+  const instrumentedMs = getInstrumentedDurationMs(task, nowMs);
+  if (instrumentedMs != null) {
+    return instrumentedMs + (mergeElapsedMs ?? 0);
+  }
+
+  return mergeElapsedMs;
+}
+
 // Mirrors summarizeWorkflowTiming in TaskTokenStatsPanel: completed steps use
 // completedAt-startedAt; in-progress steps contribute live elapsed (now-startedAt).
 function getWorkflowRuntimeMs(task: Task, nowMs: number): number | null {
@@ -711,7 +739,7 @@ function TaskCardComponent({
 
     const merging = task.status != null && ACTIVE_MERGE_STATUSES.has(task.status);
 
-    if (!merging && task.column === "in-progress") {
+    if (task.column === "in-progress") {
       const endToEndMs = getEndToEndDurationMs(task, Date.now());
       const elapsedMs = getInProgressElapsedMs(task, Date.now());
       const instrumentedMs = getInstrumentedDurationMs(task, Date.now());
@@ -741,20 +769,23 @@ function TaskCardComponent({
       return null;
     }
 
-    // While a merge is actively running, the per-step instrumented duration
-    // is frozen (the merge phase isn't tracked as a workflow step). Show
-    // live elapsed since `updatedAt` — which the merger sets when it flips
-    // status to "merging" — so stuck merges don't appear stuck at "3m".
+    // While a merge is actively running, continue showing live end-to-end
+    // execution time. For legacy tasks without executionStartedAt, fall back
+    // to instrumented runtime plus live merge-phase elapsed since `updatedAt`.
     if (task.status != null && ACTIVE_MERGE_STATUSES.has(task.status)) {
-      const startedMs = parseTimestampToMs(task.updatedAt);
-      if (startedMs != null) {
-        const elapsedMs = Math.max(0, timeIndicatorNowMs - startedMs);
-        const elapsedLabel = formatElapsedDuration(elapsedMs);
+      const totalMs = getActiveMergeTotalMs(task, timeIndicatorNowMs);
+      if (totalMs != null) {
+        const elapsedLabel = formatElapsedDurationDone(totalMs);
         if (elapsedLabel) {
+          const mergeElapsedMs = getMergeElapsedMs(task, timeIndicatorNowMs);
+          const mergeLabel = mergeElapsedMs == null ? null : formatElapsedDuration(mergeElapsedMs);
+          const title = mergeLabel
+            ? `Execution time ${elapsedLabel}. Merge phase ${mergeLabel}`
+            : `Execution time ${elapsedLabel}. Merging`;
           return {
             label: elapsedLabel,
-            title: `Merging ${elapsedLabel}`,
-            ariaLabel: `Merging ${elapsedLabel}`,
+            title,
+            ariaLabel: title,
           };
         }
       }
@@ -798,7 +829,7 @@ function TaskCardComponent({
       return null;
     }
 
-    const completionMs = getDoneCompletionMs(task);
+    const completionMs = getInReviewCompletionMs(task);
     if (completionMs == null) {
       return {
         label: elapsedLabel,

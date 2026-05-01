@@ -3,10 +3,10 @@ import {
   memo,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
-  type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
 } from "react";
@@ -16,12 +16,14 @@ import type { Components } from "react-markdown";
 import { Eye, EyeOff, MessageSquare, Paperclip, Plus, Send, Square, Wrench, X } from "lucide-react";
 import { fetchModels, type Agent, type ModelInfo } from "../api";
 import { CustomModelDropdown } from "./CustomModelDropdown";
+import { ProviderIcon } from "./ProviderIcon";
 import { AgentMentionPopup } from "./AgentMentionPopup";
 import { FN_AGENT_ID, useQuickChat, type ChatMessageInfo, type ToolCallInfo } from "../hooks/useQuickChat";
 import { useAgents } from "../hooks/useAgents";
 import { FileMentionPopup } from "./FileMentionPopup";
 import { useFileMention } from "../hooks/useFileMention";
 import { useMobileKeyboard } from "../hooks/useMobileKeyboard";
+import { useViewportMode } from "../hooks/useViewportMode";
 
 interface PendingAttachment {
   file: File;
@@ -800,15 +802,13 @@ export function QuickChatFAB({
       }
     : setInternalOpen;
 
-  const { keyboardOverlap, viewportHeight, keyboardOpen } = useMobileKeyboard({ enabled: isOpen });
-
-  const keyboardPanelStyle: CSSProperties =
-    keyboardOpen
-      ? ({
-          "--keyboard-overlap": `${keyboardOverlap}px`,
-          ...(viewportHeight !== null ? { "--vv-height": `${viewportHeight}px` } : {}),
-        } as CSSProperties)
-      : {};
+  // We still consume keyboardOpen for layout decisions outside the panel,
+  // but the high-frequency --vv-offset-top / --vv-height tracking is set
+  // directly on the panel DOM in a layout effect below — going through
+  // React state introduces a per-event reconciliation lag that the human
+  // eye reads as jank while the iOS keyboard is animating in.
+  useMobileKeyboard({ enabled: isOpen });
+  const viewportMode = useViewportMode();
 
   const [chatMode, setChatMode] = useState<"agent" | "model">("agent");
   const [selectedAgentId, setSelectedAgentId] = useState<string>("");
@@ -894,6 +894,43 @@ export function QuickChatFAB({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const pendingAttachmentsRef = useRef<PendingAttachment[]>([]);
   const shouldAutoFocusComposerRef = useRef(false);
+  // Always-mounted offscreen input used to claim the iOS soft keyboard
+  // synchronously inside the FAB click gesture, before the real composer
+  // input has rendered (or while it is still `disabled` waiting for the
+  // session). Focus is transferred to the real input once it is enabled —
+  // iOS keeps the keyboard up across that transfer.
+  const stealthInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Mirror visualViewport.height onto the panel as --vv-height directly,
+  // bypassing React state. The panel just shrinks when the iOS keyboard
+  // opens — top stays at 0 so the header remains visible.
+  useLayoutEffect(() => {
+    if (!isOpen) return;
+    if (typeof window === "undefined" || !window.visualViewport) return;
+    const panel = panelRef.current;
+    if (!panel) return;
+
+    const vv = window.visualViewport;
+    let frame = 0;
+    const apply = () => {
+      frame = 0;
+      panel.style.setProperty("--vv-height", `${vv.height}px`);
+      panel.style.setProperty("--vv-offset-top", `${vv.offsetTop || 0}px`);
+    };
+    const schedule = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(apply);
+    };
+
+    apply();
+    vv.addEventListener("resize", schedule);
+    vv.addEventListener("scroll", schedule);
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      vv.removeEventListener("resize", schedule);
+      vv.removeEventListener("scroll", schedule);
+    };
+  }, [isOpen]);
 
   const resolvedModelSelection = selectedModel || configuredDefaultModelSelection;
 
@@ -1082,8 +1119,18 @@ export function QuickChatFAB({
     const activeElement = document.activeElement;
     const panelContainsFocus = activeElement ? panelRef.current?.contains(activeElement) : false;
     const isBodyFocused = activeElement === document.body;
+    const stealthIsFocused = activeElement === stealthInputRef.current;
 
-    if (!panelContainsFocus && !isBodyFocused) {
+    if (!panelContainsFocus && !isBodyFocused && !stealthIsFocused) {
+      shouldAutoFocusComposerRef.current = false;
+      return;
+    }
+
+    // When the stealth input is currently holding the iOS keyboard, transfer
+    // focus synchronously — going through requestAnimationFrame breaks the
+    // keyboard handoff on Safari and the keyboard dismisses.
+    if (stealthIsFocused) {
+      input.focus({ preventScroll: true });
       shouldAutoFocusComposerRef.current = false;
       return;
     }
@@ -1522,11 +1569,32 @@ export function QuickChatFAB({
       didDragRef.current = false;
       return;
     }
-    setIsOpen((prev) => !prev);
-  }, [setIsOpen]);
+    if (isOpen) {
+      setIsOpen(false);
+      return;
+    }
+    // iOS only opens the soft keyboard from a focus() that runs while
+    // the originating user-gesture is still active, AND the focused
+    // element must not be `disabled`. The real composer input renders
+    // disabled until the chat session is created, so we focus an
+    // always-mounted stealth input here to claim the keyboard now; the
+    // auto-focus effect below transfers focus to the real input once
+    // it is enabled, which keeps the keyboard up.
+    if (typeof window !== "undefined" && window.innerWidth <= QUICK_CHAT_DESKTOP_BREAKPOINT) {
+      stealthInputRef.current?.focus({ preventScroll: true });
+    }
+    setIsOpen(true);
+  }, [isOpen, setIsOpen]);
 
   return (
     <>
+      <input
+        ref={stealthInputRef}
+        type="text"
+        className="quick-chat-stealth-input"
+        aria-hidden="true"
+        tabIndex={-1}
+      />
       {showFAB && (
         <button
           ref={fabRef}
@@ -1551,10 +1619,14 @@ export function QuickChatFAB({
           ref={panelRef}
           data-testid="quick-chat-panel"
           style={{
-            right: position.x + anchorOffset.right,
-            bottom: panelY + anchorOffset.bottom,
-            ...(shouldApplyDesktopPanelSize ? { width: panelSize.width, height: panelSize.height } : {}),
-            ...keyboardPanelStyle,
+            ...(shouldApplyDesktopPanelSize
+              ? {
+                  right: position.x + anchorOffset.right,
+                  bottom: panelY + anchorOffset.bottom,
+                  width: panelSize.width,
+                  height: panelSize.height,
+                }
+              : {}),
           }}
         >
           {shouldApplyDesktopPanelSize && (
@@ -1635,11 +1707,31 @@ export function QuickChatFAB({
           <div className="quick-chat-panel-header">
             <div className="quick-chat-panel-title-wrap">
               <h3>Quick Chat</h3>
-              {chatMode === "model" && selectedModelTag && (
-                <span className="quick-chat-model-tag" data-testid="quick-chat-model-tag" title={selectedModelTag}>
-                  {selectedModelTag}
-                </span>
-              )}
+              {chatMode === "model" && selectedModelTag && (() => {
+                const provider =
+                  selectedModelInfo?.provider ?? parsedModelSelection?.modelProvider ?? "";
+                // On mobile the header pill is squeezed by mode toggle + new-chat
+                // + close buttons, so swap a long model name for the provider
+                // icon to keep the title row tidy.
+                const tagTooLong = viewportMode === "mobile" && selectedModelTag.length > 12;
+                if (tagTooLong && provider) {
+                  return (
+                    <span
+                      className="quick-chat-model-tag quick-chat-model-tag--icon"
+                      data-testid="quick-chat-model-tag"
+                      title={selectedModelTag}
+                      aria-label={selectedModelTag}
+                    >
+                      <ProviderIcon provider={provider} size="sm" />
+                    </span>
+                  );
+                }
+                return (
+                  <span className="quick-chat-model-tag" data-testid="quick-chat-model-tag" title={selectedModelTag}>
+                    {selectedModelTag}
+                  </span>
+                );
+              })()}
             </div>
             <div className="quick-chat-panel-header-actions">
               {agents.length > 0 && (

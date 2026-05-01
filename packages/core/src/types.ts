@@ -1228,6 +1228,8 @@ export interface GlobalSettings {
   themeMode?: ThemeMode;
   /** Color theme preference for accent colors and styling. Default: "default". */
   colorTheme?: ColorTheme;
+  /** Dashboard font size scale percentage. Bounded to 85-125. Default: 100. */
+  dashboardFontScalePct?: number;
   /** Default AI model provider name (e.g. `"anthropic"`, `"openai"`).
    *  Must be set together with `defaultModelId`. When both are undefined,
    *  the engine uses pi's automatic model resolution. */

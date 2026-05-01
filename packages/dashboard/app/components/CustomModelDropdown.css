@@ -618,6 +618,40 @@ html .column.drag-over * {
   margin-bottom: var(--space-md);
 }
 
+.theme-font-size-toggle {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-sm);
+  margin-bottom: var(--space-lg);
+}
+
+.theme-font-size-btn {
+  align-items: center;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 13px;
+  font-weight: 500;
+  justify-content: center;
+  min-height: calc(var(--space-2xl) + var(--space-sm));
+  padding: var(--space-sm) var(--space-md);
+  transition: all var(--transition-fast);
+}
+
+.theme-font-size-btn:hover {
+  border-color: var(--todo);
+  color: var(--text);
+}
+
+.theme-font-size-btn.active {
+  background: color-mix(in srgb, var(--todo) 14%, transparent);
+  border-color: var(--todo);
+  color: var(--text);
+}
+
 .theme-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -1275,5 +1309,9 @@ html .column.drag-over * {
 
   .theme-selector {
     padding: 0 14px 14px;
+  }
+
+  .theme-font-size-toggle {
+    grid-template-columns: 1fr;
   }
 }

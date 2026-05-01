@@ -14,6 +14,7 @@ type CompleteSettings<T> = { [K in keyof Required<T>]: Required<T>[K] | undefine
 export const DEFAULT_GLOBAL_SETTINGS = {
   themeMode: "dark",
   colorTheme: "default",
+  dashboardFontScalePct: 100,
   defaultProvider: undefined,
   defaultModelId: undefined,
   fallbackProvider: undefined,

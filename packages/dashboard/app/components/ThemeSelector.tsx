@@ -5,8 +5,10 @@ import type { ThemeMode, ColorTheme } from "@fusion/core";
 interface ThemeSelectorProps {
   themeMode: ThemeMode;
   colorTheme: ColorTheme;
+  dashboardFontScalePct?: number;
   onThemeModeChange: (mode: ThemeMode) => void;
   onColorThemeChange: (theme: ColorTheme) => void;
+  onDashboardFontScaleChange?: (scalePct: number) => void;
 }
 
 const THEME_MODES: { value: ThemeMode; label: string; icon: typeof Sun }[] = [
@@ -14,6 +16,13 @@ const THEME_MODES: { value: ThemeMode; label: string; icon: typeof Sun }[] = [
   { value: "dark", label: "Dark", icon: Moon },
   { value: "system", label: "System", icon: Monitor },
 ];
+
+const FONT_SCALE_OPTIONS = [
+  { value: 90, label: "Small" },
+  { value: 100, label: "Default" },
+  { value: 110, label: "Large" },
+  { value: 120, label: "Largest" },
+] as const;
 
 const COLOR_THEMES: { value: ColorTheme; label: string; className: string }[] = [
   { value: "default", label: "Default", className: "theme-swatch-default" },
@@ -78,13 +87,16 @@ const COLOR_THEMES: { value: ColorTheme; label: string; className: string }[] = 
 export function ThemeSelector({
   themeMode,
   colorTheme,
+  dashboardFontScalePct = 100,
   onThemeModeChange,
   onColorThemeChange,
+  onDashboardFontScaleChange = () => {},
 }: ThemeSelectorProps) {
   const handleReset = useCallback(() => {
     onThemeModeChange("dark");
     onColorThemeChange("default");
-  }, [onThemeModeChange, onColorThemeChange]);
+    onDashboardFontScaleChange(100);
+  }, [onThemeModeChange, onColorThemeChange, onDashboardFontScaleChange]);
 
   return (
     <div className="theme-selector">
@@ -124,6 +136,20 @@ export function ThemeSelector({
             {COLOR_THEMES.find((t) => t.value === colorTheme)?.label}
           </div>
         </div>
+      </div>
+
+      <div className="theme-section-title">Font Size</div>
+      <div className="theme-font-size-toggle" role="radiogroup" aria-label="Dashboard font size">
+        {FONT_SCALE_OPTIONS.map(({ value, label }) => (
+          <button
+            key={value}
+            className={`theme-font-size-btn${dashboardFontScalePct === value ? " active" : ""}`}
+            onClick={() => onDashboardFontScaleChange(value)}
+            aria-pressed={dashboardFontScalePct === value}
+          >
+            <span>{label}</span>
+          </button>
+        ))}
       </div>
 
       {/* Color Theme Grid */}

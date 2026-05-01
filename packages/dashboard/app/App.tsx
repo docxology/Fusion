@@ -172,7 +172,7 @@ function AppInner() {
   const effectiveProjects = isRemote && remoteData.projects.length > 0 ? remoteData.projects : projects;
   
   // Theme management - required before useViewState
-  const { themeMode, colorTheme, setThemeMode, setColorTheme } = useTheme();
+  const { themeMode, colorTheme, dashboardFontScalePct, setThemeMode, setColorTheme, setDashboardFontScalePct } = useTheme();
 
   // Background AI sessions - required before useModalManager
   const { sessions: bgSessions, generating: bgGenerating, needsInput: bgNeedsInput, planningSessions: bgPlanningSessions, dismissSession: bgDismiss } = useBackgroundSessions(currentProject?.id);
@@ -1046,7 +1046,7 @@ function AppInner() {
         }}
         taskOperations={{ moveTask, deleteTask, mergeTask, retryTask, resetTask, duplicateTask }}
         deepLink={{ handleDetailClose }}
-        settings={{ prAuthAvailable, themeMode, colorTheme, setThemeMode, setColorTheme }}
+        settings={{ prAuthAvailable, themeMode, colorTheme, dashboardFontScalePct, setThemeMode, setColorTheme, setDashboardFontScalePct }}
         onSettingsClose={() => {
           modalManager.closeSettings();
           setResearchReadinessVersion((current) => current + 1);

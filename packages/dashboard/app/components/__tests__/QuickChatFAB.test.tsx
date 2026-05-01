@@ -2053,7 +2053,7 @@ describe("QuickChatFAB", () => {
       });
     });
 
-    it("sets keyboard overlap CSS variable when mobile viewport shrinks", async () => {
+    it("mirrors --vv-height onto the panel when the mobile viewport shrinks", async () => {
       const { listeners, mockVV } = mockMobileVisualViewport({
         innerHeight: 844,
         vvHeight: 844,
@@ -2062,7 +2062,9 @@ describe("QuickChatFAB", () => {
       render(<QuickChatFAB addToast={addToast} open={true} onOpenChange={vi.fn()} />);
 
       const panel = await screen.findByTestId("quick-chat-panel");
-      expect(panel.style.getPropertyValue("--keyboard-overlap")).toBe("");
+      // Panel layout effect runs on first render even with no keyboard, so
+      // --vv-height starts mirroring the current visual viewport.
+      expect(panel.style.getPropertyValue("--vv-height")).toBe("844px");
 
       Object.defineProperty(window, "innerHeight", {
         value: 560,
@@ -2080,12 +2082,11 @@ describe("QuickChatFAB", () => {
       });
 
       await waitFor(() => {
-        expect(panel.style.getPropertyValue("--keyboard-overlap")).toBe("284px");
         expect(panel.style.getPropertyValue("--vv-height")).toBe("560px");
       });
     });
 
-    it("applies --vv-height when keyboard opens with zero overlap (iOS last-resort signal)", async () => {
+    it("applies --vv-height for the iOS last-resort signal (offsetTop nonzero, height shrunk)", async () => {
       const { listeners, mockVV } = mockMobileVisualViewport({
         innerHeight: 800,
         vvHeight: 800,
@@ -2094,17 +2095,8 @@ describe("QuickChatFAB", () => {
       render(<QuickChatFAB addToast={addToast} open={true} onOpenChange={vi.fn()} />);
 
       const panel = await screen.findByTestId("quick-chat-panel");
-      expect(panel.style.getPropertyValue("--vv-height")).toBe("");
+      expect(panel.style.getPropertyValue("--vv-height")).toBe("800px");
 
-      // Focus the input so the hook treats the active element as
-      // keyboard-focusable — this is what unlocks the iOS last-resort branch
-      // where viewport shrinks but offsetTop+height closes the gap.
-      const input = await screen.findByTestId("quick-chat-input") as HTMLTextAreaElement;
-      input.focus();
-
-      // chromeOverlap and gap both collapse to 0 (offsetTop + height ==
-      // innerHeight == baseline), but baselineHeight - vv.height = 16 trips
-      // the "viewport shrank" branch with overlap=0, keyboardOpen=true.
       Object.defineProperty(mockVV, "height", { value: 784, writable: true, configurable: true });
       Object.defineProperty(mockVV, "offsetTop", { value: 16, writable: true, configurable: true });
 
@@ -2112,15 +2104,12 @@ describe("QuickChatFAB", () => {
         for (const cb of listeners.resize) cb();
       });
 
-      // Panel style is gated on keyboardOpen, not keyboardOverlap > 0.
-      // Regression guard for the gating change in QuickChatFAB.tsx:805.
       await waitFor(() => {
-        expect(panel.style.getPropertyValue("--keyboard-overlap")).toBe("0px");
         expect(panel.style.getPropertyValue("--vv-height")).toBe("784px");
       });
     });
 
-    it("clears keyboard overlap CSS variable when keyboard closes", async () => {
+    it("updates --vv-height when the keyboard collapses back to baseline", async () => {
       const { listeners, mockVV } = mockMobileVisualViewport({
         innerHeight: 800,
         vvHeight: 600,
@@ -2131,7 +2120,7 @@ describe("QuickChatFAB", () => {
       const panel = await screen.findByTestId("quick-chat-panel");
 
       await waitFor(() => {
-        expect(panel.style.getPropertyValue("--keyboard-overlap")).toBe("200px");
+        expect(panel.style.getPropertyValue("--vv-height")).toBe("600px");
       });
 
       Object.defineProperty(mockVV, "height", {
@@ -2145,8 +2134,7 @@ describe("QuickChatFAB", () => {
       });
 
       await waitFor(() => {
-        expect(panel.style.getPropertyValue("--keyboard-overlap")).toBe("");
-        expect(panel.style.getPropertyValue("--vv-height")).toBe("");
+        expect(panel.style.getPropertyValue("--vv-height")).toBe("800px");
       });
     });
 

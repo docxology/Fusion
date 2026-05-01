@@ -43,13 +43,21 @@ function isKeyboardFocusableElement(el: Element | null): boolean {
   return el instanceof HTMLElement && el.isContentEditable;
 }
 
-function getKeyboardMetrics(): { overlap: number; open: boolean; vvHeight: number | null } {
+interface KeyboardMetrics {
+  overlap: number;
+  open: boolean;
+  vvHeight: number | null;
+  vvOffsetTop: number;
+}
+
+function getKeyboardMetrics(): KeyboardMetrics {
   if (typeof window === "undefined" || !window.visualViewport) {
-    return { overlap: 0, open: false, vvHeight: null };
+    return { overlap: 0, open: false, vvHeight: null, vvOffsetTop: 0 };
   }
 
   const vv = window.visualViewport;
   const focused = isKeyboardFocusableElement(document.activeElement);
+  const offsetTop = vv.offsetTop;
 
   // Only refresh baseline while keyboard is likely closed.
   if (!focused) {
@@ -59,7 +67,7 @@ function getKeyboardMetrics(): { overlap: number; open: boolean; vvHeight: numbe
   // Android/Chrome style overlap.
   const chromeOverlap = Math.max(0, window.innerHeight - vv.offsetTop - vv.height);
   if (chromeOverlap > 0) {
-    return { overlap: chromeOverlap, open: true, vvHeight: vv.height };
+    return { overlap: chromeOverlap, open: true, vvHeight: vv.height, vvOffsetTop: offsetTop };
   }
 
   // iOS fallback (window.innerHeight shrinks with keyboard).
@@ -67,20 +75,20 @@ function getKeyboardMetrics(): { overlap: number; open: boolean; vvHeight: numbe
   const gap = Math.max(0, baselineHeight - vv.offsetTop - vv.height);
 
   if (gap >= IOS_FALLBACK_MIN_GAP_PX) {
-    return { overlap: gap, open: true, vvHeight: vv.height };
+    return { overlap: gap, open: true, vvHeight: vv.height, vvOffsetTop: offsetTop };
   }
 
   if (gap >= IOS_FALLBACK_MIN_FOCUSED_GAP_PX && focused) {
-    return { overlap: gap, open: true, vvHeight: vv.height };
+    return { overlap: gap, open: true, vvHeight: vv.height, vvOffsetTop: offsetTop };
   }
 
   // Last-resort signal: focused input + meaningful viewport shrink.
   const viewportShrink = Math.max(0, baselineHeight - vv.height);
   if (focused && viewportShrink >= IOS_VIEWPORT_SHRINK_MIN_PX) {
-    return { overlap: 0, open: true, vvHeight: vv.height };
+    return { overlap: 0, open: true, vvHeight: vv.height, vvOffsetTop: offsetTop };
   }
 
-  return { overlap: 0, open: false, vvHeight: null };
+  return { overlap: 0, open: false, vvHeight: null, vvOffsetTop: 0 };
 }
 
 /** Reset cached viewport baseline. Exported for tests only. */
@@ -94,15 +102,17 @@ interface UseMobileKeyboardOptions {
 
 export function useMobileKeyboard(
   { enabled = true }: UseMobileKeyboardOptions = {},
-): { keyboardOverlap: number; viewportHeight: number | null; keyboardOpen: boolean } {
+): { keyboardOverlap: number; viewportHeight: number | null; viewportOffsetTop: number; keyboardOpen: boolean } {
   const [keyboardOverlap, setKeyboardOverlap] = useState(0);
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
+  const [viewportOffsetTop, setViewportOffsetTop] = useState(0);
   const [keyboardOpen, setKeyboardOpen] = useState(false);
 
   useEffect(() => {
     if (!enabled || !isMobileDevice()) {
       setKeyboardOverlap(0);
       setViewportHeight(null);
+      setViewportOffsetTop(0);
       setKeyboardOpen(false);
       return;
     }
@@ -111,6 +121,7 @@ export function useMobileKeyboard(
     if (!vv) {
       setKeyboardOverlap(0);
       setViewportHeight(null);
+      setViewportOffsetTop(0);
       setKeyboardOpen(false);
       return;
     }
@@ -119,6 +130,7 @@ export function useMobileKeyboard(
       const metrics = getKeyboardMetrics();
       setKeyboardOverlap(metrics.overlap);
       setViewportHeight(metrics.vvHeight);
+      setViewportOffsetTop(metrics.vvOffsetTop);
       setKeyboardOpen(metrics.open);
     };
 
@@ -135,9 +147,10 @@ export function useMobileKeyboard(
       document.removeEventListener("focusout", update);
       setKeyboardOverlap(0);
       setViewportHeight(null);
+      setViewportOffsetTop(0);
       setKeyboardOpen(false);
     };
   }, [enabled]);
 
-  return { keyboardOverlap, viewportHeight, keyboardOpen };
+  return { keyboardOverlap, viewportHeight, viewportOffsetTop, keyboardOpen };
 }

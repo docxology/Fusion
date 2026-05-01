@@ -18,6 +18,7 @@ vi.mock("../../api", () => ({
 
 const THEME_MODE_STORAGE_KEY = "kb-dashboard-theme-mode";
 const COLOR_THEME_STORAGE_KEY = "kb-dashboard-color-theme";
+const FONT_SCALE_STORAGE_KEY = "kb-dashboard-font-scale-pct";
 
 const mockFetchGlobalSettings = vi.mocked(fetchGlobalSettings);
 const mockUpdateGlobalSettings = vi.mocked(updateGlobalSettings);
@@ -77,6 +78,7 @@ describe("useTheme", () => {
     // Clear document attributes
     document.documentElement.removeAttribute("data-theme");
     document.documentElement.removeAttribute("data-color-theme");
+    document.documentElement.style.fontSize = "";
 
     // Clear any theme-data stylesheet links from previous tests
     document.querySelectorAll('link[id="theme-data"]').forEach((link) => link.remove());
@@ -131,6 +133,18 @@ describe("useTheme", () => {
       expect(result.current.colorTheme).toBe("ocean");
     });
     expect(localStorageMock[COLOR_THEME_STORAGE_KEY]).toBe("ocean");
+  });
+
+  it("hydrates dashboard font scale from backend on mount", async () => {
+    mockFetchGlobalSettings.mockResolvedValue({ dashboardFontScalePct: 110 });
+
+    const { result } = renderHook(() => useTheme());
+
+    await waitFor(() => {
+      expect(result.current.dashboardFontScalePct).toBe(110);
+    });
+    expect(localStorageMock[FONT_SCALE_STORAGE_KEY]).toBe("110");
+    expect(document.documentElement.style.fontSize).toBe("110%");
   });
 
   it("prefers backend over localStorage on hydration", async () => {
@@ -277,6 +291,19 @@ describe("useTheme", () => {
     expect(mockUpdateGlobalSettings).toHaveBeenCalledWith({ themeMode: "system" });
 
     resolveUpdate!({} as Settings);
+  });
+
+  it("write-through persists dashboard font scale updates", () => {
+    const { result } = renderHook(() => useTheme());
+
+    act(() => {
+      result.current.setDashboardFontScalePct(120);
+    });
+
+    expect(result.current.dashboardFontScalePct).toBe(120);
+    expect(localStorageMock[FONT_SCALE_STORAGE_KEY]).toBe("120");
+    expect(mockUpdateGlobalSettings).toHaveBeenCalledWith({ dashboardFontScalePct: 120 });
+    expect(document.documentElement.style.fontSize).toBe("120%");
   });
 
   it("backend hydration failure falls back to localStorage", async () => {
@@ -497,6 +524,15 @@ describe("useTheme", () => {
     const { result } = renderHook(() => useTheme());
 
     expect(result.current.colorTheme).toBe("default");
+  });
+
+  it("clamps invalid dashboard font scale values from localStorage", () => {
+    localStorageMock[FONT_SCALE_STORAGE_KEY] = "400";
+
+    const { result } = renderHook(() => useTheme());
+
+    expect(result.current.dashboardFontScalePct).toBe(125);
+    expect(document.documentElement.style.fontSize).toBe("125%");
   });
 
   it("falls back to defaults when localStorage throws", () => {
@@ -1136,6 +1172,7 @@ describe("getThemeInitScript", () => {
     expect(script).toContain("localStorage");
     expect(script).toContain("data-theme");
     expect(script).toContain("data-color-theme");
+    expect(script).toContain("style.fontSize");
   });
 
   it("includes the correct localStorage keys", () => {
@@ -1143,6 +1180,7 @@ describe("getThemeInitScript", () => {
 
     expect(script).toContain(THEME_MODE_STORAGE_KEY);
     expect(script).toContain(COLOR_THEME_STORAGE_KEY);
+    expect(script).toContain(FONT_SCALE_STORAGE_KEY);
   });
 
   it("includes every supported theme in the validated theme list", () => {

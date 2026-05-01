@@ -305,6 +305,10 @@ interface SettingsModalProps {
   onThemeModeChange?: (mode: ThemeMode) => void;
   /** Called when color theme changes */
   onColorThemeChange?: (theme: ColorTheme) => void;
+  /** Current dashboard font scale percentage */
+  dashboardFontScalePct?: number;
+  /** Called when dashboard font scale changes */
+  onDashboardFontScaleChange?: (scalePct: number) => void;
   /** Optional callback when user wants to reopen the onboarding guide */
   onReopenOnboarding?: () => void;
 }
@@ -318,6 +322,8 @@ export function SettingsModal({
   colorTheme = "default",
   onThemeModeChange,
   onColorThemeChange,
+  dashboardFontScalePct = 100,
+  onDashboardFontScaleChange,
   onReopenOnboarding,
 }: SettingsModalProps) {
   const { confirm } = useConfirm();
@@ -2539,6 +2545,7 @@ export function SettingsModal({
             <ThemeSelector
               themeMode={themeMode}
               colorTheme={colorTheme}
+              dashboardFontScalePct={dashboardFontScalePct}
               onThemeModeChange={(mode) => {
                 setForm((f) => ({ ...f, themeMode: mode }));
                 onThemeModeChange?.(mode);
@@ -2546,6 +2553,10 @@ export function SettingsModal({
               onColorThemeChange={(theme) => {
                 setForm((f) => ({ ...f, colorTheme: theme }));
                 onColorThemeChange?.(theme);
+              }}
+              onDashboardFontScaleChange={(scalePct) => {
+                setForm((f) => ({ ...f, dashboardFontScalePct: scalePct }));
+                onDashboardFontScaleChange?.(scalePct);
               }}
             />
           </>

@@ -736,6 +736,37 @@ describe("TaskCard", () => {
     expect(timer).not.toBeNull();
     expect(timer?.textContent).toContain("12m");
     expect(timer?.getAttribute("title")).toContain("Execution time 12m");
+    expect(timer?.getAttribute("title")).not.toContain("Completed");
+  });
+
+  it("keeps the in-review timer live from executionStartedAt when present", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-25T12:30:00.000Z"));
+
+    const { container } = render(
+      <TaskCard
+        task={makeTask({
+          column: "in-review",
+          executionStartedAt: "2026-04-25T12:00:00.000Z",
+          columnMovedAt: "2026-04-25T12:12:00.000Z",
+          updatedAt: "2026-04-25T12:30:00.000Z",
+        })}
+        onOpenDetail={noop}
+        addToast={noop}
+      />,
+    );
+
+    const timer = container.querySelector(".card-time-indicator");
+    expect(timer).not.toBeNull();
+    expect(timer?.textContent).toContain("30m");
+    expect(timer?.getAttribute("title")).toBe("Execution time 30m");
+
+    act(() => {
+      vi.advanceTimersByTime(5 * 60_000);
+    });
+
+    expect(container.querySelector(".card-time-indicator")?.textContent).toContain("35m");
+    expect(container.querySelector(".card-time-indicator")?.getAttribute("title")).toBe("Execution time 35m");
   });
 
   it("shows live merge elapsed in timer chip while task.status is merging", () => {
@@ -748,7 +779,8 @@ describe("TaskCard", () => {
           task={makeTask({
             column: "in-review",
             status: "merging",
-            updatedAt: "2026-04-25T13:00:00.000Z",
+            executionStartedAt: "2026-04-25T13:00:00.000Z",
+            updatedAt: "2026-04-25T13:44:30.000Z",
             workflowStepResults: [
               {
                 workflowStepId: "step-1",
@@ -768,7 +800,7 @@ describe("TaskCard", () => {
       const timer = container.querySelector(".card-time-indicator");
       expect(timer).not.toBeNull();
       expect(timer?.textContent).toContain("45m");
-      expect(timer?.getAttribute("title")).toBe("Merging 45m");
+      expect(timer?.getAttribute("title")).toBe("Execution time 45m. Merge phase <1m");
     } finally {
       vi.useRealTimers();
     }

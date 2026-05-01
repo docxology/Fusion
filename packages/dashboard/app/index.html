@@ -21,10 +21,16 @@
           if (!validThemes.includes(colorTheme)) {
             colorTheme = 'default';
           }
+          var fontScale = Number(localStorage.getItem('kb-dashboard-font-scale-pct') || '100');
+          if (!Number.isFinite(fontScale)) {
+            fontScale = 100;
+          }
+          fontScale = Math.min(125, Math.max(85, Math.round(fontScale)));
           var systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
           var effectiveMode = mode === 'system' ? (systemDark ? 'dark' : 'light') : mode;
           document.documentElement.setAttribute('data-theme', effectiveMode);
           document.documentElement.setAttribute('data-color-theme', colorTheme);
+          document.documentElement.style.fontSize = fontScale + '%';
           // Load theme-data.css for non-default themes to prevent flash
           // Use path-safe resolution that works in both HTTP and file:// contexts
           if (colorTheme !== 'default') {
@@ -75,6 +81,7 @@
         } catch (e) {
           document.documentElement.setAttribute('data-theme', 'dark');
           document.documentElement.setAttribute('data-color-theme', 'default');
+          document.documentElement.style.fontSize = '100%';
         }
       })();
     </script>

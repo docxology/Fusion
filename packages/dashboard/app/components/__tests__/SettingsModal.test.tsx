@@ -410,6 +410,38 @@ describe("SettingsModal", () => {
     });
   });
 
+  describe("Appearance", () => {
+    it("renders dashboard font size options with saved value", async () => {
+      const onDashboardFontScaleChange = vi.fn();
+      renderModal({ dashboardFontScalePct: 110, onDashboardFontScaleChange });
+      await waitForSettingsModalReady();
+
+      await userEvent.click(screen.getByRole("button", { name: /Appearance/ }));
+
+      const largeButton = screen.getByRole("button", { name: "Large" });
+      expect(largeButton).toHaveAttribute("aria-pressed", "true");
+
+      await userEvent.click(screen.getByRole("button", { name: "Small" }));
+      expect(onDashboardFontScaleChange).toHaveBeenCalledWith(90);
+    });
+
+    it("saves dashboard font scale to global settings", async () => {
+      renderModal({ dashboardFontScalePct: 100 });
+      await waitForSettingsModalReady();
+
+      await userEvent.click(screen.getByRole("button", { name: /Appearance/ }));
+      await userEvent.click(screen.getByRole("button", { name: "Largest" }));
+      await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+      await waitFor(() => {
+        expect(mockUpdateGlobalSettings).toHaveBeenCalled();
+      });
+
+      const payload = mockUpdateGlobalSettings.mock.calls[0][0];
+      expect(payload).toEqual(expect.objectContaining({ dashboardFontScalePct: 120 }));
+    });
+  });
+
   describe("Project Models", () => {
     it("renders a project-scoped default model lane", async () => {
       mockFetchSettings.mockResolvedValue({
