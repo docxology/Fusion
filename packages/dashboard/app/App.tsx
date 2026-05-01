@@ -220,6 +220,7 @@ function AppInner() {
   );
 
   const [initialLoadComplete, setInitialLoadComplete] = useState(false);
+  const [researchReadinessVersion, setResearchReadinessVersion] = useState(0);
   const mountTimeRef = useRef(performance.now());
   const projectsReadyLoggedRef = useRef(false);
   const projectReadyLoggedRef = useRef(false);
@@ -731,7 +732,12 @@ function AppInner() {
       return (
         <PageErrorBoundary>
           <Suspense fallback={null}>
-            <ResearchView projectId={currentProject?.id} addToast={addToast} />
+            <ResearchView
+              projectId={currentProject?.id}
+              addToast={addToast}
+              onOpenSettings={(section) => modalManager.openSettings(section as SectionId)}
+              readinessVersion={researchReadinessVersion}
+            />
           </Suspense>
         </PageErrorBoundary>
       );
@@ -1043,6 +1049,7 @@ function AppInner() {
         settings={{ prAuthAvailable, themeMode, colorTheme, setThemeMode, setColorTheme }}
         onSettingsClose={() => {
           modalManager.closeSettings();
+          setResearchReadinessVersion((current) => current + 1);
           void refreshAppSettings();
         }}
         onReopenOnboarding={() => {

@@ -1468,6 +1468,14 @@ describe("SettingsModal", () => {
       expect(screen.getByText("Roadmaps")).toBeInTheDocument();
     });
 
+    it("shows researchView in the Experimental Features list", async () => {
+      renderModal();
+
+      await openExperimentalFeaturesSection();
+
+      expect(screen.getByLabelText("Research View")).toBeInTheDocument();
+    });
+
     it("shows a single canonical Dev Server toggle", async () => {
       renderModal();
 
@@ -2246,6 +2254,88 @@ describe("SettingsModal", () => {
       expect(inReview.checked).toBe(true);
       expect(failed.checked).toBe(true);
       expect(merged.checked).toBe(false);
+    });
+  });
+
+  describe("research settings sections", () => {
+    it("saves global research defaults through updateGlobalSettings only", async () => {
+      renderModal({ initialSection: "research-global" });
+      await waitForSettingsModalReady();
+
+      const searchInput = await screen.findByLabelText("Default Search Provider");
+      await userEvent.clear(searchInput);
+      await userEvent.type(searchInput, "tavily");
+      await userEvent.click(screen.getByText("Save"));
+
+      await waitFor(() => {
+        expect(mockUpdateGlobalSettings).toHaveBeenCalledWith(
+          expect.objectContaining({
+            researchGlobalDefaults: expect.objectContaining({ searchProvider: "tavily" }),
+          }),
+        );
+      });
+      expect(mockUpdateSettings).toHaveBeenCalledWith(
+        expect.not.objectContaining({ researchSettings: expect.anything() }),
+        undefined,
+      );
+    });
+
+    it("saves project research settings through updateSettings only", async () => {
+      renderModal({ initialSection: "research-project" });
+      await waitForSettingsModalReady();
+
+      await userEvent.click(screen.getByLabelText("Enable research in this project"));
+      const maxConcurrent = await screen.findByLabelText("Max Concurrent Runs");
+      fireEvent.change(maxConcurrent, { target: { value: "4" } });
+      await userEvent.click(screen.getByText("Save"));
+
+      await waitFor(() => {
+        expect(mockUpdateSettings).toHaveBeenCalledWith(
+          expect.objectContaining({
+            researchSettings: expect.objectContaining({
+              enabled: false,
+              limits: expect.objectContaining({ maxConcurrentRuns: 4 }),
+            }),
+          }),
+          undefined,
+        );
+      });
+      expect(mockUpdateGlobalSettings).toHaveBeenCalledWith(
+        expect.not.objectContaining({ researchGlobalDefaults: expect.anything() }),
+      );
+    });
+
+    it("blocks save and shows inline error for invalid research limits", async () => {
+      renderModal({ initialSection: "research-project" });
+      await waitForSettingsModalReady();
+
+      const maxConcurrent = await screen.findByLabelText("Max Concurrent Runs");
+      fireEvent.change(maxConcurrent, { target: { value: "0" } });
+      await userEvent.click(screen.getByText("Save"));
+
+      expect(await screen.findByText("Research max concurrent runs must be at least 1.")).toBeInTheDocument();
+    });
+
+    it("shows missing credentials warning and routes CTA to Authentication", async () => {
+      mockFetchAuthStatus.mockResolvedValueOnce({
+        providers: [
+          { id: "brave", name: "Brave Search", type: "api_key", authenticated: false },
+          { id: "tavily", name: "Tavily", type: "api_key", authenticated: true },
+        ],
+      });
+
+      renderModal({ initialSection: "research-global" });
+      await waitForSettingsModalReady();
+
+      expect(await screen.findByText(/Missing credentials for one or more research providers/i)).toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: "Open Authentication" }));
+      expect(await screen.findByRole("heading", { name: "Authentication" })).toBeInTheDocument();
+    });
+
+    it("falls back to first visible section when initial section is unavailable", async () => {
+      renderModal({ initialSection: "unknown-section" as any });
+      await waitForSettingsModalReady();
+      expect(await screen.findByRole("heading", { name: "Authentication" })).toBeInTheDocument();
     });
   });
 

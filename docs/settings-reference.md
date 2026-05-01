@@ -73,6 +73,7 @@ Defaults from `DEFAULT_GLOBAL_SETTINGS`; key scope from `GLOBAL_SETTINGS_KEYS`.
 | `settingsSyncConflictResolution` | `"last-write-wins" \| "always-ask" \| "keep-local" \| "keep-remote"` | `"last-write-wins"` | Conflict strategy for divergent synced settings. |
 | `dashboardCurrentNodeId` | `string` | `undefined` | Currently selected dashboard node ID. Restores the last-viewed node on fresh browser/PWA sessions. `undefined` means viewing the local node. |
 | `dashboardCurrentProjectIdByNode` | `Record<string, string>` | `undefined` | Map of node ID to last-selected project ID. Use key `"local"` for the local node. Persists project context across browser restarts and PWA sessions. |
+| `researchGlobalDefaults` | `ResearchGlobalDefaults` | `{ searchProvider: undefined, synthesisProvider: undefined, synthesisModelId: undefined, enabledSources: { webSearch: true, pageFetch: true, github: false, localDocs: true, llmSynthesis: true }, maxSourcesPerRun: 20, defaultExportFormat: "markdown" }` | Global Research defaults shared by all projects. Project overrides come from `researchSettings`. |
 
 ### Notification providers (pluggable)
 
@@ -237,7 +238,28 @@ Defaults from `DEFAULT_PROJECT_SETTINGS`; key scope from `PROJECT_SETTINGS_KEYS`
 | `reflectionAfterTask` | `boolean` | `true` | Trigger reflection after task completion. |
 | `reviewHandoffPolicy` | `"disabled" \| "comment-triggered" \| "always"` | `"disabled"` | Policy for agent-to-user review handoff detection. |
 | `showQuickChatFAB` | `boolean` | `false` | Show floating quick-chat button (chat remains available via More menu). |
-| `experimentalFeatures` | `Record<string, boolean>` | `{}` | Project-scoped experimental feature flags. |
+| `researchSettings` | `ResearchProjectSettings` | `{ enabled: true, searchProvider: undefined, synthesisProvider: undefined, synthesisModelId: undefined, enabledSources: { webSearch: true, pageFetch: true, github: false, localDocs: true, llmSynthesis: true }, limits: { maxConcurrentRuns: 3, maxSourcesPerRun: 20, maxDurationMs: 300000, requestTimeoutMs: 30000 } }` | Project-specific Research enablement/overrides. Resolved together with `researchGlobalDefaults` via `resolveResearchSettings()`. |
+| `experimentalFeatures` | `Record<string, boolean>` | `{}` | Project-scoped experimental feature flags. Includes `experimentalFeatures.researchView` for standalone Research route visibility. |
+
+### Research settings hierarchy and credentials
+
+Research configuration resolves through `resolveResearchSettings(settings)` in `@fusion/core` with this precedence:
+
+1. Project override (`researchSettings.*`)
+2. Global default (`researchGlobalDefaults.*`)
+3. Hardcoded fallback defaults
+
+This applies to:
+- `enabled`
+- `searchProvider`
+- `synthesisProvider` + `synthesisModelId`
+- `enabledSources` (`webSearch`, `pageFetch`, `github`, `localDocs`, `llmSynthesis`)
+- run limits (`maxConcurrentRuns`, `maxSourcesPerRun`, `maxDurationMs`, `requestTimeoutMs`)
+- export default (`defaultExportFormat`)
+
+The standalone Research route is feature-gated separately via `experimentalFeatures.researchView`.
+
+**Credential storage rule:** API keys for Research providers are not stored in settings JSON. They are managed through the existing auth storage pipeline (`/api/auth/status`, `POST /api/auth/api-key`, `DELETE /api/auth/api-key`) and persisted in auth credential storage with masked hints in API responses.
 
 ### Node Routing settings (project scope)
 

@@ -1190,6 +1190,39 @@ export interface DaemonTokenSettings {
 /** Web search backend for auto-research provider. */
 export type WebSearchBackend = "searxng" | "brave" | "google" | "tavily" | "none";
 
+export interface ResearchEnabledSources {
+  webSearch: boolean;
+  pageFetch: boolean;
+  github: boolean;
+  localDocs: boolean;
+  llmSynthesis: boolean;
+}
+
+export interface ResearchGlobalDefaults {
+  searchProvider?: string;
+  synthesisProvider?: string;
+  synthesisModelId?: string;
+  enabledSources?: ResearchEnabledSources;
+  maxSourcesPerRun?: number;
+  defaultExportFormat?: "markdown" | "json";
+}
+
+export interface ResearchProjectLimits {
+  maxConcurrentRuns?: number;
+  maxSourcesPerRun?: number;
+  maxDurationMs?: number;
+  requestTimeoutMs?: number;
+}
+
+export interface ResearchProjectSettings {
+  enabled?: boolean;
+  searchProvider?: string;
+  synthesisProvider?: string;
+  synthesisModelId?: string;
+  enabledSources?: Partial<ResearchEnabledSources>;
+  limits?: ResearchProjectLimits;
+}
+
 export interface GlobalSettings {
   /** Theme mode preference: dark, light, or system (follows OS). Default: "dark". */
   themeMode?: ThemeMode;
@@ -1392,6 +1425,9 @@ export interface GlobalSettings {
    *  triggers a vitest auto-kill. Clamped to [50, 99] in the UI.
    *  Default: 90. */
   vitestKillThresholdPct?: number;
+  /** Research defaults shared across all projects.
+   * Project settings may override these via `researchSettings`. */
+  researchGlobalDefaults?: ResearchGlobalDefaults;
   /** Enable or disable the research subsystem globally.
    *  When false, dashboard/API entrypoints should reject new research runs.
    *  Default: true when research store exists. */
@@ -1555,8 +1591,11 @@ export interface ProjectSettings {
    *  - "block": prevent execution until the selected node is healthy/available (default)
    *  - "fallback-local": run on the local node when the selected node is unavailable */
   unavailableNodePolicy?: UnavailableNodePolicy;
+  /** Project-level research configuration overrides. */
+  researchSettings?: ResearchProjectSettings;
   /** Enable or disable the research subsystem for this project.
-   *  When undefined, falls back to global settings. */
+   *  When undefined, falls back to global settings.
+   *  @deprecated Prefer researchSettings.enabled */
   researchEnabled?: boolean;
   /** Project-level maximum concurrent research runs.
    *  When undefined, falls back to global settings (default 3). */
@@ -3560,3 +3599,5 @@ export {
   resolveValidatorSettingsModel,
 } from "./model-resolution.js";
 export type { ResolvedModelSelection } from "./model-resolution.js";
+export { resolveResearchSettings } from "./research-settings.js";
+export type { ResolvedResearchSettings } from "./research-settings.js";

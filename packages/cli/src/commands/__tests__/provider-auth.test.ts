@@ -101,6 +101,17 @@ describe("wrapAuthStorageWithApiKeyProviders", () => {
     expect(providerIds).not.toContain("pi-claude-cli");
   });
 
+  it("includes research-only API-key providers", () => {
+    const fusionAuth = makeAuthStorage();
+    const modelRegistry = { getAll: vi.fn(() => []) } as any;
+
+    const wrapped = wrapAuthStorageWithApiKeyProviders(fusionAuth, modelRegistry);
+    const providerIds = wrapped.getApiKeyProviders().map((provider) => provider.id);
+
+    expect(providerIds).toContain("brave");
+    expect(providerIds).toContain("tavily");
+  });
+
   it("reads legacy auth JSON without creating missing files", async () => {
     const tempDir = tempWorkspace("fusion-provider-auth-");
     const legacyAgentDir = join(tempDir, ".pi", "agent");

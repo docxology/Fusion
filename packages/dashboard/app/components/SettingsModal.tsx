@@ -180,6 +180,7 @@ const SETTINGS_SECTIONS: SettingsSection[] = [
   { id: "notifications", label: "Notifications", scope: "global" },
   { id: "node-sync", label: "Node Sync", scope: "global" },
   { id: "global-models", label: "Models", scope: "global" },
+  { id: "research-global", label: "Research Defaults", scope: "global" },
   { id: "updates", label: "Updates", scope: "global" },
 
   // Runtimes group (plugin runtimes with their own settings)
@@ -198,6 +199,7 @@ const SETTINGS_SECTIONS: SettingsSection[] = [
   { id: "commands", label: "Commands", scope: "project" },
   { id: "merge", label: "Merge", scope: "project" },
   { id: "memory", label: "Memory", scope: "project" },
+  { id: "research-project", label: "Research", scope: "project" },
   { id: "experimental", label: "Experimental Features", scope: "project" },
   { id: "prompts", label: "Prompts", scope: "project" },
   { id: "backups", label: "Backups", scope: "project" },
@@ -241,6 +243,7 @@ const KNOWN_EXPERIMENTAL_FEATURES: Record<string, string> = {
   nodesView: "Nodes View",
   devServerView: "Dev Server",
   todoView: "Todo List",
+  researchView: "Research View",
 };
 
 const EXPERIMENTAL_FEATURE_LEGACY_ALIASES: Record<string, string> = {
@@ -374,6 +377,7 @@ export function SettingsModal({
   const gitHubStarCount = useGitHubStarCount();
   const [starClicked, markStarClicked] = useStarClickedFlag();
   const [prefixError, setPrefixError] = useState<string | null>(null);
+  const [researchLimitError, setResearchLimitError] = useState<string | null>(null);
   const [overlapPathPickerIndex, setOverlapPathPickerIndex] = useState<number | null>(null);
 
   const {
@@ -396,8 +400,13 @@ export function SettingsModal({
   useEffect(() => {
     if (activeSection === "remote" && !remoteAccessEnabled) {
       setActiveSection(firstVisibleSectionId);
+      return;
     }
-  }, [activeSection, remoteAccessEnabled, firstVisibleSectionId]);
+
+    if (!visibleSections.some((section) => section.id === activeSection)) {
+      setActiveSection(firstVisibleSectionId);
+    }
+  }, [activeSection, remoteAccessEnabled, firstVisibleSectionId, visibleSections]);
 
   // Auth state (independent of the settings save flow)
   const [authProviders, setAuthProviders] = useState<AuthProvider[]>([]);
@@ -817,7 +826,7 @@ export function SettingsModal({
   }, [activeSection, memoryDirty, selectedMemoryPath, projectId, addToast]);
 
   useEffect(() => {
-    if (activeSection === "authentication") {
+    if (activeSection === "authentication" || activeSection === "research-global") {
       setAuthLoading(true);
       loadAuthStatus().finally(() => setAuthLoading(false));
     }
@@ -1364,6 +1373,26 @@ export function SettingsModal({
 
   const handleSave = useCallback(async () => {
     if (prefixError || presetDraft) return;
+
+    const limits = form.researchSettings?.limits;
+    if (limits?.maxConcurrentRuns !== undefined && (!Number.isFinite(limits.maxConcurrentRuns) || limits.maxConcurrentRuns < 1)) {
+      setResearchLimitError("Research max concurrent runs must be at least 1.");
+      return;
+    }
+    if (limits?.maxSourcesPerRun !== undefined && (!Number.isFinite(limits.maxSourcesPerRun) || limits.maxSourcesPerRun < 1)) {
+      setResearchLimitError("Research max sources per run must be at least 1.");
+      return;
+    }
+    if (limits?.maxDurationMs !== undefined && (!Number.isFinite(limits.maxDurationMs) || limits.maxDurationMs < 1000)) {
+      setResearchLimitError("Research max duration must be at least 1000 ms.");
+      return;
+    }
+    if (limits?.requestTimeoutMs !== undefined && (!Number.isFinite(limits.requestTimeoutMs) || limits.requestTimeoutMs < 1000)) {
+      setResearchLimitError("Research request timeout must be at least 1000 ms.");
+      return;
+    }
+    setResearchLimitError(null);
+
     try {
       const payload = {
         ...form,
@@ -3586,6 +3615,213 @@ export function SettingsModal({
                 <small className="field-error">Cannot save: {isMemoryEnabled ? "Backend is read-only" : "Memory is disabled"}</small>
               </div>
             )}
+          </>
+        );
+      }
+      case "research-global": {
+        const providerStatuses = authProviders.filter((provider) => provider.id === "brave" || provider.id === "tavily");
+        const hasMissingResearchCredential = providerStatuses.some((provider) => !provider.authenticated);
+
+        return (
+          <>
+            {renderScopeBanner()}
+            <h4 className="settings-section-heading">Research Defaults</h4>
+            <div className="form-group">
+              <label htmlFor="research-global-search-provider">Default Search Provider</label>
+              <input
+                id="research-global-search-provider"
+                className="input"
+                value={form.researchGlobalDefaults?.searchProvider ?? ""}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    researchGlobalDefaults: {
+                      ...(current.researchGlobalDefaults ?? {}),
+                      searchProvider: event.target.value || undefined,
+                    },
+                  }))
+                }
+                placeholder="tavily"
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="research-global-max-sources">Default Max Sources Per Run</label>
+              <input
+                id="research-global-max-sources"
+                className="input"
+                type="number"
+                min={1}
+                value={form.researchGlobalDefaults?.maxSourcesPerRun ?? 20}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    researchGlobalDefaults: {
+                      ...(current.researchGlobalDefaults ?? {}),
+                      maxSourcesPerRun: Number(event.target.value) || 1,
+                    },
+                  }))
+                }
+              />
+            </div>
+            {hasMissingResearchCredential && (
+              <div className="settings-empty-state" role="alert">
+                Missing credentials for one or more research providers.
+                <button type="button" className="btn btn-sm" onClick={() => setActiveSection("authentication")}>
+                  Open Authentication
+                </button>
+              </div>
+            )}
+          </>
+        );
+      }
+      case "research-project": {
+        const limits = form.researchSettings?.limits;
+        const sources = form.researchSettings?.enabledSources;
+        return (
+          <>
+            {renderScopeBanner()}
+            <h4 className="settings-section-heading">Project Research Settings</h4>
+            <div className="form-group">
+              <label htmlFor="research-project-enabled" className="checkbox-label">
+                <input
+                  id="research-project-enabled"
+                  type="checkbox"
+                  checked={form.researchSettings?.enabled ?? true}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      researchSettings: {
+                        ...(current.researchSettings ?? {}),
+                        enabled: event.target.checked,
+                      },
+                    }))
+                  }
+                />
+                Enable research in this project
+              </label>
+            </div>
+            <div className="form-group">
+              <label>Enabled Sources</label>
+              <div className="settings-research-source-grid">
+                {[
+                  ["webSearch", "Web Search"],
+                  ["pageFetch", "Page Fetch"],
+                  ["github", "GitHub"],
+                  ["localDocs", "Local Docs"],
+                  ["llmSynthesis", "LLM Synthesis"],
+                ].map(([key, label]) => (
+                  <label key={key} htmlFor={`research-project-source-${key}`} className="checkbox-label">
+                    <input
+                      id={`research-project-source-${key}`}
+                      type="checkbox"
+                      checked={sources?.[key as keyof NonNullable<typeof sources>] ?? false}
+                      onChange={(event) =>
+                        setForm((current) => ({
+                          ...current,
+                          researchSettings: {
+                            ...(current.researchSettings ?? {}),
+                            enabledSources: {
+                              ...(current.researchSettings?.enabledSources ?? {}),
+                              [key]: event.target.checked,
+                            },
+                          },
+                        }))
+                      }
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="form-group">
+              <label htmlFor="research-project-max-concurrent">Max Concurrent Runs</label>
+              <input
+                id="research-project-max-concurrent"
+                className="input"
+                type="number"
+                min={1}
+                value={limits?.maxConcurrentRuns ?? 3}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    researchSettings: {
+                      ...(current.researchSettings ?? {}),
+                      limits: {
+                        ...(current.researchSettings?.limits ?? {}),
+                        maxConcurrentRuns: event.target.value === "" ? undefined : Number(event.target.value),
+                      },
+                    },
+                  }))
+                }
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="research-project-max-sources">Max Sources Per Run</label>
+              <input
+                id="research-project-max-sources"
+                className="input"
+                type="number"
+                min={1}
+                value={limits?.maxSourcesPerRun ?? 20}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    researchSettings: {
+                      ...(current.researchSettings ?? {}),
+                      limits: {
+                        ...(current.researchSettings?.limits ?? {}),
+                        maxSourcesPerRun: event.target.value === "" ? undefined : Number(event.target.value),
+                      },
+                    },
+                  }))
+                }
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="research-project-max-duration">Max Duration (ms)</label>
+              <input
+                id="research-project-max-duration"
+                className="input"
+                type="number"
+                min={1000}
+                value={limits?.maxDurationMs ?? 300000}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    researchSettings: {
+                      ...(current.researchSettings ?? {}),
+                      limits: {
+                        ...(current.researchSettings?.limits ?? {}),
+                        maxDurationMs: event.target.value === "" ? undefined : Number(event.target.value),
+                      },
+                    },
+                  }))
+                }
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="research-project-request-timeout">Request Timeout (ms)</label>
+              <input
+                id="research-project-request-timeout"
+                className="input"
+                type="number"
+                min={1000}
+                value={limits?.requestTimeoutMs ?? 30000}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    researchSettings: {
+                      ...(current.researchSettings ?? {}),
+                      limits: {
+                        ...(current.researchSettings?.limits ?? {}),
+                        requestTimeoutMs: event.target.value === "" ? undefined : Number(event.target.value),
+                      },
+                    },
+                  }))
+                }
+              />
+              {researchLimitError && <small className="field-error">{researchLimitError}</small>}
+            </div>
           </>
         );
       }

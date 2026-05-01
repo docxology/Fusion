@@ -1,15 +1,28 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { resolveResearchSettings, type Settings } from "@fusion/core";
 import { Loader2, Search } from "lucide-react";
+import { fetchAuthStatus, fetchSettings } from "../api";
 import { useResearch } from "../hooks/useResearch";
 import type { ResearchProviderOption } from "../research-types";
+import type { SectionId } from "./SettingsModal";
 import "./ResearchView.css";
 
 interface ResearchViewProps {
   projectId?: string;
   addToast?: (message: string, type?: "success" | "error" | "info") => void;
+  onOpenSettings?: (section?: SectionId) => void;
+  readinessVersion?: number;
 }
 
 const DEFAULT_PROVIDERS: ResearchProviderOption[] = ["web-search", "page-fetch", "github", "local-docs", "llm-synthesis"];
+
+const PROVIDER_TO_SOURCE_KEY: Record<ResearchProviderOption, keyof ReturnType<typeof resolveResearchSettings>["enabledSources"]> = {
+  "web-search": "webSearch",
+  "page-fetch": "pageFetch",
+  github: "github",
+  "local-docs": "localDocs",
+  "llm-synthesis": "llmSynthesis",
+};
 
 const PROVIDER_LABELS: Record<ResearchProviderOption, string> = {
   "web-search": "Web Search",
@@ -19,7 +32,7 @@ const PROVIDER_LABELS: Record<ResearchProviderOption, string> = {
   "llm-synthesis": "LLM Synthesis",
 };
 
-export function ResearchView({ projectId, addToast }: ResearchViewProps) {
+export function ResearchView({ projectId, addToast, onOpenSettings, readinessVersion = 0 }: ResearchViewProps) {
   const {
     runs,
     selectedRun,
@@ -40,12 +53,52 @@ export function ResearchView({ projectId, addToast }: ResearchViewProps) {
     refresh,
   } = useResearch({ projectId });
   const [query, setQuery] = useState("");
+  const [effectiveSettings, setEffectiveSettings] = useState(() => resolveResearchSettings(undefined));
+  const [authProviders, setAuthProviders] = useState<Array<{ id: string; authenticated: boolean }>>([]);
   const [submitting, setSubmitting] = useState(false);
-  const [selectedProviders, setSelectedProviders] = useState<ResearchProviderOption[]>(["web-search", "llm-synthesis"]);
+  const [selectedProviders, setSelectedProviders] = useState<ResearchProviderOption[]>([]);
   const [taskIdToAttach, setTaskIdToAttach] = useState("");
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   const providerOptions = availability.supportedProviders ?? DEFAULT_PROVIDERS;
+  const isProviderEnabled = (provider: ResearchProviderOption) => effectiveSettings.enabledSources[PROVIDER_TO_SOURCE_KEY[provider]];
+
+  useEffect(() => {
+    const enabledProviders = providerOptions.filter((provider) => isProviderEnabled(provider));
+    setSelectedProviders((current) => {
+      const currentEnabled = current.filter((provider) => enabledProviders.includes(provider));
+      if (currentEnabled.length > 0) {
+        return currentEnabled;
+      }
+      return enabledProviders;
+    });
+  }, [effectiveSettings.enabledSources, providerOptions]);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      fetchSettings(projectId) as Promise<Partial<Settings>>,
+      fetchAuthStatus().catch(() => ({ providers: [] })),
+    ])
+      .then(([settings, authStatus]) => {
+        if (cancelled) return;
+        setEffectiveSettings(resolveResearchSettings(settings));
+        setAuthProviders(
+          authStatus.providers
+            .filter((provider) => provider.type === "api_key")
+            .map((provider) => ({ id: provider.id, authenticated: provider.authenticated })),
+        );
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setEffectiveSettings(resolveResearchSettings(undefined));
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, readinessVersion]);
 
   const statusLabel = useMemo(() => {
     if (!selectedRun) return "No run selected";
@@ -62,6 +115,56 @@ export function ResearchView({ projectId, addToast }: ResearchViewProps) {
   }, [selectedRun]);
 
   const supportedExportFormats = availability.supportedExportFormats ?? ["markdown", "json", "html"];
+
+  const selectedSearchProvider = effectiveSettings.searchProvider;
+  const needsSearchProvider = effectiveSettings.enabledSources.webSearch && !selectedSearchProvider;
+  const needsSynthesisModel =
+    effectiveSettings.enabledSources.llmSynthesis &&
+    (!effectiveSettings.synthesisProvider || !effectiveSettings.synthesisModelId);
+  const apiKeyProviderAuth = useMemo(() => new Map(authProviders.map((provider) => [provider.id, provider.authenticated])), [authProviders]);
+  const requiredCredentialProviders = useMemo(() => {
+    const required = new Set<string>();
+    if (effectiveSettings.enabledSources.webSearch && selectedSearchProvider) {
+      required.add(selectedSearchProvider);
+    }
+    if (effectiveSettings.enabledSources.llmSynthesis && effectiveSettings.synthesisProvider) {
+      required.add(effectiveSettings.synthesisProvider);
+    }
+    return [...required].filter((providerId) => apiKeyProviderAuth.has(providerId));
+  }, [effectiveSettings.enabledSources.llmSynthesis, effectiveSettings.enabledSources.webSearch, effectiveSettings.synthesisProvider, selectedSearchProvider, apiKeyProviderAuth]);
+  const missingCredentialProvider = requiredCredentialProviders.find((providerId) => apiKeyProviderAuth.get(providerId) !== true);
+
+  const setupState = useMemo(() => {
+    if (!availability.available) {
+      return {
+        reason: availability.reason ?? "Research is unavailable for this project.",
+        details: availability.setupInstructions,
+        settingsSection: "research-project" as SectionId,
+      };
+    }
+    if (!effectiveSettings.enabled) {
+      return {
+        reason: "Research is disabled for this project.",
+        details: "Enable project research settings to create runs.",
+        settingsSection: "research-project" as SectionId,
+      };
+    }
+    if (needsSearchProvider || needsSynthesisModel) {
+      return {
+        reason: "Research defaults are incomplete.",
+        details: "Select the required provider/model defaults in Research settings.",
+        settingsSection: "research-global" as SectionId,
+      };
+    }
+    if (missingCredentialProvider) {
+      return {
+        reason: `Missing API key for ${missingCredentialProvider}.`,
+        details: "Add provider credentials in Authentication settings.",
+        settingsSection: "authentication" as SectionId,
+      };
+    }
+    return null;
+  }, [availability.available, availability.reason, availability.setupInstructions, effectiveSettings.enabled, missingCredentialProvider, needsSearchProvider, needsSynthesisModel]);
 
   const runAction = async (key: string, action: () => Promise<unknown>, successMessage: string) => {
     setActionLoading(key);
@@ -102,7 +205,12 @@ export function ResearchView({ projectId, addToast }: ResearchViewProps) {
     if (!query.trim()) return;
     setSubmitting(true);
     try {
-      const response = await createRun({ query: query.trim(), providers: selectedProviders });
+      const providers = selectedProviders.filter((provider) => isProviderEnabled(provider));
+      if (providers.length === 0) {
+        addToast?.("No enabled research sources are available for this project.", "error");
+        return;
+      }
+      const response = await createRun({ query: query.trim(), providers });
       setSelectedRunId(response.run.id);
       setQuery("");
       addToast?.("Research run created", "success");
@@ -126,10 +234,21 @@ export function ResearchView({ projectId, addToast }: ResearchViewProps) {
         </button>
       </header>
 
-      {!availability.available ? (
+      {setupState ? (
         <div className="research-view__state research-view__state--error card" data-testid="research-state-unavailable">
-          <p>{availability.reason ?? "Research is unavailable for this project."}</p>
-          {availability.setupInstructions && <p>{availability.setupInstructions}</p>}
+          <p>{setupState.reason}</p>
+          {setupState.details && <p>{setupState.details}</p>}
+          <p>
+            Current defaults: provider {effectiveSettings.searchProvider ?? "(not set)"}, max sources {effectiveSettings.limits.maxSourcesPerRun}
+          </p>
+          <div className="research-view__actions">
+            <button className="btn" type="button" onClick={() => void refresh()}>
+              Refresh
+            </button>
+            <button className="btn btn-primary" type="button" onClick={() => onOpenSettings?.(setupState.settingsSection)}>
+              Open Settings
+            </button>
+          </div>
         </div>
       ) : (
       <div className="research-view__layout">
@@ -147,7 +266,11 @@ export function ResearchView({ projectId, addToast }: ResearchViewProps) {
                     <input
                       type="checkbox"
                       checked={selectedProviders.includes(provider)}
+                      disabled={!isProviderEnabled(provider)}
                       onChange={() => {
+                        if (!isProviderEnabled(provider)) {
+                          return;
+                        }
                         setSelectedProviders((current) =>
                           current.includes(provider) ? current.filter((entry) => entry !== provider) : [...current, provider],
                         );

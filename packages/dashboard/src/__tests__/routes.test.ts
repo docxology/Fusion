@@ -4772,6 +4772,21 @@ describe("GET /auth/status", () => {
     expect(openrouter.type).toBe("api_key");
   });
 
+  it("reports research API-key providers with type api_key", async () => {
+    (authStorage.getApiKeyProviders as ReturnType<typeof vi.fn>).mockReturnValue([
+      { id: "tavily", name: "Tavily" },
+    ]);
+
+    const res = await GET(buildApp(), "/api/auth/status");
+
+    expect(res.status).toBe(200);
+    expect(res.body.providers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "tavily", type: "api_key" }),
+      ]),
+    );
+  });
+
   it("returns 500 on error", async () => {
     (authStorage.getOAuthProviders as ReturnType<typeof vi.fn>).mockImplementation(() => {
       throw new Error("storage error");
@@ -5187,6 +5202,20 @@ describe("POST /auth/api-key", () => {
 
     expect(res.status).toBe(200);
     expect(authStorage.setApiKey).toHaveBeenCalledWith("openrouter", "sk-or-v1-test-key");
+  });
+
+  it("saves a trimmed key for research API-key providers", async () => {
+    (authStorage.getApiKeyProviders as ReturnType<typeof vi.fn>).mockReturnValue([
+      { id: "tavily", name: "Tavily" },
+    ]);
+
+    const res = await REQUEST(buildApp(), "POST", "/api/auth/api-key", JSON.stringify({
+      provider: "tavily",
+      apiKey: "  tavily-secret  ",
+    }), { "Content-Type": "application/json" });
+
+    expect(res.status).toBe(200);
+    expect(authStorage.setApiKey).toHaveBeenCalledWith("tavily", "tavily-secret");
   });
 
   it("returns 400 when provider is missing", async () => {

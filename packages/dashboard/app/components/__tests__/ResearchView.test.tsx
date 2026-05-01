@@ -9,8 +9,23 @@ vi.mock("../../hooks/useResearch", () => ({
   useResearch: (...args: unknown[]) => mockUseResearch(...args),
 }));
 
+const configuredResearchSettings = {
+  researchSettings: { enabled: true },
+  researchGlobalDefaults: {
+    searchProvider: "openrouter",
+    synthesisProvider: "openrouter",
+    synthesisModelId: "gpt-5",
+    maxSourcesPerRun: 20,
+  },
+};
+
+const mockFetchSettings = vi.fn().mockResolvedValue(configuredResearchSettings);
+const mockFetchAuthStatus = vi.fn().mockResolvedValue({ providers: [{ id: "openrouter", type: "api_key", authenticated: false }] });
+
 vi.mock("../../api", () => ({
   fetchScripts: vi.fn().mockResolvedValue({}),
+  fetchSettings: (...args: unknown[]) => mockFetchSettings(...args),
+  fetchAuthStatus: (...args: unknown[]) => mockFetchAuthStatus(...args),
 }));
 
 vi.mock("lucide-react", async (importOriginal) => {
@@ -85,15 +100,25 @@ describe("ResearchView", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockFetchSettings.mockResolvedValue(configuredResearchSettings);
+    mockFetchAuthStatus.mockResolvedValue({ providers: [{ id: "openrouter", type: "api_key", authenticated: false }] });
     mockUseResearch.mockReturnValue(baseHookValue);
   });
 
-  it("renders empty state", () => {
+  it("shows authentication setup state when required credentials are missing", async () => {
+    mockFetchSettings.mockResolvedValue(configuredResearchSettings);
     render(<ResearchView projectId="p1" />);
-    expect(screen.getByTestId("research-state-empty")).toBeInTheDocument();
+    expect(await screen.findByText(/Missing API key for openrouter/i)).toBeInTheDocument();
   });
 
-  it("renders selected run details", () => {
+  it("renders empty state when required credentials are configured", async () => {
+    mockFetchSettings.mockResolvedValue(configuredResearchSettings);
+    mockFetchAuthStatus.mockResolvedValue({ providers: [{ id: "openrouter", type: "api_key", authenticated: true }] });
+    render(<ResearchView projectId="p1" />);
+    expect(await screen.findByTestId("research-state-empty")).toBeInTheDocument();
+  });
+
+  it("renders selected run details", async () => {
     mockUseResearch.mockReturnValue({
       ...baseHookValue,
       runs: [{ id: "RR-1", title: "t", query: "q", status: "running" }],
@@ -101,9 +126,10 @@ describe("ResearchView", () => {
       selectedRunId: "RR-1",
       statusCounts: { pending: 0, running: 1, completed: 0, failed: 0, cancelled: 0 },
     });
+    mockFetchAuthStatus.mockResolvedValue({ providers: [{ id: "openrouter", type: "api_key", authenticated: true }] });
 
     render(<ResearchView projectId="p1" />);
-    expect(screen.getByTestId("research-state-results")).toHaveTextContent("Summary");
+    expect(await screen.findByTestId("research-state-results")).toHaveTextContent("Summary");
   });
 
   it("triggers lifecycle/task/export actions", async () => {
@@ -124,8 +150,10 @@ describe("ResearchView", () => {
       attachRunToTask,
       exportRun,
     });
+    mockFetchAuthStatus.mockResolvedValue({ providers: [{ id: "openrouter", type: "api_key", authenticated: true }] });
 
     render(<ResearchView projectId="p1" />);
+    await screen.findByText("Cancel");
 
     fireEvent.click(screen.getByText("Cancel"));
     fireEvent.click(screen.getByText("Retry"));
@@ -143,23 +171,153 @@ describe("ResearchView", () => {
     });
   });
 
-  it("renders unavailable state without interactive workflow controls", () => {
+  it("renders unavailable state without interactive workflow controls", async () => {
     mockUseResearch.mockReturnValue({ ...baseHookValue, availability: { available: false, reason: "disabled" } });
     render(<ResearchView projectId="p1" />);
-    expect(screen.getByTestId("research-state-unavailable")).toBeInTheDocument();
+    expect(await screen.findByTestId("research-state-unavailable")).toBeInTheDocument();
     expect(screen.queryByLabelText("Query")).not.toBeInTheDocument();
     expect(screen.queryByText("Create Run")).not.toBeInTheDocument();
   });
 
-  it("renders human-readable provider labels", () => {
+  it("shows setup card when project research is disabled", async () => {
+    mockFetchSettings.mockResolvedValue({
+      ...configuredResearchSettings,
+      researchSettings: { enabled: false },
+    });
+    const onOpenSettings = vi.fn();
+    render(<ResearchView projectId="p1" onOpenSettings={onOpenSettings} />);
+    expect(await screen.findByText("Research is disabled for this project.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Open Settings" }));
+    expect(onOpenSettings).toHaveBeenCalledWith("research-project");
+  });
+
+  it("shows incomplete defaults setup CTA routed to global research settings", async () => {
+    mockFetchSettings.mockResolvedValue({
+      researchSettings: { enabled: true },
+      researchGlobalDefaults: {
+        searchProvider: "tavily",
+        synthesisProvider: undefined,
+        synthesisModelId: undefined,
+        maxSourcesPerRun: 20,
+      },
+    });
+    mockFetchAuthStatus.mockResolvedValue({ providers: [{ id: "tavily", type: "api_key", authenticated: true }] });
+
+    const onOpenSettings = vi.fn();
+    render(<ResearchView projectId="p1" onOpenSettings={onOpenSettings} />);
+    expect(await screen.findByText(/Research defaults are incomplete/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Open Settings" }));
+    expect(onOpenSettings).toHaveBeenCalledWith("research-global");
+  });
+
+  it("shows authentication CTA when provider credentials are missing", async () => {
+    mockFetchSettings.mockResolvedValue({
+      researchSettings: { enabled: true },
+      researchGlobalDefaults: {
+        searchProvider: "tavily",
+        synthesisProvider: "openrouter",
+        synthesisModelId: "gpt-5",
+        maxSourcesPerRun: 20,
+      },
+    });
+    mockFetchAuthStatus.mockResolvedValue({
+      providers: [
+        { id: "tavily", type: "api_key", authenticated: false },
+        { id: "openrouter", type: "api_key", authenticated: true },
+      ],
+    });
+    const onOpenSettings = vi.fn();
+    render(<ResearchView projectId="p1" onOpenSettings={onOpenSettings} />);
+    expect(await screen.findByText(/Missing API key for tavily/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Open Settings" }));
+    expect(onOpenSettings).toHaveBeenCalledWith("authentication");
+  });
+
+  it("renders human-readable provider labels", async () => {
     mockUseResearch.mockReturnValue({
       ...baseHookValue,
       availability: { available: true, supportedProviders: ["web-search", "page-fetch", "llm-synthesis"] },
     });
+    mockFetchAuthStatus.mockResolvedValue({ providers: [{ id: "openrouter", type: "api_key", authenticated: true }] });
     render(<ResearchView projectId="p1" />);
-    expect(screen.getByText("Web Search")).toBeInTheDocument();
+    expect(await screen.findByText("Web Search")).toBeInTheDocument();
     expect(screen.getByText("Page Fetch")).toBeInTheDocument();
     expect(screen.getByText("LLM Synthesis")).toBeInTheDocument();
+  });
+
+  it("disables provider checkboxes when sources are disabled in settings", async () => {
+    mockFetchSettings.mockResolvedValue({
+      ...configuredResearchSettings,
+      researchGlobalDefaults: {
+        ...configuredResearchSettings.researchGlobalDefaults,
+        enabledSources: {
+          webSearch: false,
+          pageFetch: true,
+          github: false,
+          localDocs: true,
+          llmSynthesis: true,
+        },
+      },
+    });
+    mockFetchAuthStatus.mockResolvedValue({ providers: [{ id: "openrouter", type: "api_key", authenticated: true }] });
+
+    mockUseResearch.mockReturnValue({
+      ...baseHookValue,
+      availability: { available: true, supportedProviders: ["web-search", "page-fetch", "llm-synthesis"] },
+    });
+
+    render(<ResearchView projectId="p1" />);
+
+    const webSearch = (await screen.findByLabelText("Web Search")) as HTMLInputElement;
+    const pageFetch = screen.getByLabelText("Page Fetch") as HTMLInputElement;
+    expect(webSearch.disabled).toBe(true);
+    expect(pageFetch.disabled).toBe(false);
+  });
+
+  it("submits only enabled providers", async () => {
+    const createRun = vi.fn().mockResolvedValue({ run: { id: "RR-2" } });
+    mockFetchSettings.mockResolvedValue({
+      ...configuredResearchSettings,
+      researchGlobalDefaults: {
+        ...configuredResearchSettings.researchGlobalDefaults,
+        enabledSources: {
+          webSearch: false,
+          pageFetch: true,
+          github: false,
+          localDocs: false,
+          llmSynthesis: true,
+        },
+      },
+    });
+    mockFetchAuthStatus.mockResolvedValue({ providers: [{ id: "openrouter", type: "api_key", authenticated: true }] });
+    mockUseResearch.mockReturnValue({
+      ...baseHookValue,
+      createRun,
+      availability: { available: true, supportedProviders: ["web-search", "page-fetch", "llm-synthesis"] },
+    });
+
+    render(<ResearchView projectId="p1" />);
+    fireEvent.change(await screen.findByLabelText("Query"), { target: { value: "hello" } });
+    fireEvent.click(screen.getByText("Create Run"));
+
+    await waitFor(() => {
+      expect(createRun).toHaveBeenCalledWith(expect.objectContaining({ providers: ["page-fetch", "llm-synthesis"] }));
+    });
+  });
+
+  it("refreshes readiness state when readinessVersion changes", async () => {
+    const onOpenSettings = vi.fn();
+    mockFetchSettings.mockResolvedValueOnce(configuredResearchSettings);
+    mockFetchAuthStatus.mockResolvedValueOnce({ providers: [{ id: "openrouter", type: "api_key", authenticated: false }] });
+
+    const { rerender } = render(<ResearchView projectId="p1" onOpenSettings={onOpenSettings} readinessVersion={0} />);
+    expect(await screen.findByText(/Missing API key for openrouter/i)).toBeInTheDocument();
+
+    mockFetchSettings.mockResolvedValueOnce(configuredResearchSettings);
+    mockFetchAuthStatus.mockResolvedValueOnce({ providers: [{ id: "openrouter", type: "api_key", authenticated: true }] });
+    rerender(<ResearchView projectId="p1" onOpenSettings={onOpenSettings} readinessVersion={1} />);
+
+    expect(await screen.findByTestId("research-state-empty")).toBeInTheDocument();
   });
 
   it("includes mobile layout media rule", async () => {

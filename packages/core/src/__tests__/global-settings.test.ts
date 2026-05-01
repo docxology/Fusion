@@ -333,6 +333,45 @@ describe("GlobalSettingsStore", () => {
       const settings = await store.getSettings();
       expect(settings.ntfyTopic).toMatch(/^topic-\d$/);
     });
+
+    it("persists and clears nested researchGlobalDefaults with null-as-delete semantics", async () => {
+      await store.init();
+      await store.updateSettings({
+        researchGlobalDefaults: {
+          searchProvider: "tavily",
+          enabledSources: {
+            webSearch: true,
+            pageFetch: true,
+            github: false,
+            localDocs: true,
+            llmSynthesis: true,
+          },
+          maxSourcesPerRun: 15,
+          defaultExportFormat: "json",
+        },
+      });
+
+      let settings = await store.getSettings();
+      expect(settings.researchGlobalDefaults?.searchProvider).toBe("tavily");
+
+      // @ts-expect-error null is intentionally used to clear field
+      await store.updateSettings({ researchGlobalDefaults: null });
+      settings = await store.getSettings();
+      expect(settings.researchGlobalDefaults).toMatchObject({
+        searchProvider: undefined,
+        synthesisProvider: undefined,
+        synthesisModelId: undefined,
+        maxSourcesPerRun: 20,
+        defaultExportFormat: "markdown",
+      });
+      expect(settings.researchGlobalDefaults?.enabledSources).toEqual({
+        webSearch: true,
+        pageFetch: true,
+        github: false,
+        localDocs: true,
+        llmSynthesis: true,
+      });
+    });
   });
 
   describe("schema protection", () => {
