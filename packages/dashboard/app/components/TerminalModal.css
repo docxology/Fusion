@@ -276,6 +276,10 @@
   background: var(--card-hover);
 }
 
+.terminal-clear-btn--shortcut {
+  margin-left: var(--space-xs);
+}
+
 .terminal-log-container {
   flex: 1;
   overflow: hidden;
@@ -864,17 +868,17 @@
     resize: none;
   }
 
-  /* Stack tabs and actions on separate rows */
+  /* Keep tabs and header actions on a single row */
   .terminal-header {
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     padding-top: env(safe-area-inset-top, 0);
+    overflow: hidden;
   }
 
-  /* Tabs get their own full-width row and remain scrollable */
+  /* Tabs stay scrollable and yield space to the fixed action cluster */
   .terminal-tabs {
-    flex: 1 1 100%;
-    min-width: 100%;
-    order: 1;
+    flex: 1 1 auto;
+    min-width: 0;
   }
 
   /* Hide the redundant title/status indicator on mobile — .terminal-status-bar shows connection state */
@@ -882,13 +886,12 @@
     display: none;
   }
 
-  /* Actions sit on a compact second row */
+  /* Actions stay pinned to the right edge of the header row */
   .terminal-actions {
-    flex: 1 1 100%;
-    order: 2;
+    flex: 0 0 auto;
     justify-content: flex-end;
-    border-top: 1px solid var(--border);
-    padding: 0 4px;
+    border-top: none;
+    padding: 0 var(--space-xs) 0 0;
     min-height: 36px;
   }
 
@@ -1047,5 +1050,4 @@
     min-height: 36px;
   }
 }
-
 

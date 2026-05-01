@@ -1132,7 +1132,7 @@ export function TerminalModal({ isOpen, onClose, initialCommand, projectId }: Te
             : undefined
         }
       >
-        {/* Header — on mobile (≤768px) flex-wrap stacks tabs and actions on separate rows;
+        {/* Header — on mobile (≤768px) keep tabs and actions on one row;
             .terminal-title is hidden; action button labels are hidden (icons only) */}
         <div className="terminal-header">
           {/* Tab Bar */}
@@ -1210,7 +1210,7 @@ export function TerminalModal({ isOpen, onClose, initialCommand, projectId }: Te
               <span className="terminal-action-label">Clear</span>
             </button>
             <button
-              className="terminal-clear-btn"
+              className="terminal-clear-btn terminal-clear-btn--shortcut"
               onClick={() => setShowShortcuts((current) => !current)}
               data-testid="terminal-shortcut-toggle"
               title="Shortcuts"

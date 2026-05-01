@@ -1679,6 +1679,16 @@ describe("TerminalModal — mobile layout contract", () => {
     });
   });
 
+  it("adds the shortcut spacing hook to the shortcuts toggle", async () => {
+    render(<TerminalModal isOpen={true} onClose={mockOnClose} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("terminal-shortcut-toggle").className).toContain(
+        "terminal-clear-btn--shortcut",
+      );
+    });
+  });
+
   it("terminal-title section contains the status indicator for connection state", async () => {
     render(<TerminalModal isOpen={true} onClose={mockOnClose} />);
 
