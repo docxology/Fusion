@@ -28,7 +28,7 @@ const DEFAULT_FONT_SIZE = 14;
 const MIN_TERMINAL_FONT_SIZE = 8;
 const MAX_TERMINAL_FONT_SIZE = 32;
 const XTERM_FONT_FAMILY =
-  '"MesloLGS NF", "MesloLGM Nerd Font", "JetBrainsMono Nerd Font", "FiraCode Nerd Font", "Hack Nerd Font", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace';
+  '"Fusion Terminal Nerd Font Symbols", "MesloLGS NF", "MesloLGM Nerd Font", "JetBrainsMono Nerd Font", "FiraCode Nerd Font", "Hack Nerd Font", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace';
 
 export function ctrlChar(key: string): string {
   if (!key) {

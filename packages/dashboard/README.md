@@ -252,7 +252,7 @@ Access a fully functional PTY (pseudo-terminal) shell directly from the dashboar
 - **Real PTY Terminal**: Spawns a real shell (bash/zsh/powershell) using node-pty for authentic terminal behavior
 - **Bidirectional Communication**: WebSocket connection for instant input/output
 - **xterm.js Integration**: Full terminal emulation with proper ANSI support, colors, and cursor handling
-- **Nerd Font-preferred rendering**: The terminal prefers a Nerd Font-capable monospace stack (`MesloLGS NF`, `JetBrainsMono Nerd Font`, `FiraCode Nerd Font`, etc.) with standard monospace fallbacks so powerline/private-use prompt glyphs render correctly when patched fonts are installed
+- **Bundled Nerd Font glyph fallback**: The terminal now ships a bundled Nerd Font symbols asset (`/fonts/SymbolsNerdFontMono-Regular.ttf`) and preloads it for deterministic powerline/private-use glyph rendering, while still keeping the existing Nerd Font-preferred monospace stack (`MesloLGS NF`, `JetBrainsMono Nerd Font`, `FiraCode Nerd Font`, etc.) plus standard monospace fallbacks for normal text metrics.
 - **Auto-resizing**: Terminal automatically fits to container size
 - **Scrollback Buffer**: 5KB of scrollback history with replay on reconnect
 - **Reconnection Support**: Automatic reconnect with exponential backoff if connection drops

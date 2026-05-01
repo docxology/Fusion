@@ -31,4 +31,17 @@ describe("mobile build output chunking", () => {
     expect(indexHtml).toMatch(/assets\/vendor-react-[A-Za-z0-9_-]+\.js/);
     expect(indexHtml).toMatch(/assets\/vendor-xterm-[A-Za-z0-9_-]+\.js/);
   });
+
+  test("ships Nerd Font symbol fallback asset and preloads it in dist index", () => {
+    const bundledFontPath = resolve(
+      dashboardClientDistDir,
+      "fonts",
+      "SymbolsNerdFontMono-Regular.ttf",
+    );
+    const indexHtml = readFileSync(resolve(dashboardClientDistDir, "index.html"), "utf8");
+
+    expect(() => readFileSync(bundledFontPath)).not.toThrow();
+    expect(indexHtml).toContain('/fonts/SymbolsNerdFontMono-Regular.ttf');
+    expect(indexHtml).toContain('rel="preload"');
+  });
 });

@@ -563,7 +563,7 @@ describe("TerminalModal", () => {
     expect(Terminal).toHaveBeenCalledWith(
       expect.objectContaining({
         fontFamily:
-          '"MesloLGS NF", "MesloLGM Nerd Font", "JetBrainsMono Nerd Font", "FiraCode Nerd Font", "Hack Nerd Font", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
+          '"Fusion Terminal Nerd Font Symbols", "MesloLGS NF", "MesloLGM Nerd Font", "JetBrainsMono Nerd Font", "FiraCode Nerd Font", "Hack Nerd Font", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
       }),
     );
     expect(screen.getByTestId("terminal-font-size-value").textContent).toBe("14px");

@@ -1,3 +1,9 @@
+@font-face {
+  font-family: "Fusion Terminal Nerd Font Symbols";
+  src: url("/fonts/SymbolsNerdFontMono-Regular.ttf") format("truetype");
+  font-display: swap;
+}
+
 /* === Terminal Modal === */
 /* Center vertically (override the overlay's default top alignment). */
 .modal-overlay:has(.terminal-modal) {
